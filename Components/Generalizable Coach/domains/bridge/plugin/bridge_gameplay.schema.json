@@ -1,0 +1,7 @@
+{
+  "domainId": "bridge_gameplay",
+  "conceptCategories": ["hand_evaluation", "bidding"],
+  "eventTypes": ["deal_started", "bid_made", "hint_requested", "hand_completed"],
+  "ruleTypes": ["bidding_rule"],
+  "evaluator": { "type": "engine", "name": "BEN" }
+}

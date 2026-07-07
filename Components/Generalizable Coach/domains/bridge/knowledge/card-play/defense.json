@@ -1,0 +1,126 @@
+[
+  {
+    "chunkId": "df_rule_lead_nt_longest",
+    "conceptIds": ["CONCEPT_OPENING_LEAD"],
+    "skillIds": ["SKILL_OPENING_LEAD_NT"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "Against notrump, lead your longest suit — usually the fourth-highest card of it. You are trying to set up length tricks. From a suit headed by touching honors (a sequence), lead the top of the sequence instead.",
+    "metadata": { "sourceDocument": "Watson — Elementary Defense Against No-Trump" }
+  },
+  {
+    "chunkId": "df_rule_lead_sequence",
+    "conceptIds": ["CONCEPT_OPENING_LEAD"],
+    "skillIds": ["SKILL_OPENING_LEAD_NT", "SKILL_OPENING_LEAD_SUIT"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "With a three-card honor sequence such as K-Q-J or Q-J-10, lead the TOP card. It cannot cost, drives out a higher honor safely, and tells partner you hold the cards beneath it.",
+    "metadata": { "sourceDocument": "Watson — The Honor-Sequence Lead" }
+  },
+  {
+    "chunkId": "df_rule_third_hand_high",
+    "conceptIds": ["CONCEPT_THIRD_HAND_HIGH"],
+    "skillIds": ["SKILL_THIRD_HAND_HIGH"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "Third hand plays high. When partner leads a low card and dummy plays low, contribute your highest card to force out declarer's honor or win the trick. Exception: with touching honors, play the LOWEST of the sequence.",
+    "metadata": { "sourceDocument": "Watson — Third Hand Defense" }
+  },
+  {
+    "chunkId": "df_rule_second_hand_low",
+    "conceptIds": ["CONCEPT_SECOND_HAND_LOW"],
+    "skillIds": ["SKILL_SECOND_HAND_LOW"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "Second hand plays low. When declarer leads toward dummy and you are second to play, usually play low — do not waste an honor on air. Save your high card to capture one of theirs. Rising is right only for a clear reason (e.g. to cover, or to win a setting trick).",
+    "metadata": { "sourceDocument": "Watson — Defensive Plays by Second Hand" }
+  },
+  {
+    "chunkId": "df_rule_cover_honor",
+    "conceptIds": ["CONCEPT_COVER_HONOR"],
+    "skillIds": ["SKILL_COVER_HONOR"],
+    "difficulty": "intermediate",
+    "chunkType": "rule",
+    "content": "Cover an honor with an honor. When an honor is led (e.g. dummy's Queen) and you sit over it with a higher honor, cover it — you promote your side's lower cards (or partner's) into potential winners. Do not cover, though, when there is no lower card to promote.",
+    "metadata": { "sourceDocument": "Watson — Second Hand Play" }
+  },
+  {
+    "chunkId": "df_rule_rule_of_eleven",
+    "conceptIds": ["CONCEPT_RULE_OF_ELEVEN", "CONCEPT_THIRD_HAND_HIGH"],
+    "skillIds": ["SKILL_RULE_OF_ELEVEN"],
+    "difficulty": "intermediate",
+    "chunkType": "rule",
+    "content": "Rule of Eleven: when partner leads fourth-best, subtract its rank from 11. The result is how many higher cards the other three hands hold. Count those you can see in dummy and your own hand to know exactly how many high cards declarer holds — and play accordingly.",
+    "metadata": { "sourceDocument": "Watson — The Rule of Eleven" }
+  },
+  {
+    "chunkId": "df_rule_return_partners_suit",
+    "conceptIds": ["CONCEPT_OPENING_LEAD", "CONCEPT_SIGNALS"],
+    "skillIds": ["SKILL_DEFENSIVE_SIGNAL"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "Return the suit your partner led unless you have a clearly better plan. Continuing partner's suit develops your side's tricks. Return your higher card from an original three, your remaining card from a doubleton.",
+    "metadata": { "sourceDocument": "Watson — Defense After the First Trick" }
+  },
+  {
+    "chunkId": "df_rule_signals",
+    "conceptIds": ["CONCEPT_SIGNALS"],
+    "skillIds": ["SKILL_DEFENSIVE_SIGNAL"],
+    "difficulty": "intermediate",
+    "chunkType": "rule",
+    "content": "Signal with your spot cards. A high-then-low 'echo' encourages partner to continue the suit; low-then-high discourages. Signals share the count and attitude your partner needs to defend accurately.",
+    "metadata": { "sourceDocument": "Watson — Defensive Discards; The Echo and Its Uses" }
+  },
+  {
+    "chunkId": "df_rule_no_lead_from_ace",
+    "conceptIds": ["CONCEPT_OPENING_LEAD"],
+    "skillIds": ["SKILL_OPENING_LEAD_SUIT"],
+    "difficulty": "intermediate",
+    "chunkType": "rule",
+    "content": "Against a suit contract, avoid leading away from an unsupported Ace (A-x-x without the King). You risk crashing your Ace under declarer's now-singleton King. Prefer a sequence lead, a trump, or a safe suit.",
+    "metadata": { "sourceDocument": "Watson — Opening Leads Against a Suit Contract" }
+  },
+  {
+    "chunkId": "df_misconception_always_cover",
+    "conceptIds": ["CONCEPT_COVER_HONOR"],
+    "skillIds": ["SKILL_COVER_HONOR"],
+    "difficulty": "intermediate",
+    "chunkType": "misconception",
+    "content": "Myth: “Always cover an honor with an honor.” Only cover when it can promote a lower card for your side. Covering the first of touching honors (e.g. dummy's Q from Q-J-10) just gives declarer a free finesse against your partner.",
+    "metadata": { "sourceDocument": "Watson — Second Hand Play" }
+  },
+  {
+    "chunkId": "df_misconception_second_hand_high",
+    "conceptIds": ["CONCEPT_SECOND_HAND_LOW"],
+    "skillIds": ["SKILL_SECOND_HAND_LOW"],
+    "difficulty": "beginner",
+    "chunkType": "misconception",
+    "content": "Myth: “Grab a trick with my King when declarer leads the suit.” Playing your King second hand on air lets declarer's Ace and Queen both score. Play low; make declarer guess where your King is.",
+    "metadata": { "sourceDocument": "Watson — Second Hand Play" }
+  },
+  {
+    "chunkId": "df_example_rule_of_eleven",
+    "conceptIds": ["CONCEPT_RULE_OF_ELEVEN"],
+    "skillIds": ["SKILL_RULE_OF_ELEVEN"],
+    "difficulty": "intermediate",
+    "chunkType": "example",
+    "content": "Partner leads the ♥4 (fourth-best), dummy plays the ♥7. 11 − 4 = 7 cards above the four are held by dummy, you, and declarer. If you can see six of them between your hand and dummy, declarer has just one — so your honor is safe to play.",
+    "metadata": { "sourceDocument": "Watson — The Rule of Eleven" }
+  },
+  {
+    "chunkId": "df_hint_which_card_partner",
+    "conceptIds": ["CONCEPT_THIRD_HAND_HIGH", "CONCEPT_OPENING_LEAD"],
+    "skillIds": ["SKILL_THIRD_HAND_HIGH"],
+    "difficulty": "beginner",
+    "chunkType": "hint_template",
+    "content": "Partner led — are you third hand? What is the highest card you can usefully contribute to this trick?"
+  },
+  {
+    "chunkId": "df_hint_second_hand",
+    "conceptIds": ["CONCEPT_SECOND_HAND_LOW"],
+    "skillIds": ["SKILL_SECOND_HAND_LOW"],
+    "difficulty": "beginner",
+    "chunkType": "hint_template",
+    "content": "Declarer led toward dummy and you play second. Do you really need to spend an honor here, or can you wait?"
+  }
+]

@@ -1,0 +1,69 @@
+p r o g r a m  1 P r o g r a m  2 p r o g r a m  3
+P r o g r a m s  t h a t  a r e  a l r e a d y
+c r e a t e d .  E x :
++  B r i d g e  p r o g r a m
++  D a n c e  p r o g r a m
++  M  i n d  A I  p r o g r a m
+-  .
+M a i n
+a u t h  p a g e  / u s e r  l o g i n )
+P a g e
+C o n t e n t  1 C o n t e n t  2 C o n t e n t  3
+A p p l i c a t i o n
++  T r a c k  s t u d e n t s
++  P e r f o r m a n c e
++  S o c i a l  M e d i a  1  c o m m u n i t y
+L e a r n i n g  P l a t f o r m  /
+A c t i v i t y  p l a t f o r m
+L A I C
+N o t e s :
++  E a c h  o r g a n i z a t i o n  m u s t
+h a v e  t h e i r  o w n  p a s e s
+D i f f e r e n t
+b a c k e n d ,  d a t a b a s e s ,  e t c . . . .
+t C a n n o t  h o s t  a l l  o n  o n e  d a t a b a s e
+E x :  C a n v a
+c o n t e n t
+a r t i f a c t s
++  T e m p l a t e  →  o n l y  c e r t a i n
+k i n d  o f  a p p l i c a t i o n s
+A d m i n
+p o r t a l
+>  F r o m  t h e  s c r e e n s
+⇒  c r e a t e  a  c o n f i g u r a b l e
+t e m p l a t e .
+S
+A p p l i c a t i o n
+C o n f i g u r a t i o n
+R e s t r i c t  u s e r ' s
+f r e e d o m
+*  N o t e :
++  L e a r n i n g  o b j e c t s
+L o o k  i n t o  t h i s
+T e a c h e r  /  c o a c h e s  l o g i n  w i l l  b e
+a s s i g n e d  t o  t h e i r  d e s i g n a t e d  p r o g r a m
+( T h i s  a s s i g n m e n t  w i l l  b e  d o n e  b y
+t h e  o r g a n i z a t i o n )
+>  O r g a n i z a t i o n s  l o g i n
+⇒  w h e n  a n  o r g a n i z a t i o n
+l o g i n ;  t h e y  w i l l  b e  l e d
+t o  t h e  m a i n  p a g e
+L e a r n i n g  P l a t f o r m :
++  A  p l a c e  w h e r e  t e a c h e r s  /  c o a c h e s
+a s s i g n e d  t o  t h a t  p r o g r a m  w i l l  b e
+c r e a t i n g  c o u r s e s
+L e a r n e r s  l o g i n  w i l l  b e
+a s s i g n e d  t o  t h e i r  d e s i g n a t e d
+p r o g r a m  ( T h i s  a s s i g n m e n t  w i l l
+b e  m a d e  b y  h a v i n g  t h e  t e a c h e r s /
+C o a c h e s  s e n d i n g  i n v i t a t i o n  t o  t h e
+l e a r n e r
+*  N o t e :
++  T e a c h e r s  / c o a c h e s  w i l l
+h a v e  a  d i f f e r e n t  v i e w  f r o m
+t h e  l e a r n e r s
++  T e a c h e r s  /  c o a c h e s  w i l l  h a v e
+a  c r e a t i n g  c o u r s e s  v i e w
++  L e a r n e r s  w i l l  b e  a b l e  t o  c h o o s e
+c o u r s e s  a n d  a c c e s s  t h e  c r e a t e d
+c o n t e n t

@@ -1,0 +1,117 @@
+[
+  {
+    "chunkId": "cp_rule_plan_first",
+    "conceptIds": ["CONCEPT_PLAN_PLAY"],
+    "skillIds": ["SKILL_PLAN_TRICKS"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "Before playing to trick one, make a plan. At notrump, count your sure winners and decide which suit can develop the extra tricks you need. At a suit contract, count your losers and decide how to avoid them — draw trumps, ruff, discard, or finesse.",
+    "metadata": { "sourceDocument": "Watson — Planning the Play" }
+  },
+  {
+    "chunkId": "cp_rule_finesse",
+    "conceptIds": ["CONCEPT_FINESSE", "CONCEPT_TENACE"],
+    "skillIds": ["SKILL_TAKE_FINESSE"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "A finesse tries to win a trick with a card that is not the highest by using position. With a tenace such as A-Q, lead a low card from the OTHER hand toward it; if the missing King is played second, cover it, otherwise play the Queen and hope the King sits before it.",
+    "metadata": { "sourceDocument": "Watson — The Positional Value of Honors" }
+  },
+  {
+    "chunkId": "cp_rule_lead_toward",
+    "conceptIds": ["CONCEPT_FINESSE", "CONCEPT_TENACE"],
+    "skillIds": ["SKILL_TAKE_FINESSE"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "Lead TOWARD the honor you hope to score, never away from it. With A-Q in dummy, the lead must come from your hand up to the tenace. Leading the Ace first crashes your own finesse and hands the defenders their King.",
+    "metadata": { "sourceDocument": "Watson — Entries; Positional Value of Honors" }
+  },
+  {
+    "chunkId": "cp_rule_holdup",
+    "conceptIds": ["CONCEPT_HOLDUP"],
+    "skillIds": ["SKILL_HOLDUP_PLAY"],
+    "difficulty": "intermediate",
+    "chunkType": "rule",
+    "content": "At notrump, hold up your sole stopper in the suit the opponents lead. With A-x-x facing x-x, refuse the first (and often second) round, winning only when one defender can no longer reach his partner's long cards. Holding up cuts the defenders' communication.",
+    "metadata": { "sourceDocument": "Watson — The Strategy of Control and the Hold-up" }
+  },
+  {
+    "chunkId": "cp_rule_duck",
+    "conceptIds": ["CONCEPT_DUCK", "CONCEPT_ESTABLISH_SUIT"],
+    "skillIds": ["SKILL_DUCK_PLAY", "SKILL_ESTABLISH_LONG_SUIT"],
+    "difficulty": "intermediate",
+    "chunkType": "rule",
+    "content": "To establish a long suit missing an honor, duck an early round — deliberately lose a trick while you still control the suit. Ducking rectifies the count and keeps an entry, so the suit runs later once the outstanding cards fall.",
+    "metadata": { "sourceDocument": "Watson — Ducking" }
+  },
+  {
+    "chunkId": "cp_rule_entries",
+    "conceptIds": ["CONCEPT_ENTRIES"],
+    "skillIds": ["SKILL_MANAGE_ENTRIES"],
+    "difficulty": "intermediate",
+    "chunkType": "rule",
+    "content": "Entries are the threads that let you move the lead between your hand and dummy. Count them before you start. Preserve the entry to a suit you are establishing — cash winners in the right order so you are not left stranded away from your good cards.",
+    "metadata": { "sourceDocument": "Watson — Entries" }
+  },
+  {
+    "chunkId": "cp_rule_draw_trumps",
+    "conceptIds": ["CONCEPT_DRAW_TRUMPS"],
+    "skillIds": ["SKILL_DRAW_TRUMPS"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "In a suit contract, draw the opponents' trumps early UNLESS you need dummy's trumps to ruff losers, or have more urgent work. Pulling trumps stops defenders from ruffing your winners. Count how many they hold and lead trumps until they are gone.",
+    "metadata": { "sourceDocument": "Watson — Trump Management at Suit Play" }
+  },
+  {
+    "chunkId": "cp_rule_ruff_short_hand",
+    "conceptIds": ["CONCEPT_RUFF"],
+    "skillIds": ["SKILL_RUFF_IN_DUMMY"],
+    "difficulty": "intermediate",
+    "chunkType": "rule",
+    "content": "Ruffing power lies in the SHORT trump hand — usually dummy. Ruffing losers there wins extra tricks; ruffing in the long hand usually does not, because those trumps would have won anyway. Ruff your losers in dummy BEFORE drawing all the trumps.",
+    "metadata": { "sourceDocument": "Watson — Ruffing Power" }
+  },
+  {
+    "chunkId": "cp_misconception_draw_trumps_always",
+    "conceptIds": ["CONCEPT_DRAW_TRUMPS", "CONCEPT_RUFF"],
+    "skillIds": ["SKILL_DRAW_TRUMPS"],
+    "difficulty": "intermediate",
+    "chunkType": "misconception",
+    "content": "Myth: “Always draw trumps first.” Not when dummy's short trumps are needed to ruff your losers. Drawing trumps too soon can strip dummy of the very trumps that were your extra tricks. Ruff first, then pull the rest.",
+    "metadata": { "sourceDocument": "Watson — Plays Postponing the Trump Lead" }
+  },
+  {
+    "chunkId": "cp_misconception_win_early",
+    "conceptIds": ["CONCEPT_HOLDUP"],
+    "skillIds": ["SKILL_HOLDUP_PLAY"],
+    "difficulty": "intermediate",
+    "chunkType": "misconception",
+    "content": "Myth: “Grab your Ace as soon as they lead the suit.” At notrump with a single stopper, winning too early lets a defender later reach his partner's established suit. Hold up until the danger hand is exhausted of the suit.",
+    "metadata": { "sourceDocument": "Watson — The Hold-up" }
+  },
+  {
+    "chunkId": "cp_example_finesse",
+    "conceptIds": ["CONCEPT_FINESSE"],
+    "skillIds": ["SKILL_TAKE_FINESSE"],
+    "difficulty": "beginner",
+    "chunkType": "example",
+    "content": "Dummy has ♥A Q 4, you hold ♥6 3 2. Lead the ♥2 from your hand. If West follows low, play dummy's Queen: it wins whenever West holds the King (half the time), turning a one-trick suit into two.",
+    "metadata": { "sourceDocument": "Watson — The Finesse" }
+  },
+  {
+    "chunkId": "cp_hint_count_winners",
+    "conceptIds": ["CONCEPT_PLAN_PLAY"],
+    "skillIds": ["SKILL_PLAN_TRICKS"],
+    "difficulty": "beginner",
+    "chunkType": "hint_template",
+    "content": "How many tricks do you need, and how many can you count right now? Where will the missing ones come from?"
+  },
+  {
+    "chunkId": "cp_hint_which_hand_leads",
+    "conceptIds": ["CONCEPT_FINESSE", "CONCEPT_ENTRIES"],
+    "skillIds": ["SKILL_TAKE_FINESSE"],
+    "difficulty": "beginner",
+    "chunkType": "hint_template",
+    "content": "Which hand should lead this suit — and are you leading toward your high cards or away from them?"
+  }
+]

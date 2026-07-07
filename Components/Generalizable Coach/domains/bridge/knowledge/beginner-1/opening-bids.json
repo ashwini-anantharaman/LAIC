@@ -1,0 +1,75 @@
+[
+  {
+    "chunkId": "ob_rule_1major",
+    "conceptIds": ["CONCEPT_OPENING_BID"],
+    "skillIds": ["SKILL_OPENING_1SUIT"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "Open 1 of a major (1♥ or 1♠) with 12–21 HCP and a 5+ card major. With two 5-card majors, open the higher one (spades)."
+  },
+  {
+    "chunkId": "ob_rule_1nt",
+    "conceptIds": ["CONCEPT_OPENING_BID", "CONCEPT_HAND_BALANCED"],
+    "skillIds": ["SKILL_OPENING_1SUIT", "SKILL_HAND_SHAPE"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "Open 1NT with exactly 15–17 HCP and a balanced hand (4-3-3-3, 4-4-3-2, or 5-3-3-2) and no 5-card major."
+  },
+  {
+    "chunkId": "ob_rule_1minor",
+    "conceptIds": ["CONCEPT_OPENING_BID"],
+    "skillIds": ["SKILL_OPENING_1SUIT"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "Open 1 of a minor with 12–21 HCP and no 5-card major. Open your longer minor; with 4-4, open 1♦; with 3-3, open 1♣."
+  },
+  {
+    "chunkId": "ob_rule_pass",
+    "conceptIds": ["CONCEPT_OPENING_BID", "CONCEPT_HCP"],
+    "skillIds": ["SKILL_PASS_MINIMUM", "SKILL_HCP_COUNTING"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "With fewer than 12 HCP, pass. You need opening strength before you describe your hand with a bid."
+  },
+  {
+    "chunkId": "ob_misconception_strong_nt",
+    "conceptIds": ["CONCEPT_OPENING_BID", "CONCEPT_HAND_BALANCED"],
+    "skillIds": ["SKILL_HAND_SHAPE"],
+    "difficulty": "beginner",
+    "chunkType": "misconception",
+    "content": "Myth: “My hand is strong, so I should open 1NT.” 1NT is about shape and a narrow 15–17 range, not just strength. With a 5-card major, open the major instead."
+  },
+  {
+    "chunkId": "ob_misconception_11hcp",
+    "conceptIds": ["CONCEPT_OPENING_BID", "CONCEPT_HCP"],
+    "skillIds": ["SKILL_HCP_COUNTING"],
+    "difficulty": "beginner",
+    "chunkType": "misconception",
+    "content": "Myth: “I have 11 HCP so I should open.” 11 is below the 12-point opening bar. Recount, and if you are truly under 12, pass."
+  },
+  {
+    "chunkId": "ob_example_1s",
+    "conceptIds": ["CONCEPT_OPENING_BID"],
+    "skillIds": ["SKILL_OPENING_1SUIT", "SKILL_HAND_SHAPE"],
+    "difficulty": "beginner",
+    "chunkType": "example",
+    "content": "♠KQ874 ♥A3 ♦K92 ♣J54 is 13 HCP with 5 spades. Open 1♠, not 1NT — you hold a 5-card major.",
+    "metadata": { "exampleHands": ["S:KQ874 H:A3 D:K92 C:J54"] }
+  },
+  {
+    "chunkId": "ob_hint_longest_suit",
+    "conceptIds": ["CONCEPT_OPENING_BID", "CONCEPT_HAND_DISTRIBUTION"],
+    "skillIds": ["SKILL_HAND_SHAPE"],
+    "difficulty": "beginner",
+    "chunkType": "hint_template",
+    "content": "Look at your longest suit. How many cards do you have in it?"
+  },
+  {
+    "chunkId": "ob_hint_count_hcp",
+    "conceptIds": ["CONCEPT_OPENING_BID", "CONCEPT_HCP"],
+    "skillIds": ["SKILL_HCP_COUNTING"],
+    "difficulty": "beginner",
+    "chunkType": "hint_template",
+    "content": "Count your high-card points. Is your hand in the opening range?"
+  }
+]

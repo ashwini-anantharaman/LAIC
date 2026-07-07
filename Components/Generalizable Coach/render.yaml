@@ -1,0 +1,26 @@
+# Render Blueprint for the LAIC Generalizable Coach API.
+# Deploy: Render Dashboard → New → Blueprint → pick this repo.
+# Because this service lives in a subdirectory of the repo, rootDir is set.
+services:
+  - type: web
+    name: laic-coach
+    runtime: node
+    rootDir: Generalizable Coach
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/cardplay/scenarios
+    autoDeploy: true
+    envVars:
+      # Set the real key in the Render dashboard (marked sync:false so it is not
+      # stored in git). The server reads OPENAI_API_KEY and infers the provider.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      # Lock this to your Vercel URL after the frontend deploys (e.g.
+      # https://bridgebot.vercel.app). "*" is fine for first bring-up.
+      - key: ALLOWED_ORIGIN
+        value: "*"
+      - key: NODE_VERSION
+        value: "20"

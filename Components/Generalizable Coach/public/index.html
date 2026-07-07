@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Bridge AI Buddy — Adaptive Coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --felt-0:#0a2b26; --felt-1:#0e3a32; --felt-2:#124a40;
+    --ivory:#f4ead6; --ivory-edge:#e6d7b8;
+    --ink:#1c2321; --red:#c0362c;
+    --gold:#d7a94b; --gold-soft:#b8923c;
+    --paper:#fbf6ea;
+    --muted:#a9c3ba;
+    --ok:#3f9d6d; --ok-glow:rgba(63,157,109,.35);
+    --shadow: 0 18px 40px -18px rgba(0,0,0,.65);
+    --serif:"Fraunces",Georgia,serif;
+    --sans:"Instrument Sans",system-ui,sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; }
+  body {
+    font-family:var(--sans); color:var(--ivory);
+    background:radial-gradient(120% 90% at 50% -10%, var(--felt-2), var(--felt-1) 42%, var(--felt-0) 100%);
+    min-height:100dvh; display:flex; justify-content:center; overflow-x:hidden;
+  }
+  body::before {
+    content:""; position:fixed; inset:0; pointer-events:none; opacity:.5; z-index:0;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  }
+  .app { width:100%; max-width:460px; padding:20px 18px 150px; position:relative; z-index:1; transition:max-width .3s; }
+  .app.wide { max-width:820px; }
+
+  header { display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:14px; }
+  .brand .kicker { font-size:11px; letter-spacing:.32em; text-transform:uppercase; color:var(--gold); font-weight:600; }
+  .brand h1 { font-family:var(--serif); font-weight:600; font-size:29px; line-height:1; margin-top:4px; letter-spacing:-.01em; }
+  .brand h1 em { font-style:italic; color:var(--gold); }
+  .style-pick { text-align:right; }
+  .style-pick label { display:block; font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); margin-bottom:5px; }
+  select { font-family:var(--sans); font-size:13px; color:var(--ivory); background:rgba(0,0,0,.28);
+    border:1px solid rgba(215,169,75,.35); border-radius:9px; padding:7px 9px; appearance:none; cursor:pointer; }
+
+  /* mode toggle */
+  .modes { display:flex; gap:4px; background:rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.08);
+    border-radius:12px; padding:4px; margin-bottom:16px; }
+  .mode { flex:1; text-align:center; padding:9px; border-radius:9px; font-size:13px; font-weight:600;
+    letter-spacing:.03em; cursor:pointer; color:var(--muted); transition:.18s; }
+  .mode.on { background:linear-gradient(180deg,var(--gold),var(--gold-soft)); color:var(--felt-0); }
+
+  /* pipeline trace */
+  .pipe { display:flex; align-items:center; gap:6px; margin:0 0 16px; padding:11px 12px; border-radius:13px;
+    background:rgba(0,0,0,.22); border:1px solid rgba(255,255,255,.06); }
+  .pipe .step { flex:1; text-align:center; font-size:9px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--muted); transition:.3s; }
+  .pipe .step .dot { width:9px; height:9px; border-radius:50%; margin:0 auto 5px; background:rgba(255,255,255,.14); transition:.3s; }
+  .pipe .step.active { color:var(--gold); }
+  .pipe .step.active .dot { background:var(--gold); box-shadow:0 0 12px var(--gold); transform:scale(1.25); }
+  .pipe .arrow { color:rgba(255,255,255,.15); font-size:10px; margin-bottom:14px; }
+
+  .context { display:flex; align-items:center; gap:10px; margin-bottom:14px; min-height:22px; flex-wrap:wrap; }
+  .context .seat { font-family:var(--serif); font-style:italic; color:var(--muted); font-size:14px; }
+  .auction { display:flex; gap:6px; }
+  .call { font-family:var(--serif); font-weight:600; font-size:14px; padding:3px 9px; border-radius:7px;
+    background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.08); }
+  .call.partner { color:var(--gold); border-color:rgba(215,169,75,.4); }
+
+  /* hand panel (bidding) */
+  .hand { background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.12));
+    border:1px solid rgba(215,169,75,.22); border-radius:18px; padding:16px 14px; box-shadow:var(--shadow); position:relative; }
+  .hand::after { content:"South · You"; position:absolute; top:-9px; left:16px; font-size:10px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--felt-0); background:var(--gold); padding:2px 9px; border-radius:20px; font-weight:600; }
+  .suit-row { display:flex; align-items:center; gap:8px; padding:7px 2px; }
+  .suit-row + .suit-row { border-top:1px dashed rgba(255,255,255,.08); }
+  .suit-sym { width:26px; font-size:19px; text-align:center; }
+  .suit-sym.red { color:var(--red); } .suit-sym.black { color:var(--paper); }
+  .cards { display:flex; gap:5px; flex-wrap:wrap; }
+  .card { min-width:26px; height:36px; background:var(--paper); color:var(--ink); border-radius:6px;
+    display:flex; align-items:center; justify-content:center; font-family:var(--serif); font-weight:600; font-size:16px;
+    box-shadow:0 3px 0 var(--ivory-edge), 0 6px 10px -4px rgba(0,0,0,.5); border:1px solid rgba(0,0,0,.12); padding:0 4px;
+    opacity:0; transform:translateY(10px) rotate(-4deg); animation:deal .4s cubic-bezier(.2,.8,.3,1) forwards; }
+  .card.red { color:var(--red); }
+  .void { color:var(--muted); font-style:italic; font-size:13px; font-family:var(--serif); }
+  @keyframes deal { to { opacity:1; transform:none; } }
+
+  .meta-row { display:flex; justify-content:space-between; align-items:center; margin:12px 2px 0; }
+  .pts { font-size:12px; color:var(--muted); } .pts b { color:var(--ivory); font-family:var(--serif); font-size:15px; }
+  .toggle { font-size:11px; color:var(--gold); background:none; border:none; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+
+  .section-label { font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--muted); margin:22px 2px 10px; }
+  .bids { display:grid; grid-template-columns:repeat(5,1fr); gap:7px; }
+  .bid { font-family:var(--serif); font-weight:600; font-size:17px; padding:12px 0; border-radius:11px; background:var(--paper);
+    color:var(--ink); border:1px solid rgba(0,0,0,.1); box-shadow:0 4px 0 var(--ivory-edge); cursor:pointer; transition:transform .08s, box-shadow .08s; }
+  .bid:active { transform:translateY(3px); box-shadow:0 1px 0 var(--ivory-edge); }
+  .bid .r { color:var(--red); }
+  .bid.pass { grid-column:span 5; background:transparent; color:var(--ivory); border:1px dashed rgba(255,255,255,.3);
+    box-shadow:none; letter-spacing:.1em; font-size:14px; text-transform:uppercase; font-family:var(--sans); font-weight:600; padding:11px 0; }
+
+  .actions { display:flex; gap:9px; margin-top:16px; }
+  .btn { flex:1; padding:13px; border-radius:12px; font-family:var(--sans); font-weight:600; font-size:13px; letter-spacing:.04em; cursor:pointer; border:1px solid transparent; transition:.15s; }
+  .btn.hint { background:linear-gradient(180deg,var(--gold),var(--gold-soft)); color:var(--felt-0); animation:pulse 2.4s infinite; }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(215,169,75,0);} 50%{box-shadow:0 0 22px -2px rgba(215,169,75,.55);} }
+  .btn.ghost { background:rgba(0,0,0,.25); color:var(--ivory); border-color:rgba(255,255,255,.14); }
+  .btn[disabled] { opacity:.35; pointer-events:none; animation:none; }
+
+  /* ---- card-play table ---- */
+  .scene { font-size:13.5px; line-height:1.5; color:var(--ivory); background:rgba(0,0,0,.2);
+    border:1px solid rgba(215,169,75,.2); border-radius:14px; padding:13px 14px; margin-bottom:14px; }
+  .scene .tag-contract { font-family:var(--serif); font-weight:600; color:var(--gold); margin-right:8px; }
+  .table { position:relative; background:radial-gradient(80% 80% at 50% 45%, rgba(30,90,78,.55), rgba(0,0,0,.25));
+    border:1px solid rgba(215,169,75,.25); border-radius:20px; padding:12px; box-shadow:var(--shadow);
+    display:grid; grid-template-columns:1fr 1.1fr 1fr; grid-template-rows:auto auto auto;
+    grid-template-areas:". north ." "west center east" ". south ."; gap:8px; align-items:center; }
+  .pos { min-height:44px; }
+  .pos.north { grid-area:north; } .pos.south { grid-area:south; }
+  .pos.west { grid-area:west; } .pos.east { grid-area:east; }
+  .center { grid-area:center; min-height:96px; display:flex; align-items:center; justify-content:center; }
+  .seat-label { font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); text-align:center; margin-bottom:5px; }
+  .seat-label b { color:var(--gold); }
+  .facedown { display:flex; justify-content:center; gap:-6px; }
+  .back { width:22px; height:31px; border-radius:5px; margin-left:-8px; border:1px solid rgba(0,0,0,.3);
+    background:repeating-linear-gradient(45deg,#134b40,#134b40 3px,#0d3830 3px,#0d3830 6px); box-shadow:0 2px 5px rgba(0,0,0,.4); }
+  .back:first-child{ margin-left:0; }
+  .phand { display:flex; flex-direction:column; gap:3px; }
+  .prow { display:flex; align-items:center; gap:4px; justify-content:center; }
+  .psym { width:15px; font-size:13px; text-align:center; } .psym.red{color:var(--red);} .psym.black{color:var(--paper);}
+  .pcards { display:flex; gap:3px; flex-wrap:wrap; }
+  .pcard { min-width:20px; height:28px; background:var(--paper); color:var(--ink); border-radius:5px; display:flex;
+    align-items:center; justify-content:center; font-family:var(--serif); font-weight:600; font-size:13px; padding:0 3px;
+    border:1px solid rgba(0,0,0,.12); box-shadow:0 2px 0 var(--ivory-edge); }
+  .pcard.red { color:var(--red); }
+  .pcard.play { cursor:pointer; box-shadow:0 3px 0 var(--gold-soft), 0 0 0 1px var(--gold); transition:transform .1s; }
+  .pcard.play:hover { transform:translateY(-4px); }
+  .pcard.play:active { transform:translateY(1px); }
+  .pcard.dim { opacity:.32; }
+  .pcard.rec { box-shadow:0 0 0 2px var(--gold), 0 0 16px 2px rgba(215,169,75,.7); }
+
+  /* two-column card-play layout: table + side recommendation panel */
+  .cp-grid { display:grid; grid-template-columns:1fr; gap:16px; }
+  @media (min-width:700px){ .cp-grid{ grid-template-columns:minmax(300px,1fr) 288px; align-items:start; } }
+  .cp-side { position:sticky; top:16px; }
+  .panel { background:linear-gradient(180deg,#173f37,#0e2c27); border:1px solid rgba(215,169,75,.4);
+    border-radius:18px; padding:15px 15px 16px; box-shadow:var(--shadow); }
+  .panel .coach-top { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .panel .phead { font-family:var(--serif); font-style:italic; color:var(--muted); font-size:13px; margin-bottom:8px; }
+  .badge.bad { color:#e07a5f; }
+  .hint-note { color:var(--muted); font-size:12.5px; font-style:italic; font-family:var(--serif); line-height:1.5; }
+  .active-tag { display:inline-block; font-size:8.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--felt-0);
+    background:var(--gold); padding:1px 6px; border-radius:10px; margin-top:5px; }
+  .trick { display:grid; grid-template-columns:repeat(2,auto); gap:6px 10px; justify-content:center; }
+  .tcard { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--muted); }
+  .tcard .pcard { min-width:18px; height:25px; font-size:12px; box-shadow:none; }
+  .lead-note { font-family:var(--serif); font-style:italic; color:var(--muted); font-size:13px; text-align:center; }
+
+  /* mastery */
+  .mastery { margin-top:26px; }
+  .skill { display:flex; align-items:center; gap:10px; padding:9px 0; }
+  .skill + .skill { border-top:1px solid rgba(255,255,255,.06); }
+  .skill .name { flex:1; font-size:13px; } .skill .name small { display:block; color:var(--muted); font-size:10.5px; margin-top:1px; }
+  .meter { display:flex; gap:3px; } .pip { width:14px; height:5px; border-radius:3px; background:rgba(255,255,255,.13); } .pip.on { background:var(--gold); }
+  .empty-note { color:var(--muted); font-size:12.5px; font-style:italic; font-family:var(--serif); }
+
+  /* coach bottom sheet */
+  .sheet { position:fixed; left:50%; bottom:0; transform:translateX(-50%) translateY(115%); width:100%; max-width:460px;
+    z-index:5; padding:0 14px 18px; transition:transform .42s cubic-bezier(.2,.85,.25,1); }
+  .sheet.up { transform:translateX(-50%) translateY(0); }
+  .coach { background:linear-gradient(180deg,#173f37,#0e2c27); border:1px solid rgba(215,169,75,.4);
+    border-radius:20px 20px 16px 16px; padding:16px 16px 18px; box-shadow:0 -20px 50px -20px rgba(0,0,0,.8); }
+  .coach-top { display:flex; align-items:center; gap:11px; margin-bottom:11px; }
+  .avatar { width:38px; height:38px; border-radius:50%; flex:none; background:radial-gradient(circle at 35% 30%, var(--gold), var(--gold-soft));
+    display:flex; align-items:center; justify-content:center; font-family:var(--serif); font-weight:700; color:var(--felt-0); font-size:19px; }
+  .coach-id { flex:1; } .coach-id .who { font-family:var(--serif); font-weight:600; font-size:15px; }
+  .coach-id .badge { font-size:10px; letter-spacing:.14em; text-transform:uppercase; }
+  .badge.silent { color:var(--ok); } .badge.hint,.badge.nudge { color:var(--gold); }
+  .levels { display:flex; gap:5px; }
+  .lv { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.16); transition:.3s; }
+  .lv.on { background:var(--gold); box-shadow:0 0 8px var(--gold); }
+  .coach-msg { font-size:15px; line-height:1.5; color:var(--ivory); }
+  .coach-msg.good { display:flex; align-items:center; gap:9px; }
+  .coach-msg.good .tick { width:26px;height:26px;border-radius:50%;background:var(--ok-glow); color:var(--ok);
+    display:flex; align-items:center; justify-content:center; font-size:15px; flex:none; }
+  .tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:11px; }
+  .tag { font-size:10.5px; letter-spacing:.03em; color:var(--muted); background:rgba(0,0,0,.28);
+    border:1px solid rgba(255,255,255,.08); padding:3px 8px; border-radius:20px; }
+  .reveal { margin-top:12px; font-size:13px; color:var(--muted); } .reveal b { color:var(--gold); font-family:var(--serif); font-size:15px; }
+  .sheet-close { position:absolute; top:6px; right:22px; background:none; border:none; color:var(--muted); font-size:22px; cursor:pointer; z-index:6; }
+  .grip { width:40px; height:4px; border-radius:3px; background:rgba(255,255,255,.22); margin:0 auto 12px; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="kicker">Adaptive Coach</div>
+      <h1>Bridge <em>AI</em> Buddy</h1>
+    </div>
+    <div class="style-pick">
+      <label for="style">Coaching style</label>
+      <select id="style">
+        <option value="socratic">Socratic</option>
+        <option value="gentle">Gentle</option>
+        <option value="direct">Direct</option>
+        <option value="minimal">Minimal</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="modes">
+    <div class="mode on" data-mode="bidding">Bidding</div>
+    <div class="mode" data-mode="cardplay">Card play</div>
+  </div>
+
+  <div class="pipe" id="pipe">
+    <div class="step"><div class="dot"></div>Evaluate</div><span class="arrow">→</span>
+    <div class="step"><div class="dot"></div>Decide</div><span class="arrow">→</span>
+    <div class="step"><div class="dot"></div>Retrieve</div><span class="arrow">→</span>
+    <div class="step"><div class="dot"></div>Respond</div><span class="arrow">→</span>
+    <div class="step"><div class="dot"></div>Learn</div>
+  </div>
+
+  <!-- ===== BIDDING VIEW ===== -->
+  <div id="biddingView">
+    <div class="context" id="context"></div>
+    <div class="hand" id="hand"></div>
+    <div class="meta-row">
+      <div class="pts" id="pts"></div>
+      <button class="toggle" id="ptsToggle">Show points</button>
+    </div>
+    <div class="section-label">Your call</div>
+    <div class="bids" id="bids"></div>
+    <div class="actions">
+      <button class="btn hint" id="hintBtn">Ask for a hint</button>
+      <button class="btn ghost" id="newBtn">New deal</button>
+    </div>
+  </div>
+
+  <!-- ===== CARD PLAY VIEW ===== -->
+  <div id="cardplayView" hidden>
+    <div class="cp-grid">
+      <div class="cp-main">
+        <div class="scene" id="scene"></div>
+        <div class="table" id="table"></div>
+        <div class="actions">
+          <button class="btn hint" id="cpHintBtn">Ask for a hint</button>
+          <button class="btn ghost" id="cpNextBtn">Next situation</button>
+        </div>
+      </div>
+      <aside class="cp-side">
+        <div class="panel">
+          <div class="coach-top">
+            <div class="avatar">♠</div>
+            <div class="coach-id"><div class="who">Your Coach</div><div class="badge" id="pBadge"></div></div>
+            <div class="levels" id="pLevels"><div class="lv"></div><div class="lv"></div><div class="lv"></div><div class="lv"></div></div>
+          </div>
+          <div class="phead" id="pHead"></div>
+          <div class="coach-msg" id="pMsg"></div>
+          <div class="tags" id="pTags"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="mastery">
+    <div class="section-label">Skill mastery</div>
+    <div id="skills"><div class="empty-note">Make a play to start building your profile…</div></div>
+  </div>
+</div>
+
+<div class="sheet" id="sheet">
+  <button class="sheet-close" id="closeSheet">×</button>
+  <div class="coach">
+    <div class="grip"></div>
+    <div class="coach-top">
+      <div class="avatar">♠</div>
+      <div class="coach-id"><div class="who">Your Coach</div><div class="badge" id="badge"></div></div>
+      <div class="levels" id="levels"><div class="lv"></div><div class="lv"></div><div class="lv"></div><div class="lv"></div></div>
+    </div>
+    <div class="coach-msg" id="msg"></div>
+    <div class="tags" id="tags"></div>
+    <div class="reveal" id="reveal"></div>
+  </div>
+</div>
+
+<script>
+const SUIT = { S:{s:"♠",c:"black"}, H:{s:"♥",c:"red"}, D:{s:"♦",c:"red"}, C:{s:"♣",c:"black"} };
+const HCP = { A:4, K:3, Q:2, J:1 };
+const CONCEPT_LABELS = {
+  CONCEPT_OPENING_BID:"Opening bids", CONCEPT_HCP:"Point count", CONCEPT_HAND_EVAL_BASIC:"Hand evaluation",
+  CONCEPT_HAND_BALANCED:"Balanced shape", CONCEPT_HAND_DISTRIBUTION:"Distribution", CONCEPT_RESPONSE_1LEVEL:"Responding",
+  CONCEPT_RAISE:"Raises", CONCEPT_NT_RESPONSE:"NT response",
+  CONCEPT_PLAN_PLAY:"Planning the play", CONCEPT_FINESSE:"The finesse", CONCEPT_TENACE:"Tenaces",
+  CONCEPT_ENTRIES:"Entries", CONCEPT_HOLDUP:"Hold-up", CONCEPT_DUCK:"Ducking", CONCEPT_ESTABLISH_SUIT:"Establishing suits",
+  CONCEPT_DRAW_TRUMPS:"Drawing trumps", CONCEPT_RUFF:"Ruffing", CONCEPT_OPENING_LEAD:"Opening leads",
+  CONCEPT_RULE_OF_ELEVEN:"Rule of Eleven", CONCEPT_THIRD_HAND_HIGH:"Third hand high", CONCEPT_SECOND_HAND_LOW:"Second hand low",
+  CONCEPT_COVER_HONOR:"Cover an honor", CONCEPT_SIGNALS:"Signals", CONCEPT_COUNTING:"Counting",
+};
+const SKILL_LABELS = {
+  SKILL_OPENING_1SUIT:"Opening one of a suit", SKILL_RESPONSE_NT:"1NT response", SKILL_RESPONSE_1M_NT:"1NT over a major",
+  SKILL_SIMPLE_RAISE:"Simple raise", SKILL_LIMIT_RAISE:"Limit raise", SKILL_NEW_SUIT_1LEVEL:"New suit at the 1-level",
+  SKILL_PASS_MINIMUM:"Passing minimums", SKILL_HCP_COUNTING:"Counting points", SKILL_HAND_SHAPE:"Reading shape",
+  SKILL_PLAN_TRICKS:"Planning tricks", SKILL_TAKE_FINESSE:"Taking a finesse", SKILL_MANAGE_ENTRIES:"Managing entries",
+  SKILL_HOLDUP_PLAY:"The hold-up", SKILL_DUCK_PLAY:"Ducking", SKILL_ESTABLISH_LONG_SUIT:"Establishing a long suit",
+  SKILL_DRAW_TRUMPS:"Drawing trumps", SKILL_RUFF_IN_DUMMY:"Ruffing in dummy", SKILL_OPENING_LEAD_NT:"Opening lead vs NT",
+  SKILL_OPENING_LEAD_SUIT:"Opening lead vs suit", SKILL_RULE_OF_ELEVEN:"Rule of Eleven",
+  SKILL_THIRD_HAND_HIGH:"Third hand high", SKILL_SECOND_HAND_LOW:"Second hand low", SKILL_COVER_HONOR:"Covering honors",
+  SKILL_DEFENSIVE_SIGNAL:"Defensive signals",
+};
+const MASTERY_RANK = { not_started:0, introduced:1, practicing:2, proficient:3, mastered:4 };
+const MASTERY_LABEL = { not_started:"Not started", introduced:"Introduced", practicing:"Practicing", proficient:"Proficient", mastered:"Mastered" };
+
+let learnerId, sessionId, mode="bidding", showPts=false, busy=false;
+let deal, scenario, scenarioList=[], scenarioIdx=0;
+let previewCache={}, hoverTimer;
+
+const $ = (id)=>document.getElementById(id);
+const api = (p,o)=>fetch(p,{headers:{"content-type":"application/json"},...o}).then(r=>r.json());
+
+function normCard(c){ return c.toUpperCase().replace("10","T"); }
+function rankLabel(r){ return (r==="T")?"10":r; }
+function prettyBid(b){ if(b==="P"||b==="Pass")return"Pass"; const m=b.match(/^(\d)(NT|[SHDC])$/); if(!m)return b; return m[1]+(m[2]==="NT"?"NT":SUIT[m[2]].s); }
+function prettyCard(tok){ const s=tok[0], r=tok.slice(1); return `${rankLabel(r)}${SUIT[s].s}`; }
+function bidHTML(b){ const m=b.match(/^(\d)([SHDC]|NT)$/); if(!m)return b; if(m[2]==="NT")return m[1]+"NT"; const red=(m[2]==="H"||m[2]==="D"); return m[1]+`<span class="${red?'r':''}">${SUIT[m[2]].s}</span>`; }
+
+function parseHand(str){ const out={S:[],H:[],D:[],C:[]}; (str||"").trim().split(/\s+/).forEach(tok=>{ const m=tok.match(/^([SHDC]):(.*)$/); if(m) out[m[1]]=(m[2].match(/10|[AKQJT98765432]/g)||[]).map(r=>r==="10"?"T":r); }); return out; }
+function countHCP(h){ return Object.values(h).flat().reduce((n,r)=>n+(HCP[r]||0),0); }
+
+/* ---------- pipeline + coach sheet (shared) ---------- */
+async function animatePipe(learn=true){
+  const steps=document.querySelectorAll("#pipe .step"); steps.forEach(s=>s.classList.remove("active"));
+  const count=learn?5:4;
+  for(let i=0;i<count;i++){ steps[i].classList.add("active"); await new Promise(r=>setTimeout(r,140)); }
+  setTimeout(()=>steps.forEach(s=>s.classList.remove("active")),700);
+}
+function showResponse(r, answerText){
+  const sheet=$("sheet"), badge=$("badge"), msg=$("msg"), tags=$("tags"), reveal=$("reveal"), levels=$("levels").children;
+  [...levels].forEach((l,i)=> l.classList.toggle("on", r.level? i<r.level : false));
+  if(r.type==="silent"){
+    badge.className="badge silent"; badge.textContent="Stayed silent";
+    msg.className="coach-msg good";
+    msg.innerHTML=`<span class="tick">✓</span><span>Well played — that's the recommended card. The coach only speaks up when it can help.</span>`;
+    tags.innerHTML=""; reveal.innerHTML="";
+  } else {
+    badge.className="badge "+r.type;
+    badge.textContent = r.type==="hint"?`Hint · level ${r.level}`:r.type;
+    msg.className="coach-msg"; msg.textContent=r.message||"…";
+    const cs=[...new Set((r.metadata?.relatedConceptIds||[]).map(c=>CONCEPT_LABELS[c]||c))];
+    tags.innerHTML=cs.map(c=>`<span class="tag">${c}</span>`).join("");
+    reveal.innerHTML = (r.level>=4 && answerText)?answerText:"";
+  }
+  sheet.classList.add("up");
+}
+
+/* ================= BIDDING ================= */
+function renderBids(){
+  const rows=[["1C","1D","1H","1S","1NT"],["2C","2D","2H","2S","2NT"],["3C","3D","3H","3S","3NT"]];
+  let html=rows.flat().map(b=>`<button class="bid" data-bid="${b}">${bidHTML(b)}</button>`).join("");
+  html+=`<button class="bid pass" data-bid="P">Pass</button>`;
+  $("bids").innerHTML=html;
+  document.querySelectorAll(".bid").forEach(el=>el.onclick=()=>submitBid(el.dataset.bid));
+}
+function renderPts(){ $("pts").innerHTML = showPts?`High-card points: <b>${countHCP(parseHand(deal.hands.S))}</b>`:`High-card points hidden`; }
+function renderHand(){
+  const hand=parseHand(deal.hands.S);
+  $("hand").innerHTML=["S","H","D","C"].map(s=>{
+    const cards=hand[s].length?hand[s].map((r,i)=>`<div class="card ${SUIT[s].c==='red'?'red':''}" style="animation-delay:${i*45}ms">${rankLabel(r)}</div>`).join(""):`<span class="void">— void —</span>`;
+    return `<div class="suit-row"><div class="suit-sym ${SUIT[s].c}">${SUIT[s].s}</div><div class="cards">${cards}</div></div>`;
+  }).join("");
+  renderPts();
+  const ctx=$("context");
+  if(deal.auctionSoFar&&deal.auctionSoFar.length){
+    const calls=deal.auctionSoFar.map((c,i)=>`<span class="call ${i===0?'partner':''}">${prettyBid(c)}</span>`).join("");
+    ctx.innerHTML=`<span class="seat">Partner opened —</span><div class="auction">${calls}</div>`;
+  } else ctx.innerHTML=`<span class="seat">You are the dealer. Make your opening call.</span>`;
+}
+async function submitBid(bid){
+  if(busy)return; busy=true; await animatePipe(true);
+  const {response}=await api(`/api/sessions/${sessionId}/events`,{method:"POST",body:JSON.stringify({eventType:"bid_made",
+    action:{bid,position:"S",hand:deal.hands.S,auctionSoFar:deal.auctionSoFar||[]}})});
+  showResponse(response, `Recommended call: <b>${prettyBid(deal.expectedBid)}</b>`);
+  await refreshMastery(); busy=false;
+}
+async function newDeal(){
+  $("sheet").classList.remove("up");
+  const asResp=Math.random()<0.35;
+  const body=asResp?{mode:"response",partnerOpening:Math.random()<0.5?"1S":"1H"}:{mode:"opening"};
+  deal=await api("/api/deals/generate",{method:"POST",body:JSON.stringify(body)});
+  renderHand();
+}
+
+/* ================= CARD PLAY ================= */
+function handRowsHTML(handStr, seat, active, legalSet){
+  const hand=parseHand(handStr);
+  return `<div class="phand">`+["S","H","D","C"].map(s=>{
+    if(!hand[s].length) return "";
+    const cards=hand[s].map(r=>{
+      const tok=s+r; const red=SUIT[s].c==="red";
+      let cls="pcard"+(red?" red":"");
+      if(active){ if(legalSet.has(tok)) cls+=" play"; else cls+=" dim"; }
+      const clickable = active && legalSet.has(tok);
+      return `<div class="${cls}" ${clickable?`data-card="${tok}"`:""}>${rankLabel(r)}</div>`;
+    }).join("");
+    return `<div class="prow"><div class="psym ${SUIT[s].c}">${SUIT[s].s}</div><div class="pcards">${cards}</div></div>`;
+  }).join("")+`</div>`;
+}
+function seatHTML(seat, s){
+  const visible = (seat===s.learnerSeat)||(seat===s.dummySeat);
+  const active = seat===s.playFromSeat;
+  const isDummy = seat===s.dummySeat;
+  const isYou = seat===s.learnerSeat;
+  const legalSet = new Set((s.legalCards||[]).map(normCard));
+  let label = seat;
+  if(isYou) label = `<b>${seat} · You</b>`;
+  else if(isDummy) label = `${seat} · Dummy`;
+  let body;
+  if(visible){
+    body = handRowsHTML(s.hands[seat]||"", seat, active, legalSet);
+  } else {
+    body = `<div class="facedown">${'<div class="back"></div>'.repeat(4)}</div>`;
+  }
+  const activeTag = active?`<div style="text-align:center"><span class="active-tag">Your turn</span></div>`:"";
+  return `<div class="pos ${seat==='N'?'north':seat==='S'?'south':seat==='W'?'west':'east'}">
+    <div class="seat-label">${label}</div>${body}${activeTag}</div>`;
+}
+function centerHTML(s){
+  if(!s.trickSoFar||!s.trickSoFar.length){
+    return `<div class="lead-note">${s.toLead?"You are on lead":"—"}</div>`;
+  }
+  return `<div class="trick">`+s.trickSoFar.map(t=>{
+    const tok=normCard(t.card); const red=SUIT[tok[0]].c==="red";
+    return `<div class="tcard">${t.seat}<div class="pcard ${red?'red':''}">${rankLabel(tok.slice(1))}</div></div>`;
+  }).join("")+`</div>`;
+}
+function renderScenario(){
+  const s=scenario;
+  $("scene").innerHTML=`<span class="tag-contract">${s.contract}</span>${s.situation}`;
+  $("table").innerHTML = seatHTML("N",s)+seatHTML("W",s)+`<div class="center">${centerHTML(s)}</div>`+seatHTML("E",s)+seatHTML("S",s);
+  document.querySelectorAll("#table .pcard.play").forEach(el=>{
+    el.onclick=()=>submitCard(el.dataset.card);
+    el.onmouseenter=()=>previewCard(el.dataset.card);
+    el.onmouseleave=()=>clearTimeout(hoverTimer);
+  });
+  defaultPanel();
+}
+
+/* ---- side recommendation panel ---- */
+function panelFill({head, badgeText, badgeClass, level, message, concepts, plain}){
+  $("pHead").textContent = head||"";
+  $("pBadge").className = "badge "+(badgeClass||""); $("pBadge").textContent = badgeText||"";
+  const lv=$("pLevels"); [...lv.children].forEach((l,i)=>l.classList.toggle("on", level? i<level:false));
+  lv.style.visibility = level? "visible":"hidden";
+  $("pMsg").className = "coach-msg"+(plain?" hint-note":""); $("pMsg").textContent = message||"";
+  $("pTags").innerHTML = [...new Set((concepts||[]).map(c=>CONCEPT_LABELS[c]||c))].map(c=>`<span class="tag">${c}</span>`).join("");
+}
+function defaultPanel(){
+  panelFill({badgeText:"Ready", badgeClass:"nudge", plain:true,
+    message:"Hover a card to see the coach's read on it. Click a card to play it for real."});
+  highlightRec(null);
+}
+function highlightRec(best){
+  document.querySelectorAll("#table .pcard.rec").forEach(el=>el.classList.remove("rec"));
+  if(best){ const el=document.querySelector(`#table .pcard[data-card="${normCard(best)}"]`); if(el) el.classList.add("rec"); }
+}
+const VERDICT = {
+  correct:{t:"Best play", c:"silent"}, acceptable:{t:"Reasonable", c:"nudge"},
+  suboptimal:{t:"Playable, not ideal", c:"bad"}, incorrect:{t:"Not recommended", c:"bad"},
+};
+function showPreview(ev){
+  const v=VERDICT[ev.correctness]||{t:ev.correctness,c:"nudge"};
+  panelFill({head:`If you play ${prettyCard(normCard(ev.card))} —`, badgeText:v.t, badgeClass:v.c,
+    message:ev.explanation, concepts:ev.conceptIds});
+  highlightRec(ev.bestAction);
+}
+function previewCard(card){
+  clearTimeout(hoverTimer);
+  hoverTimer=setTimeout(async()=>{
+    const key=scenario.scenarioId+":"+normCard(card);
+    let ev=previewCache[key];
+    if(!ev){ ev=await api("/api/cardplay/preview",{method:"POST",body:JSON.stringify({scenarioId:scenario.scenarioId,card})}); ev.card=card; previewCache[key]=ev; }
+    showPreview(ev);
+  },140);
+}
+
+async function submitCard(card){
+  if(busy)return; busy=true; await animatePipe(true);
+  const {response}=await api(`/api/sessions/${sessionId}/events`,{method:"POST",body:JSON.stringify({eventType:"card_played",
+    action:{card,position:scenario.playFromSeat,scenarioId:scenario.scenarioId}})});
+  showCommitted(card, response);
+  await refreshMastery(); busy=false;
+}
+function showCommitted(card, r){
+  const played=prettyCard(normCard(card));
+  if(r.type==="silent"){
+    panelFill({head:`You played ${played}`, badgeText:"Well played", badgeClass:"silent",
+      message:"That's the recommended card — the coach stays quiet when you're on track."});
+  } else {
+    panelFill({head:`You played ${played}`, badgeText: r.type==="hint"?`Hint · level ${r.level}`:r.type,
+      badgeClass:r.type, level:r.level, message:r.message, concepts:r.metadata?.relatedConceptIds});
+  }
+}
+
+async function loadScenarios(){
+  scenarioList=await api("/api/cardplay/scenarios");
+  scenarioIdx=0; await loadScenario(scenarioList[0].scenarioId);
+}
+async function loadScenario(id){
+  $("sheet").classList.remove("up");
+  previewCache={};
+  scenario=await api(`/api/cardplay/scenario/${id}`);
+  renderScenario();
+}
+async function nextScenario(){
+  scenarioIdx=(scenarioIdx+1)%scenarioList.length;
+  await loadScenario(scenarioList[scenarioIdx].scenarioId);
+}
+
+/* ================= shared hint / mastery ================= */
+async function requestHint(){
+  if(busy)return; busy=true; await animatePipe(false);
+  const {response}=await api(`/api/sessions/${sessionId}/hint`,{method:"POST",body:"{}"});
+  if(mode==="cardplay"){
+    if(response.type==="silent"){
+      panelFill({badgeText:"Waiting", badgeClass:"nudge", plain:true, message:"Play a card first, then I can talk you through it."});
+    } else {
+      panelFill({head:"Coach hint", badgeText:`Hint · level ${response.level}`, badgeClass:"hint",
+        level:response.level, message:response.message, concepts:response.metadata?.relatedConceptIds});
+    }
+  } else if(response.type==="silent"){
+    $("badge").className="badge nudge"; $("badge").textContent="Waiting";
+    $("msg").className="coach-msg"; $("msg").textContent="Make a bid first, then I can guide you.";
+    $("tags").innerHTML=""; $("reveal").innerHTML=""; [...$("levels").children].forEach(l=>l.classList.remove("on"));
+    $("sheet").classList.add("up");
+  } else showResponse(response, "");
+  busy=false;
+}
+async function refreshMastery(){
+  const profile=await api(`/api/learners/${learnerId}`);
+  const dom=profile.domains?.bridge_gameplay; const box=$("skills");
+  const skills=(dom?.skillStates||[]).filter(s=>s.exposureCount>0)
+    .sort((a,b)=>MASTERY_RANK[b.mastery]-MASTERY_RANK[a.mastery]||b.exposureCount-a.exposureCount);
+  if(!skills.length){ box.innerHTML=`<div class="empty-note">Make a play to start building your profile…</div>`; return; }
+  box.innerHTML=skills.map(s=>{
+    const rank=MASTERY_RANK[s.mastery]; const pips=[0,1,2,3].map(i=>`<div class="pip ${i<rank?'on':''}"></div>`).join("");
+    const acc=s.exposureCount?Math.round(100*s.correctCount/s.exposureCount):0;
+    return `<div class="skill"><div class="name">${SKILL_LABELS[s.skillId]||s.skillId}
+      <small>${MASTERY_LABEL[s.mastery]} · ${s.correctCount}/${s.exposureCount} correct (${acc}%)</small></div>
+      <div class="meter">${pips}</div></div>`;
+  }).join("");
+}
+
+/* ================= mode + boot ================= */
+function setMode(m){
+  mode=m;
+  document.querySelectorAll(".mode").forEach(el=>el.classList.toggle("on",el.dataset.mode===m));
+  $("biddingView").hidden = m!=="bidding";
+  $("cardplayView").hidden = m!=="cardplay";
+  document.querySelector(".app").classList.toggle("wide", m==="cardplay");
+  $("sheet").classList.remove("up");
+  if(m==="cardplay" && !scenario) loadScenarios();
+}
+async function restart(){
+  const style=$("style").value;
+  const c=await api("/api/learners",{method:"POST",body:JSON.stringify({name:"Player",preferences:{feedbackStyle:style,explanationDepth:"short"}})});
+  learnerId=c.learnerId;
+  const s=await api("/api/sessions",{method:"POST",body:JSON.stringify({learnerId,domainId:"bridge_gameplay"})});
+  sessionId=s.sessionId;
+  await refreshMastery();
+  if(mode==="bidding") await newDeal(); else await loadScenarios();
+}
+
+$("hintBtn").onclick=requestHint; $("cpHintBtn").onclick=requestHint;
+$("newBtn").onclick=newDeal; $("cpNextBtn").onclick=nextScenario;
+$("closeSheet").onclick=()=>$("sheet").classList.remove("up");
+$("ptsToggle").onclick=()=>{ showPts=!showPts; renderPts(); $("ptsToggle").textContent=showPts?"Hide points":"Show points"; };
+$("style").onchange=restart;
+document.querySelectorAll(".mode").forEach(el=>el.onclick=()=>setMode(el.dataset.mode));
+renderBids();
+restart();
+</script>
+</body>
+</html>

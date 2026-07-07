@@ -1,0 +1,7 @@
+{
+  "packageId": "bridge_cardplay_v1",
+  "domainId": "bridge_gameplay",
+  "version": "1.0.0",
+  "sourceDocument": "Louis H. Watson (ed. Sam Fry Jr.) — Watson's Classic Book on the Play of the Hand at Bridge (Sterling, 1958)",
+  "sources": ["declarer-play.json", "defense.json", "planning.json"]
+}

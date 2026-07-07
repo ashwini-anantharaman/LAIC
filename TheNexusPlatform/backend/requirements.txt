@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+supabase
+pydantic
+pydantic-settings
+python-dotenv
+email-validator
+truststore
+psycopg2-binary

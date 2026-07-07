@@ -1,0 +1,6 @@
+{
+  "packageId": "bridge_beginner_1_v1",
+  "domainId": "bridge_gameplay",
+  "version": "1.0.0",
+  "sources": ["opening-bids.json", "simple-responses.json", "hand-evaluation.json"]
+}

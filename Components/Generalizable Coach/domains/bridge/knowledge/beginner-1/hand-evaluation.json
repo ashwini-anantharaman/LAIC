@@ -1,0 +1,51 @@
+[
+  {
+    "chunkId": "he_rule_hcp",
+    "conceptIds": ["CONCEPT_HCP", "CONCEPT_HAND_EVAL_BASIC"],
+    "skillIds": ["SKILL_HCP_COUNTING"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "Count high-card points: Ace = 4, King = 3, Queen = 2, Jack = 1. A full deck holds 40 HCP, so an average hand is 10."
+  },
+  {
+    "chunkId": "he_explanation_balanced",
+    "conceptIds": ["CONCEPT_HAND_BALANCED", "CONCEPT_HAND_EVAL_BASIC"],
+    "skillIds": ["SKILL_HAND_SHAPE"],
+    "difficulty": "beginner",
+    "chunkType": "explanation",
+    "content": "A balanced hand has no void, no singleton, and at most one doubleton — patterns 4-3-3-3, 4-4-3-2, and 5-3-3-2. Balanced hands suit notrump contracts."
+  },
+  {
+    "chunkId": "he_explanation_distribution",
+    "conceptIds": ["CONCEPT_HAND_DISTRIBUTION"],
+    "skillIds": ["SKILL_HAND_SHAPE"],
+    "difficulty": "beginner",
+    "chunkType": "explanation",
+    "content": "When your hand is unbalanced — a long suit or a short suit — distribution matters as much as points. Long trump fits produce extra tricks that raw HCP miss."
+  },
+  {
+    "chunkId": "he_misconception_only_hcp",
+    "conceptIds": ["CONCEPT_HAND_DISTRIBUTION", "CONCEPT_HCP"],
+    "skillIds": ["SKILL_HAND_SHAPE"],
+    "difficulty": "beginner",
+    "chunkType": "misconception",
+    "content": "Myth: “Only high-card points matter.” Shape counts too. A 5-card major or a big fit can be worth far more than the HCP alone suggest."
+  },
+  {
+    "chunkId": "he_example_counting",
+    "conceptIds": ["CONCEPT_HCP", "CONCEPT_HAND_EVAL_BASIC"],
+    "skillIds": ["SKILL_HCP_COUNTING"],
+    "difficulty": "beginner",
+    "chunkType": "example",
+    "content": "♠AK4 ♥Q32 ♦K652 ♣J43: A+K = 7, Q = 2, K = 3, J = 1 → 13 HCP. A balanced 4-3-4-2 hand worth an opening bid.",
+    "metadata": { "exampleHands": ["S:AK4 H:Q32 D:K652 C:J43"] }
+  },
+  {
+    "chunkId": "he_hint_count",
+    "conceptIds": ["CONCEPT_HCP"],
+    "skillIds": ["SKILL_HCP_COUNTING"],
+    "difficulty": "beginner",
+    "chunkType": "hint_template",
+    "content": "Add up your honors: 4 for each Ace, 3 for each King, 2 for each Queen, 1 for each Jack."
+  }
+]

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+coverage/
+# SQLite coach database (default COACH_DB path) + WAL sidecars
+coach.db
+coach.db-wal
+coach.db-shm

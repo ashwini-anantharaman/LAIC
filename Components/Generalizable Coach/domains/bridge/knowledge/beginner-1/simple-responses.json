@@ -1,0 +1,84 @@
+[
+  {
+    "chunkId": "sr_rule_simple_raise",
+    "conceptIds": ["CONCEPT_RAISE", "CONCEPT_RESPONSE_1LEVEL"],
+    "skillIds": ["SKILL_SIMPLE_RAISE"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "With 6–9 HCP and 3+ cards in partner's suit, make a simple raise (2 of partner's suit). It shows a fit and a minimum responding hand."
+  },
+  {
+    "chunkId": "sr_rule_limit_raise",
+    "conceptIds": ["CONCEPT_RAISE", "CONCEPT_RESPONSE_1LEVEL"],
+    "skillIds": ["SKILL_LIMIT_RAISE"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "With 10–12 HCP and 4+ card support, make a limit raise (3 of partner's suit). It invites game and shows a strong fit."
+  },
+  {
+    "chunkId": "sr_rule_1nt_response",
+    "conceptIds": ["CONCEPT_NT_RESPONSE", "CONCEPT_RESPONSE_1LEVEL"],
+    "skillIds": ["SKILL_RESPONSE_NT", "SKILL_RESPONSE_1M_NT"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "With 6–10 HCP, no fit for partner, and no new suit you can bid at the 1-level, respond 1NT. It keeps the auction low and shows values."
+  },
+  {
+    "chunkId": "sr_rule_new_suit_1level",
+    "conceptIds": ["CONCEPT_RESPONSE_1LEVEL"],
+    "skillIds": ["SKILL_NEW_SUIT_1LEVEL"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "With 6+ HCP and a 4+ card suit that ranks higher than partner's, bid that new suit at the 1-level. New suits are forcing and explore for the best fit."
+  },
+  {
+    "chunkId": "sr_rule_pass_weak",
+    "conceptIds": ["CONCEPT_RESPONSE_1LEVEL", "CONCEPT_HCP"],
+    "skillIds": ["SKILL_PASS_MINIMUM"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "With fewer than 6 HCP, pass partner's opening. You lack the strength to respond safely."
+  },
+  {
+    "chunkId": "sr_misconception_always_new_suit",
+    "conceptIds": ["CONCEPT_RAISE", "CONCEPT_RESPONSE_1LEVEL"],
+    "skillIds": ["SKILL_SIMPLE_RAISE"],
+    "difficulty": "beginner",
+    "chunkType": "misconception",
+    "content": "Myth: “I should always bid a new suit, even with support.” When you have a good fit and a minimum, showing the fit with a raise is usually clearer than inventing a new suit."
+  },
+  {
+    "chunkId": "sr_example_simple_raise",
+    "conceptIds": ["CONCEPT_RAISE"],
+    "skillIds": ["SKILL_SIMPLE_RAISE"],
+    "difficulty": "beginner",
+    "chunkType": "example",
+    "content": "Partner opens 1♠. You hold ♠Q93 ♥K74 ♦J852 ♣T63 (7 HCP, 3 spades). Raise to 2♠.",
+    "metadata": { "exampleHands": ["S:Q93 H:K74 D:J852 C:T63"] }
+  },
+  {
+    "chunkId": "sr_example_1nt_response",
+    "conceptIds": ["CONCEPT_NT_RESPONSE"],
+    "skillIds": ["SKILL_RESPONSE_1M_NT"],
+    "difficulty": "beginner",
+    "chunkType": "example",
+    "content": "Partner opens 1♠. You hold ♠52 ♥K843 ♦Q762 ♣J43 (6 HCP, no fit). Respond 1NT.",
+    "metadata": { "exampleHands": ["S:52 H:K843 D:Q762 C:J43"] }
+  },
+  {
+    "chunkId": "sr_hint_support",
+    "conceptIds": ["CONCEPT_RAISE"],
+    "skillIds": ["SKILL_SIMPLE_RAISE", "SKILL_LIMIT_RAISE"],
+    "difficulty": "beginner",
+    "chunkType": "hint_template",
+    "content": "How many cards do you hold in partner's suit? Do you have a fit?"
+  },
+  {
+    "chunkId": "sr_hint_strength",
+    "conceptIds": ["CONCEPT_RESPONSE_1LEVEL", "CONCEPT_HCP"],
+    "skillIds": ["SKILL_HCP_COUNTING"],
+    "difficulty": "beginner",
+    "chunkType": "hint_template",
+    "content": "Count your points. Are you minimum (6–9), invitational (10–12), or too weak to bid?"
+  }
+]

@@ -1,0 +1,55 @@
+[
+  {
+    "chunkId": "pl_rule_count_losers",
+    "conceptIds": ["CONCEPT_PLAN_PLAY", "CONCEPT_COUNTING"],
+    "skillIds": ["SKILL_PLAN_TRICKS"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "At a suit contract, count losers hand-by-hand in the long trump hand. For each loser ask: can I ruff it, discard it on a side winner, or finesse to avoid it? Turn losers into winners before you touch trumps if dummy's ruffs are the answer.",
+    "metadata": { "sourceDocument": "Watson — Planning the Play, At a Suit Contract" }
+  },
+  {
+    "chunkId": "pl_rule_count_winners_nt",
+    "conceptIds": ["CONCEPT_PLAN_PLAY", "CONCEPT_ESTABLISH_SUIT"],
+    "skillIds": ["SKILL_PLAN_TRICKS", "SKILL_ESTABLISH_LONG_SUIT"],
+    "difficulty": "beginner",
+    "chunkType": "rule",
+    "content": "At notrump, count sure winners first. If they fall short of the contract, pick the suit that can develop the extra tricks with the fewest losses and the entries to enjoy it — then attack it early, before the opponents set up theirs.",
+    "metadata": { "sourceDocument": "Watson — Planning the Play, At a No-trump Contract" }
+  },
+  {
+    "chunkId": "pl_rule_counting_hand",
+    "conceptIds": ["CONCEPT_COUNTING"],
+    "skillIds": ["SKILL_PLAN_TRICKS"],
+    "difficulty": "advanced",
+    "chunkType": "rule",
+    "content": "Count the hand: track each suit's distribution as cards appear, and use the bidding to place missing honors. Knowing exactly how the enemy cards lie lets you finesse the right way, drop a doubleton King, or execute an end play.",
+    "metadata": { "sourceDocument": "Watson — Counting" }
+  },
+  {
+    "chunkId": "pl_explanation_when_not_finesse",
+    "conceptIds": ["CONCEPT_FINESSE", "CONCEPT_PLAN_PLAY"],
+    "skillIds": ["SKILL_TAKE_FINESSE", "SKILL_PLAN_TRICKS"],
+    "difficulty": "intermediate",
+    "chunkType": "explanation",
+    "content": "Do not finesse out of habit. If you can count enough tricks without risk, take the safe line. Sometimes playing for a defender's honor to drop, or cashing sure winners, beats a fifty-fifty finesse — especially when a loser is affordable.",
+    "metadata": { "sourceDocument": "Watson — When Not to Finesse" }
+  },
+  {
+    "chunkId": "pl_explanation_contract_is_the_thing",
+    "conceptIds": ["CONCEPT_PLAN_PLAY"],
+    "skillIds": ["SKILL_PLAN_TRICKS"],
+    "difficulty": "beginner",
+    "chunkType": "explanation",
+    "content": "The contract is the thing. Play to make your contract first; overtricks come second. Choose the line that most safely brings home the tricks you actually need, even if a greedier line might win one more.",
+    "metadata": { "sourceDocument": "Watson — General Principles: The Contract Is the Thing" }
+  },
+  {
+    "chunkId": "pl_hint_plan_before_trick_one",
+    "conceptIds": ["CONCEPT_PLAN_PLAY"],
+    "skillIds": ["SKILL_PLAN_TRICKS"],
+    "difficulty": "beginner",
+    "chunkType": "hint_template",
+    "content": "Pause before trick one. What is your contract, and what is your plan to bring it home?"
+  }
+]
