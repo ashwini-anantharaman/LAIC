@@ -45,6 +45,23 @@ pnpm build       # all packages + Next.js app
 pnpm lint
 ```
 
+## Development
+
+```sh
+pnpm --filter bridge-web dev   # http://localhost:3000
+```
+
+By default the app runs with `NEXUS_CLIENT_MODE=stub` (no env file needed):
+`/welcome` shows a dev user picker with seeded users for each bridge role
+(learner, coach, org admin, program admin, reviewer) in a sample world —
+LAIC org → Bridge Program → Sunrise Bridge Club → Tuesday Beginners group.
+Real Nexus context + Supabase sign-in activates in Phase 10 via
+`NEXUS_CLIENT_MODE=http` (see `apps/bridge-web/.env.example`).
+
+Convention: workspace packages use **extensionless relative imports**
+(`./types`, not `./types.js`) — they ship TS source consumed by bundlers
+(Next/Turbopack, Vitest), which do not remap `.js` specifiers.
+
 ## Key invariants (see execution plan §6)
 
 - Rules are **data** in versioned packages, never hand-edited code; every rule
