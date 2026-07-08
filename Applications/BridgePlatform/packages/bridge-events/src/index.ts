@@ -1,12 +1,14 @@
 /**
  * @bridge/events
  *
- * Bridge event schemas (action/logic/session/progress categories), event bus, append-only log, and replay helpers.
- *
- * Implementation lands in Phase 2 of
- * laicdocs/Bridge_Workstream_Execution_Plan_v1.md. This is a Phase 0 stub
- * establishing the package boundary; do not add implementation here until
- * that phase begins.
+ * Base package: the shared bridge vocabulary plus the event-sourcing
+ * infrastructure ported from the bridgebot prototype — four event categories
+ * (bid/play action events + bid/play logic events), typed mitt bus, and the
+ * append-only event log. Higher packages (@bridge/engine, @bridge/formats)
+ * build on this; @bridge/engine re-exports the vocabulary.
  */
 
-export const PACKAGE_NAME = "@bridge/events" as const;
+export * from "./vocabulary";
+export * from "./types";
+export { createBus, type Bus, type BusEvents } from "./bus";
+export { createEventLog, type EventLog } from "./log";

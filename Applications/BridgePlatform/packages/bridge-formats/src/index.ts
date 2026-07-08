@@ -1,12 +1,15 @@
 /**
  * @bridge/formats
  *
- * PBN/LIN import/export, GameContext deal representation, seeded random dealing.
- *
- * Implementation lands in Phase 2 of
- * laicdocs/Bridge_Workstream_Execution_Plan_v1.md. This is a Phase 0 stub
- * establishing the package boundary; do not add implementation here until
- * that phase begins.
+ * Board I/O ported from the bridgebot prototype: the normalized GameContext
+ * shape, BBO LIN parsing, PBN parse/write (full round-trip: deal + auction +
+ * play), and seeded random dealing. Constraint-aware dealing builds on this
+ * in @bridge/dealer (Phase 6).
  */
 
-export const PACKAGE_NAME = "@bridge/formats" as const;
+export * from "./context";
+export { parseLin, type LinBoard, type LinParseResult } from "./lin";
+export { parseLinToContexts } from "./linAdapter";
+export { parsePbn } from "./pbn";
+export { randomContext } from "./random";
+export { toLin, toPbn } from "./write";

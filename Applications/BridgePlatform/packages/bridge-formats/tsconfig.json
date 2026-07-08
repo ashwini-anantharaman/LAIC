@@ -1,4 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // This package is a near-literal port of proven prototype parsers
+    // (pbn.ts, write.ts, lin.ts) written before this flag; relaxing it here
+    // keeps the port byte-faithful instead of scattering `!` assertions.
+    "noUncheckedIndexedAccess": false
+  },
   "include": ["src"]
 }

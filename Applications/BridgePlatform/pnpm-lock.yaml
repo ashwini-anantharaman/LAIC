@@ -74,13 +74,34 @@ importers:
 
   packages/bridge-dealer: {}
 
-  packages/bridge-engine: {}
+  packages/bridge-engine:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
 
   packages/bridge-evaluator: {}
 
-  packages/bridge-events: {}
+  packages/bridge-events:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      mitt:
+        specifier: ^3.0.1
+        version: 3.0.1
 
-  packages/bridge-formats: {}
+  packages/bridge-formats:
+    dependencies:
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
 
   packages/bridge-knowledge: {}
 
@@ -1298,6 +1319,9 @@ packages:
 
   minimatch@3.1.5:
     resolution: {integrity: sha512-VgjWUsnnT6n+NUk6eZq77zeFdpW2LWDzP6zFGrCbHXiYNul5Dzqk2HHQ5uFH2DNW5Xbp8+jVzaeNt94ssEEl4w==}
+
+  mitt@3.0.1:
+    resolution: {integrity: sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw==}
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
@@ -2595,6 +2619,8 @@ snapshots:
   minimatch@3.1.5:
     dependencies:
       brace-expansion: 1.1.15
+
+  mitt@3.0.1: {}
 
   ms@2.1.3: {}
 
