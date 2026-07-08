@@ -1,0 +1,14 @@
+{
+  "name": "@bridge/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Setting-registry mechanics (dependencies, exclusivity), configuration resolver, and the convention card model. Setting definitions come from published knowledge packages, not this code.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@bridge/events",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bridge event schemas (action/logic/session/progress categories), event bus, append-only log, and replay helpers.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  }
+}

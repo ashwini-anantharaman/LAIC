@@ -1,0 +1,14 @@
+{
+  "name": "@bridge/engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game controller, GameState fold, legality helpers, predicate library, and the rule interpreter that consumes published rule packages.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  }
+}

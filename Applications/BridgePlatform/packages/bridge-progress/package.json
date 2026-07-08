@@ -1,0 +1,14 @@
+{
+  "name": "@bridge/progress",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Async progress-signal extraction from evaluated events, mistake-pattern aggregation, and bridge learner profile updates. Always domainId=bridge; signals rebuildable from raw events.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@bridge/knowledge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Knowledge base schemas (sources, readable items, gaps), generation runs, package builder and validation. Rules-as-data with full source lineage; humans approve before publication.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  }
+}
