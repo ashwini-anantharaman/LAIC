@@ -7,10 +7,14 @@
 import type { Setting } from "@bridge/config";
 import type { BridgeRulePackage, RuleProvenance } from "../rules/schema";
 
+// HONEST LABELING: these ids resolve to nothing and nothing was reviewed —
+// so the status is "needs_review", never "approved". This package can
+// therefore NEVER pass the publish gate (validatePackage blocks non-approved
+// entries in published packages), which is exactly right for a dev fixture.
 const prov = (slug: string): RuleProvenance => ({
   knowledgeItemIds: [`ki_test_${slug}`],
-  sourceIds: ["src_test_fixture"],
-  reviewStatus: "approved",
+  sourceIds: ["src_test_fixture_not_a_real_source"],
+  reviewStatus: "needs_review",
 });
 
 const SETTINGS: Setting[] = [
