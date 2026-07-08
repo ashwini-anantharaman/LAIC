@@ -93,3 +93,12 @@ export function resolvedValues(
   for (const [key, r] of Object.entries(resolved)) out[key] = r.value;
   return out;
 }
+
+/** Plain key -> default map for a registry (no profiles applied). */
+export function defaultSettingValues(
+  settings: readonly Setting[],
+): Record<string, SettingValue> {
+  const out: Record<string, SettingValue> = {};
+  for (const s of settings) out[s.key] = s.default;
+  return out;
+}

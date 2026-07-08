@@ -6,8 +6,10 @@
 
 import type { SettingValue } from "@bridge/config";
 import {
+  isContractBid,
   isMajor,
   isMinor,
+  partnerOf,
   type AuctionCall,
   type Card,
   type Seat,
@@ -56,6 +58,21 @@ export const PREDICATES: Record<string, PredicateFn> = {
 
   /** Balanced shape: 4-3-3-3, 4-4-3-2, or 5-3-3-2. */
   balanced: ({ hand }) => isBalanced(hand),
+
+  /**
+   * params: { min: number } — at least `min` cards in the suit of partner's
+   * most recent contract bid (false when partner hasn't bid a suit).
+   */
+  supportForPartner: ({ hand, auction, seat }, params) => {
+    const partner = partnerOf(seat);
+    for (let i = auction.length - 1; i >= 0; i--) {
+      const c = auction[i]!;
+      if (c.seat === partner && isContractBid(c.call) && c.call[1] !== "N") {
+        return suitCounts(hand)[c.call[1] as Suit] >= num(params.min, 3);
+      }
+    }
+    return false;
+  },
 };
 
 export const KNOWN_PREDICATES: ReadonlySet<string> = new Set(Object.keys(PREDICATES));

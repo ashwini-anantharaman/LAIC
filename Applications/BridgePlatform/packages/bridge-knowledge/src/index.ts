@@ -1,12 +1,30 @@
 /**
  * @bridge/knowledge
  *
- * Knowledge base schemas (sources, readable items, gaps), generation runs, package builder and validation. Rules-as-data with full source lineage; humans approve before publication.
+ * The Bridge Knowledge Base (Bridge plan §12): registered sources, human-
+ * readable knowledge items (the reviewed source of truth), the gap registry,
+ * generation runs that turn approved items into validated BridgeRulePackage
+ * versions with full lineage, immutable publication, and trace resolution
+ * (rule id -> items -> sources).
  *
- * Implementation lands in Phase 3 (core) and Phase 9 (LLM-assisted extraction at scale) of
- * laicdocs/Bridge_Workstream_Execution_Plan_v1.md. This is a Phase 0 stub
- * establishing the package boundary; do not add implementation here until
- * that phase begins.
+ * Persistence goes through the KnowledgeStore seam: in-memory (tests),
+ * JSON-file (dev admin UI; server-only import via ./fileStore), Postgres
+ * (when Supabase credentials land — schema in db/migrations).
  */
 
-export const PACKAGE_NAME = "@bridge/knowledge" as const;
+export * from "./model";
+export {
+  emptyStoreData,
+  InMemoryKnowledgeStore,
+  type KnowledgeStore,
+  type KnowledgeStoreData,
+} from "./store";
+export { publishPackage, runGeneration, type GenerationRequest } from "./generate";
+export { resolveRuleProvenance, type ResolvedRuleProvenance } from "./resolve";
+export {
+  BEGINNER_NATURAL_PACKAGE_ID,
+  BEGINNER_NATURAL_V0_SEED,
+  GAPS as BEGINNER_NATURAL_GAPS,
+  ITEMS as BEGINNER_NATURAL_ITEMS,
+  SOURCES as BEGINNER_NATURAL_SOURCES,
+} from "./content/beginnerNaturalV0";

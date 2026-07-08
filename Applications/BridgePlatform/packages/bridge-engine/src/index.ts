@@ -50,3 +50,11 @@ export {
 
 // Golden-board harness
 export { runBoards, type BoardInput, type BoardReport, type HarnessReport } from "./harness";
+
+// Golden boards (curated + seeded deterministic deals for harness baselines)
+export {
+  BOARD_G1,
+  GOLDEN_BOARDS,
+  parseHandShdc,
+  seededBoard,
+} from "./fixtures/goldenBoards";

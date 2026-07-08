@@ -73,8 +73,20 @@ export interface AuctionPattern {
 export type BidRuleAction =
   | { kind: "call"; call: Call }
   | { kind: "pass" }
-  | { kind: "openLongest"; among: "majors" | "minors" | "all"; level: number }
-  | { kind: "raisePartner"; toLevel: number };
+  | {
+      kind: "openLongest";
+      among: "majors" | "minors" | "all";
+      level: number;
+      /** Tie handling for equal-length suits (default "higher"). */
+      tieBreak?: "higher" | "lower";
+    }
+  | { kind: "raisePartner"; toLevel: number }
+  | {
+      kind: "newSuitAtLevel";
+      level: number;
+      minLength: number;
+      /** Longest first; equal lengths bid the cheaper suit. Skips suits partner bid. */
+    };
 
 export interface BidRuleEntry {
   ruleId: string;

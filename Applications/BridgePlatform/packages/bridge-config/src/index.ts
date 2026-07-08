@@ -14,6 +14,7 @@
 export { dependencyMet, isDependencyMet } from "./dependencies";
 export { exclusiveGroups, siblingsToReset } from "./exclusivity";
 export {
+  defaultSettingValues,
   resolveAll,
   resolvedValues,
   resolveOptions,

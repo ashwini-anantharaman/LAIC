@@ -86,6 +86,7 @@ function checkGates(
 function resolveBidAction(
   action: BidRuleAction,
   ctx: PredicateContext,
+  legal: Set<Call>,
 ): Call | null {
   switch (action.kind) {
     case "call":
@@ -93,14 +94,22 @@ function resolveBidAction(
     case "pass":
       return "P";
     case "openLongest": {
+      const tieBreak = action.tieBreak ?? "higher";
       const counts = suitCounts(ctx.hand);
       const suits = (Object.keys(counts) as Suit[]).filter((s) =>
         action.among === "majors" ? isMajor(s) : action.among === "minors" ? isMinor(s) : true,
       );
       let best: Suit | null = null;
       for (const s of suits) {
-        if (!best || counts[s] > counts[best] || (counts[s] === counts[best] && SUIT_RANK[s] > SUIT_RANK[best]))
+        if (!best) {
           best = s;
+          continue;
+        }
+        if (counts[s] > counts[best]) best = s;
+        else if (counts[s] === counts[best]) {
+          const higher = SUIT_RANK[s] > SUIT_RANK[best];
+          if (tieBreak === "higher" ? higher : !higher) best = s;
+        }
       }
       return best ? `${action.level}${best}` : null;
     }
@@ -111,6 +120,25 @@ function resolveBidAction(
         const c = ctx.auction[i]!;
         if (c.seat === partner && isContractBid(c.call))
           return `${action.toLevel}${c.call[1]}`;
+      }
+      return null;
+    }
+    case "newSuitAtLevel": {
+      // Longest suit of at least minLength, skipping suits partner has bid;
+      // equal lengths bid the cheaper suit; must be legal at that level.
+      const partner = partnerOf(ctx.seat);
+      const partnerSuits = new Set(
+        ctx.auction
+          .filter((c) => c.seat === partner && isContractBid(c.call) && c.call[1] !== "N")
+          .map((c) => c.call[1] as Suit),
+      );
+      const counts = suitCounts(ctx.hand);
+      const candidates = (Object.keys(counts) as Suit[])
+        .filter((s) => counts[s] >= action.minLength && !partnerSuits.has(s))
+        .sort((a, b) => counts[b] - counts[a] || SUIT_RANK[a] - SUIT_RANK[b]);
+      for (const s of candidates) {
+        const call = `${action.level}${s}`;
+        if (legal.has(call)) return call;
       }
       return null;
     }
@@ -186,7 +214,7 @@ export function interpretBid(
       record(false, "hand conditions not met");
       continue;
     }
-    const resolved = resolveBidAction(rule.action, ctx);
+    const resolved = resolveBidAction(rule.action, ctx, legal);
     if (resolved === null) {
       record(false, "action template did not resolve to a call");
       continue;

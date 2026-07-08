@@ -74,8 +74,8 @@ the folder's `.env.example`.
 ## Bridge Platform specifics (Applications/BridgePlatform)
 
 Work proceeds in phases per `laicdocs/Bridge_Workstream_Execution_Plan_v1.md`
-(currently: Phases 0–2 complete — shell, contracts, engine machinery + rule
-interpreter). Before touching bridge code, read that plan's
+(currently: Phases 0–3 complete — shell, contracts, engine + interpreter,
+knowledge base with published Beginner Natural v0). Before touching bridge code, read that plan's
 §1 (locked decisions) and §6 (cross-cutting invariants). The short version:
 
 - **Rules are data**, in versioned knowledge packages with cited sources —

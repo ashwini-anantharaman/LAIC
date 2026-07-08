@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@bridge/knowledge": "workspace:*",
     "@bridge/nexus-client": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts",
     "@supabase/ssr": "^0.12.0",

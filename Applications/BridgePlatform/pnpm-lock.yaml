@@ -26,6 +26,9 @@ importers:
 
   apps/bridge-web:
     dependencies:
+      '@bridge/knowledge':
+        specifier: workspace:*
+        version: link:../../packages/bridge-knowledge
       '@bridge/nexus-client':
         specifier: workspace:*
         version: link:../../packages/nexus-client
@@ -103,7 +106,17 @@ importers:
         specifier: workspace:*
         version: link:../bridge-events
 
-  packages/bridge-knowledge: {}
+  packages/bridge-knowledge:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
 
   packages/bridge-progress: {}
 
