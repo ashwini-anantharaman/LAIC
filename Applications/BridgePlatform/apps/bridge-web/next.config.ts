@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
     "@bridge/progress",
     "@bridge/nexus-client",
     "@bridge/profiles",
+    "@bridge/progress",
     "@bridge/sessions",
     "@laic/learner-contracts",
   ],

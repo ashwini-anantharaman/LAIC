@@ -38,6 +38,9 @@ importers:
       '@bridge/engine':
         specifier: workspace:*
         version: link:../../packages/bridge-engine
+      '@bridge/evaluator':
+        specifier: workspace:*
+        version: link:../../packages/bridge-evaluator
       '@bridge/events':
         specifier: workspace:*
         version: link:../../packages/bridge-events
@@ -50,6 +53,9 @@ importers:
       '@bridge/profiles':
         specifier: workspace:*
         version: link:../../packages/bridge-profiles
+      '@bridge/progress':
+        specifier: workspace:*
+        version: link:../../packages/bridge-progress
       '@bridge/sessions':
         specifier: workspace:*
         version: link:../../packages/bridge-sessions
@@ -121,7 +127,17 @@ importers:
         specifier: workspace:*
         version: link:../bridge-events
 
-  packages/bridge-evaluator: {}
+  packages/bridge-evaluator:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
 
   packages/bridge-events:
     dependencies:
@@ -172,7 +188,30 @@ importers:
         specifier: workspace:*
         version: link:../bridge-knowledge
 
-  packages/bridge-progress: {}
+  packages/bridge-progress:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@bridge/evaluator':
+        specifier: workspace:*
+        version: link:../bridge-evaluator
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+      '@bridge/sessions':
+        specifier: workspace:*
+        version: link:../bridge-sessions
+      '@laic/learner-contracts':
+        specifier: link:../../../../Components/laic-learner-contracts
+        version: link:../../../../Components/laic-learner-contracts
+    devDependencies:
+      '@bridge/knowledge':
+        specifier: workspace:*
+        version: link:../bridge-knowledge
 
   packages/bridge-sessions:
     dependencies:

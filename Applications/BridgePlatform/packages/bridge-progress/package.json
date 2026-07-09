@@ -6,9 +6,29 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./fileStore": {
+      "types": "./src/fileStore.ts",
+      "default": "./src/fileStore.ts"
+    }
+  },
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bridge/config": "workspace:*",
+    "@bridge/engine": "workspace:*",
+    "@bridge/evaluator": "workspace:*",
+    "@bridge/events": "workspace:*",
+    "@bridge/sessions": "workspace:*",
+    "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts"
+  },
+  "devDependencies": {
+    "@bridge/knowledge": "workspace:*"
   }
 }

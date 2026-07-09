@@ -472,6 +472,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       ruleId: "bn_pass_otherwise",
       title: "No agreement defined: pass",
       priority: 900,
+      noAgreement: true,
       settingGates: [],
       auctionContext: { role: "any" },
       handConditions: { predicate: "hcpRange", params: { min: 0, max: 40 } },

@@ -15,6 +15,7 @@ import { resolveProfileValues } from "@bridge/profiles";
 import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
+import { recomputeSignalsSafe } from "@/lib/progress";
 import { latestPublishedPackage, sessionService } from "@/lib/sessions";
 
 async function requireContext() {
@@ -63,6 +64,7 @@ export async function stepSession(formData: FormData) {
   const context = await requireContext();
   const id = String(formData.get("sessionId"));
   await sessionService().step(id, context);
+  await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
 
@@ -70,6 +72,7 @@ export async function autoplaySession(formData: FormData) {
   const context = await requireContext();
   const id = String(formData.get("sessionId"));
   await sessionService().autoplay(id, context);
+  await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
 
@@ -77,6 +80,7 @@ export async function undoSession(formData: FormData) {
   const context = await requireContext();
   const id = String(formData.get("sessionId"));
   await sessionService().undo(id, context);
+  await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
 
@@ -87,6 +91,7 @@ export async function humanBid(formData: FormData) {
   const call = String(formData.get("call"));
   await sessionService().applyExternalAction(id, context, seat, { kind: "bid", call });
   await sessionService().autoplay(id, context); // AI responds up to the next human turn
+  await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
 
@@ -97,6 +102,7 @@ export async function humanPlay(formData: FormData) {
   const cardId = String(formData.get("cardId"));
   await sessionService().applyExternalAction(id, context, seat, { kind: "play", cardId });
   await sessionService().autoplay(id, context);
+  await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
 
