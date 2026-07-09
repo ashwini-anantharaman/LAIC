@@ -47,6 +47,9 @@ importers:
       '@bridge/nexus-client':
         specifier: workspace:*
         version: link:../../packages/nexus-client
+      '@bridge/profiles':
+        specifier: workspace:*
+        version: link:../../packages/bridge-profiles
       '@bridge/sessions':
         specifier: workspace:*
         version: link:../../packages/bridge-sessions
@@ -149,6 +152,25 @@ importers:
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
+
+  packages/bridge-profiles:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+      '@laic/learner-contracts':
+        specifier: link:../../../../Components/laic-learner-contracts
+        version: link:../../../../Components/laic-learner-contracts
+    devDependencies:
+      '@bridge/knowledge':
+        specifier: workspace:*
+        version: link:../bridge-knowledge
 
   packages/bridge-progress: {}
 

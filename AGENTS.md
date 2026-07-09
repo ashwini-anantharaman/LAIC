@@ -77,7 +77,8 @@ Work proceeds in phases per `laicdocs/Bridge_Workstream_Execution_Plan_v1.md`
 (currently: Phases 0–6 complete — shell, contracts, engine + interpreter,
 knowledge base with published Beginner Natural v0, persistent sessions,
 playable table with citation-resolving Why panel, constrained dealing with
-evaluator-filtered teaching scopes). Before touching bridge code, read that plan's
+evaluator-filtered teaching scopes, package-backed player profiles with
+generated convention cards). Before touching bridge code, read that plan's
 §1 (locked decisions) and §6 (cross-cutting invariants). The short version:
 
 - **Rules are data**, in versioned knowledge packages with cited sources —

@@ -11,8 +11,10 @@ import type { Seat } from "@bridge/events";
 import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { resolveProfileValues } from "@bridge/profiles";
 import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
+import { profileService } from "@/lib/profiles";
 import { latestPublishedPackage, sessionService } from "@/lib/sessions";
 
 async function requireContext() {
@@ -26,12 +28,19 @@ export async function createPracticeSession(formData: FormData) {
   const seed = Number(formData.get("seed")) || 1;
   const humanSeat = formData.get("humanSeat") as Seat | "watch" | null;
   const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const profileId = String(formData.get("profileId") || "");
+  const profile = profileId
+    ? await (await profileService()).getProfile(profileId, context)
+    : null;
+  const resolvedValues = profile
+    ? resolveProfileValues(pkg.settings, profile.selectedPresetId, profile.valueOverrides).values
+    : defaultSettingValues(pkg.settings);
   const record = await sessionService().createSession({
     context,
     sessionType: "single_board",
     board: seededBoard(seed),
     pkg,
-    resolvedValues: defaultSettingValues(pkg.settings),
+    resolvedValues,
     seats:
       humanSeat && humanSeat !== "watch"
         ? {

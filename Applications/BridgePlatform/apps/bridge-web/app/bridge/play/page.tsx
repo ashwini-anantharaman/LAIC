@@ -2,12 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createLevelPracticeSession, createPracticeSession } from "@/app/bridge/play/actions";
 import { getBridgeContext } from "@/lib/nexus";
+import { profileService } from "@/lib/profiles";
 import { sessionService } from "@/lib/sessions";
 
 export default async function PlayPage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const sessions = (await sessionService().listSessions(context)).slice().reverse();
+  const profiles = await (await profileService()).listProfiles(context);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -24,6 +26,13 @@ export default async function PlayPage() {
           defaultValue={1}
           className="w-24 rounded border border-neutral-300 px-2 py-1 text-sm"
         />
+        <select name="profileId" className="rounded border border-neutral-300 px-2 py-1 text-sm">
+          {profiles.map((p) => (
+            <option key={p.aiPlayerProfileId} value={p.aiPlayerProfileId}>
+              AI: {p.name}
+            </option>
+          ))}
+        </select>
         <select name="humanSeat" className="rounded border border-neutral-300 px-2 py-1 text-sm">
           <option value="S">Sit South</option>
           <option value="N">Sit North (dealer on seeded boards)</option>
