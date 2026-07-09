@@ -1,0 +1,17 @@
+{
+  "name": "@bridge/nexus-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NexusBridgeContext adapter: interface plus stub (seeded dev data) and real HTTP implementations. Bridge consumes identity/org/role context from Nexus and never builds its own user system.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts"
+  }
+}

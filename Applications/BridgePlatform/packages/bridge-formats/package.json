@@ -1,0 +1,23 @@
+{
+  "name": "@bridge/formats",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PBN/LIN import/export, GameContext deal representation, seeded random dealing.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bridge/engine": "workspace:*",
+    "@bridge/events": "workspace:*"
+  }
+}

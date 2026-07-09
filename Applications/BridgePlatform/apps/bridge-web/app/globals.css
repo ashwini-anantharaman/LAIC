@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+/* System font stack: builds stay hermetic (no font downloads at build time). */
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+}
