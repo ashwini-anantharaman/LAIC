@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import platform
+from .routers import bridge_context, platform
 
 settings = get_settings()
 
@@ -34,6 +34,7 @@ app.add_middleware(
 )
 
 app.include_router(platform.router)
+app.include_router(bridge_context.router)
 
 
 @app.get("/health")
