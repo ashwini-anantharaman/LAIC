@@ -17,6 +17,7 @@
     "@bridge/events": "workspace:*",
     "@bridge/knowledge": "workspace:*",
     "@bridge/nexus-client": "workspace:*",
+    "@bridge/pg-stores": "workspace:*",
     "@bridge/profiles": "workspace:*",
     "@bridge/progress": "workspace:*",
     "@bridge/sessions": "workspace:*",

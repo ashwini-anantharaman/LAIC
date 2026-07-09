@@ -130,7 +130,16 @@ export interface ProfileStoreData {
   scopes?: TeachingScopeRecord[];
 }
 
-export class InMemoryProfileStore {
+export interface ProfileStore {
+  list(): Promise<BridgeAiPlayerProfile[]>;
+  get(id: string): Promise<BridgeAiPlayerProfile | null>;
+  save(profile: BridgeAiPlayerProfile): Promise<void>;
+  listScopes(): Promise<TeachingScopeRecord[]>;
+  getScope(id: string): Promise<TeachingScopeRecord | null>;
+  saveScope(scope: TeachingScopeRecord): Promise<void>;
+}
+
+export class InMemoryProfileStore implements ProfileStore {
   protected data: ProfileStoreData;
   constructor(seed?: Partial<ProfileStoreData>) {
     this.data = { profiles: [], ...structuredClone(seed ?? {}) };
@@ -194,7 +203,7 @@ export function canEditProfile(p: Owned, ctx: NexusBridgeContext): boolean {
 
 export class ProfileService {
   constructor(
-    private readonly store: InMemoryProfileStore,
+    private readonly store: ProfileStore,
     private readonly newId: () => string = () => `aip_${crypto.randomUUID().slice(0, 12)}`,
     private readonly now: () => string = () => new Date().toISOString(),
   ) {}

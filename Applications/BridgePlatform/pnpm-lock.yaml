@@ -50,6 +50,9 @@ importers:
       '@bridge/nexus-client':
         specifier: workspace:*
         version: link:../../packages/nexus-client
+      '@bridge/pg-stores':
+        specifier: workspace:*
+        version: link:../../packages/bridge-pg-stores
       '@bridge/profiles':
         specifier: workspace:*
         version: link:../../packages/bridge-profiles
@@ -172,6 +175,31 @@ importers:
       '@bridge/dealer':
         specifier: workspace:*
         version: link:../bridge-dealer
+
+  packages/bridge-pg-stores:
+    dependencies:
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+      '@bridge/knowledge':
+        specifier: workspace:*
+        version: link:../bridge-knowledge
+      '@bridge/profiles':
+        specifier: workspace:*
+        version: link:../bridge-profiles
+      '@bridge/progress':
+        specifier: workspace:*
+        version: link:../bridge-progress
+      '@bridge/sessions':
+        specifier: workspace:*
+        version: link:../bridge-sessions
+      '@supabase/supabase-js':
+        specifier: ^2.45.0
+        version: 2.110.1
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.2
+        version: 24.13.2
 
   packages/bridge-profiles:
     dependencies:

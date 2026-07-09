@@ -4,20 +4,36 @@
 
 import { BEGINNER_NATURAL_V0_SEED, LEVEL2_GAPS, LEVEL2_ITEMS, type KnowledgeStore } from "@bridge/knowledge";
 import { JsonFileKnowledgeStore } from "@bridge/knowledge/fileStore";
+import { PgKnowledgeStore } from "@bridge/pg-stores";
 import { join } from "node:path";
+import { pgClient, storeBackend, withLazySeed } from "./backend";
 
 const globalCache = globalThis as unknown as { __bridgeKnowledgeStore?: KnowledgeStore };
 
 export function knowledgeStore(): KnowledgeStore {
   if (!globalCache.__bridgeKnowledgeStore) {
-    globalCache.__bridgeKnowledgeStore = new JsonFileKnowledgeStore(
-      join(process.cwd(), ".data", "knowledge-store.json"),
-      {
-        ...BEGINNER_NATURAL_V0_SEED,
-        items: [...(BEGINNER_NATURAL_V0_SEED.items ?? []), ...LEVEL2_ITEMS],
-        gaps: [...(BEGINNER_NATURAL_V0_SEED.gaps ?? []), ...LEVEL2_GAPS],
-      },
-    );
+    const seed = {
+      ...BEGINNER_NATURAL_V0_SEED,
+      items: [...(BEGINNER_NATURAL_V0_SEED.items ?? []), ...LEVEL2_ITEMS],
+      gaps: [...(BEGINNER_NATURAL_V0_SEED.gaps ?? []), ...LEVEL2_GAPS],
+    };
+    if (storeBackend() === "postgres") {
+      // Seed the shared DB once, on first use of an empty knowledge base.
+      globalCache.__bridgeKnowledgeStore = withLazySeed(
+        new PgKnowledgeStore(pgClient()),
+        async (store) => {
+          if ((await store.listSources()).length > 0) return;
+          for (const src of seed.sources ?? []) await store.saveSource(src);
+          for (const gap of seed.gaps ?? []) await store.saveGap(gap);
+          for (const item of seed.items ?? []) await store.saveItem(item);
+        },
+      );
+    } else {
+      globalCache.__bridgeKnowledgeStore = new JsonFileKnowledgeStore(
+        join(process.cwd(), ".data", "knowledge-store.json"),
+        seed,
+      );
+    }
   }
   return globalCache.__bridgeKnowledgeStore;
 }

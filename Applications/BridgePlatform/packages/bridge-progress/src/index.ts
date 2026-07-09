@@ -81,7 +81,16 @@ export interface ProgressStoreData {
   patterns: BridgeMistakePattern[];
 }
 
-export class InMemoryProgressStore {
+export interface ProgressStore {
+  getProfile(nexusUserId: string): Promise<BridgeLearnerProfile | null>;
+  saveProfile(p: BridgeLearnerProfile): Promise<void>;
+  listSignals(filter: { nexusUserId?: string; bridgeSessionId?: string }): Promise<BridgeProgressSignal[]>;
+  replaceSessionSignals(bridgeSessionId: string, signals: BridgeProgressSignal[]): Promise<void>;
+  listPatterns(nexusUserId: string): Promise<BridgeMistakePattern[]>;
+  savePattern(p: BridgeMistakePattern): Promise<void>;
+}
+
+export class InMemoryProgressStore implements ProgressStore {
   protected data: ProgressStoreData;
   constructor(seed?: Partial<ProgressStoreData>) {
     this.data = { profiles: [], signals: [], patterns: [], ...structuredClone(seed ?? {}) };
@@ -224,7 +233,7 @@ export interface ProgressSummary {
 
 export class ProgressService {
   constructor(
-    private readonly store: InMemoryProgressStore,
+    private readonly store: ProgressStore,
     private readonly deps: {
       loadSession: (id: string) => Promise<{ record: BridgeSessionRecord; events: GameEvent[] } | null>;
       loadPackage: (ref: { packageId: string; version: string }) => Promise<BridgeRulePackage | null>;

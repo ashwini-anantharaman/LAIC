@@ -2,8 +2,10 @@
 // event persistence — the async track; the engine's beforeCommit hook stays
 // available for future synchronous (before-commit) coaching.
 
+import { PgProgressStore } from "@bridge/pg-stores";
 import { ProgressService } from "@bridge/progress";
 import { JsonFileProgressStore } from "@bridge/progress/fileStore";
+import { pgClient, storeBackend } from "./backend";
 import { join } from "node:path";
 import { knowledgeStore } from "./knowledge";
 import { sessionStoreInstance } from "./sessions";
@@ -15,7 +17,9 @@ export function progressService(): ProgressService {
     const sessions = sessionStoreInstance();
     const kstore = knowledgeStore();
     globalCache.__bridgeProgressService = new ProgressService(
-      new JsonFileProgressStore(join(process.cwd(), ".data", "progress-store.json")),
+      storeBackend() === "postgres"
+        ? new PgProgressStore(pgClient())
+        : new JsonFileProgressStore(join(process.cwd(), ".data", "progress-store.json")),
       {
         loadSession: async (id) => {
           const record = await sessions.getSession(id);

@@ -14,7 +14,9 @@ const globalCache = globalThis as unknown as { __bridgeProfileService?: ProfileS
 export async function profileService(): Promise<ProfileService> {
   if (!globalCache.__bridgeProfileService) {
     const service = new ProfileService(
-      new JsonFileProfileStore(join(process.cwd(), ".data", "profile-store.json")),
+      storeBackend() === "postgres"
+        ? new PgProfileStore(pgClient())
+        : new JsonFileProfileStore(join(process.cwd(), ".data", "profile-store.json")),
     );
     const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
     await service.ensureSystemProfile(
