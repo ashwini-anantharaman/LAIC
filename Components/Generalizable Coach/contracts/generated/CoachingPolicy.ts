@@ -27,6 +27,14 @@ export interface CoachingPolicy {
    */
   crossScopeAwareness?: boolean;
   /**
+   * Enable the conversational 'chat with me' surface (§6.3).
+   */
+  conversationalMode?: boolean;
+  /**
+   * Hard bound on step/tool chaining within one chat turn (bet #7).
+   */
+  maxOrchestrationSteps?: number;
+  /**
    * Which CoachingPolicyProfile version produced this resolved policy (config versioning, §8.5).
    */
   provenance?: {

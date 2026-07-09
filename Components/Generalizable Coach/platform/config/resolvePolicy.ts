@@ -25,6 +25,8 @@ export function platformDefaultPolicy(): CoachingPolicy {
     saveForPostmortemWhenPossible: false,
     enabledTools: [],
     crossScopeAwareness: false,
+    conversationalMode: true,
+    maxOrchestrationSteps: 3,
   };
 }
 

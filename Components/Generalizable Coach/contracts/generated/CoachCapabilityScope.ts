@@ -24,4 +24,6 @@ export interface CoachCapabilityScope {
   canSummarizeForHumanCoach?: boolean;
   canUpdateLearnerModel?: boolean;
   canTriggerNotifications?: boolean;
+  canChatConversationally?: boolean;
+  canChainTools?: boolean;
 }

@@ -66,6 +66,8 @@ These are the non-negotiables. Every later decision is constrained not to break 
 
 6. **Domain-isolated learner data by default.** Every learner record carries a `domainId`; dashboards filter by domain/program/entitlement. Cross-domain *awareness* inside coaching is a policy-gated feature, off by default (LPIP requirement, see §5.4 and §9).
 
+7. **Bounded, policy-gated agency (not an open agent).** The Coach may take *multiple* steps within one conversational turn — ask, retrieve, propose a tool, fold the result into a reply — so it can support a "chat with me" assistant that does several things at once. But every step re-passes scope, capability, and gating checks, is bounded by a `maxOrchestrationSteps` limit, and is traced. The LLM only *phrases* and *selects among already-allowed options*; it never decides correctness or bypasses a guardrail. This is orchestration under guardrails, not a free-roaming multi-agent system.
+
 ---
 
 ## 3. Layer / runtime / instance vocabulary
@@ -140,6 +142,8 @@ interface InteractionMemory {
 }
 ```
 
+**Conversation thread vs. long-term memory.** The *active* multi-turn thread (the running chat within one session) is distinct from this long-term Interaction Memory. The thread is short-lived working context for the current conversation and drives the bounded orchestration loop (§6.3); Interaction Memory is the durable, cross-session record that `recall()` queries. A conversational turn reads the thread for immediate context and writes each turn into Interaction Memory for later recall.
+
 ### 5.4 Domain isolation vs. cross-domain awareness (LPIP adjustment)
 LPIP requires domain-isolated progress by default; cross-domain aggregation must be opt-in and admin-level. GCA's Common Layer surfaces cross-domain awareness by default. **Resolution:** store cross-domain (§5.2), but treat `crossScopeAwareness` as a **policy-gated field, OFF by default**. The Coach references other courses in dialogue only when the resolved policy enables it. This keeps GCA's unified store while satisfying LPIP's isolation rule.
 
@@ -188,6 +192,24 @@ ActivityEvent (host-translated)
   → RecommendationEngine (optional)→ Recommendation[] (§13)
   → Analytics event
 ```
+
+### 6.3 Conversational interaction mode (chat)
+Beyond reacting to a host `ActivityEvent`, the Coach supports a **message-driven** turn — the "chat with me" surface (e.g. a Spark.E-style assistant). A free-text learner message runs a parallel pipeline that reuses the same scope, policy, gating, memory, and trace machinery:
+
+```text
+ChatMessage (learner text)
+  → Intent Router          classify: ask | answer | command(do X) | meta("what did we cover?")
+  → branch by intent
+      ask     → KnowledgeSource.retrieve (scope-bounded) → decide → compose
+      answer  → Evaluator.evaluate → diagnose → feedback (+ recommendation, §13)
+      command → gate tools (§10) → select tool + input → tool_call → ToolResult → weave
+      meta    → InteractionMemory.recall (§5.3)
+  → ResponseGenerator.generate   (LLM PHRASES the grounded result; deterministic offline fallback)
+  → InteractionMemory.record + InterventionTrace   (every turn; §5.3, plan §3.4)
+  → bounded orchestration loop   (repeat a gated step until done or maxOrchestrationSteps; bet #7)
+```
+
+The router, tool selection, and LLM phrasing sit **after** scope and gating, so a fluent conversation can never answer out of scope or fire a forbidden / answer-revealing tool. This is what lets the Coach *feel* like a conversational assistant while staying source-bound and policy-gated. LLM phrasing is optional: with no model, the reply is assembled deterministically from the retrieved chunks + citations.
 
 ---
 
@@ -322,8 +344,11 @@ type CoachCapabilityScope = {
   canRecommendLearningObjects: boolean; canRecommendPractice: boolean; canCreateFlashcardReview: boolean;
   canGeneratePostmortems: boolean; canGuideReplay: boolean;
   canSummarizeForHumanCoach: boolean; canUpdateLearnerModel: boolean; canTriggerNotifications: boolean;
+  canChatConversationally: boolean; canChainTools: boolean;   // conversational assistant (§6.3, bet #7)
 };
 ```
+
+The *shape* of a conversational turn is further governed by resolved `CoachingPolicy` fields (§8.2): `conversationalMode` (enable the chat surface), `maxOrchestrationSteps` (the hard bound on step/tool chaining within one turn), and `canChainTools` (whether multi-step tool use is permitted). A capability the scope disables is structurally unavailable in chat exactly as elsewhere.
 
 ### 8.5 Config versioning
 Each resolved `CoachingPolicy` is stamped with the `profileId` + `schemaVersion` that produced it and stored on the session, so a later postmortem or audit reads history under the settings it was created with.
@@ -348,7 +373,7 @@ Deterministic, no LLM. This is where configuration becomes *behavior* rather tha
 
 ## 10. Tool-Calling Layer — host-injected, not Coach-owned
 
-The Coach is not an autonomous multi-agent system, and it does not own a hardcoded tool catalogue. Baking concrete tool names into the engine would violate domain-agnosticism the same way baking in "bridge" would.
+The Coach is not an autonomous multi-agent system, and it does not own a hardcoded tool catalogue. Baking concrete tool names into the engine would violate domain-agnosticism the same way baking in "bridge" would. It *may*, however, take **multiple gated steps within one conversational turn** (propose a tool, read its result, continue) — bounded by `maxOrchestrationSteps` and re-checked against scope / capability / gating at every step (bet #7). That is orchestration under guardrails, not open-ended autonomy.
 
 ### 10.1 The inversion
 The Coach defines only the *abstract capability* — a tool has a name, description, input schema, handler, and policy hints. The **host** injects its own registry at session-open via its domain plugin. The Coach never knows a tool exists until told.
@@ -374,13 +399,17 @@ The registry is attached to the domain plugin (`DomainPlugin.toolRegistry`), kee
 
 ### 10.3 Runtime flow
 ```text
-1. Host registers plugin incl. ToolRegistry            ← HOST decides WHAT tools exist
+1. Host registers a ToolRegistry (or advertises a tool MANIFEST)   ← HOST decides WHAT tools exist
 2. openCoachSession() binds the session to it
 3. Learner acts / asks
-4. InterventionPolicyEngine filters registry → allowedTools using policyHints  ← COACH decides WHETHER
-5. LLM chooses among allowed tools via their descriptions
-6. Chosen tool's handler runs — HOST's code; the Coach never executes tool logic itself
+4. GATE:    filter registry → allowedTools using policyHints        ← COACH decides WHETHER
+5. SELECT:  a selector (rule-based → LLM function-calling) picks a tool from allowedTools + fills input  ← COACH decides WHICH
+6. PROPOSE: the Coach emits a `tool_call` (it never executes tool logic itself)
+7. EXECUTE: the HOST runs the tool — in-process handler, or its own endpoint keyed by the tool name  ← HOST's code
+8. RETURN:  the host hands back a `ToolResult`, correlated by `callId`
+9. WEAVE:   the Coach folds the result into its reply, and may loop to step 4 up to maxOrchestrationSteps (§6.3)
 ```
+Selection is deterministic/rule-based first; LLM-driven function-calling is layered on later. Whether the Coach *calls* the host (co-located) or merely *returns* the `tool_call` for the host to execute (separate-service, the safe default) is a deployment choice — the contract in §10.6 is identical either way.
 
 ### 10.4 Illustrative Learning-Platform catalogue (example, not shipped by the engine)
 | Example tool | Backed by (host function, LPIP) | Example policyHints |
@@ -395,6 +424,17 @@ Bridge would register an entirely different catalogue (hint expansion, guided-re
 
 ### 10.5 Safety property
 A tool tagged `revealsAnswer: true` is *structurally absent* from `allowedTools` during assessment mode — the LLM never sees it and therefore can never choose it. Same guarantee as bet #1, applied to actions.
+
+### 10.6 Tool-execution contract
+A tool call and its result are plain data, so the same contract works in-process or across a service boundary:
+```ts
+interface ToolCall   { callId: string; tool: string; input: unknown; }
+interface ToolResult { callId: string; ok: boolean; data?: unknown; error?: string; }
+```
+- **Discovery.** The host either injects a `ToolRegistry` (in-process) or advertises a **manifest** (`name`, `description`, `inputSchema`, `policyHints`, endpoint) that the Coach fetches at session open. MCP is a compatible standard for the manifest/transport.
+- **Execution model.** Default (safe for a shared, multi-host Coach): the Coach *proposes* a `ToolCall` and the **host executes** it in its own auth context, returning a `ToolResult`. A co-located deployment may instead let the Coach invoke the host handler directly.
+- **Correlation.** `callId` ties a returned `ToolResult` to the turn that proposed it, enabling the bounded orchestration loop (§6.3, bet #7).
+- **Guardrail preserved.** Moving execution to HTTP does not weaken safety: the Coach can still only invoke a tool the host advertised *and* the gate allowed.
 
 ---
 
@@ -477,9 +517,12 @@ The `RetrievalRequest` the Coach sends the Learning Platform carries `domainId`,
 type AdaptiveCoachResponse =
   | { type: InterventionType; message: string; level?: HintLevel;
       sources?: KnowledgeChunk[]; metadata?: Record<string,unknown> }
-  | { type: "tool_call"; tool: string; input: unknown; metadata?: Record<string,unknown> };
+  | { type: "tool_call"; callId: string; tool: string; input: unknown; metadata?: Record<string,unknown> };
+
+// A tool's outcome returns as a ToolResult (§10.6) and re-enters the pipeline:
+//   tool_call → (host executes) → ToolResult → Coach weaves it into the next response.
 ```
-The generator moves from "always a message" to "a message *or* a cleared tool call." `sources` carries citations back to the UI to satisfy LPIP source-grounding. This is the one non-trivial change to the existing response type.
+The generator moves from "always a message" to "a message *or* a cleared tool call." In a conversational turn (§6.3) these alternate — `tool_call → tool_result → message` — bounded by `maxOrchestrationSteps`. `sources` carries citations back to the UI to satisfy LPIP source-grounding.
 
 ---
 
@@ -651,6 +694,7 @@ Universal: coach button, panel, chat window, hint card, explanation card, reflec
 4. **Interaction-memory scope (§5.3):** how far conversational recall reaches; privacy/retention for stored learner chats.
 5. **LLM-graded evaluator reliability (§7.2):** grading open content well enough to drive intervention is a genuine unknown — the eval harness (D1) must pass before the graded `course_learning` helper (D3) is enabled as the default.
 6. **Cross-domain awareness default (§5.4):** confirmed OFF by default per LPIP; define the admin gate that turns it on.
+7. **Conversational agency bound (§6.3, §10, bet #7):** set the default `maxOrchestrationSteps` and confirm the **bounded, policy-gated** posture over an open LLM agent — the LLM phrases and selects among allowed options, never bypassing scope/gating. Revisit only with evidence.
 
 ---
 

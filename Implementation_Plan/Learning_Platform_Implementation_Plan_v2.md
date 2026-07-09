@@ -124,6 +124,24 @@ Coaching Platform
   Owns: deep coach runtime, learner context package, intervention policy, postmortem coach
 ```
 
+### 3.4 Coach Integration Requirements (what the Learning Platform must provide the Coach)
+
+The Coach is a separate, domain-agnostic service; it consumes the Learning
+Platform through narrow contracts and builds none of the below itself. For the
+Coach to power in-lesson tutoring and the "chat with me" assistant, the Learning
+Platform must provide:
+
+- **LR1 — Knowledge retrieval (`/retrieve`).** Serve source-bound `KnowledgeChunk`s against the `RetrievalRequest` contract, scoped by `domainId` + `knowledgeScopeId` (fully specified in §7.5). This is the hard dependency for grounded answers.
+- **LR2 — Event forwarding.** Forward learner activity to the Coach as a generic `ActivityEvent` (`POST /api/coaching/events`): map `LearningEvent` (§16.1) — `quiz_attempted`, `lesson`, `flashcard`, `reflection`, `ai_question_asked` — carrying `domainId`, `actorId` (learnerId), `eventType`, and `contextRefs.learningObjectId`/`courseId`. Reuse the existing `POST /api/runtime/events` and `POST /api/progress/signals` as the source.
+- **LR3 — Route the in-lesson AI helper through the Coach.** `POST /api/runtime/ai/ask` (the AI Explainer / Study Panel) opens a `course_learning` **Coach session** rather than a standalone chatbot, so it inherits memory, hint policy, scope discipline, and the toolbelt (see §9.8, §15.9).
+- **LR4 — Tool manifest + execution (host-executed).** Advertise the platform's actions as tools (`name`, `description`, `inputSchema`, `policyHints`) — e.g. generate-quiz, generate-flashcards, recommend-review-block, launch-domain-activity — and **execute** the Coach's proposed `ToolCall`s host-side, returning a `ToolResult` correlated by `callId`. The Coach proposes and gates; the Learning Platform runs its own code.
+- **LR5 — Stable object/source ids.** Expose `LearningObjectBase.id` and `SourceDocument.id`; the Coach references them in recommendations, knowledge scopes, and citations.
+- **LR6 — Knowledge-scope binding.** For each deployed coach instance, supply the approved/forbidden learning-object, source, and concept ids so `/retrieve` never returns out-of-scope content.
+- **LR7 — Ingestion + tagging.** Publish chunks conforming to `KnowledgeChunk` with `conceptIds`/`skillIds`/`chunkType` populated (safe default on failure) and `SourceReference` citations (§7.3) — the required-tag rule the Coach relies on for retrieval and progressive disclosure.
+- **LR8 — Identity/auth.** Provide a Nexus-issued learner identity/token so the Coach can attribute events and the Learning Platform can authorize Coach-proposed tool calls.
+
+Everything the Coach owns in return (learner model, intervention policy, scopes, memory, recommendations, traceability) is listed under the Coaching Platform above and is not built by the Learning Platform.
+
 ---
 
 ## 4. Learning Object Philosophy

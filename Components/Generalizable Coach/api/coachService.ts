@@ -10,29 +10,45 @@
  * Design bet #1 holds even here: an event is validated against the ActivityEvent
  * schema (the same schema the types are generated from) before it is accepted.
  */
+import { randomUUID } from "node:crypto";
 import express, { type Express, type Request, type Response } from "express";
 import { validate, CONTRACTS_SCHEMA_VERSION } from "../contracts/index.js";
 import type { ActivityEvent } from "../contracts/index.js";
 import { InMemoryEventLogRepo, type EventLogRepo } from "../platform/events/index.js";
 import { ProfileRegistry } from "../platform/studio/index.js";
+import {
+  buildObservation,
+  InMemoryObservationStore,
+  type ObservationStore,
+} from "../platform/observation/index.js";
 import type { EvaluationResult } from "../platform/types/index.js";
+import type { ChatOrchestrator } from "../platform/chat/index.js";
+import { demoChatSessionFactory, type ChatSessionFactory } from "./demoChatSession.js";
 
 export interface CoachServiceOptions {
   /** Inject a durable event log (e.g. Postgres) in production; defaults to in-memory. */
   eventLog?: EventLogRepo;
   /** Inject a coach profile registry; defaults to a fresh one seeded with presets. */
   registry?: ProfileRegistry;
+  /** Inject an observation store; defaults to in-memory. */
+  observationStore?: ObservationStore;
+  /** Build a chat session for a host; defaults to the built-in course_learning demo. */
+  chatSessionFactory?: ChatSessionFactory;
 }
 
 export interface CoachService {
   app: Express;
   eventLog: EventLogRepo;
   registry: ProfileRegistry;
+  observationStore: ObservationStore;
 }
 
 export function createCoachService(opts: CoachServiceOptions = {}): CoachService {
   const eventLog = opts.eventLog ?? new InMemoryEventLogRepo();
   const registry = opts.registry ?? new ProfileRegistry();
+  const observationStore = opts.observationStore ?? new InMemoryObservationStore();
+  const chatSessionFactory = opts.chatSessionFactory ?? demoChatSessionFactory;
+  const chatSessions = new Map<string, { orchestrator: ChatOrchestrator; learnerId: string; domainId: string }>();
   const app = express();
   app.use(express.json());
 
@@ -52,8 +68,17 @@ export function createCoachService(opts: CoachServiceOptions = {}): CoachService
       return res.status(400).json({ error: "invalid ActivityEvent", details: result.errors });
     }
     const event = req.body as ActivityEvent;
+    // Raw event → the immutable log (system of record for what happened)...
     eventLog.append(event);
+    // ...and, separately, an educational observation (never mutates the raw log).
+    observationStore.append(buildObservation(event));
     return res.status(201).json({ eventId: event.eventId, stored: true, total: eventLog.count() });
+  });
+
+  // Observations are the interpreted view, kept separate from the raw log.
+  app.get("/api/coaching/observations", (req: Request, res: Response) => {
+    const learnerId = typeof req.query.learnerId === "string" ? req.query.learnerId : undefined;
+    res.json({ observations: observationStore.list({ learnerId }) });
   });
 
   // Read back the raw log (used by the CLI harness and tests; scope by query).
@@ -128,5 +153,49 @@ export function createCoachService(opts: CoachServiceOptions = {}): CoachService
     return res.json({ instance });
   });
 
-  return { app, eventLog, registry };
+  // --- Conversational surface (A / M3 finish) -------------------------------
+  // Open a chat session. A host injects its own factory; the default is the
+  // built-in course_learning demo so this works out of the box.
+  app.post("/api/coaching/sessions", (req: Request, res: Response) => {
+    const learnerId = typeof req.body?.learnerId === "string" ? req.body.learnerId : undefined;
+    if (!learnerId) return res.status(400).json({ error: "learnerId is required" });
+    const domainId = typeof req.body?.domainId === "string" ? req.body.domainId : "course_learning";
+    const sessionId = randomUUID();
+    chatSessions.set(sessionId, {
+      orchestrator: chatSessionFactory({ learnerId, domainId, sessionId }),
+      learnerId,
+      domainId,
+    });
+    return res.status(201).json({ sessionId, learnerId, domainId });
+  });
+
+  // A conversational turn — the "chat with me" surface.
+  app.post("/api/coaching/ask", async (req: Request, res: Response) => {
+    const { sessionId, message } = req.body ?? {};
+    const session = typeof sessionId === "string" ? chatSessions.get(sessionId) : undefined;
+    if (!session) return res.status(404).json({ error: "unknown session" });
+    if (typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({ error: "message is required" });
+    }
+    try {
+      const result = await session.orchestrator.chat(message);
+      return res.json(result);
+    } catch (e) {
+      return res.status(500).json({ error: (e as Error).message });
+    }
+  });
+
+  // Read a session's conversation thread.
+  app.get("/api/coaching/sessions/:id", (req: Request, res: Response) => {
+    const session = chatSessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "unknown session" });
+    return res.json({
+      sessionId: req.params.id,
+      learnerId: session.learnerId,
+      domainId: session.domainId,
+      history: session.orchestrator.history(),
+    });
+  });
+
+  return { app, eventLog, registry, observationStore };
 }

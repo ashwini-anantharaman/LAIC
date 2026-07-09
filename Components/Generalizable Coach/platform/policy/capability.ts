@@ -30,6 +30,8 @@ export function defaultCapabilityScope(): CoachCapabilityScope {
     canSummarizeForHumanCoach: true,
     canUpdateLearnerModel: true,
     canTriggerNotifications: true,
+    canChatConversationally: true,
+    canChainTools: true,
   };
 }
 

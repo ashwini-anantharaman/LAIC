@@ -106,6 +106,52 @@ API-only in this pass — no UI yet).
 Try it: `npm run m2:demo`. Tests: `tests/config/{resolver,policy-drives-behavior,
 capability-scope}.test.ts`, `tests/api/studio-registry.test.ts`.
 
+## LAIC Milestone 3 — interaction surface + lightweight tutoring
+
+M3 (plan §7) makes the coach genuinely useful: it holds a scoped conversation,
+calls host tools, remembers, and tutors — all on safe, deterministic,
+source-grounded machinery (no LLM-graded eval, no platform retrieval; those are
+M4). Built on the M0 contracts; the Phase-1 bridge prototype is untouched.
+
+- **C1 — tool-calling** (`platform/tools/`): host-injected `CoachTool`/`ToolRegistry`;
+  `gateTools()` filters to the tools allowed this turn via `policyHints` + the
+  profile allowlist (assessment mode structurally hides `revealsAnswer` tools);
+  a `tool_call` response variant.
+- **C2 — interaction memory** (`platform/memory/`): the coach's own chat history
+  with `recall()`, separate from `KnowledgeSource`.
+- **C3 — observation + traceability** (`platform/observation/`, `platform/trace/`):
+  `POST /api/coaching/events` now also writes a separate **observation** (raw log
+  vs. interpreted view), and every intervention persists a full **trace** (event,
+  instance, policy version, scope, sources, evaluator output, output).
+- **C4 — study tutor** (`platform/tutor/`, `domains/course_learning/`): scope-bound
+  Q&A with citations (declines out-of-scope via `ScopedKnowledgeSource`), quiz
+  feedback via a rule-based evaluator, and deterministic recommendations
+  (`platform/recommendation/`) referencing a learning-object id.
+
+Answers are assembled from retrieved chunks + citations (offline, testable); an
+optional `phraser` (LLM) can re-word them. Try it: `npm run m3:demo`. Tests:
+`tests/{tools,memory,observation,trace,tutor}/*`.
+
+- **C5 — conversational assistant ("chat with me")** (`platform/chat/`): the
+  Spark.E-style loop, coach-side against a mock host. An `IntentRouter` splits a
+  message (ask / command / meta), a `ToolSelector` picks a gated tool + input,
+  and `ChatOrchestrator` runs the **bounded loop** (`route → retrieve/scope →
+  tool_call → ToolResult → weave`, capped by `maxOrchestrationSteps`), tracing
+  every turn. Tool execution goes through a `ToolExecutor` (Variant B: coach
+  proposes, host executes) — `InProcessToolExecutor` is the in-process/mock host.
+  A compound *"explain spaced repetition and quiz me"* yields a cited
+  explanation **plus** a gated quiz call in one reply, never leaving scope.
+  Try it: `npm run chat:demo`. Tests: `tests/chat/*`.
+
+- **Conversational HTTP surface + LLM phrasing** (`api/coachService.ts`,
+  `platform/llm/phraser.ts`): the chat loop is now callable over HTTP —
+  `POST /api/coaching/sessions` → `POST /api/coaching/ask` → `GET /api/coaching/sessions/:id`
+  (thread). A `ChatSessionFactory` is injectable; the default is the built-in
+  `course_learning` demo. Answers are re-worded by an env-configured LLM when a
+  key is present (`envGroundedPhraser`) and fall back to deterministic,
+  source-grounded composition otherwise. `npm run start:coach`, then POST to
+  `/api/coaching/sessions` and `/api/coaching/ask`. Tests: `tests/api/chat-endpoint.test.ts`.
+
 ## Architecture — build for Bridge, architect at the seams
 
 Three zones, strictly separated. The platform core never says "bridge."

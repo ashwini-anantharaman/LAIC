@@ -116,6 +116,7 @@ These come straight from the architecture's core design bets and must be true at
 - **C2** Coach Interaction Memory: store the Coach's own chat/interaction history and expose `recall()` as a second retrievable source, separate from `KnowledgeSource`. (M)
 - **C3** Event ingestion API + observation store: `POST /api/coaching/events` fully wired through Observation Builder → observation store, with the raw-event / learner-model split enforced. (M)
 - **C4** Lightweight study-tutor mode for Brain Bee / MindAI Bee, using **bundled/tagged knowledge and a rule-based evaluator** (deliberately *before* the graded `course_learning` path): lesson-scoped Q&A, quiz feedback, missed-topic review, deterministic recommendations, reflection prompts, source-bound explanations with citations. (L)
+- **C5** Conversational assistant ("chat with me") orchestration — the Spark.E-style surface (architecture §6.3, bet #7), built **coach-side against mocks**: an **intent router** (ask / answer / command / meta), a **tool selector** (rule-based first, LLM later) on top of C1's gating, the **bounded orchestration loop** (`tool_call → ToolResult → weave`, capped by `maxOrchestrationSteps`), the **LLM-phrasing** wiring (optional; deterministic fallback), and the **conversation thread**. Host-side pieces — real tool execution/endpoints, auth, and the chat UI — are explicitly **integration, out of scope for this milestone** (a mock host stands in). (L)
 - **Traceability** (cross-cutting): from this milestone on, every intervention persists its full context trace (input event, instance, policy version, scope version, sources, evaluator output, output). (S, but mandatory)
 
 **Dependencies:** M2 (needs profiles, policy engine, capability scopes).
@@ -126,6 +127,7 @@ These come straight from the architecture's core design bets and must be true at
 - A learner on a Brain Bee lesson can ask a question and get a source-cited answer bounded to that lesson's scope; asking something out of scope is declined or redirected, not hallucinated.
 - A missed quiz question produces a deterministic recommendation referencing a real Learning Platform object id.
 - A tool (`request_flashcards`) fires only when policy allows it, and is structurally absent in assessment mode.
+- A single chat message that asks for two things (e.g. "explain spaced repetition and quiz me") is routed into an explanation plus a gated tool call, executed against a **mock host** and woven into one reply — never exceeding `maxOrchestrationSteps`, never leaving scope.
 - Every coach output in this milestone is traceable end-to-end.
 
 ---
@@ -242,6 +244,9 @@ Visual correctness of cards/panels, perceived latency, and the *host's* translat
 - `tests/tutor/recommendation.test.ts` — an incorrect `quiz_attempted` event yields a `Recommendation` referencing a real learning-object id.
 - `tests/memory/recall.test.ts` — `InteractionMemory.recall()` returns prior interactions distinct from `KnowledgeSource` results.
 - `tests/trace/intervention-trace.test.ts` *(cross-cutting)* — after any intervention, the stored trace contains input event, instance, policy version, scope version, sources, evaluator output, and learner-facing output.
+- `tests/chat/intent-router.test.ts` — a message is classified into ask / answer / command / meta; ambiguous/compound messages split correctly.
+- `tests/chat/tool-selection.test.ts` — the selector picks a tool only from `allowedTools` and fills a schema-valid input; an out-of-scope or gated-out action is never selected.
+- `tests/chat/orchestration-loop.test.ts` — a compound "explain + quiz me" message drives `route → retrieve → tool_call → (mock host) ToolResult → woven reply`, stops at `maxOrchestrationSteps`, and stays in scope; each step is traced.
 
 **M4 — Platform convergence.** Create:
 - `tests/eval-harness/graded-accuracy.test.ts` *(the D3 gate)* — run a labeled set of learner answers through the graded evaluator; assert accuracy, false-correct rate, and guardrail-violation rate meet the pre-agreed bar (§ "three things to lock").
@@ -285,6 +290,18 @@ Pod A owns the spine and platform track: M0→M1→M2→M3→M4. Pod B joins at 
 2. **Config ownership / Studio scope** (architecture §17.1). Decide who edits each config level (API-only vs. instructor UI) before M2, because it sizes the Studio — the single biggest deliverable in the plan.
 3. **The eval-harness bar for graded evaluation** (architecture §17.5). Define what "good enough to drive intervention" means *before* M4, so D3's cutover gate is objective rather than a judgment call under pressure.
 
+### 13.1 What the Coach requires from each host (integration contracts)
+
+The Coach builds none of identity, content, domain runtime, tool execution, or
+UI — it consumes them. The concrete list of what each host must provide is
+written into that host's plan and must be committed before its integration
+milestone:
+
+- **Learning Platform → Coach:** `LR1–LR8` in **Learning Platform Implementation Plan §3.4** — `/retrieve` (§7.5), event forwarding, routing the in-lesson AI helper through a `course_learning` session, a tool manifest + host-side execution, stable object/source ids, knowledge-scope binding, tagged-chunk ingestion, and Nexus auth. Gates **M4**.
+- **Bridge Platform → Coach:** `BR1–BR9` in **Bridge Platform Implementation Plan §10.6** — event subscription, `BridgeActionEvaluation` facts (Bridge evaluates; Coach consumes), the **Coach→Bridge response/render contract** (the one still-undefined seam), a bridge tool catalogue + host-side execution, position/board context, progress signals tied to the Coach's own skill state, shared taxonomy, timing hooks, and `domainId`/identity. Gates **M5**.
+
+Both are the mirror of the "coach proposes → host executes" model (architecture §10.6): the Coach emits events/decisions/tool calls; the host runs its own code and returns results.
+
 ---
 
 ## 14. Minimum shippable products along the way
@@ -292,6 +309,7 @@ Pod A owns the spine and platform track: M0→M1→M2→M3→M4. Pod B joins at 
 You don't have to reach M6 to ship value. Natural release points:
 
 - **After M3:** Brain Bee / MindAI Bee lightweight tutoring — source-bound Q&A, quiz feedback, review recommendations, reflection. A real, safe, useful product with no graded-evaluator risk.
+- **After M3 (C5) + M4 `/retrieve`:** a **Spark.E-style "chat with me" tutor** on the Learning Platform — a conversational assistant that answers from the lesson's approved content, can be asked to *do* several things at once (quiz me, make flashcards) via gated host tools, remembers the conversation, and stays source-bound and policy-gated throughout. (Real tool execution + chat UI are the host-side integration step.)
 - **After M5-E1:** Bridge postmortems + hint requests — the Bridge coach delivers value before full live intervention exists.
 - **After M4-D3:** adaptive, memory-having, cross-course tutoring becomes the default learning experience.
 - **After M6:** human coaches and admins are in the loop; the system is maintainable at scale.

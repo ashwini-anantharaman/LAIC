@@ -17,6 +17,11 @@ import { toKnowledgeChunk, type RawChunk } from "./normalize.js";
 
 const DEFAULT_TOP_K = 5;
 
+/** Lowercase word tokens (letters/digits), punctuation stripped. */
+function tokenize(text: string): string[] {
+  return text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
 export class BundledKnowledgeSource implements KnowledgeSource {
   readonly domainId: string;
   private readonly chunks: KnowledgeChunk[];
@@ -34,7 +39,9 @@ export class BundledKnowledgeSource implements KnowledgeSource {
   async retrieve(query: KnowledgeQuery): Promise<KnowledgeChunk[]> {
     const wantedConcepts = new Set(query.conceptIds ?? []);
     const wantedSkills = new Set(query.skillIds ?? []);
-    const terms = (query.text ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+    // Whole-word tokens, length ≥ 3, so stopwords like "i"/"me" don't match as
+    // substrings of unrelated words (e.g. "me" inside "memories").
+    const terms = tokenize(query.text ?? "").filter((t) => t.length >= 3);
     const topK = query.topK ?? DEFAULT_TOP_K;
 
     const scored = this.chunks
@@ -58,10 +65,10 @@ export class BundledKnowledgeSource implements KnowledgeSource {
     // Tag overlap dominates (this is a tag-first retriever).
     for (const c of chunk.conceptIds ?? []) if (concepts.has(c)) score += 3;
     for (const s of chunk.skillIds ?? []) if (skills.has(s)) score += 2;
-    // Keyword match on content (offline semantic proxy).
+    // Keyword match on content (offline semantic proxy) — whole words only.
     if (terms.length) {
-      const content = chunk.content.toLowerCase();
-      for (const t of terms) if (content.includes(t)) score += 1;
+      const words = new Set(tokenize(chunk.content));
+      for (const t of terms) if (words.has(t)) score += 1;
     }
     // Cosine, only when both sides have vectors (kept offline: caller supplies it).
     if (queryEmbedding && chunk.embedding && chunk.embedding.length === queryEmbedding.length) {

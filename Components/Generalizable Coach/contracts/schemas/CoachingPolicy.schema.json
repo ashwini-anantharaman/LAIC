@@ -25,6 +25,8 @@
       "description": "Subset of the host's registered tools this policy permits."
     },
     "crossScopeAwareness": { "type": "boolean", "description": "Cross-domain awareness in dialogue; OFF by default (LPIP §5.4)." },
+    "conversationalMode": { "type": "boolean", "description": "Enable the conversational 'chat with me' surface (§6.3)." },
+    "maxOrchestrationSteps": { "type": "integer", "minimum": 1, "maximum": 10, "description": "Hard bound on step/tool chaining within one chat turn (bet #7)." },
     "provenance": {
       "type": "object",
       "description": "Which CoachingPolicyProfile version produced this resolved policy (config versioning, §8.5).",

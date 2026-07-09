@@ -32,6 +32,8 @@
     "cli": "node --import tsx scripts/coach-cli.mjs",
     "m1:demo": "node --import tsx scripts/m1-demo.mjs",
     "m2:demo": "node --import tsx scripts/m2-demo.mjs",
+    "m3:demo": "node --import tsx scripts/m3-demo.mjs",
+    "chat:demo": "node --import tsx scripts/chat-demo.mjs",
     "dev": "node --env-file-if-exists=.env --watch --import tsx domains/bridge/api/server.ts",
     "start": "node --env-file-if-exists=.env --import tsx domains/bridge/api/server.ts",
     "start:coach": "node --env-file-if-exists=.env --import tsx api/server.ts"

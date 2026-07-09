@@ -22,6 +22,8 @@
     "canGuideReplay": { "type": "boolean" },
     "canSummarizeForHumanCoach": { "type": "boolean" },
     "canUpdateLearnerModel": { "type": "boolean" },
-    "canTriggerNotifications": { "type": "boolean" }
+    "canTriggerNotifications": { "type": "boolean" },
+    "canChatConversationally": { "type": "boolean" },
+    "canChainTools": { "type": "boolean" }
   }
 }
