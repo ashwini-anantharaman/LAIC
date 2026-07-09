@@ -2,9 +2,11 @@
 
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import {
+  chunkSourceText,
   PrototypeRegistryExtractor,
   runGeneration,
   runIngestion,
+  runLlmIngestion,
   type BridgeKnowledgeSource,
   type BridgeReadableKnowledgeItem,
 } from "@bridge/knowledge";
@@ -12,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { extractionClient } from "@/lib/extraction";
 import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
 
@@ -114,6 +117,67 @@ export async function triggerGeneration(formData: FormData) {
   });
   revalidatePath("/bridge/admin/runs");
   redirect(`/bridge/admin/runs/${run.runId}`);
+}
+
+/**
+ * Upload a book/document for a registered source: extract text (txt/md
+ * directly, PDF via unpdf), chunk into deterministic passages, store both.
+ */
+export async function uploadSourceDocument(formData: FormData) {
+  await requireReviewer();
+  const store = knowledgeStore();
+  const sourceId = str(formData, "sourceId");
+  const source = await store.getSource(sourceId);
+  if (!source) throw new Error(`No source ${sourceId} — register it first`);
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || !file.size) throw new Error("No file uploaded");
+
+  let text: string;
+  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const pdf = await getDocumentProxy(new Uint8Array(await file.arrayBuffer()));
+    const extracted = await extractText(pdf, { mergePages: true });
+    text = extracted.text;
+  } else {
+    text = await file.text();
+  }
+  text = text.trim();
+  if (!text) throw new Error("No text could be extracted from the file");
+
+  const passages = chunkSourceText(sourceId, text);
+  await store.saveSourceDocument(
+    {
+      sourceId,
+      fileName: file.name,
+      mediaType: file.type || "text/plain",
+      charCount: text.length,
+      uploadedAt: new Date().toISOString(),
+      text,
+    },
+    passages,
+  );
+  await store.saveSource({ ...source, locator: source.locator ?? file.name });
+  revalidatePath("/bridge/admin/sources");
+  redirect(`/bridge/admin/sources/${sourceId}`);
+}
+
+/** LLM extraction over a source's uploaded passages (needs ANTHROPIC_API_KEY). */
+export async function runLlmExtraction(formData: FormData) {
+  const context = await requireReviewer();
+  const client = extractionClient();
+  if (!client)
+    throw new Error("Set ANTHROPIC_API_KEY in apps/bridge-web/.env.local to enable LLM extraction");
+  await runLlmIngestion(knowledgeStore(), client, {
+    sourceId: str(formData, "sourceId"),
+    systemFamily: str(formData, "systemFamily") as never,
+    requestedBy: context.nexusUserId,
+    now: new Date().toISOString(),
+    jobId: `job_${crypto.randomUUID().slice(0, 8)}`,
+  });
+  revalidatePath("/bridge/admin/sources");
+  revalidatePath("/bridge/admin/knowledge");
+  redirect("/bridge/admin/knowledge");
 }
 
 /**

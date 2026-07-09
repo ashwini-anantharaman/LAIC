@@ -25,13 +25,17 @@ export {
   type GenerationRequest,
 } from "./generate";
 export {
-  LlmExtractor,
   PrototypeRegistryExtractor,
   runIngestion,
+  runLlmIngestion,
   type CandidateExtractor,
   type CandidateItem,
   type IngestionRequest,
+  type LlmExtractedItem,
+  type LlmExtractionClient,
+  type LlmIngestionRequest,
 } from "./ingest";
+export { chunkSourceText } from "./passages";
 export { resolveRuleProvenance, type ResolvedRuleProvenance } from "./resolve";
 export { LEVEL2_GAPS, LEVEL2_ITEMS } from "./content/level2";
 export {

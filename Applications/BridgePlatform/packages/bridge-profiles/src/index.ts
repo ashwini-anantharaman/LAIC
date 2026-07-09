@@ -217,6 +217,40 @@ export class ProfileService {
     return p && canSeeProfile(p, ctx) ? p : null;
   }
 
+  /**
+   * Create a player pinned to an exact package version — the one-click end
+   * of the book→player flow (generate a package from a book, then play it).
+   */
+  async createProfile(
+    ctx: NexusBridgeContext,
+    input: {
+      name: string;
+      description?: string;
+      packageRef: { packageId: string; version: string };
+      settings: readonly Setting[];
+      selectedPresetId?: string;
+    },
+  ): Promise<BridgeAiPlayerProfile> {
+    const { hash } = resolveProfileValues(input.settings, input.selectedPresetId, {});
+    const profile: BridgeAiPlayerProfile = {
+      aiPlayerProfileId: this.newId(),
+      name: input.name,
+      description: input.description,
+      ownerType: ctx.accessLevel === "coach" ? "coach" : "learner",
+      ownerId: ctx.nexusUserId,
+      programOrganizationId: ctx.programOrganizationId,
+      packageRef: input.packageRef,
+      selectedPresetId: input.selectedPresetId,
+      valueOverrides: {},
+      resolvedValueHash: hash,
+      status: "active",
+      createdAt: this.now(),
+      updatedAt: this.now(),
+    };
+    await this.store.save(profile);
+    return profile;
+  }
+
   /** Copy-on-customize: clone any visible profile into the caller's scope. */
   async customize(
     sourceId: string,

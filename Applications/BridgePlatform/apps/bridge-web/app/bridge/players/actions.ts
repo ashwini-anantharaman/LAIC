@@ -13,6 +13,23 @@ async function requireContext() {
   return context;
 }
 
+/** One-click player from an exact generated package version (book→player). */
+export async function createPlayerFromPackage(formData: FormData) {
+  const context = await requireContext();
+  const packageId = String(formData.get("packageId"));
+  const version = String(formData.get("version"));
+  const record = await (await import("@/lib/knowledge")).knowledgeStore().getPackage(packageId, version);
+  if (!record) throw new Error(`No package ${packageId}@${version}`);
+  const profile = await (await profileService()).createProfile(context, {
+    name: String(formData.get("name") || "") || `${packageId}@${version} player`,
+    description: `Plays by ${packageId}@${version}. Toggle settings to customize.`,
+    packageRef: { packageId, version },
+    settings: record.pkg.settings,
+  });
+  revalidatePath("/bridge/players");
+  redirect(`/bridge/players/${profile.aiPlayerProfileId}`);
+}
+
 export async function customizeProfile(formData: FormData) {
   const context = await requireContext();
   const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);

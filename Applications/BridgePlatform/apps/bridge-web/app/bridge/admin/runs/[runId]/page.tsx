@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { createPlayerFromPackage } from "@/app/bridge/players/actions";
 import { knowledgeStore } from "@/lib/knowledge";
 import type { RuleDiffEntry } from "@bridge/knowledge";
 
@@ -86,23 +87,37 @@ export default async function RunPage({
       )}
 
       {pkg && (
-        <section className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4">
-          <span className="font-mono text-sm">
-            {pkg.packageId}@{pkg.version}
-          </span>
-          <span className={pkg.status === "deprecated" ? "text-sm text-red-700" : "text-sm text-emerald-700"}>
-            {pkg.status}
-          </span>
-          {pkg.baseline && (
-            <span className="text-xs text-neutral-500">
-              baseline: {pkg.baseline.boards} boards, fallback bid{" "}
-              {(pkg.baseline.bidFallbackRate * 100).toFixed(1)}% / play{" "}
-              {(pkg.baseline.playFallbackRate * 100).toFixed(1)}%
+        <section className="space-y-2 rounded-lg border border-neutral-200 p-4">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm">
+              {pkg.packageId}@{pkg.version}
             </span>
-          )}
-          <span className="text-xs text-neutral-500">
+            <span className={pkg.status === "deprecated" ? "text-sm text-red-700" : "text-sm text-emerald-700"}>
+              {pkg.status}
+            </span>
+            {pkg.baseline && (
+              <span className="text-xs text-neutral-500">
+                baseline: {pkg.baseline.boards} boards, fallback bid{" "}
+                {(pkg.baseline.bidFallbackRate * 100).toFixed(1)}% / play{" "}
+                {(pkg.baseline.playFallbackRate * 100).toFixed(1)}%
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-neutral-500">
             This version is immutable — sessions and players pin it exactly.
-          </span>
+          </p>
+          <form action={createPlayerFromPackage} className="flex items-center gap-2">
+            <input type="hidden" name="packageId" value={pkg.packageId} />
+            <input type="hidden" name="version" value={pkg.version} />
+            <input
+              name="name"
+              placeholder={`Player name (default: ${pkg.packageId}@${pkg.version} player)`}
+              className="w-72 rounded border border-neutral-300 px-2 py-1 text-xs"
+            />
+            <button type="submit" className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
+              Create player from this version
+            </button>
+          </form>
         </section>
       )}
 

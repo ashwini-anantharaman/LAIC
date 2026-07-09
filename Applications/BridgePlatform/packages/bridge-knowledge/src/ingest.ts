@@ -5,13 +5,17 @@
 // or deprecates them in the Knowledge Browser; there is no approval gate
 // (revised decision 3).
 
+import { KNOWN_PREDICATES } from "@bridge/engine";
 import type { Setting } from "@bridge/config";
 import type {
   BridgeIngestionJob,
   BridgeReadableKnowledgeItem,
+  SourcePassage,
   SystemFamily,
 } from "./model";
 import type { KnowledgeStore } from "./store";
+
+const KNOWN_PREDICATES_LIST = [...KNOWN_PREDICATES].sort();
 
 export interface CandidateItem {
   itemId: string;
@@ -87,18 +91,160 @@ export class PrototypeRegistryExtractor implements CandidateExtractor {
   }
 }
 
+// ---------------------------------------------------------------------------
+// LLM extraction over uploaded passages (plan §12.10 step 4, §20.2: LLMs
+// draft content, never make table decisions). The network client is a seam —
+// bridge-web supplies the Anthropic implementation; tests supply fakes.
+// ---------------------------------------------------------------------------
+
+/** One item proposed by the LLM from a batch of passages. */
+export interface LlmExtractedItem {
+  /** Short kebab/snake slug; namespaced to cand_llm_<slug> on save. */
+  slug: string;
+  itemType: BridgeReadableKnowledgeItem["itemType"];
+  title: string;
+  humanReadableRule: string;
+  /**
+   * Optional machine payload as a JSON string (BidRulePayload / PlayRulePayload
+   * / Setting). Left unvalidated here — generation's validatePackage is the
+   * structural check; bad payloads surface as run errors, never at the table.
+   */
+  structuredFieldsJson?: string;
+  /** passageIds (from the batch) this item is grounded in. */
+  passageIds: string[];
+  /** Ambiguities/assumptions the extractor flagged. */
+  flags: string[];
+}
+
+export interface LlmExtractionClient {
+  extractItems(input: {
+    systemFamily: SystemFamily;
+    passages: SourcePassage[];
+    knownPredicates: readonly string[];
+  }): Promise<LlmExtractedItem[]>;
+}
+
+export interface LlmIngestionRequest {
+  sourceId: string;
+  systemFamily: SystemFamily;
+  requestedBy: string;
+  now: string;
+  jobId: string;
+  /** Passages per LLM call (default 6). */
+  batchSize?: number;
+}
+
 /**
- * LLM-backed extractor SEAM (plan §20.2: LLMs draft content, never make
- * table decisions). Implemented against the Anthropic API in Phase 13 task 4;
- * until the key is provisioned this throws with instructions.
+ * Run LLM extraction over a source's uploaded passages. Items land active,
+ * attributed to the extractor, citing the exact passages they came from.
  */
-export class LlmExtractor implements CandidateExtractor {
-  readonly kind = "llm" as const;
-  extract(): never {
-    throw new Error(
-      "LLM extraction needs ANTHROPIC_API_KEY in apps/bridge-web/.env.local (see execution plan Phase 13). Extracted items land as ordinary editable content attributed to the extractor.",
-    );
+export async function runLlmIngestion(
+  store: KnowledgeStore,
+  client: LlmExtractionClient,
+  req: LlmIngestionRequest,
+): Promise<BridgeIngestionJob> {
+  const fail = async (errors: string[]): Promise<BridgeIngestionJob> => {
+    const job: BridgeIngestionJob = {
+      jobId: req.jobId,
+      sourceId: req.sourceId,
+      extractor: "llm",
+      systemFamily: req.systemFamily,
+      requestedBy: req.requestedBy,
+      createdAt: req.now,
+      status: "failed",
+      stats: { parsedEntries: 0, candidatesCreated: 0, skipped: 0 },
+      candidateItemIds: [],
+      errors,
+    };
+    await store.saveJob(job);
+    return job;
+  };
+
+  const source = await store.getSource(req.sourceId);
+  if (!source) return fail([`Unknown source ${req.sourceId}`]);
+  const passages = await store.listPassages(req.sourceId);
+  if (!passages.length)
+    return fail([`Source ${req.sourceId} has no uploaded document/passages — upload the book first`]);
+
+  const byId = new Map(passages.map((p) => [p.passageId, p]));
+  const batchSize = req.batchSize ?? 6;
+  const created: string[] = [];
+  const errors: string[] = [];
+  let parsed = 0;
+  let skipped = 0;
+
+  for (let i = 0; i < passages.length; i += batchSize) {
+    const batch = passages.slice(i, i + batchSize);
+    let proposals: LlmExtractedItem[];
+    try {
+      proposals = await client.extractItems({
+        systemFamily: req.systemFamily,
+        passages: batch,
+        knownPredicates: KNOWN_PREDICATES_LIST,
+      });
+    } catch (e) {
+      errors.push(`batch ${i / batchSize}: ${e instanceof Error ? e.message : String(e)}`);
+      continue;
+    }
+    parsed += proposals.length;
+
+    for (const p of proposals) {
+      const itemId = `cand_llm_${p.slug.replace(/[^a-z0-9_]+/gi, "_").toLowerCase()}`;
+      if ((await store.getItem(itemId)) || created.includes(itemId)) {
+        skipped++; // re-runs never clobber existing items
+        continue;
+      }
+      let structuredFields: Record<string, unknown> = {};
+      const localFlags = [...p.flags];
+      if (p.structuredFieldsJson) {
+        try {
+          structuredFields = JSON.parse(p.structuredFieldsJson) as Record<string, unknown>;
+        } catch {
+          localFlags.push("structuredFields did not parse as JSON — payload dropped, edit by hand");
+        }
+      }
+      const cited = p.passageIds
+        .map((id) => byId.get(id))
+        .filter((x): x is SourcePassage => Boolean(x));
+      await store.saveItem({
+        itemId,
+        systemFamily: req.systemFamily,
+        itemType: p.itemType,
+        title: p.title,
+        humanReadableRule: p.humanReadableRule,
+        structuredFields,
+        sourceIds: [req.sourceId],
+        citations: cited.map((pas) => ({
+          sourceId: req.sourceId,
+          passageId: pas.passageId,
+          passage: `${pas.anchor}: "${pas.text.slice(0, 160)}${pas.text.length > 160 ? "…" : ""}"`,
+        })),
+        gapIds: [],
+        reviewerNotes: `Extracted (llm). Flags: ${localFlags.join("; ") || "none"}. Edit as needed or deprecate.`,
+        status: "active",
+        version: "1",
+        createdBy: "ingestion:llm",
+        createdAt: req.now,
+      });
+      created.push(itemId);
+    }
   }
+
+  await store.saveSource({ ...source, status: "ingested" });
+  const job: BridgeIngestionJob = {
+    jobId: req.jobId,
+    sourceId: req.sourceId,
+    extractor: "llm",
+    systemFamily: req.systemFamily,
+    requestedBy: req.requestedBy,
+    createdAt: req.now,
+    status: errors.length && !created.length ? "failed" : "completed",
+    stats: { parsedEntries: parsed, candidatesCreated: created.length, skipped },
+    candidateItemIds: created,
+    errors,
+  };
+  await store.saveJob(job);
+  return job;
 }
 
 export interface IngestionRequest {

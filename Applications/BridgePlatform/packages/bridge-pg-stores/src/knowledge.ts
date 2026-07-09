@@ -8,6 +8,8 @@ import type {
   BridgeReadableKnowledgeItem,
   KnowledgeStore,
   RulePackageRecord,
+  SourceDocument,
+  SourcePassage,
 } from "@bridge/knowledge";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { check } from "./client";
@@ -81,6 +83,45 @@ export class PgKnowledgeStore implements KnowledgeStore {
   }
   async saveSource(source: BridgeKnowledgeSource) {
     check(await this.db.from("bridge_knowledge_sources").upsert(sourceToRow(source), { onConflict: "source_id" }), "saveSource");
+  }
+
+  async saveSourceDocument(doc: SourceDocument, passages: SourcePassage[]) {
+    check(await this.db.from("bridge_source_documents").upsert({
+      source_id: doc.sourceId, file_name: doc.fileName, media_type: doc.mediaType,
+      char_count: doc.charCount, uploaded_at: doc.uploadedAt, text: doc.text,
+    }, { onConflict: "source_id" }), "saveSourceDocument");
+    check(await this.db.from("bridge_source_passages").delete().eq("source_id", doc.sourceId), "saveSourceDocument(clear)");
+    if (passages.length) {
+      check(await this.db.from("bridge_source_passages").insert(passages.map((p) => ({
+        passage_id: p.passageId, source_id: p.sourceId, ordinal: p.ordinal,
+        anchor: p.anchor, text: p.text,
+      }))), "saveSourceDocument(passages)");
+    }
+  }
+  async getSourceDocument(sourceId: string) {
+    const rows = check(await this.db.from("bridge_source_documents").select("*").eq("source_id", sourceId), "getSourceDocument");
+    if (!rows.length) return null;
+    const r = rows[0] as any;
+    return {
+      sourceId: r.source_id, fileName: r.file_name, mediaType: r.media_type,
+      charCount: r.char_count, uploadedAt: r.uploaded_at, text: r.text,
+    } as SourceDocument;
+  }
+  async listPassages(sourceId: string) {
+    const rows = check(
+      await this.db.from("bridge_source_passages").select("*").eq("source_id", sourceId).order("ordinal"),
+      "listPassages",
+    );
+    return rows.map((r: any): SourcePassage => ({
+      passageId: r.passage_id, sourceId: r.source_id, ordinal: r.ordinal,
+      anchor: r.anchor, text: r.text,
+    }));
+  }
+  async getPassage(passageId: string) {
+    const rows = check(await this.db.from("bridge_source_passages").select("*").eq("passage_id", passageId), "getPassage");
+    if (!rows.length) return null;
+    const r = rows[0] as any;
+    return { passageId: r.passage_id, sourceId: r.source_id, ordinal: r.ordinal, anchor: r.anchor, text: r.text } as SourcePassage;
   }
 
   async listItems(filter?: { systemFamily?: string; status?: string; itemType?: string }) {

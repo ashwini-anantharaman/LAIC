@@ -11,10 +11,14 @@ import type {
   BridgeKnowledgeSource,
   BridgeReadableKnowledgeItem,
   RulePackageRecord,
+  SourceDocument,
+  SourcePassage,
 } from "./model";
 
 export interface KnowledgeStoreData {
   sources: BridgeKnowledgeSource[];
+  documents?: SourceDocument[];
+  passages?: SourcePassage[];
   jobs?: BridgeIngestionJob[];
   items: BridgeReadableKnowledgeItem[];
   /** Append-only history of superseded item revisions. */
@@ -37,6 +41,12 @@ export interface KnowledgeStore {
   listSources(): Promise<BridgeKnowledgeSource[]>;
   getSource(sourceId: string): Promise<BridgeKnowledgeSource | null>;
   saveSource(source: BridgeKnowledgeSource): Promise<void>;
+
+  /** Replace the uploaded document + passages for a source atomically. */
+  saveSourceDocument(doc: SourceDocument, passages: SourcePassage[]): Promise<void>;
+  getSourceDocument(sourceId: string): Promise<SourceDocument | null>;
+  listPassages(sourceId: string): Promise<SourcePassage[]>;
+  getPassage(passageId: string): Promise<SourcePassage | null>;
 
   listItems(filter?: {
     systemFamily?: string;
@@ -104,6 +114,29 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
     if (i >= 0) this.data.sources[i] = structuredClone(source);
     else this.data.sources.push(structuredClone(source));
     this.persist();
+  }
+
+  async saveSourceDocument(doc: SourceDocument, passages: SourcePassage[]) {
+    this.data.documents = [
+      ...(this.data.documents ?? []).filter((d) => d.sourceId !== doc.sourceId),
+      structuredClone(doc),
+    ];
+    this.data.passages = [
+      ...(this.data.passages ?? []).filter((p) => p.sourceId !== doc.sourceId),
+      ...structuredClone(passages),
+    ];
+    this.persist();
+  }
+  async getSourceDocument(sourceId: string) {
+    return (this.data.documents ?? []).find((d) => d.sourceId === sourceId) ?? null;
+  }
+  async listPassages(sourceId: string) {
+    return (this.data.passages ?? [])
+      .filter((p) => p.sourceId === sourceId)
+      .sort((a, b) => a.ordinal - b.ordinal);
+  }
+  async getPassage(passageId: string) {
+    return (this.data.passages ?? []).find((p) => p.passageId === passageId) ?? null;
   }
 
   async listItems(filter?: { systemFamily?: string; status?: string; itemType?: string }) {

@@ -9,7 +9,8 @@ import { describe, expect, it } from "vitest";
 import { BEGINNER_NATURAL_PACKAGE_ID, BEGINNER_NATURAL_V0_SEED } from "./content/beginnerNaturalV0";
 import { LEVEL2_GAPS, LEVEL2_ITEMS } from "./content/level2";
 import { runGeneration } from "./generate";
-import { LlmExtractor, PrototypeRegistryExtractor, runIngestion } from "./ingest";
+import { PrototypeRegistryExtractor, runIngestion, runLlmIngestion, type LlmExtractionClient } from "./ingest";
+import { chunkSourceText } from "./passages";
 import { InMemoryKnowledgeStore } from "./store";
 
 const NOW = "2026-07-09T12:00:00.000Z";
@@ -72,18 +73,79 @@ describe("ingestion jobs", () => {
     expect(again.stats.candidatesCreated).toBe(0);
   });
 
-  it("the LLM extractor seam fails loudly until a key is provisioned", async () => {
+  it("LLM ingestion fails loudly when the source has no uploaded document", async () => {
     const store = new InMemoryKnowledgeStore(BEGINNER_NATURAL_V0_SEED);
-    const job = await runIngestion(store, new LlmExtractor(), {
+    const never: LlmExtractionClient = { extractItems: async () => { throw new Error("must not be called"); } };
+    const job = await runLlmIngestion(store, never, {
       sourceId: "src_sayc_booklet",
-      sourceText: "…",
       systemFamily: "SAYC",
       requestedBy: "x",
       now: NOW,
       jobId: "job_llm",
     });
     expect(job.status).toBe("failed");
-    expect(job.errors[0]).toContain("ANTHROPIC_API_KEY");
+    expect(job.errors[0]).toContain("no uploaded document");
+  });
+
+  it("book -> items: uploaded passages, deterministic chunking, passage-anchored citations", async () => {
+    const store = new InMemoryKnowledgeStore(BEGINNER_NATURAL_V0_SEED);
+    const text = "Opening bids.\n\nOpen 1NT with 15-17 HCP and balanced shape.\n\nWith a five-card major and 12+ points, open one of the major.";
+    const passages = chunkSourceText("src_sayc_booklet", text);
+    expect(passages.length).toBeGreaterThan(0);
+    // Determinism: same text, same anchors.
+    expect(chunkSourceText("src_sayc_booklet", text)).toEqual(passages);
+    await store.saveSourceDocument(
+      { sourceId: "src_sayc_booklet", fileName: "sayc.txt", mediaType: "text/plain", charCount: text.length, uploadedAt: NOW, text },
+      passages,
+    );
+
+    const fake: LlmExtractionClient = {
+      extractItems: async ({ passages: batch, knownPredicates }) => {
+        expect(knownPredicates).toContain("hcpRange");
+        return [
+          {
+            slug: "open_1nt_15_17",
+            itemType: "bidding_rule",
+            title: "Open 1NT with 15-17 HCP, balanced",
+            humanReadableRule: "With 15-17 HCP and balanced shape, open 1NT.",
+            structuredFieldsJson: JSON.stringify({
+              rule: {
+                ruleId: "llm_open_1nt", title: "Open 1NT with 15-17 HCP, balanced", priority: 5,
+                settingGates: [], auctionContext: { role: "opening" },
+                handConditions: { all: [{ predicate: "hcpRange", params: { min: 15, max: 17 } }, { predicate: "balanced" }] },
+                action: { kind: "call", call: "1N" },
+              },
+            }),
+            passageIds: [batch[0]!.passageId],
+            flags: [],
+          },
+        ];
+      },
+    };
+
+    const job = await runLlmIngestion(store, fake, {
+      sourceId: "src_sayc_booklet",
+      systemFamily: "SAYC",
+      requestedBy: "coach",
+      now: NOW,
+      jobId: "job_llm2",
+    });
+    expect(job.status).toBe("completed");
+    expect(job.stats.candidatesCreated).toBe(1);
+
+    const item = (await store.getItem("cand_llm_open_1nt_15_17"))!;
+    expect(item.status).toBe("active");
+    expect(item.createdBy).toBe("ingestion:llm");
+    expect(item.citations[0]!.passageId).toBe(passages[0]!.passageId);
+    // The citation resolves to the actual uploaded text.
+    const cited = await store.getPassage(item.citations[0]!.passageId!);
+    expect(cited!.text).toContain("Open 1NT");
+    // Re-running skips, never clobbers.
+    const again = await runLlmIngestion(store, fake, {
+      sourceId: "src_sayc_booklet", systemFamily: "SAYC", requestedBy: "coach", now: NOW, jobId: "job_llm3",
+    });
+    expect(again.stats.candidatesCreated).toBe(0);
+    expect(again.stats.skipped).toBeGreaterThan(0);
   });
 });
 

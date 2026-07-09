@@ -35,6 +35,14 @@ export default async function KnowledgeItemPage({
               <li key={i}>
                 <span className="font-medium">{c.sourceId}:</span>{" "}
                 <span className="text-neutral-600">{c.passage}</span>
+                {c.passageId && (
+                  <a
+                    href={`/bridge/admin/sources/${c.sourceId}#${c.passageId.split("#")[1]}`}
+                    className="ml-2 text-xs text-emerald-700 hover:underline"
+                  >
+                    open passage →
+                  </a>
+                )}
               </li>
             ))}
           </ul>

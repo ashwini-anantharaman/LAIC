@@ -58,6 +58,35 @@ export interface Citation {
   sourceId: string;
   /** Passage reference. Prefix "paraphrase:" when not an exact quote. */
   passage: string;
+  /** Anchor into an uploaded source document (SourcePassage.passageId). */
+  passageId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Uploaded source documents & passages (§12.4: locators resolve to real text)
+// ---------------------------------------------------------------------------
+
+export interface SourceDocument {
+  sourceId: string;
+  fileName: string;
+  mediaType: string;
+  charCount: number;
+  uploadedAt: string;
+  /** Full extracted text (PDF/markdown/plain text). */
+  text: string;
+}
+
+/**
+ * Deterministic chunk of a source document. Citations reference passages by
+ * id so "where is this rule from?" resolves to the actual book text.
+ */
+export interface SourcePassage {
+  passageId: string; // `${sourceId}#p${ordinal}`
+  sourceId: string;
+  ordinal: number;
+  /** Human label, e.g. "¶12 (chars 8014–9382)". */
+  anchor: string;
+  text: string;
 }
 
 export interface BridgeReadableKnowledgeItem {
