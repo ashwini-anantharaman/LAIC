@@ -19,7 +19,12 @@ export {
   type KnowledgeStore,
   type KnowledgeStoreData,
 } from "./store";
-export { publishPackage, runGeneration, type GenerationRequest } from "./generate";
+export {
+  attachTestBoardArtifacts,
+  publishPackage,
+  runGeneration,
+  type GenerationRequest,
+} from "./generate";
 export { resolveRuleProvenance, type ResolvedRuleProvenance } from "./resolve";
 export {
   BEGINNER_NATURAL_PACKAGE_ID,

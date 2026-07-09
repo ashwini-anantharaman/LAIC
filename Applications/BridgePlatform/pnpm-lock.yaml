@@ -32,6 +32,9 @@ importers:
       '@bridge/config':
         specifier: workspace:*
         version: link:../../packages/bridge-config
+      '@bridge/dealer':
+        specifier: workspace:*
+        version: link:../../packages/bridge-dealer
       '@bridge/engine':
         specifier: workspace:*
         version: link:../../packages/bridge-engine
@@ -90,7 +93,21 @@ importers:
 
   packages/bridge-config: {}
 
-  packages/bridge-dealer: {}
+  packages/bridge-dealer:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+    devDependencies:
+      '@bridge/knowledge':
+        specifier: workspace:*
+        version: link:../bridge-knowledge
 
   packages/bridge-engine:
     dependencies:

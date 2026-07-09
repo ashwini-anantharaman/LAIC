@@ -255,3 +255,37 @@ export async function publishPackage(
   await store.savePackage(published);
   return published;
 }
+
+/**
+ * Attach generated test boards to a DRAFT package (Bridge plan §22 Q8: test
+ * boards join the publication workflow). Must happen before publishing —
+ * published records are immutable. Boards carry their own lineage payload.
+ */
+export async function attachTestBoardArtifacts(
+  store: KnowledgeStore,
+  packageId: string,
+  version: string,
+  boards: readonly unknown[],
+  generatedFromKnowledgeItemIds: string[],
+): Promise<void> {
+  const record = await store.getPackage(packageId, version);
+  if (!record) throw new Error(`No package ${packageId}@${version}`);
+  if (record.status === "published")
+    throw new Error("Published packages are immutable — attach test boards before publishing");
+  await store.savePackage({
+    ...record,
+    artifacts: [
+      ...record.artifacts,
+      ...boards.map((board, i) => ({
+        artifactId: `${packageId}@${version}/test_board:${i}`,
+        artifactType: "test_board_reference" as const,
+        generatedFromKnowledgeItemIds,
+        generatedFromSourceIds: [],
+        packageId,
+        version,
+        status: "draft" as const,
+        artifactPayload: board,
+      })),
+    ],
+  });
+}

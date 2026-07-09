@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createPracticeSession } from "@/app/bridge/play/actions";
+import { createLevelPracticeSession, createPracticeSession } from "@/app/bridge/play/actions";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 
@@ -39,6 +39,22 @@ export default async function PlayPage() {
         </button>
         <span className="text-xs text-neutral-500">
           Latest published Beginner Natural package.
+        </span>
+      </form>
+
+      <form
+        action={createLevelPracticeSession}
+        className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50/40 p-4"
+      >
+        <button
+          type="submit"
+          className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+        >
+          Practice at my level
+        </button>
+        <span className="text-xs text-neutral-600">
+          Level 1 scope: you deal and always hold a one-of-a-suit opening
+          (evaluator-filtered per teaching scope ki_bn_scope_level1).
         </span>
       </form>
 

@@ -284,6 +284,29 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     gapIds: [],
   }),
 
+  approved({
+    itemId: "ki_bn_scope_level1",
+    itemType: "teaching_scope",
+    title: "Level 1 practice scope: dealer holds a one-of-a-suit opening",
+    humanReadableRule:
+      "Level 1 practice deals are constrained so the dealer's systemic action is a one-of-a-suit opening (1\u2663/1\u2666/1\u2665/1\u2660) \u2014 never pass, and never an action outside Level-1 scope (no NT openings by system definition; enforced by evaluator filter so it stays true even when later systems add NT openings). Learners therefore always practice opening or responding.",
+    structuredFields: {
+      scope: {
+        scopeId: "bn_level1",
+        levelBand: "new",
+        evaluatorFilter: {
+          seats: "dealer",
+          requireSystemicActionIn: ["1C", "1D", "1H", "1S"],
+        },
+        targetConceptIds: ["bn_opening_bids", "bn_responses"],
+      },
+    },
+    sourceIds: ["src_bn_expert_notes"],
+    citations: [expertNote("Level-1 dealing constraint drafted for fellow ratification.")],
+    relatedItemIds: ["ed_bn_scope"],
+    gapIds: [],
+  }),
+
   // ---- bidding rules -------------------------------------------------------
   approved({
     itemId: "ki_bn_open_major",
