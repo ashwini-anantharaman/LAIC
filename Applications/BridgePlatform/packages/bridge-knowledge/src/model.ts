@@ -140,6 +140,19 @@ export interface GenerationDiff {
   settings: RuleDiffEntry[];
 }
 
+export interface BridgeIngestionJob {
+  jobId: string;
+  sourceId: string;
+  extractor: "prototype_registry" | "llm";
+  systemFamily: SystemFamily;
+  requestedBy: string;
+  createdAt: string;
+  status: "completed" | "failed";
+  stats: { parsedEntries: number; candidatesCreated: number; skipped: number };
+  candidateItemIds: string[];
+  errors: string[];
+}
+
 export interface BridgeGenerationRun {
   runId: string;
   systemFamily: SystemFamily;
@@ -150,6 +163,8 @@ export interface BridgeGenerationRun {
   inputItems: Array<{ itemId: string; version: string }>;
   diff: GenerationDiff | null;
   errors: string[];
+  /** §19.3 quality warnings (non-blocking): unreferenced settings, etc. */
+  warnings?: string[];
   /** Set when status is completed. */
   resultPackageId?: string;
   resultVersion?: string;
@@ -164,6 +179,8 @@ export interface PublishedPackageRecord {
   publishedAt?: string;
   pkg: BridgeRulePackage;
   artifacts: BridgeGeneratedArtifact[];
+  /** Golden-board fallback baseline measured at publication (§19.3). */
+  baseline?: { boards: number; bidFallbackRate: number; playFallbackRate: number };
 }
 
 // Payload helper types used by structuredFields

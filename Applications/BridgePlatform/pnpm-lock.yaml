@@ -168,6 +168,10 @@ importers:
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
+    devDependencies:
+      '@bridge/dealer':
+        specifier: workspace:*
+        version: link:../bridge-dealer
 
   packages/bridge-profiles:
     dependencies:

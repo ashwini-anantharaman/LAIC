@@ -4,13 +4,17 @@
 // Publication (step 8) validates the publish gate and freezes the version.
 
 import {
+  createPackageDecider,
+  GOLDEN_BOARDS,
   KNOWN_PREDICATES,
   KNOWN_PRIMITIVES,
+  runBoards,
   validatePackage,
   type BidRuleEntry,
   type BridgeRulePackage,
   type PlayRuleEntry,
 } from "@bridge/engine";
+import { defaultSettingValues } from "@bridge/config";
 import type { Setting } from "@bridge/config";
 import type {
   BidRulePayload,
@@ -157,6 +161,15 @@ export async function runGeneration(
   errors.push(...validatePackage(pkg, KNOWN_PREDICATES, KNOWN_PRIMITIVES));
   if (errors.length) return fail(errors);
 
+  // §19.3 quality gate (non-blocking warnings, surfaced on the run/diff view):
+  // every setting must be referenced by >=1 rule gate or marked UI-only.
+  const referencedKeys = new Set(
+    [...bidRules, ...playRules].flatMap((r) => r.settingGates.map((g) => g.key)),
+  );
+  const warnings = settings
+    .filter((s) => !referencedKeys.has(s.key) && !s.uiOnly)
+    .map((s) => `§19.3: setting "${s.key}" is referenced by no rule and not marked uiOnly`);
+
   const diff: GenerationDiff = {
     previousVersion: previous?.version ?? null,
     bidRules: diffEntries(previous?.pkg.bidRules ?? [], bidRules, (r) => r.ruleId),
@@ -216,6 +229,7 @@ export async function runGeneration(
     inputItems: approved.map((i) => ({ itemId: i.itemId, version: i.version })),
     diff,
     errors: [],
+    warnings,
     resultPackageId: packageId,
     resultVersion: version,
   };
@@ -244,6 +258,12 @@ export async function publishPackage(
   const errors = validatePackage(publishedPkg, KNOWN_PREDICATES, KNOWN_PRIMITIVES);
   if (errors.length) throw new Error(`Publish gate failed:\n${errors.join("\n")}`);
 
+  // §19.3: measure the golden-board fallback baseline at publication so
+  // every published version carries a reviewed quality number.
+  const harness = await runBoards(
+    GOLDEN_BOARDS,
+    createPackageDecider({ pkg: publishedPkg, values: defaultSettingValues(publishedPkg.settings) }),
+  );
   const published: PublishedPackageRecord = {
     ...record,
     status: "published",
@@ -251,6 +271,11 @@ export async function publishPackage(
     publishedAt: now,
     pkg: publishedPkg,
     artifacts: record.artifacts.map((a) => ({ ...a, status: "published" })),
+    baseline: {
+      boards: harness.totals.boards,
+      bidFallbackRate: harness.totals.bidFallbackRate,
+      playFallbackRate: harness.totals.playFallbackRate,
+    },
   };
   await store.savePackage(published);
   return published;
