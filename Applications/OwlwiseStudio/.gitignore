@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-server
+.DS_Store
+*.local
+.env
+.env.local
+.cursor/
+server/data/animations/
