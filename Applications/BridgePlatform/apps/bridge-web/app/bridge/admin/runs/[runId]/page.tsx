@@ -64,6 +64,17 @@ export default async function RunPage({
         </section>
       )}
 
+      {(run.warnings?.length ?? 0) > 0 && (
+        <section className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <h2 className="mb-1 text-sm font-medium text-amber-800">Quality warnings (§19.3)</h2>
+          <ul className="list-inside list-disc text-sm text-amber-700">
+            {run.warnings!.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {run.diff && (
         <section className="space-y-3 rounded-lg border border-neutral-200 p-4">
           <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">

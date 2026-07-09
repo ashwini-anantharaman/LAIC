@@ -45,6 +45,13 @@ export default async function RunsPage() {
               {p.publishedBy && (
                 <span className="text-xs text-neutral-500"> — published by {p.publishedBy}</span>
               )}
+              {p.baseline && (
+                <span className="text-xs text-neutral-500">
+                  {" "}· baseline: {p.baseline.boards} boards, fallback bid{" "}
+                  {(p.baseline.bidFallbackRate * 100).toFixed(1)}% / play{" "}
+                  {(p.baseline.playFallbackRate * 100).toFixed(1)}%
+                </span>
+              )}
             </li>
           ))}
         </ul>

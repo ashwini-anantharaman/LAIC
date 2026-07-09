@@ -6,18 +6,34 @@
 
 import type { BridgeRulePackage } from "@bridge/engine";
 import { publishPackage, runGeneration, type KnowledgeStore } from "@bridge/knowledge";
-import { SessionService } from "@bridge/sessions";
+import { PgSessionStore } from "@bridge/pg-stores";
+import { SessionService, type SessionStore } from "@bridge/sessions";
 import { JsonFileSessionStore } from "@bridge/sessions/fileStore";
+import { pgClient, storeBackend } from "./backend";
 import { join } from "node:path";
 import { knowledgeStore } from "./knowledge";
 
-const globalCache = globalThis as unknown as { __bridgeSessionService?: SessionService };
+const globalCache = globalThis as unknown as {
+  __bridgeSessionService?: SessionService;
+  __bridgeSessionStore?: SessionStore;
+};
+
+/** Internal store handle (progress extraction bypasses tenant checks by design). */
+export function sessionStoreInstance(): SessionStore {
+  if (!globalCache.__bridgeSessionStore) {
+    globalCache.__bridgeSessionStore =
+      storeBackend() === "postgres"
+        ? new PgSessionStore(pgClient())
+        : new JsonFileSessionStore(join(process.cwd(), ".data", "session-store.json"));
+  }
+  return globalCache.__bridgeSessionStore;
+}
 
 export function sessionService(): SessionService {
   if (!globalCache.__bridgeSessionService) {
     const kstore = knowledgeStore();
     globalCache.__bridgeSessionService = new SessionService({
-      store: new JsonFileSessionStore(join(process.cwd(), ".data", "session-store.json")),
+      store: sessionStoreInstance(),
       loadPackage: async (ref) => (await kstore.getPackage(ref.packageId, ref.version))?.pkg ?? null,
     });
   }

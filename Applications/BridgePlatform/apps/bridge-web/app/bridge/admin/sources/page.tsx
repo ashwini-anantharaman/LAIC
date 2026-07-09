@@ -1,8 +1,10 @@
-import { registerSource } from "@/app/bridge/admin/actions";
+import { extractPrototypeRegistry, registerSource } from "@/app/bridge/admin/actions";
 import { knowledgeStore } from "@/lib/knowledge";
 
 export default async function SourcesPage() {
-  const sources = await knowledgeStore().listSources();
+  const store = knowledgeStore();
+  const sources = await store.listSources();
+  const jobs = (await store.listJobs()).slice().reverse();
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Knowledge sources</h1>
@@ -20,9 +22,30 @@ export default async function SourcesPage() {
               {s.locator ? ` — ${s.locator}` : ""}
             </p>
             {s.notes && <p className="mt-1 text-sm text-neutral-600">{s.notes}</p>}
+            {s.sourceId === "src_prototype_artifacts" && (
+              <form action={extractPrototypeRegistry} className="mt-2">
+                <button className="rounded bg-neutral-800 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-900">
+                  Extract candidates (deterministic registry parser)
+                </button>
+              </form>
+            )}
           </li>
         ))}
       </ul>
+
+      {jobs.length > 0 && (
+        <section className="space-y-1">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">Ingestion jobs</h2>
+          {jobs.map((j) => (
+            <p key={j.jobId} className="rounded border border-neutral-200 px-3 py-2 text-xs">
+              <span className="font-mono">{j.jobId}</span> · {j.extractor} · {j.sourceId} ·{" "}
+              <span className={j.status === "completed" ? "text-emerald-700" : "text-red-700"}>{j.status}</span>{" "}
+              · parsed {j.stats.parsedEntries}, created {j.stats.candidatesCreated}, skipped {j.stats.skipped}
+              {j.errors.length > 0 && <span className="text-red-700"> — {j.errors[0]}</span>}
+            </p>
+          ))}
+        </section>
+      )}
 
       <form action={registerSource} className="space-y-2 rounded-lg border border-neutral-200 p-4">
         <h2 className="font-medium">Register a source</h2>

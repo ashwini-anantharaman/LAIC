@@ -68,6 +68,7 @@ export interface CreateSessionInput {
   resolvedValues: Record<string, SettingValue>;
   /** Defaults to four deterministic AI seats. */
   seats?: Partial<Record<Seat, SeatAssignment>>;
+  launchRef?: string;
 }
 
 export interface SessionView {
@@ -126,6 +127,7 @@ export class SessionService {
       resolvedValueHash: hashValues(input.resolvedValues),
       board: input.board,
       seats,
+      launchRef: input.launchRef,
       createdBy: input.context.nexusUserId,
       createdAt: this.now(),
     };

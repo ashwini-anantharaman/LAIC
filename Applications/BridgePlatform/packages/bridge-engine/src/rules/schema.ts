@@ -99,6 +99,14 @@ export interface BidRuleEntry {
   handConditions: HandConstraintExpr;
   action: BidRuleAction;
   /**
+   * Explicit no-agreement/catch-all rule (e.g. "nothing defined here: pass").
+   * Real content for AI play, but EXCLUDED as evidence when evaluating a
+   * human action — "aligned with no agreement" is not evidence of skill,
+   * and a catch-all is never a "reasonable alternative" (anti-overclaiming,
+   * Bridge plan §13.7).
+   */
+  noAgreement?: boolean;
+  /**
    * Escape hatch for logic pure data can't express (e.g. range-inference
    * game decisions). Names an engine primitive from src/primitives; that
    * primitive's behavior must itself be specified by cited knowledge items.

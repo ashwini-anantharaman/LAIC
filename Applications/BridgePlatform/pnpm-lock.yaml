@@ -38,6 +38,9 @@ importers:
       '@bridge/engine':
         specifier: workspace:*
         version: link:../../packages/bridge-engine
+      '@bridge/evaluator':
+        specifier: workspace:*
+        version: link:../../packages/bridge-evaluator
       '@bridge/events':
         specifier: workspace:*
         version: link:../../packages/bridge-events
@@ -47,6 +50,15 @@ importers:
       '@bridge/nexus-client':
         specifier: workspace:*
         version: link:../../packages/nexus-client
+      '@bridge/pg-stores':
+        specifier: workspace:*
+        version: link:../../packages/bridge-pg-stores
+      '@bridge/profiles':
+        specifier: workspace:*
+        version: link:../../packages/bridge-profiles
+      '@bridge/progress':
+        specifier: workspace:*
+        version: link:../../packages/bridge-progress
       '@bridge/sessions':
         specifier: workspace:*
         version: link:../../packages/bridge-sessions
@@ -118,7 +130,17 @@ importers:
         specifier: workspace:*
         version: link:../bridge-events
 
-  packages/bridge-evaluator: {}
+  packages/bridge-evaluator:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
 
   packages/bridge-events:
     dependencies:
@@ -149,8 +171,82 @@ importers:
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
+    devDependencies:
+      '@bridge/dealer':
+        specifier: workspace:*
+        version: link:../bridge-dealer
 
-  packages/bridge-progress: {}
+  packages/bridge-pg-stores:
+    dependencies:
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+      '@bridge/knowledge':
+        specifier: workspace:*
+        version: link:../bridge-knowledge
+      '@bridge/profiles':
+        specifier: workspace:*
+        version: link:../bridge-profiles
+      '@bridge/progress':
+        specifier: workspace:*
+        version: link:../bridge-progress
+      '@bridge/sessions':
+        specifier: workspace:*
+        version: link:../bridge-sessions
+      '@supabase/supabase-js':
+        specifier: ^2.45.0
+        version: 2.110.1
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.2
+        version: 24.13.2
+
+  packages/bridge-profiles:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/dealer':
+        specifier: workspace:*
+        version: link:../bridge-dealer
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+      '@laic/learner-contracts':
+        specifier: link:../../../../Components/laic-learner-contracts
+        version: link:../../../../Components/laic-learner-contracts
+    devDependencies:
+      '@bridge/knowledge':
+        specifier: workspace:*
+        version: link:../bridge-knowledge
+
+  packages/bridge-progress:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@bridge/evaluator':
+        specifier: workspace:*
+        version: link:../bridge-evaluator
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+      '@bridge/sessions':
+        specifier: workspace:*
+        version: link:../bridge-sessions
+      '@laic/learner-contracts':
+        specifier: link:../../../../Components/laic-learner-contracts
+        version: link:../../../../Components/laic-learner-contracts
+    devDependencies:
+      '@bridge/knowledge':
+        specifier: workspace:*
+        version: link:../bridge-knowledge
 
   packages/bridge-sessions:
     dependencies:

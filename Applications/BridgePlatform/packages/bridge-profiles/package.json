@@ -1,0 +1,33 @@
+{
+  "name": "@bridge/profiles",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI player profiles (Bridge plan §11): package-backed configuration with the defaults+preset+overrides resolution chain, tenant-scoped ownership with copy-on-customize, the generated convention card, and the 'rules this player follows' readable view.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./fileStore": {
+      "types": "./src/fileStore.ts",
+      "default": "./src/fileStore.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bridge/config": "workspace:*",
+    "@bridge/dealer": "workspace:*",
+    "@bridge/engine": "workspace:*",
+    "@bridge/events": "workspace:*",
+    "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts"
+  },
+  "devDependencies": {
+    "@bridge/knowledge": "workspace:*"
+  }
+}

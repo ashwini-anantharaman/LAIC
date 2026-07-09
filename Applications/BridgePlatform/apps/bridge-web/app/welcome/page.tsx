@@ -1,6 +1,7 @@
 import { roleLabel, STUB_USERS } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
 import { setDevUser } from "@/app/actions";
+import { LoginForm } from "@/components/LoginForm";
 import { getBridgeContext, nexusMode } from "@/lib/nexus";
 
 export default async function WelcomePage() {
@@ -56,11 +57,7 @@ export default async function WelcomePage() {
           </p>
         </section>
       ) : (
-        <section className="rounded-lg border border-neutral-200 p-6 text-sm text-neutral-600">
-          This deployment runs in <code>http</code> mode: sign-in is handled
-          via the shared Supabase project and Nexus context endpoint
-          (Phase 10). No session was found.
-        </section>
+        <LoginForm />
       )}
     </main>
   );

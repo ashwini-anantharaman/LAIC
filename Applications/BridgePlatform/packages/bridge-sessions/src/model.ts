@@ -41,6 +41,8 @@ export interface BridgeSessionRecord {
   resolvedValueHash: string;
   board: BoardInput;
   seats: Record<Seat, SeatAssignment>;
+  /** Learning-platform activity launch this session fulfils (LP §13.3). */
+  launchRef?: string;
   createdBy: string; // nexusUserId
   createdAt: string;
   completedAt?: string;

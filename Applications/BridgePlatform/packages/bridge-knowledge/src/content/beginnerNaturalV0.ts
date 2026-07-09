@@ -287,9 +287,9 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
   approved({
     itemId: "ki_bn_scope_level1",
     itemType: "teaching_scope",
-    title: "Level 1 practice scope: dealer holds a one-of-a-suit opening",
+    title: "SUGGESTED Level-1 scope: dealer holds a one-of-a-suit opening",
     humanReadableRule:
-      "Level 1 practice deals are constrained so the dealer's systemic action is a one-of-a-suit opening (1\u2663/1\u2666/1\u2665/1\u2660) \u2014 never pass, and never an action outside Level-1 scope (no NT openings by system definition; enforced by evaluator filter so it stays true even when later systems add NT openings). Learners therefore always practice opening or responding.",
+      "FELLOW-SUGGESTED DEFAULT — there is no objective Level 1: coaches own their teaching scopes and set levels per their judgment (this item only seeds the system-default scope record). Suggested Level-1 practice deals are constrained so the dealer's systemic action is a one-of-a-suit opening (1\u2663/1\u2666/1\u2665/1\u2660) \u2014 never pass, and never an action outside Level-1 scope (no NT openings by system definition; enforced by evaluator filter so it stays true even when later systems add NT openings). Learners therefore always practice opening or responding.",
     structuredFields: {
       scope: {
         scopeId: "bn_level1",
@@ -472,6 +472,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       ruleId: "bn_pass_otherwise",
       title: "No agreement defined: pass",
       priority: 900,
+      noAgreement: true,
       settingGates: [],
       auctionContext: { role: "any" },
       handConditions: { predicate: "hcpRange", params: { min: 0, max: 40 } },

@@ -1,6 +1,7 @@
 import type { Seat } from "@bridge/events";
 import { NextResponse, type NextRequest } from "next/server";
 import { apiError, requireContext } from "@/lib/api";
+import { recomputeSignalsSafe } from "@/lib/progress";
 import { sessionService } from "@/lib/sessions";
 
 /**
@@ -25,6 +26,7 @@ export async function POST(
         ? { kind: "bid", call: body.call }
         : { kind: "play", cardId: body.cardId },
     );
+    await recomputeSignalsSafe(id);
     return NextResponse.json(view);
   } catch (e) {
     return apiError(e);

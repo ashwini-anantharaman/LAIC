@@ -2,11 +2,15 @@
 
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import {
+  PrototypeRegistryExtractor,
   publishPackage,
   runGeneration,
+  runIngestion,
   type BridgeKnowledgeSource,
   type BridgeReadableKnowledgeItem,
 } from "@bridge/knowledge";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { knowledgeStore } from "@/lib/knowledge";
@@ -131,4 +135,32 @@ export async function publishGeneratedPackage(formData: FormData) {
   );
   revalidatePath("/bridge/admin/runs");
   redirect(`/bridge/admin/runs`);
+}
+
+/**
+ * Deterministic extraction of the bridgebot prototype's setting registry into
+ * needs_review candidates (Phase 9 reconciliation: match-to-source or reject).
+ */
+export async function extractPrototypeRegistry() {
+  const context = await requireReviewer();
+  const registryPath = join(
+    process.cwd(),
+    "../../../../bridgebot/src/vendor/config/data/registry.ts",
+  );
+  let text: string;
+  try {
+    text = readFileSync(registryPath, "utf8");
+  } catch {
+    throw new Error(`Prototype registry not found at ${registryPath} — clone bridgebot alongside the repo`);
+  }
+  await runIngestion(knowledgeStore(), new PrototypeRegistryExtractor(), {
+    sourceId: "src_prototype_artifacts",
+    sourceText: text,
+    systemFamily: "SAYC",
+    requestedBy: context.nexusUserId,
+    now: new Date().toISOString(),
+    jobId: `job_${crypto.randomUUID().slice(0, 8)}`,
+  });
+  revalidatePath("/bridge/admin/sources");
+  revalidatePath("/bridge/admin/knowledge");
 }

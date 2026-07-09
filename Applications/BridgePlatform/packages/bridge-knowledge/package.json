@@ -24,5 +24,8 @@
     "@bridge/config": "workspace:*",
     "@bridge/engine": "workspace:*",
     "@bridge/events": "workspace:*"
+  },
+  "devDependencies": {
+    "@bridge/dealer": "workspace:*"
   }
 }

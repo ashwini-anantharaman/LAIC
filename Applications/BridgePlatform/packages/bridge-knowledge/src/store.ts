@@ -6,6 +6,7 @@
 
 import type {
   BridgeGenerationRun,
+  BridgeIngestionJob,
   BridgeKnowledgeGap,
   BridgeKnowledgeSource,
   BridgeReadableKnowledgeItem,
@@ -14,6 +15,7 @@ import type {
 
 export interface KnowledgeStoreData {
   sources: BridgeKnowledgeSource[];
+  jobs?: BridgeIngestionJob[];
   items: BridgeReadableKnowledgeItem[];
   /** Append-only history of superseded item revisions. */
   itemRevisions: BridgeReadableKnowledgeItem[];
@@ -52,6 +54,9 @@ export interface KnowledgeStore {
   listGaps(filter?: { resolutionStatus?: string }): Promise<BridgeKnowledgeGap[]>;
   getGap(gapId: string): Promise<BridgeKnowledgeGap | null>;
   saveGap(gap: BridgeKnowledgeGap): Promise<void>;
+
+  listJobs(): Promise<BridgeIngestionJob[]>;
+  saveJob(job: BridgeIngestionJob): Promise<void>;
 
   listRuns(): Promise<BridgeGenerationRun[]>;
   getRun(runId: string): Promise<BridgeGenerationRun | null>;
@@ -136,6 +141,14 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
     const i = this.data.gaps.findIndex((g) => g.gapId === gap.gapId);
     if (i >= 0) this.data.gaps[i] = structuredClone(gap);
     else this.data.gaps.push(structuredClone(gap));
+    this.persist();
+  }
+
+  async listJobs() {
+    return [...(this.data.jobs ?? [])];
+  }
+  async saveJob(job: BridgeIngestionJob) {
+    this.data.jobs = [...(this.data.jobs ?? []).filter((j) => j.jobId !== job.jobId), structuredClone(job)];
     this.persist();
   }
 
