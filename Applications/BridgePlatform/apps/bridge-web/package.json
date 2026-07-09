@@ -10,8 +10,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@bridge/config": "workspace:*",
+    "@bridge/engine": "workspace:*",
+    "@bridge/events": "workspace:*",
     "@bridge/knowledge": "workspace:*",
     "@bridge/nexus-client": "workspace:*",
+    "@bridge/sessions": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.110.1",
