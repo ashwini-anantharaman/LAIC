@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.nexus/coach/contracts/Recommendation.schema.json",
+  "title": "Recommendation",
+  "description": "A next-step recommendation the Coach emits, referencing an owning-platform object so the host renders it. See LAIC architecture §13.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "learnerId", "domainId", "reason", "recommendationType", "priority", "status", "generatedBy", "createdAt"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "id": { "type": "string" },
+    "learnerId": { "type": "string" },
+    "domainId": { "type": "string" },
+    "reason": { "type": "string" },
+    "recommendationType": {
+      "type": "string",
+      "description": "review_block | flashcard_set | quiz_retry | next_lesson | tutorial | drill | practice_hand | postmortem_review | reflection | assessment | human_coach_review | guided_replay"
+    },
+    "targetObjectId": { "type": "string", "description": "owning-platform learning object id" },
+    "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+    "evidenceRefs": { "type": "array", "items": { "type": "string" } },
+    "status": { "type": "string", "enum": ["active", "accepted", "dismissed", "completed", "expired"] },
+    "generatedBy": { "type": "string", "enum": ["rule", "coach", "llm_assisted", "human_coach"] },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

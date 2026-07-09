@@ -1,0 +1,49 @@
+{
+  "packageId": "bridge_sample_v1",
+  "domainId": "bridge_gameplay",
+  "version": "1.0.0",
+  "chunks": [
+    {
+      "schemaVersion": "1.0.0",
+      "id": "br-open-1nt",
+      "content": "Open 1NT with 15-17 HCP and a balanced hand.",
+      "conceptIds": ["concept.opening_bid", "concept.hand_balanced"],
+      "skillIds": ["skill.opening_1nt"],
+      "chunkType": "rule",
+      "difficulty": "beginner"
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "id": "br-open-major",
+      "content": "Open one of a major with 12-21 points and a five-card-or-longer suit.",
+      "conceptIds": ["concept.opening_bid"],
+      "skillIds": ["skill.opening_major"],
+      "chunkType": "rule",
+      "difficulty": "beginner"
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "id": "br-hint-open",
+      "content": "What do your point count and shape suggest about the opening bid here?",
+      "conceptIds": ["concept.opening_bid"],
+      "skillIds": ["skill.opening_1nt"],
+      "chunkType": "hint_template",
+      "difficulty": "beginner"
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "id": "br-ex-open",
+      "content": "Example: with S:AKJ87 H:Q4 D:K92 C:J54 (14 HCP, five spades) open 1S.",
+      "conceptIds": ["concept.opening_bid"],
+      "skillIds": ["skill.opening_major"],
+      "chunkType": "example",
+      "difficulty": "beginner"
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "id": "br-untagged",
+      "content": "A balanced hand has no singleton or void and at most one doubleton.",
+      "conceptIds": ["concept.hand_balanced"]
+    }
+  ]
+}

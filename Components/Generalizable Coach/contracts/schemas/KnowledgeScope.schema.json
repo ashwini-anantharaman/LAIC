@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.nexus/coach/contracts/KnowledgeScope.schema.json",
+  "title": "KnowledgeScope",
+  "description": "The primary knowledge guardrail: the approved packages/concepts/skills/objects/sources a coach instance may use in a context. See LAIC architecture §11.5.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "domainId", "instructionalLevel", "sourcePolicy"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "id": { "type": "string" },
+    "domainId": { "type": "string" },
+    "allowedKnowledgePackageIds": { "type": "array", "items": { "type": "string" } },
+    "allowedConceptIds": { "type": "array", "items": { "type": "string" } },
+    "allowedSkillIds": { "type": "array", "items": { "type": "string" } },
+    "allowedLearningObjectIds": { "type": "array", "items": { "type": "string" }, "description": "LPIP LearningObjectBase.id" },
+    "allowedSourceIds": { "type": "array", "items": { "type": "string" }, "description": "LPIP SourceDocument.id" },
+    "forbiddenConceptIds": { "type": "array", "items": { "type": "string" } },
+    "forbiddenSkillIds": { "type": "array", "items": { "type": "string" } },
+    "instructionalLevel": {
+      "type": "string",
+      "enum": ["intro", "beginner", "club_beginner", "intermediate", "advanced"]
+    },
+    "sourcePolicy": {
+      "type": "object",
+      "required": ["sourceBoundOnly", "allowGeneralBackground", "requireCitations"],
+      "additionalProperties": false,
+      "properties": {
+        "sourceBoundOnly": { "type": "boolean" },
+        "allowGeneralBackground": { "type": "boolean" },
+        "requireCitations": { "type": "boolean" }
+      }
+    }
+  }
+}

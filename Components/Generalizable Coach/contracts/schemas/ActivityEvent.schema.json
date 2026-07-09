@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.nexus/coach/contracts/ActivityEvent.schema.json",
+  "title": "ActivityEvent",
+  "description": "The generic, host-translated activity envelope the Coach ingests. UI- and domain-agnostic: a host maps its native events (a bridge bid, a quiz answer) onto this shape. See LAIC architecture §6.2, §14.4.",
+  "type": "object",
+  "required": ["schemaVersion", "eventId", "domainId", "eventType", "timestamp", "sessionId", "actorId"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "eventId": { "type": "string" },
+    "domainId": { "type": "string", "description": "e.g. \"bridge_gameplay\", \"course_learning\"" },
+    "eventType": { "type": "string", "description": "e.g. \"bid_made\", \"quiz_attempted\", \"hint_requested\"" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "sessionId": { "type": "string" },
+    "actorId": { "type": "string", "description": "the learnerId" },
+    "action": {
+      "description": "Domain-specific payload; opaque to the platform.",
+      "type": ["object", "null"]
+    },
+    "sourcePlatform": {
+      "type": "string",
+      "enum": ["bridge", "learning", "nexus", "coach", "other"],
+      "description": "Which platform emitted this event (LAIC §14.4)."
+    },
+    "activityType": { "type": "string", "description": "e.g. \"lesson\", \"quiz\", \"flashcard\", \"bid\", \"play\"" },
+    "contextRefs": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "learningObjectId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "bridgeBoardId": { "type": "string" }
+      }
+    }
+  }
+}

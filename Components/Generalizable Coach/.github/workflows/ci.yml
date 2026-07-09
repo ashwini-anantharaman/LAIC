@@ -1,0 +1,32 @@
+name: coach-ci
+
+# LAIC M0 CI gate. Runs on every push/PR touching the coach component.
+# The type-drift test (tests/contracts/type-drift.test.ts) is the schema→type
+# guard: it fails the build if contracts/generated/* is out of sync with the
+# JSON Schemas, satisfying M0's "CI check that fails if generated types drift."
+
+on:
+  push:
+    paths: ["Components/Generalizable Coach/**"]
+  pull_request:
+    paths: ["Components/Generalizable Coach/**"]
+
+defaults:
+  run:
+    working-directory: Components/Generalizable Coach
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test (includes schema-validation + type-drift + events-ingest gates)
+        run: npm test

@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.nexus/coach/contracts/LearnerDomainProfile.schema.json",
+  "title": "LearnerDomainProfile",
+  "description": "The per-domain projection of the cross-domain Learner Profile Store. Every record carries domainId so dashboards stay domain-isolated. See LAIC architecture §5.2, CPIP §11.1, and the domain-isolation rule §16.4.",
+  "type": "object",
+  "required": ["schemaVersion", "learnerId", "domainId", "skillStates"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "learnerId": { "type": "string" },
+    "domainId": { "type": "string" },
+    "currentLevel": { "type": "string" },
+    "currentLearningGoal": { "type": "string" },
+    "masteredSkills": { "type": "array", "items": { "type": "string" } },
+    "weakSkills": { "type": "array", "items": { "type": "string" } },
+    "skillStates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["skillId", "mastery"],
+        "additionalProperties": false,
+        "properties": {
+          "skillId": { "type": "string" },
+          "mastery": { "type": "number", "minimum": 0, "maximum": 1 },
+          "exposureCount": { "type": "integer" },
+          "correctCount": { "type": "integer" },
+          "mistakeCount": { "type": "integer" },
+          "lastPracticedAt": { "type": "string" }
+        }
+      }
+    },
+    "recentMistakes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["conceptId", "skillId"],
+        "additionalProperties": false,
+        "properties": {
+          "timestamp": { "type": "string" },
+          "conceptId": { "type": "string" },
+          "skillId": { "type": "string" },
+          "eventId": { "type": "string" },
+          "severity": { "type": "string" }
+        }
+      }
+    }
+  }
+}

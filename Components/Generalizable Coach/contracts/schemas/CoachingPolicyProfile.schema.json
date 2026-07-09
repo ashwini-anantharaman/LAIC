@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.nexus/coach/contracts/CoachingPolicyProfile.schema.json",
+  "title": "CoachingPolicyProfile",
+  "description": "The inner behavioral profile a CoachProfile resolves to (persona, hint ladder, questioning style, intervention policy, enabled tools). Collapsed by the resolver into the flat CoachingPolicy the runtime consumes. See LAIC architecture §8.2.",
+  "type": "object",
+  "required": ["schemaVersion", "profileId", "displayName", "questioningStyle", "interventionPolicy"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "profileId": { "type": "string" },
+    "displayName": { "type": "string" },
+    "persona": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tone": { "type": "string" },
+        "terminology": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "hintLadder": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxLevel": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "questionFirst": { "type": "boolean", "description": "start the ladder in question form before revealing" }
+      }
+    },
+    "questioningStyle": { "type": "string", "enum": ["socratic", "direct", "mixed"] },
+    "interventionPolicy": {
+      "type": "object",
+      "required": ["maxHintLevel"],
+      "additionalProperties": false,
+      "properties": {
+        "maxHintLevel": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "allowDirectAnswer": { "type": "boolean" },
+        "feedbackStyle": { "type": "string", "enum": ["gentle", "direct", "socratic", "minimal", "mixed"] },
+        "interruptionTolerance": { "type": "string", "enum": ["low", "medium", "high"] },
+        "postmortemVsRealtime": { "type": "string", "enum": ["prefer_realtime", "prefer_postmortem"] }
+      }
+    },
+    "enabledTools": { "type": "array", "items": { "type": "string" } },
+    "lockedFields": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "CoachingPolicy fields lower layers may NOT override."
+    }
+  }
+}

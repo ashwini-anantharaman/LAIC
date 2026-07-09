@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.nexus/coach/contracts/CoachProfile.schema.json",
+  "title": "CoachProfile",
+  "description": "The outer deployable, admin-authored coach record: purpose, audience, domain, and references to the policy/scope/capability/evaluator/tool config it resolves to. Distinct from CoachingPolicyProfile (the inner behavioral object). See LAIC architecture §8.2.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "name", "domainId", "profileType", "supportedModes", "defaultMode", "coachingPolicyProfileId", "knowledgeScopeId", "capabilityScopeId", "version", "status", "ownerType", "ownerId"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "domainId": { "type": "string" },
+    "profileType": {
+      "type": "string",
+      "enum": ["study_tutor", "challenge_prep", "live_activity_coach", "postmortem_coach", "analysis_coach", "human_coach_assistant"]
+    },
+    "supportedModes": { "type": "array", "items": { "$ref": "#/definitions/coachingMode" } },
+    "defaultMode": { "$ref": "#/definitions/coachingMode" },
+    "coachingPolicyProfileId": { "type": "string" },
+    "knowledgeScopeId": { "type": "string" },
+    "capabilityScopeId": { "type": "string" },
+    "learnerScopePolicyId": { "type": "string" },
+    "recommendationPolicyId": { "type": "string" },
+    "evaluatorBindings": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+    "toolBindings": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+    "promptTemplateSetId": { "type": "string" },
+    "outputStyleId": { "type": "string" },
+    "version": { "type": "string" },
+    "status": { "type": "string", "enum": ["draft", "review", "published", "archived"] },
+    "ownerType": { "type": "string", "enum": ["platform", "program", "organization", "human_coach"] },
+    "ownerId": { "type": "string" },
+    "basePresetId": { "type": "string" },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apps": { "type": "array", "items": { "type": "string" } },
+        "domains": { "type": "array", "items": { "type": "string" } },
+        "activityTypes": { "type": "array", "items": { "type": "string" } },
+        "learnerLevels": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "definitions": {
+    "coachingMode": {
+      "type": "string",
+      "enum": ["passive", "on_demand", "guided_tutor", "live_coach", "postmortem", "guided_replay", "human_coach_assistant"]
+    }
+  }
+}

@@ -28,6 +28,17 @@ import {
   type WeakSkill,
   type Recommendation,
 } from "../common-coach/index.js";
+import type { LearnerDomainProfile } from "../../contracts/index.js";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
+
+/** Map the internal mastery ladder onto the contract's 0–1 mastery scale. */
+const MASTERY_SCORE: Record<Mastery, number> = {
+  not_started: 0,
+  introduced: 0.25,
+  practicing: 0.5,
+  proficient: 0.8,
+  mastered: 1,
+};
 
 const MAX_RECENT_MISTAKES = 20;
 
@@ -41,9 +52,13 @@ function nowIso(): string {
 }
 
 function emptyDomainState(): DomainLearnerState {
+  // Domain-neutral defaults: the platform core invents no domain content.
+  // A domain (or the resolved policy) sets the concrete level/goal; until
+  // then the level is the lowest generic tier and the goal is unset (the
+  // prompt builders fall back to "general practice" on an empty goal).
   return {
-    currentLevel: "beginner_1",
-    currentLearningGoal: "Opening bids and simple responses",
+    currentLevel: "beginner",
+    currentLearningGoal: "",
     skillStates: [],
     recentMistakes: [],
     sessionsCompleted: 0,
@@ -251,6 +266,53 @@ export class LearnerStore {
           profile.preferences.feedbackStyle !== "minimal",
         saveForPostmortemWhenPossible: false,
       },
+    };
+  }
+
+  /**
+   * The domain IDs this learner has any state in (LAIC M1/A3). Used by the
+   * cross-scope-awareness path; the store is cross-domain but every *view* is
+   * domain-filtered.
+   */
+  listLearnerDomains(learnerId: string): string[] {
+    return Object.keys(this.repo.get(learnerId)?.domains ?? {});
+  }
+
+  /**
+   * Project the cross-domain store into the per-domain `LearnerDomainProfile`
+   * contract (LAIC M1/A3, §5.2, CPIP §11.1). Domain-isolated BY CONSTRUCTION:
+   * only the requested domain's skills/mistakes are read, so a bridge skill can
+   * never appear in a Brain Bee projection (the §16.4 isolation rule).
+   */
+  getLearnerDomainProfile(learnerId: string, domainId: string): LearnerDomainProfile {
+    const profile = this.repo.get(learnerId);
+    const domain = profile?.domains[domainId] ?? emptyDomainState();
+
+    return {
+      schemaVersion: CONTRACTS_SCHEMA_VERSION,
+      learnerId,
+      domainId,
+      currentLevel: domain.currentLevel,
+      currentLearningGoal: domain.currentLearningGoal,
+      masteredSkills: domain.skillStates
+        .filter((s) => s.mastery === "mastered")
+        .map((s) => s.skillId),
+      weakSkills: detectWeakSkills(domain).map((w) => w.skillId),
+      skillStates: domain.skillStates.map((s) => ({
+        skillId: s.skillId,
+        mastery: MASTERY_SCORE[s.mastery],
+        exposureCount: s.exposureCount,
+        correctCount: s.correctCount,
+        mistakeCount: s.mistakeCount,
+        lastPracticedAt: s.lastPracticedAt,
+      })),
+      recentMistakes: domain.recentMistakes.map((m) => ({
+        timestamp: m.timestamp,
+        conceptId: m.conceptId,
+        skillId: m.skillId,
+        eventId: m.eventId,
+        severity: m.severity,
+      })),
     };
   }
 

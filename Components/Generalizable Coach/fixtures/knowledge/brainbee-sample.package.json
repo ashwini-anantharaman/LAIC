@@ -1,0 +1,25 @@
+{
+  "packageId": "brainbee_sample_v1",
+  "domainId": "brainbee",
+  "version": "1.0.0",
+  "chunks": [
+    {
+      "schemaVersion": "1.0.0",
+      "id": "bb-mem-rule",
+      "content": "Spaced repetition strengthens long-term memory consolidation.",
+      "conceptIds": ["concept.memory_consolidation"],
+      "skillIds": ["skill.recall"],
+      "chunkType": "rule",
+      "difficulty": "beginner"
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "id": "bb-mem-hint",
+      "content": "How might reviewing this again tomorrow help you remember it?",
+      "conceptIds": ["concept.memory_consolidation"],
+      "skillIds": ["skill.recall"],
+      "chunkType": "hint_template",
+      "difficulty": "beginner"
+    }
+  ]
+}

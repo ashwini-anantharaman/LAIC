@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "eventId": "fixture-bid-1",
+  "domainId": "bridge_gameplay",
+  "eventType": "bid_made",
+  "timestamp": "2026-07-08T12:00:00.000Z",
+  "sessionId": "fixture-session-1",
+  "actorId": "learner-fixture",
+  "sourcePlatform": "bridge",
+  "activityType": "bid",
+  "action": { "bid": "1NT", "hand": "S:KQ874 H:A3 D:K92 C:J54" }
+}

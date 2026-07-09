@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.nexus/coach/contracts/CoachInstance.schema.json",
+  "title": "CoachInstance",
+  "description": "A published CoachProfile deployed to a concrete place (app, course, learning object, bridge table, review screen). See LAIC architecture §3 (CPIP §7.1).",
+  "type": "object",
+  "required": ["schemaVersion", "id", "coachProfileId", "domainId", "mode", "status", "createdAt"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "id": { "type": "string" },
+    "coachProfileId": { "type": "string" },
+    "domainId": { "type": "string" },
+    "mode": {
+      "type": "string",
+      "enum": ["passive", "on_demand", "guided_tutor", "live_coach", "postmortem", "guided_replay", "human_coach_assistant"]
+    },
+    "deployedTo": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "appId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "learningObjectId": { "type": "string" },
+        "bridgeTableId": { "type": "string" },
+        "reviewScreenId": { "type": "string" }
+      }
+    },
+    "entitlementId": { "type": "string" },
+    "status": { "type": "string", "enum": ["active", "disabled", "archived"] },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

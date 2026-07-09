@@ -22,11 +22,16 @@ export interface KnowledgeChunk {
   difficulty: Difficulty;
   chunkType: ChunkType;
   content: string;
+  /**
+   * Open, domain-defined metadata. The platform never reads domain-specific
+   * keys — it carries this through opaquely. `sourceDocument` is the one
+   * cross-domain convention (citation/provenance); everything else (e.g. a
+   * bridge domain's `exampleHands`, a music domain's `audioClip`) is the
+   * domain's own and lives under here without the platform contract naming it.
+   */
   metadata?: {
     sourceDocument?: string;
-    bridgeSystem?: string;
-    exampleHands?: string[];
-  };
+  } & Record<string, unknown>;
 }
 
 export interface KnowledgePackage {

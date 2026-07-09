@@ -4,6 +4,108 @@ The core adaptive coaching loop: a learner makes a bridge bidding decision →
 the system evaluates it → retrieves relevant knowledge → the coach responds
 with an appropriately leveled hint.
 
+## LAIC Milestone 0 — contracts foundation & coach service
+
+M0 (per `LAIC_Coach_Implementation_Plan.md` §4) establishes the schema-first
+foundation every later milestone imports from. It is built inside this single
+package rather than as five separate npm packages — the plan's own M0 risk note
+says *"start as one integrated service; defer the service split until load
+justifies it"* (Risk 5).
+
+**Schema-first contracts (`contracts/`).** The eight core contracts —
+`ActivityEvent`, `KnowledgeChunk`, `CoachProfile`, `CoachingPolicy`,
+`KnowledgeScope`, `Recommendation`, `LearnerDomainProfile`, `CoachInstance` —
+are defined once as JSON Schemas in `contracts/schemas/`, each carrying a
+`schemaVersion`. TypeScript types are **generated** from them into
+`contracts/generated/` (never hand-written), and one Ajv validator is built from
+the same schemas, so compile-time types and runtime validation share a single
+source of truth.
+
+```bash
+npm run contracts:gen   # regenerate types after editing a schema
+npm test                # includes the type-drift gate (fails if generated types are stale)
+```
+
+**Coach service (`api/`).** The domain-neutral coach service (the "coach =
+separate service" delivery model). In M0 it exposes the validated event-ingest
+endpoint backed by the raw event log; later milestones add sessions/hints/etc.
+
+```bash
+npm run start:coach     # POST /api/coaching/events on COACH_PORT (default 3100)
+npm run cli -- --domain bridge_gameplay --learner L1 --type bid_made --action '{"bid":"1NT"}'
+```
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/coaching/events` | validate an `ActivityEvent` and persist it to the raw event log |
+| `GET /api/coaching/events?sessionId=` | read back the raw log (CLI/tests) |
+| `GET /health` | liveness + contracts version |
+
+**Deferred by design (documented, not built in M0):** Postgres — the event log
+runs in-memory behind `EventLogRepo` (a Postgres `activity_events` adapter drops
+in without touching callers); Nexus auth — a no-op hook in the service marks
+where entitlement checks attach; the 5-package monorepo split — see above.
+
+M0 tests: `tests/contracts/schema-validation.test.ts`,
+`tests/contracts/type-drift.test.ts` (CI gate), `tests/api/events-ingest.test.ts`.
+
+## LAIC Milestone 1 — foundations
+
+M1 (plan §5) stands up the two-layer skeleton: it can **hold a learner and
+retrieve knowledge** through the proper contracts, *without coaching adaptively
+yet*. Built against the M0 contracts, adapting the Phase-1 code at the boundary
+(so the existing bridge suite stays green).
+
+- **A1 — `KnowledgeChunk` required-tag rule** (`platform/knowledge-source/normalize.ts`):
+  every chunk is normalized to carry `conceptIds`/`skillIds`/`chunkType` (safe
+  default `explanation`) and `schemaVersion`; the Phase-1 `chunkId` is adapted
+  onto the M0 `id` at the boundary.
+- **A2 — `KnowledgeSource` port + `BundledKnowledgeSource`** (`platform/knowledge-source/`):
+  the one retrieval interface the coach depends on, plus the offline in-process
+  adapter (tag + keyword, optional cosine). Sample packages in
+  `fixtures/knowledge/`.
+- **A3 — cross-domain learner store + projection** (`platform/learner-model/LearnerStore.ts`):
+  `getLearnerDomainProfile(learnerId, domainId)` projects the cross-domain store
+  into the per-domain `LearnerDomainProfile` contract, **domain-isolated by
+  construction**. `crossScopeAwareness` is off by default.
+- **A4 — `openCoachSession`** (`platform/adaptive/openCoachSession.ts`): the
+  architecture-level opener (§6.1) that builds the **Common Coach Package**
+  (domain-filtered profile + resolved policy) and binds a `KnowledgeSource`. The
+  pipeline inside is a stub in M1. (Distinct from the Phase-1 embed opener; they
+  converge later.)
+
+M1 tests (`tests/engine/`): `open-session`, `bundled-knowledge`,
+`domain-isolation` (the critical isolation gate). The default `CoachingPolicy`
+is a placeholder until the config resolver arrives in **M2**.
+
+## LAIC Milestone 2 — the configurable coach
+
+M2 (plan §6) makes design bet #4 real: **coach behavior comes from resolved
+configuration, and coaches are created by config, not code.** Built on the M0
+contracts (adds `CoachingPolicyProfile` + `CoachCapabilityScope`; the Studio is
+API-only in this pass — no UI yet).
+
+- **B1 — config resolver** (`platform/config/resolvePolicy.ts`): flattens
+  platform default → `CoachingPolicyProfile` → course → class → learner → session
+  into the flat `CoachingPolicy`, honoring `lockedFields`, stamping `provenance`.
+- **B2 — policy-driven intervention** (`platform/policy/InterventionPolicyEngine.ts`):
+  deterministic decision where `questioningStyle`/`feedbackStyle`/interruption
+  tolerance/hint ceiling become behavior (socratic → question-form; direct →
+  higher hint). The M0-aligned engine (the Phase-1 bridge engine still serves the
+  bridge runtime).
+- **B3 — capability scope** (`platform/policy/capability.ts`): a disabled
+  capability is structurally unavailable — the decision downgrades to silent.
+- **B4 — `chat()` window**: `openCoachSession` now carries a multi-turn
+  conversation window + a config-driven `decide()`.
+- **B5 — profile registry + Studio API** (`platform/studio/`, `api/`): clone a
+  preset, tweak policy/scope, publish a version (clone lineage preserved), deploy
+  an instance, preview behavior — all via HTTP:
+  `GET/POST /api/coaching/profiles`, `POST /api/coaching/profiles/:id/versions`,
+  `POST /api/coaching/profiles/:id/preview`, `POST /api/coaching/instances`.
+
+Try it: `npm run m2:demo`. Tests: `tests/config/{resolver,policy-drives-behavior,
+capability-scope}.test.ts`, `tests/api/studio-registry.test.ts`.
+
 ## Architecture — build for Bridge, architect at the seams
 
 Three zones, strictly separated. The platform core never says "bridge."
