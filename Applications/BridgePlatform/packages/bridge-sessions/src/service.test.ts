@@ -3,8 +3,8 @@
 // tenant isolation holds (org A cannot read org B).
 
 import { defaultSettingValues } from "@bridge/config";
-import { BOARD_G1, seededBoard, type BridgeRulePackage } from "@bridge/engine";
-import { isActionEvent } from "@bridge/events";
+import { BOARD_G1, legalPlays, seededBoard, type BridgeRulePackage } from "@bridge/engine";
+import { cardId, isActionEvent } from "@bridge/events";
 import {
   BEGINNER_NATURAL_PACKAGE_ID,
   BEGINNER_NATURAL_V0_SEED,
@@ -182,5 +182,39 @@ describe("tenant isolation (Bridge plan §21)", () => {
 
     expect((await service.listSessions(orgB)).length).toBe(0);
     expect((await service.listSessions(orgAPeer)).length).toBe(1);
+  });
+});
+
+describe("dummy control", () => {
+  it("human declarer plays dummy's cards through their own seat", async () => {
+    const { service } = makeService();
+    const caller = ctx({});
+    const { bridgeSessionId: id } = await service.createSession({
+      context: caller,
+      sessionType: "single_board",
+      board: BOARD_G1,
+      pkg,
+      resolvedValues: values(),
+      seats: { N: { seat: "N", playerKind: "human", occupantId: caller.nexusUserId } },
+    });
+
+    // Human North opens 1S; AI E/S/W act; human passes out the auction.
+    await service.applyExternalAction(id, caller, "N", { kind: "bid", call: "1S" });
+    await service.autoplay(id, caller); // E: P, S: 2S, W: P — stops at N
+    await service.applyExternalAction(id, caller, "N", { kind: "bid", call: "P" });
+    await service.autoplay(id, caller); // E: P completes; E leads; stops at dummy (S) controlled by N
+
+    let view = await service.getSession(id, caller);
+    expect(view.state.phase).toBe("play");
+    expect(view.state.contract).toMatchObject({ declarer: "N" });
+    expect(view.state.turn).toBe("S"); // dummy's turn, human-controlled
+
+    const legal = legalPlays(view.state, "S");
+    view = await service.applyExternalAction(id, caller, "N", {
+      kind: "play",
+      cardId: cardId(legal[0]!),
+    });
+    const trick = view.state.tricks[0]!;
+    expect(trick.plays[1]!.seat).toBe("S"); // dummy's card, played via N
   });
 });

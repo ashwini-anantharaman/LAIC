@@ -24,15 +24,21 @@ export default async function PlayPage() {
           defaultValue={1}
           className="w-24 rounded border border-neutral-300 px-2 py-1 text-sm"
         />
+        <select name="humanSeat" className="rounded border border-neutral-300 px-2 py-1 text-sm">
+          <option value="S">Sit South</option>
+          <option value="N">Sit North (dealer on seeded boards)</option>
+          <option value="E">Sit East</option>
+          <option value="W">Sit West</option>
+          <option value="watch">Watch 4 AI seats</option>
+        </select>
         <button
           type="submit"
           className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
         >
-          Deal a board (4 AI seats)
+          Deal a board
         </button>
         <span className="text-xs text-neutral-500">
-          Runs against the latest published Beginner Natural package. Human
-          seats arrive with the Phase 5 table.
+          Latest published Beginner Natural package.
         </span>
       </form>
 

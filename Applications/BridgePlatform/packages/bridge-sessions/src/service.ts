@@ -204,7 +204,11 @@ export class SessionService {
           };
         },
         decidePlay: async (s, actingSeat): Promise<Decision<Card>> => {
-          if (action.kind !== "play" || actingSeat !== expectedSeat)
+          // actingSeat may be the DUMMY seat while expectedSeat is the human
+          // declarer controlling it — the Game controller routes dummy turns
+          // to the declarer's decider, so only the action kind is checked
+          // here; legality is computed against the seat actually on play.
+          if (action.kind !== "play")
             throw new Error("No pending play action for this seat");
           const legal = legalPlays(s, actingSeat);
           const card = legal.find((c) => cardId(c) === action.cardId);

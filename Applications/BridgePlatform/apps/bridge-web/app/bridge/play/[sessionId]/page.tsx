@@ -1,37 +1,105 @@
+import { legalCalls, legalPlays } from "@bridge/engine";
 import {
   callLabel,
+  cardId,
   contractLabel,
-  isLogicEvent,
+  isRedStrain,
+  partnerOf,
   rankLabel,
   type Card,
+  type Seat,
 } from "@bridge/events";
+import { resolveRuleProvenance } from "@bridge/knowledge";
 import { SessionAccessError } from "@bridge/sessions";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { autoplaySession, stepSession, undoSession } from "@/app/bridge/play/actions";
+import {
+  autoplaySession,
+  humanBid,
+  humanPlay,
+  stepSession,
+  undoSession,
+} from "@/app/bridge/play/actions";
+import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 
 const GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
-const handString = (hand: Card[]): string =>
-  (["S", "H", "D", "C"] as const)
-    .map(
-      (s) =>
-        GLYPH[s] +
-        (hand
-          .filter((c) => c.suit === s)
-          .sort((a, b) => b.rank - a.rank)
-          .map((c) => rankLabel(c.rank))
-          .join("") || "—"),
-    )
-    .join(" ");
+const red = (suit: string) => suit === "H" || suit === "D";
+
+function CardFace({ card }: Readonly<{ card: Card }>) {
+  return (
+    <span className={red(card.suit) ? "text-red-600" : "text-neutral-900"}>
+      {GLYPH[card.suit]}
+      {rankLabel(card.rank)}
+    </span>
+  );
+}
+
+function Hand({
+  cards,
+  hidden,
+  playable,
+  sessionId,
+  actingAs,
+}: Readonly<{
+  cards: Card[];
+  hidden: boolean;
+  playable?: Set<string>;
+  sessionId?: string;
+  actingAs?: Seat;
+}>) {
+  if (hidden)
+    return <span className="text-sm text-neutral-400">{"🂠".repeat(Math.min(cards.length, 13)) || "—"}</span>;
+  const sorted = [...cards].sort(
+    (a, b) => "SHDC".indexOf(a.suit) - "SHDC".indexOf(b.suit) || b.rank - a.rank,
+  );
+  return (
+    <span className="flex flex-wrap gap-1">
+      {sorted.map((c) => {
+        const id = cardId(c);
+        if (playable && sessionId && actingAs) {
+          const legal = playable.has(id);
+          return (
+            <form key={id} action={humanPlay} className="inline">
+              <input type="hidden" name="sessionId" value={sessionId} />
+              <input type="hidden" name="seat" value={actingAs} />
+              <input type="hidden" name="cardId" value={id} />
+              <button
+                type="submit"
+                disabled={!legal}
+                className={`rounded border px-1.5 py-0.5 text-sm ${
+                  legal
+                    ? "border-emerald-400 bg-white hover:bg-emerald-50"
+                    : "border-neutral-200 bg-neutral-50 opacity-40"
+                }`}
+              >
+                <CardFace card={c} />
+              </button>
+            </form>
+          );
+        }
+        return (
+          <span key={id} className="rounded border border-neutral-200 bg-white px-1.5 py-0.5 text-sm">
+            <CardFace card={c} />
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 export default async function SessionPage({
   params,
-}: Readonly<{ params: Promise<{ sessionId: string }> }>) {
+  searchParams,
+}: Readonly<{
+  params: Promise<{ sessionId: string }>;
+  searchParams: Promise<{ why?: string }>;
+}>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
+  const { why } = await searchParams;
 
   let view, events;
   try {
@@ -42,34 +110,165 @@ export default async function SessionPage({
     throw e;
   }
   const { record, state } = view;
-  const bidLogic = events.filter(
-    (e) => e.category === "bid-logic-event",
-  ) as Extract<(typeof events)[number], { category: "bid-logic-event" }>[];
+
+  const mySeats = (Object.values(record.seats) as { seat: Seat; playerKind: string; occupantId?: string }[])
+    .filter((s) => s.playerKind === "human" && s.occupantId === context.nexusUserId)
+    .map((s) => s.seat);
+  const isParticipant = mySeats.length > 0;
+  const declarer = state.contract?.declarer;
+  const dummy = declarer ? partnerOf(declarer) : null;
+  const playStarted = events.some((e) => e.category === "play-event");
+  const showHand = (seat: Seat) =>
+    !isParticipant ||
+    state.phase === "complete" ||
+    mySeats.includes(seat) ||
+    (dummy === seat && playStarted);
+  const controllerOf = (seat: Seat): Seat =>
+    state.phase === "play" && dummy === seat && declarer ? declarer : seat;
+  const humansTurn =
+    state.phase !== "complete" && mySeats.includes(controllerOf(state.turn));
+  const legalPlaySet = humansTurn && state.phase === "play"
+    ? new Set(legalPlays(state, state.turn).map(cardId))
+    : undefined;
+  const legalCallSet =
+    humansTurn && state.phase === "auction" ? legalCalls(state.auction, state.turn) : null;
+
+  const logicEvents = events.filter(
+    (e) => e.category === "bid-logic-event" || e.category === "play-logic-event",
+  ) as Extract<(typeof events)[number], { category: "bid-logic-event" | "play-logic-event" }>[];
+
+  // "Why?" panel: resolve the selected decision's rule to items + sources.
+  const whyEvent = why ? logicEvents.find((e) => e.seq === Number(why)) : undefined;
+  const whyProvenance =
+    whyEvent?.matchedRuleId != null
+      ? await resolveRuleProvenance(
+          knowledgeStore(),
+          record.packageRef.packageId,
+          record.packageRef.version,
+          whyEvent.matchedRuleId,
+        )
+      : null;
+
+  const seatBox = (seat: Seat) => (
+    <div className={`rounded-lg border p-3 ${state.turn === seat && state.phase !== "complete" ? "border-emerald-500" : "border-neutral-200"}`}>
+      <p className="mb-1 text-xs font-medium text-neutral-500">
+        {seat}
+        {mySeats.includes(seat) ? " (you)" : record.seats[seat].playerKind === "human" ? " (human)" : " (AI)"}
+        {dummy === seat && playStarted ? " — dummy" : ""}
+      </p>
+      <Hand
+        cards={state.hands[seat]}
+        hidden={!showHand(seat)}
+        playable={humansTurn && state.turn === seat ? legalPlaySet : undefined}
+        sessionId={record.bridgeSessionId}
+        actingAs={controllerOf(seat)}
+      />
+    </div>
+  );
+
+  const currentTrick = state.tricks[state.tricks.length - 1];
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">{record.board.name}</h1>
         <p className="text-xs text-neutral-500">
           <span className="font-mono">{record.bridgeSessionId}</span> · {record.status} ·{" "}
-          {record.packageRef.packageId}@{record.packageRef.version} · config hash{" "}
-          <span className="font-mono">{record.resolvedValueHash}</span> · {events.length} events
+          {record.packageRef.packageId}@{record.packageRef.version} ·{" "}
+          {state.contract ? contractLabel(state.contract) : `phase: ${state.phase}`} · tricks NS{" "}
+          {state.trickCount.NS} / EW {state.trickCount.EW}
         </p>
       </header>
 
+      {/* Table */}
+      <div className="grid grid-cols-3 items-center gap-3">
+        <div />
+        {seatBox("N")}
+        <div />
+        {seatBox("W")}
+        <div className="rounded-lg border border-dashed border-neutral-300 p-3 text-center">
+          <p className="mb-1 text-xs text-neutral-400">current trick</p>
+          {currentTrick?.plays.length ? (
+            <p className="space-x-2 text-sm">
+              {currentTrick.plays.map((p) => (
+                <span key={p.seat}>
+                  {p.seat}:<CardFace card={p.card} />
+                </span>
+              ))}
+              {currentTrick.winner && <span className="text-neutral-400">→ {currentTrick.winner}</span>}
+            </p>
+          ) : (
+            <p className="text-sm text-neutral-400">—</p>
+          )}
+        </div>
+        {seatBox("E")}
+        <div />
+        {seatBox("S")}
+        <div />
+      </div>
+
+      {/* Bidding box */}
+      {legalCallSet && (
+        <section className="rounded-lg border border-emerald-300 bg-emerald-50/40 p-4">
+          <h2 className="mb-2 text-sm font-medium text-emerald-900">
+            Your call ({state.turn})
+          </h2>
+          <div className="flex flex-wrap gap-1">
+            {[...legalCallSet]
+              .sort((a, b) => {
+                const order = (c: string) =>
+                  c === "P" ? 100 : c === "X" ? 101 : c === "XX" ? 102 : Number(c[0]) * 5 + "CDHSN".indexOf(c[1]!);
+                return order(a) - order(b);
+              })
+              .map((call) => (
+                <form key={call} action={humanBid} className="inline">
+                  <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+                  <input type="hidden" name="seat" value={state.turn} />
+                  <input type="hidden" name="call" value={call} />
+                  <button
+                    type="submit"
+                    className={`rounded border border-neutral-300 bg-white px-2 py-1 text-sm hover:bg-emerald-100 ${isRedStrain(call) ? "text-red-600" : ""}`}
+                  >
+                    {callLabel(call)}
+                  </button>
+                </form>
+              ))}
+          </div>
+        </section>
+      )}
+      {humansTurn && state.phase === "play" && (
+        <p className="text-sm text-emerald-800">
+          Your play — click a highlighted card{state.turn !== controllerOf(state.turn) ? "" : ""}
+          {dummy === state.turn ? " (you control dummy)" : ""}.
+        </p>
+      )}
+
+      {/* Controls */}
       <div className="flex gap-2">
-        <form action={stepSession}>
-          <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
-          <button className="rounded bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-900" disabled={state.phase === "complete"}>
-            Step AI
-          </button>
-        </form>
-        <form action={autoplaySession}>
-          <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
-          <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800" disabled={state.phase === "complete"}>
-            Play to end
-          </button>
-        </form>
+        {!isParticipant && (
+          <>
+            <form action={stepSession}>
+              <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+              <button className="rounded bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-900">
+                Step AI
+              </button>
+            </form>
+            <form action={autoplaySession}>
+              <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+              <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
+                Play to end
+              </button>
+            </form>
+          </>
+        )}
+        {isParticipant && !humansTurn && state.phase !== "complete" && (
+          <form action={autoplaySession}>
+            <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+            <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
+              Advance AI
+            </button>
+          </form>
+        )}
         <form action={undoSession}>
           <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
           <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50">
@@ -78,65 +277,85 @@ export default async function SessionPage({
         </form>
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border border-neutral-200 p-4">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
-            Position ({state.phase})
-          </h2>
-          <ul className="space-y-1 font-mono text-sm">
-            {(["N", "E", "S", "W"] as const).map((seat) => (
-              <li key={seat}>
-                {seat}: {handString(state.hands[seat])}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-sm">
-            {state.contract
-              ? `${contractLabel(state.contract)} — tricks NS ${state.trickCount.NS} / EW ${state.trickCount.EW}`
-              : state.phase === "complete"
-                ? "Passed out"
-                : `Turn: ${state.turn}`}
-          </p>
-        </div>
-        <div className="rounded-lg border border-neutral-200 p-4">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
-            Auction
-          </h2>
-          {bidLogic.length === 0 && <p className="text-sm text-neutral-500">No calls yet.</p>}
-          <ul className="space-y-1 text-sm">
-            {bidLogic.map((e) => (
-              <li key={e.seq}>
-                <span className="font-mono">{e.seat}: {callLabel(e.chosen)}</span>{" "}
-                <span className="text-neutral-500">← {e.reason}</span>
-                {e.fallback && <span className="ml-1 rounded bg-red-50 px-1 text-xs text-red-700">fallback</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
+      {/* Auction + decisions with Why links */}
       <section className="rounded-lg border border-neutral-200 p-4">
         <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
-          Event log ({events.length} events, seq-ordered)
+          Decisions — click “why?” to resolve any AI action to its cited source
         </h2>
-        <ul className="max-h-96 space-y-1 overflow-y-auto text-xs">
-          {events.map((e) => (
-            <li key={e.seq}>
-              <details>
-                <summary className="cursor-pointer font-mono">
-                  #{e.seq} {e.category}
-                  {"seat" in e ? ` · ${e.seat}` : ""}
-                  {isLogicEvent(e) ? ` · ${e.reason}` : ""}
-                  {"fallback" in e && e.fallback ? " · FALLBACK" : ""}
-                </summary>
-                <pre className="mt-1 overflow-x-auto rounded bg-neutral-50 p-2">
-                  {JSON.stringify(e, null, 2)}
-                </pre>
-              </details>
+        <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
+          {logicEvents.map((e) => (
+            <li key={e.seq} className={why === String(e.seq) ? "rounded bg-emerald-50 px-1" : "px-1"}>
+              <span className="font-mono">
+                {e.seat}:{" "}
+                {e.category === "bid-logic-event" ? callLabel(e.chosen) : <CardFace card={e.chosen} />}
+              </span>{" "}
+              <span className="text-neutral-500">← {e.reason}</span>
+              {e.fallback && (
+                <span className="ml-1 rounded bg-red-50 px-1 text-xs text-red-700">fallback</span>
+              )}
+              {e.matchedRuleId && (
+                <Link
+                  href={`/bridge/play/${record.bridgeSessionId}?why=${e.seq}`}
+                  className="ml-2 text-xs text-emerald-700 hover:underline"
+                >
+                  why?
+                </Link>
+              )}
             </li>
           ))}
         </ul>
       </section>
+
+      {/* Why panel */}
+      {whyEvent && (
+        <section className="rounded-lg border border-emerald-300 p-4">
+          <h2 className="mb-2 text-sm font-medium text-emerald-900">
+            Why {whyEvent.seat} chose{" "}
+            {whyEvent.category === "bid-logic-event" ? callLabel(whyEvent.chosen) : cardId(whyEvent.chosen)}{" "}
+            (event #{whyEvent.seq})
+          </h2>
+          <p className="text-sm text-neutral-700">{whyEvent.reason}</p>
+          {whyEvent.facts.hcp !== undefined && (
+            <p className="mt-1 text-xs text-neutral-500">
+              Facts: {whyEvent.facts.hcp} HCP, shape {String(whyEvent.facts.shape)}
+            </p>
+          )}
+          {whyProvenance && (
+            <div className="mt-3 space-y-2 border-t border-neutral-200 pt-3 text-sm">
+              {whyProvenance.items.map((item) => (
+                <div key={item.itemId}>
+                  <p className="font-medium">
+                    {item.title}{" "}
+                    <span className="text-xs font-normal text-neutral-500">
+                      ({item.itemId}, {item.itemType}, v{item.version}, {item.status})
+                    </span>
+                  </p>
+                  <p className="text-neutral-600">{item.humanReadableRule}</p>
+                </div>
+              ))}
+              <ul className="text-xs text-neutral-500">
+                {whyProvenance.citations.map((c, i) => (
+                  <li key={i}>
+                    ↳ {c.sourceId}: {c.passage}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <details className="mt-3 text-xs">
+            <summary className="cursor-pointer text-neutral-500">
+              Full rule trace ({whyEvent.trace.length} rules considered)
+            </summary>
+            <ul className="mt-1 space-y-0.5 font-mono">
+              {whyEvent.trace.map((r, i) => (
+                <li key={i} className={r.matched ? "text-emerald-700" : "text-neutral-400"}>
+                  {r.matched ? "✓" : "·"} {r.ruleId} — {r.reason}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </section>
+      )}
 
       <Link href="/bridge/play" className="text-sm text-emerald-700 hover:underline">
         ← All sessions

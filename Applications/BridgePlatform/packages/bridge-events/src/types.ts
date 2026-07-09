@@ -78,6 +78,8 @@ export interface PlayEvent extends EventBase {
 interface LogicBase extends EventBase {
   seat: Seat;
   fallback: boolean;
+  /** The rule the selection policy chose (resolves to knowledge items). */
+  matchedRuleId?: string;
   trace: RuleEval[];
   citedSettings: CitedSetting[];
   facts: Facts;
