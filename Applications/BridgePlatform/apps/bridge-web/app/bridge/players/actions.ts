@@ -41,3 +41,36 @@ export async function updateProfile(formData: FormData) {
   revalidatePath(`/bridge/players/${id}`);
   redirect(`/bridge/players/${id}`);
 }
+
+export async function customizeScope(formData: FormData) {
+  const context = await requireContext();
+  const copy = await (await profileService()).customizeScope(
+    String(formData.get("scopeId")),
+    context,
+  );
+  revalidatePath("/bridge/players");
+  void copy;
+  redirect("/bridge/players");
+}
+
+export async function updateScope(formData: FormData) {
+  const context = await requireContext();
+  const allowed = String(formData.get("requireIn") || "")
+    .split(",")
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean);
+  const reject = String(formData.get("rejectIn") || "")
+    .split(",")
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean);
+  await (await profileService()).updateScope(String(formData.get("scopeId")), context, {
+    name: String(formData.get("name") || "") || undefined,
+    evaluatorFilter: {
+      seats: "dealer",
+      ...(allowed.length ? { requireSystemicActionIn: allowed } : {}),
+      ...(reject.length ? { rejectIfSystemicActionIn: reject } : {}),
+    },
+  });
+  revalidatePath("/bridge/players");
+  redirect("/bridge/players");
+}

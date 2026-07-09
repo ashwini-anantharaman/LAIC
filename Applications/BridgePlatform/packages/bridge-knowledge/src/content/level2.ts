@@ -103,9 +103,9 @@ export const LEVEL2_ITEMS: BridgeReadableKnowledgeItem[] = [
     itemId: "ki_bn2_scope_level2",
     systemFamily: "natural",
     itemType: "teaching_scope",
-    title: "Level 2 practice scope: dealer opens a suit or 1NT",
+    title: "SUGGESTED Level-2 scope: dealer opens a suit or 1NT",
     humanReadableRule:
-      "Level 2 practice deals: the dealer's systemic action is any Level-2 opening (1♣/1♦/1♥/1♠/1NT) — never pass. Sets can also be generated EXCLUDING 1NT-best hands via the reject filter when drilling suit openings specifically.",
+      "FELLOW-SUGGESTED DEFAULT — coaches own their teaching scopes; this only seeds the system default. Suggested Level-2 practice deals: the dealer's systemic action is any Level-2 opening (1♣/1♦/1♥/1♠/1NT) — never pass. Sets can also be generated EXCLUDING 1NT-best hands via the reject filter when drilling suit openings specifically.",
     structuredFields: {
       scope: {
         scopeId: "bn_level2",

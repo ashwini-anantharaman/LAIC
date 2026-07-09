@@ -97,11 +97,37 @@ export function resolveProfileValues(
 }
 
 // ---------------------------------------------------------------------------
+// Teaching scopes — a COACH'S judgment, not system truth
+// ---------------------------------------------------------------------------
+// There is no objective "Level 1". Fellow-authored teaching_scope knowledge
+// items are SUGGESTED defaults only; the operative object is this record,
+// owned and editable by a coach (or org) exactly like an AI profile:
+// system entries are read-only suggestions, customize = copy-on-write.
+
+import type { EvaluatorFilterSpec } from "@bridge/dealer";
+
+export interface TeachingScopeRecord {
+  teachingScopeId: string;
+  name: string;
+  description?: string;
+  ownerType: "system" | "program_org" | "coach" | "learner";
+  ownerId?: string;
+  programOrganizationId?: string;
+  /** Lineage to the fellow-suggested knowledge item, when derived (not authority). */
+  derivedFromItemId?: string;
+  evaluatorFilter: EvaluatorFilterSpec;
+  targetConceptIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Store + tenant-scoped service
 // ---------------------------------------------------------------------------
 
 export interface ProfileStoreData {
   profiles: BridgeAiPlayerProfile[];
+  scopes?: TeachingScopeRecord[];
 }
 
 export class InMemoryProfileStore {
@@ -125,9 +151,28 @@ export class InMemoryProfileStore {
     else this.data.profiles.push(structuredClone(profile));
     this.persist();
   }
+  async listScopes(): Promise<TeachingScopeRecord[]> {
+    return structuredClone(this.data.scopes ?? []);
+  }
+  async getScope(id: string): Promise<TeachingScopeRecord | null> {
+    return structuredClone((this.data.scopes ?? []).find((x) => x.teachingScopeId === id) ?? null);
+  }
+  async saveScope(scope: TeachingScopeRecord): Promise<void> {
+    this.data.scopes = [
+      ...(this.data.scopes ?? []).filter((x) => x.teachingScopeId !== scope.teachingScopeId),
+      structuredClone(scope),
+    ];
+    this.persist();
+  }
 }
 
-export function canSeeProfile(p: BridgeAiPlayerProfile, ctx: NexusBridgeContext): boolean {
+interface Owned {
+  ownerType: "system" | "program_org" | "coach" | "learner";
+  ownerId?: string;
+  programOrganizationId?: string;
+}
+
+export function canSeeProfile(p: Owned, ctx: NexusBridgeContext): boolean {
   if (p.ownerType === "system") return true;
   if (p.ownerId === ctx.nexusUserId) return true;
   if (p.programOrganizationId && p.programOrganizationId === ctx.programOrganizationId) return true;
@@ -135,7 +180,7 @@ export function canSeeProfile(p: BridgeAiPlayerProfile, ctx: NexusBridgeContext)
   return false;
 }
 
-export function canEditProfile(p: BridgeAiPlayerProfile, ctx: NexusBridgeContext): boolean {
+export function canEditProfile(p: Owned, ctx: NexusBridgeContext): boolean {
   if (p.ownerType === "system") return false; // customize = copy, never edit
   if (p.ownerId === ctx.nexusUserId) return true;
   if (
@@ -212,6 +257,69 @@ export class ProfileService {
     };
     await this.store.save(updated);
     return updated;
+  }
+
+  // ---- teaching scopes (same ownership semantics as profiles) -------------
+
+  async listScopes(ctx: NexusBridgeContext): Promise<TeachingScopeRecord[]> {
+    return (await this.store.listScopes()).filter((s) => canSeeProfile(s, ctx));
+  }
+
+  async getScope(id: string, ctx: NexusBridgeContext): Promise<TeachingScopeRecord | null> {
+    const s = await this.store.getScope(id);
+    return s && canSeeProfile(s, ctx) ? s : null;
+  }
+
+  /** Copy a visible scope into the caller's ownership — their judgment now. */
+  async customizeScope(
+    sourceId: string,
+    ctx: NexusBridgeContext,
+    name?: string,
+  ): Promise<TeachingScopeRecord> {
+    const source = await this.getScope(sourceId, ctx);
+    if (!source) throw new Error("Teaching scope not found");
+    const copy: TeachingScopeRecord = {
+      ...source,
+      teachingScopeId: this.newId().replace("aip_", "ts_"),
+      name: name ?? `${source.name} (my judgment)`,
+      ownerType: ctx.accessLevel === "coach" ? "coach" : "learner",
+      ownerId: ctx.nexusUserId,
+      programOrganizationId: ctx.programOrganizationId,
+      createdAt: this.now(),
+      updatedAt: this.now(),
+    };
+    await this.store.saveScope(copy);
+    return copy;
+  }
+
+  async updateScope(
+    id: string,
+    ctx: NexusBridgeContext,
+    changes: Partial<Pick<TeachingScopeRecord, "name" | "description" | "evaluatorFilter" | "targetConceptIds">>,
+  ): Promise<TeachingScopeRecord> {
+    const s = await this.store.getScope(id);
+    if (!s || !canSeeProfile(s, ctx)) throw new Error("Teaching scope not found");
+    if (!canEditProfile(s, ctx))
+      throw new Error("System and foreign scopes are read-only — customize to make your own");
+    const updated = { ...s, ...changes, updatedAt: this.now() };
+    await this.store.saveScope(updated);
+    return updated;
+  }
+
+  /** Idempotent seed of a fellow-SUGGESTED default (read-only; customize to own). */
+  async ensureSystemScope(
+    scope: Omit<TeachingScopeRecord, "ownerType" | "createdAt" | "updatedAt">,
+  ): Promise<TeachingScopeRecord> {
+    const existing = await this.store.getScope(scope.teachingScopeId);
+    if (existing) return existing;
+    const record: TeachingScopeRecord = {
+      ...scope,
+      ownerType: "system",
+      createdAt: this.now(),
+      updatedAt: this.now(),
+    };
+    await this.store.saveScope(record);
+    return record;
   }
 
   /** Idempotent system-profile seed (dev bootstrap). */

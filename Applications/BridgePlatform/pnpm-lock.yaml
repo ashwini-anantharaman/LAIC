@@ -178,6 +178,9 @@ importers:
       '@bridge/config':
         specifier: workspace:*
         version: link:../bridge-config
+      '@bridge/dealer':
+        specifier: workspace:*
+        version: link:../bridge-dealer
       '@bridge/engine':
         specifier: workspace:*
         version: link:../bridge-engine

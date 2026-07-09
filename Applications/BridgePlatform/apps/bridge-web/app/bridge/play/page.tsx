@@ -9,7 +9,9 @@ export default async function PlayPage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const sessions = (await sessionService().listSessions(context)).slice().reverse();
-  const profiles = await (await profileService()).listProfiles(context);
+  const service = await profileService();
+  const profiles = await service.listProfiles(context);
+  const scopes = await service.listScopes(context);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -55,15 +57,23 @@ export default async function PlayPage() {
         action={createLevelPracticeSession}
         className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50/40 p-4"
       >
+        <select name="scopeId" className="rounded border border-neutral-300 px-2 py-1 text-sm">
+          {scopes.map((s) => (
+            <option key={s.teachingScopeId} value={s.teachingScopeId}>
+              {s.name}
+              {s.ownerType === "system" ? " (suggested default)" : " (yours)"}
+            </option>
+          ))}
+        </select>
         <button
           type="submit"
           className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
         >
-          Practice at my level
+          Practice at this level
         </button>
         <span className="text-xs text-neutral-600">
-          Level 1 scope: you deal and always hold a one-of-a-suit opening
-          (evaluator-filtered per teaching scope ki_bn_scope_level1).
+          Levels are coach judgment, not system truth — customize scopes on the
+          Players page. You deal; boards are evaluator-filtered to the scope.
         </span>
       </form>
 

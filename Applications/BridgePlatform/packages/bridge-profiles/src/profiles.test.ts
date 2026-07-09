@@ -167,3 +167,37 @@ describe("ownership scoping + copy-on-customize (locked decision 9.2)", () => {
     ).rejects.toThrow(/read-only/);
   });
 });
+
+describe("teaching scopes are coach judgment, not system truth", () => {
+  it("system scopes are read-only suggestions; coaches customize and redefine levels", async () => {
+    const service = new ProfileService(new InMemoryProfileStore(), () => "aip_s1", () => NOW);
+    const suggested = await service.ensureSystemScope({
+      teachingScopeId: "ts_system_bn_level1",
+      name: "Level 1 (suggested)",
+      derivedFromItemId: "ki_bn_scope_level1",
+      evaluatorFilter: { seats: "dealer", requireSystemicActionIn: ["1C", "1D", "1H", "1S"] },
+      targetConceptIds: ["bn_opening_bids"],
+    });
+    const coach = ctx({ nexusUserId: "user_carlos", accessLevel: "coach" });
+
+    await expect(
+      service.updateScope(suggested.teachingScopeId, coach, { name: "mine" }),
+    ).rejects.toThrow(/read-only/);
+
+    const own = await service.customizeScope(suggested.teachingScopeId, coach);
+    expect(own.ownerType).toBe("coach");
+    expect(own.derivedFromItemId).toBe("ki_bn_scope_level1"); // lineage, not authority
+
+    // The coach redefines what "Level 1" means for their learners.
+    const updated = await service.updateScope(own.teachingScopeId, coach, {
+      evaluatorFilter: { seats: "dealer", requireSystemicActionIn: ["1H", "1S"] },
+    });
+    expect(updated.evaluatorFilter.requireSystemicActionIn).toEqual(["1H", "1S"]);
+
+    // Other-org users don't see the coach's scope; the suggestion stays visible.
+    const otherOrg = ctx({ nexusUserId: "x", programOrganizationId: "bporg_other" });
+    expect((await service.listScopes(otherOrg)).map((s) => s.teachingScopeId)).toEqual([
+      "ts_system_bn_level1",
+    ]);
+  });
+});
