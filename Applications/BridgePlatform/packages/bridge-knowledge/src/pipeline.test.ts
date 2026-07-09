@@ -1,12 +1,13 @@
-// Phase 3 acceptance: register -> author -> approve -> generate -> diff ->
-// publish; immutability; correction loop; full lineage; publish gate.
+// Knowledge pipeline acceptance: register -> author -> generate -> diff;
+// per-version immutability; correction + deprecation loops; full lineage;
+// citation coverage as warnings (revised decision 3: no approval gates).
 
 import { describe, expect, it } from "vitest";
 import {
   BEGINNER_NATURAL_PACKAGE_ID,
   BEGINNER_NATURAL_V0_SEED,
 } from "./content/beginnerNaturalV0";
-import { publishPackage, runGeneration } from "./generate";
+import { runGeneration } from "./generate";
 import { resolveRuleProvenance } from "./resolve";
 import { InMemoryKnowledgeStore } from "./store";
 
@@ -22,8 +23,8 @@ const generate = (store: InMemoryKnowledgeStore, runId = "run_1") =>
     runId,
   });
 
-describe("generation + publication pipeline", () => {
-  it("generates a validated draft package from approved items, with a diff", async () => {
+describe("generation pipeline", () => {
+  it("generates a validated, immediately usable package from active items, with a diff", async () => {
     const store = freshStore();
     const run = await generate(store);
 
@@ -40,65 +41,86 @@ describe("generation + publication pipeline", () => {
     // Input snapshot recorded for replayability.
     expect(run.inputItems.length).toBeGreaterThan(10);
 
-    const draft = await store.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0");
-    expect(draft?.status).toBe("draft");
+    const record = await store.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0");
+    expect(record?.status).toBe("active");
+    expect(record?.pkg.status).toBe("active");
+    // Usable immediately: getLatest resolves to it, baseline measured.
+    expect((await store.getLatest(BEGINNER_NATURAL_PACKAGE_ID))?.version).toBe("0.1.0");
+    expect(record?.baseline?.boards).toBeGreaterThan(0);
   });
 
-  it("publishes with every entry approved and full lineage", async () => {
+  it("every generated rule and artifact carries full lineage", async () => {
     const store = freshStore();
     await generate(store);
-    const published = await publishPackage(
-      store,
-      BEGINNER_NATURAL_PACKAGE_ID,
-      "0.1.0",
-      "user_reviewer_rhea",
-      NOW,
-    );
+    const record = (await store.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0"))!;
 
-    expect(published.status).toBe("published");
-    expect(published.pkg.status).toBe("published");
-    // Zero unreviewed entries; every rule cites items AND sources.
-    for (const rule of [...published.pkg.bidRules, ...published.pkg.playRules]) {
-      expect(rule.provenance.reviewStatus).toBe("approved");
+    for (const rule of [...record.pkg.bidRules, ...record.pkg.playRules]) {
       expect(rule.provenance.knowledgeItemIds.length).toBeGreaterThan(0);
       expect(rule.provenance.sourceIds.length).toBeGreaterThan(0);
     }
-    // Every artifact carries lineage.
-    for (const a of published.artifacts) {
-      expect(a.status).toBe("published");
+    for (const a of record.artifacts) {
+      expect(a.status).toBe("active");
       expect(a.generatedFromKnowledgeItemIds.length).toBeGreaterThan(0);
     }
   });
 
-  it("published versions are immutable", async () => {
+  it("uncited items still generate, but the run warns about them", async () => {
     const store = freshStore();
-    await generate(store);
-    const published = await publishPackage(
-      store,
-      BEGINNER_NATURAL_PACKAGE_ID,
-      "0.1.0",
-      "user_reviewer_rhea",
-      NOW,
-    );
-    await expect(store.savePackage({ ...published, createdAt: "later" })).rejects.toThrow(
-      /immutable/,
-    );
-    await expect(
-      publishPackage(store, BEGINNER_NATURAL_PACKAGE_ID, "0.1.0", "again", NOW),
-    ).rejects.toThrow(/already published/);
+    const item = (await store.getItem("ki_bn_raise_partner"))!;
+    await store.saveItem({ ...item, version: "2", citations: [], sourceIds: [] });
+
+    const run = await generate(store);
+    expect(run.status).toBe("completed");
+    expect(run.warnings?.some((w) => w.includes("ki_bn_raise_partner") && w.includes("uncited"))).toBe(true);
+    // The rule is present regardless — visibility, not a gate.
+    const record = (await store.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0"))!;
+    expect(record.pkg.bidRules.some((r) => r.ruleId === "bn_single_raise")).toBe(true);
   });
 
-  it("correction loop: edit -> re-approve -> regenerate creates a new version; old untouched", async () => {
+  it("a version's rule content is immutable; artifacts may be appended", async () => {
     const store = freshStore();
     await generate(store);
-    await publishPackage(store, BEGINNER_NATURAL_PACKAGE_ID, "0.1.0", "user_reviewer_rhea", NOW);
+    const record = (await store.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0"))!;
 
-    // Reviewer edits the raise rule: 6-10 -> 6-9 (status drops to needs_review).
+    // Changing rule content in place is rejected.
+    await expect(
+      store.savePackage({
+        ...record,
+        pkg: { ...record.pkg, bidRules: record.pkg.bidRules.slice(1) },
+      }),
+    ).rejects.toThrow(/immutable/);
+
+    // Appending artifacts (e.g. test boards) with identical pkg is fine.
+    await store.savePackage({
+      ...record,
+      artifacts: [
+        ...record.artifacts,
+        {
+          artifactId: `${record.packageId}@${record.version}/test_board:0`,
+          artifactType: "test_board_reference",
+          generatedFromKnowledgeItemIds: ["ki_bn_scope_level1"],
+          generatedFromSourceIds: [],
+          packageId: record.packageId,
+          version: record.version,
+          status: "active",
+          artifactPayload: { boards: [] },
+        },
+      ],
+    });
+    const updated = (await store.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0"))!;
+    expect(updated.artifacts.some((a) => a.artifactType === "test_board_reference")).toBe(true);
+  });
+
+  it("correction loop: edit -> regenerate creates a new version; old untouched", async () => {
+    const store = freshStore();
+    await generate(store);
+
+    // Coach edits the raise rule: 6-10 -> 6-9. No approval step — the edit
+    // bumps the version and the next generation picks it up.
     const item = (await store.getItem("ki_bn_raise_partner"))!;
-    const edited = {
+    await store.saveItem({
       ...item,
       version: "2",
-      status: "needs_review" as const,
       humanReadableRule: item.humanReadableRule.replace("6–10", "6–9"),
       structuredFields: {
         rule: {
@@ -111,17 +133,10 @@ describe("generation + publication pipeline", () => {
           },
         },
       },
-    };
-    await store.saveItem(edited);
+    });
     expect((await store.listItemRevisions("ki_bn_raise_partner")).length).toBe(1);
 
-    // Unapproved items are EXCLUDED from generation — the rule would vanish.
-    const runWithout = await generate(store, "run_2");
-    expect(runWithout.diff?.bidRules.some((d) => d.id === "bn_single_raise" && d.change === "removed")).toBe(true);
-
-    // Re-approve, regenerate: new version with the changed rule; 0.1.0 intact.
-    await store.saveItem({ ...edited, status: "approved", approvedBy: "user_reviewer_rhea", approvedAt: NOW });
-    const run = await generate(store, "run_3");
+    const run = await generate(store, "run_2");
     expect(run.resultVersion).toBe("0.2.0");
     expect(run.diff?.previousVersion).toBe("0.1.0");
     expect(run.diff?.bidRules).toEqual([{ id: "bn_single_raise", change: "changed" }]);
@@ -131,10 +146,23 @@ describe("generation + publication pipeline", () => {
     expect(JSON.stringify(oldRule.handConditions)).toContain('"max":10');
   });
 
+  it("deprecating an item removes its rule from the NEXT version only", async () => {
+    const store = freshStore();
+    await generate(store);
+
+    const item = (await store.getItem("ki_bn_raise_partner"))!;
+    await store.saveItem({ ...item, status: "deprecated" });
+
+    const run = await generate(store, "run_2");
+    expect(run.diff?.bidRules).toEqual([{ id: "bn_single_raise", change: "removed" }]);
+    // The pinned old version still resolves the rule (provenance stays truthful).
+    const old = await store.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0");
+    expect(old!.pkg.bidRules.some((r) => r.ruleId === "bn_single_raise")).toBe(true);
+  });
+
   it("resolves a runtime rule id back to readable items and cited sources", async () => {
     const store = freshStore();
     await generate(store);
-    await publishPackage(store, BEGINNER_NATURAL_PACKAGE_ID, "0.1.0", "user_reviewer_rhea", NOW);
 
     const resolved = await resolveRuleProvenance(
       store,

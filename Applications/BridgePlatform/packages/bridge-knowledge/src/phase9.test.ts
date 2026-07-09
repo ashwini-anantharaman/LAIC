@@ -1,15 +1,14 @@
-// Phase 9 acceptance: extraction candidates always land as needs_review (the
-// LLM/extractor boundary is enforced by the job runner); prototype-registry
-// reconciliation produces reviewable candidates; §19.3 gates warn on
-// unreferenced settings and record a golden-board baseline at publication;
-// the Level-2 growth loop publishes 0.2.0 whose 1NT opening makes the
-// dealer's NT-reject filter real.
+// Phase 9 acceptance: extraction lands attributed, editable items (badged
+// uncited until matched to passages); prototype-registry reconciliation
+// produces candidates; §19.3 checks warn on unreferenced settings and record
+// a golden-board baseline at generation; the Level-2 growth loop generates
+// 0.2.0 whose 1NT opening makes the dealer's NT-reject filter real.
 
 import { defaultSettingValues } from "@bridge/config";
 import { describe, expect, it } from "vitest";
 import { BEGINNER_NATURAL_PACKAGE_ID, BEGINNER_NATURAL_V0_SEED } from "./content/beginnerNaturalV0";
 import { LEVEL2_GAPS, LEVEL2_ITEMS } from "./content/level2";
-import { publishPackage, runGeneration } from "./generate";
+import { runGeneration } from "./generate";
 import { LlmExtractor, PrototypeRegistryExtractor, runIngestion } from "./ingest";
 import { InMemoryKnowledgeStore } from "./store";
 
@@ -40,7 +39,7 @@ export const SETTINGS: Setting[] = [
 `;
 
 describe("ingestion jobs", () => {
-  it("prototype-registry candidates land as needs_review with flags and lineage", async () => {
+  it("prototype-registry candidates land active with flags and lineage", async () => {
     const store = new InMemoryKnowledgeStore(BEGINNER_NATURAL_V0_SEED);
     const job = await runIngestion(store, new PrototypeRegistryExtractor(), {
       sourceId: "src_prototype_artifacts",
@@ -54,13 +53,13 @@ describe("ingestion jobs", () => {
     expect(job.status).toBe("completed");
     expect(job.stats.candidatesCreated).toBe(2); // broken entry skipped, not guessed
     const item = (await store.getItem("cand_proto_nt1_range"))!;
-    expect(item.status).toBe("needs_review"); // NEVER approved by extraction
+    expect(item.status).toBe("active"); // editable content, badged uncited
     expect(item.sourceIds).toEqual(["src_prototype_artifacts"]);
     expect(item.citations[0]!.passage).toContain('key="nt1_range"');
     expect(item.reviewerNotes).toContain("default value NOT carried over");
     expect((await store.getSource("src_prototype_artifacts"))!.status).toBe("ingested");
 
-    // Re-running never clobbers items under review.
+    // Re-running never clobbers existing items.
     const again = await runIngestion(store, new PrototypeRegistryExtractor(), {
       sourceId: "src_prototype_artifacts",
       sourceText: REGISTRY_SNIPPET,
@@ -116,32 +115,31 @@ describe("§19.3 quality gates", () => {
     ]);
   });
 
-  it("publication records a golden-board fallback baseline", async () => {
+  it("generation records a golden-board fallback baseline", async () => {
     const store = new InMemoryKnowledgeStore(BEGINNER_NATURAL_V0_SEED);
     await runGeneration(store, { systemFamily: "natural", requestedBy: "t", now: NOW, runId: "r" });
-    const rec = await publishPackage(store, BEGINNER_NATURAL_PACKAGE_ID, "0.1.0", "t", NOW);
+    const rec = (await store.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0"))!;
     expect(rec.baseline).toEqual({ boards: 5, bidFallbackRate: 0, playFallbackRate: 0 });
   });
 });
 
 describe("Level 2 growth loop", () => {
-  it("publishes 0.2.0 with the 1NT opening; the NT dealer filter is now real", async () => {
+  it("generates the 1NT opening; the NT dealer filter is now real", async () => {
     const seed = structuredClone(BEGINNER_NATURAL_V0_SEED);
     seed.items!.push(...LEVEL2_ITEMS);
     seed.gaps!.push(...LEVEL2_GAPS);
     const store = new InMemoryKnowledgeStore(seed);
 
-    const r1 = await runGeneration(store, { systemFamily: "natural", requestedBy: "t", now: NOW, runId: "r1" });
-    await publishPackage(store, BEGINNER_NATURAL_PACKAGE_ID, r1.resultVersion!, "t", NOW);
+    await runGeneration(store, { systemFamily: "natural", requestedBy: "t", now: NOW, runId: "r1" });
     const r2 = await runGeneration(store, { systemFamily: "natural", requestedBy: "t", now: NOW, runId: "r2" });
-    // First publish already contained Level 2 (seeded); regen shows no diff…
+    // First generation already contained Level 2 (seeded); regen shows no diff…
     expect(r2.diff?.bidRules).toEqual([]);
 
-    const rec = (await store.getLatestPublished(BEGINNER_NATURAL_PACKAGE_ID))!;
+    const rec = (await store.getLatest(BEGINNER_NATURAL_PACKAGE_ID))!;
     expect(rec.pkg.bidRules.some((r) => r.ruleId === "bn2_open_1nt")).toBe(true);
     expect(rec.baseline).toBeDefined();
 
-    // The user's original example against the REAL published package:
+    // The user's original example against the REAL generated package:
     const { generateConstrainedBoards, systemicOpeningAction, verifyBoards } = await import(
       "@bridge/dealer"
     );

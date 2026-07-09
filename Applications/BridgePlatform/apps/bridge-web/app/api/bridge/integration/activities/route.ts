@@ -4,7 +4,7 @@ import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
 import { NextResponse, type NextRequest } from "next/server";
 import { apiError, requireContext } from "@/lib/api";
 import { profileService } from "@/lib/profiles";
-import { latestPublishedPackage, sessionService } from "@/lib/sessions";
+import { latestPackage, sessionService } from "@/lib/sessions";
 
 /**
  * Learning Platform domain-activity contract, bridge side (LP §13.3):
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       (await service.listScopes(context))[0];
     if (!scope) return NextResponse.json({ error: "No teaching scope available" }, { status: 409 });
 
-    const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+    const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
     const values = defaultSettingValues(pkg.settings);
     const seed = body.seed ?? Math.floor(Math.random() * 1_000_000);
     const board = generateConstrainedBoards(

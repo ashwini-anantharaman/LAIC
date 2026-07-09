@@ -7,7 +7,7 @@ import type {
   BridgeKnowledgeSource,
   BridgeReadableKnowledgeItem,
   KnowledgeStore,
-  PublishedPackageRecord,
+  RulePackageRecord,
 } from "@bridge/knowledge";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { check } from "./client";
@@ -34,7 +34,8 @@ const itemToRow = (i: BridgeReadableKnowledgeItem) => ({
   citations: i.citations, related_item_ids: i.relatedItemIds ?? [],
   gap_ids: i.gapIds, reviewer_notes: i.reviewerNotes ?? null, status: i.status,
   version: i.version, created_by: i.createdBy, created_at: i.createdAt,
-  approved_by: i.approvedBy ?? null, approved_at: i.approvedAt ?? null,
+  // approved_by/approved_at columns retired by the Phase 13 de-governance.
+  approved_by: null, approved_at: null,
 });
 const rowToItem = (r: any): BridgeReadableKnowledgeItem => ({
   itemId: r.item_id, systemFamily: r.system_family, itemType: r.item_type,
@@ -43,9 +44,9 @@ const rowToItem = (r: any): BridgeReadableKnowledgeItem => ({
   citations: r.citations ?? [],
   relatedItemIds: (r.related_item_ids ?? []).length ? r.related_item_ids : undefined,
   gapIds: r.gap_ids ?? [], reviewerNotes: r.reviewer_notes ?? undefined,
-  status: r.status, version: r.version, createdBy: r.created_by,
-  createdAt: r.created_at, approvedBy: r.approved_by ?? undefined,
-  approvedAt: r.approved_at ?? undefined,
+  // Legacy statuses (draft/needs_review/approved) read as active.
+  status: r.status === "deprecated" ? "deprecated" : "active",
+  version: r.version, createdBy: r.created_by, createdAt: r.created_at,
 });
 
 const gapToRow = (g: BridgeKnowledgeGap) => ({
@@ -175,47 +176,48 @@ export class PgKnowledgeStore implements KnowledgeStore {
     );
     return rows.length ? this.rowToPackage(rows[0]) : null;
   }
-  async getLatestPublished(packageId: string) {
+  async getLatest(packageId: string) {
     const rows = check(
-      await this.db.from("bridge_published_packages").select("*").eq("package_id", packageId).eq("status", "published"),
-      "getLatestPublished",
+      await this.db.from("bridge_published_packages").select("*").eq("package_id", packageId).neq("status", "deprecated"),
+      "getLatest",
     );
     if (!rows.length) return null;
     const best = rows.reduce((a: any, b: any) => (semverGt(b.version, a.version) ? b : a));
     return this.rowToPackage(best);
   }
-  private async rowToPackage(r: any): Promise<PublishedPackageRecord> {
+  private async rowToPackage(r: any): Promise<RulePackageRecord> {
     const artifacts = check(
       await this.db.from("bridge_generated_artifacts").select("*").eq("package_id", r.package_id).eq("version", r.version),
       "rowToPackage(artifacts)",
     );
     return {
-      packageId: r.package_id, version: r.version, status: r.status,
-      createdAt: r.created_at, publishedBy: r.published_by ?? undefined,
-      publishedAt: r.published_at ?? undefined, pkg: r.package,
+      packageId: r.package_id, version: r.version,
+      status: r.status === "deprecated" ? ("deprecated" as const) : ("active" as const),
+      createdAt: r.created_at, pkg: r.package,
       baseline: r.baseline ?? undefined,
       artifacts: artifacts.map((a: any) => ({
         artifactId: a.artifact_id, artifactType: a.artifact_type,
         generatedFromKnowledgeItemIds: a.generated_from_knowledge_item_ids ?? [],
         generatedFromSourceIds: a.generated_from_source_ids ?? [],
-        packageId: a.package_id, version: a.version, status: a.status,
+        packageId: a.package_id, version: a.version,
+        status: a.status === "deprecated" ? ("deprecated" as const) : ("active" as const),
         artifactPayload: a.artifact_payload,
       })),
     };
   }
-  async savePackage(record: PublishedPackageRecord) {
+  async savePackage(record: RulePackageRecord) {
     const existing = check(
-      await this.db.from("bridge_published_packages").select("status").eq("package_id", record.packageId).eq("version", record.version),
+      await this.db.from("bridge_published_packages").select("package").eq("package_id", record.packageId).eq("version", record.version),
       "savePackage(check)",
     );
-    if (existing.length && existing[0]!.status === "published")
+    if (existing.length && JSON.stringify((existing[0] as any).package) !== JSON.stringify(record.pkg))
       throw new Error(
-        `${record.packageId}@${record.version} is published and immutable — publish a new version instead`,
+        `${record.packageId}@${record.version} rule content is immutable — generate a new version instead`,
       );
     check(await this.db.from("bridge_published_packages").upsert({
       package_id: record.packageId, version: record.version, status: record.status,
-      created_at: record.createdAt, published_by: record.publishedBy ?? null,
-      published_at: record.publishedAt ?? null, package: record.pkg, baseline: record.baseline ?? null,
+      created_at: record.createdAt, published_by: null, published_at: null,
+      package: record.pkg, baseline: record.baseline ?? null,
     }, { onConflict: "package_id,version" }), "savePackage");
     // Replace this version's artifacts atomically-enough for dev/team use.
     check(await this.db.from("bridge_generated_artifacts").delete().eq("package_id", record.packageId).eq("version", record.version), "savePackage(clear artifacts)");

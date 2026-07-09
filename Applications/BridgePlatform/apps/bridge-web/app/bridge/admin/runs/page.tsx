@@ -29,7 +29,8 @@ export default async function RunsPage() {
           Run generation
         </button>
         <span className="text-xs text-neutral-500">
-          Assembles approved items into a validated draft package + diff.
+          Assembles active items into a validated, immediately usable package
+          version + diff.
         </span>
       </form>
 
@@ -39,12 +40,9 @@ export default async function RunsPage() {
           {packages.map((p) => (
             <li key={`${p.packageId}@${p.version}`} className="rounded border border-neutral-200 px-3 py-2 text-sm">
               <span className="font-mono">{p.packageId}@{p.version}</span>{" "}
-              <span className={p.status === "published" ? "text-emerald-700" : "text-amber-700"}>
+              <span className={p.status === "deprecated" ? "text-red-700" : "text-emerald-700"}>
                 {p.status}
               </span>
-              {p.publishedBy && (
-                <span className="text-xs text-neutral-500"> — published by {p.publishedBy}</span>
-              )}
               {p.baseline && (
                 <span className="text-xs text-neutral-500">
                   {" "}· baseline: {p.baseline.boards} boards, fallback bid{" "}

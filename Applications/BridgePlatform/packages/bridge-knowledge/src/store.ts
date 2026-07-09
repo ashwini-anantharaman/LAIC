@@ -10,7 +10,7 @@ import type {
   BridgeKnowledgeGap,
   BridgeKnowledgeSource,
   BridgeReadableKnowledgeItem,
-  PublishedPackageRecord,
+  RulePackageRecord,
 } from "./model";
 
 export interface KnowledgeStoreData {
@@ -21,7 +21,7 @@ export interface KnowledgeStoreData {
   itemRevisions: BridgeReadableKnowledgeItem[];
   gaps: BridgeKnowledgeGap[];
   runs: BridgeGenerationRun[];
-  packages: PublishedPackageRecord[];
+  packages: RulePackageRecord[];
 }
 
 export const emptyStoreData = (): KnowledgeStoreData => ({
@@ -62,14 +62,16 @@ export interface KnowledgeStore {
   getRun(runId: string): Promise<BridgeGenerationRun | null>;
   saveRun(run: BridgeGenerationRun): Promise<void>;
 
-  listPackages(): Promise<PublishedPackageRecord[]>;
-  getPackage(packageId: string, version: string): Promise<PublishedPackageRecord | null>;
-  getLatestPublished(packageId: string): Promise<PublishedPackageRecord | null>;
+  listPackages(): Promise<RulePackageRecord[]>;
+  getPackage(packageId: string, version: string): Promise<RulePackageRecord | null>;
+  /** Latest non-deprecated version by semver. */
+  getLatest(packageId: string): Promise<RulePackageRecord | null>;
   /**
-   * Upsert a package record. Throws when attempting to overwrite a version
-   * already published (published packages are immutable — Bridge plan §12.8).
+   * Upsert a package record. A version's RULE CONTENT is immutable once
+   * written (sessions pin versions for replay/provenance): overwriting with a
+   * different pkg throws. Artifacts, status, and baseline may still update.
    */
-  savePackage(record: PublishedPackageRecord): Promise<void>;
+  savePackage(record: RulePackageRecord): Promise<void>;
 }
 
 const semverGt = (a: string, b: string): boolean => {
@@ -173,21 +175,21 @@ export class InMemoryKnowledgeStore implements KnowledgeStore {
       this.data.packages.find((p) => p.packageId === packageId && p.version === version) ?? null
     );
   }
-  async getLatestPublished(packageId: string) {
-    const published = this.data.packages.filter(
-      (p) => p.packageId === packageId && p.status === "published",
+  async getLatest(packageId: string) {
+    const candidates = this.data.packages.filter(
+      (p) => p.packageId === packageId && p.status !== "deprecated",
     );
-    if (!published.length) return null;
-    return published.reduce((a, b) => (semverGt(b.version, a.version) ? b : a));
+    if (!candidates.length) return null;
+    return candidates.reduce((a, b) => (semverGt(b.version, a.version) ? b : a));
   }
-  async savePackage(record: PublishedPackageRecord) {
+  async savePackage(record: RulePackageRecord) {
     const i = this.data.packages.findIndex(
       (p) => p.packageId === record.packageId && p.version === record.version,
     );
     if (i >= 0) {
-      if (this.data.packages[i]!.status === "published")
+      if (JSON.stringify(this.data.packages[i]!.pkg) !== JSON.stringify(record.pkg))
         throw new Error(
-          `${record.packageId}@${record.version} is published and immutable — publish a new version instead`,
+          `${record.packageId}@${record.version} rule content is immutable — generate a new version instead`,
         );
       this.data.packages[i] = structuredClone(record);
     } else {

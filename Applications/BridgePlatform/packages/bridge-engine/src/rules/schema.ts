@@ -1,29 +1,24 @@
-// The rule-package schema: rules are DATA in versioned, published packages —
-// never hand-edited code (execution plan §1, locked decision 1). Every entry
+// The rule-package schema: rules are DATA in versioned packages — never
+// hand-edited code (execution plan §1, locked decision 1). Every entry
 // carries provenance back to human-readable knowledge items and cited sources
-// (Bridge plan §12.10 step 9, §12.11). The engine's interpreter evaluates
-// these entries against a position; the predicate library supplies the named
+// (Bridge plan §12.10 step 9, §12.11): click a bid → the rule → the readable
+// item → the passage it came from. The engine's interpreter evaluates these
+// entries against a position; the predicate library supplies the named
 // building blocks.
 
 import type { Setting, SettingValue } from "@bridge/config";
 import type { Call } from "@bridge/events";
 
-export type PackageStatus = "draft" | "review" | "published" | "deprecated";
+export type PackageStatus = "active" | "deprecated";
 
 /**
- * Provenance gate (locked decision 3): `published` packages require every
- * entry to be `approved`; prototype-derived unreviewed entries may appear in
- * draft/review packages only, always visibly flagged.
+ * Provenance (revised decision 3): the link chain rule → knowledge items →
+ * sources. Empty provenance is allowed but surfaced as a generation warning
+ * and an "uncited" badge in the UI — visibility, not a gate.
  */
-export type ReviewStatus =
-  | "approved"
-  | "unreviewed_prototype_derived"
-  | "needs_review";
-
 export interface RuleProvenance {
   knowledgeItemIds: string[];
   sourceIds: string[];
-  reviewStatus: ReviewStatus;
 }
 
 /** A config setting that must hold for the rule to be active. */
@@ -152,7 +147,9 @@ export interface BridgeRulePackage {
 }
 
 // ---------------------------------------------------------------------------
-// Validation (Phase 3's publication pipeline runs this; tests use it too)
+// Validation: STRUCTURAL checks only (unknown predicates/primitives, bad
+// regexes, duplicate ids, dangling setting refs). Citation coverage is a
+// generation-run warning, not a validation error (revised decision 3).
 // ---------------------------------------------------------------------------
 
 export function validatePackage(
@@ -175,12 +172,6 @@ export function validatePackage(
   for (const rule of [...pkg.bidRules, ...pkg.playRules]) {
     if (ids.has(rule.ruleId)) errors.push(`duplicate ruleId "${rule.ruleId}"`);
     ids.add(rule.ruleId);
-    if (pkg.status === "published" && rule.provenance.reviewStatus !== "approved")
-      errors.push(
-        `${rule.ruleId}: status "${rule.provenance.reviewStatus}" not allowed in a published package`,
-      );
-    if (!rule.provenance.knowledgeItemIds.length || !rule.provenance.sourceIds.length)
-      errors.push(`${rule.ruleId}: provenance must cite knowledge items and sources`);
     for (const gate of rule.settingGates)
       if (!settingKeys.has(gate.key))
         errors.push(`${rule.ruleId}: settingGate references unknown setting "${gate.key}"`);

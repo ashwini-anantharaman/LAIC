@@ -1,13 +1,15 @@
 // Server-side singleton profile service; system profile seeded from the
-// latest published package on first use.
+// latest package version on first use.
 
 import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
+import { PgProfileStore } from "@bridge/pg-stores";
 import { ProfileService, type TeachingScopeRecord } from "@bridge/profiles";
 import type { EvaluatorFilterSpec } from "@bridge/dealer";
+import { pgClient, storeBackend } from "./backend";
 import { knowledgeStore } from "./knowledge";
 import { JsonFileProfileStore } from "@bridge/profiles/fileStore";
 import { join } from "node:path";
-import { latestPublishedPackage } from "./sessions";
+import { latestPackage } from "./sessions";
 
 const globalCache = globalThis as unknown as { __bridgeProfileService?: ProfileService };
 
@@ -18,7 +20,7 @@ export async function profileService(): Promise<ProfileService> {
         ? new PgProfileStore(pgClient())
         : new JsonFileProfileStore(join(process.cwd(), ".data", "profile-store.json")),
     );
-    const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+    const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
     await service.ensureSystemProfile(
       { packageId: pkg.packageId, version: pkg.version },
       pkg.settings,
@@ -28,7 +30,7 @@ export async function profileService(): Promise<ProfileService> {
     const kstore = knowledgeStore();
     for (const itemId of ["ki_bn_scope_level1", "ki_bn2_scope_level2"]) {
       const item = await kstore.getItem(itemId);
-      if (item?.status !== "approved") continue;
+      if (item?.status !== "active") continue;
       const scope = item.structuredFields.scope as {
         scopeId: string;
         evaluatorFilter: EvaluatorFilterSpec;

@@ -49,7 +49,7 @@ export default async function PlayPage() {
           Deal a board
         </button>
         <span className="text-xs text-neutral-500">
-          Latest published Beginner Natural package.
+          Latest Beginner Natural package version.
         </span>
       </form>
 

@@ -3,7 +3,6 @@
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import {
   PrototypeRegistryExtractor,
-  publishPackage,
   runGeneration,
   runIngestion,
   type BridgeKnowledgeSource,
@@ -60,17 +59,15 @@ export async function saveItemEdit(formData: FormData) {
     throw new Error("structuredFields must be valid JSON");
   }
 
-  // Any edit sends the item back to review (correction loop §12.10 step 10).
+  // Edits bump the version (revision history keeps the old one); packages
+  // already generated are pinned to the version they consumed.
   const edited: BridgeReadableKnowledgeItem = {
     ...existing,
     title: str(formData, "title"),
     humanReadableRule: str(formData, "humanReadableRule"),
     structuredFields,
     reviewerNotes: (formData.get("reviewerNotes") as string) || existing.reviewerNotes,
-    status: "needs_review",
     version: String(Number(existing.version) + 1),
-    approvedBy: undefined,
-    approvedAt: undefined,
     createdBy: existing.createdBy,
   };
   void context;
@@ -80,18 +77,13 @@ export async function saveItemEdit(formData: FormData) {
 }
 
 export async function setItemStatus(formData: FormData) {
-  const context = await requireReviewer();
+  await requireReviewer();
   const store = knowledgeStore();
   const itemId = str(formData, "itemId");
   const status = str(formData, "status") as BridgeReadableKnowledgeItem["status"];
   const existing = await store.getItem(itemId);
   if (!existing) throw new Error(`No item ${itemId}`);
-  await store.saveItem({
-    ...existing,
-    status,
-    approvedBy: status === "approved" ? context.nexusUserId : undefined,
-    approvedAt: status === "approved" ? new Date().toISOString() : undefined,
-  });
+  await store.saveItem({ ...existing, status });
   revalidatePath(`/bridge/admin/knowledge`);
   redirect(`/bridge/admin/knowledge/${itemId}`);
 }
@@ -124,22 +116,9 @@ export async function triggerGeneration(formData: FormData) {
   redirect(`/bridge/admin/runs/${run.runId}`);
 }
 
-export async function publishGeneratedPackage(formData: FormData) {
-  const context = await requireReviewer();
-  await publishPackage(
-    knowledgeStore(),
-    str(formData, "packageId"),
-    str(formData, "version"),
-    context.nexusUserId,
-    new Date().toISOString(),
-  );
-  revalidatePath("/bridge/admin/runs");
-  redirect(`/bridge/admin/runs`);
-}
-
 /**
- * Deterministic extraction of the bridgebot prototype's setting registry into
- * needs_review candidates (Phase 9 reconciliation: match-to-source or reject).
+ * Deterministic extraction of the bridgebot prototype's setting registry
+ * (Phase 9 reconciliation: items land active but uncited until matched).
  */
 export async function extractPrototypeRegistry() {
   const context = await requireReviewer();

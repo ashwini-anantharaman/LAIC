@@ -9,7 +9,6 @@ import {
   BEGINNER_NATURAL_PACKAGE_ID,
   BEGINNER_NATURAL_V0_SEED,
   InMemoryKnowledgeStore,
-  publishPackage,
   runGeneration,
 } from "@bridge/knowledge";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
@@ -41,8 +40,7 @@ beforeAll(async () => {
     now: NOW,
     runId: "run_sessions",
   });
-  const record = await publishPackage(kstore, BEGINNER_NATURAL_PACKAGE_ID, "0.1.0", "test", NOW);
-  pkg = record.pkg;
+  pkg = (await kstore.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0"))!.pkg;
 });
 
 function makeService() {
@@ -137,17 +135,17 @@ describe("session persistence", () => {
     expect(logic.fallback).toBe(false);
   });
 
-  it("refuses to create sessions against non-published packages", async () => {
+  it("refuses to create sessions against deprecated packages", async () => {
     const { service } = makeService();
     await expect(
       service.createSession({
         context: ctx({}),
         sessionType: "single_board",
         board: BOARD_G1,
-        pkg: { ...pkg, status: "draft" },
+        pkg: { ...pkg, status: "deprecated" },
         resolvedValues: values(),
       }),
-    ).rejects.toThrow(/published packages only/);
+    ).rejects.toThrow(/deprecated/);
   });
 });
 

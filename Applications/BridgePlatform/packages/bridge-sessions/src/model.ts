@@ -32,7 +32,7 @@ export interface BridgeSessionRecord {
   sessionType: SessionType;
   status: SessionStatus;
   /**
-   * Replay stability (Bridge plan §11.4): the exact published package version
+   * Replay stability (Bridge plan §11.4): the exact package version
    * and resolved configuration this session runs under, plus a hash so drift
    * is detectable even if values are re-derived later.
    */

@@ -1,11 +1,10 @@
-// Server-side singleton session service. JSON-file dev store; the injected
-// package lookup pins sessions to exact published versions from the
-// knowledge store. Dev bootstrap: if no published package exists yet, run a
-// generation + publication of the approved seed once (the publish gate still
-// validates — this is a convenience, not a bypass).
+// Server-side singleton session service. The injected package lookup pins
+// sessions to exact generated versions from the knowledge store. Dev
+// bootstrap: if no package version exists yet, run one generation of the
+// seed content.
 
 import type { BridgeRulePackage } from "@bridge/engine";
-import { publishPackage, runGeneration, type KnowledgeStore } from "@bridge/knowledge";
+import { runGeneration, type KnowledgeStore } from "@bridge/knowledge";
 import { PgSessionStore } from "@bridge/pg-stores";
 import { SessionService, type SessionStore } from "@bridge/sessions";
 import { JsonFileSessionStore } from "@bridge/sessions/fileStore";
@@ -40,12 +39,10 @@ export function sessionService(): SessionService {
   return globalCache.__bridgeSessionService;
 }
 
-/** Latest published package, auto-publishing the seed once in a fresh dev store. */
-export async function latestPublishedPackage(
-  packageId: string,
-): Promise<BridgeRulePackage> {
+/** Latest package version, generating the seed once in a fresh dev store. */
+export async function latestPackage(packageId: string): Promise<BridgeRulePackage> {
   const kstore: KnowledgeStore = knowledgeStore();
-  const existing = await kstore.getLatestPublished(packageId);
+  const existing = await kstore.getLatest(packageId);
   if (existing) return existing.pkg;
 
   const run = await runGeneration(kstore, {
@@ -56,14 +53,7 @@ export async function latestPublishedPackage(
   });
   if (run.status !== "completed")
     throw new Error(
-      `No published package and dev bootstrap generation failed:\n${run.errors.join("\n")}`,
+      `No package version and dev bootstrap generation failed:\n${run.errors.join("\n")}`,
     );
-  const published = await publishPackage(
-    kstore,
-    run.resultPackageId!,
-    run.resultVersion!,
-    "dev_bootstrap",
-    new Date().toISOString(),
-  );
-  return published.pkg;
+  return (await kstore.getPackage(run.resultPackageId!, run.resultVersion!))!.pkg;
 }

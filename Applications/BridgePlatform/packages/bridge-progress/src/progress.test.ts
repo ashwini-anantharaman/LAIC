@@ -9,7 +9,6 @@ import {
   BEGINNER_NATURAL_PACKAGE_ID,
   BEGINNER_NATURAL_V0_SEED,
   InMemoryKnowledgeStore,
-  publishPackage,
   runGeneration,
 } from "@bridge/knowledge";
 import { InMemorySessionStore, SessionService } from "@bridge/sessions";
@@ -40,7 +39,7 @@ beforeAll(async () => {
     now: NOW,
     runId: "run_progress",
   });
-  pkg = (await publishPackage(kstore, BEGINNER_NATURAL_PACKAGE_ID, "0.1.0", "test", NOW)).pkg;
+  pkg = (await kstore.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0"))!.pkg;
 });
 
 function makeWorld() {

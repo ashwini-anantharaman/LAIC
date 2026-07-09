@@ -18,7 +18,7 @@ export default async function PlayersPage() {
         Players & Configurations
       </h1>
       <p className="text-sm text-neutral-600">
-        AI player profiles are a published package + preset + your overrides
+        AI player profiles are a generated package version + preset + your overrides
         (hashed for replay stability). System profiles are read-only —
         customize to make your own copy.
       </p>

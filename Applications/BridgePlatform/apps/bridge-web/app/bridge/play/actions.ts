@@ -11,7 +11,7 @@ import { resolveProfileValues } from "@bridge/profiles";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
 import { recomputeSignalsSafe } from "@/lib/progress";
-import { latestPublishedPackage, sessionService } from "@/lib/sessions";
+import { latestPackage, sessionService } from "@/lib/sessions";
 
 async function requireContext() {
   const context = await getBridgeContext();
@@ -23,7 +23,7 @@ export async function createPracticeSession(formData: FormData) {
   const context = await requireContext();
   const seed = Number(formData.get("seed")) || 1;
   const humanSeat = formData.get("humanSeat") as Seat | "watch" | null;
-  const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
   const profileId = String(formData.get("profileId") || "");
   const profile = profileId
     ? await (await profileService()).getProfile(profileId, context)
@@ -112,7 +112,7 @@ export async function createLevelPracticeSession(formData: FormData) {
   const scopeId = String(formData.get("scopeId") || "ts_system_bn_level1");
   const scope = await (await profileService()).getScope(scopeId, context);
   if (!scope) throw new Error("Teaching scope not found in your scope");
-  const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
   const values = defaultSettingValues(pkg.settings);
   const spec = specFromTeachingScope(
     scope.derivedFromItemId ?? scope.teachingScopeId,

@@ -106,9 +106,9 @@ export class SessionService {
   }
 
   async createSession(input: CreateSessionInput): Promise<BridgeSessionRecord> {
-    if (input.pkg.status !== "published")
+    if (input.pkg.status === "deprecated")
       throw new Error(
-        `Sessions run against published packages only (got ${input.pkg.packageId}@${input.pkg.version}: ${input.pkg.status})`,
+        `Package ${input.pkg.packageId}@${input.pkg.version} is deprecated — generate a current version`,
       );
     const seats: Record<Seat, SeatAssignment> = {
       N: { seat: "N", playerKind: "deterministic_ai" },

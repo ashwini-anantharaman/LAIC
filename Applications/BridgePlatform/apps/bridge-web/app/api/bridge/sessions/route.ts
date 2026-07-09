@@ -3,7 +3,7 @@ import { defaultSettingValues } from "@bridge/config";
 import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
 import { NextResponse, type NextRequest } from "next/server";
 import { apiError, requireContext } from "@/lib/api";
-import { latestPublishedPackage, sessionService } from "@/lib/sessions";
+import { latestPackage, sessionService } from "@/lib/sessions";
 
 /** GET /api/bridge/sessions — list sessions visible in the caller's scope. */
 export async function GET() {
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       humanSeat?: "N" | "E" | "S" | "W";
     };
     const seed = Number.isFinite(body.seed) ? Number(body.seed) : 1;
-    const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+    const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
     const record = await sessionService().createSession({
       context,
       sessionType: (body.sessionType as never) ?? "single_board",

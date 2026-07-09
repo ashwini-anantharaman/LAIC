@@ -7,7 +7,6 @@ import type { BridgeKnowledgeGap, BridgeReadableKnowledgeItem } from "../model";
 
 const NOW = "2026-07-09T00:00:00.000Z";
 const AUTHOR = "bridge_workstream_dev";
-const REVIEWER = "user_reviewer_rhea";
 const PENDING =
   "Level 2 authoring by workstream developer; bridge-fellow re-review pending (gap_bn_citation_verification).";
 
@@ -56,12 +55,10 @@ export const LEVEL2_ITEMS: BridgeReadableKnowledgeItem[] = [
     ],
     gapIds: [],
     reviewerNotes: PENDING,
-    status: "approved",
+    status: "active",
     version: "1",
     createdBy: AUTHOR,
     createdAt: NOW,
-    approvedBy: REVIEWER,
-    approvedAt: NOW,
   },
   {
     itemId: "ki_bn2_open_1nt",
@@ -92,12 +89,10 @@ export const LEVEL2_ITEMS: BridgeReadableKnowledgeItem[] = [
     ],
     gapIds: ["gap_bn2_nt_responses"],
     reviewerNotes: PENDING,
-    status: "approved",
+    status: "active",
     version: "1",
     createdBy: AUTHOR,
     createdAt: NOW,
-    approvedBy: REVIEWER,
-    approvedAt: NOW,
   },
   {
     itemId: "ki_bn2_scope_level2",
@@ -122,11 +117,9 @@ export const LEVEL2_ITEMS: BridgeReadableKnowledgeItem[] = [
     relatedItemIds: ["ed_bn_scope"],
     gapIds: [],
     reviewerNotes: PENDING,
-    status: "approved",
+    status: "active",
     version: "1",
     createdBy: AUTHOR,
     createdAt: NOW,
-    approvedBy: REVIEWER,
-    approvedAt: NOW,
   },
 ];

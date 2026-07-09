@@ -3,7 +3,7 @@ import { interpretBid, interpretPlay } from "@bridge/engine";
 import { cardId, type Seat } from "@bridge/events";
 import { NextResponse, type NextRequest } from "next/server";
 import { apiError, requireContext } from "@/lib/api";
-import { latestPublishedPackage, sessionService } from "@/lib/sessions";
+import { latestPackage, sessionService } from "@/lib/sessions";
 
 /**
  * The evaluator surface the Coaching pipeline calls back into (Coaching plan
@@ -23,7 +23,7 @@ export async function POST(
     const body = (await request.json().catch(() => ({}))) as {
       proposedAction?: { kind: "bid"; call: string } | { kind: "play"; cardId: string };
     };
-    const pkg = await latestPublishedPackage(view.record.packageRef.packageId);
+    const pkg = await latestPackage(view.record.packageRef.packageId);
     const state = view.state;
     if (state.phase === "complete")
       return NextResponse.json({ error: "Session is complete" }, { status: 409 });

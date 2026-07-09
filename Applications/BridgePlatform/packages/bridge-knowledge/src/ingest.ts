@@ -1,8 +1,9 @@
 // Structured ingestion (Bridge plan §12.3-§12.5, §20.2): extractors propose
-// CANDIDATE readable items from registered sources. The LLM boundary is
-// enforced HERE, not by extractor goodwill: every candidate enters the review
-// queue as `needs_review` regardless of extractor — nothing extracted is ever
-// published without human approval.
+// readable items from registered sources. Extracted items are ordinary
+// editable content — attributed to their extractor in createdBy, flags
+// captured in the notes, citing the passages they came from. The coach edits
+// or deprecates them in the Knowledge Browser; there is no approval gate
+// (revised decision 3).
 
 import type { Setting } from "@bridge/config";
 import type {
@@ -33,8 +34,9 @@ export interface CandidateExtractor {
  * Deterministic extractor for the bridgebot prototype's setting registry
  * (src/vendor/config/data/registry.ts). Regex-based on the object-literal
  * entries; anything unparsable is counted as skipped, never silently guessed.
- * Each candidate is a setting_definition awaiting SOURCE MATCHING: a reviewer
- * must cite a real source (upgrading to approved) or reject the item.
+ * Each candidate is a setting_definition whose real-source citation is still
+ * missing — it lands active but visibly "uncited" until someone matches it
+ * to a passage or deprecates it.
  */
 export class PrototypeRegistryExtractor implements CandidateExtractor {
   readonly kind = "prototype_registry" as const;
@@ -72,7 +74,7 @@ export class PrototypeRegistryExtractor implements CandidateExtractor {
         title: `Setting: ${label}`,
         humanReadableRule:
           description ||
-          `Prototype setting "${label}" (${key}) — definition and default must be re-derived from a cited source before approval.`,
+          `Prototype setting "${label}" (${key}) — definition and default should be re-derived from a cited source.`,
         structuredFields: { setting },
         passage: `registry.ts entry key="${key}"`,
         flags: [
@@ -86,16 +88,15 @@ export class PrototypeRegistryExtractor implements CandidateExtractor {
 }
 
 /**
- * LLM-backed extractor SEAM (plan §20.2: LLM drafts, humans approve).
- * Intentionally unimplemented until an Anthropic API key is provisioned —
- * this class exists so the job runner's contract (and the needs_review
- * enforcement) is already in place.
+ * LLM-backed extractor SEAM (plan §20.2: LLMs draft content, never make
+ * table decisions). Implemented against the Anthropic API in Phase 13 task 4;
+ * until the key is provisioned this throws with instructions.
  */
 export class LlmExtractor implements CandidateExtractor {
   readonly kind = "llm" as const;
   extract(): never {
     throw new Error(
-      "LLM extraction is not wired yet: provision ANTHROPIC_API_KEY and implement LlmExtractor (see execution plan Phase 9). Candidates would still enter review as needs_review — the gate does not depend on the extractor.",
+      "LLM extraction needs ANTHROPIC_API_KEY in apps/bridge-web/.env.local (see execution plan Phase 13). Extracted items land as ordinary editable content attributed to the extractor.",
     );
   }
 }
@@ -109,7 +110,7 @@ export interface IngestionRequest {
   jobId: string;
 }
 
-/** Run an extraction job: candidates land in the review queue as needs_review. */
+/** Run an extraction job: candidates land as active items, badged uncited until matched to passages. */
 export async function runIngestion(
   store: KnowledgeStore,
   extractor: CandidateExtractor,
@@ -158,8 +159,8 @@ export async function runIngestion(
       sourceIds: [req.sourceId],
       citations: [{ sourceId: req.sourceId, passage: c.passage }],
       gapIds: [],
-      reviewerNotes: `Extracted candidate (${extractor.kind}). Flags: ${c.flags.join("; ") || "none"}. Match to a real source and approve, or reject.`,
-      status: "needs_review", // ENFORCED: extraction never yields approved items
+      reviewerNotes: `Extracted (${extractor.kind}). Flags: ${c.flags.join("; ") || "none"}. Edit as needed, match citations to real passages, or deprecate.`,
+      status: "active",
       version: "1",
       createdBy: `ingestion:${extractor.kind}`,
       createdAt: req.now,

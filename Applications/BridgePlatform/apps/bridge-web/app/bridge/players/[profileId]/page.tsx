@@ -11,7 +11,7 @@ import { customizeProfile, updateProfile } from "@/app/bridge/players/actions";
 import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
-import { latestPublishedPackage } from "@/lib/sessions";
+import { latestPackage } from "@/lib/sessions";
 
 export default async function ProfilePage({
   params,
@@ -22,7 +22,7 @@ export default async function ProfilePage({
   const profile = await (await profileService()).getProfile(profileId, context);
   if (!profile) notFound();
 
-  const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
   const { values } = resolveProfileValues(
     pkg.settings,
     profile.selectedPresetId,

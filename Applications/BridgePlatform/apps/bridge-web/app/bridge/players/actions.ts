@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
-import { latestPublishedPackage } from "@/lib/sessions";
+import { latestPackage } from "@/lib/sessions";
 
 async function requireContext() {
   const context = await getBridgeContext();
@@ -15,7 +15,7 @@ async function requireContext() {
 
 export async function customizeProfile(formData: FormData) {
   const context = await requireContext();
-  const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
   const copy = await (await profileService()).customize(
     String(formData.get("profileId")),
     context,
@@ -26,7 +26,7 @@ export async function customizeProfile(formData: FormData) {
 
 export async function updateProfile(formData: FormData) {
   const context = await requireContext();
-  const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
   const id = String(formData.get("profileId"));
   const overrides: Record<string, boolean> = {};
   for (const setting of pkg.settings) {

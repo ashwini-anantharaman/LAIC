@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { publishGeneratedPackage } from "@/app/bridge/admin/actions";
 import { knowledgeStore } from "@/lib/knowledge";
 import type { RuleDiffEntry } from "@bridge/knowledge";
 
@@ -91,20 +90,18 @@ export default async function RunPage({
           <span className="font-mono text-sm">
             {pkg.packageId}@{pkg.version}
           </span>
-          <span className={pkg.status === "published" ? "text-sm text-emerald-700" : "text-sm text-amber-700"}>
+          <span className={pkg.status === "deprecated" ? "text-sm text-red-700" : "text-sm text-emerald-700"}>
             {pkg.status}
           </span>
-          {pkg.status === "draft" && (
-            <form action={publishGeneratedPackage}>
-              <input type="hidden" name="packageId" value={pkg.packageId} />
-              <input type="hidden" name="version" value={pkg.version} />
-              <button type="submit" className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
-                Publish {pkg.version}
-              </button>
-            </form>
+          {pkg.baseline && (
+            <span className="text-xs text-neutral-500">
+              baseline: {pkg.baseline.boards} boards, fallback bid{" "}
+              {(pkg.baseline.bidFallbackRate * 100).toFixed(1)}% / play{" "}
+              {(pkg.baseline.playFallbackRate * 100).toFixed(1)}%
+            </span>
           )}
           <span className="text-xs text-neutral-500">
-            Publishing re-validates the provenance gate and freezes this version.
+            This version is immutable — sessions and players pin it exactly.
           </span>
         </section>
       )}

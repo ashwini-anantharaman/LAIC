@@ -12,7 +12,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
-import { latestPublishedPackage } from "@/lib/sessions";
+import { latestPackage } from "@/lib/sessions";
 
 const GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const handString = (hand: Card[]): string =>
@@ -43,7 +43,7 @@ export default async function BoardsPage({
   let report: DealGenerationReport | null = null;
   let violations = 0;
   if (isAdmin && seed && scopeRec) {
-    const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+    const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
     const ctx = { pkg, values: defaultSettingValues(pkg.settings) };
     const spec = specFromTeachingScope(
       scopeRec.teachingScopeId,

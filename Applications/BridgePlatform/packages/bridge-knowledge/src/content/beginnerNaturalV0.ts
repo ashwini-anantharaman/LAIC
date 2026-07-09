@@ -175,22 +175,20 @@ const expertNote = (passage: string): Citation => ({
   passage,
 });
 
-const PENDING = "Initial v0 approval by workstream developer in the dev store; bridge-fellow re-review pending (gap_bn_citation_verification).";
+const PENDING = "Authored by workstream developer from the cited passages; bridge-fellow citation verification pending (gap_bn_citation_verification).";
 
 type ItemSeed = Omit<
   BridgeReadableKnowledgeItem,
-  "version" | "createdBy" | "createdAt" | "approvedBy" | "approvedAt" | "status" | "systemFamily"
+  "version" | "createdBy" | "createdAt" | "status" | "systemFamily"
 > & { systemFamily?: BridgeReadableKnowledgeItem["systemFamily"] };
 
-const approved = (seed: ItemSeed): BridgeReadableKnowledgeItem => ({
+const item = (seed: ItemSeed): BridgeReadableKnowledgeItem => ({
   systemFamily: "natural",
   ...seed,
-  status: "approved",
+  status: "active",
   version: "1",
   createdBy: AUTHOR,
   createdAt: NOW,
-  approvedBy: REVIEWER,
-  approvedAt: NOW,
   reviewerNotes: seed.reviewerNotes ? `${seed.reviewerNotes} ${PENDING}` : PENDING,
 });
 
@@ -203,7 +201,7 @@ const playRule = (rule: PlayRulePayload) => ({ rule });
 
 export const ITEMS: BridgeReadableKnowledgeItem[] = [
   // ---- expert decisions ---------------------------------------------------
-  approved({
+  item({
     itemId: "ed_bn_scope",
     itemType: "expert_decision",
     title: "Beginner Natural v0 teaching scope",
@@ -214,7 +212,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     citations: [expertNote("Level-1 scope decision drafted for fellow ratification.")],
     gapIds: ["gap_bn_no_nt_openings", "gap_bn_competitive", "gap_bn_opener_rebids"],
   }),
-  approved({
+  item({
     itemId: "ed_bn_hcp_only",
     itemType: "expert_decision",
     title: "v0 uses HCP-only ranges",
@@ -228,7 +226,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     ],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ed_bn_equal_minors",
     itemType: "expert_decision",
     title: "Equal-length minors open 1♣",
@@ -244,7 +242,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
   }),
 
   // ---- system + settings --------------------------------------------------
-  approved({
+  item({
     itemId: "ki_bn_system",
     itemType: "system",
     title: "Beginner Natural (Level 1) system definition",
@@ -256,7 +254,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     relatedItemIds: ["ed_bn_scope"],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_setting_1nt_response",
     itemType: "setting_definition",
     title: "Setting: 1NT response to a suit opening",
@@ -284,7 +282,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     gapIds: [],
   }),
 
-  approved({
+  item({
     itemId: "ki_bn_scope_level1",
     itemType: "teaching_scope",
     title: "SUGGESTED Level-1 scope: dealer holds a one-of-a-suit opening",
@@ -308,7 +306,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
   }),
 
   // ---- bidding rules -------------------------------------------------------
-  approved({
+  item({
     itemId: "ki_bn_open_major",
     itemType: "bidding_rule",
     title: "Open the longest major (12–21 HCP, 5+ cards)",
@@ -335,7 +333,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     relatedItemIds: ["ed_bn_hcp_only"],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_open_minor",
     itemType: "bidding_rule",
     title: "Open the longer minor (12–21 HCP, no 5-card major)",
@@ -360,7 +358,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     relatedItemIds: ["ed_bn_hcp_only", "ed_bn_equal_minors"],
     gapIds: ["gap_bn_equal_minors"],
   }),
-  approved({
+  item({
     itemId: "ki_bn_open_pass",
     itemType: "bidding_rule",
     title: "Pass in opening position with 0–11 HCP",
@@ -379,7 +377,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     relatedItemIds: ["ed_bn_hcp_only"],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_raise_partner",
     itemType: "bidding_rule",
     title: "Single raise of partner's suit opening (6–10 HCP, 3+ support)",
@@ -403,7 +401,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     citations: [sayc("A single raise shows 6–10 points and adequate trump support (three cards for a major).")],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_new_suit",
     itemType: "bidding_rule",
     title: "New suit at the one level (6+ HCP, 4+ cards)",
@@ -425,7 +423,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     ],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_1nt_response",
     itemType: "bidding_rule",
     title: "1NT response (6–10 HCP catch-all)",
@@ -444,7 +442,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     citations: [sayc("A 1NT response to a suit opening shows 6–10 points.")],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_response_pass",
     itemType: "bidding_rule",
     title: "Pass partner's opening with 0–5 HCP",
@@ -462,7 +460,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     citations: [sayc("Responder needs about 6 points to respond.")],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_pass_otherwise",
     itemType: "bidding_rule",
     title: "No agreement defined: pass",
@@ -485,7 +483,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
   }),
 
   // ---- play rules ----------------------------------------------------------
-  approved({
+  item({
     itemId: "ki_bn_lead_longest",
     itemType: "lead_rule",
     title: "Lead from your longest suit (v0: top card)",
@@ -503,7 +501,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     citations: [expertNote("Simplified Level-1 lead rule; refinement deferred.")],
     gapIds: ["gap_bn_play_technique"],
   }),
-  approved({
+  item({
     itemId: "ki_bn_follow_low",
     itemType: "play_rule",
     title: "Follow suit with your lowest card (v0)",

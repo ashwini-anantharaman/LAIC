@@ -1,20 +1,17 @@
 // Hand-authored TEST rule package (execution plan Phase 2 task 6): exercises
 // the interpreter end to end — gates, auction patterns, hand predicates,
-// action templates, provenance. This is a dev fixture (status "review", fake
-// provenance ids); it is NOT bridge content. Real content arrives in Phase 3
-// as Beginner Natural v0 through the knowledge pipeline.
+// action templates, provenance. This is a dev fixture with fake provenance
+// ids; it is NOT bridge content. Real content arrives through the knowledge
+// pipeline.
 
 import type { Setting } from "@bridge/config";
 import type { BridgeRulePackage, RuleProvenance } from "../rules/schema";
 
-// HONEST LABELING: these ids resolve to nothing and nothing was reviewed —
-// so the status is "needs_review", never "approved". This package can
-// therefore NEVER pass the publish gate (validatePackage blocks non-approved
-// entries in published packages), which is exactly right for a dev fixture.
+// HONEST LABELING: these ids resolve to nothing — the fake source id makes
+// that self-evident to anyone following the provenance chain.
 const prov = (slug: string): RuleProvenance => ({
   knowledgeItemIds: [`ki_test_${slug}`],
   sourceIds: ["src_test_fixture_not_a_real_source"],
-  reviewStatus: "needs_review",
 });
 
 const SETTINGS: Setting[] = [
@@ -39,7 +36,7 @@ export const TEST_PACKAGE: BridgeRulePackage = {
   packageId: "bridge_test_package",
   systemFamily: "custom",
   version: "0.0.1",
-  status: "review",
+  status: "active",
   settings: SETTINGS,
   bidRules: [
     {

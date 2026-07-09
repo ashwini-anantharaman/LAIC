@@ -7,7 +7,6 @@ import {
   BEGINNER_NATURAL_PACKAGE_ID,
   BEGINNER_NATURAL_V0_SEED,
   InMemoryKnowledgeStore,
-  publishPackage,
   runGeneration,
 } from "@bridge/knowledge";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
@@ -31,7 +30,7 @@ beforeAll(async () => {
     now: NOW,
     runId: "run_profiles",
   });
-  pkg = (await publishPackage(kstore, BEGINNER_NATURAL_PACKAGE_ID, "0.1.0", "test", NOW)).pkg;
+  pkg = (await kstore.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0"))!.pkg;
 });
 
 const ctx = (over: Partial<NexusBridgeContext>): NexusBridgeContext => ({
