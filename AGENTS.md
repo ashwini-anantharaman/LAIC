@@ -80,7 +80,8 @@ playable table with citation-resolving Why panel, constrained dealing with
 evaluator-filtered teaching scopes, package-backed player profiles with
 generated convention cards, evaluator + learner-model evidence layer with
 domain-scoped progress signals, ingestion jobs + Level-2 content + §19.3
-quality gates). Before touching bridge code, read that plan's
+quality gates, coach-owned teaching scopes, Phase 12 integration surfaces
+for Coaching/Learning). Remaining: Phase 10 (needs Supabase), Phase 11 (BEN). Before touching bridge code, read that plan's
 §1 (locked decisions) and §6 (cross-cutting invariants). The short version:
 
 - **Rules are data**, in versioned knowledge packages with cited sources —
