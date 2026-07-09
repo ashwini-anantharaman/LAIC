@@ -1,14 +1,15 @@
 // Beginner Natural Level 2 slice: the 1NT opening returns (it was excluded at
-// Level 1 by ed_bn_scope). Same honesty posture as v0: paraphrase-flagged
-// SAYC citations pending fellow verification; responses to 1NT are an
-// explicit deferred gap (the no-agreement rule covers them, honestly).
+// Level 1 by ed_bn_scope). Same honesty posture as v0: citations anchor to
+// the published ACBL SAYC booklet PDF (see src_sayc_booklet's locator);
+// responses to 1NT are an explicit deferred gap (the no-agreement rule
+// covers them, honestly).
 
 import type { BridgeKnowledgeGap, BridgeReadableKnowledgeItem } from "../model";
 
 const NOW = "2026-07-09T00:00:00.000Z";
 const AUTHOR = "bridge_workstream_dev";
 const PENDING =
-  "Level 2 authoring by workstream developer; bridge-fellow re-review pending (gap_bn_citation_verification).";
+  "Citations verified against the published SAYC booklet PDF (gap_bn_citation_verification); fellows adjust by editing this item.";
 
 export const LEVEL2_GAPS: BridgeKnowledgeGap[] = [
   {
@@ -51,7 +52,7 @@ export const LEVEL2_ITEMS: BridgeReadableKnowledgeItem[] = [
     },
     sourceIds: ["src_sayc_booklet"],
     citations: [
-      { sourceId: "src_sayc_booklet", passage: "paraphrase: A 1NT opening shows 15–17 HCP and balanced distribution." },
+      { sourceId: "src_sayc_booklet", passage: 'SAYC booklet p.1, General Approach: "Notrump openings show a balanced hand… 1NT = 15–17."' },
     ],
     gapIds: [],
     reviewerNotes: PENDING,
@@ -85,7 +86,7 @@ export const LEVEL2_ITEMS: BridgeReadableKnowledgeItem[] = [
     },
     sourceIds: ["src_sayc_booklet"],
     citations: [
-      { sourceId: "src_sayc_booklet", passage: "paraphrase: Open 1NT with 15–17 HCP and balanced shape; balanced hands in range open 1NT even with a five-card major." },
+      { sourceId: "src_sayc_booklet", passage: 'SAYC booklet p.1, General Approach: "Notrump openings show a balanced hand and may be made with a five-card major suit or a five-card minor suit. 1NT = 15–17."' },
     ],
     gapIds: ["gap_bn2_nt_responses"],
     reviewerNotes: PENDING,

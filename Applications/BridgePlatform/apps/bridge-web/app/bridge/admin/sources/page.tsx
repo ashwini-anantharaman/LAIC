@@ -41,7 +41,17 @@ export default async function SourcesPage() {
               </div>
               <p className="mt-1 text-xs text-neutral-500">
                 {s.sourceId}
-                {s.locator ? ` — ${s.locator}` : ""}
+                {s.locator &&
+                  (s.locator.startsWith("http") ? (
+                    <>
+                      {" — "}
+                      <a href={s.locator} target="_blank" rel="noreferrer" className="break-all text-emerald-700 hover:underline">
+                        {s.locator}
+                      </a>
+                    </>
+                  ) : (
+                    ` — ${s.locator}`
+                  ))}
                 {doc && (
                   <>
                     {" · "}

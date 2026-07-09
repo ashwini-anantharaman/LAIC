@@ -56,7 +56,11 @@ export type KnowledgeItemType =
 
 export interface Citation {
   sourceId: string;
-  /** Passage reference. Prefix "paraphrase:" when not an exact quote. */
+  /**
+   * Passage reference — prefer a page/section anchor into the source's
+   * locator (e.g. 'SAYC booklet p.3: "…"'); prefix "paraphrase:" when the
+   * text is neither quoted nor anchored.
+   */
   passage: string;
   /** Anchor into an uploaded source document (SourcePassage.passageId). */
   passageId?: string;

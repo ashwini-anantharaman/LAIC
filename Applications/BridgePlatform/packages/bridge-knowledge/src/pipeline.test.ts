@@ -175,7 +175,8 @@ describe("generation pipeline", () => {
     // Expert decisions ride along via relatedItemIds.
     expect(resolved!.items.map((i) => i.itemId)).toContain("ed_bn_equal_minors");
     expect(resolved!.sources.map((s) => s.sourceId)).toContain("src_sayc_booklet");
-    expect(resolved!.citations.some((c) => c.passage.startsWith("paraphrase:"))).toBe(true);
+    // Citations anchor to the published booklet PDF with page/section refs.
+    expect(resolved!.citations.some((c) => c.passage.includes("SAYC booklet p."))).toBe(true);
   });
 
   it("gap registry: the level decisions and deferred areas are recorded", async () => {
@@ -184,7 +185,7 @@ describe("generation pipeline", () => {
     expect(open.length).toBeGreaterThanOrEqual(6);
     expect((await store.getGap("gap_bn_no_nt_openings"))?.resolutionStatus).toBe("resolved");
     expect((await store.getGap("gap_bn_citation_verification"))?.resolutionStatus).toBe(
-      "expert_decision_needed",
+      "resolved",
     );
   });
 });
