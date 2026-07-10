@@ -65,6 +65,21 @@ export function decideIntervention(input: DecideInput): InterventionDecision {
     return { shouldRespond: false, responseType: "silent", hintLevel: 0, reason: "correct — no intervention" };
   }
 
+  // 2b. Partially correct (graded, M4): respond, but gently — acknowledge and
+  // nudge the missing piece rather than treating it as a hard miss. A
+  // low-confidence graded verdict (or socratic style) leads with a question
+  // rather than asserting a correction.
+  if (correctness === "partially_correct") {
+    const lowConfidence = typeof evaluation.confidence === "number" && evaluation.confidence < 0.6;
+    const asQuestion = socratic || minimal || lowConfidence;
+    return {
+      shouldRespond: true,
+      responseType: asQuestion ? "question" : "nudge",
+      hintLevel: clamp(1, 0, max),
+      reason: lowConfidence ? "partially correct, low-confidence grade — question" : "partially correct — gentle nudge",
+    };
+  }
+
   const severe = severity === "major" || severity === "critical";
 
   // 3. `minimal` feedback raises the bar: only interrupt for severe issues.

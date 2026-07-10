@@ -15,6 +15,18 @@ export const config = {
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   /** Max studio pages/modules to generate per course (textbooks may need ~18+). */
   studioMaxModules: Number(process.env.STUDIO_MAX_MODULES ?? 24),
+  /** Shared secret the Generalizable Coach presents to call /api/rag/retrieve (M4 LR1). */
+  coachServiceToken: process.env.COACH_SERVICE_TOKEN ?? "",
+  /** Base URL of the Coach service; when set, learning events are forwarded to it (M4 LR2). */
+  coachBaseUrl: process.env.COACH_BASE_URL ?? "",
+  /**
+   * Course ids where the graded Coach-backed in-lesson helper is enabled (M4 D3
+   * flagged rollout). Comma-separated; "*" enables all. Empty = off everywhere.
+   */
+  coachGradedCourses: (process.env.COACH_GRADED_COURSES ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
 };
 
 export function isGenerativeManimConfigured(): boolean {

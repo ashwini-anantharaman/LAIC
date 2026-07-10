@@ -1,8 +1,9 @@
 import { Router } from "express";
 import type { AuthedRequest } from "../middleware/auth.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireServiceOrAuth } from "../middleware/auth.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { buildDashboardAnalytics } from "../lib/dashboardAnalytics.js";
+import { autoTagCourseChunks } from "../lib/rag.js";
 import * as planner from "../agents/planner.js";
 
 const router = Router();
@@ -125,6 +126,29 @@ router.post("/auth/register", async (req, res) => {
     res.json({ ok: true, userId, role });
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+/**
+ * M4 · Workstream D — mastery read for the Coach. Owlwise owns mastery (BKT);
+ * the Coach reads it here (read-only) rather than computing a divergent record.
+ * Auth: service token (Coach) or an authed learner (defaults to self).
+ */
+router.get("/mastery", requireServiceOrAuth, async (req: AuthedRequest, res) => {
+  try {
+    const userId = String(req.query.userId ?? req.userId ?? "");
+    if (!userId) return res.status(400).json({ error: "userId is required" });
+    const courseId = req.query.courseId ? String(req.query.courseId) : null;
+    let q = supabaseAdmin
+      .from("mastery_states")
+      .select("concept_id, course_id, level, bkt_score, updated_at")
+      .eq("user_id", userId);
+    if (courseId) q = q.eq("course_id", courseId);
+    const { data, error } = await q;
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ userId, courseId, mastery: data ?? [] });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
   }
 });
 
@@ -444,6 +468,11 @@ router.post("/course/:courseId/publish", requireAuth, async (req: AuthedRequest,
     if (enrolled?.length) {
       await seedMasteryForUsers(courseId, enrolled.map((e) => e.user_id));
     }
+
+    // M4 · LR7 — concepts now exist; tag the course's chunks for Coach retrieval.
+    autoTagCourseChunks(courseId).catch((e) =>
+      console.warn(`[publish] auto-tag skipped for ${courseId}:`, e)
+    );
 
     res.json({ ok: true, enrolledCount: enrolled?.length ?? 0, joinCode });
   } catch (e) {

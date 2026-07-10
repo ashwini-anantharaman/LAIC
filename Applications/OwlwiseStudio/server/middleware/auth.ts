@@ -7,6 +7,22 @@ export interface AuthedRequest extends Request {
   userRole?: string;
 }
 
+/**
+ * M4 LR1: allow the Generalizable Coach (a trusted server-to-server caller) to
+ * reach coach-facing endpoints with a shared service token, OR fall back to a
+ * normal authenticated learner. The Coach presents `Bearer <COACH_SERVICE_TOKEN>`.
+ */
+export async function requireServiceOrAuth(req: AuthedRequest, res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  const token = header?.startsWith("Bearer ") ? header.slice(7) : "";
+  if (config.coachServiceToken && token && token === config.coachServiceToken) {
+    req.userId = "coach-service";
+    req.userRole = "service";
+    return next();
+  }
+  return requireAuth(req, res, next);
+}
+
 export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {

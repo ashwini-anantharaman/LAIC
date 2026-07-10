@@ -8,4 +8,8 @@ export {
 } from "./KnowledgeSource.js";
 export { BundledKnowledgeSource } from "./BundledKnowledgeSource.js";
 export { ScopedKnowledgeSource } from "./ScopedKnowledgeSource.js";
+export {
+  PlatformKnowledgeSource,
+  type PlatformKnowledgeSourceOptions,
+} from "./PlatformKnowledgeSource.js";
 export { toKnowledgeChunk, DEFAULT_CHUNK_TYPE, type RawChunk } from "./normalize.js";

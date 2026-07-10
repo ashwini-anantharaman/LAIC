@@ -103,8 +103,9 @@ export class InterventionPolicyEngine {
     // Build the "natural" decision, then apply the postmortem override below.
     let decision: InterventionDecision;
 
-    if (correctness === "suboptimal") {
-      // 4. Suboptimal — escalate if the same concept was recently missed.
+    if (correctness === "suboptimal" || correctness === "partially_correct") {
+      // 4. Suboptimal / partially-correct (graded, M4) — gentle path; escalate
+      //    if the same concept was recently missed.
       if (repeated) {
         decision = {
           shouldRespond: true,

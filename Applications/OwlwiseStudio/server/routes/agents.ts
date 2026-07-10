@@ -9,6 +9,12 @@ import * as quizCoach from "../agents/quizCoach.js";
 import * as reflection from "../agents/reflection.js";
 import * as planner from "../agents/planner.js";
 import * as studentAssistant from "../agents/studentAssistant.js";
+import {
+  forwardActivityEvent,
+  isCoachGradedCourse,
+  askCoach,
+  COURSE_LEARNING_COACH_TOOLS,
+} from "../lib/coachClient.js";
 import * as animation from "../agents/animation.js";
 import * as animation3d from "../agents/animation3d.js";
 import * as interactiveAnimation from "../agents/interactiveAnimation.js";
@@ -245,6 +251,26 @@ router.post("/quiz/evaluate", requireAuth, async (req: AuthedRequest, res) => {
       });
     }
 
+    // M4 · LR2 — forward the attempt to the Coach (non-blocking). Owlwise stays
+    // the system of record for mastery; the Coach observes to diagnose and help.
+    void forwardActivityEvent({
+      domainId: "course_learning",
+      eventType: "quiz_attempted",
+      sessionId: `${req.userId}:${courseId}`,
+      actorId: req.userId!,
+      activityType: "quiz",
+      action: {
+        questionId,
+        conceptId,
+        correct: result.correct,
+        selectedIndex,
+        newMastery: result.newMastery,
+        bktScore: newBkt,
+        hintsUsed: hintsUsed ?? 0,
+      },
+      contextRefs: { courseId, learningObjectId: conceptId },
+    });
+
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -284,14 +310,44 @@ router.post("/planner/next", requireAuth, async (req: AuthedRequest, res) => {
 
 router.post("/assistant/chat", requireAuth, async (req: AuthedRequest, res) => {
   try {
+    const courseId = String(req.body?.courseId ?? "");
+    // M4 · LR3/D3 — when the course is flagged, route the in-lesson helper
+    // through a course_learning Coach session (memory, hint policy, guardrails-
+    // as-policy, tools) instead of the standalone assistant. Fall back to the
+    // local assistant if the Coach is unreachable so the lesson never breaks.
+    if (courseId && isCoachGradedCourse(courseId)) {
+      try {
+        const coached = await askCoach({
+          learnerId: req.userId!,
+          courseId,
+          message: String(req.body?.message ?? ""),
+          sessionId: typeof req.body?.coachSessionId === "string" ? req.body.coachSessionId : undefined,
+        });
+        return res.json({
+          role: "assistant",
+          content: coached.content,
+          coachSessionId: coached.sessionId,
+          sources: coached.sources,
+          via: "coach",
+        });
+      } catch (e) {
+        console.warn(`[assistant] Coach route failed, falling back to local:`, e instanceof Error ? e.message : e);
+      }
+    }
+
     const result = await studentAssistant.assistantRespond({
       ...req.body,
       pastReflections: req.body.pastReflections,
     });
-    res.json(result);
+    res.json({ ...result, via: "local" });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
+});
+
+/** M4 · LR4 — advertise the host tools the Coach may gate + propose (host-executed). */
+router.get("/coach-tools", requireAuth, async (_req: AuthedRequest, res) => {
+  res.json({ tools: COURSE_LEARNING_COACH_TOOLS });
 });
 
 router.get("/assistant/greeting", requireAuth, async (req: AuthedRequest, res) => {

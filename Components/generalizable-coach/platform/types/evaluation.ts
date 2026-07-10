@@ -6,7 +6,12 @@
  * learner-facing text — that is the LLM's job downstream.
  */
 
-export type Correctness = "correct" | "acceptable" | "suboptimal" | "incorrect";
+export type Correctness =
+  | "correct"
+  | "acceptable"
+  | "partially_correct"
+  | "suboptimal"
+  | "incorrect";
 
 export type Severity = "minor" | "moderate" | "major" | "critical";
 
@@ -23,6 +28,13 @@ export interface EvaluationResult {
   /** machine-readable reason, not learner-facing */
   explanation?: string;
   severity: Severity;
+  /**
+   * Graded variant (M4/D1): fraction of credit for an open-ended answer, 0–1.
+   * Present only for graded (LLM) evaluations; absent for deterministic ones.
+   */
+  partialCredit?: number;
+  /** Graded variant: the grader's transparency rationale (machine-readable). */
+  rationale?: string;
 }
 
 export interface EvaluatorContract<TState, TAction> {

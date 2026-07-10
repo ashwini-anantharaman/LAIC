@@ -91,7 +91,27 @@ function skillLevelFromDomainLevel(level: string): SkillLevel {
 }
 
 export class LearnerStore {
+  /**
+   * Domains whose mastery is owned by the host platform, not the Coach (M4:
+   * OwlwiseStudio owns `course_learning` BKT mastery). For these, the Coach
+   * reads mastery from the host and must NOT advance a second, divergent skill
+   * record locally — the mitigation for the §14.6 deviation. `updateSkillState`
+   * is a no-op for a domain listed here.
+   */
+  private readonly externalMasteryDomains = new Set<string>();
+
   constructor(private readonly repo: LearnerRepo = new InMemoryLearnerRepo()) {}
+
+  /** Mark a domain's mastery as host-owned (read-only for the Coach). */
+  setExternalMasteryDomains(domainIds: string[]): void {
+    this.externalMasteryDomains.clear();
+    for (const id of domainIds) this.externalMasteryDomains.add(id);
+  }
+
+  /** Whether the Coach advances its own mastery for this domain. */
+  ownsMastery(domainId: string): boolean {
+    return !this.externalMasteryDomains.has(domainId);
+  }
 
   getProfile(learnerId: string): LearnerProfile | null {
     return this.repo.get(learnerId);
@@ -163,6 +183,8 @@ export class LearnerStore {
       throw new Error(`Unknown learner: ${learnerId}`);
     }
     if (!skillId) return; // nothing to attribute this evaluation to
+    // Host owns mastery for this domain (M4): do not advance a divergent record.
+    if (this.externalMasteryDomains.has(domainId)) return;
 
     const domain = this.getOrCreateDomainState(profile, domainId);
     const skill = this.getOrCreateSkillState(domain, skillId);

@@ -13,6 +13,16 @@ import { CourseQuizEvaluator, type QuizAction } from "./evaluator.js";
 export const COURSE_LEARNING_DOMAIN_ID = "course_learning";
 
 export { CourseQuizEvaluator, type QuizAction };
+export {
+  LlmGradedEvaluator,
+  HeuristicGradingModel,
+  makeCourseLearningEvaluator,
+  type GradingModel,
+  type GradingRequest,
+  type GradingVerdict,
+  type GradedQuizAction,
+  type GradedCorrectness,
+} from "./gradedEvaluator.js";
 
 /** A lesson-scoped KnowledgeScope for the sample "memory" lesson. */
 export function memoryLessonScope(): KnowledgeScope {

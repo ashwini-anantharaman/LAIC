@@ -1,11 +1,11 @@
 import { Router } from "express";
 import multer from "multer";
 import type { AuthedRequest } from "../middleware/auth.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireServiceOrAuth } from "../middleware/auth.js";
 import { supabaseAdmin } from "../lib/supabase.js";
 import { extractFromBuffer, extractFromUrl, isDriveUrl, isQuizletUrl } from "../lib/extract.js";
 import { extractYouTubeId, isYouTubeUrl } from "../lib/youtube.js";
-import { getCourseRagStats, ingestExtract } from "../lib/rag.js";
+import { getCourseRagStats, ingestExtract, retrieveForCoach, autoTagCourseChunks } from "../lib/rag.js";
 import { formatErrorMessage } from "../lib/errors.js";
 
 /** Max source upload size (PDFs, docs, audio). Brain Facts high-res ~66MB. */
@@ -79,6 +79,16 @@ router.get("/course/:courseId/status", requireAuth, async (req: AuthedRequest, r
     res.json(stats);
   } catch (e) {
     res.status(500).json({ error: String(e) });
+  }
+});
+
+/** M4 · LR7 — backfill concept tags over a course's chunks (instructor/manual). */
+router.post("/course/:courseId/tag", requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const result = await autoTagCourseChunks(String(req.params.courseId));
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: formatErrorMessage(e) });
   }
 });
 
@@ -377,6 +387,51 @@ router.post("/course/:courseId/sources/register", requireAuth, async (req: Authe
     res.json(data);
   } catch (e) {
     res.status(500).json({ error: String(e) });
+  }
+});
+
+/**
+ * M4 · LR1 — the Coach's knowledge-grounding seam. Accepts the Generalizable
+ * Coach's RetrievalRequest and returns source-bound chunks in its KnowledgeChunk
+ * shape. `knowledgeScopeId` (contract) maps to the Owlwise `courseId`; a native
+ * `courseId` is accepted too. Auth: service token (Coach) or an authed learner.
+ */
+router.post("/retrieve", requireServiceOrAuth, async (req: AuthedRequest, res) => {
+  try {
+    const body = (req.body ?? {}) as {
+      domainId?: string;
+      courseId?: string;
+      knowledgeScopeId?: string;
+      text?: string;
+      conceptIds?: string[];
+      skillIds?: string[];
+      chunkType?: string;
+      topK?: number;
+      allowedSourceIds?: string[];
+      forbiddenConceptIds?: string[];
+    };
+
+    const courseId = body.courseId ?? body.knowledgeScopeId;
+    if (!courseId) {
+      return res.status(400).json({ error: "courseId (or knowledgeScopeId) is required" });
+    }
+    if (body.domainId && body.domainId !== "course_learning") {
+      console.warn(`[rag] /retrieve called with unexpected domainId "${body.domainId}"`);
+    }
+
+    const chunks = await retrieveForCoach({
+      courseId,
+      text: body.text,
+      conceptIds: body.conceptIds,
+      skillIds: body.skillIds,
+      chunkType: body.chunkType,
+      topK: body.topK,
+      allowedSourceIds: body.allowedSourceIds,
+      forbiddenConceptIds: body.forbiddenConceptIds,
+    });
+    res.json({ chunks });
+  } catch (e) {
+    res.status(500).json({ error: formatErrorMessage(e) });
   }
 });
 
