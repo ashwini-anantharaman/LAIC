@@ -2,8 +2,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getSettings } from "./config";
 
-// Supabase helpers. Cache and course operations are best-effort where noted;
-// hard failures on platform mutations return errors to the caller.
+// Supabase helpers. Platform mutations surface errors to the caller; the
+// dual-mode fallback in platformDb decides when to use the local store instead.
 
 let _client: SupabaseClient | null = null;
 let _adminClient: SupabaseClient | null = null;
@@ -32,6 +32,7 @@ export function requireAdminClient(): SupabaseClient {
   return _adminClient;
 }
 
+/** Fresh client so sign-in never clobbers the admin session. */
 export function createEphemeralClient(): SupabaseClient {
   const settings = getSettings();
   if (!settings.supabaseEnabled) throw new Error("Supabase is not configured");

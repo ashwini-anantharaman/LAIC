@@ -154,6 +154,15 @@ These come straight from the architecture's core design bets and must be true at
 - A learner enrolled in multiple courses can get cross-course retrieval *only* when the policy enables it; isolation holds otherwise.
 - The graded helper is the default on at least one real course, with a kill-switch flag.
 
+**Implementation status (2026-07) — M4/Phase D built + unit-verified; only live-env validation remains.** Detail + test evidence in `Implementation_Plan/M4_Execution_Plan.md`. The Learning Platform host is **OwlwiseStudio** (`Applications/OwlwiseStudio`); the mastery decision is **Owlwise owns BKT mastery, the Coach reads it** (a deliberate, guarded deviation from §14.6).
+
+- **D1 — done.** Graded evaluator (`LlmGradedEvaluator` + `HeuristicGradingModel` + closed/open router), eval harness (`scoreGradingAccuracy` + labeled dataset + `partially_correct` in both policy engines), and the **real-LLM `LlmGradingModel`** + `npm run eval:graded` gate runner.
+- **D2 — done.** `PlatformKnowledgeSource` (HTTP→Owlwise `/retrieve`) is wired into the session factory via `defaultChatSessionFactory`/`platformChatSessionFactory` (the "wire KnowledgeSource" step), selected when `LEARNING_PLATFORM_URL` is set. `MultiScopeKnowledgeSource` built (cross-course, stays policy-off).
+- **D3 — mechanism done; gate must still be RUN.** Kill-switch flag (`COACH_GRADED_COURSES` / `isCoachGradedCourse` + `/assistant/chat` routing with local fallback) is built. **Remaining (live env, not code):** run `eval:graded` against a real LLM and clear `DEFAULT_ACCURACY_BAR` before the graded helper becomes a course default (§11.6).
+- **Owlwise LR side — done:** `/retrieve` (LR1), tagged-chunk ingest + backfill (LR7), event forwarding (LR2), `GET /api/mastery` + Coach external-mastery guard, in-lesson helper reroute (LR3), tool manifest + **host-side `POST /coach-tools/execute`** (LR4).
+
+Everything above is **M4/Phase D**; none of it belongs to M5 or M6. The only open items are the live D3 accuracy run and the two-server e2e — environment, not code.
+
 ---
 
 ## 9. Milestone 5 — Bridge depth (architecture Phase E) — parallelizable after M2

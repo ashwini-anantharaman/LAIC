@@ -17,13 +17,6 @@ export interface Settings {
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
 
-  // --- Bridge Program integration surface. Program-level roles are
-  // config-seeded until a proper grant UI exists. These are mutable so tests
-  // can override them (mirrors the pydantic Settings object).
-  laicOrgId: string;
-  bridgeProgramAdminEmails: string;
-  bridgeReviewerEmails: string;
-
   // CORS: primary frontend origin (owlwise-2 on Vercel or local dev).
   frontendOrigin: string;
   // Comma-separated extra origins (e.g. platform_logic Vercel URL).
@@ -43,10 +36,6 @@ export function getSettings(): Settings {
 
     supabaseUrl: env.SUPABASE_URL ?? "",
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY ?? "",
-
-    laicOrgId: env.LAIC_ORG_ID || "org_laic",
-    bridgeProgramAdminEmails: env.BRIDGE_PROGRAM_ADMIN_EMAILS ?? "",
-    bridgeReviewerEmails: env.BRIDGE_REVIEWER_EMAILS ?? "",
 
     frontendOrigin: env.FRONTEND_ORIGIN || "http://localhost:5173",
     extraCorsOrigins: env.EXTRA_CORS_ORIGINS ?? "",

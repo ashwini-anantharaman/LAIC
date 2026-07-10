@@ -23,7 +23,7 @@ import {
 } from "../platform/observation/index.js";
 import type { EvaluationResult } from "../platform/types/index.js";
 import type { ChatOrchestrator } from "../platform/chat/index.js";
-import { demoChatSessionFactory, type ChatSessionFactory } from "./demoChatSession.js";
+import { defaultChatSessionFactory, type ChatSessionFactory } from "./demoChatSession.js";
 
 export interface CoachServiceOptions {
   /** Inject a durable event log (e.g. Postgres) in production; defaults to in-memory. */
@@ -47,7 +47,7 @@ export function createCoachService(opts: CoachServiceOptions = {}): CoachService
   const eventLog = opts.eventLog ?? new InMemoryEventLogRepo();
   const registry = opts.registry ?? new ProfileRegistry();
   const observationStore = opts.observationStore ?? new InMemoryObservationStore();
-  const chatSessionFactory = opts.chatSessionFactory ?? demoChatSessionFactory;
+  const chatSessionFactory = opts.chatSessionFactory ?? defaultChatSessionFactory;
   const chatSessions = new Map<string, { orchestrator: ChatOrchestrator; learnerId: string; domainId: string }>();
   const app = express();
   app.use(express.json());
@@ -160,9 +160,17 @@ export function createCoachService(opts: CoachServiceOptions = {}): CoachService
     const learnerId = typeof req.body?.learnerId === "string" ? req.body.learnerId : undefined;
     if (!learnerId) return res.status(400).json({ error: "learnerId is required" });
     const domainId = typeof req.body?.domainId === "string" ? req.body.domainId : "course_learning";
+    // Knowledge scope to bind (platform mode): courseId from contextRefs, or an
+    // explicit knowledgeScopeId/scopeId. Undefined → bundled/demo knowledge.
+    const ctx = (req.body?.contextRefs ?? {}) as { courseId?: string };
+    const scopeId =
+      (typeof ctx.courseId === "string" && ctx.courseId) ||
+      (typeof req.body?.knowledgeScopeId === "string" && req.body.knowledgeScopeId) ||
+      (typeof req.body?.scopeId === "string" && req.body.scopeId) ||
+      undefined;
     const sessionId = randomUUID();
     chatSessions.set(sessionId, {
-      orchestrator: chatSessionFactory({ learnerId, domainId, sessionId }),
+      orchestrator: chatSessionFactory({ learnerId, domainId, sessionId, scopeId }),
       learnerId,
       domainId,
     });

@@ -217,6 +217,16 @@ The router, tool selection, and LLM phrasing sit **after** scope and gating, so 
 
 A domain is the unit of "what this activity means." Adding a domain requires no core changes.
 
+**What this layer is (and isn't).** The Domain Plugin is *not* a third cooperating layer alongside the Common and Adaptive layers (§1) — those two are the runtime; the plugin is the **pluggable per-activity bundle they operate on**. It is the one seam where a new subject (bridge, a course, dance) is taught the Coach without editing the engine: register a plugin and the same runtime coaches it. Concretely, a plugin answers five questions about an activity and nothing else:
+
+1. **What are its concepts and skills?** (`taxonomy`) — the shared ids everything keys off.
+2. **What can happen in it?** (`eventTypes`) — the native events, translated to `ActivityEvent`.
+3. **How do we judge an action?** (`evaluator`) — deterministic (bridge) or LLM-graded (course_learning), §7.2.
+4. **Where does its knowledge come from?** (`knowledgeSource`) — bundled, platform-backed, or multi-scope (§11).
+5. **What host actions may the Coach propose?** (`toolRegistry`) — the host's tools, gated per turn (§10).
+
+The Adaptive Layer **resolves the plugin by `domainId` at session open** (§6.1, step 1) and then drives its evaluator/knowledge/tools through the *same* pipeline for every domain. Distinguish the plugin from a **Coach Profile/Instance** (§3): the plugin is the *technical* "what this activity means" (code: evaluator, taxonomy, knowledge, tools); a profile/instance is the *configured behavior* deployed on top of it (persona, policy, scope) — many profiles can run on one plugin. The engine never names "bridge"; only a plugin does (design bet #3).
+
 ```ts
 interface DomainPlugin {
   domainId: string;                       // "bridge_gameplay", "course_learning", ...

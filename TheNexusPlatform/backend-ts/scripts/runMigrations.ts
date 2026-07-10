@@ -19,14 +19,24 @@ import postgres from "postgres";
 const _here = dirname(fileURLToPath(import.meta.url));
 // backend-ts/scripts -> ../../backend/supabase
 const SQL_DIR = join(_here, "..", "..", "backend", "supabase");
-const SQL_FILES = [join(SQL_DIR, "schema.sql"), join(SQL_DIR, "migration_platform.sql")];
+// Same files, same order as backend/scripts/run_platform_migrations.py.
+// (migration_v2.sql is intentionally excluded — it is a legacy patch for
+// already-applied schema.sql installs, not part of a fresh migration.)
+const SQL_FILES = [
+  join(SQL_DIR, "schema.sql"),
+  join(SQL_DIR, "migration_platform.sql"),
+  join(SQL_DIR, "migration_programs.sql"),
+  join(SQL_DIR, "migration_nexus_addendum.sql"),
+  join(SQL_DIR, "migration_offerings_apps_hook.sql"),
+  join(SQL_DIR, "migration_audit_entitlements.sql"),
+];
 
 async function main(): Promise<number> {
   const url = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
   if (!url) {
     console.error(
       "Set DATABASE_URL to your Supabase Postgres connection string.\n" +
-        "Until then, the backend uses local JSON storage in backend-ts/.local_data/ for platform tables.",
+        "Until then, the backend uses local JSON storage in backend/.local_data/ for platform tables.",
     );
     return 1;
   }
@@ -46,7 +56,9 @@ async function main(): Promise<number> {
     await sql.end();
   }
 
-  console.log("Migrations complete. Restart the backend to use Supabase tables instead of local storage.");
+  console.log(
+    "Migrations complete. Restart the backend to use Supabase tables instead of local storage.",
+  );
   return 0;
 }
 

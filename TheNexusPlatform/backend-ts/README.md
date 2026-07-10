@@ -1,74 +1,139 @@
-# The Nexus Platform API — TypeScript backend
+# Nexus Platform API — TypeScript (Hono)
 
-A 1:1 TypeScript port of the Python/FastAPI backend (`../backend`), built on
-[Hono](https://hono.dev), `@supabase/supabase-js`, and [Zod](https://zod.dev).
+A TypeScript port of the Python/FastAPI platform backend (`../backend`). Same
+HTTP contract: identical routes, snake_case JSON, and the FastAPI `{ "detail": ... }`
+error envelope — so the existing frontends work against it with **zero code changes**.
 
-It exposes the **same HTTP API** (same paths, same JSON shapes, same
-`{ "detail": ... }` error envelope) and reads the **same environment
-variables**, so the existing frontend and any existing `.env` work unchanged.
+Stack: **Hono** + `@hono/node-server` + `@supabase/supabase-js` + **Zod** + `tsx` + **Vitest**.
+No ORM — every query is contained in `src/platformDb.ts`, so a later move to
+Drizzle/Prisma is a one-file refactor (honors the v3 §23 portability rule).
 
-## Endpoints
+## Scope
 
-- `GET  /health`
-- `*    /api/platform/*` — auth, orgs, stages, join codes, dashboard, members
-- `GET  /api/platform/bridge/context`
+This port covers the **platform layer only**: auth, organizations, programs,
+stages/groups, offerings, registered apps, the signup hook, participants,
+registrations, entitlements, audit, and the mock game scenario generator.
 
-(The dead course/upload/mastery code in the Python `supabase_client.py` /
-`local_store.py` was **not** ported — no router mounted it.)
+The **learning subsystem** (`content`, `courses`, `uploads`, `learning`, ingest,
+BM25 RAG, PDF extraction) is **not** ported — per the v3 architecture, Nexus does
+not own learning content; that becomes a separate Learning Platform app connected
+via the registered-app / hook / launch-context boundary. See "Dropped endpoints".
 
-## Run
+## Running
 
 ```bash
 cd backend-ts
 npm install
-cp .env.example .env      # fill in Supabase creds (same values as ../backend/.env)
-npm run dev               # http://localhost:8000  (tsx watch)
+cp .env.example .env        # or copy ../backend/.env — same var names
+npm run dev                 # tsx watch, port 8000 (override with PORT)
 ```
 
-Other scripts:
+Without Supabase configured (or when the schema isn't migrated), the backend
+runs in **demo mode** against a local JSON store — the same dual-mode fallback as
+the Python backend. By default it reads/writes `../backend/.local_data` so demo
+data carries over; override with `LOCAL_DATA_DIR`.
 
-| command | purpose |
+## Scripts
+
+| Script | What it does |
 |---|---|
-| `npm start` | run once (no watch) |
+| `npm run dev` | `tsx watch src/index.ts` (hot reload) |
+| `npm start` | run once |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | Vitest (bridge-context mapping tests) |
-| `npm run migrate` | apply `../backend/supabase/*.sql` via `DATABASE_URL` |
+| `npm test` | Vitest unit + in-process route tests |
+| `npm run migrate` | apply `../backend/supabase/*.sql` over `DATABASE_URL` |
+| `npm run parity` | boot Python (:8009) + TS (:8010), diff the acceptance flow |
 
-## Data layer
+Migrations read the SQL from `../backend/supabase/` (Python side stays the single
+source of truth), in the same order as `run_platform_migrations.py`.
 
-Mirrors the Python behavior exactly:
+## Python → TypeScript file map
 
-- **Supabase configured + schema migrated** → uses Postgres via `@supabase/supabase-js`.
-- **Supabase configured, schema missing** → falls back to local JSON in
-  `backend-ts/.local_data/` (detected by the `PGRST205` probe in `useLocal()`).
-- **Supabase not configured** → platform routes return `503`, same as FastAPI.
-
-## Structure
-
-| TypeScript | Ported from (Python) |
+| Python (`backend/app/`) | TypeScript (`backend-ts/src/`) |
 |---|---|
-| `src/config.ts` | `app/config.py` |
-| `src/supabaseClient.ts` | `app/supabase_client.py` (client factories only) |
-| `src/permissions.ts` | `app/platform_permissions.py` |
-| `src/platformLocalStore.ts` | `app/platform_local_store.py` |
-| `src/platformDb.ts` | `app/platform_db.py` |
-| `src/auth.ts` | `app/platform_auth.py` |
-| `src/schemas.ts` | `app/schemas_platform.py` (Pydantic → Zod) |
-| `src/routes/platform.ts` | `app/routers/platform.py` |
-| `src/routes/bridge.ts` | `app/routers/bridge_context.py` |
-| `src/app.ts` + `src/index.ts` | `app/main.py` |
-| `scripts/runMigrations.ts` | `scripts/run_platform_migrations.py` |
-| `tests/bridge.test.ts` | `tests/test_bridge_context.py` |
+| `main.py` | `index.ts` + `app.ts` |
+| `config.py` | `config.ts` |
+| `supabase_client.py` (platform parts) | `supabaseClient.ts` |
+| `platform_auth.py` | `auth.ts` |
+| `platform_permissions.py` | `permissions.ts` |
+| `platform_db.py` | `platformDb.ts` |
+| `platform_local_store.py` | `platformLocalStore.ts` |
+| `game_store.py` | `gameStore.ts` |
+| `schemas_platform.py` + `schemas_game.py` | `schemas.ts` |
+| `claude.py` | `claude.ts` |
+| `routers/platform.py` | `routes/platform.ts` |
+| `routers/offerings.py` | `routes/offerings.ts` |
+| `routers/hook.py` | `routes/hook.ts` |
+| `routers/game.py` | `routes/game.ts` |
+| `scripts/run_platform_migrations.py` | `scripts/runMigrations.ts` |
 
-## Notes / follow-ups
+The route inventory matches the Python backend exactly (51 routes + `/health`),
+verified by `npm run parity`.
 
-- Field names are kept **snake_case** throughout (DB rows, internal objects,
-  and JSON responses) to preserve the exact contract the frontend consumes.
-- `truststore` (corporate-proxy TLS) has no equivalent here — Node uses the OS
-  certificate store natively, so it's not needed.
-- Once verified, the Python `../backend` folder can be removed, and the
-  frontend's dev-error hint (`services/api.ts`, "cd backend && uvicorn …") can
-  be updated to `cd backend-ts && npm run dev`.
-- Deploy: `npm start` runs a Node server (parity with uvicorn). For Vercel,
-  Hono also has an edge/serverless adapter if you later want same-project
-  deploy with the frontend.
+## Behavior parity notes
+
+- **Error envelope**: all errors render as `{ "detail": ... }`; validation errors
+  as `{ "detail": [{ loc, msg, type }] }`. Zod and Pydantic word validation
+  *messages* differently and Pydantic adds `input`/`ctx`; the frontends only
+  consume `detail[].msg`, so this is contract-compatible, not byte-identical.
+- **Hashing is byte-identical** to Python: API keys `nxk_` + base64url(32 bytes),
+  sha256-hashed; launch tokens base64url(24 bytes), sha256, 60s single-use.
+- **Datetimes** are ISO strings passed through as stored; `new Date()` on the
+  frontend parses both the `Z` and `+00:00` forms.
+- **Audit is best-effort** (never throws); **entitlements are permissive when
+  unconfigured**; the `nexus` module cannot be disabled — all preserved.
+
+## Dropped endpoints (learning subsystem)
+
+These return `404 { "detail": "Not Found" }` (no stubs). Only the root `src/`
+student app uses them; it will regress until a Learning Platform app is wired in.
+
+```
+POST /api/content/generate            POST /api/courses/preview-structure
+POST /api/content/assistant           GET  /api/courses/ingest-jobs/{id}
+GET  /api/content/module/{id}         POST /api/courses
+GET  /api/learning/mastery/{id}       GET  /api/courses/join/{code}
+POST /api/learning/attempt            GET  /api/courses/{id}
+POST /api/uploads                     POST /api/courses/{id}/enroll
+```
+
+## Deploying to Vercel (swap from the Python backend)
+
+The repo's root `vercel.json` currently points the `backend` service at the
+Python app (`backend`, `app.main:app`). Swapping to this TS backend is the last
+step — **verify it on a Vercel preview deployment before promoting**, since it
+can't be checked locally. Two options:
+
+### Option A — keep the `services` schema (minimal diff)
+
+Repoint the `backend` service in `vercel.json`:
+
+```json
+"backend": { "root": "backend-ts", "entrypoint": "src/index.ts" }
+```
+
+Deploy to a preview and confirm `/health` + a login flow before promoting. The
+`services` Node-entrypoint format isn't publicly documented; if the preview build
+fails, use Option B.
+
+### Option B — standard serverless function (well-documented fallback)
+
+1. Create `api/[[...route]].ts` at the repo root:
+
+   ```ts
+   import { handle } from "hono/vercel";
+   import { createApp } from "../backend-ts/src/app";
+   export const config = { runtime: "nodejs" };
+   export default handle(createApp());
+   ```
+
+2. Add an `/api/health` alias in `src/app.ts` (one line next to `/health`) and
+   rewrite `/health` → `/api/health` in `vercel.json`.
+3. Add the runtime deps (`hono`, `@hono/node-server`, `@supabase/supabase-js`,
+   `zod`, `@anthropic-ai/sdk`) to the **root** `package.json` so the function
+   bundler resolves them, and drop the `backend` service + its `/api` rewrite.
+
+Either way, set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`,
+`FRONTEND_ORIGIN`, and `EXTRA_CORS_ORIGINS` in the Vercel project. Production has
+no `.local_data` (`.vercelignore`), so Supabase must be configured there.
+Rollback is a one-line `vercel.json` revert.

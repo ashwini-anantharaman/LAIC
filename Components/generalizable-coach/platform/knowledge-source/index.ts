@@ -12,4 +12,5 @@ export {
   PlatformKnowledgeSource,
   type PlatformKnowledgeSourceOptions,
 } from "./PlatformKnowledgeSource.js";
+export { MultiScopeKnowledgeSource } from "./MultiScopeKnowledgeSource.js";
 export { toKnowledgeChunk, DEFAULT_CHUNK_TYPE, type RawChunk } from "./normalize.js";

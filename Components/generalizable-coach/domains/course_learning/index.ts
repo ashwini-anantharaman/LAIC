@@ -23,6 +23,7 @@ export {
   type GradedQuizAction,
   type GradedCorrectness,
 } from "./gradedEvaluator.js";
+export { LlmGradingModel, type LlmGradingModelOptions } from "./llmGradingModel.js";
 
 /** A lesson-scoped KnowledgeScope for the sample "memory" lesson. */
 export function memoryLessonScope(): KnowledgeScope {

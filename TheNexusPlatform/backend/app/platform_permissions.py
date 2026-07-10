@@ -19,6 +19,7 @@ class Membership:
     access: Access
     stage_path: Optional[str] = None
     stage_type: Optional[StageType] = None
+    program_id: Optional[str] = None
 
 
 @dataclass
@@ -33,6 +34,17 @@ class StageNode:
     discord_url: Optional[str] = None
     event_at: Optional[str] = None
     qualifier_status: Optional[str] = None
+    program_id: Optional[str] = None
+
+
+@dataclass
+class ProgramInfo:
+    """Minimal program shape needed for role-label derivation."""
+
+    id: str
+    category: str
+    instructor_label: Optional[str] = None
+    learner_label: Optional[str] = None
 
 
 def is_subtree_path(ancestor_path: str, descendant_path: str) -> bool:
@@ -109,17 +121,56 @@ def resolve_effective_access(
     return membership_access
 
 
-def role_label(memberships: list[Membership], org_id: str, stages: list[StageNode]) -> str:
+def category_role_word(role: str, category: Optional[str]) -> str:
+    """Category-derived display word for a canonical instructor/learner role.
+
+    Game programs read as Coach/Player, edu programs (or no program) read as
+    Teacher/Student. This is only the *default*; callers should prefer an
+    explicit per-program instructor_label/learner_label override when present.
+    """
+    if role == "instructor":
+        return "Coach" if category == "game" else "Teacher"
+    if role == "learner":
+        return "Player" if category == "game" else "Student"
+    return {"owner": "Owner", "administrator": "Administrator"}.get(role, "Member")
+
+
+def is_offering_admin(memberships: list[Membership], org_id: str, program_id: Optional[str] = None) -> bool:
+    """Minimal offering/app/registration-admin check reusing existing membership
+    data — not the full generic RoleAssignment/permission-string system from the
+    Nexus doc's Section 17, just enough to gate the new offering/app endpoints."""
+    for m in memberships:
+        if m.org_id != org_id:
+            continue
+        if m.role in ("owner", "administrator") and m.stage_node_id is None:
+            return True
+        if program_id and m.program_id == program_id and m.role in ("administrator", "instructor"):
+            return True
+    return False
+
+
+def role_label(
+    memberships: list[Membership],
+    org_id: str,
+    stages: list[StageNode],
+    programs: Optional[list["ProgramInfo"]] = None,
+) -> str:
     org_memberships = [m for m in memberships if m.org_id == org_id]
     if not org_memberships:
         return "Member"
 
     primary = next((m for m in org_memberships if m.role == "owner"), org_memberships[0])
-    role_word = {
-        "owner": "Owner",
-        "administrator": "Administrator",
-        "teacher": "Teacher",
-    }.get(primary.role, "Member")
+
+    program = None
+    if primary.program_id and programs:
+        program = next((p for p in programs if p.id == primary.program_id), None)
+
+    if primary.role == "instructor" and program and program.instructor_label:
+        role_word = program.instructor_label
+    elif primary.role == "learner" and program and program.learner_label:
+        role_word = program.learner_label
+    else:
+        role_word = category_role_word(primary.role, program.category if program else None)
 
     if primary.stage_node_id:
         stage = next((s for s in stages if s.id == primary.stage_node_id), None)

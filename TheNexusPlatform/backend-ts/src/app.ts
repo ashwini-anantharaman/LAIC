@@ -3,10 +3,12 @@ import { cors } from "hono/cors";
 
 import { getSettings } from "./config";
 import { HttpError } from "./httpError";
-import { bridgeRouter } from "./routes/bridge";
+import { gameRouter } from "./routes/game";
+import { hookRouter } from "./routes/hook";
+import { offeringsRouter } from "./routes/offerings";
 import { platformRouter } from "./routes/platform";
 
-/** Build the Hono app. Mirrors the FastAPI `app` in the Python backend. */
+/** Build the Hono app. Mirrors the FastAPI `app` in backend/app/main.py. */
 export function createApp(): Hono {
   const settings = getSettings();
 
@@ -37,8 +39,11 @@ export function createApp(): Hono {
     }),
   );
 
-  app.route("/api/platform/bridge", bridgeRouter);
+  // More specific prefixes first; offerings mounts at the bare /api prefix.
   app.route("/api/platform", platformRouter);
+  app.route("/api/hook", hookRouter);
+  app.route("/api/game", gameRouter);
+  app.route("/api", offeringsRouter);
 
   app.get("/health", (c) =>
     c.json({
@@ -56,6 +61,9 @@ export function createApp(): Hono {
     console.error(err);
     return c.json({ detail: "Internal Server Error" }, 500);
   });
+
+  // Keep the FastAPI envelope on unknown routes too (Hono defaults to text).
+  app.notFound((c) => c.json({ detail: "Not Found" }, 404));
 
   return app;
 }

@@ -1,0 +1,7 @@
+.venv
+backend/.venv
+backend/.local_data
+node_modules
+.env
+.env.local
+backend/.env

@@ -2,10 +2,11 @@
 
 import type { Context } from "hono";
 
+import { getSettings } from "./config";
 import { HttpError } from "./httpError";
-import type { Membership } from "./permissions";
-import { useLocal } from "./platformDb";
+import * as platformDb from "./platformDb";
 import * as local from "./platformLocalStore";
+import type { Membership } from "./permissions";
 import { createEphemeralClient, requireAdminClient, requireClient } from "./supabaseClient";
 
 type Row = Record<string, any>;
@@ -18,7 +19,23 @@ export interface PlatformUser {
   memberships: Membership[];
 }
 
-// Test hook mirroring FastAPI's `app.dependency_overrides[get_current_user]`.
+/**
+ * Resolved identity for a Registered App calling the signup hook. A distinct
+ * principal type from PlatformUser — an app's API key, not a user session.
+ */
+export interface AuthenticatedApp {
+  id: string;
+  organization_id: string;
+  program_id: string | null;
+  offering_id: string | null;
+  app_slug: string;
+  allowed_identifiers: string;
+  status: string;
+  launch_url: string | null;
+  launch_context: Row;
+}
+
+// Test hooks mirroring FastAPI's `app.dependency_overrides[...]`.
 let _currentUserOverride: (() => PlatformUser | Promise<PlatformUser>) | null = null;
 export function setCurrentUserOverride(
   fn: (() => PlatformUser | Promise<PlatformUser>) | null,
@@ -26,26 +43,61 @@ export function setCurrentUserOverride(
   _currentUserOverride = fn;
 }
 
+let _authenticatedAppOverride: (() => AuthenticatedApp | Promise<AuthenticatedApp>) | null = null;
+export function setAuthenticatedAppOverride(
+  fn: (() => AuthenticatedApp | Promise<AuthenticatedApp>) | null,
+): void {
+  _authenticatedAppOverride = fn;
+}
+
+const _ROLE_ALIASES: Record<string, string> = { teacher: "instructor" };
+
+/**
+ * Run the whole platform locally (demo mode) when Supabase isn't configured
+ * OR isn't reachable / not migrated. Mirrors platformDb's local-store fallback
+ * so auth and data storage always agree on which backend is in use.
+ */
+export async function demoMode(): Promise<boolean> {
+  if (!getSettings().supabaseEnabled) return true;
+  try {
+    return await platformDb.useLocal();
+  } catch {
+    return true;
+  }
+}
+
 function _rowToMembership(row: Row, stageRow?: Row | null): Membership {
   return {
     id: row.id,
     org_id: row.org_id,
     profile_id: row.profile_id,
-    role: row.role,
+    role: _ROLE_ALIASES[row.role] ?? row.role,
     stage_node_id: row.stage_node_id ?? null,
     access: row.access ?? "view",
     stage_path: stageRow ? stageRow.path ?? null : null,
     stage_type: stageRow ? stageRow.stage_type ?? null : null,
+    program_id: row.program_id ?? null,
   };
 }
 
+function _bearerToken(c: Context): string | null {
+  const header = c.req.header("Authorization") ?? c.req.header("authorization");
+  if (!header) return null;
+  const parts = header.split(/\s+/);
+  if (parts.length !== 2 || !/^bearer$/i.test(parts[0]) || !parts[1]) return null;
+  return parts[1];
+}
+
 export async function verifyToken(token: string): Promise<{ id: string; email: string }> {
+  if (await demoMode()) {
+    const user = local.localAuthGetUser(token);
+    if (user === null) throw new HttpError(401, "Invalid token");
+    return { id: user.id, email: user.email };
+  }
   const client = requireAdminClient();
   try {
     const { data, error } = await client.auth.getUser(token);
-    if (error || !data || !data.user) {
-      throw new HttpError(401, "Invalid token");
-    }
+    if (error || !data || !data.user) throw new HttpError(401, "Invalid token");
     return { id: data.user.id, email: data.user.email ?? "" };
   } catch (exc) {
     if (exc instanceof HttpError) throw exc;
@@ -54,7 +106,7 @@ export async function verifyToken(token: string): Promise<{ id: string; email: s
 }
 
 export async function loadPlatformUser(userId: string, email: string): Promise<PlatformUser> {
-  if (await useLocal()) {
+  if (await platformDb.useLocal()) {
     const profile = local.localGetProfile(userId);
     if (!profile) throw new HttpError(404, "Profile not found");
     const membershipRows = local.localGetMemberships(userId);
@@ -62,7 +114,9 @@ export async function loadPlatformUser(userId: string, email: string): Promise<P
     for (const m of membershipRows) {
       const orgId = m.org_id;
       if (orgId) {
-        for (const s of local.localListStageNodes(orgId)) stageMap.set(s.id, s as unknown as Row);
+        for (const s of local.localListStageNodes(orgId)) {
+          stageMap.set(s.id, s as unknown as Row);
+        }
       }
     }
     const memberships = membershipRows.map((m) =>
@@ -79,24 +133,30 @@ export async function loadPlatformUser(userId: string, email: string): Promise<P
 
   const client = requireClient();
 
-  const { data: profiles } = await client.from("profiles").select("*").eq("id", userId).limit(1);
-  if (!profiles || profiles.length === 0) throw new HttpError(404, "Profile not found");
-
+  const { data: profiles, error: profileError } = await client
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .limit(1);
+  if (profileError || !profiles || profiles.length === 0) {
+    throw new HttpError(404, "Profile not found");
+  }
   const profile = profiles[0];
-  const { data: membershipRows0 } = await client
+
+  const { data: membershipRows } = await client
     .from("org_memberships")
     .select("*")
     .eq("profile_id", userId);
-  const membershipRows = membershipRows0 ?? [];
+  const rows: Row[] = membershipRows ?? [];
 
-  const stageIds = membershipRows.filter((m) => m.stage_node_id).map((m) => m.stage_node_id);
+  const stageIds = rows.filter((m) => m.stage_node_id).map((m) => m.stage_node_id);
   const stageMap = new Map<string, Row>();
-  if (stageIds.length) {
+  if (stageIds.length > 0) {
     const { data: stages } = await client.from("stage_nodes").select("*").in("id", stageIds);
     for (const s of stages ?? []) stageMap.set(s.id, s);
   }
 
-  const memberships = membershipRows.map((m) =>
+  const memberships = rows.map((m) =>
     _rowToMembership(m, m.stage_node_id ? stageMap.get(m.stage_node_id) : null),
   );
 
@@ -109,16 +169,9 @@ export async function loadPlatformUser(userId: string, email: string): Promise<P
   };
 }
 
-function _bearer(c: Context): string | null {
-  const header = c.req.header("Authorization") ?? c.req.header("authorization");
-  if (!header) return null;
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  return match ? match[1] : null;
-}
-
 export async function getCurrentUser(c: Context): Promise<PlatformUser> {
   if (_currentUserOverride) return _currentUserOverride();
-  const token = _bearer(c);
+  const token = _bearerToken(c);
   if (!token) throw new HttpError(401, "Authentication required");
   const auth = await verifyToken(token);
   return loadPlatformUser(auth.id, auth.email);
@@ -126,7 +179,7 @@ export async function getCurrentUser(c: Context): Promise<PlatformUser> {
 
 export async function getOptionalUser(c: Context): Promise<PlatformUser | null> {
   if (_currentUserOverride) return _currentUserOverride();
-  const token = _bearer(c);
+  const token = _bearerToken(c);
   if (!token) return null;
   try {
     const auth = await verifyToken(token);
@@ -138,6 +191,7 @@ export async function getOptionalUser(c: Context): Promise<PlatformUser | null> 
 }
 
 export async function createAuthUser(email: string, password: string): Promise<Row> {
+  if (await demoMode()) return local.localAuthCreateUser(email, password);
   const client = requireAdminClient();
   try {
     const { data, error } = await client.auth.admin.createUser({
@@ -150,7 +204,7 @@ export async function createAuthUser(email: string, password: string): Promise<R
     return { id: data.user.id, email: data.user.email ?? email };
   } catch (exc) {
     if (exc instanceof HttpError) throw exc;
-    const msg = exc instanceof Error ? exc.message : String(exc);
+    const msg = String((exc as Error)?.message ?? exc);
     if (msg.toLowerCase().includes("already") || msg.toLowerCase().includes("duplicate")) {
       throw new HttpError(409, "Email already registered");
     }
@@ -158,15 +212,84 @@ export async function createAuthUser(email: string, password: string): Promise<R
   }
 }
 
-export async function signInUser(
-  email: string,
-  password: string,
-): Promise<{ id: string; email: string; access_token: string }> {
+/**
+ * Bearer-token auth for /api/hook/* — a per-app API key, verified against
+ * registered_apps.api_key_hash. Separate from getCurrentUser by design.
+ * TODO(rate-limit): no throttling infra exists in this repo yet; add a per-app
+ * rate limit here before the hook is exposed to untrusted third-party apps.
+ */
+export async function getAuthenticatedApp(c: Context): Promise<AuthenticatedApp> {
+  if (_authenticatedAppOverride) return _authenticatedAppOverride();
+  const token = _bearerToken(c);
+  if (!token) throw new HttpError(401, "App API key required");
+  const row = await platformDb.getRegisteredAppByHash(local.hashApiKey(token));
+  if (!row || row.status !== "active") {
+    throw new HttpError(401, "Invalid or revoked app API key");
+  }
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    program_id: row.program_id ?? null,
+    offering_id: row.offering_id ?? null,
+    app_slug: row.app_slug,
+    allowed_identifiers: row.allowed_identifiers ?? "email",
+    status: row.status,
+    launch_url: row.launch_url ?? null,
+    launch_context: row.launch_context ?? {},
+  };
+}
+
+/**
+ * Swap a short-lived, single-use launch token (minted by
+ * GET /api/apps/{id}/launch-context for one specific user) for a real session
+ * access_token. Deliberately simple — no OAuth/PKCE: the token was already tied
+ * to a user_id at issuance, so a successful consume just mints that user a fresh
+ * session. Replaces handing a long-lived platform session token in a URL.
+ */
+export async function exchangeLaunchToken(rawToken: string): Promise<Row> {
+  const consumed = await platformDb.consumeLaunchToken(rawToken);
+  if (!consumed) throw new HttpError(401, "Invalid or expired launch token");
+  const userId = consumed.user_id;
+
+  if (await demoMode()) {
+    // Demo-mode access tokens are the user id itself (see localAuthSignIn).
+    return { access_token: userId };
+  }
+
+  const profile = await platformDb.getProfile(userId);
+  const email = profile?.email;
+  if (!email) throw new HttpError(500, "Could not resolve user for launch token");
+  try {
+    const admin = requireAdminClient();
+    const { data: link, error: linkError } = await admin.auth.admin.generateLink({
+      type: "magiclink",
+      email,
+    });
+    if (linkError || !link?.properties?.hashed_token) {
+      throw new HttpError(500, `Failed to exchange launch token: ${linkError?.message ?? "no link"}`);
+    }
+    const ephemeral = createEphemeralClient();
+    const { data: verified, error: verifyError } = await ephemeral.auth.verifyOtp({
+      token_hash: link.properties.hashed_token,
+      type: "magiclink",
+    });
+    if (verifyError || !verified?.session) {
+      throw new HttpError(500, "Failed to mint session from launch token");
+    }
+    return { access_token: verified.session.access_token };
+  } catch (exc) {
+    if (exc instanceof HttpError) throw exc;
+    throw new HttpError(500, `Failed to exchange launch token: ${exc}`);
+  }
+}
+
+export async function signInUser(email: string, password: string): Promise<Row> {
+  if (await demoMode()) return local.localAuthSignIn(email, password);
   // Ephemeral client so login never overwrites the admin client's service-role session.
   const client = createEphemeralClient();
   try {
     const { data, error } = await client.auth.signInWithPassword({ email, password });
-    if (error || !data || !data.session || !data.user) {
+    if (error || !data?.session || !data?.user) {
       throw new HttpError(401, "Invalid credentials");
     }
     return {
