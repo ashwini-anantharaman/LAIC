@@ -54,6 +54,18 @@ export interface MembershipSummary {
   app_launch_url?: string;
 }
 
+export interface OrgMember {
+  id: string;
+  profile_id: string;
+  email: string;
+  display_name?: string;
+  role: string; // owner | administrator | instructor
+  program_id?: string;
+  stage_node_id?: string;
+  stage_name?: string;
+  access: "view" | "edit";
+}
+
 export interface MeResponse {
   id: string;
   email: string;
@@ -187,6 +199,26 @@ export interface RegisteredApp {
   status: AppStatus;
   launch_url?: string;
   launch_context: Record<string, unknown>;
+}
+
+// ── App Shell (Nexus v0.4 §6) ───────────────────────────────────────────────
+// v0.4 re-adopts the App Shell as the single configurable app object. The
+// backend still persists a RegisteredApp; the extra shell configuration
+// (appType, theme, navigation, feature flags) is carried inside the app's
+// `launch_context.shell` blob until the backend grows dedicated columns.
+export type AppType = "course_app" | "challenge_app" | "coaching_app" | "bridge_app" | "mixed_app";
+
+export interface AppShellTheme {
+  primaryColor?: string;
+  secondaryColor?: string;
+  logoUrl?: string;
+}
+
+export interface AppShellConfig {
+  appType?: AppType;
+  theme?: AppShellTheme;
+  navSections?: string[];
+  featureFlags?: string[];
 }
 
 export interface RegisteredAppWithKey extends RegisteredApp {

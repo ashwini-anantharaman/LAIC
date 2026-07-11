@@ -20,7 +20,10 @@ import type { DeliveryMethod, StageKey } from "../types/platform";
 import type { DashboardData, JoinCodeKind, Program, ProgramCategory, SignupType } from "../types/platform";
 import { BASE, PANEL, INPUT_BG, BORDER, MUTED, FONT_HEAD, FONT_BODY, slide } from "./theme";
 import { OfferingsSection } from "./components/offerings/OfferingsSection";
+import { PlatformWorkspace } from "./components/platform/PlatformWorkspace";
+import { TeacherWorkspace } from "./components/platform/TeacherWorkspace";
 import { ActivityFeed } from "./components/ActivityFeed";
+import type { MembershipSummary } from "../types/platform";
 import { getAppLaunchContext, listEntitlements, setEntitlement } from "../services/api";
 import type { Entitlement, ModuleKey } from "../types/platform";
 
@@ -36,7 +39,7 @@ const ATMO = [
   BASE,
 ].join(", ");
 
-type Screen = "landing" | "login" | "signup-role" | "signup" | "org-setup" | "dashboard" | "game-handoff";
+type Screen = "landing" | "login" | "signup-role" | "signup" | "org-setup" | "dashboard" | "teacher" | "game-handoff";
 
 function Grain({ opacity = 0.22 }: { opacity?: number }) {
   const raw = useId();
@@ -65,7 +68,7 @@ function AuthPanel({ children }: { children: React.ReactNode }) {
       <div className="relative hidden md:flex flex-1 items-end p-10 overflow-hidden" style={{ background: ATMO }}>
         <Grain opacity={0.2} />
         <p className="relative z-10 text-[11px] font-semibold tracking-[0.22em] uppercase" style={{ color: "rgba(255,255,255,0.35)", fontFamily: FONT_BODY }}>
-          ✳ Life in AI Center Platform
+          MindBrainAI Nexus Platform
         </p>
       </div>
       <div
@@ -148,11 +151,8 @@ function Landing({ onLogin, onSignup }: { onLogin: () => void; onSignup: () => v
       <div className="absolute top-0 right-0 w-[500px] h-[500px] pointer-events-none" style={{ background: "radial-gradient(ellipse at 100% 0%, rgba(48,26,78,0.35) 0%, transparent 55%)" }} />
 
       <motion.div className="relative z-10 flex flex-col items-center text-center px-6 max-w-xl" {...slide}>
-        <div className="mb-8 w-11 h-11 rounded-full flex items-center justify-center" style={{ border: "1px solid rgba(255,255,255,0.15)" }}>
-          <span className="text-white/60 text-base">✳</span>
-        </div>
         <h1 className="text-5xl md:text-[3.75rem] font-bold text-white leading-[1.1] tracking-tight mb-5" style={{ fontFamily: FONT_HEAD }}>
-          Life in AI Center<br />Platform
+          MindBrainAI Nexus<br />Platform
         </h1>
         <p className="text-sm leading-relaxed mb-12 max-w-xs" style={{ color: MUTED, fontFamily: FONT_BODY }}>
           The unified infrastructure for academic AI challenges and organizational management.
@@ -197,11 +197,8 @@ function Login({ onBack, onSuccess, onGoSignup }: { onBack: () => void; onSucces
     <AuthPanel>
       <motion.div className="w-full max-w-[280px]" {...slide}>
         <BackBtn onClick={onBack} />
-        <div className="w-10 h-10 rounded-xl mx-auto mb-6 flex items-center justify-center" style={{ border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)" }}>
-          <span className="text-white/55 text-sm">✳</span>
-        </div>
         <p className="text-center text-[10px] tracking-[0.2em] uppercase mb-1" style={{ color: MUTED, fontFamily: FONT_BODY }}>Log in to</p>
-        <h1 className="text-center text-[1.75rem] font-bold text-white mb-8 tracking-tight" style={{ fontFamily: FONT_HEAD }}>Life in AI</h1>
+        <h1 className="text-center text-[1.75rem] font-bold text-white mb-8 tracking-tight" style={{ fontFamily: FONT_HEAD }}>MindBrainAI Nexus Platform</h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
           <InputField type="email" placeholder="Your Email" value={email} onChange={setEmail} Icon={Mail} required />
           <InputField
@@ -1177,83 +1174,41 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         <div className="mt-8 h-px w-full" style={{ background: BORDER }} />
         {data?.org_id && (
           <div className="mt-10">
-            <OrganizationWorkspace orgId={data.org_id} orgName={data.org_name} accent={accent} />
+            <PlatformWorkspace orgId={data.org_id} orgName={data.org_name} accent={accent} />
           </div>
         )}
-        <div className="mt-2 mb-10 flex gap-1 w-fit rounded-xl p-1 flex-wrap" style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}` }}>
-          {(data?.stages ?? []).map((s) => (
-            <button key={s.id} onClick={() => setActiveStage(s.id)} className="px-5 py-2 rounded-lg text-[11px] font-bold tracking-widest uppercase transition-all duration-150 focus:outline-none" style={{ background: activeStage === s.id ? accent : "transparent", color: activeStage === s.id ? "#111" : MUTED, fontFamily: FONT_BODY }}>
-              {s.name}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="flex flex-col gap-5">
-            <AnimatePresence mode="wait">
-              <motion.div key={activeStage} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
-                <div className="rounded-2xl p-7 flex flex-col gap-4" style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}` }}>
-                  <div className="text-[2rem] font-bold text-white leading-tight" style={{ fontFamily: FONT_HEAD }}>
-                    {activeStageData?.event_at ? new Date(activeStageData.event_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "No event set"}
-                  </div>
-                  <p className="text-xs" style={{ color: MUTED, fontFamily: FONT_BODY }}>{activeStageData?.qualifier_status ?? "Pending"}</p>
-                </div>
-              </motion.div>
-            </AnimatePresence>
-            {activeStageData?.discord_url && (
-              <a href={activeStageData.discord_url} target="_blank" rel="noreferrer" className="flex items-center gap-3 group">
-                <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 text-white" style={{ background: "#5865F2" }}><DiscordIcon size={18} /></div>
-                <span className="text-sm group-hover:text-white transition-colors" style={{ color: MUTED, fontFamily: FONT_BODY }}>{activeStageData.name} Discord Server</span>
-              </a>
-            )}
-            {activeStage && activeStageData && (
-              <JoinCodesPanel stageId={activeStage} stageName={activeStageData.name} accent={accent} />
-            )}
-          </div>
-          <div className="flex flex-col gap-7">
-            <div>
-              <p className="text-[10px] font-bold tracking-[0.18em] uppercase mb-2" style={{ color: MUTED, fontFamily: FONT_BODY }}>Qualifiers</p>
-              <p className="text-sm text-white/45" style={{ fontFamily: FONT_BODY }}>{activeStageData?.qualifier_status ?? "[not unlocked yet]"}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold tracking-[0.18em] uppercase mb-2" style={{ color: MUTED, fontFamily: FONT_BODY }}>Student Sign-ups</p>
-              <p className="text-5xl font-bold text-white" style={{ fontFamily: FONT_HEAD }}>{data?.total_signups ?? 0}</p>
-              <button onClick={() => setOpen((v) => !v)} className="mt-1.5 text-[11px] underline underline-offset-2 hover:text-white transition-colors focus:outline-none" style={{ color: MUTED, fontFamily: FONT_BODY }}>{open ? "Hide list" : "View list"}</button>
-              <AnimatePresence>
-                {open && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22 }} className="overflow-hidden">
-                    <div className="mt-3 rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "rgba(255,255,255,0.03)" }}>
-                      {students.map((n, i) => (
-                        <div key={n + i} className="px-4 py-2.5 text-sm text-white/55" style={{ borderBottom: i < students.length - 1 ? `1px solid ${BORDER}` : "none", fontFamily: FONT_BODY }}>{n}</div>
-                      ))}
-                      {students.length === 0 && <div className="px-4 py-2.5 text-sm text-white/28" style={{ fontFamily: FONT_BODY }}>No registrations yet</div>}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-          <div className="flex flex-col gap-6">
-            <p className="text-[10px] font-bold tracking-[0.18em] uppercase" style={{ color: MUTED, fontFamily: FONT_BODY }}>Dashboard / Stats</p>
-            <div className="flex flex-col gap-5">
-              <Bar pct={50} label="Course completion rate" />
-              <Bar pct={72} label="Registration progress" />
-              <Bar pct={38} label="Practice test submissions" />
-            </div>
-            <div className="rounded-2xl p-5 mt-2" style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}` }}>
-              <p className="text-[10px] font-bold tracking-[0.18em] uppercase mb-2" style={{ color: MUTED, fontFamily: FONT_BODY }}>Active administrators</p>
-              <p className="text-4xl font-bold text-white" style={{ fontFamily: FONT_HEAD }}>—</p>
-            </div>
-          </div>
-        </div>
-        <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-3">
-          {(data?.stages ?? []).map((s) => (
-            <div key={s.id} className="rounded-2xl px-5 py-4" style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}` }}>
-              <p className="text-[9px] uppercase tracking-[0.18em] mb-1.5" style={{ color: MUTED, fontFamily: FONT_BODY }}>{s.stage_type}</p>
-              <p className="text-sm font-semibold text-white" style={{ fontFamily: FONT_HEAD }}>{s.signup_count} signups</p>
-            </div>
-          ))}
-        </div>
         {data?.org_id && <ActivityFeed orgId={data.org_id} />}
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Teacher Dashboard ──────────────────────────────────────────────────────
+
+function TeacherDashboard({ memberships, onLogout }: { memberships: MembershipSummary[]; onLogout: () => void }) {
+  const [displayName, setDisplayName] = useState("");
+
+  useEffect(() => {
+    getMe().then((me) => setDisplayName(me.display_name || me.email.split("@")[0])).catch(() => {});
+  }, []);
+
+  return (
+    <div className="relative min-h-screen overflow-hidden" style={{ background: BASE }}>
+      <Grain opacity={0.18} />
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] pointer-events-none" style={{ background: "radial-gradient(ellipse at 100% 0%, rgba(48,26,78,0.25) 0%, transparent 55%)" }} />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] pointer-events-none" style={{ background: "radial-gradient(ellipse at 0% 100%, rgba(120,28,20,0.20) 0%, transparent 55%)" }} />
+      <motion.div className="relative z-10 max-w-6xl mx-auto px-8 md:px-14 py-14" {...slide}>
+        <div className="flex items-start justify-between mb-2">
+          <div>
+            <h1 className="text-5xl font-bold text-white tracking-tight" style={{ fontFamily: FONT_HEAD }}>Welcome, {displayName || "Teacher"}</h1>
+            <p className="mt-2 text-base" style={{ color: MUTED, fontFamily: FONT_BODY }}>{memberships[0]?.org_name ?? "Organization"} — Instructor</p>
+          </div>
+          <button onClick={onLogout} className="text-xs hover:text-white transition-colors focus:outline-none mt-2" style={{ color: MUTED, fontFamily: FONT_BODY }}>Log out</button>
+        </div>
+        <div className="mt-8 h-px w-full" style={{ background: BORDER }} />
+        <div className="mt-10">
+          <TeacherWorkspace memberships={memberships} displayName={displayName} accent={DEFAULT_ACCENT} />
+        </div>
       </motion.div>
     </div>
   );
@@ -1281,17 +1236,32 @@ export default function App() {
   const [orgId, setOrgId] = useState("");
   const [orgName, setOrgName] = useState("");
   const [gameHandoff, setGameHandoff] = useState<GameMembershipInfo | null>(null);
+  const [teacherMemberships, setTeacherMemberships] = useState<MembershipSummary[]>([]);
 
   function routeAfterAuth() {
     getMe()
       .then((me) => {
+        // Org owners/admins get the supervisory dashboard (all programs, teachers,
+        // students, offerings). Everyone else is scoped to what they belong to.
+        const isOrgAdmin = me.memberships.some((m) => m.role === "owner" || m.role === "administrator");
+        if (isOrgAdmin) {
+          setScreen("dashboard");
+          return;
+        }
+        // Game-program members launch the Game Platform (existing coach handoff).
         const gameProgram = firstGameMembership(me.memberships);
         if (gameProgram) {
           setGameHandoff(gameProgram);
           setScreen("game-handoff");
-        } else {
-          setScreen("dashboard");
+          return;
         }
+        // Instructors/teachers: scoped to their own program(s) to create courses.
+        if (me.memberships.some((m) => m.role === "instructor")) {
+          setTeacherMemberships(me.memberships);
+          setScreen("teacher");
+          return;
+        }
+        setScreen("dashboard");
       })
       .catch(() => setScreen("dashboard"));
   }
@@ -1305,6 +1275,7 @@ export default function App() {
     setOrgId("");
     setOrgName("");
     setGameHandoff(null);
+    setTeacherMemberships([]);
     setScreen("landing");
   }
 
@@ -1351,6 +1322,11 @@ export default function App() {
         {screen === "dashboard" && (
           <motion.div key="dashboard" {...slide}>
             <Dashboard onLogout={handleLogout} />
+          </motion.div>
+        )}
+        {screen === "teacher" && (
+          <motion.div key="teacher" {...slide}>
+            <TeacherDashboard memberships={teacherMemberships} onLogout={handleLogout} />
           </motion.div>
         )}
         {screen === "game-handoff" && gameHandoff && (

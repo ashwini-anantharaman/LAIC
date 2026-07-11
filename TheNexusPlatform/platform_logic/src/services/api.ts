@@ -17,8 +17,10 @@ import type {
   Offering,
   OfferingStatus,
   OfferingType,
+  OrgMember,
   Participant,
   ParticipantType,
+  PlatformModule,
   Program,
   ProgramCategory,
   Registration,
@@ -195,6 +197,14 @@ export async function listPrograms(orgId: string): Promise<Program[]> {
   return request<Program[]>(`/api/platform/orgs/${orgId}/programs`);
 }
 
+export async function listMembers(orgId: string): Promise<OrgMember[]> {
+  return request<OrgMember[]>(`/api/platform/orgs/${orgId}/members`);
+}
+
+export async function deleteProgram(programId: string): Promise<void> {
+  await request(`/api/platform/programs/${programId}`, { method: "DELETE" });
+}
+
 export async function createProgram(orgId: string, program: DraftProgramInput): Promise<Program> {
   return request<Program>(`/api/platform/orgs/${orgId}/programs`, {
     method: "POST",
@@ -256,6 +266,10 @@ export interface CreateOfferingInput {
   status?: OfferingStatus;
   description?: string;
   registration_open?: boolean;
+  platform_module?: PlatformModule;
+  external_runtime_url?: string;
+  participant_label_singular?: string;
+  participant_label_plural?: string;
 }
 
 export async function createOffering(programId: string, payload: CreateOfferingInput): Promise<Offering> {
@@ -278,6 +292,10 @@ export async function publishOffering(offeringId: string): Promise<Offering> {
 
 export async function closeOffering(offeringId: string): Promise<Offering> {
   return request<Offering>(`/api/offerings/${offeringId}/close`, { method: "POST" });
+}
+
+export async function deleteOffering(offeringId: string): Promise<void> {
+  await request(`/api/offerings/${offeringId}`, { method: "DELETE" });
 }
 
 export interface CreateAppInput {

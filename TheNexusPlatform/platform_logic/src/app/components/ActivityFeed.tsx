@@ -3,6 +3,9 @@ import { listAuditEvents } from "../../services/api";
 import type { AuditEvent } from "../../types/platform";
 import { BORDER, MUTED, FONT_BODY } from "../theme";
 
+// Keep the dashboard focused: show only the latest couple of events by default.
+const PREVIEW_COUNT = 2;
+
 // Humanized labels for audit actions. Anything unlisted falls back to the raw
 // action string, so new backend events show up without a frontend change.
 const ACTION_LABELS: Record<string, string> = {
@@ -10,7 +13,9 @@ const ACTION_LABELS: Record<string, string> = {
   "organization.setup_completed": "completed organization setup",
   "organization.theme_updated": "updated the theme",
   "program.created": "created a program",
+  "program.deleted": "deleted a program",
   "offering.created": "created an offering",
+  "offering.deleted": "deleted an offering",
   "offering.updated": "updated an offering",
   "offering.published": "published an offering",
   "offering.closed": "closed an offering",
@@ -66,7 +71,7 @@ export function ActivityFeed({ orgId }: { orgId: string }) {
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load activity"));
   }, [orgId]);
 
-  const visible = expanded ? events : events?.slice(0, 8);
+  const visible = expanded ? events : events?.slice(0, PREVIEW_COUNT);
 
   return (
     <div className="mt-12">
@@ -74,7 +79,7 @@ export function ActivityFeed({ orgId }: { orgId: string }) {
         <p className="text-[10px] font-bold tracking-[0.18em] uppercase" style={{ color: MUTED, fontFamily: FONT_BODY }}>
           Recent Activity
         </p>
-        {events && events.length > 8 && (
+        {events && events.length > PREVIEW_COUNT && (
           <button
             type="button" onClick={() => setExpanded((v) => !v)}
             className="text-[11px] underline underline-offset-2 hover:text-white transition-colors focus:outline-none"
