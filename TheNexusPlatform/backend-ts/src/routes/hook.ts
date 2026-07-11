@@ -7,15 +7,27 @@
  */
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 
 import { getAuthenticatedApp, type AuthenticatedApp } from "../auth";
+import { getSettings } from "../config";
 import { HttpError } from "../httpError";
 import * as db from "../platformDb";
+import { allowRequest } from "../rateLimit";
 import { hookRegistrationSchema, normalizeSignupField, parseBody } from "../schemas";
 
 type Row = Record<string, any>;
 
 export const hookRouter = new Hono();
+
+/** Authenticate the app, then apply a per-app rate limit (v0.4 §31). */
+async function _authAndLimit(c: Context): Promise<AuthenticatedApp> {
+  const app = await getAuthenticatedApp(c);
+  if (!allowRequest(`hook:${app.id}`, getSettings().hookRateLimitPerMin, 60_000)) {
+    throw new HttpError(429, "Rate limit exceeded — too many hook requests, slow down");
+  }
+  return app;
+}
 
 function _registrationResponse(row: Row): Row {
   return {
@@ -69,7 +81,7 @@ function _requireQuery(c: { req: { query: (k: string) => string | undefined } },
 }
 
 hookRouter.get("/signup-fields", async (c) => {
-  const app = await getAuthenticatedApp(c);
+  const app = await _authAndLimit(c);
   const appSlug = _requireQuery(c, "appSlug");
   const offeringId = _requireQuery(c, "offeringId");
   if (appSlug !== app.app_slug) {
@@ -85,7 +97,7 @@ hookRouter.get("/signup-fields", async (c) => {
 });
 
 hookRouter.post("/registrations", async (c) => {
-  const app = await getAuthenticatedApp(c);
+  const app = await _authAndLimit(c);
   const req = parseBody(hookRegistrationSchema, await c.req.json());
   const offering = await _resolveOffering(app, req.offering_id);
   if (
@@ -147,7 +159,7 @@ hookRouter.post("/registrations", async (c) => {
 });
 
 hookRouter.get("/registrations/:registration_id", async (c) => {
-  const app = await getAuthenticatedApp(c);
+  const app = await _authAndLimit(c);
   const row = await db.getRegistration(c.req.param("registration_id"));
   if (!row || row.organization_id !== app.organization_id) {
     throw new HttpError(404, "Registration not found");

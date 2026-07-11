@@ -189,6 +189,23 @@ offeringsRouter.post("/offerings/:offering_id/publish", async (c) => {
   return c.json(_offeringResponse(updated));
 });
 
+offeringsRouter.delete("/offerings/:offering_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const offeringId = c.req.param("offering_id");
+  const row = await db.getOffering(offeringId);
+  if (!row) throw new HttpError(404, "Offering not found");
+  _requireOfferingAdmin(user, row.organization_id, row.program_id);
+  await db.deleteOffering(offeringId);
+  await db.recordAuditEvent("offering.deleted", {
+    orgId: row.organization_id,
+    actorUserId: user.id,
+    scopeType: "offering",
+    scopeId: offeringId,
+    metadata: { name: row.name, offering_type: row.offering_type },
+  });
+  return c.json({ ok: true });
+});
+
 offeringsRouter.post("/offerings/:offering_id/close", async (c) => {
   const user = await getCurrentUser(c);
   const offeringId = c.req.param("offering_id");

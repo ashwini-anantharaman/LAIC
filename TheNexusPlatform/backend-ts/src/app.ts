@@ -1,12 +1,30 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import type { Context } from "hono";
 
 import { getSettings } from "./config";
 import { HttpError } from "./httpError";
+import { verifyToken } from "./auth";
+import { dbEnabled } from "./db/client";
+import { runWithRequestUser } from "./db/requestContext";
 import { gameRouter } from "./routes/game";
 import { hookRouter } from "./routes/hook";
 import { offeringsRouter } from "./routes/offerings";
 import { platformRouter } from "./routes/platform";
+
+/** Best-effort: resolve the bearer token to a user id for the request context. */
+async function _resolveUserId(c: Context): Promise<string | null> {
+  const h = c.req.header("authorization") ?? c.req.header("Authorization");
+  if (!h) return null;
+  const parts = h.split(/\s+/);
+  if (parts.length !== 2 || !/^bearer$/i.test(parts[0]) || !parts[1]) return null;
+  try {
+    const u = await verifyToken(parts[1]);
+    return u.id;
+  } catch {
+    return null; // app-key (hook) tokens, expired/invalid → no user context
+  }
+}
 
 /** Build the Hono app. Mirrors the FastAPI `app` in backend/app/main.py. */
 export function createApp(): Hono {
@@ -38,6 +56,13 @@ export function createApp(): Hono {
       allowHeaders: ["*"],
     }),
   );
+
+  // Bind the request user into AsyncLocalStorage so the Postgres data path runs
+  // tenant queries under RLS (withUserContext). Only in DB mode — avoids an extra
+  // token verification per request when the legacy path is in use.
+  if (dbEnabled()) {
+    app.use("*", async (c, next) => runWithRequestUser(await _resolveUserId(c), () => next()));
+  }
 
   // More specific prefixes first; offerings mounts at the bare /api prefix.
   app.route("/api/platform", platformRouter);

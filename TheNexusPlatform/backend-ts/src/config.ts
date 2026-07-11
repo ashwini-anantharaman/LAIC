@@ -17,10 +17,17 @@ export interface Settings {
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
 
+  // Direct Postgres connection string for the Drizzle data path (v0.4).
+  // e.g. postgresql://user:pass@host:5432/db  (Supabase or any Postgres).
+  databaseUrl: string;
+
   // CORS: primary frontend origin (owlwise-2 on Vercel or local dev).
   frontendOrigin: string;
   // Comma-separated extra origins (e.g. platform_logic Vercel URL).
   extraCorsOrigins: string;
+
+  // Signup-hook abuse throttle: max requests per app per minute.
+  hookRateLimitPerMin: number;
 
   readonly supabaseEnabled: boolean;
 }
@@ -37,8 +44,12 @@ export function getSettings(): Settings {
     supabaseUrl: env.SUPABASE_URL ?? "",
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY ?? "",
 
+    databaseUrl: env.DATABASE_URL ?? env.SUPABASE_DB_URL ?? "",
+
     frontendOrigin: env.FRONTEND_ORIGIN || "http://localhost:5173",
     extraCorsOrigins: env.EXTRA_CORS_ORIGINS ?? "",
+
+    hookRateLimitPerMin: Number(env.HOOK_RATE_LIMIT_PER_MIN ?? "120"),
 
     get supabaseEnabled(): boolean {
       return Boolean(this.supabaseUrl && this.supabaseServiceRoleKey);

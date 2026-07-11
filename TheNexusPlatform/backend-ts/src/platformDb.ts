@@ -7,8 +7,21 @@ import * as local from "./platformLocalStore";
 import { StageNode } from "./permissions";
 import { getSettings } from "./config";
 import { requireClient } from "./supabaseClient";
+import { dbEnabled } from "./db/client";
+import * as pg from "./db/identityRepo";
+import * as tpg from "./db/tenantRepo";
 
 type Row = Record<string, any>;
+
+/**
+ * Postgres (Drizzle + RLS) is the canonical data path — v0.4. When DATABASE_URL
+ * is set it takes priority over the legacy local-store / supabase-js paths.
+ * Slice 4 routes the identity + org-lifecycle functions here; remaining tenant
+ * CRUD is converted in Slice 5.
+ */
+function usePg(): boolean {
+  return dbEnabled();
+}
 
 const _ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 export const STAGE_ORDER = ["international", "national", "state", "chapter"];
@@ -160,6 +173,7 @@ export async function createProfile(
   role: string,
   displayName: string | null = null,
 ): Promise<Row> {
+  if (usePg()) return pg.createProfile(userId, email, role, displayName);
   if (await useLocal()) return local.localCreateProfile(userId, email, role, displayName);
   const client = requireClient();
   const row = {
@@ -173,6 +187,7 @@ export async function createProfile(
 }
 
 export async function createOrganization(name: string, ownerId: string): Promise<Row> {
+  if (usePg()) return pg.createOrganization(name, ownerId);
   if (await useLocal()) return local.localCreateOrganization(name, ownerId);
   const client = requireClient();
   const slug = await _uniqueSlug(_slugify(name));
@@ -194,6 +209,7 @@ export async function createOrganization(name: string, ownerId: string): Promise
 }
 
 export async function getOrganization(orgId: string): Promise<Row | null> {
+  if (usePg()) return pg.getOrganization(orgId);
   if (await useLocal()) return local.localGetOrganization(orgId);
   const client = requireClient();
   const rows = await _select(client.from("organizations").select("*").eq("id", orgId).limit(1));
@@ -205,6 +221,7 @@ export async function updateOrgTheme(
   accentColor: string | null | undefined,
   logoUrl: string | null | undefined,
 ): Promise<Row> {
+  if (usePg()) return tpg.updateOrgTheme(orgId, accentColor, logoUrl);
   if (await useLocal()) return local.localUpdateOrgTheme(orgId, accentColor, logoUrl);
   const client = requireClient();
   const org = await getOrganization(orgId);
@@ -221,6 +238,7 @@ export async function updateOrgTheme(
 }
 
 export async function getJoinCode(code: string): Promise<Row | null> {
+  if (usePg()) return pg.getJoinCode(code);
   if (await useLocal()) return local.localGetJoinCode(code);
   const client = requireClient();
   const rows = await _select(
@@ -240,6 +258,7 @@ export async function createProgram(
   category: string,
   opts: local.CreateProgramOptions = {},
 ): Promise<Row> {
+  if (usePg()) return tpg.createProgram(orgId, name, category, opts);
   if (await useLocal()) return local.localCreateProgram(orgId, name, category, opts);
   const client = requireClient();
   return _mutateOne(
@@ -286,6 +305,7 @@ async function _programCounts(orgId: string, programId: string): Promise<Row> {
 }
 
 export async function listPrograms(orgId: string): Promise<Row[]> {
+  if (usePg()) return tpg.listPrograms(orgId);
   if (await useLocal()) return local.localListPrograms(orgId);
   const client = requireClient();
   const rows = await _select(client.from("programs").select("*").eq("org_id", orgId));
@@ -295,6 +315,7 @@ export async function listPrograms(orgId: string): Promise<Row[]> {
 }
 
 export async function getProgram(programId: string): Promise<Row | null> {
+  if (usePg()) return tpg.getProgram(programId);
   if (await useLocal()) return local.localGetProgram(programId);
   const client = requireClient();
   const rows = await _select(client.from("programs").select("*").eq("id", programId).limit(1));
@@ -303,11 +324,50 @@ export async function getProgram(programId: string): Promise<Row | null> {
   return { ...row, ...(await _programCounts(row.org_id, row.id)) };
 }
 
+/**
+ * Delete a program and its program-scoped rows. On Supabase we clear the
+ * dependent tables first (in case FK cascade isn't configured), then the
+ * program itself.
+ */
+export async function deleteProgram(programId: string): Promise<void> {
+  if (usePg()) return tpg.deleteProgram(programId);
+  if (await useLocal()) {
+    local.localDeleteProgram(programId);
+    return;
+  }
+  const client = requireClient();
+  const offerings = await _select(client.from("offerings").select("id").eq("program_id", programId));
+  const offeringIds = offerings.map((o) => o.id);
+  if (offeringIds.length > 0) {
+    await client.from("registrations").delete().in("offering_id", offeringIds);
+    await client.from("participants").delete().in("offering_id", offeringIds);
+  }
+  for (const table of ["offerings", "registered_apps", "stage_nodes", "join_codes", "registrations", "participants", "org_memberships"]) {
+    await client.from(table).delete().eq("program_id", programId);
+  }
+  await client.from("programs").delete().eq("id", programId);
+}
+
+/** Delete one offering and its dependent rows (apps, registrations, participants). */
+export async function deleteOffering(offeringId: string): Promise<void> {
+  if (usePg()) return tpg.deleteOffering(offeringId);
+  if (await useLocal()) {
+    local.localDeleteOffering(offeringId);
+    return;
+  }
+  const client = requireClient();
+  await client.from("registrations").delete().eq("offering_id", offeringId);
+  await client.from("participants").delete().eq("offering_id", offeringId);
+  await client.from("registered_apps").delete().eq("offering_id", offeringId);
+  await client.from("offerings").delete().eq("id", offeringId);
+}
+
 export async function createProgramJoinCode(
   programId: string,
   kind: string,
   opts: local.JoinCodeOptions = {},
 ): Promise<Row> {
+  if (usePg()) return tpg.createProgramJoinCode(programId, kind, opts);
   if (await useLocal()) return local.localCreateProgramJoinCode(programId, kind, opts);
   const client = requireClient();
   const program = _firstRow(
@@ -384,6 +444,7 @@ async function _insertStageTree(
 }
 
 export async function setupOrganization(orgId: string, payload: Row): Promise<Row> {
+  if (usePg()) return tpg.setupOrganization(orgId, payload);
   if (await useLocal()) return local.localSetupOrganization(orgId, payload);
   const client = requireClient();
 
@@ -500,6 +561,7 @@ export async function setupOrganization(orgId: string, payload: Row): Promise<Ro
 }
 
 export async function listStageNodes(orgId: string): Promise<StageNode[]> {
+  if (usePg()) return tpg.listStageNodes(orgId) as unknown as Promise<StageNode[]>;
   if (await useLocal()) return local.localListStageNodes(orgId);
   const client = requireClient();
   const rows = await _select(
@@ -527,6 +589,7 @@ export async function createJoinCode(
   kind: string,
   opts: local.JoinCodeOptions = {},
 ): Promise<Row> {
+  if (usePg()) return tpg.createJoinCode(stageNodeId, kind, opts);
   if (await useLocal()) return local.localCreateJoinCode(stageNodeId, kind, opts);
   const client = requireClient();
   const stage = _firstRow(
@@ -556,6 +619,7 @@ export async function createJoinCode(
 
 /** Decrement uses_remaining for a code with a usage limit, if set. */
 export async function consumeJoinCode(code: string): Promise<void> {
+  if (usePg()) return pg.consumeJoinCode(code);
   if (await useLocal()) {
     local.localConsumeJoinCode(code);
     return;
@@ -579,6 +643,7 @@ export async function addMembership(
   access: string,
   programId: string | null = null,
 ): Promise<Row> {
+  if (usePg()) return pg.addMembership(orgId, profileId, role, stageNodeId, access, programId);
   if (await useLocal()) {
     return local.localAddMembership(orgId, profileId, role, stageNodeId, access, programId);
   }
@@ -630,6 +695,7 @@ export async function registerStudent(
   joinCodeRow: Row,
   displayName: string | null = null,
 ): Promise<Row> {
+  if (usePg()) return tpg.registerStudent(profileId, joinCodeRow, displayName);
   if (await useLocal()) {
     const result = local.localRegisterStudent(profileId, joinCodeRow, displayName);
     await _bridgeJoinCodeToParticipant(profileId, joinCodeRow);
@@ -673,6 +739,7 @@ export async function listStudentRegistrationsForStages(
   orgId: string,
   visibleStages: StageNode[],
 ): Promise<Row[]> {
+  if (usePg()) return tpg.listStudentRegistrationsForStages(orgId, visibleStages);
   if (await useLocal()) return local.localListStudentRegistrations(orgId, visibleStages);
   const client = requireClient();
   const rows = await _select(
@@ -704,6 +771,7 @@ export async function listStudentRegistrationsForStages(
 }
 
 export async function listMembers(orgId: string): Promise<Row[]> {
+  if (usePg()) return tpg.listMembers(orgId);
   if (await useLocal()) return local.localListMembers(orgId);
   const client = requireClient();
   return _select(
@@ -715,6 +783,7 @@ export async function listMembers(orgId: string): Promise<Row[]> {
 }
 
 export async function getUserOrgs(profileId: string): Promise<Row[]> {
+  if (usePg()) return tpg.getUserOrgs(profileId);
   if (await useLocal()) return local.localGetUserOrgs(profileId);
   const client = requireClient();
   return _select(
@@ -726,6 +795,7 @@ export async function getUserOrgs(profileId: string): Promise<Row[]> {
 }
 
 export async function getOrgChallenge(orgId: string): Promise<Row | null> {
+  if (usePg()) return tpg.getOrgChallenge(orgId);
   if (await useLocal()) return local.localGetOrgChallenge(orgId);
   const client = requireClient();
   const org = await getOrganization(orgId);
@@ -754,6 +824,7 @@ export async function getOrgChallenge(orgId: string): Promise<Row | null> {
 }
 
 export async function updateMemberAccess(memberId: string, access: string): Promise<Row> {
+  if (usePg()) return tpg.updateMemberAccess(memberId, access);
   if (await useLocal()) return local.localUpdateMemberAccess(memberId, access);
   const client = requireClient();
   return _mutateOne(
@@ -763,6 +834,7 @@ export async function updateMemberAccess(memberId: string, access: string): Prom
 }
 
 export async function getStageNode(stageId: string): Promise<Row | null> {
+  if (usePg()) return tpg.getStageNode(stageId);
   if (await useLocal()) return local.localGetStage(stageId);
   const client = requireClient();
   const rows = await _select(
@@ -772,6 +844,7 @@ export async function getStageNode(stageId: string): Promise<Row | null> {
 }
 
 export async function getProfileByEmail(email: string): Promise<Row | null> {
+  if (usePg()) return pg.getProfileByEmail(email);
   if (await useLocal()) return local.localGetProfileByEmail(email);
   const client = requireClient();
   const rows = await _select(client.from("profiles").select("*").eq("email", email).limit(1));
@@ -779,6 +852,7 @@ export async function getProfileByEmail(email: string): Promise<Row | null> {
 }
 
 export async function getMembership(memberId: string): Promise<Row | null> {
+  if (usePg()) return tpg.getMembership(memberId);
   if (await useLocal()) return local.localGetMembership(memberId);
   const client = requireClient();
   const rows = await _select(client.from("org_memberships").select("*").eq("id", memberId).limit(1));
@@ -786,6 +860,7 @@ export async function getMembership(memberId: string): Promise<Row | null> {
 }
 
 export async function getProfile(profileId: string): Promise<Row | null> {
+  if (usePg()) return pg.getProfile(profileId);
   if (await useLocal()) return local.localGetProfile(profileId);
   const client = requireClient();
   const rows = await _select(client.from("profiles").select("*").eq("id", profileId).limit(1));
@@ -798,6 +873,7 @@ export async function addStageNodes(
   parentId: string | null = null,
   programId: string | null = null,
 ): Promise<Row[]> {
+  if (usePg()) return tpg.addStageNodes(orgId, nodes, parentId, programId);
   if (await useLocal()) return local.localAddStageNodes(orgId, nodes, parentId, programId);
   const client = requireClient();
   const challenges = await _select(client.from("challenges").select("id").eq("org_id", orgId).limit(1));
@@ -826,6 +902,7 @@ export async function createIntegration(
   permissionLevel: string,
   programId: string | null = null,
 ): Promise<Row> {
+  if (usePg()) return tpg.createIntegration(orgId, integrationType, config, permissionLevel, programId);
   if (await useLocal()) {
     return local.localCreateIntegration(orgId, integrationType, config, permissionLevel, programId);
   }
@@ -846,6 +923,7 @@ export async function createIntegration(
 }
 
 export async function listIntegrations(orgId: string): Promise<Row[]> {
+  if (usePg()) return tpg.listIntegrations(orgId);
   if (await useLocal()) return local.localListIntegrations(orgId);
   const client = requireClient();
   return _select(client.from("integrations").select("*").eq("organization_id", orgId));
@@ -908,6 +986,7 @@ export async function createOffering(
   offeringType: string,
   opts: local.OfferingOptions = {},
 ): Promise<Row> {
+  if (usePg()) return tpg.createOffering(orgId, programId, name, offeringType, opts);
   if (await useLocal()) return local.localCreateOffering(orgId, programId, name, offeringType, opts);
   const finalSlug = await _uniqueScopedSlug(
     "offerings",
@@ -947,6 +1026,7 @@ export async function createOffering(
 }
 
 export async function listOfferings(programId: string): Promise<Row[]> {
+  if (usePg()) return tpg.listOfferings(programId);
   if (await useLocal()) return local.localListOfferings(programId);
   const client = requireClient();
   const rows = await _select(client.from("offerings").select("*").eq("program_id", programId));
@@ -956,6 +1036,7 @@ export async function listOfferings(programId: string): Promise<Row[]> {
 }
 
 export async function getOffering(offeringId: string): Promise<Row | null> {
+  if (usePg()) return tpg.getOffering(offeringId);
   if (await useLocal()) return local.localGetOffering(offeringId);
   const client = requireClient();
   const rows = await _select(client.from("offerings").select("*").eq("id", offeringId).limit(1));
@@ -964,6 +1045,7 @@ export async function getOffering(offeringId: string): Promise<Row | null> {
 }
 
 export async function updateOffering(offeringId: string, patch: Row): Promise<Row> {
+  if (usePg()) return tpg.updateOffering(offeringId, patch);
   if (await useLocal()) return local.localUpdateOffering(offeringId, patch);
   const client = requireClient();
   const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v != null));
@@ -984,6 +1066,7 @@ export async function createRegisteredApp(
   appName: string,
   opts: local.RegisteredAppOptions = {},
 ): Promise<[Row, string]> {
+  if (usePg()) return tpg.createRegisteredApp(orgId, programId, appName, opts);
   if (await useLocal()) return local.localCreateRegisteredApp(orgId, programId, appName, opts);
   const finalSlug = await _uniqueScopedSlug(
     "registered_apps",
@@ -1016,12 +1099,14 @@ export async function createRegisteredApp(
 }
 
 export async function listRegisteredApps(programId: string): Promise<Row[]> {
+  if (usePg()) return tpg.listRegisteredApps(programId);
   if (await useLocal()) return local.localListRegisteredApps(programId);
   const client = requireClient();
   return _select(client.from("registered_apps").select("*").eq("program_id", programId));
 }
 
 export async function getRegisteredApp(appId: string): Promise<Row | null> {
+  if (usePg()) return tpg.getRegisteredApp(appId);
   if (await useLocal()) return local.localGetRegisteredApp(appId);
   const client = requireClient();
   const rows = await _select(client.from("registered_apps").select("*").eq("id", appId).limit(1));
@@ -1029,6 +1114,7 @@ export async function getRegisteredApp(appId: string): Promise<Row | null> {
 }
 
 export async function getRegisteredAppByHash(apiKeyHash: string): Promise<Row | null> {
+  if (usePg()) return tpg.getRegisteredAppByHash(apiKeyHash);
   if (await useLocal()) return local.localGetRegisteredAppByHash(apiKeyHash);
   const client = requireClient();
   const rows = await _select(
@@ -1038,6 +1124,7 @@ export async function getRegisteredAppByHash(apiKeyHash: string): Promise<Row | 
 }
 
 export async function updateRegisteredApp(appId: string, patch: Row): Promise<Row> {
+  if (usePg()) return tpg.updateRegisteredApp(appId, patch);
   if (await useLocal()) return local.localUpdateRegisteredApp(appId, patch);
   const client = requireClient();
   const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v != null));
@@ -1048,6 +1135,7 @@ export async function updateRegisteredApp(appId: string, patch: Row): Promise<Ro
 }
 
 export async function rotateAppApiKey(appId: string): Promise<[Row, string]> {
+  if (usePg()) return tpg.rotateAppApiKey(appId);
   if (await useLocal()) return local.localRotateAppApiKey(appId);
   const [rawKey, keyHash, keyPrefix] = local.generateApiKey();
   const client = requireClient();
@@ -1063,6 +1151,7 @@ export async function rotateAppApiKey(appId: string): Promise<[Row, string]> {
 }
 
 export async function revokeApp(appId: string): Promise<Row> {
+  if (usePg()) return tpg.revokeApp(appId);
   if (await useLocal()) return local.localRevokeApp(appId);
   const client = requireClient();
   return _mutateOne(
@@ -1080,6 +1169,7 @@ export async function createRegistration(
   offeringId: string,
   opts: local.RegistrationOptions = {},
 ): Promise<Row> {
+  if (usePg()) return tpg.createRegistration(orgId, offeringId, opts);
   if (await useLocal()) return local.localCreateRegistration(orgId, offeringId, opts);
   const client = requireClient();
   return _mutateOne(
@@ -1107,6 +1197,7 @@ export async function createRegistration(
 }
 
 export async function getRegistration(registrationId: string): Promise<Row | null> {
+  if (usePg()) return tpg.getRegistration(registrationId);
   if (await useLocal()) return local.localGetRegistration(registrationId);
   const client = requireClient();
   const rows = await _select(
@@ -1119,6 +1210,7 @@ export async function listRegistrations(
   offeringId: string,
   status: string | null = null,
 ): Promise<Row[]> {
+  if (usePg()) return tpg.listRegistrations(offeringId, status);
   if (await useLocal()) return local.localListRegistrations(offeringId, status);
   const client = requireClient();
   let query = client.from("registrations").select("*").eq("offering_id", offeringId);
@@ -1131,6 +1223,7 @@ export async function setRegistrationStatus(
   status: string,
   reviewedByUserId: string | null,
 ): Promise<Row> {
+  if (usePg()) return tpg.setRegistrationStatus(registrationId, status, reviewedByUserId);
   if (await useLocal()) {
     return local.localSetRegistrationStatus(registrationId, status, reviewedByUserId);
   }
@@ -1154,6 +1247,7 @@ export async function createParticipant(
   offeringId: string,
   opts: local.ParticipantOptions = {},
 ): Promise<Row> {
+  if (usePg()) return tpg.createParticipant(orgId, offeringId, opts);
   if (await useLocal()) return local.localCreateParticipant(orgId, offeringId, opts);
   const client = requireClient();
   const participantType = opts.participantType ?? "learner";
@@ -1193,6 +1287,7 @@ export async function listParticipants(
   offeringId: string,
   status: string | null = null,
 ): Promise<Row[]> {
+  if (usePg()) return tpg.listParticipants(offeringId, status);
   if (await useLocal()) return local.localListParticipants(offeringId, status);
   const client = requireClient();
   let query = client.from("participants").select("*").eq("offering_id", offeringId);
@@ -1239,6 +1334,7 @@ export async function recordAuditEvent(
   opts: local.AuditEventOptions = {},
 ): Promise<void> {
   try {
+    if (usePg()) return await pg.recordAuditEvent(action, opts);
     if (await useLocal()) {
       local.localRecordAuditEvent(action, opts);
       return;
@@ -1260,6 +1356,7 @@ export async function recordAuditEvent(
 }
 
 export async function listAuditEvents(orgId: string, limit = 50): Promise<Row[]> {
+  if (usePg()) return tpg.listAuditEvents(orgId, limit);
   if (await useLocal()) return local.localListAuditEvents(orgId, limit);
   const client = requireClient();
   return _select(
@@ -1274,6 +1371,7 @@ export async function listAuditEvents(orgId: string, limit = 50): Promise<Row[]>
 
 // ── Entitlements: module access grants for orgs/programs/offerings ──────────
 export async function listEntitlements(orgId: string): Promise<Row[]> {
+  if (usePg()) return tpg.listEntitlements(orgId);
   if (await useLocal()) return local.localListEntitlements(orgId);
   const client = requireClient();
   return _select(client.from("entitlements").select("*").eq("organization_id", orgId));
@@ -1285,6 +1383,7 @@ export async function setEntitlement(
   status: string,
   opts: local.EntitlementOptions = {},
 ): Promise<Row> {
+  if (usePg()) return tpg.setEntitlement(orgId, module, status, opts);
   if (await useLocal()) return local.localSetEntitlement(orgId, module, status, opts);
   const client = requireClient();
   const row: Row = {
@@ -1344,6 +1443,7 @@ export async function createLaunchToken(
   userId: string,
   ttlSeconds = 60,
 ): Promise<[Row, string]> {
+  if (usePg()) return tpg.createLaunchToken(registeredAppId, userId, ttlSeconds);
   if (await useLocal()) return local.localCreateLaunchToken(registeredAppId, userId, ttlSeconds);
   const [rawKey, keyHash] = local.generateApiKey();
   const client = requireClient();
@@ -1363,6 +1463,7 @@ export async function createLaunchToken(
 }
 
 export async function consumeLaunchToken(rawToken: string): Promise<Row | null> {
+  if (usePg()) return tpg.consumeLaunchToken(rawToken);
   if (await useLocal()) return local.localConsumeLaunchToken(rawToken);
   const client = requireClient();
   const tokenHash = local.hashApiKey(rawToken);

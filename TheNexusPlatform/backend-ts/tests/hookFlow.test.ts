@@ -7,6 +7,8 @@ import { afterAll, describe, expect, it } from "vitest";
 const tempDir = mkdtempSync(join(tmpdir(), "owlwise-hook-"));
 process.env.LOCAL_DATA_DIR = tempDir;
 delete process.env.SUPABASE_URL;
+delete process.env.DATABASE_URL;
+delete process.env.SUPABASE_DB_URL;
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const { createApp } = await import("../src/app");

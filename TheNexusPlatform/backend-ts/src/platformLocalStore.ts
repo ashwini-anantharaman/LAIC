@@ -293,6 +293,43 @@ export function localGetProgram(programId: string): Row | null {
   return null;
 }
 
+/**
+ * Delete a program and everything scoped to it, so no orphaned offerings,
+ * apps, groups, memberships, invites, or registrations linger.
+ */
+export function localDeleteProgram(programId: string): void {
+  const offeringIds = new Set(
+    _read("offerings").filter((o) => o.program_id === programId).map((o) => o.id),
+  );
+  const byProgram = (name: string) =>
+    _write(name, _read(name).filter((r) => r.program_id !== programId));
+  byProgram("offerings");
+  byProgram("registered_apps");
+  byProgram("stage_nodes");
+  byProgram("join_codes");
+  byProgram("registrations");
+  byProgram("participants");
+  // Memberships scoped to this program are removed; org-level ones (no program_id) stay.
+  _write("memberships", _read("memberships").filter((m) => m.program_id !== programId));
+  // Sweep any records keyed only by the removed offerings.
+  for (const name of ["registrations", "participants", "launch_tokens"]) {
+    _write(name, _read(name).filter((r) => !r.offering_id || !offeringIds.has(r.offering_id)));
+  }
+  _write("programs", _read("programs").filter((p) => p.id !== programId));
+}
+
+/** Delete one offering and everything scoped to it (apps, registrations, participants). */
+export function localDeleteOffering(offeringId: string): void {
+  const appIds = new Set(
+    _read("registered_apps").filter((a) => a.offering_id === offeringId).map((a) => a.id),
+  );
+  _write("registered_apps", _read("registered_apps").filter((a) => a.offering_id !== offeringId));
+  _write("registrations", _read("registrations").filter((r) => r.offering_id !== offeringId));
+  _write("participants", _read("participants").filter((p) => p.offering_id !== offeringId));
+  _write("launch_tokens", _read("launch_tokens").filter((t) => !t.app_id || !appIds.has(t.app_id)));
+  _write("offerings", _read("offerings").filter((o) => o.id !== offeringId));
+}
+
 export function localGetMemberships(profileId: string): Row[] {
   return _read("memberships").filter((m) => m.profile_id === profileId);
 }

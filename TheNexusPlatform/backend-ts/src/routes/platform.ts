@@ -14,6 +14,8 @@ import {
 import { getSettings } from "../config";
 import { HttpError } from "../httpError";
 import * as db from "../platformDb";
+import { dbEnabled } from "../db/client";
+import { provisionOrganization } from "../db/provisioning";
 import {
   canViewStage,
   roleLabel,
@@ -187,15 +189,24 @@ platformRouter.post("/auth/signup", async (c) => {
   if (req.signup_type === "org") {
     if (!req.org_name) throw new HttpError(400, "org_name is required for org signup");
     const auth = await createAuthUser(req.email, req.password);
-    await db.createProfile(auth.id, req.email, "org_admin", req.display_name ?? null);
-    const org = await db.createOrganization(req.org_name, auth.id);
-    await db.recordAuditEvent("organization.created", {
-      orgId: org.id,
-      actorUserId: auth.id,
-      scopeType: "organization",
-      scopeId: org.id,
-      metadata: { name: org.name },
-    });
+    if (dbEnabled()) {
+      // Canonical path (v0.4 §2.2): one transactional provisioning event creates
+      // the org + owner + default entitlements + storage scope + theme + audit.
+      await provisionOrganization({
+        name: req.org_name,
+        owner: { userId: auth.id, email: req.email, displayName: req.display_name ?? undefined },
+      });
+    } else {
+      await db.createProfile(auth.id, req.email, "org_admin", req.display_name ?? null);
+      const org = await db.createOrganization(req.org_name, auth.id);
+      await db.recordAuditEvent("organization.created", {
+        orgId: org.id,
+        actorUserId: auth.id,
+        scopeType: "organization",
+        scopeId: org.id,
+        metadata: { name: org.name },
+      });
+    }
     const session = await signInUser(req.email, req.password);
     const user = await loadPlatformUser(auth.id, req.email);
     return c.json(_authUserResponse(user, session.access_token));
@@ -398,6 +409,23 @@ platformRouter.post("/orgs/:org_id/programs", async (c) => {
     metadata: { name: row.name, category: row.category },
   });
   return c.json(_programResponse((await db.getProgram(row.id)) ?? row));
+});
+
+platformRouter.delete("/programs/:program_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _assertOrgAccess(user, program.org_id, true);
+  await db.deleteProgram(programId);
+  await db.recordAuditEvent("program.deleted", {
+    orgId: program.org_id,
+    actorUserId: user.id,
+    scopeType: "program",
+    scopeId: programId,
+    metadata: { name: program.name },
+  });
+  return c.json({ ok: true });
 });
 
 platformRouter.patch("/orgs/:org_id/theme", async (c) => {
@@ -695,6 +723,7 @@ function _memberResponse(row: Row, profile: Row, stageName: string | null): Row 
     email: profile.email ?? "",
     display_name: profile.display_name || profile.name || null,
     role: row.role,
+    program_id: row.program_id ?? null,
     stage_node_id: row.stage_node_id ?? null,
     stage_name: stageName,
     access: row.access ?? "view",

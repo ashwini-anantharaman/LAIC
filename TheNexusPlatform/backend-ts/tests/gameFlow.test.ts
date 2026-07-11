@@ -7,6 +7,8 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 const tempDir = mkdtempSync(join(tmpdir(), "owlwise-game-"));
 process.env.LOCAL_DATA_DIR = tempDir;
 delete process.env.SUPABASE_URL;
+delete process.env.DATABASE_URL;
+delete process.env.SUPABASE_DB_URL;
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Mock the Claude call so the test doesn't hit the network / need a key.

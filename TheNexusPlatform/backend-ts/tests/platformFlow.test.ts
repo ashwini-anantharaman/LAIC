@@ -10,6 +10,10 @@ const tempDir = mkdtempSync(join(tmpdir(), "owlwise-flow-"));
 process.env.LOCAL_DATA_DIR = tempDir;
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Pin to local-store mode: these flows exercise the legacy path (the Postgres
+// data path is converted incrementally; identity is done, the rest lands Slice 5).
+delete process.env.DATABASE_URL;
+delete process.env.SUPABASE_DB_URL;
 
 const { createApp } = await import("../src/app");
 

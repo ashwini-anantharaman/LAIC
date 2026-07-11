@@ -8,6 +8,8 @@ import * as platformDb from "./platformDb";
 import * as local from "./platformLocalStore";
 import type { Membership } from "./permissions";
 import { createEphemeralClient, requireAdminClient, requireClient } from "./supabaseClient";
+import { dbEnabled } from "./db/client";
+import * as pg from "./db/identityRepo";
 
 type Row = Record<string, any>;
 
@@ -106,6 +108,20 @@ export async function verifyToken(token: string): Promise<{ id: string; email: s
 }
 
 export async function loadPlatformUser(userId: string, email: string): Promise<PlatformUser> {
+  // Canonical Postgres path (v0.4): identity is resolved via a privileged
+  // bootstrap read; tenant DATA reads then run under RLS context.
+  if (dbEnabled()) {
+    const { profile, memberships } = await pg.loadUser(userId);
+    if (!profile) throw new HttpError(404, "Profile not found");
+    return {
+      id: userId,
+      email: email || (profile.email as string) || "",
+      display_name: (profile.display_name as string) ?? null,
+      role: (profile.role as string) || "student",
+      memberships,
+    };
+  }
+
   if (await platformDb.useLocal()) {
     const profile = local.localGetProfile(userId);
     if (!profile) throw new HttpError(404, "Profile not found");
@@ -215,8 +231,8 @@ export async function createAuthUser(email: string, password: string): Promise<R
 /**
  * Bearer-token auth for /api/hook/* — a per-app API key, verified against
  * registered_apps.api_key_hash. Separate from getCurrentUser by design.
- * TODO(rate-limit): no throttling infra exists in this repo yet; add a per-app
- * rate limit here before the hook is exposed to untrusted third-party apps.
+ * Per-app rate limiting is applied at the hook route layer (see routes/hook.ts
+ * `_authAndLimit` + src/rateLimit.ts), v0.4 §31.
  */
 export async function getAuthenticatedApp(c: Context): Promise<AuthenticatedApp> {
   if (_authenticatedAppOverride) return _authenticatedAppOverride();
