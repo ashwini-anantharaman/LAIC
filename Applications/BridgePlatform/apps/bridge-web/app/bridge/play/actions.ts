@@ -7,7 +7,7 @@ import type { Seat } from "@bridge/events";
 import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { resolveProfileValues } from "@bridge/profiles";
+import { packagePresets, resolveProfileValues } from "@bridge/profiles";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
 import { recomputeSignalsSafe } from "@/lib/progress";
@@ -29,7 +29,7 @@ export async function createPracticeSession(formData: FormData) {
     ? await (await profileService()).getProfile(profileId, context)
     : null;
   const resolvedValues = profile
-    ? resolveProfileValues(pkg.settings, profile.selectedPresetId, profile.valueOverrides).values
+    ? resolveProfileValues(pkg.settings, profile.selectedPresetId, profile.valueOverrides, packagePresets(pkg)).values
     : defaultSettingValues(pkg.settings);
   const record = await sessionService().createSession({
     context,

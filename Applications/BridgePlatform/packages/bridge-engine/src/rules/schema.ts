@@ -108,6 +108,13 @@ export interface BidRuleEntry {
    */
   complexPrimitive?: string;
   primitiveParams?: Record<string, unknown>;
+  /**
+   * Skill/concept tags copied from the source knowledge item at generation
+   * (§13.5): evaluator and progress derive skills from the session's pinned
+   * package, never from a code-level rule→skill map.
+   */
+  relatedSkillIds?: string[];
+  relatedConceptIds?: string[];
   provenance: RuleProvenance;
   /** Readable knowledge item for trace resolution ("why did AI do that?"). */
   explanationItemId: string;
@@ -127,6 +134,9 @@ export interface PlayRuleEntry {
   /** "lead" = first card of a trick; "follow" = any later position. */
   when: { role: "lead" | "follow" | "any" };
   action: PlayRuleAction;
+  /** Skill/concept tags copied from the source knowledge item (§13.5). */
+  relatedSkillIds?: string[];
+  relatedConceptIds?: string[];
   provenance: RuleProvenance;
   explanationItemId: string;
 }
@@ -134,6 +144,18 @@ export interface PlayRuleEntry {
 // ---------------------------------------------------------------------------
 // The package
 // ---------------------------------------------------------------------------
+
+/**
+ * §11.3: a preset is CONTENT — an explicit named setting-value map generated
+ * from a knowledge item, never just a label. Resolution (§11.4): registry
+ * defaults + preset values + owner overrides.
+ */
+export interface ConfigPresetEntry {
+  presetId: string;
+  name: string;
+  description: string;
+  values: Record<string, SettingValue>;
+}
 
 export interface BridgeRulePackage {
   packageId: string;
@@ -144,6 +166,8 @@ export interface BridgeRulePackage {
   settings: Setting[];
   bidRules: BidRuleEntry[];
   playRules: PlayRuleEntry[];
+  /** Named configurations shipped with the package (§11.3, optional pre-Phase-15 versions omit it). */
+  presets?: ConfigPresetEntry[];
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +184,11 @@ export function validatePackage(
   const errors: string[] = [];
   const ids = new Set<string>();
   const settingKeys = new Set(pkg.settings.map((s) => s.key));
+  for (const preset of pkg.presets ?? []) {
+    for (const key of Object.keys(preset.values))
+      if (!settingKeys.has(key))
+        errors.push(`preset ${preset.presetId}: value for unknown setting "${key}"`);
+  }
 
   const checkExpr = (ruleId: string, expr: HandConstraintExpr): void => {
     if ("all" in expr) return expr.all.forEach((e) => checkExpr(ruleId, e));

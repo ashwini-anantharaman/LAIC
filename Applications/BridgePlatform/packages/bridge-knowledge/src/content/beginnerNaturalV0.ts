@@ -293,6 +293,55 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     gapIds: [],
   }),
 
+  // §11.3: presets are content — explicit value maps, never just labels.
+  item({
+    itemId: "ki_bn_preset_default",
+    itemType: "configuration_preset",
+    title: "Preset: Beginner Natural (standard)",
+    humanReadableRule:
+      "The standard Beginner Natural configuration: every Level-1 agreement on, exactly the package defaults.",
+    structuredFields: {
+      preset: {
+        presetId: "bn_default",
+        name: "Beginner Natural (standard)",
+        description: "Package defaults: all Level-1 agreements on.",
+        values: {},
+      },
+    },
+    sourceIds: ["src_bn_expert_notes"],
+    citations: [
+      {
+        sourceId: "src_bn_expert_notes",
+        passage: "Fellow decision: the teaching default is the full Level-1 agreement set.",
+      },
+    ],
+    gapIds: [],
+  }),
+  item({
+    itemId: "ki_bn_preset_no_1nt",
+    itemType: "configuration_preset",
+    title: "Preset: Beginner Natural without the 1NT response",
+    humanReadableRule:
+      "Beginner Natural with the 6–9 1NT response switched off — weak responding hands pass instead. For groups introducing responses one agreement at a time.",
+    structuredFields: {
+      preset: {
+        presetId: "bn_no_1nt",
+        name: "Beginner Natural — without the 1NT response",
+        description: "The 6–9 1NT response is off; weak responding hands pass.",
+        values: { bn_1nt_response: false },
+      },
+    },
+    sourceIds: ["src_bn_expert_notes"],
+    citations: [
+      {
+        sourceId: "src_bn_expert_notes",
+        passage:
+          "Fellow decision: staged introduction — the 1NT response is the first agreement coaches may defer.",
+      },
+    ],
+    gapIds: [],
+  }),
+
   item({
     itemId: "ki_bn_scope_level1",
     itemType: "teaching_scope",
@@ -342,6 +391,8 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       sayc("p.1, General Approach", "\"Normally open five-card majors in all seats. Open the higher of long suits of equal length: 5–5 or 6–6.\""),
     ],
     relatedItemIds: ["ed_bn_hcp_only"],
+    relatedSkillIds: ["sk_hand_evaluation", "sk_opening_bid_selection"],
+    relatedConceptIds: ["bn_opening_bids"],
     gapIds: [],
   }),
   item({
@@ -370,6 +421,8 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       sayc("p.1, General Approach", "1D with 4–4 in the minors, 1C with 3–3 (v0 deviates in the 4–4 case — see ed_bn_equal_minors)."),
     ],
     relatedItemIds: ["ed_bn_hcp_only", "ed_bn_equal_minors"],
+    relatedSkillIds: ["sk_hand_evaluation", "sk_opening_bid_selection", "sk_minor_suit_handling"],
+    relatedConceptIds: ["bn_opening_bids"],
     gapIds: ["gap_bn_equal_minors"],
   }),
   item({
@@ -389,6 +442,8 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     sourceIds: ["src_sayc_booklet", "src_bn_expert_notes"],
     citations: [sayc("p.3, opener's rebids", "opening strength starts around 13 total points (\"minimum hand (13–15 points)\") — hands below it pass.")],
     relatedItemIds: ["ed_bn_hcp_only"],
+    relatedSkillIds: ["sk_hand_evaluation", "sk_opening_bid_selection"],
+    relatedConceptIds: ["bn_opening_bids"],
     gapIds: [],
   }),
   item({
@@ -413,6 +468,8 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     }),
     sourceIds: ["src_sayc_booklet"],
     citations: [sayc("p.3, responses to 1H/1S", "\"2H = three-card or longer heart support; 6–10 dummy points.\"")],
+    relatedSkillIds: ["sk_response_selection", "sk_major_suit_raises"],
+    relatedConceptIds: ["bn_responses"],
     gapIds: [],
   }),
   item({
@@ -436,6 +493,8 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       sayc("p.5, responses to 1C/1D", "\"Bidding at the one level is up-the-line in principle.\""),
       expertNote("v0 deviates from up-the-line: candidates are ordered longest-first, cheaper suit on ties (refinement deferred)."),
     ],
+    relatedSkillIds: ["sk_response_selection"],
+    relatedConceptIds: ["bn_responses"],
     gapIds: [],
   }),
   item({
@@ -455,6 +514,8 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     }),
     sourceIds: ["src_sayc_booklet"],
     citations: [sayc("p.3, responses to 1H/1S", "\"1NT = 6–9 points, denies four spades or three hearts. NOT forcing.\"")],
+    relatedSkillIds: ["sk_response_selection", "sk_notrump_ranges"],
+    relatedConceptIds: ["bn_responses"],
     gapIds: [],
   }),
   item({
@@ -473,6 +534,8 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     }),
     sourceIds: ["src_sayc_booklet"],
     citations: [sayc("p.3, responses to 1H/1S", "responses start at 6 points (e.g. \"1S = at least four spades, 6 or more points\") — with less, pass.")],
+    relatedSkillIds: ["sk_hand_evaluation", "sk_response_selection"],
+    relatedConceptIds: ["bn_responses"],
     gapIds: [],
   }),
   item({
@@ -517,6 +580,8 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       sayc("p.8, Defensive Leads and Signals", "\"From four cards or longer lead fourth best\" — leading from length is standard; v0 simplifies to the TOP card."),
       expertNote("Top-of-longest is a Level-1 simplification; fourth-best and honor-sequence leads are deferred."),
     ],
+    relatedSkillIds: ["sk_opening_leads"],
+    relatedConceptIds: ["bn_opening_leads"],
     gapIds: ["gap_bn_play_technique"],
   }),
   item({
@@ -538,6 +603,8 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       laws("Law 44C", "\"In playing to a trick, each player must follow suit if possible.\" Which card to follow with is agreement, not law."),
       expertNote("Lowest-card follow/discard is a Level-1 simplification; third-hand-high and win-cheaply are deferred."),
     ],
+    relatedSkillIds: ["sk_following_suit"],
+    relatedConceptIds: ["bn_declarer_basics"],
     gapIds: ["gap_bn_play_technique"],
   }),
 ];

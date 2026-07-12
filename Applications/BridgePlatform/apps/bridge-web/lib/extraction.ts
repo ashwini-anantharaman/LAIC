@@ -85,6 +85,7 @@ class AnthropicExtractionClient implements LlmExtractionClient {
     systemFamily: string;
     passages: SourcePassage[];
     knownPredicates: readonly string[];
+    extractionGoals?: readonly string[];
   }): Promise<LlmExtractedItem[]> {
     const passageBlock = input.passages
       .map((p) => `<passage id="${p.passageId}" anchor="${p.anchor}">\n${p.text}\n</passage>`)
@@ -99,7 +100,7 @@ class AnthropicExtractionClient implements LlmExtractionClient {
         {
           role: "user",
           content: `System family: ${input.systemFamily}
-Available hand predicates (use ONLY these): ${input.knownPredicates.join(", ")}
+${input.extractionGoals?.length ? `Extraction goals (declared intent — §12.5): focus on ${input.extractionGoals.join(", ")}; still flag conflicts/exceptions/ambiguities you notice outside these areas.\n` : ""}Available hand predicates (use ONLY these): ${input.knownPredicates.join(", ")}
 Predicate params: hcpRange {min,max}; suitLengthAtLeast {suit,min}; longestAmong {among,min}; balanced {}; supportForPartner {min}.
 
 Extract knowledge items from these passages:

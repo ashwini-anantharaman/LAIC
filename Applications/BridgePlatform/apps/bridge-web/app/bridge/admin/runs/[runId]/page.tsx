@@ -83,6 +83,40 @@ export default async function RunPage({
           <DiffList title="Bid rules" entries={run.diff.bidRules} />
           <DiffList title="Play rules" entries={run.diff.playRules} />
           <DiffList title="Settings" entries={run.diff.settings} />
+          {run.diff.presets && <DiffList title="Presets (§11.3)" entries={run.diff.presets} />}
+        </section>
+      )}
+
+      {/* §19.3: which golden boards re-test what this run changed. */}
+      {run.testCoverage && (
+        <section className="space-y-2 rounded-lg border border-neutral-200 p-4">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
+            Affected tests (§19.3)
+          </h2>
+          {run.testCoverage.affectedTests.length ? (
+            <ul className="space-y-0.5 text-xs">
+              {run.testCoverage.affectedTests.map((t) => (
+                <li key={t.ruleId}>
+                  <span className="font-mono">{t.ruleId}</span>{" "}
+                  {t.boards.length ? (
+                    <span className="text-neutral-600">
+                      — exercised by {t.boards.join(", ")}
+                    </span>
+                  ) : (
+                    <span className="text-amber-700">— no golden board exercises this rule</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-neutral-400">no rules added or changed in this run</p>
+          )}
+          {run.testCoverage.untestedRuleIds.length > 0 && (
+            <p className="text-xs text-amber-700">
+              Untested rules in this version: {run.testCoverage.untestedRuleIds.join(", ")} — add
+              test hands where feasible.
+            </p>
+          )}
         </section>
       )}
 

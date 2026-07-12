@@ -4,7 +4,7 @@
 // links back through items to registered sources — so a bid at the table
 // resolves to a readable rule and the passage it came from.
 
-import type { BidRuleEntry, PlayRuleEntry, BridgeRulePackage } from "@bridge/engine";
+import type { BidRuleEntry, ConfigPresetEntry, PlayRuleEntry, BridgeRulePackage } from "@bridge/engine";
 import type { Setting } from "@bridge/config";
 
 export type SystemFamily = "SAYC" | "2_over_1" | "natural" | "custom";
@@ -51,6 +51,7 @@ export type KnowledgeItemType =
   | "visibility_rule"
   | "teaching_scope"
   | "setting_definition"
+  | "configuration_preset"
   | "example"
   | "expert_decision";
 
@@ -112,6 +113,13 @@ export interface BridgeReadableKnowledgeItem {
   citations: Citation[];
   /** Expert decisions / related items informing this one. */
   relatedItemIds?: string[];
+  /**
+   * §13.5 skill / concept taxonomy tags (@bridge/taxonomy ids). Generation
+   * copies them onto the produced rule entries so evaluator/progress derive
+   * skills from the pinned package. Unknown ids are generation warnings.
+   */
+  relatedSkillIds?: string[];
+  relatedConceptIds?: string[];
   gapIds: string[];
   reviewerNotes?: string;
   /**
@@ -176,6 +184,43 @@ export interface GenerationDiff {
   bidRules: RuleDiffEntry[];
   playRules: RuleDiffEntry[];
   settings: RuleDiffEntry[];
+  /** §11.3 preset content changes (absent on pre-Phase-15 runs). */
+  presets?: RuleDiffEntry[];
+}
+
+/**
+ * §12.5: what an ingestion run is FOR — which outputs the coach wants and
+ * which content areas to extract. Stamped on the job for review context and
+ * fed to the LLM extractor to focus its pass. Human review is definitionally
+ * required (extracted items are editable candidates, never truth).
+ */
+export interface BridgeIngestionIntent {
+  intentId: string;
+  sourceId: string;
+  systemFamily: "SAYC" | "2_over_1" | "natural" | "custom";
+  targetOutputs: Array<
+    | "configuration_package"
+    | "bidding_rule_package"
+    | "play_rule_package"
+    | "convention_card_package"
+    | "validator_package"
+    | "test_board_package"
+  >;
+  extractionGoals: Array<
+    | "opening_bids"
+    | "responses"
+    | "rebids"
+    | "competitive_bidding"
+    | "slam_conventions"
+    | "lead_rules"
+    | "carding_rules"
+    | "convention_dependencies"
+    | "conflicts"
+    | "examples"
+    | "exceptions"
+    | "ambiguities"
+  >;
+  humanReviewRequired: true;
 }
 
 export interface BridgeIngestionJob {
@@ -189,6 +234,8 @@ export interface BridgeIngestionJob {
   stats: { parsedEntries: number; candidatesCreated: number; skipped: number };
   candidateItemIds: string[];
   errors: string[];
+  /** §12.5 intent this run was executing, when one was declared. */
+  intent?: BridgeIngestionIntent;
 }
 
 export interface BridgeGenerationRun {
@@ -203,6 +250,16 @@ export interface BridgeGenerationRun {
   errors: string[];
   /** §19.3 quality warnings (non-blocking): unreferenced settings, etc. */
   warnings?: string[];
+  /**
+   * §19.3 test-hand linkage, computed from the golden-board harness at
+   * generation: rules no board exercises, and — for every rule added or
+   * changed in this run — the boards that DO exercise it (the "affected
+   * tests" a reviewer should re-check on the diff).
+   */
+  testCoverage?: {
+    untestedRuleIds: string[];
+    affectedTests: Array<{ ruleId: string; boards: string[] }>;
+  };
   /** Set when status is completed. */
   resultPackageId?: string;
   resultVersion?: string;
@@ -228,7 +285,17 @@ export interface RulePackageRecord {
 /** @deprecated legacy alias from the pre-revamp publish workflow. */
 export type PublishedPackageRecord = RulePackageRecord;
 
-// Payload helper types used by structuredFields
-export type BidRulePayload = Omit<BidRuleEntry, "provenance" | "explanationItemId">;
-export type PlayRulePayload = Omit<PlayRuleEntry, "provenance" | "explanationItemId">;
+// Payload helper types used by structuredFields. Skill/concept tags are NOT
+// part of the payload: they live on the item (relatedSkillIds) and generation
+// stamps them onto the rule entry — one authoring place, no drift.
+export type BidRulePayload = Omit<
+  BidRuleEntry,
+  "provenance" | "explanationItemId" | "relatedSkillIds" | "relatedConceptIds"
+>;
+export type PlayRulePayload = Omit<
+  PlayRuleEntry,
+  "provenance" | "explanationItemId" | "relatedSkillIds" | "relatedConceptIds"
+>;
 export type SettingPayload = Setting;
+/** structuredFields.preset for configuration_preset items (§11.3). */
+export type PresetPayload = ConfigPresetEntry;

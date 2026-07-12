@@ -33,6 +33,8 @@ export interface BoardReport {
   playDecisions: number;
   bidFallbacks: number;
   playFallbacks: number;
+  /** Unique rule ids exercised on this board (§19.3 test-hand linkage). */
+  matchedRuleIds: string[];
 }
 
 export interface HarnessReport {
@@ -93,6 +95,13 @@ export async function runBoards(
       playDecisions: playLogic.length,
       bidFallbacks: bidLogic.filter((e) => e.fallback).length,
       playFallbacks: playLogic.filter((e) => e.fallback).length,
+      matchedRuleIds: [
+        ...new Set(
+          [...bidLogic, ...playLogic]
+            .map((e) => e.matchedRuleId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ],
     });
     log.dispose();
   }

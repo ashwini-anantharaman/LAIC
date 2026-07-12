@@ -40,7 +40,12 @@ export interface BridgeActionEvaluation {
   seat: Seat;
   kind: "bid" | "play";
   evaluatedAction: string;
-  evaluationMode: "system_alignment";
+  /**
+   * §14.2 modes. Only system_alignment is implemented; the others activate
+   * as their content lands (expert rule sets, learner-level constraints,
+   * coach constraints) — the type is the contract external consumers see.
+   */
+  evaluationMode: "system_alignment" | "expert_rule" | "learner_level" | "coach_constraint";
   judgment: EvaluationJudgment;
   /** What the system would have done in the same position. */
   systemAction: string;
@@ -48,6 +53,9 @@ export interface BridgeActionEvaluation {
   matchedRuleIds: string[];
   /** Rules the system would have acted on instead. */
   missedRuleIds: string[];
+  /** §13.5 taxonomy tags from the pinned package's matched/missed rules. */
+  relatedSkillIds: string[];
+  relatedConceptIds: string[];
   confidence: number;
 }
 
@@ -56,13 +64,13 @@ export interface EvaluatorContext {
   values: Record<string, SettingValue>;
 }
 
-export function evaluateBidAction(
+function evaluateBidCore(
   stateBefore: GameState,
   seat: Seat,
   chosen: Call,
   ctx: EvaluatorContext,
   ids: { bridgeSessionId: string; actionEventSeq: number },
-): BridgeActionEvaluation {
+): CoreEvaluation {
   const base = {
     evaluationId: `ev_${ids.bridgeSessionId}_${ids.actionEventSeq}`,
     bridgeSessionId: ids.bridgeSessionId,
@@ -116,13 +124,13 @@ export function evaluateBidAction(
   };
 }
 
-export function evaluatePlayAction(
+function evaluatePlayCore(
   stateBefore: GameState,
   seat: Seat,
   chosenCardId: string,
   ctx: EvaluatorContext,
   ids: { bridgeSessionId: string; actionEventSeq: number },
-): BridgeActionEvaluation {
+): CoreEvaluation {
   const base = {
     evaluationId: `ev_${ids.bridgeSessionId}_${ids.actionEventSeq}`,
     bridgeSessionId: ids.bridgeSessionId,
@@ -159,4 +167,46 @@ export function evaluatePlayAction(
     missedRuleIds: d.matchedRuleId ? [d.matchedRuleId] : [],
     confidence: 0.3,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Skill/concept attribution (§13.5): tags come from the session's PINNED
+// package rules — never a code-level rule→skill map, so replays of old
+// package versions attribute exactly what that version said.
+// ---------------------------------------------------------------------------
+
+type CoreEvaluation = Omit<BridgeActionEvaluation, "relatedSkillIds" | "relatedConceptIds">;
+
+function withRuleTags(pkg: BridgeRulePackage, e: CoreEvaluation): BridgeActionEvaluation {
+  const byId = new Map(
+    [...pkg.bidRules, ...pkg.playRules].map((r) => [r.ruleId, r] as const),
+  );
+  const skills = new Set<string>();
+  const concepts = new Set<string>();
+  for (const ruleId of [...e.matchedRuleIds, ...e.missedRuleIds]) {
+    const rule = byId.get(ruleId);
+    for (const s of rule?.relatedSkillIds ?? []) skills.add(s);
+    for (const c of rule?.relatedConceptIds ?? []) concepts.add(c);
+  }
+  return { ...e, relatedSkillIds: [...skills], relatedConceptIds: [...concepts] };
+}
+
+export function evaluateBidAction(
+  stateBefore: GameState,
+  seat: Seat,
+  chosen: Call,
+  ctx: EvaluatorContext,
+  ids: { bridgeSessionId: string; actionEventSeq: number },
+): BridgeActionEvaluation {
+  return withRuleTags(ctx.pkg, evaluateBidCore(stateBefore, seat, chosen, ctx, ids));
+}
+
+export function evaluatePlayAction(
+  stateBefore: GameState,
+  seat: Seat,
+  chosenCardId: string,
+  ctx: EvaluatorContext,
+  ids: { bridgeSessionId: string; actionEventSeq: number },
+): BridgeActionEvaluation {
+  return withRuleTags(ctx.pkg, evaluatePlayCore(stateBefore, seat, chosenCardId, ctx, ids));
 }

@@ -23,7 +23,8 @@
   "dependencies": {
     "@bridge/config": "workspace:*",
     "@bridge/engine": "workspace:*",
-    "@bridge/events": "workspace:*"
+    "@bridge/events": "workspace:*",
+    "@bridge/taxonomy": "workspace:*"
   },
   "devDependencies": {
     "@bridge/dealer": "workspace:*"

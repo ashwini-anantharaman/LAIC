@@ -78,23 +78,48 @@ export default async function SourcesPage() {
                   </button>
                 </form>
                 {doc && (
-                  <form action={runLlmExtraction} className="flex items-center gap-2">
-                    <input type="hidden" name="sourceId" value={s.sourceId} />
-                    <select name="systemFamily" defaultValue={s.systemFamily ?? "custom"} className="rounded border border-neutral-300 px-1 py-0.5 text-xs">
-                      {["natural", "SAYC", "2_over_1", "custom"].map((f) => (
-                        <option key={f}>{f}</option>
-                      ))}
-                    </select>
-                    <button
-                      disabled={!llmReady}
-                      title={llmReady ? undefined : "Set ANTHROPIC_API_KEY in .env.local to enable"}
-                      className="rounded bg-emerald-700 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
-                    >
-                      Extract items (LLM)
-                    </button>
-                    {!llmReady && (
-                      <span className="text-xs text-neutral-400">needs ANTHROPIC_API_KEY</span>
-                    )}
+                  <form action={runLlmExtraction} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <input type="hidden" name="sourceId" value={s.sourceId} />
+                      <select name="systemFamily" defaultValue={s.systemFamily ?? "custom"} className="rounded border border-neutral-300 px-1 py-0.5 text-xs">
+                        {["natural", "SAYC", "2_over_1", "custom"].map((f) => (
+                          <option key={f}>{f}</option>
+                        ))}
+                      </select>
+                      <button
+                        disabled={!llmReady}
+                        title={llmReady ? undefined : "Set ANTHROPIC_API_KEY in .env.local to enable"}
+                        className="rounded bg-emerald-700 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
+                      >
+                        Extract items (LLM)
+                      </button>
+                      {!llmReady && (
+                        <span className="text-xs text-neutral-400">needs ANTHROPIC_API_KEY</span>
+                      )}
+                    </div>
+                    <details className="text-xs text-neutral-500">
+                      <summary className="cursor-pointer">
+                        Declare intent (§12.5) — optional: focus the extraction pass
+                      </summary>
+                      <div className="mt-1 space-y-1 pl-2">
+                        <p className="flex flex-wrap gap-x-3 gap-y-0.5">
+                          <span className="font-medium">Goals:</span>
+                          {["opening_bids", "responses", "rebids", "competitive_bidding", "slam_conventions", "lead_rules", "carding_rules", "convention_dependencies", "conflicts", "examples", "exceptions", "ambiguities"].map((g) => (
+                            <label key={g} className="flex items-center gap-1">
+                              <input type="checkbox" name="extractionGoals" value={g} /> {g}
+                            </label>
+                          ))}
+                        </p>
+                        <p className="flex flex-wrap gap-x-3 gap-y-0.5">
+                          <span className="font-medium">Target outputs:</span>
+                          {["configuration_package", "bidding_rule_package", "play_rule_package", "convention_card_package", "validator_package", "test_board_package"].map((o) => (
+                            <label key={o} className="flex items-center gap-1">
+                              <input type="checkbox" name="targetOutputs" value={o} /> {o}
+                            </label>
+                          ))}
+                        </p>
+                      </div>
+                    </details>
                   </form>
                 )}
                 {s.sourceId === "src_prototype_artifacts" && (
@@ -118,6 +143,12 @@ export default async function SourcesPage() {
               <span className="font-mono">{j.jobId}</span> · {j.extractor} · {j.sourceId} ·{" "}
               <span className={j.status === "completed" ? "text-emerald-700" : "text-red-700"}>{j.status}</span>{" "}
               · parsed {j.stats.parsedEntries}, created {j.stats.candidatesCreated}, skipped {j.stats.skipped}
+              {j.intent && (
+                <span className="text-neutral-500">
+                  {" "}· intent: {j.intent.extractionGoals.join(", ") || "any"}
+                  {j.intent.targetOutputs.length > 0 && ` → ${j.intent.targetOutputs.join(", ")}`}
+                </span>
+              )}
               {j.errors.length > 0 && <span className="text-red-700"> — {j.errors[0]}</span>}
             </p>
           ))}

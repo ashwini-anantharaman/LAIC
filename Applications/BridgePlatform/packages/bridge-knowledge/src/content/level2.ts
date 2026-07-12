@@ -88,6 +88,8 @@ export const LEVEL2_ITEMS: BridgeReadableKnowledgeItem[] = [
     citations: [
       { sourceId: "src_sayc_booklet", passage: 'SAYC booklet p.1, General Approach: "Notrump openings show a balanced hand and may be made with a five-card major suit or a five-card minor suit. 1NT = 15–17."' },
     ],
+    relatedSkillIds: ["sk_hand_evaluation", "sk_notrump_ranges"],
+    relatedConceptIds: ["bn2_nt_opening"],
     gapIds: ["gap_bn2_nt_responses"],
     reviewerNotes: PENDING,
     status: "active",

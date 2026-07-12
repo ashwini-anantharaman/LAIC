@@ -1,5 +1,7 @@
 "use server";
 
+import { packagePresets } from "@bridge/profiles";
+
 import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -25,6 +27,7 @@ export async function createPlayerFromPackage(formData: FormData) {
     description: `Plays by ${packageId}@${version}. Toggle settings to customize.`,
     packageRef: { packageId, version },
     settings: record.pkg.settings,
+    presets: packagePresets(record.pkg),
   });
   revalidatePath("/bridge/players");
   redirect(`/bridge/players/${profile.aiPlayerProfileId}`);
@@ -37,6 +40,8 @@ export async function customizeProfile(formData: FormData) {
     String(formData.get("profileId")),
     context,
     pkg.settings,
+    undefined,
+    packagePresets(pkg),
   );
   redirect(`/bridge/players/${copy.aiPlayerProfileId}`);
 }
@@ -50,11 +55,17 @@ export async function updateProfile(formData: FormData) {
     if (setting.control === "toggle")
       overrides[setting.key] = formData.get(`setting:${setting.key}`) === "on";
   }
-  await (await profileService()).updateValues(id, context, pkg.settings, {
-    name: String(formData.get("name") || "") || undefined,
-    selectedPresetId: String(formData.get("presetId") || "") || undefined,
-    valueOverrides: overrides,
-  });
+  await (await profileService()).updateValues(
+    id,
+    context,
+    pkg.settings,
+    {
+      name: String(formData.get("name") || "") || undefined,
+      selectedPresetId: String(formData.get("presetId") || "") || undefined,
+      valueOverrides: overrides,
+    },
+    packagePresets(pkg),
+  );
   revalidatePath(`/bridge/players/${id}`);
   redirect(`/bridge/players/${id}`);
 }

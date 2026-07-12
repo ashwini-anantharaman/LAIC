@@ -1,8 +1,8 @@
 import { BEGINNER_NATURAL_PACKAGE_ID, resolveRuleProvenance } from "@bridge/knowledge";
 import {
-  BN_PRESETS,
   canEditProfile,
   generateConventionCard,
+  packagePresets,
   resolveProfileValues,
 } from "@bridge/profiles";
 import Link from "next/link";
@@ -23,10 +23,12 @@ export default async function ProfilePage({
   if (!profile) notFound();
 
   const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const presets = packagePresets(pkg); // §11.3: presets ship IN the package
   const { values } = resolveProfileValues(
     pkg.settings,
     profile.selectedPresetId,
     profile.valueOverrides,
+    presets,
   );
   const card = generateConventionCard(pkg, values, profile.name);
   const editable = canEditProfile(profile, context);
@@ -73,7 +75,7 @@ export default async function ProfilePage({
               defaultValue={profile.selectedPresetId}
               className="rounded border border-neutral-300 px-2 py-1 text-sm"
             >
-              {BN_PRESETS.map((p) => (
+              {presets.map((p) => (
                 <option key={p.presetId} value={p.presetId}>
                   {p.name}
                 </option>

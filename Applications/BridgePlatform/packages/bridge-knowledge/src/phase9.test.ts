@@ -172,9 +172,9 @@ describe("§19.3 quality gates", () => {
       runId: "run_w",
     });
     expect(run.status).toBe("completed");
-    expect(run.warnings).toEqual([
+    expect(run.warnings).toContain(
       '§19.3: setting "orphan_setting" is referenced by no rule and not marked uiOnly',
-    ]);
+    );
   });
 
   it("generation records a golden-board fallback baseline", async () => {

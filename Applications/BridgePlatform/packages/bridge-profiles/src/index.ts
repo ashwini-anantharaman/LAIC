@@ -15,6 +15,7 @@
 
 import type { Setting, SettingValue } from "@bridge/config";
 import type { BridgeRulePackage, SettingGate } from "@bridge/engine";
+import { unknownConceptIds } from "@bridge/taxonomy";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
 
 // ---------------------------------------------------------------------------
@@ -29,10 +30,10 @@ export interface ConfigPreset {
 }
 
 /**
- * Dev presets for Beginner Natural. Presets are configuration content and
- * graduate to knowledge items with the Phase 9 registry ingestion (plan
- * §11.3: "presets should not be just labels"); until then they live here,
- * flagged as dev data.
+ * LEGACY fallback presets (§11.3): presets are package CONTENT since Phase 15
+ * (BridgeRulePackage.presets, generated from configuration_preset knowledge
+ * items). This list only serves package versions generated before presets
+ * existed — prefer `packagePresets(pkg)`.
  */
 export const BN_PRESETS: ConfigPreset[] = [
   {
@@ -44,7 +45,7 @@ export const BN_PRESETS: ConfigPreset[] = [
   {
     presetId: "bn_no_1nt",
     name: "Beginner Natural — without the 1NT response",
-    description: "The 6–10 1NT response is off; weak responding hands pass.",
+    description: "The 6–9 1NT response is off; weak responding hands pass.",
     values: { bn_1nt_response: false },
   },
 ];
@@ -80,6 +81,11 @@ export function hashSettingValues(values: Record<string, SettingValue>): string 
     h = Math.imul(h, 0x01000193);
   }
   return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+/** The package's shipped presets, falling back to legacy dev data (§11.3). */
+export function packagePresets(pkg: BridgeRulePackage): readonly ConfigPreset[] {
+  return pkg.presets?.length ? pkg.presets : BN_PRESETS;
 }
 
 /** Resolution chain §11.4: defaults + preset + overrides. */
@@ -259,9 +265,15 @@ export class ProfileService {
       packageRef: { packageId: string; version: string };
       settings: readonly Setting[];
       selectedPresetId?: string;
+      presets?: readonly ConfigPreset[];
     },
   ): Promise<BridgeAiPlayerProfile> {
-    const { hash } = resolveProfileValues(input.settings, input.selectedPresetId, {});
+    const { hash } = resolveProfileValues(
+      input.settings,
+      input.selectedPresetId,
+      {},
+      input.presets ?? BN_PRESETS,
+    );
     const profile: BridgeAiPlayerProfile = {
       aiPlayerProfileId: this.newId(),
       name: input.name,
@@ -287,10 +299,11 @@ export class ProfileService {
     ctx: NexusBridgeContext,
     settings: readonly Setting[],
     name?: string,
+    presets: readonly ConfigPreset[] = BN_PRESETS,
   ): Promise<BridgeAiPlayerProfile> {
     const source = await this.getProfile(sourceId, ctx);
     if (!source) throw new Error("Profile not found");
-    const { hash } = resolveProfileValues(settings, source.selectedPresetId, source.valueOverrides);
+    const { hash } = resolveProfileValues(settings, source.selectedPresetId, source.valueOverrides, presets);
     const copy: BridgeAiPlayerProfile = {
       ...source,
       aiPlayerProfileId: this.newId(),
@@ -312,6 +325,7 @@ export class ProfileService {
     ctx: NexusBridgeContext,
     settings: readonly Setting[],
     changes: { name?: string; selectedPresetId?: string; valueOverrides?: Record<string, SettingValue> },
+    presets: readonly ConfigPreset[] = BN_PRESETS,
   ): Promise<BridgeAiPlayerProfile> {
     const p = await this.store.get(id);
     if (!p || !canSeeProfile(p, ctx)) throw new Error("Profile not found");
@@ -319,7 +333,7 @@ export class ProfileService {
       throw new Error("System and foreign profiles are read-only — customize to make your own copy");
     const selectedPresetId = changes.selectedPresetId ?? p.selectedPresetId;
     const valueOverrides = changes.valueOverrides ?? p.valueOverrides;
-    const { hash } = resolveProfileValues(settings, selectedPresetId, valueOverrides);
+    const { hash } = resolveProfileValues(settings, selectedPresetId, valueOverrides, presets);
     const updated: BridgeAiPlayerProfile = {
       ...p,
       name: changes.name ?? p.name,
@@ -374,6 +388,13 @@ export class ProfileService {
     if (!s || !canSeeProfile(s, ctx)) throw new Error("Teaching scope not found");
     if (!canEditProfile(s, ctx))
       throw new Error("System and foreign scopes are read-only — customize to make your own");
+    if (changes.targetConceptIds) {
+      const unknown = unknownConceptIds(changes.targetConceptIds);
+      if (unknown.length)
+        throw new Error(
+          `Unknown concept ids: ${unknown.join(", ")} — targetConceptIds must reference the concept taxonomy (§15.1)`,
+        );
+    }
     const updated = { ...s, ...changes, updatedAt: this.now() };
     await this.store.saveScope(updated);
     return updated;

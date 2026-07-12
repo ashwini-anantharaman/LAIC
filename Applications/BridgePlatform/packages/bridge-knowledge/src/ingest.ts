@@ -8,6 +8,7 @@
 import { KNOWN_PREDICATES } from "@bridge/engine";
 import type { Setting } from "@bridge/config";
 import type {
+  BridgeIngestionIntent,
   BridgeIngestionJob,
   BridgeReadableKnowledgeItem,
   SourcePassage,
@@ -121,6 +122,8 @@ export interface LlmExtractionClient {
     systemFamily: SystemFamily;
     passages: SourcePassage[];
     knownPredicates: readonly string[];
+    /** §12.5 intent goals — focuses the extraction pass when declared. */
+    extractionGoals?: readonly string[];
   }): Promise<LlmExtractedItem[]>;
 }
 
@@ -132,6 +135,8 @@ export interface LlmIngestionRequest {
   jobId: string;
   /** Passages per LLM call (default 6). */
   batchSize?: number;
+  /** §12.5: what this run is for; stamped on the job, fed to the extractor. */
+  intent?: BridgeIngestionIntent;
 }
 
 /**
@@ -155,6 +160,7 @@ export async function runLlmIngestion(
       stats: { parsedEntries: 0, candidatesCreated: 0, skipped: 0 },
       candidateItemIds: [],
       errors,
+      intent: req.intent,
     };
     await store.saveJob(job);
     return job;
@@ -181,6 +187,7 @@ export async function runLlmIngestion(
         systemFamily: req.systemFamily,
         passages: batch,
         knownPredicates: KNOWN_PREDICATES_LIST,
+        extractionGoals: req.intent?.extractionGoals,
       });
     } catch (e) {
       errors.push(`batch ${i / batchSize}: ${e instanceof Error ? e.message : String(e)}`);
@@ -242,6 +249,7 @@ export async function runLlmIngestion(
     stats: { parsedEntries: parsed, candidatesCreated: created.length, skipped },
     candidateItemIds: created,
     errors,
+    intent: req.intent,
   };
   await store.saveJob(job);
   return job;

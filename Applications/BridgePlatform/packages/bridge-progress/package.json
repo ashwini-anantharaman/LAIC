@@ -26,6 +26,7 @@
     "@bridge/evaluator": "workspace:*",
     "@bridge/events": "workspace:*",
     "@bridge/sessions": "workspace:*",
+    "@bridge/taxonomy": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts"
   },
   "devDependencies": {

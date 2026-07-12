@@ -14,10 +14,12 @@ import {
   validatePackage,
   type BidRuleEntry,
   type BridgeRulePackage,
+  type ConfigPresetEntry,
   type PlayRuleEntry,
 } from "@bridge/engine";
 import { defaultSettingValues } from "@bridge/config";
 import type { Setting } from "@bridge/config";
+import { unknownConceptIds, unknownSkillIds } from "@bridge/taxonomy";
 import type {
   BidRulePayload,
   BridgeGeneratedArtifact,
@@ -109,6 +111,22 @@ export async function runGeneration(
       warnings.push(`${itemId}: uncited — no source citations; rule will be badged in the UI`);
   };
 
+  // §13.5 taxonomy tags: unknown ids and untagged rules are warnings, never
+  // gates. No-agreement catch-alls are exempt — they exercise no skill.
+  const warnTags = (
+    item: { itemId: string; relatedSkillIds?: string[]; relatedConceptIds?: string[] },
+    noAgreement?: boolean,
+  ): void => {
+    const badSkills = unknownSkillIds(item.relatedSkillIds ?? []);
+    const badConcepts = unknownConceptIds(item.relatedConceptIds ?? []);
+    if (badSkills.length)
+      warnings.push(`${item.itemId}: unknown skill ids [${badSkills.join(", ")}] — not in @bridge/taxonomy`);
+    if (badConcepts.length)
+      warnings.push(`${item.itemId}: unknown concept ids [${badConcepts.join(", ")}] — not in @bridge/taxonomy`);
+    if (!noAgreement && !(item.relatedSkillIds ?? []).length)
+      warnings.push(`${item.itemId}: no relatedSkillIds — progress can't attribute this rule to skills`);
+  };
+
   const settings: Setting[] = [];
   const settingArtifactSources = new Map<string, string>(); // setting key -> itemId
   for (const item of active.filter((i) => i.itemType === "setting_definition")) {
@@ -128,8 +146,11 @@ export async function runGeneration(
       continue;
     }
     warnUncited(item.itemId, item.citations, item.sourceIds);
+    warnTags(item, payload.noAgreement);
     bidRules.push({
       ...payload,
+      relatedSkillIds: item.relatedSkillIds ?? [],
+      relatedConceptIds: item.relatedConceptIds ?? [],
       provenance: {
         knowledgeItemIds: [item.itemId, ...(item.relatedItemIds ?? [])],
         sourceIds: item.sourceIds,
@@ -146,14 +167,31 @@ export async function runGeneration(
       continue;
     }
     warnUncited(item.itemId, item.citations, item.sourceIds);
+    warnTags(item);
     playRules.push({
       ...payload,
+      relatedSkillIds: item.relatedSkillIds ?? [],
+      relatedConceptIds: item.relatedConceptIds ?? [],
       provenance: {
         knowledgeItemIds: [item.itemId, ...(item.relatedItemIds ?? [])],
         sourceIds: item.sourceIds,
       },
       explanationItemId: item.itemId,
     });
+  }
+
+  // §11.3 presets are content: explicit value maps from knowledge items.
+  const presets: ConfigPresetEntry[] = [];
+  const presetArtifactSources = new Map<string, string>(); // presetId -> itemId
+  for (const item of active.filter((i) => i.itemType === "configuration_preset")) {
+    const preset = item.structuredFields.preset as ConfigPresetEntry | undefined;
+    if (!preset) {
+      errors.push(`${item.itemId}: configuration_preset without structuredFields.preset`);
+      continue;
+    }
+    warnUncited(item.itemId, item.citations, item.sourceIds);
+    presets.push(preset);
+    presetArtifactSources.set(preset.presetId, item.itemId);
   }
 
   const previous = await store.getLatest(packageId);
@@ -167,6 +205,7 @@ export async function runGeneration(
     settings,
     bidRules,
     playRules,
+    presets,
   };
   errors.push(...validatePackage(pkg, KNOWN_PREDICATES, KNOWN_PRIMITIVES));
   if (errors.length) return fail(errors);
@@ -187,6 +226,7 @@ export async function runGeneration(
     bidRules: diffEntries(previous?.pkg.bidRules ?? [], bidRules, (r) => r.ruleId),
     playRules: diffEntries(previous?.pkg.playRules ?? [], playRules, (r) => r.ruleId),
     settings: diffEntries(previous?.pkg.settings ?? [], settings, (s) => s.key),
+    presets: diffEntries(previous?.pkg.presets ?? [], presets, (p) => p.presetId),
   };
 
   const artifacts: BridgeGeneratedArtifact[] = [
@@ -210,6 +250,17 @@ export async function runGeneration(
       status: "active" as const,
       artifactPayload: r,
     })),
+    ...presets.map((p) => ({
+      artifactId: `${packageId}@${version}/preset:${p.presetId}`,
+      artifactType: "ai_player_default" as const,
+      generatedFromKnowledgeItemIds: [presetArtifactSources.get(p.presetId)!],
+      generatedFromSourceIds:
+        active.find((i) => i.itemId === presetArtifactSources.get(p.presetId))?.sourceIds ?? [],
+      packageId,
+      version,
+      status: "active" as const,
+      artifactPayload: p,
+    })),
     ...settings.map((s) => ({
       artifactId: `${packageId}@${version}/setting:${s.key}`,
       artifactType: "setting_registry_entry" as const,
@@ -229,6 +280,31 @@ export async function runGeneration(
     GOLDEN_BOARDS,
     createPackageDecider({ pkg, values: defaultSettingValues(pkg.settings) }),
   );
+
+  // §19.3 test-hand linkage: which golden boards exercise which rules —
+  // computed from the actual harness decisions, not manual declarations.
+  const boardsByRule = new Map<string, string[]>();
+  for (const b of harness.boards)
+    for (const ruleId of b.matchedRuleIds)
+      boardsByRule.set(ruleId, [...(boardsByRule.get(ruleId) ?? []), b.name]);
+  const untestedRuleIds = [...bidRules, ...playRules]
+    .map((r) => r.ruleId)
+    .filter((id) => !boardsByRule.has(id));
+  warnings.push(
+    ...untestedRuleIds.map(
+      (id) => `§19.3: no golden board exercises rule "${id}" — add a test hand where feasible`,
+    ),
+  );
+  const changedRuleIds = [...diff.bidRules, ...diff.playRules]
+    .filter((d) => d.change !== "removed")
+    .map((d) => d.id);
+  const testCoverage = {
+    untestedRuleIds,
+    affectedTests: changedRuleIds.map((ruleId) => ({
+      ruleId,
+      boards: boardsByRule.get(ruleId) ?? [],
+    })),
+  };
 
   const record: RulePackageRecord = {
     packageId,
@@ -255,6 +331,7 @@ export async function runGeneration(
     diff,
     errors: [],
     warnings,
+    testCoverage,
     resultPackageId: packageId,
     resultVersion: version,
   };

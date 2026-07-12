@@ -62,6 +62,12 @@ export async function saveItemEdit(formData: FormData) {
     throw new Error("structuredFields must be valid JSON");
   }
 
+  const idList = (name: string): string[] | undefined => {
+    const raw = formData.get(name);
+    if (raw === null) return undefined; // field absent: leave unchanged
+    return String(raw).split(",").map((s) => s.trim()).filter(Boolean);
+  };
+
   // Edits bump the version (revision history keeps the old one); packages
   // already generated are pinned to the version they consumed.
   const edited: BridgeReadableKnowledgeItem = {
@@ -69,6 +75,8 @@ export async function saveItemEdit(formData: FormData) {
     title: str(formData, "title"),
     humanReadableRule: str(formData, "humanReadableRule"),
     structuredFields,
+    relatedSkillIds: idList("relatedSkillIds") ?? existing.relatedSkillIds,
+    relatedConceptIds: idList("relatedConceptIds") ?? existing.relatedConceptIds,
     reviewerNotes: (formData.get("reviewerNotes") as string) || existing.reviewerNotes,
     version: String(Number(existing.version) + 1),
     createdBy: existing.createdBy,
@@ -168,12 +176,26 @@ export async function runLlmExtraction(formData: FormData) {
   const client = extractionClient();
   if (!client)
     throw new Error("Set ANTHROPIC_API_KEY in apps/bridge-web/.env.local to enable LLM extraction");
+  const sourceId = str(formData, "sourceId");
+  const goals = formData.getAll("extractionGoals").map(String);
+  const outputs = formData.getAll("targetOutputs").map(String);
   await runLlmIngestion(knowledgeStore(), client, {
-    sourceId: str(formData, "sourceId"),
+    sourceId,
     systemFamily: str(formData, "systemFamily") as never,
     requestedBy: context.nexusUserId,
     now: new Date().toISOString(),
     jobId: `job_${crypto.randomUUID().slice(0, 8)}`,
+    // §12.5: the declared intent rides on the job for review context.
+    intent: goals.length || outputs.length
+      ? {
+          intentId: `intent_${crypto.randomUUID().slice(0, 8)}`,
+          sourceId,
+          systemFamily: str(formData, "systemFamily") as never,
+          targetOutputs: outputs as never,
+          extractionGoals: goals as never,
+          humanReviewRequired: true,
+        }
+      : undefined,
   });
   revalidatePath("/bridge/admin/sources");
   revalidatePath("/bridge/admin/knowledge");

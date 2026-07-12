@@ -68,6 +68,9 @@ importers:
       '@bridge/sessions':
         specifier: workspace:*
         version: link:../../packages/bridge-sessions
+      '@bridge/taxonomy':
+        specifier: workspace:*
+        version: link:../../packages/bridge-taxonomy
       '@laic/learner-contracts':
         specifier: link:../../../../Components/laic-learner-contracts
         version: link:../../../../Components/laic-learner-contracts
@@ -180,6 +183,9 @@ importers:
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
+      '@bridge/taxonomy':
+        specifier: workspace:*
+        version: link:../bridge-taxonomy
     devDependencies:
       '@bridge/dealer':
         specifier: workspace:*
@@ -224,6 +230,9 @@ importers:
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
+      '@bridge/taxonomy':
+        specifier: workspace:*
+        version: link:../bridge-taxonomy
       '@laic/learner-contracts':
         specifier: link:../../../../Components/laic-learner-contracts
         version: link:../../../../Components/laic-learner-contracts
@@ -249,6 +258,9 @@ importers:
       '@bridge/sessions':
         specifier: workspace:*
         version: link:../bridge-sessions
+      '@bridge/taxonomy':
+        specifier: workspace:*
+        version: link:../bridge-taxonomy
       '@laic/learner-contracts':
         specifier: link:../../../../Components/laic-learner-contracts
         version: link:../../../../Components/laic-learner-contracts
@@ -275,6 +287,8 @@ importers:
       '@bridge/knowledge':
         specifier: workspace:*
         version: link:../bridge-knowledge
+
+  packages/bridge-taxonomy: {}
 
   packages/nexus-client:
     dependencies:

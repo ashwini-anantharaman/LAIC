@@ -84,16 +84,21 @@ real online sources), and the table/play completion (Law 77 scoring, session
 lifecycle event stream in its own seq space, position snapshots with
 exact-package resume, PBN/LIN import/export with attribution-honest imported
 histories, board library + share links, server-rendered replay viewer,
-per-user table profiles with feedback modes). Remaining:
+per-user table profiles with feedback modes). Phase 15 (knowledge, taxonomy
+& content machinery) is complete: the full 32-skill §13.5 taxonomy + concept
+taxonomy live in @bridge/taxonomy (mirrored to SQL in migration 0009), skill/
+concept tags flow knowledge item → generated rule entry → evaluator →
+progress (RULE_SKILL_MAP retired — attribution always comes from the
+session's pinned package version), ingestion intents (§12.5) focus and are
+stamped on extraction jobs, the Knowledge Browser shows the reviewed rule
+side-by-side with its cited source passage, the §19.3 test-hand gate warns on
+rules no golden board exercises and run diffs list affected tests, and
+presets are package content (configuration_preset items → pkg.presets;
+BN_PRESETS is a legacy fallback for pre-15 versions). Still open from 15's
+content program (fellow work, ongoing): SAYC v1, 2/1 v1, more golden boards,
+citation verification; the optional pgvector search layer is parked with the
+Supabase work. Remaining:
 
-- **Phase 15 — knowledge, taxonomy & content machinery**: full skill taxonomy
-  (~32 skills) + concept taxonomy, skill tags on knowledge items so evaluator/
-  progress derive skills from the package (retire the hardcoded
-  RULE_SKILL_MAP), ingestion intents + side-by-side passage view in the
-  Knowledge Browser, "every rule has ≥1 test hand" warning gate, presets as
-  content + additional evaluator modes, content program (SAYC v1, 2/1 v1,
-  golden boards), optional pgvector search layer (human search only — rule
-  retrieval at decision time stays exact/deterministic).
 - **Phase 16 — platform, security & org model**: append-only audit log +
   admin view, server-side permission enforcement, REST parity (configurations
   resolve/convention-card/clone, knowledge APIs, seat-assignments + start),

@@ -27,9 +27,10 @@ import type {
   CommonProgressSignal,
   NexusBridgeContext,
 } from "@laic/learner-contracts";
-import { skillsForRules } from "./taxonomy";
-
-export * from "./taxonomy";
+// Taxonomy reference data lives in @bridge/taxonomy (re-exported for
+// consumers); skill attribution now comes from the pinned package via the
+// evaluator — the transitional RULE_SKILL_MAP is retired (§13.5).
+export * from "@bridge/taxonomy";
 
 // ---------------------------------------------------------------------------
 // Model (LM doc §3.2)
@@ -179,7 +180,6 @@ export function extractSessionSignals(
         e.category === "bid-event"
           ? evaluateBidAction(state, e.seat, e.call, ctx, ids)
           : evaluatePlayAction(state, e.seat, cardId(e.card), ctx, ids);
-      const skills = skillsForRules([...evaluation.matchedRuleIds, ...evaluation.missedRuleIds]);
       signals.push({
         progressSignalId: `ps_${record.bridgeSessionId}_${e.seq}`,
         nexusUserId: occupant,
@@ -190,8 +190,8 @@ export function extractSessionSignals(
         bridgeSessionId: record.bridgeSessionId,
         seat: e.seat,
         signalType: JUDGMENT_TO_SIGNAL[evaluation.judgment] ?? "questionable_action",
-        relatedSkillIds: skills,
-        relatedConceptIds: [],
+        relatedSkillIds: evaluation.relatedSkillIds,
+        relatedConceptIds: evaluation.relatedConceptIds,
         sourceEventIds: [String(e.seq)],
         confidence: evaluation.confidence,
         severity: evaluation.judgment === "not_system_aligned" ? "medium" : "low",
@@ -310,8 +310,8 @@ export class ProgressService {
         nexusUserId,
         domainId: "bridge",
         patternType: `missed:${ruleId}`,
-        relatedSkillIds: skillsForRules([ruleId]),
-        relatedConceptIds: [],
+        relatedSkillIds: [...new Set(group.flatMap((s) => s.evaluation.relatedSkillIds))],
+        relatedConceptIds: [...new Set(group.flatMap((s) => s.evaluation.relatedConceptIds))],
         exampleEventIds: group.map((s) => `${s.bridgeSessionId}#${s.sourceEventIds[0]}`),
         firstObservedAt: group[0]!.createdAt,
         lastObservedAt: group[group.length - 1]!.createdAt,
