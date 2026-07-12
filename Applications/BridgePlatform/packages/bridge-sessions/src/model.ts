@@ -21,8 +21,10 @@ export type SessionStatus = "created" | "active" | "completed" | "abandoned";
 export interface SeatAssignment {
   seat: Seat;
   playerKind: "human" | "deterministic_ai" | "ben" | "empty";
-  /** nexusUserId for humans; AI profile id later (Phase 7). */
+  /** nexusUserId for humans; aiPlayerProfileId for configured AI seats. */
   occupantId?: string;
+  /** Display name at the table (profile name for AI, table name for humans). */
+  label?: string;
 }
 
 export interface BridgeSessionRecord {
@@ -43,6 +45,13 @@ export interface BridgeSessionRecord {
   seats: Record<Seat, SeatAssignment>;
   /** Learning-platform activity launch this session fulfils (LP §13.3). */
   launchRef?: string;
+  /**
+   * Per-seat resolved values (the prototype's independent per-seat configs):
+   * a seat listed here plays by ITS OWN configuration; seats absent fall back
+   * to the table default in resolvedValues. Covered by resolvedValueHash, so
+   * replay stability holds for the whole table arrangement.
+   */
+  seatValues?: Partial<Record<Seat, Record<string, SettingValue>>>;
   /**
    * Set when this session was forked from another to change settings
    * mid-board (the prototype's live-config loop): same board/seats/package,

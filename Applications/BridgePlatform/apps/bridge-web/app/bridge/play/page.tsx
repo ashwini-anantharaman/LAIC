@@ -60,6 +60,34 @@ export default async function PlayPage() {
         <span className="text-xs text-neutral-500">
           Latest Beginner Natural package version.
         </span>
+        <details className="w-full">
+          <summary className="cursor-pointer text-xs text-neutral-500">
+            Per-seat AIs — sit different players at each seat (NS one system, EW another…)
+          </summary>
+          <div className="mt-2 flex flex-wrap gap-3">
+            {(["N", "E", "S", "W"] as const).map((seat) => (
+              <label key={seat} className="flex items-center gap-1.5 text-xs text-neutral-600">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-800 text-[11px] font-bold text-emerald-50">
+                  {seat}
+                </span>
+                <select
+                  name={`profile_${seat}`}
+                  className="rounded border border-neutral-300 px-1.5 py-1 text-xs"
+                >
+                  <option value="">table default</option>
+                  {profiles.map((p) => (
+                    <option key={p.aiPlayerProfileId} value={p.aiPlayerProfileId}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            <span className="self-center text-[11px] text-neutral-400">
+              Your seat ignores its AI pick; every AI decision still cites its own profile’s rules.
+            </span>
+          </div>
+        </details>
       </form>
 
       <form

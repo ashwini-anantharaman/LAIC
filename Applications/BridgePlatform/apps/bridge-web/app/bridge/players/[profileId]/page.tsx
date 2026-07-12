@@ -8,6 +8,8 @@ import {
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { customizeProfile, updateProfile } from "@/app/bridge/players/actions";
+import { ConventionCardView } from "@/components/ConventionCardView";
+import { PrintButton } from "@/components/PrintButton";
 import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
@@ -108,28 +110,17 @@ export default async function ProfilePage({
         </form>
       )}
 
-      <section className="rounded-lg border border-neutral-200 p-4">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-neutral-500">
-          Convention card (generated from settings — derived, never hand-edited)
-        </h2>
-        <p className="mb-3 text-xs text-neutral-500">
-          Settings: {card.settings.map((s) => `${s.label} = ${String(s.value)}`).join(" · ")}
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {card.sections.map((section) => (
-            <div key={section.title}>
-              <h3 className="mb-1 text-sm font-semibold">{section.title}</h3>
-              <ul className="space-y-1 text-sm">
-                {section.entries.map((e) => (
-                  <li key={e.ruleId} className={e.active ? "" : "text-neutral-400 line-through"}>
-                    {e.label}
-                    {!e.active && <span className="ml-1 text-xs no-underline">(off)</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
+            Convention card (generated from settings — derived, never hand-edited)
+          </h2>
+          <PrintButton />
         </div>
+        <ConventionCardView
+          card={card}
+          defaults={Object.fromEntries(pkg.settings.map((s) => [s.key, s.default]))}
+        />
       </section>
 
       <section className="rounded-lg border border-neutral-200 p-4">

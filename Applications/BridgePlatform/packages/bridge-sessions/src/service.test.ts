@@ -432,3 +432,128 @@ describe("fork on settings change (prototype live-config loop)", () => {
     ).rejects.toThrow("exact package version");
   });
 });
+
+// N holds a 13-HCP club opening; S holds 6 HCP with four hearts. Over 1♣,
+// BOTH bn_new_suit_1level and bn_1nt_response match — a real coach pool.
+const multiMatchBoard = () => {
+  const board = seededBoard(2);
+  board.dealer = "N";
+  board.hands.N = [
+    { suit: "S" as const, rank: 14 as const }, { suit: "S" as const, rank: 13 as const },
+    { suit: "S" as const, rank: 3 as const },
+    { suit: "H" as const, rank: 13 as const }, { suit: "H" as const, rank: 8 as const },
+    { suit: "H" as const, rank: 6 as const },
+    { suit: "D" as const, rank: 7 as const }, { suit: "D" as const, rank: 5 as const },
+    { suit: "C" as const, rank: 12 as const }, { suit: "C" as const, rank: 11 as const },
+    { suit: "C" as const, rank: 9 as const }, { suit: "C" as const, rank: 8 as const },
+    { suit: "C" as const, rank: 2 as const },
+  ];
+  // S: 6 HCP (Q♥ K♦ J♣), five diamonds, DOUBLETON club (no raise): the
+  // new-suit response and the 1NT response both match — a two-rule pool.
+  board.hands.S = [
+    { suit: "S" as const, rank: 7 as const }, { suit: "S" as const, rank: 2 as const },
+    { suit: "H" as const, rank: 12 as const }, { suit: "H" as const, rank: 5 as const },
+    { suit: "H" as const, rank: 4 as const }, { suit: "H" as const, rank: 3 as const },
+    { suit: "D" as const, rank: 13 as const }, { suit: "D" as const, rank: 5 as const },
+    { suit: "D" as const, rank: 4 as const }, { suit: "D" as const, rank: 3 as const },
+    { suit: "D" as const, rank: 2 as const },
+    { suit: "C" as const, rank: 11 as const }, { suit: "C" as const, rank: 7 as const },
+  ];
+  const used = new Set([...board.hands.N, ...board.hands.S].map((c) => `${c.suit}${c.rank}`));
+  const rest: { suit: "S" | "H" | "D" | "C"; rank: number }[] = [];
+  for (const suit of ["S", "H", "D", "C"] as const)
+    for (let rank = 2; rank <= 14; rank++)
+      if (!used.has(`${suit}${rank}`)) rest.push({ suit, rank });
+  board.hands.E = rest.slice(0, 13) as typeof board.hands.E;
+  board.hands.W = rest.slice(13, 26) as typeof board.hands.W;
+  return board;
+};
+
+describe("per-seat configurations (different systems at one table)", () => {
+  it("a seat with its own values plays its own system; the hash pins the arrangement", async () => {
+    const { service } = makeService();
+    const caller = ctx({});
+    const mk = (seatValues?: Record<string, Record<string, boolean>>) =>
+      service.createSession({
+        context: caller,
+        sessionType: "single_board",
+        board: multiMatchBoard(),
+        pkg,
+        resolvedValues: values(),
+        seatValues: seatValues as never,
+      });
+
+    const plain = await mk();
+    const perSeat = await mk({ S: { ...values(), bn_1nt_response: false } as never });
+    expect(perSeat.resolvedValueHash).not.toBe(plain.resolvedValueHash);
+
+    // Same table default, but seat S plays its own no-1NT system: after
+    // N opens and E passes, S bids 1♥ in BOTH (new suit outranks 1NT)…
+    for (const rec of [plain, perSeat]) {
+      await service.step(rec.bridgeSessionId, caller); // N: 1C
+      await service.step(rec.bridgeSessionId, caller); // E: P
+    }
+    const plainPeek = await service.peek(plain.bridgeSessionId, caller);
+    const seatPeek = await service.peek(perSeat.bridgeSessionId, caller);
+    if (plainPeek.kind !== "bid" || seatPeek.kind !== "bid") throw new Error("expected bids");
+    // …but the pools differ: the per-seat S has bn_1nt_response gated OFF.
+    expect(plainPeek.decision.matches!.map((m) => m.ruleId)).toContain("bn_1nt_response");
+    expect(seatPeek.decision.matches!.map((m) => m.ruleId)).not.toContain("bn_1nt_response");
+  });
+});
+
+describe("ask + coach choice (prototype transport)", () => {
+  it("peek previews without committing; coach commits an alternative matched rule", async () => {
+    const { store, service } = makeService();
+    const coach = ctx({ nexusUserId: "user_coach", accessLevel: "coach" });
+    const record = await service.createSession({
+      context: coach,
+      sessionType: "single_board",
+      board: multiMatchBoard(),
+      pkg,
+      resolvedValues: values(),
+    });
+    const id = record.bridgeSessionId;
+    await service.step(id, coach); // N: 1C
+    await service.step(id, coach); // E: P
+
+    const before = (await store.getEvents(id)).length;
+    const peeked = await service.peek(id, coach);
+    if (peeked.kind !== "bid") throw new Error("expected a bid preview");
+    expect(peeked.seat).toBe("S");
+    expect(peeked.decision.action).toBe("1D"); // policy pick: new suit, longest first
+    expect(peeked.decision.matches!.map((m) => m.ruleId)).toEqual(
+      expect.arrayContaining(["bn_new_suit_1level", "bn_1nt_response"]),
+    );
+    expect((await store.getEvents(id)).length).toBe(before); // read-only
+
+    // Coach overrides the policy pick with the other matched rule.
+    const view = await service.applyCoachChoice(id, coach, "S", "bn_1nt_response");
+    expect(view.state.auction[2]).toEqual({ seat: "S", call: "1N" });
+    const logic = (await store.getEvents(id)).find(
+      (e) => e.category === "bid-logic-event" && e.seat === "S",
+    );
+    expect(logic && "reason" in logic ? logic.reason : "").toContain("Coach chose");
+  });
+
+  it("coach choice rejects unmatched rules and non-coach callers", async () => {
+    const { service } = makeService();
+    const coach = ctx({ nexusUserId: "user_coach", accessLevel: "coach" });
+    const record = await service.createSession({
+      context: coach,
+      sessionType: "single_board",
+      board: multiMatchBoard(),
+      pkg,
+      resolvedValues: values(),
+    });
+    const id = record.bridgeSessionId;
+    await service.step(id, coach);
+    await service.step(id, coach);
+    await expect(service.applyCoachChoice(id, coach, "S", "bn_open_major")).rejects.toThrow(
+      "not in the matched pool",
+    );
+    await expect(
+      service.applyCoachChoice(id, ctx({ nexusUserId: "user_coach" }), "S", "bn_1nt_response"),
+    ).rejects.toThrow("coach, reviewer, or admin");
+  });
+});

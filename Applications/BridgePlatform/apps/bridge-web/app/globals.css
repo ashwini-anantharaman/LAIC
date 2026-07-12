@@ -140,3 +140,15 @@ main section[class*="border"] {
     animation-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  aside {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  main {
+    padding: 0 !important;
+  }
+}

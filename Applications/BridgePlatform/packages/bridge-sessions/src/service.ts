@@ -9,6 +9,8 @@ import {
   createGame,
   createPackageDecider,
   initialState,
+  interpretBid,
+  interpretPlay,
   legalCalls,
   legalPlays,
   resultLabel,
@@ -76,6 +78,8 @@ export interface CreateSessionInput {
   resolvedValues: Record<string, SettingValue>;
   /** Defaults to four deterministic AI seats. */
   seats?: Partial<Record<Seat, SeatAssignment>>;
+  /** Per-seat configurations; absent seats use resolvedValues (table default). */
+  seatValues?: Partial<Record<Seat, Record<string, SettingValue>>>;
   launchRef?: string;
   forkedFromSessionId?: string;
 }
@@ -137,7 +141,13 @@ export class SessionService {
       status: "active",
       packageRef: { packageId: input.pkg.packageId, version: input.pkg.version },
       resolvedValues: input.resolvedValues,
-      resolvedValueHash: hashValues(input.resolvedValues),
+      seatValues: input.seatValues,
+      // The hash pins the WHOLE table arrangement: default + per-seat values.
+      resolvedValueHash: input.seatValues && Object.keys(input.seatValues).length
+        ? hashValues({ __table: hashValues(input.resolvedValues), ...Object.fromEntries(
+            Object.entries(input.seatValues).map(([s, v]) => [`__seat_${s}`, hashValues(v!)]),
+          ) })
+        : hashValues(input.resolvedValues),
       board: input.board,
       seats,
       launchRef: input.launchRef,
@@ -410,6 +420,90 @@ export class SessionService {
   }
 
   /**
+   * The prototype's "Ask": preview the NEXT decision without committing
+   * anything — the decision, its reasoning, and the full matched-rule pool
+   * (coach mode chooses among these). Read-only; no events are written.
+   */
+  async peek(
+    id: string,
+    context: NexusBridgeContext,
+  ): Promise<
+    | { kind: "complete" }
+    | { kind: "awaiting_human"; seat: Seat }
+    | { kind: "bid"; seat: Seat; decision: Decision<Call> }
+    | { kind: "play"; seat: Seat; decision: Decision<Card> }
+  > {
+    const { record, game } = await this.reconstruct(id, context);
+    const state = game.getState();
+    if (state.phase === "complete") return { kind: "complete" };
+    const seat = game.actingSeat();
+    if (record.seats[seat].playerKind === "human") return { kind: "awaiting_human", seat };
+    const pkg = (await this.deps.loadPackage(record.packageRef))!;
+    if (state.phase === "auction") {
+      const values = record.seatValues?.[seat] ?? record.resolvedValues;
+      return { kind: "bid", seat, decision: interpretBid(state, seat, { pkg, values }) };
+    }
+    // In play the hand on turn may be dummy; its controller's config decides.
+    const values = record.seatValues?.[seat] ?? record.resolvedValues;
+    return { kind: "play", seat: state.turn, decision: interpretPlay(state, state.turn, { pkg, values }) };
+  }
+
+  /**
+   * Coach mode (prototype's multi-match choice): commit an ALTERNATIVE rule
+   * from the matched pool instead of the policy pick — with honest
+   * attribution ("coach chose …"). Only rules that actually matched this
+   * position are eligible; requires coach-level access.
+   */
+  async applyCoachChoice(
+    id: string,
+    context: NexusBridgeContext,
+    seat: Seat,
+    chosenRuleId: string,
+  ): Promise<SessionView> {
+    if (!["coach", "admin", "reviewer"].includes(context.accessLevel))
+      throw new Error("Coach tools require coach, reviewer, or admin access");
+    const source = await this.requireRecord(id, context);
+    const pkg = (await this.deps.loadPackage(source.packageRef))!;
+    const valuesFor = (s: Seat) => source.seatValues?.[s] ?? source.resolvedValues;
+
+    const coachDecider: AsyncDecider = {
+      decideBid: async (s, actingSeat): Promise<Decision<Call>> => {
+        const d = interpretBid(s, actingSeat, { pkg, values: valuesFor(actingSeat) });
+        const m = (d.matches ?? []).find((x) => x.ruleId === chosenRuleId);
+        if (!m) throw new Error(`Rule ${chosenRuleId} is not in the matched pool here`);
+        return {
+          ...d,
+          action: m.action,
+          matchedRuleId: m.ruleId,
+          reason: `Coach chose "${m.title}" from the matched pool (policy pick was ${String(d.action)})`,
+        };
+      },
+      decidePlay: async (s, actingSeat): Promise<Decision<Card>> => {
+        const d = interpretPlay(s, actingSeat, { pkg, values: valuesFor(actingSeat) });
+        const m = (d.matches ?? []).find((x) => x.ruleId === chosenRuleId);
+        if (!m) throw new Error(`Rule ${chosenRuleId} is not in the matched pool here`);
+        return {
+          ...d,
+          action: m.action,
+          matchedRuleId: m.ruleId,
+          reason: `Coach chose "${m.title}" from the matched pool`,
+        };
+      },
+    };
+
+    const { record, game, log } = await this.reconstruct(id, context, () => ({
+      overrideSeat: seat,
+      decider: coachDecider,
+    }));
+    if (game.actingSeat() !== seat)
+      throw new Error(`It is ${game.actingSeat()}'s turn, not ${seat}'s`);
+    if (record.seats[seat].playerKind === "human")
+      throw new Error("Coach choice applies to AI seats — humans just act");
+    await game.step();
+    return this.persistNew(record, game, log);
+  }
+
+  /**
    * The prototype's "flip a setting mid-board" loop, honestly: a session's
    * configuration is pinned for replay stability (§11.4), so changing values
    * at the table FORKS — a new session on the same board, seats, and exact
@@ -422,6 +516,7 @@ export class SessionService {
     context: NexusBridgeContext,
     pkg: BridgeRulePackage,
     resolvedValues: Record<string, SettingValue>,
+    seatValues?: Partial<Record<Seat, Record<string, SettingValue>>>,
   ): Promise<BridgeSessionRecord> {
     const source = await this.requireRecord(id, context);
     if (
@@ -436,6 +531,7 @@ export class SessionService {
       board: source.board,
       pkg,
       resolvedValues,
+      seatValues: seatValues ?? source.seatValues,
       seats: source.seats,
       forkedFromSessionId: id,
     });
@@ -534,14 +630,21 @@ export class SessionService {
     const actions = events.filter(isActionEvent);
     const bus = createBus();
     const log = createEventLog(bus); // captures only NEW events this request
-    const ai = createPackageDecider({ pkg, values: record.resolvedValues });
+    // Per-seat deciders: a seat with its own values plays its own system.
+    const aiFor = (seat: Seat) =>
+      createPackageDecider({ pkg, values: record.seatValues?.[seat] ?? record.resolvedValues });
     const initial = initialState(
       record.board.name,
       record.board.dealer,
       record.board.vul,
       record.board.hands,
     );
-    const deciders: Record<Seat, AsyncDecider> = { N: ai, E: ai, S: ai, W: ai };
+    const deciders: Record<Seat, AsyncDecider> = {
+      N: aiFor("N"),
+      E: aiFor("E"),
+      S: aiFor("S"),
+      W: aiFor("W"),
+    };
     if (seatOverride) {
       const o = seatOverride(initial);
       deciders[o.overrideSeat] = o.decider;

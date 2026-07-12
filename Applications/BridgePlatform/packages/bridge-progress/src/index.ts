@@ -175,7 +175,8 @@ export function extractSessionSignals(
     if (humanSeats.has(controller)) {
       const occupant = record.seats[controller].occupantId!;
       const ids = { bridgeSessionId: record.bridgeSessionId, actionEventSeq: e.seq };
-      const ctx = { pkg, values: record.resolvedValues };
+      // Judge the human against THEIR seat's configuration (per-seat tables).
+      const ctx = { pkg, values: record.seatValues?.[controller] ?? record.resolvedValues };
       const evaluation =
         e.category === "bid-event"
           ? evaluateBidAction(state, e.seat, e.call, ctx, ids)

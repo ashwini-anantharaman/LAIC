@@ -16,6 +16,7 @@ import { notFound, redirect } from "next/navigation";
 import {
   autoplaySession,
   changeTableSetting,
+  coachChooseRule,
   humanBid,
   humanPlay,
   saveBoardToLibraryAction,
@@ -125,12 +126,13 @@ export default async function SessionPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ why?: string }>;
+  searchParams: Promise<{ why?: string; scope?: string; ask?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { why } = await searchParams;
+  const { why, scope: scopeParam, ask } = await searchParams;
+  const scope = ["N", "E", "S", "W"].includes(scopeParam ?? "") ? (scopeParam as Seat) : "table";
 
   let view, events;
   try {
@@ -177,6 +179,13 @@ export default async function SessionPage({
     (e) => e.category === "bid-logic-event" || e.category === "play-logic-event",
   ) as Extract<(typeof events)[number], { category: "bid-logic-event" | "play-logic-event" }>[];
 
+  // Coverage (prototype parity): which settings have actually driven
+  // decisions at this table so far — exercised vs merely configured.
+  const coverage = new Map<string, { label: string; count: number }>();
+  for (const e of logicEvents)
+    for (const c of e.citedSettings ?? [])
+      coverage.set(c.key, { label: c.label, count: (coverage.get(c.key)?.count ?? 0) + 1 });
+
   // "Why?" panel: resolve the selected decision's rule to items + sources.
   const whyEvent = why ? logicEvents.find((e) => e.seq === Number(why)) : undefined;
   const whyProvenance =
@@ -211,8 +220,13 @@ export default async function SessionPage({
           {mySeats.includes(seat)
             ? `${me?.displayNameAtTable || "you"}`
             : record.seats[seat].playerKind === "human"
-              ? "human"
-              : "AI"}
+              ? (record.seats[seat].label ?? "human")
+              : (record.seats[seat].label ?? "AI")}
+          {record.seats[seat].playerKind !== "human" && record.seatValues?.[seat] && (
+            <span className="rounded bg-emerald-100 px-1 text-[10px] text-emerald-800" title="This seat plays its own configuration">
+              own config
+            </span>
+          )}
           {dummy === seat && playStarted ? " · dummy" : ""}
           {boardOver ? " · the deal" : ""}
         </p>
@@ -238,6 +252,12 @@ export default async function SessionPage({
   };
 
   const currentTrick = state.tricks[state.tricks.length - 1];
+
+  // The prototype's "Ask": preview the next decision without committing.
+  const peeked = ask && state.phase !== "complete"
+    ? await sessionService().peek(sessionId, context)
+    : null;
+  const canCoach = ["coach", "reviewer", "admin"].includes(context.accessLevel);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -381,6 +401,18 @@ export default async function SessionPage({
             </form>
           </>
         )}
+        {state.phase !== "complete" && (
+          <Link
+            href={`/bridge/play/${record.bridgeSessionId}${ask ? "" : "?ask=1"}`}
+            className={`rounded border px-3 py-1.5 text-sm ${
+              ask
+                ? "border-emerald-400 bg-emerald-50 text-emerald-900"
+                : "border-neutral-300 hover:bg-neutral-50"
+            }`}
+          >
+            Ask
+          </Link>
+        )}
         <form action={undoSession}>
           <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
           <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50">
@@ -425,6 +457,91 @@ export default async function SessionPage({
         </a>
       </div>
 
+      {peeked && (
+        <section className="rounded-lg border border-emerald-300 bg-emerald-50/40 p-4">
+          <h2 className="mb-1 text-sm font-medium text-emerald-900">
+            Ask — what happens next (nothing committed)
+          </h2>
+          {peeked.kind === "complete" && (
+            <p className="text-sm text-neutral-600">The board is complete.</p>
+          )}
+          {peeked.kind === "awaiting_human" && (
+            <p className="text-sm text-neutral-600">
+              Waiting on the human at {peeked.seat} — nothing to preview.
+            </p>
+          )}
+          {(peeked.kind === "bid" || peeked.kind === "play") && (
+            <div className="space-y-2 text-sm">
+              <p>
+                <span className="font-mono font-medium">{peeked.seat}</span> will{" "}
+                {peeked.kind === "bid" ? (
+                  <>call {callLabel(peeked.decision.action)}</>
+                ) : (
+                  <>
+                    play <CardFace card={peeked.decision.action} />
+                  </>
+                )}{" "}
+                <span className="text-neutral-500">← {peeked.decision.reason}</span>
+                {peeked.decision.fallback && (
+                  <span className="ml-1 rounded bg-red-50 px-1 text-xs text-red-700">fallback</span>
+                )}
+              </p>
+              {(peeked.decision.matches?.length ?? 0) > 1 && (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    Matched pool — the policy picked #1{canCoach ? "; choose another to commit it instead" : ""}
+                  </p>
+                  <ul className="mt-1 space-y-1">
+                    {peeked.decision.matches!.map((m, i) => (
+                      <li key={m.ruleId} className="flex flex-wrap items-center gap-2 text-xs">
+                        <span className="font-mono text-neutral-400">#{i + 1}</span>
+                        <span className="font-medium">
+                          {peeked.kind === "bid"
+                            ? callLabel(m.action as never)
+                            : cardId(m.action as never)}
+                        </span>
+                        <span className="text-neutral-500">{m.title}</span>
+                        <span className="font-mono text-neutral-400">({m.ruleId})</span>
+                        {canCoach && m.ruleId !== peeked.decision.matchedRuleId && (
+                          <form action={coachChooseRule}>
+                            <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+                            <input type="hidden" name="seat" value={peeked.seat} />
+                            <input type="hidden" name="ruleId" value={m.ruleId} />
+                            <button className="rounded border border-emerald-400 px-2 py-0.5 text-xs text-emerald-800 hover:bg-emerald-50">
+                              Commit this instead
+                            </button>
+                          </form>
+                        )}
+                        {m.ruleId === peeked.decision.matchedRuleId && (
+                          <span className="rounded bg-emerald-100 px-1.5 text-[10px] text-emerald-800">
+                            policy pick
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      <p className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+        Convention cards:
+        {(["N", "E", "S", "W"] as const).map((s) => (
+          <Link
+            key={s}
+            href={`/bridge/play/${record.bridgeSessionId}/card/${s}`}
+            className="rounded-full border border-neutral-300 px-2 py-0.5 hover:border-emerald-400 hover:bg-emerald-50"
+          >
+            {s}
+            {record.seats[s].label ? ` · ${record.seats[s].label}` : ""}
+            {record.seatValues?.[s] ? " (own)" : ""}
+          </Link>
+        ))}
+      </p>
+
       {/* Score (§8.2) */}
       {view.score && (
         <section className="rounded-lg border border-emerald-300 border-l-4 border-l-[var(--gold)] bg-emerald-50/40 p-4">
@@ -457,14 +574,39 @@ export default async function SessionPage({
             Table settings — {record.packageRef.packageId}@{record.packageRef.version} · config{" "}
             <span className="font-mono normal-case">{record.resolvedValueHash}</span>
           </h2>
-          <p className="mb-3 text-xs text-neutral-500">
+          <p className="mb-2 text-xs text-neutral-500">
             A session’s configuration is pinned so its decisions replay forever. Flipping a
             setting continues this deal at a forked table under the new configuration — try
             Undo, change a setting, then Step AI to see the same position decided differently.
           </p>
+          <p className="mb-3 flex flex-wrap items-center gap-1 text-xs text-neutral-500">
+            Editing scope:
+            {(["table", "N", "E", "S", "W"] as const).map((sc) => (
+              <Link
+                key={sc}
+                href={`/bridge/play/${record.bridgeSessionId}?scope=${sc}`}
+                className={`rounded-full px-2 py-0.5 ${
+                  scope === sc
+                    ? "bg-emerald-700 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-emerald-50"
+                }`}
+              >
+                {sc === "table" ? "whole table" : `${sc}${record.seats[sc].label ? ` · ${record.seats[sc].label}` : ""}`}
+              </Link>
+            ))}
+            {scope !== "table" && (
+              <span className="text-neutral-400">
+                — changes fork with a configuration only {scope} plays by
+              </span>
+            )}
+          </p>
           <ul className="space-y-2">
             {pinnedPkg.settings.map((s) => {
-              const on = Boolean(record.resolvedValues[s.key]);
+              const effective =
+                scope === "table"
+                  ? record.resolvedValues
+                  : (record.seatValues?.[scope] ?? record.resolvedValues);
+              const on = Boolean(effective[s.key]);
               return (
                 <li key={s.key} className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <span className="min-w-0">
@@ -481,6 +623,7 @@ export default async function SessionPage({
                   <form action={changeTableSetting}>
                     <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
                     <input type="hidden" name="key" value={s.key} />
+                    <input type="hidden" name="scope" value={scope} />
                     <button className="whitespace-nowrap rounded border border-neutral-300 px-2.5 py-1 text-xs hover:border-emerald-400 hover:bg-emerald-50">
                       {on ? "Turn off & continue here" : "Turn on & continue here"}
                     </button>
@@ -489,6 +632,23 @@ export default async function SessionPage({
               );
             })}
           </ul>
+          <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-dashed border-neutral-200 pt-2 text-xs text-neutral-500">
+            <span className="font-medium uppercase tracking-wide">Exercised so far</span>
+            {coverage.size === 0 && <span>no setting has driven a decision yet</span>}
+            {[...coverage.entries()]
+              .sort((a, b) => b[1].count - a[1].count)
+              .map(([key, c]) => (
+                <span key={key} className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-800">
+                  {c.label} ×{c.count}
+                </span>
+              ))}
+            {pinnedPkg && coverage.size < pinnedPkg.settings.length && coverage.size > 0 && (
+              <span className="text-neutral-400">
+                — {pinnedPkg.settings.length - coverage.size} configured setting
+                {pinnedPkg.settings.length - coverage.size === 1 ? "" : "s"} not yet exercised
+              </span>
+            )}
+          </p>
         </section>
       )}
 

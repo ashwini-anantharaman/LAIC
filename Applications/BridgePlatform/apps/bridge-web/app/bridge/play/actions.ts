@@ -24,13 +24,45 @@ export async function createPracticeSession(formData: FormData) {
   const seed = Number(formData.get("seed")) || 1;
   const humanSeat = formData.get("humanSeat") as Seat | "watch" | null;
   const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const service = await profileService();
+
+  // The prototype's per-seat setup: each AI seat may run its OWN profile.
+  // Base "AI:" pick (profileId) is the table default; per-seat picks
+  // (profile_N …) override individual seats with their own resolved values.
   const profileId = String(formData.get("profileId") || "");
-  const profile = profileId
-    ? await (await profileService()).getProfile(profileId, context)
-    : null;
+  const profile = profileId ? await service.getProfile(profileId, context) : null;
   const resolvedValues = profile
     ? resolveProfileValues(pkg.settings, profile.selectedPresetId, profile.valueOverrides, packagePresets(pkg)).values
     : defaultSettingValues(pkg.settings);
+
+  const seats: Partial<Record<Seat, { seat: Seat; playerKind: "human" | "deterministic_ai"; occupantId?: string; label?: string }>> = {};
+  const seatValues: Partial<Record<Seat, Record<string, boolean | number | string>>> = {};
+  if (profile)
+    for (const s of ["N", "E", "S", "W"] as Seat[])
+      seats[s] = { seat: s, playerKind: "deterministic_ai", occupantId: profile.aiPlayerProfileId, label: profile.name };
+  for (const s of ["N", "E", "S", "W"] as Seat[]) {
+    const perSeatId = String(formData.get(`profile_${s}`) || "");
+    if (!perSeatId || perSeatId === profileId) continue;
+    const p = await service.getProfile(perSeatId, context);
+    if (!p) continue;
+    seatValues[s] = resolveProfileValues(
+      pkg.settings,
+      p.selectedPresetId,
+      p.valueOverrides,
+      packagePresets(pkg),
+    ).values as Record<string, boolean | number | string>;
+    seats[s] = { seat: s, playerKind: "deterministic_ai", occupantId: p.aiPlayerProfileId, label: p.name };
+  }
+  if (humanSeat && humanSeat !== "watch") {
+    seats[humanSeat] = {
+      seat: humanSeat,
+      playerKind: "human",
+      occupantId: context.nexusUserId,
+      label: (await service.getUserProfile(context))?.displayNameAtTable,
+    };
+    delete seatValues[humanSeat];
+  }
+
   const { assertAiAllowed, assertPackageAllowed } = await import("@/lib/org");
   await assertAiAllowed(context); // §3.4 org policy
   await assertPackageAllowed(context, pkg);
@@ -40,16 +72,8 @@ export async function createPracticeSession(formData: FormData) {
     board: seededBoard(seed),
     pkg,
     resolvedValues,
-    seats:
-      humanSeat && humanSeat !== "watch"
-        ? {
-            [humanSeat]: {
-              seat: humanSeat,
-              playerKind: "human",
-              occupantId: context.nexusUserId,
-            },
-          }
-        : undefined,
+    seatValues: Object.keys(seatValues).length ? seatValues : undefined,
+    seats: Object.keys(seats).length ? seats : undefined,
   });
   // Advance AI to the human's first turn (or to completion for watch mode
   // leave it stepped manually).
@@ -277,16 +301,32 @@ export async function changeTableSetting(formData: FormData) {
   if (!pkgRecord) throw new Error("The session's package version is no longer available");
   const setting = pkgRecord.pkg.settings.find((s) => s.key === key);
   if (!setting) throw new Error(`No setting "${key}" in this package version`);
-  const newValues = {
-    ...view.record.resolvedValues,
-    [key]: !view.record.resolvedValues[key],
-  };
-  const forked = await sessionService().forkSession(id, context, pkgRecord.pkg, newValues);
+  const scope = (String(formData.get("scope") || "table")) as "table" | Seat;
+  let newTable = view.record.resolvedValues;
+  let newSeatValues = view.record.seatValues;
+  if (scope === "table") {
+    newTable = { ...view.record.resolvedValues, [key]: !view.record.resolvedValues[key] };
+  } else {
+    const current = view.record.seatValues?.[scope] ?? view.record.resolvedValues;
+    newSeatValues = { ...view.record.seatValues, [scope]: { ...current, [key]: !current[key] } };
+  }
+  const forked = await sessionService().forkSession(id, context, pkgRecord.pkg, newTable, newSeatValues);
   const { audit } = await import("@/lib/audit");
   await audit(context, "session.fork", "bridge_session", forked.bridgeSessionId, {
     forkedFrom: id,
     changed: key,
-    to: newValues[key],
+    scope,
   });
   redirect(`/bridge/play/${forked.bridgeSessionId}`);
+}
+
+/** Coach mode: commit an alternative matched rule with honest attribution. */
+export async function coachChooseRule(formData: FormData) {
+  const context = await requireContext();
+  const id = String(formData.get("sessionId"));
+  const seat = String(formData.get("seat")) as Seat;
+  const ruleId = String(formData.get("ruleId"));
+  await sessionService().applyCoachChoice(id, context, seat, ruleId);
+  await recomputeSignalsSafe(id);
+  redirect(`/bridge/play/${id}?ask=1`);
 }

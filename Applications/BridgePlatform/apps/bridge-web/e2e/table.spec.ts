@@ -42,9 +42,11 @@ test("human seat: make calls and plays through the UI to completion", async ({ p
     const passButton = page.getByRole("button", { name: "Pass", exact: true });
     const legalCard = page.locator("button.border-emerald-400:enabled").first();
     const advance = page.getByRole("button", { name: "Advance AI" });
-    if (await passButton.isVisible()) await passButton.click();
-    else if (await legalCard.isVisible()) await legalCard.click();
-    else if (await advance.isVisible()) await advance.click();
+    // Short-timeout clicks: a re-render between isVisible and click just
+    // means this iteration is a no-op and the loop looks again.
+    if (await passButton.isVisible()) await passButton.click({ timeout: 4000 }).catch(() => {});
+    else if (await legalCard.isVisible()) await legalCard.click({ timeout: 4000 }).catch(() => {});
+    else if (await advance.isVisible()) await advance.click({ timeout: 4000 }).catch(() => {});
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(100);
   }
