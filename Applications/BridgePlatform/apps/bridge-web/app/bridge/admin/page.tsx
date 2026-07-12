@@ -35,6 +35,16 @@ export default async function AdminPage() {
       title: "Generation runs & packages",
       body: `${packages.length} package versions. Active knowledge → validated, versioned rule packages.`,
     },
+    {
+      href: "/bridge/admin/audit",
+      title: "Audit log",
+      body: "Append-only trail of expert/admin actions (§21).",
+    },
+    {
+      href: "/bridge/org",
+      title: "Organization",
+      body: "Bridge org profile (allowed systems, AI/BEN policy) and coach affiliations (§3.4–3.5).",
+    },
   ];
 
   return (

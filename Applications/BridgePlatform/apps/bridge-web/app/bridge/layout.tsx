@@ -20,13 +20,13 @@ export default async function BridgeShellLayout({
     stubDisplayName(context.nexusUserId) ?? context.nexusUserId;
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-neutral-200 bg-neutral-50">
+    <div className="flex min-h-screen flex-col md:flex-row">
+      <aside className="flex w-full shrink-0 flex-col border-b border-neutral-200 bg-neutral-50 md:w-64 md:border-b-0 md:border-r">
         <div className="border-b border-neutral-200 p-4">
           <p className="font-semibold tracking-tight">Bridge Platform</p>
           <p className="text-xs text-neutral-500">LAIC Bridge Program</p>
         </div>
-        <nav className="flex-1 space-y-1 p-3">
+        <nav className="flex flex-row flex-wrap gap-1 p-3 md:flex-1 md:flex-col md:flex-nowrap md:space-y-1 md:gap-0">
           {navForContext(context).map((item) => (
             <NavLink key={item.href} href={item.href} label={item.label} />
           ))}
@@ -55,7 +55,7 @@ export default async function BridgeShellLayout({
           )}
         </div>
       </aside>
-      <main className="flex-1 p-8">{children}</main>
+      <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>
     </div>
   );
 }

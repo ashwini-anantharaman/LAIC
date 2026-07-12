@@ -30,7 +30,10 @@ export async function POST(request: NextRequest) {
     };
     const seed = Number.isFinite(body.seed) ? Number(body.seed) : 1;
     const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
-    const record = await sessionService().createSession({
+    const { assertAiAllowed, assertPackageAllowed } = await import("@/lib/org");
+  await assertAiAllowed(context); // §3.4 org policy
+  await assertPackageAllowed(context, pkg);
+  const record = await sessionService().createSession({
       context,
       sessionType: (body.sessionType as never) ?? "single_board",
       board: seededBoard(seed),

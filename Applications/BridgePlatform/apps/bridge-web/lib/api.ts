@@ -22,3 +22,17 @@ export function apiError(e: unknown): NextResponse {
   const message = e instanceof Error ? e.message : "Unknown error";
   return NextResponse.json({ error: message }, { status: 400 });
 }
+
+/** Admin/knowledge routes: area role gate + action permission (§21). */
+export async function requireAdminContext(...permissions: string[]): Promise<NexusBridgeContext> {
+  const context = await requireContext();
+  const { canAccessAdminArea, requirePermission } = await import("@bridge/nexus-client");
+  if (!canAccessAdminArea(context)) throw new SessionAccessError("Not an admin");
+  requirePermission(
+    context,
+    ...(permissions.length
+      ? permissions
+      : ["bridge.knowledge.review", "bridge.knowledge.edit", "bridge.program.manage"]),
+  );
+  return context;
+}

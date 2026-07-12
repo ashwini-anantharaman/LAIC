@@ -33,6 +33,8 @@ export interface SessionStore {
     status: SessionStatus,
     completedAt?: string,
   ): Promise<void>;
+  /** Replace seat assignments (§16.2 — service enforces "before first action"). */
+  updateSeats(bridgeSessionId: string, seats: BridgeSessionRecord["seats"]): Promise<void>;
 
   /** Append events; rejects out-of-order or duplicate seq (gap-free invariant). */
   appendEvents(bridgeSessionId: string, events: GameEvent[]): Promise<void>;
@@ -87,6 +89,13 @@ export class InMemorySessionStore implements SessionStore {
     if (!s) throw new Error(`No session ${id}`);
     s.status = status;
     if (completedAt) s.completedAt = completedAt;
+    this.persist();
+  }
+
+  async updateSeats(id: string, seats: BridgeSessionRecord["seats"]) {
+    const s = this.data.sessions.find((x) => x.bridgeSessionId === id);
+    if (!s) throw new Error(`No session ${id}`);
+    s.seats = structuredClone(seats);
     this.persist();
   }
 

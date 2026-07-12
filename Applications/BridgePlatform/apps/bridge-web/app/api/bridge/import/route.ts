@@ -16,7 +16,10 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as { text?: string };
     const imported = importBoardText(String(body.text ?? ""));
     const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
-    const record = await sessionService().createSession({
+    const { assertAiAllowed, assertPackageAllowed } = await import("@/lib/org");
+  await assertAiAllowed(context); // §3.4 org policy
+  await assertPackageAllowed(context, pkg);
+  const record = await sessionService().createSession({
       context,
       sessionType: "single_board",
       board: imported.board,

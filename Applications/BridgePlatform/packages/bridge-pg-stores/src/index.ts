@@ -13,3 +13,4 @@ export { PgKnowledgeStore } from "./knowledge";
 export { PgSessionStore } from "./sessions";
 export { PgProfileStore } from "./profiles";
 export { PgProgressStore } from "./progress";
+export { PgAuditStore } from "./audit";

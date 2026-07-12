@@ -5,6 +5,7 @@ import { packagePresets } from "@bridge/profiles";
 import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { audit } from "@/lib/audit";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
 import { latestPackage } from "@/lib/sessions";
@@ -29,6 +30,9 @@ export async function createPlayerFromPackage(formData: FormData) {
     settings: record.pkg.settings,
     presets: packagePresets(record.pkg),
   });
+  await audit(context, "profile.create", "ai_player_profile", profile.aiPlayerProfileId, {
+    packageRef: profile.packageRef,
+  });
   revalidatePath("/bridge/players");
   redirect(`/bridge/players/${profile.aiPlayerProfileId}`);
 }
@@ -43,6 +47,7 @@ export async function customizeProfile(formData: FormData) {
     undefined,
     packagePresets(pkg),
   );
+  await audit(context, "profile.customize", "ai_player_profile", copy.aiPlayerProfileId, {});
   redirect(`/bridge/players/${copy.aiPlayerProfileId}`);
 }
 
@@ -66,6 +71,7 @@ export async function updateProfile(formData: FormData) {
     },
     packagePresets(pkg),
   );
+  await audit(context, "profile.update", "ai_player_profile", id, {});
   revalidatePath(`/bridge/players/${id}`);
   redirect(`/bridge/players/${id}`);
 }
@@ -76,8 +82,8 @@ export async function customizeScope(formData: FormData) {
     String(formData.get("scopeId")),
     context,
   );
+  await audit(context, "scope.customize", "teaching_scope", copy.teachingScopeId, {});
   revalidatePath("/bridge/players");
-  void copy;
   redirect("/bridge/players");
 }
 
@@ -99,6 +105,7 @@ export async function updateScope(formData: FormData) {
       ...(reject.length ? { rejectIfSystemicActionIn: reject } : {}),
     },
   });
+  await audit(context, "scope.update", "teaching_scope", String(formData.get("scopeId")), {});
   revalidatePath("/bridge/players");
   redirect("/bridge/players");
 }

@@ -1,6 +1,6 @@
 "use server";
 
-import { canAccessAdminArea } from "@bridge/nexus-client";
+import { canAccessAdminArea, requirePermission } from "@bridge/nexus-client";
 import {
   chunkSourceText,
   PrototypeRegistryExtractor,
@@ -16,11 +16,17 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { extractionClient } from "@/lib/extraction";
 import { knowledgeStore } from "@/lib/knowledge";
+import { audit } from "@/lib/audit";
 import { getBridgeContext } from "@/lib/nexus";
 
-async function requireReviewer() {
+async function requireReviewer(...permissions: string[]) {
   const context = await getBridgeContext();
   if (!context || !canAccessAdminArea(context)) throw new Error("Not authorized");
+  // §21: the area role gate is not enough — the action itself is permissioned.
+  requirePermission(
+    context,
+    ...(permissions.length ? permissions : ["bridge.knowledge.review", "bridge.knowledge.edit", "bridge.program.manage"]),
+  );
   return context;
 }
 
@@ -45,6 +51,7 @@ export async function registerSource(formData: FormData) {
     status: "registered",
   };
   await knowledgeStore().saveSource(source);
+  await audit(context, "knowledge.source.register", "source", source.sourceId, { title: source.title });
   revalidatePath("/bridge/admin/sources");
 }
 
@@ -81,20 +88,27 @@ export async function saveItemEdit(formData: FormData) {
     version: String(Number(existing.version) + 1),
     createdBy: existing.createdBy,
   };
-  void context;
   await store.saveItem(edited);
+  await audit(context, "knowledge.item.edit", "knowledge_item", itemId, {
+    fromVersion: existing.version,
+    toVersion: edited.version,
+  });
   revalidatePath(`/bridge/admin/knowledge`);
   redirect(`/bridge/admin/knowledge/${itemId}`);
 }
 
 export async function setItemStatus(formData: FormData) {
-  await requireReviewer();
+  const context = await requireReviewer();
   const store = knowledgeStore();
   const itemId = str(formData, "itemId");
   const status = str(formData, "status") as BridgeReadableKnowledgeItem["status"];
   const existing = await store.getItem(itemId);
   if (!existing) throw new Error(`No item ${itemId}`);
   await store.saveItem({ ...existing, status });
+  await audit(context, "knowledge.item.status", "knowledge_item", itemId, {
+    from: existing.status,
+    to: status,
+  });
   revalidatePath(`/bridge/admin/knowledge`);
   redirect(`/bridge/admin/knowledge/${itemId}`);
 }
@@ -111,6 +125,9 @@ export async function resolveGap(formData: FormData) {
     resolvedBy: context.nexusUserId,
     resolvedAt: new Date().toISOString(),
   });
+  await audit(context, "knowledge.gap.resolve", "gap", gap.gapId, {
+    resolutionStatus: str(formData, "resolutionStatus"),
+  });
   revalidatePath("/bridge/admin/gaps");
 }
 
@@ -123,6 +140,11 @@ export async function triggerGeneration(formData: FormData) {
     now: new Date().toISOString(),
     runId: `run_${crypto.randomUUID().slice(0, 8)}`,
   });
+  await audit(context, "generation.run", "generation_run", run.runId, {
+    status: run.status,
+    resultVersion: run.resultVersion,
+    warnings: run.warnings?.length ?? 0,
+  });
   revalidatePath("/bridge/admin/runs");
   redirect(`/bridge/admin/runs/${run.runId}`);
 }
@@ -132,7 +154,7 @@ export async function triggerGeneration(formData: FormData) {
  * directly, PDF via unpdf), chunk into deterministic passages, store both.
  */
 export async function uploadSourceDocument(formData: FormData) {
-  await requireReviewer();
+  const context = await requireReviewer();
   const store = knowledgeStore();
   const sourceId = str(formData, "sourceId");
   const source = await store.getSource(sourceId);
@@ -166,6 +188,11 @@ export async function uploadSourceDocument(formData: FormData) {
     passages,
   );
   await store.saveSource({ ...source, locator: source.locator ?? file.name });
+  await audit(context, "knowledge.source.upload", "source", sourceId, {
+    fileName: file.name,
+    charCount: text.length,
+    passages: passages.length,
+  });
   revalidatePath("/bridge/admin/sources");
   redirect(`/bridge/admin/sources/${sourceId}`);
 }
@@ -197,6 +224,10 @@ export async function runLlmExtraction(formData: FormData) {
         }
       : undefined,
   });
+  await audit(context, "knowledge.ingestion.run", "source", sourceId, {
+    extractor: "llm",
+    goals,
+  });
   revalidatePath("/bridge/admin/sources");
   revalidatePath("/bridge/admin/knowledge");
   redirect("/bridge/admin/knowledge");
@@ -226,6 +257,58 @@ export async function extractPrototypeRegistry() {
     now: new Date().toISOString(),
     jobId: `job_${crypto.randomUUID().slice(0, 8)}`,
   });
+  await audit(context, "knowledge.ingestion.run", "source", "src_prototype_artifacts", {
+    extractor: "prototype_registry",
+  });
   revalidatePath("/bridge/admin/sources");
   revalidatePath("/bridge/admin/knowledge");
+}
+
+// ---- org model (§3.4-3.5) ---------------------------------------------------
+
+export async function saveOrgProfileAction(formData: FormData) {
+  const context = await requireReviewer("bridge.org.manage");
+  const service = await (await import("@/lib/profiles")).profileService();
+  const systems = formData.getAll("allowedBiddingSystems").map(String);
+  const profile = await service.saveOrgProfile(context, {
+    bridgeOrgType: str(formData, "bridgeOrgType") as never,
+    allowedBiddingSystems: systems,
+    defaultLearnerLevel: (formData.get("defaultLearnerLevel") as string) || undefined,
+    allowAiPlayers: formData.get("allowAiPlayers") === "on",
+    allowBenPlayers: formData.get("allowBenPlayers") === "on",
+  });
+  await audit(context, "org.profile.update", "program_organization", profile.programOrganizationId, {
+    allowAiPlayers: profile.allowAiPlayers,
+    allowBenPlayers: profile.allowBenPlayers,
+    allowedBiddingSystems: profile.allowedBiddingSystems,
+  });
+  revalidatePath("/bridge/org");
+}
+
+export async function addAffiliationAction(formData: FormData) {
+  const context = await getBridgeContext();
+  if (!context) throw new Error("Not signed in");
+  const service = await (await import("@/lib/profiles")).profileService();
+  const affiliation = await service.addAffiliation(context, {
+    programOrganizationId: (formData.get("programOrganizationId") as string) || undefined,
+    affiliationType: str(formData, "affiliationType") as never,
+  });
+  await audit(context, "org.affiliation.change", "coach_affiliation", affiliation.coachAffiliationId, {
+    status: affiliation.status,
+    programOrganizationId: affiliation.programOrganizationId,
+  });
+  revalidatePath("/bridge/org");
+}
+
+/** §3.5 explicit context switch — any signed-in user with an active affiliation. */
+export async function switchActiveOrgAction(formData: FormData) {
+  const context = await getBridgeContext();
+  if (!context) throw new Error("Not signed in");
+  const target = (formData.get("programOrganizationId") as string) || null;
+  const service = await (await import("@/lib/profiles")).profileService();
+  await service.switchActiveOrg(context, target);
+  await audit(context, "org.affiliation.change", "context_switch", context.nexusUserId, {
+    activeProgramOrganizationId: target,
+  });
+  revalidatePath("/bridge", "layout");
 }

@@ -85,6 +85,20 @@ export class PgSessionStore implements SessionStore {
     if (!rows.length) throw new Error(`No session ${id}`);
   }
 
+  async updateSeats(id: string, seats: BridgeSessionRecord["seats"]) {
+    const existing = await this.getSession(id);
+    if (!existing) throw new Error(`No session ${id}`);
+    const rows = check(
+      await this.db
+        .from("bridge_sessions")
+        .update({ record: { ...existing, seats } })
+        .eq("bridge_session_id", id)
+        .select("bridge_session_id"),
+      "updateSeats",
+    );
+    if (!rows.length) throw new Error(`No session ${id}`);
+  }
+
   async appendEvents(id: string, events: GameEvent[]) {
     if (!events.length) return;
     const last = check(

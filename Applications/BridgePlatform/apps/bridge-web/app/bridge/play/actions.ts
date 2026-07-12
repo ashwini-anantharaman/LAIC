@@ -31,6 +31,9 @@ export async function createPracticeSession(formData: FormData) {
   const resolvedValues = profile
     ? resolveProfileValues(pkg.settings, profile.selectedPresetId, profile.valueOverrides, packagePresets(pkg)).values
     : defaultSettingValues(pkg.settings);
+  const { assertAiAllowed, assertPackageAllowed } = await import("@/lib/org");
+  await assertAiAllowed(context); // §3.4 org policy
+  await assertPackageAllowed(context, pkg);
   const record = await sessionService().createSession({
     context,
     sessionType: "single_board",
@@ -75,6 +78,8 @@ export async function undoSession(formData: FormData) {
   const context = await requireContext();
   const id = String(formData.get("sessionId"));
   await sessionService().undo(id, context);
+  const { audit } = await import("@/lib/audit");
+  await audit(context, "session.undo", "bridge_session", id, {});
   await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
@@ -120,6 +125,9 @@ export async function createLevelPracticeSession(formData: FormData) {
     { seed, count: 1, dealer: "S", namePrefix: scope.name },
   );
   const board = generateConstrainedBoards(spec, { pkg, values }).boards[0]!;
+  const { assertAiAllowed, assertPackageAllowed } = await import("@/lib/org");
+  await assertAiAllowed(context); // §3.4 org policy
+  await assertPackageAllowed(context, pkg);
   const record = await sessionService().createSession({
     context,
     sessionType: "practice_set",
@@ -185,6 +193,9 @@ export async function playSavedBoard(formData: FormData) {
   const humanSeat = formData.get("humanSeat") as Seat | "watch" | null;
   const saved = await sessionService().getBoard(boardId, context);
   const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const { assertAiAllowed, assertPackageAllowed } = await import("@/lib/org");
+  await assertAiAllowed(context); // §3.4 org policy
+  await assertPackageAllowed(context, pkg);
   const record = await sessionService().createSession({
     context,
     sessionType: "single_board",
@@ -215,6 +226,9 @@ export async function importBoard(formData: FormData) {
   const { importBoardText } = await import("@/lib/formats");
   const imported = importBoardText(text);
   const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const { assertAiAllowed, assertPackageAllowed } = await import("@/lib/org");
+  await assertAiAllowed(context); // §3.4 org policy
+  await assertPackageAllowed(context, pkg);
   const record = await sessionService().createSession({
     context,
     sessionType: "single_board",

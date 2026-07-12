@@ -97,18 +97,37 @@ presets are package content (configuration_preset items → pkg.presets;
 BN_PRESETS is a legacy fallback for pre-15 versions). Still open from 15's
 content program (fellow work, ongoing): SAYC v1, 2/1 v1, more golden boards,
 citation verification; the optional pgvector search layer is parked with the
-Supabase work. Remaining:
+Supabase work.
 
-- **Phase 16 — platform, security & org model**: append-only audit log +
-  admin view, server-side permission enforcement, REST parity (configurations
-  resolve/convention-card/clone, knowledge APIs, seat-assignments + start),
-  org model completion (org profiles with allowed systems/allowAi, coach
-  affiliations with context switching, groups).
-- **Phase 17 — runtime & operations**: Postgres completion (apply pending
-  migrations, live-verify Pg stores, flip STORE_BACKEND=postgres as team
-  default), Playwright suite, deployment + responsive/mobile pass. BEN
-  adapter deferred by decision 2026-07-12 — the ben-service container stays
-  parked until a BEN table server is available.
+Phase 16 (platform, security & org model) is complete: @bridge/audit is an
+append-only trail of every privileged mutation (generation, item edits, gap
+resolution, source uploads, profile/scope changes, org admin, undo) with an
+admin view at /bridge/admin/audit; server actions and knowledge APIs check
+context.permissions (requirePermission), not just area roles; the full §16.2–
+16.4 REST surface exists (sessions start / seat-assignments — mutable only
+before the first action — / actions/bid / actions/play / events / undo;
+player-profiles + configurations with resolve / convention-card / clone;
+knowledge sources / ingestion-jobs / gaps / readable-items GET-POST-PATCH /
+generation-runs + diff; approve/reject/publish return explicit 410s per
+deviation 6); and the §3.4–3.5 org model is in (org profiles with allowed
+systems + allowAi/allowBen enforced at session creation, many-to-many coach
+affiliations — pending unless self-administered — with explicit context
+switching applied in getBridgeContext, /bridge/org UI, migration 0010).
+
+Phase 17 (runtime & operations) is code-complete: Playwright suite in
+apps/bridge-web/e2e (table play driven to completion through the real UI,
+admin generation loop, org flows — `pnpm e2e`), and the §7.3 responsive pass
+(shell stacks on small screens, table grid restacks). Still blocked on
+external access, not code:
+
+- **Supabase**: apply migrations 0005–0010, live-verify the five Pg stores,
+  then flip STORE_BACKEND=postgres as the team default (needs a Supabase
+  sign-in; JSON file stores remain the dev default meanwhile).
+- **Deployment**: Vercel web + managed Postgres (§17.2 Option A) — needs
+  Vercel account access.
+- **BEN adapter**: deferred by decision 2026-07-12 — the ben-service
+  container stays parked until a BEN table server is available; org profiles
+  already carry the allowBenPlayers switch (default off).
 
 Phase 10 shipped: shared Supabase project 'nexus-platform' exists (bridge
 migrations applied, RLS on); GET /api/platform/bridge/context added to

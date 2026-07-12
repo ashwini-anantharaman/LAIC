@@ -127,17 +127,17 @@ export default async function ReplayPage({
         </p>
       </header>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {stepLink(0, "⏮ Start", n === 0)}
         {stepLink(n - 1, "← Back", n === 0)}
         {stepLink(n + 1, "Next →", n >= total)}
         {stepLink(total, "End ⏭", n >= total)}
       </div>
 
-      <div className="grid grid-cols-3 items-center gap-3">
-        <div />
+      <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-3">
+        <div className="hidden sm:block" />
         {seatBox("N")}
-        <div />
+        <div className="hidden sm:block" />
         {seatBox("W")}
         <div className="rounded-lg border border-dashed border-neutral-300 p-3 text-center">
           <p className="mb-1 text-xs text-neutral-400">current trick</p>
@@ -155,9 +155,9 @@ export default async function ReplayPage({
           )}
         </div>
         {seatBox("E")}
-        <div />
+        <div className="hidden sm:block" />
         {seatBox("S")}
-        <div />
+        <div className="hidden sm:block" />
       </div>
 
       {lastAction && (

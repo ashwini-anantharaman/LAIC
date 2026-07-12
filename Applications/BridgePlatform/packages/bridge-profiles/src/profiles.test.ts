@@ -200,3 +200,56 @@ describe("teaching scopes are coach judgment, not system truth", () => {
     ]);
   });
 });
+
+describe("org model (§3.4–3.5)", () => {
+  it("org profile: save requires bridge.org.manage; reads are open", async () => {
+    const service = new ProfileService(new InMemoryProfileStore(), () => "id_1", () => NOW);
+    const admin = ctx({
+      nexusUserId: "user_admin",
+      accessLevel: "admin",
+      permissions: ["bridge.org.manage"],
+    });
+    await expect(
+      service.saveOrgProfile(ctx({ nexusUserId: "user_x" }), { allowAiPlayers: false }),
+    ).rejects.toThrow("bridge.org.manage");
+
+    const saved = await service.saveOrgProfile(admin, {
+      bridgeOrgType: "bridge_club",
+      allowAiPlayers: false,
+      allowedBiddingSystems: ["natural"],
+    });
+    expect(saved.allowAiPlayers).toBe(false);
+    expect((await service.getOrgProfile(ctx({})))?.allowedBiddingSystems).toEqual(["natural"]);
+  });
+
+  it("affiliations: pending unless self-administered; switch needs an ACTIVE one", async () => {
+    let n = 0;
+    const service = new ProfileService(new InMemoryProfileStore(), () => `id_${n++}`, () => NOW);
+    const coach = ctx({ nexusUserId: "user_coach", accessLevel: "coach" });
+
+    const pending = await service.addAffiliation(coach, {
+      programOrganizationId: "bporg_other",
+      affiliationType: "organization_coach",
+    });
+    expect(pending.status).toBe("pending");
+    // Pending affiliation is NOT a valid switch target.
+    await expect(service.switchActiveOrg(coach, "bporg_other")).rejects.toThrow("active affiliation");
+
+    // Org admin adding themselves to their own org: active immediately.
+    const admin = ctx({
+      nexusUserId: "user_admin2",
+      programOrganizationId: "bporg_club_a",
+      permissions: ["bridge.org.manage"],
+    });
+    const active = await service.addAffiliation(admin, {
+      programOrganizationId: "bporg_club_a",
+      affiliationType: "organization_coach",
+    });
+    expect(active.status).toBe("active");
+    await service.switchActiveOrg(admin, "bporg_club_a");
+    expect((await service.getUserProfile(admin))?.activeProgramOrganizationId).toBe("bporg_club_a");
+    // Clearing the switch is always allowed.
+    await service.switchActiveOrg(admin, null);
+    expect((await service.getUserProfile(admin))?.activeProgramOrganizationId).toBeUndefined();
+  });
+});

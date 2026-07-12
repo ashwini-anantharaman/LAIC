@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@bridge/audit": "workspace:*",
     "@bridge/events": "workspace:*",
     "@bridge/knowledge": "workspace:*",
     "@bridge/profiles": "workspace:*",

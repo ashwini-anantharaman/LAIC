@@ -191,10 +191,10 @@ export default async function SessionPage({
       </header>
 
       {/* Table */}
-      <div className="grid grid-cols-3 items-center gap-3">
-        <div />
+      <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-3">
+        <div className="hidden sm:block" />
         {seatBox("N")}
-        <div />
+        <div className="hidden sm:block" />
         {seatBox("W")}
         <div className="rounded-lg border border-dashed border-neutral-300 p-3 text-center">
           <p className="mb-1 text-xs text-neutral-400">current trick</p>
@@ -212,9 +212,9 @@ export default async function SessionPage({
           )}
         </div>
         {seatBox("E")}
-        <div />
+        <div className="hidden sm:block" />
         {seatBox("S")}
-        <div />
+        <div className="hidden sm:block" />
       </div>
 
       {/* Bidding box */}
@@ -254,7 +254,7 @@ export default async function SessionPage({
       )}
 
       {/* Controls */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {!isParticipant && (
           <>
             <form action={stepSession}>

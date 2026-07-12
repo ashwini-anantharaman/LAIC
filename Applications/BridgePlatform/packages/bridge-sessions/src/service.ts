@@ -239,6 +239,37 @@ export class SessionService {
    * Commit an externally supplied (human) action for the acting seat, with
    * an honest human trace — never dressed up as a rule decision.
    */
+  /**
+   * §16.2: seating stays MUTABLE between creation and the first action —
+   * once anything has been played the seat occupants are part of the
+   * record's truth (attribution) and can no longer be rewritten.
+   */
+  async assignSeats(
+    id: string,
+    context: NexusBridgeContext,
+    changes: Partial<Record<Seat, SeatAssignment>>,
+  ): Promise<BridgeSessionRecord> {
+    const record = await this.requireRecord(id, context);
+    const events = await this.deps.store.getEvents(id);
+    if (events.length)
+      throw new Error("Seats are frozen once the first action is committed (§16.2)");
+    const seats = { ...record.seats };
+    for (const seat of Object.keys(changes) as Seat[]) {
+      const assignment = changes[seat];
+      if (!assignment) continue;
+      if (assignment.seat !== seat) throw new Error(`Assignment for ${seat} names seat ${assignment.seat}`);
+      seats[seat] = assignment;
+    }
+    await this.deps.store.updateSeats(id, seats);
+    await this.emitLifecycle(id, null, (Object.keys(changes) as Seat[]).map(
+      (seat): [LifecycleEventType, Record<string, unknown>] => [
+        "seat_assigned",
+        { seat, playerKind: seats[seat].playerKind, occupantId: seats[seat].occupantId, reassigned: true },
+      ],
+    ));
+    return { ...record, seats };
+  }
+
   async applyExternalAction(
     id: string,
     context: NexusBridgeContext,
