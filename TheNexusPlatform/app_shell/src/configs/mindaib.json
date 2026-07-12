@@ -1,0 +1,129 @@
+{
+  "appId": "app_mindaib",
+  "slug": "mindaib",
+  "status": "preview",
+  "version": "0.1.0",
+  "identity": {
+    "displayName": "MindAI Bee",
+    "shortName": "MindAI Bee",
+    "bundleId": "org.lifeinai.mindaib",
+    "packageName": "org.lifeinai.mindaib"
+  },
+  "programContext": {
+    "nexusOrgId": "org_laic",
+    "programId": "program_mindaib",
+    "defaultDomainId": "mindaib"
+  },
+  "branding": {
+    "primaryColor": "#d97d06",
+    "secondaryColor": "#26221c",
+    "accentColor": "#3aa6a0",
+    "backgroundColor": "#fdf8ec",
+    "surfaceColor": "#ffffff",
+    "textColor": "#262019",
+    "mutedColor": "#8a8071",
+    "fontFamily": "'Sora', sans-serif",
+    "displayFontFamily": "'Sora', sans-serif",
+    "scheme": "light",
+    "markGlyph": "⬡"
+  },
+  "copy": {
+    "welcomeTitle": "Welcome to MindAI Bee",
+    "welcomeSubtitle": "Study mind, brain, decision making, and AI through concept tutorials and challenge practice.",
+    "loginTitle": "Sign in to your hive",
+    "signupTitle": "Join the challenge",
+    "footerText": "A Life in AI Center program"
+  },
+  "auth": {
+    "allowedMethods": ["email", "phone", "otp"],
+    "allowSelfSignup": true,
+    "allowAdminEnrollment": true
+  },
+  "roleButtons": [
+    {
+      "key": "student",
+      "label": "Student",
+      "description": "Practice challenges and follow concept tutorials",
+      "roleRequested": "participant",
+      "entryFlow": "signup",
+      "defaultRouteAfterLogin": "/learn/home",
+      "visible": true,
+      "sortOrder": 1
+    },
+    {
+      "key": "chapter_lead",
+      "label": "Chapter Lead",
+      "description": "Run your chapter and follow your students",
+      "roleRequested": "chapter_lead",
+      "entryFlow": "signin",
+      "defaultRouteAfterLogin": "/learn/progress",
+      "visible": true,
+      "sortOrder": 2
+    },
+    {
+      "key": "program_admin",
+      "label": "Program Admin",
+      "description": "Invite-only program administration",
+      "roleRequested": "program_admin",
+      "entryFlow": "invite_only",
+      "defaultRouteAfterLogin": "/learn/progress",
+      "visible": true,
+      "sortOrder": 3
+    }
+  ],
+  "onboarding": {
+    "questions": [
+      {
+        "key": "chapter",
+        "label": "Which chapter are you part of?",
+        "type": "text",
+        "required": false,
+        "visibleForRoles": ["participant"]
+      },
+      {
+        "key": "region",
+        "label": "Region",
+        "type": "single_select",
+        "options": [
+          { "label": "West", "value": "west" },
+          { "label": "Midwest", "value": "midwest" },
+          { "label": "Northeast", "value": "northeast" },
+          { "label": "South", "value": "south" },
+          { "label": "International", "value": "intl" }
+        ],
+        "required": true
+      },
+      {
+        "key": "first_competition",
+        "label": "Is this your first MindAI Bee season?",
+        "type": "boolean",
+        "required": false,
+        "visibleForRoles": ["participant"]
+      }
+    ],
+    "requiredForRoles": ["participant"]
+  },
+  "navigation": {
+    "homeRoute": "/learn/home",
+    "tabs": [
+      { "key": "challenges", "label": "Challenges", "route": "/learn/home", "icon": "bolt", "requiredModule": "learning" },
+      { "key": "progress", "label": "Progress", "route": "/learn/progress", "icon": "chart", "requiredModule": "learning" }
+    ]
+  },
+  "enabledModules": { "learning": true, "bridge": false, "coaching": true },
+  "featureFlags": {
+    "aiStudyPanel": true,
+    "scenarioQuestions": true,
+    "reflectionPrompts": true,
+    "chapterRegionRegistration": true
+  },
+  "entitlements": {
+    "requiredEntitlementKeys": ["learning_basic"]
+  },
+  "build": {
+    "appVariant": "mindaib",
+    "runtimeTemplate": "learning-app",
+    "environment": "dev",
+    "configFrozenAtBuild": false
+  }
+}
