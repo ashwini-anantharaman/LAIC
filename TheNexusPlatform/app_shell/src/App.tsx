@@ -73,7 +73,12 @@ export default function App() {
   const [variant, setVariant] = useState<string | null>(resolveVariant);
   const [config, setConfig] = useState<AppShellConfig | null>(null);
   const [bootError, setBootError] = useState("");
-  const isEditor = window.location.pathname.startsWith("/editor");
+  // The editor is the home surface: "/" (and /editor) open it. An app only
+  // boots when explicitly requested with ?app=<slug>, or when resuming a
+  // running session on a deep route (variant remembered in localStorage).
+  const requestedApp = new URLSearchParams(window.location.search).get("app");
+  const path = window.location.pathname;
+  const isEditor = path.startsWith("/editor") || (!requestedApp && (path === "/" || !variant));
 
   useEffect(() => {
     if (!variant || isEditor) return;
@@ -109,13 +114,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <ShellWithRouter key={config.slug} config={config} />
-      {/* Dev-only escape hatch back to the launcher. */}
+      {/* Dev-only escape hatch back to the editor. */}
       <button
         className="dev-switch"
-        title="Switch app (dev)"
+        title="Back to editor (dev)"
         onClick={() => {
           localStorage.removeItem(VARIANT_KEY);
-          window.location.href = window.location.pathname;
+          window.location.href = "/editor";
         }}
       >
         ⇄
