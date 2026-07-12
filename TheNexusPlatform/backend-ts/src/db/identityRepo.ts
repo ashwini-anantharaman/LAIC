@@ -10,11 +10,12 @@
  * Returns snake_case Row shapes so they are drop-in for the existing platformDb
  * callers and routes.
  */
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, or } from "drizzle-orm";
 
 import type { Membership } from "../permissions";
 import type { AuditEventOptions } from "../platformLocalStore";
 import { asPrivileged } from "./context";
+import { resolveProfileId, ensureOrgProfile as ensureOrgProfileTx } from "./resolveProfile";
 import { profiles, organizations, orgMemberships, joinCodes, stageNodes, auditEvents } from "./schema";
 
 type Row = Record<string, unknown>;
@@ -40,9 +41,10 @@ function joinCodeRow(j: typeof joinCodes.$inferSelect): Row {
 export async function createProfile(userId: string, email: string, role: string, displayName: string | null): Promise<Row> {
   return asPrivileged(async (tx) => {
     const name = displayName || email.split("@")[0];
+    // Org-less profile (e.g. a student before joining): id == auth id, auth_user_id == id.
     const [row] = await tx
       .insert(profiles)
-      .values({ id: userId, email, role, displayName: displayName ?? name, name })
+      .values({ id: userId, authUserId: userId, email, role, displayName: displayName ?? name, name })
       .onConflictDoUpdate({ target: profiles.id, set: { email, role, displayName: displayName ?? name } })
       .returning();
     return profileRow(row);
@@ -63,8 +65,9 @@ export async function getProfile(profileId: string): Promise<Row | null> {
   });
 }
 
-export async function createOrganization(name: string, ownerId: string): Promise<Row> {
+export async function createOrganization(name: string, ownerAuthId: string): Promise<Row> {
   // Kept for the POST /orgs path; org SIGNUP goes through provisionOrganization.
+  // Owner is an org-scoped profile (one login → many org profiles).
   return asPrivileged(async (tx) => {
     const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
     let slug = base;
@@ -76,9 +79,10 @@ export async function createOrganization(name: string, ownerId: string): Promise
       n += 1;
       slug = `${base}-${n}`;
     }
-    const [org] = await tx.insert(organizations).values({ name, slug, ownerId }).returning();
-    await tx.insert(orgMemberships).values({ orgId: org.id, profileId: ownerId, role: "owner", access: "edit" });
-    await tx.update(profiles).set({ role: "org_admin" }).where(eq(profiles.id, ownerId));
+    const [org] = await tx.insert(organizations).values({ name, slug }).returning();
+    const ownerProfileId = await ensureOrgProfileTx(tx, ownerAuthId, org.id, { role: "org_admin" });
+    await tx.update(organizations).set({ ownerId: ownerProfileId, createdByUserId: ownerProfileId }).where(eq(organizations.id, org.id));
+    await tx.insert(orgMemberships).values({ orgId: org.id, profileId: ownerProfileId, role: "owner", access: "edit" });
     return orgRow(org);
   });
 }
@@ -121,9 +125,11 @@ export async function addMembership(
 export async function recordAuditEvent(action: string, opts: AuditEventOptions = {}): Promise<void> {
   try {
     await asPrivileged(async (tx) => {
+      // actorUserId may arrive as an auth id — resolve to the org-scoped profile.
+      const actor = await resolveProfileId(tx, opts.actorUserId ?? null, opts.orgId ?? null);
       await tx.insert(auditEvents).values({
         organizationId: opts.orgId ?? null,
-        actorUserId: opts.actorUserId ?? null,
+        actorUserId: actor,
         action,
         scopeType: opts.scopeType ?? null,
         scopeId: opts.scopeId ?? null,
@@ -137,13 +143,18 @@ export async function recordAuditEvent(action: string, opts: AuditEventOptions =
   }
 }
 
-/** Identity bootstrap: resolve the caller's profile + memberships (privileged). */
-export async function loadUser(userId: string): Promise<{ profile: Row | null; memberships: Membership[] }> {
+/** Identity bootstrap: resolve the caller's org-scoped profiles + memberships (privileged). */
+export async function loadUser(authUserId: string): Promise<{ profile: Row | null; memberships: Membership[] }> {
   return asPrivileged(async (tx) => {
-    const prof = await tx.select().from(profiles).where(eq(profiles.id, userId)).limit(1);
-    if (!prof.length) return { profile: null, memberships: [] };
+    // A person = one auth credential → many org-scoped profiles.
+    const persons = await tx
+      .select()
+      .from(profiles)
+      .where(or(eq(profiles.authUserId, authUserId), eq(profiles.id, authUserId)));
+    if (!persons.length) return { profile: null, memberships: [] };
+    const profileIds = persons.map((p) => p.id);
 
-    const mships = await tx.select().from(orgMemberships).where(eq(orgMemberships.profileId, userId));
+    const mships = await tx.select().from(orgMemberships).where(inArray(orgMemberships.profileId, profileIds));
     const stageIds = mships.map((m) => m.stageNodeId).filter((x): x is string => Boolean(x));
     const stages = stageIds.length
       ? await tx.select().from(stageNodes).where(inArray(stageNodes.id, stageIds))
@@ -164,6 +175,15 @@ export async function loadUser(userId: string): Promise<{ profile: Row | null; m
         program_id: m.programId ?? null,
       };
     });
-    return { profile: profileRow(prof[0]), memberships };
+    return { profile: profileRow(persons[0]), memberships };
   });
+}
+
+/** Find-or-create the org-scoped profile for a person (by auth id) in an org. */
+export async function ensureOrgProfile(
+  authUserId: string,
+  orgId: string,
+  opts: { email?: string | null; role?: string; displayName?: string | null } = {},
+): Promise<string> {
+  return asPrivileged((tx) => ensureOrgProfileTx(tx, authUserId, orgId, opts));
 }

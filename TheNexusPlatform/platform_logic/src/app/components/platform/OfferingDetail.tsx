@@ -16,6 +16,7 @@ import type { Offering, OfferingStatus, Program } from "../../../types/platform"
 import { AppShellEditor } from "./AppShellEditor";
 import { RegistrationQueue } from "../offerings/RegistrationQueue";
 import { ParticipantsList } from "../offerings/ParticipantsList";
+import { BulkImportPanel } from "./OrgGraphSections";
 import { BORDER, MUTED, FONT_HEAD, FONT_BODY } from "../../theme";
 
 const LEARNING_APP_URL =
@@ -27,6 +28,7 @@ export function OfferingDetail({ program, offering: initial, accent, onDeleted }
   const [offering, setOffering] = useState<Offering>(initial);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [rosterKey, setRosterKey] = useState(0);
   const isApp = offering.offering_type === "app";
   const isCourse = offering.offering_type === "course";
   const kind = isApp ? "app shell" : isCourse ? "course" : offering.offering_type;
@@ -131,12 +133,15 @@ export function OfferingDetail({ program, offering: initial, accent, onDeleted }
       )}
 
       {/* Registrations + Participants (all offering types) */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
-          <RegistrationQueue offering={offering} accent={accent} />
-        </div>
-        <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
-          <ParticipantsList offering={offering} />
+      <section className="flex flex-col gap-3">
+        <BulkImportPanel offeringId={offering.id} accent={accent} onImported={() => setRosterKey((k) => k + 1)} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
+            <RegistrationQueue key={`reg-${rosterKey}`} offering={offering} accent={accent} />
+          </div>
+          <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
+            <ParticipantsList key={`par-${rosterKey}`} offering={offering} />
+          </div>
         </div>
       </section>
     </div>

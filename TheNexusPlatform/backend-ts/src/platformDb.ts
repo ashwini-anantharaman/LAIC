@@ -186,6 +186,21 @@ export async function createProfile(
   return _mutateOne(client.from("profiles").upsert(row).select("*"), "Failed to create profile");
 }
 
+/**
+ * Find-or-create the org-scoped profile for a person (by auth id) in an org, and
+ * return its profile id. In local mode there's a single global profile per auth
+ * user (profile id == auth id), so this reduces to createProfile.
+ */
+export async function ensureOrgProfile(
+  authUserId: string,
+  orgId: string,
+  opts: { email?: string | null; role?: string; displayName?: string | null } = {},
+): Promise<string> {
+  if (usePg()) return pg.ensureOrgProfile(authUserId, orgId, opts);
+  const p = await createProfile(authUserId, opts.email ?? "", opts.role ?? "student", opts.displayName ?? null);
+  return p.id as string;
+}
+
 export async function createOrganization(name: string, ownerId: string): Promise<Row> {
   if (usePg()) return pg.createOrganization(name, ownerId);
   if (await useLocal()) return local.localCreateOrganization(name, ownerId);
@@ -206,6 +221,22 @@ export async function createOrganization(name: string, ownerId: string): Promise
   );
   await _select(client.from("profiles").update({ role: "org_admin" }).eq("id", ownerId));
   return org;
+}
+
+export async function listAllOrganizations(): Promise<Row[]> {
+  if (usePg()) return tpg.listAllOrganizations();
+  if (await useLocal()) return local.localListAllOrganizations();
+  const client = requireClient();
+  return _select(client.from("organizations").select("*"));
+}
+
+// Names-only org directory (id/name/slug) for any authenticated caller.
+export async function listOrgDirectory(): Promise<Row[]> {
+  const map = (o: Row) => ({ id: o.id, name: o.name ?? null, slug: o.slug ?? null });
+  if (usePg()) return tpg.listOrgDirectory();
+  if (await useLocal()) return (await local.localListAllOrganizations()).map(map);
+  const client = requireClient();
+  return (await _select(client.from("organizations").select("id,name,slug"))).map(map);
 }
 
 export async function getOrganization(orgId: string): Promise<Row | null> {

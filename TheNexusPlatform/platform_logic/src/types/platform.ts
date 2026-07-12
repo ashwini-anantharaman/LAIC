@@ -1,4 +1,4 @@
-export type SignupType = "org" | "administrator" | "teacher";
+export type SignupType = "org" | "administrator" | "teacher" | "student";
 export type StageKey = "international" | "national" | "state" | "chapter";
 export type JoinCodeKind = "student" | "teacher" | "administrator";
 export type Permission = "Can Edit" | "Can View" | "Per Level";
@@ -64,6 +64,95 @@ export interface OrgMember {
   stage_node_id?: string;
   stage_name?: string;
   access: "view" | "edit";
+}
+
+// ── Slice 11: org graph (relationships, affiliations, groups, invitations) ──
+export interface Invitation {
+  id: string;
+  organization_id: string;
+  organization_name?: string;
+  program_id?: string;
+  offering_id?: string;
+  group_id?: string;
+  email?: string;
+  role: string;
+  status: string;
+  expires_at?: string;
+  created_at?: string;
+  token?: string;
+  redeem_url?: string;
+}
+
+export interface Group {
+  id: string;
+  organization_id: string;
+  program_id?: string;
+  offering_id?: string;
+  name: string;
+  label?: string;
+  visibility: string;
+  parent_group_id?: string;
+  owner_user_id?: string;
+  created_at?: string;
+}
+
+export interface GroupMember {
+  id: string;
+  group_id: string;
+  user_id?: string;
+  role?: string;
+  display_name?: string;
+  email?: string;
+}
+
+export interface ProgramAffiliation {
+  id: string;
+  program_id: string;
+  subject_type: "user" | "organization" | "group";
+  subject_id: string;
+  affiliation_type: string;
+  status: string;
+  created_at?: string;
+}
+
+// A program shared with the current org via an accepted affiliation (Org B view).
+export interface AffiliatedProgram {
+  program_id: string;
+  name: string;
+  category?: ProgramCategory;
+  description?: string;
+  owner_organization_id: string;
+  affiliation_type: string;
+}
+
+export interface AffiliatedProgramDetail {
+  program: { id: string; name: string; category?: string; description?: string } | null;
+  offerings: Array<{ id: string; name: string; offering_type: string; status: string }>;
+  participants: Array<{ id: string; offering_id: string; participant_type: string; status: string; display_name?: string; email?: string }>;
+}
+
+// Program ↔ organization affiliation (Org A invites Org B; Org B accepts).
+export interface ProgramOrgAffiliation {
+  id: string;
+  program_id: string;
+  organization_id: string; // the invited org (Org B)
+  affiliation_type: string;
+  tenant_access_mode?: string;
+  visibility?: string;
+  status: string; // invited | active | paused | archived
+  created_at?: string;
+  // Enriched on the incoming-requests inbox only:
+  program_name?: string;
+  from_organization_id?: string; // the inviting org (Org A)
+}
+
+export interface OrgRelationship {
+  id: string;
+  source_organization_id: string;
+  target_organization_id: string;
+  relationship_type: string;
+  status: string;
+  created_at?: string;
 }
 
 export interface MeResponse {

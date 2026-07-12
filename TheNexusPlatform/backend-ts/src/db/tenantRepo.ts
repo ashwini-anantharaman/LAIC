@@ -13,6 +13,7 @@ import * as localKeys from "../platformLocalStore";
 import type { StageNode } from "../permissions";
 import { withUserContext, asPrivileged, type Tx } from "./context";
 import { currentUserId } from "./requestContext";
+import { resolveProfileId, ensureOrgProfile } from "./resolveProfile";
 import {
   programs, stageNodes, offerings, registeredApps, registrations, participants,
   orgMemberships, profiles, organizations, entitlements, integrations, auditEvents, appLaunchTokens,
@@ -22,7 +23,7 @@ import {
 
 type Row = Record<string, unknown>;
 
-function scoped<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+export function scoped<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   const uid = currentUserId();
   return uid ? withUserContext(uid, fn) : asPrivileged(fn);
 }
@@ -102,6 +103,26 @@ async function offeringCounts(tx: Tx, offeringId: string): Promise<Row> {
     pending_count: regs.filter((r) => r.status === "pending_review").length,
     participant_count: parts.length,
   };
+}
+
+// ── Platform-admin: all organizations ──────────────────────────────────────
+// Under a platform admin's context the RLS bypass returns every org.
+export async function listAllOrganizations(): Promise<Row[]> {
+  return scoped(async (tx) =>
+    (await tx.select().from(organizations)).map((o) => ({
+      id: o.id, name: o.name, slug: o.slug, status: o.status, organization_type: o.organizationType, created_at: o.createdAt,
+    })),
+  );
+}
+
+// Names-only directory of every org, readable by any authenticated user so they
+// can reference other orgs in affiliations/relationships. Deliberately bypasses
+// RLS (privileged) but returns ONLY id/name/slug — never any org's private data.
+export async function listOrgDirectory(): Promise<Row[]> {
+  return asPrivileged(async (tx) =>
+    (await tx.select({ id: organizations.id, name: organizations.name, slug: organizations.slug }).from(organizations))
+      .map((o) => ({ id: o.id, name: o.name, slug: o.slug })),
+  );
 }
 
 // ── Programs ────────────────────────────────────────────────────────────────
@@ -356,14 +377,16 @@ export async function revokeApp(appId: string): Promise<Row> {
 // ── Registrations ─────────────────────────────────────────────────────────
 export async function createRegistration(orgId: string, offeringId: string, opts: localKeys.RegistrationOptions = {}): Promise<Row> {
   return scoped(async (tx) => {
+    const userId = await resolveProfileId(tx, (opts.userId as string) ?? null, orgId);
+    const createdBy = await resolveProfileId(tx, (opts.createdByUserId as string) ?? null, orgId);
     const [r] = await tx.insert(registrations).values({
       organizationId: orgId, programId: (opts.programId as string) ?? null, offeringId,
       stageNodeId: (opts.stageNodeId as string) ?? null, registeredAppId: (opts.registeredAppId as string) ?? null,
       registrationSource: (opts.registrationSource as string) ?? "app_hook",
       email: (opts.email as string) ?? null, phone: (opts.phone as string) ?? null,
       name: (opts.name as string) ?? null, age: (opts.age as number) ?? null,
-      userId: (opts.userId as string) ?? null, status: (opts.status as string) ?? "pending_review",
-      fieldData: (opts.fieldData as Record<string, unknown>) ?? {}, createdByUserId: (opts.createdByUserId as string) ?? null,
+      userId, status: (opts.status as string) ?? "pending_review",
+      fieldData: (opts.fieldData as Record<string, unknown>) ?? {}, createdByUserId: createdBy,
     }).returning();
     return regRow(r);
   });
@@ -385,7 +408,9 @@ export async function listRegistrations(offeringId: string, status: string | nul
 
 export async function setRegistrationStatus(registrationId: string, status: string, reviewedByUserId: string | null): Promise<Row> {
   return scoped(async (tx) => {
-    const [r] = await tx.update(registrations).set({ status, reviewedByUserId, reviewedAt: new Date() }).where(eq(registrations.id, registrationId)).returning();
+    const cur = await tx.select({ orgId: registrations.organizationId }).from(registrations).where(eq(registrations.id, registrationId)).limit(1);
+    const reviewer = await resolveProfileId(tx, reviewedByUserId, cur.length ? cur[0].orgId : null);
+    const [r] = await tx.update(registrations).set({ status, reviewedByUserId: reviewer, reviewedAt: new Date() }).where(eq(registrations.id, registrationId)).returning();
     return regRow(r);
   });
 }
@@ -394,16 +419,18 @@ export async function setRegistrationStatus(registrationId: string, status: stri
 export async function createParticipant(orgId: string, offeringId: string, opts: localKeys.ParticipantOptions = {}): Promise<Row> {
   return scoped(async (tx) => {
     const type = (opts.participantType as string) ?? "learner";
-    if (opts.userId) {
+    const userId = await resolveProfileId(tx, (opts.userId as string) ?? null, orgId);
+    const addedBy = await resolveProfileId(tx, (opts.addedByUserId as string) ?? null, orgId);
+    if (userId) {
       const existing = await tx.select().from(participants)
-        .where(and(eq(participants.offeringId, offeringId), eq(participants.userId, opts.userId as string), eq(participants.participantType, type))).limit(1);
+        .where(and(eq(participants.offeringId, offeringId), eq(participants.userId, userId), eq(participants.participantType, type))).limit(1);
       if (existing.length) return partRow(existing[0]);
     }
     const [p] = await tx.insert(participants).values({
       organizationId: orgId, programId: (opts.programId as string) ?? null, offeringId,
-      stageNodeId: (opts.stageNodeId as string) ?? null, userId: (opts.userId as string) ?? null,
+      stageNodeId: (opts.stageNodeId as string) ?? null, userId,
       participantType: type, status: (opts.status as string) ?? "active",
-      addedByUserId: (opts.addedByUserId as string) ?? null, registrationId: (opts.registrationId as string) ?? null,
+      addedByUserId: addedBy, registrationId: (opts.registrationId as string) ?? null,
       metadata: (opts.metadata as Record<string, unknown>) ?? {},
     }).returning();
     return partRow(p);
@@ -519,8 +546,11 @@ export async function listAuditEvents(orgId: string, limit = 50): Promise<Row[]>
 export async function createLaunchToken(registeredAppId: string, userId: string, ttlSeconds = 60): Promise<[Row, string]> {
   return scoped(async (tx) => {
     const [rawKey, keyHash] = localKeys.generateApiKey();
+    // userId may be the auth id — resolve to the launcher's org-scoped profile.
+    const app = await tx.select({ orgId: registeredApps.organizationId }).from(registeredApps).where(eq(registeredApps.id, registeredAppId)).limit(1);
+    const profileId = await resolveProfileId(tx, userId, app.length ? app[0].orgId : null);
     const [t] = await tx.insert(appLaunchTokens).values({
-      tokenHash: keyHash, registeredAppId, userId, expiresAt: new Date(Date.now() + ttlSeconds * 1000),
+      tokenHash: keyHash, registeredAppId, userId: profileId ?? userId, expiresAt: new Date(Date.now() + ttlSeconds * 1000),
     }).returning();
     return [{ id: t.id, token_hash: t.tokenHash, registered_app_id: t.registeredAppId, user_id: t.userId, expires_at: t.expiresAt, used_at: t.usedAt, created_at: t.createdAt }, rawKey] as [Row, string];
   });
@@ -574,11 +604,12 @@ export async function createJoinCode(stageNodeId: string, kind: string, opts: lo
     const s = await tx.select().from(stageNodes).where(eq(stageNodes.id, stageNodeId)).limit(1);
     if (!s.length) throw new Error("Stage not found");
     const code = await makeCode(tx);
+    const createdBy = await resolveProfileId(tx, opts.createdByUserId ?? null, s[0].orgId);
     const [j] = await tx.insert(joinCodesTable).values({
       orgId: s[0].orgId, stageNodeId, code, kind,
       deliveryMethod: opts.deliveryMethod ?? "join_code", email: opts.email ?? null,
       maxUses: opts.maxUses ?? null, usesRemaining: opts.maxUses ?? null,
-      expiresAt: (opts.expiresAt as unknown as Date) ?? null, createdByUserId: opts.createdByUserId ?? null,
+      expiresAt: (opts.expiresAt as unknown as Date) ?? null, createdByUserId: createdBy,
     }).returning();
     return joinCodeRow(j);
   });
@@ -589,11 +620,12 @@ export async function createProgramJoinCode(programId: string, kind: string, opt
     const p = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
     if (!p.length) throw new Error("Program not found");
     const code = await makeCode(tx);
+    const createdBy = await resolveProfileId(tx, opts.createdByUserId ?? null, p[0].orgId);
     const [j] = await tx.insert(joinCodesTable).values({
       orgId: p[0].orgId, stageNodeId: null, programId, code, kind,
       deliveryMethod: opts.deliveryMethod ?? "join_code", email: opts.email ?? null,
       maxUses: opts.maxUses ?? null, usesRemaining: opts.maxUses ?? null,
-      expiresAt: (opts.expiresAt as unknown as Date) ?? null, createdByUserId: opts.createdByUserId ?? null,
+      expiresAt: (opts.expiresAt as unknown as Date) ?? null, createdByUserId: createdBy,
     }).returning();
     return joinCodeRow(j);
   });
@@ -665,21 +697,24 @@ export async function setupOrganization(orgId: string, payload: Row): Promise<Ro
   });
 }
 
-export async function registerStudent(profileId: string, joinCodeRowIn: Row, displayName: string | null = null): Promise<Row> {
+export async function registerStudent(authUserId: string, joinCodeRowIn: Row, displayName: string | null = null): Promise<Row> {
   // Join-code redemption is a bootstrap (the student isn't a member yet), so it
-  // runs privileged — the code itself is the authorization.
+  // runs privileged — the code itself is the authorization. The student gets an
+  // org-scoped profile in the code's org.
+  const orgId = joinCodeRowIn.org_id as string;
   const result = await asPrivileged(async (tx) => {
+    const profileId = await ensureOrgProfile(tx, authUserId, orgId, { role: "student", displayName });
     if (displayName) await tx.update(profiles).set({ displayName, name: displayName }).where(eq(profiles.id, profileId));
-    await tx.update(profiles).set({ role: "student" }).where(eq(profiles.id, profileId));
     const [reg] = await tx.insert(studentRegistrations)
-      .values({ orgId: joinCodeRowIn.org_id as string, stageNodeId: (joinCodeRowIn.stage_node_id as string) ?? null, profileId, joinCodeId: (joinCodeRowIn.id as string) ?? null, currentStageNodeId: (joinCodeRowIn.stage_node_id as string) ?? null })
+      .values({ orgId, stageNodeId: (joinCodeRowIn.stage_node_id as string) ?? null, profileId, joinCodeId: (joinCodeRowIn.id as string) ?? null, currentStageNodeId: (joinCodeRowIn.stage_node_id as string) ?? null })
       .onConflictDoUpdate({ target: [studentRegistrations.profileId, studentRegistrations.orgId], set: { stageNodeId: (joinCodeRowIn.stage_node_id as string) ?? null } })
       .returning();
-    return reg;
+    return { reg, profileId };
   });
   if (joinCodeRowIn.code) await consumeJoinCodePg((joinCodeRowIn.code as string));
-  await bridgeParticipant(profileId, joinCodeRowIn);
-  return { id: result.id, org_id: result.orgId, stage_node_id: result.stageNodeId, profile_id: result.profileId, join_code_id: result.joinCodeId, current_stage_node_id: result.currentStageNodeId, registered_at: result.registeredAt };
+  await bridgeParticipant(result.profileId, joinCodeRowIn);
+  const r = result.reg;
+  return { id: r.id, org_id: r.orgId, stage_node_id: r.stageNodeId, profile_id: r.profileId, join_code_id: r.joinCodeId, current_stage_node_id: r.currentStageNodeId, registered_at: r.registeredAt };
 }
 
 async function consumeJoinCodePg(code: string): Promise<void> {

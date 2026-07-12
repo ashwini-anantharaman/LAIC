@@ -16,6 +16,9 @@ import { HttpError } from "../httpError";
 import * as db from "../platformDb";
 import { dbEnabled } from "../db/client";
 import { provisionOrganization } from "../db/provisioning";
+import * as graph from "../db/orgGraphRepo";
+import { getStorage, orgKey } from "../storage";
+import { isOfferingAdmin } from "../permissions";
 import {
   canViewStage,
   roleLabel,
@@ -162,6 +165,8 @@ async function _membershipSummaries(user: PlatformUser): Promise<Row[]> {
 }
 
 function _assertOrgAccess(user: PlatformUser, orgId: string, requireEdit = false): void {
+  // Platform admins manage every organization.
+  if (user.role === "platform_admin") return;
   const orgMemberships = user.memberships.filter((m) => m.org_id === orgId);
   if (orgMemberships.length === 0) {
     throw new HttpError(403, "Not a member of this organization");
@@ -171,6 +176,12 @@ function _assertOrgAccess(user: PlatformUser, orgId: string, requireEdit = false
       throw new HttpError(403, "Edit access required");
     }
   }
+}
+
+function _hasOrgAccess(user: PlatformUser, orgId: string | null | undefined): boolean {
+  if (!orgId) return false;
+  if (user.role === "platform_admin") return true;
+  return user.memberships.some((m) => m.org_id === orgId);
 }
 
 function _authUserResponse(user: PlatformUser, accessToken: string): Row {
@@ -236,7 +247,12 @@ platformRouter.post("/auth/signup", async (c) => {
 
   const auth = await createAuthUser(req.email, req.password);
   const profileRole = req.signup_type === "administrator" ? "org_admin" : "teacher";
-  await db.createProfile(auth.id, req.email, profileRole, req.display_name ?? null);
+  // Org-scoped profile in the code's org (one login → many org profiles).
+  const profileId = await db.ensureOrgProfile(auth.id, codeRow.org_id, {
+    email: req.email,
+    role: profileRole,
+    displayName: req.display_name ?? null,
+  });
 
   // Stored membership role uses the canonical "instructor" (Nexus addendum);
   // the public-facing "Coach"/"Teacher" word is derived from program category
@@ -244,7 +260,7 @@ platformRouter.post("/auth/signup", async (c) => {
   const membershipRole = req.signup_type === "administrator" ? "administrator" : "instructor";
   await db.addMembership(
     codeRow.org_id,
-    auth.id,
+    profileId,
     membershipRole,
     codeRow.stage_node_id ?? null,
     "view",
@@ -925,4 +941,375 @@ platformRouter.put("/orgs/:org_id/entitlements/:module", async (c) => {
     },
   );
   return c.json(_entitlementResponse(row));
+});
+
+// ─── Slice 11: relationships, affiliations, groups, invitations ─────────────
+function _requireDb(): void {
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+}
+function _requireProgramAdmin(user: PlatformUser, orgId: string, programId: string): void {
+  if (user.role === "platform_admin") return;
+  if (!isOfferingAdmin(user.memberships, orgId, programId)) {
+    throw new HttpError(403, "Program admin access required");
+  }
+}
+function _requirePlatformAdmin(user: PlatformUser): void {
+  if (user.role !== "platform_admin") throw new HttpError(403, "Platform admin access required");
+}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function _assertUuid(value: unknown, field: string): string {
+  if (typeof value !== "string" || !UUID_RE.test(value)) throw new HttpError(422, `${field} must be a valid id`);
+  return value;
+}
+
+// Platform admin: manage every organization.
+platformRouter.get("/admin/organizations", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  return c.json(await db.listAllOrganizations());
+});
+
+// Organizations the caller may reference (affiliations / relationships).
+// Any authenticated user gets the names-only directory of every org so they can
+// link partners/chapters/coach-orgs. This exposes org names + slugs (not any
+// org's private data), a deliberate relaxation of strict isolation for linking.
+platformRouter.get("/orgs/selectable", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  return c.json(await db.listOrgDirectory());
+});
+
+// Organization relationships
+platformRouter.get("/orgs/:org_id/relationships", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId);
+  return c.json(await graph.listOrgRelationships(orgId));
+});
+platformRouter.post("/orgs/:org_id/relationships", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId, true);
+  const body = (await c.req.json()) as Row;
+  if (!body?.target_organization_id || !body?.relationship_type) {
+    throw new HttpError(422, "target_organization_id and relationship_type are required");
+  }
+  _assertUuid(body.target_organization_id, "target_organization_id");
+  const row = await graph.createOrgRelationship(orgId, {
+    targetOrganizationId: body.target_organization_id,
+    relationshipType: body.relationship_type,
+    metadataJson: body.metadata_json ?? {},
+  });
+  await db.recordAuditEvent("organization.relationship_created", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    targetType: "org_relationship", targetId: row.id as string,
+  });
+  return c.json(row);
+});
+// Accept a proposed relationship (target org) or update its status. Either the
+// initiating or the target org may act.
+platformRouter.patch("/relationships/:id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const id = c.req.param("id");
+  const existing = await graph.getOrgRelationship(id);
+  if (!existing) throw new HttpError(404, "Relationship not found");
+  if (!_hasOrgAccess(user, existing.source_organization_id as string) && !_hasOrgAccess(user, existing.target_organization_id as string)) {
+    throw new HttpError(403, "Not authorized for this relationship");
+  }
+  const status = ((await c.req.json().catch(() => ({}))) as Row)?.status as string ?? "active";
+  const row = await graph.updateOrgRelationship(id, status);
+  if (!row) throw new HttpError(404, "Relationship not found");
+  await db.recordAuditEvent(`organization.relationship_${status === "active" ? "accepted" : "updated"}`, {
+    orgId: existing.target_organization_id as string, actorUserId: user.id,
+    scopeType: "organization", scopeId: existing.target_organization_id as string,
+    targetType: "org_relationship", targetId: id, metadata: { status },
+  });
+  return c.json(row);
+});
+// Remove a relationship — deletes the single row, so it's gone for both orgs.
+platformRouter.delete("/relationships/:id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const id = c.req.param("id");
+  const existing = await graph.getOrgRelationship(id);
+  if (!existing) throw new HttpError(404, "Relationship not found");
+  if (!_hasOrgAccess(user, existing.source_organization_id as string) && !_hasOrgAccess(user, existing.target_organization_id as string)) {
+    throw new HttpError(403, "Not authorized for this relationship");
+  }
+  await graph.deleteOrgRelationship(id);
+  await db.recordAuditEvent("organization.relationship_removed", {
+    orgId: existing.source_organization_id as string, actorUserId: user.id,
+    scopeType: "organization", scopeId: existing.source_organization_id as string,
+    targetType: "org_relationship", targetId: id, metadata: {},
+  });
+  return c.json({ ok: true });
+});
+
+// Program ↔ organization affiliations
+platformRouter.get("/programs/:program_id/org-affiliations", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _assertOrgAccess(user, program.org_id);
+  return c.json(await graph.listProgramOrgAffiliations(programId));
+});
+platformRouter.post("/programs/:program_id/org-affiliations", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, program.org_id, programId);
+  const body = (await c.req.json()) as Row;
+  if (!body?.organization_id || !body?.affiliation_type) {
+    throw new HttpError(422, "organization_id and affiliation_type are required");
+  }
+  const row = await graph.createProgramOrgAffiliation(programId, {
+    organizationId: body.organization_id, affiliationType: body.affiliation_type,
+    tenantAccessMode: body.tenant_access_mode, visibility: body.visibility, metadataJson: body.metadata_json ?? {},
+  });
+  await db.recordAuditEvent("program.org_affiliation_created", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    targetType: "program_org_affiliation", targetId: row.id as string,
+  });
+  return c.json(row);
+});
+// Incoming affiliation requests addressed to an org (Org B's inbox).
+platformRouter.get("/orgs/:org_id/incoming-affiliations", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId);
+  return c.json(await graph.listIncomingProgramOrgAffiliations(orgId));
+});
+// Programs shared with an org via an ACTIVE affiliation (only appear once accepted).
+platformRouter.get("/orgs/:org_id/affiliated-programs", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId);
+  return c.json(await graph.listAffiliatedPrograms(orgId));
+});
+// The shared program's data (courses + students), read-only for the invited org.
+platformRouter.get("/orgs/:org_id/affiliated-programs/:program_id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  const programId = c.req.param("program_id");
+  _assertOrgAccess(user, orgId);
+  if (!(await graph.hasActiveAffiliation(orgId, programId))) {
+    throw new HttpError(403, "This program is not shared with your organization");
+  }
+  return c.json(await graph.getAffiliatedProgramDetail(programId));
+});
+// Accept / decline / pause an org affiliation. Either side may update status:
+// the invited org (Org B) accepts/declines, the program's org (Org A) cancels.
+platformRouter.patch("/org-affiliations/:id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const id = c.req.param("id");
+  const existing = await graph.getProgramOrgAffiliation(id);
+  if (!existing) throw new HttpError(404, "Affiliation not found");
+  const invitedOrg = existing.organization_id as string;
+  const programOrg = existing.from_organization_id as string | null;
+  if (!_hasOrgAccess(user, invitedOrg) && !_hasOrgAccess(user, programOrg)) {
+    throw new HttpError(403, "Not authorized for this affiliation");
+  }
+  const status = ((await c.req.json().catch(() => ({}))) as Row)?.status as string ?? "active";
+  const row = await graph.updateProgramOrgAffiliation(id, status);
+  if (!row) throw new HttpError(404, "Affiliation not found");
+  const action = status === "active" ? "accepted" : status === "archived" ? "declined" : "updated";
+  await db.recordAuditEvent(`program.org_affiliation_${action}`, {
+    orgId: invitedOrg, actorUserId: user.id, scopeType: "program", scopeId: existing.program_id as string,
+    targetType: "program_org_affiliation", targetId: id, metadata: { status },
+  });
+  return c.json(row);
+});
+
+// Program affiliations (actor → program)
+platformRouter.get("/programs/:program_id/affiliations", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _assertOrgAccess(user, program.org_id);
+  return c.json(await graph.listProgramAffiliations(programId));
+});
+platformRouter.post("/programs/:program_id/affiliations", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, program.org_id, programId);
+  const body = (await c.req.json()) as Row;
+  if (!body?.subject_type || !body?.subject_id || !body?.affiliation_type) {
+    throw new HttpError(422, "subject_type, subject_id and affiliation_type are required");
+  }
+  _assertUuid(body.subject_id, "subject_id");
+  if (body.represented_organization_id) _assertUuid(body.represented_organization_id, "represented_organization_id");
+  const row = await graph.createProgramAffiliation(programId, {
+    subjectType: body.subject_type, subjectId: body.subject_id, affiliationType: body.affiliation_type,
+    representedOrganizationId: body.represented_organization_id ?? null, visibility: body.visibility, metadataJson: body.metadata_json ?? {},
+  });
+  await db.recordAuditEvent("program.affiliation_created", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    targetType: "program_affiliation", targetId: row.id as string,
+  });
+  return c.json(row);
+});
+platformRouter.patch("/affiliations/:id", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  const body = (await c.req.json()) as Row;
+  const row = await graph.updateProgramAffiliation(c.req.param("id"), (body?.status as string) ?? "active");
+  if (!row) throw new HttpError(404, "Affiliation not found");
+  return c.json(row);
+});
+
+// Groups
+platformRouter.get("/orgs/:org_id/groups", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId);
+  return c.json(await graph.listGroups(orgId, c.req.query("program_id") ?? null));
+});
+platformRouter.post("/orgs/:org_id/groups", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId, true);
+  const body = (await c.req.json()) as Row;
+  if (!body?.name) throw new HttpError(422, "name is required");
+  const row = await graph.createGroup(orgId, {
+    programId: body.program_id ?? null, offeringId: body.offering_id ?? null, name: body.name,
+    label: body.label ?? null, parentGroupId: body.parent_group_id ?? null,
+    ownerUserId: body.owner_user_id ?? user.id, ownerOrganizationId: body.owner_organization_id ?? null,
+    metadataJson: body.metadata_json ?? {},
+  });
+  await db.recordAuditEvent("group.created", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, targetType: "group", targetId: row.id as string,
+  });
+  return c.json(row);
+});
+platformRouter.get("/groups/:id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const row = await graph.getGroup(c.req.param("id"));
+  if (!row) throw new HttpError(404, "Group not found");
+  _assertOrgAccess(user, row.organization_id as string);
+  return c.json(row);
+});
+platformRouter.patch("/groups/:id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const existing = await graph.getGroup(c.req.param("id"));
+  if (!existing) throw new HttpError(404, "Group not found");
+  _assertOrgAccess(user, existing.organization_id as string, true);
+  const body = (await c.req.json()) as Row;
+  const row = await graph.updateGroup(c.req.param("id"), {
+    name: body.name as string | undefined, label: body.label as string | null | undefined,
+    visibility: body.visibility as string | undefined, parentGroupId: body.parent_group_id as string | null | undefined,
+  });
+  return c.json(row);
+});
+platformRouter.get("/groups/:id/members", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const g = await graph.getGroup(c.req.param("id"));
+  if (!g) throw new HttpError(404, "Group not found");
+  _assertOrgAccess(user, g.organization_id as string);
+  return c.json(await graph.listGroupMembers(c.req.param("id")));
+});
+platformRouter.post("/groups/:id/members", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const g = await graph.getGroup(c.req.param("id"));
+  if (!g) throw new HttpError(404, "Group not found");
+  _assertOrgAccess(user, g.organization_id as string, true);
+  const body = (await c.req.json()) as Row;
+  return c.json(await graph.addGroupMember(c.req.param("id"), g.organization_id as string, { userId: body.user_id ?? null, role: body.role ?? null }));
+});
+platformRouter.delete("/groups/:id/members/:member_id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const g = await graph.getGroup(c.req.param("id"));
+  if (!g) throw new HttpError(404, "Group not found");
+  _assertOrgAccess(user, g.organization_id as string, true);
+  await graph.removeGroupMember(c.req.param("member_id"));
+  return c.json({ ok: true });
+});
+
+// Invitations (secure-token invite link)
+platformRouter.post("/orgs/:org_id/invitations", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId, true);
+  const body = (await c.req.json()) as Row;
+  const { invitation, token } = await graph.createInvitation(orgId, user.id, {
+    email: body.email ?? null, role: (body.role as string) ?? "learner",
+    programId: body.program_id ?? null, offeringId: body.offering_id ?? null, groupId: body.group_id ?? null,
+    expiresAt: body.expires_at ?? null,
+  });
+  await db.recordAuditEvent("invitation.created", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, targetType: "invitation", targetId: invitation.id as string,
+  });
+  const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
+  return c.json({ ...invitation, token, redeem_url: base ? `${base}/?invite=${token}` : `/?invite=${token}` });
+});
+platformRouter.get("/invitations/:token", async (c) => {
+  _requireDb();
+  const row = await graph.getInvitationByToken(c.req.param("token"));
+  if (!row) throw new HttpError(404, "Invitation not found");
+  return c.json(row);
+});
+platformRouter.post("/invitations/:token/accept", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const body = (await c.req.json().catch(() => ({}))) as Row;
+  const row = await graph.acceptInvitation(c.req.param("token"), user.id, (body?.display_name as string) ?? null);
+  return c.json(row);
+});
+
+// ─── Slice 12: org-scoped storage (logo upload + FS serve) ──────────────────
+const _LOGO_EXT: Record<string, string> = {
+  "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg",
+};
+const _MAX_LOGO_BYTES = 1_048_576; // ~1 MB (§9)
+
+platformRouter.post("/orgs/:org_id/logo", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId, true);
+  const body = (await c.req.json()) as { data?: string; content_type?: string };
+  const ext = _LOGO_EXT[body.content_type ?? ""];
+  if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
+  const buf = Buffer.from(body.data, "base64");
+  if (buf.length === 0) throw new HttpError(422, "Empty upload");
+  if (buf.length > _MAX_LOGO_BYTES) throw new HttpError(413, "Logo exceeds the 1 MB limit");
+
+  const key = orgKey(orgId, `logo.${ext}`);
+  await getStorage().put(key, buf, body.content_type as string);
+  const url = await getStorage().url(key);
+  await db.updateOrgTheme(orgId, null, url);
+  await db.recordAuditEvent("organization.logo_uploaded", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { key, bytes: buf.length },
+  });
+  return c.json({ logo_url: url });
+});
+
+// Serve locally-stored objects (FS adapter dev mode). Public — logos are org page assets.
+platformRouter.get("/storage/:key{.+}", async (c) => {
+  const obj = await getStorage().get(c.req.param("key"));
+  if (!obj) throw new HttpError(404, "Not found");
+  const ab = obj.body.buffer.slice(obj.body.byteOffset, obj.body.byteOffset + obj.body.byteLength) as ArrayBuffer;
+  return c.body(ab, 200, { "Content-Type": obj.contentType });
 });

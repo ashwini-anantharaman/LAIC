@@ -13,16 +13,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  Plus, ChevronRight, GraduationCap, Dices, BookOpen, AppWindow, ArrowUpRight, ArrowLeft, Check, Mail, Trash2,
+  Plus, ChevronRight, GraduationCap, Dices, BookOpen, AppWindow, ArrowUpRight, ArrowLeft, Check, Mail, Trash2, Copy,
 } from "lucide-react";
 import {
   listPrograms, createProgram, listOfferings, createOffering, getAppLaunchContext, listApps,
-  listMembers, deleteProgram, listParticipants,
+  listMembers, deleteProgram, listParticipants, createInvitation,
 } from "../../../services/api";
 import { DEFAULT_SIGNUP_FIELDS } from "../../../types/platform";
 import type { Offering, OrgMember, Participant, Program, ProgramCategory } from "../../../types/platform";
 import { BORDER, INPUT_BG, MUTED, FONT_HEAD, FONT_BODY } from "../../theme";
 import { OfferingDetail } from "./OfferingDetail";
+import { GroupsSection, ProgramOrgAffiliationsSection, IncomingAffiliationRequests, AffiliatedProgramsSection, OrgRelationshipsPanel } from "./OrgGraphSections";
 
 const LEARNING_APP_URL =
   (import.meta.env.VITE_LEARNING_APP_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:5180";
@@ -50,28 +51,48 @@ type OrgTotals = {
 
 type OfferingWithProgram = { offering: Offering; program: Program };
 
-function InviteTeacher({ programs, accent }: { programs: Program[]; accent: string }) {
+function InviteTeacher({ orgId, programs, accent }: { orgId: string; programs: Program[]; accent: string }) {
   const [open, setOpen] = useState(false);
   const [programId, setProgramId] = useState("");
   const [email, setEmail] = useState("");
   const [sentTo, setSentTo] = useState("");
+  const [redeemUrl, setRedeemUrl] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   function reset() {
     setEmail("");
     setSentTo("");
+    setRedeemUrl("");
+    setCopied(false);
     setError("");
   }
 
-  // Frontend-only for now: validates and shows a confirmation. Wiring the actual
-  // email delivery to the backend (invitation token → email) is a follow-up.
-  function sendInvite() {
+  // Creates a real invitation (secure-token link) scoped to the chosen program.
+  // Email delivery is a follow-up; for now we surface the redeem link to copy.
+  async function sendInvite() {
     const addr = email.trim();
-    const pid = programId || programs[0]?.id;
-    if (!pid) { setError("Create a program first"); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) { setError("Enter a valid email address"); return; }
+    const pid = programId || programs[0]?.id;
+    setBusy(true);
     setError("");
-    setSentTo(addr);
+    try {
+      const inv = await createInvitation(orgId, { email: addr, role: "instructor", program_id: pid || undefined });
+      setSentTo(addr);
+      // Build the link from the admin's own origin so it always points at the
+      // running app (the backend's redeem_url host depends on a server env var).
+      setRedeemUrl(inv.token ? `${window.location.origin}/?invite=${inv.token}` : (inv.redeem_url || ""));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create invitation");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyLink() {
+    if (!redeemUrl) return;
+    try { await navigator.clipboard.writeText(redeemUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
   }
 
   const selectedProgramName = programs.find((p) => p.id === (programId || programs[0]?.id))?.name;
@@ -98,12 +119,21 @@ function InviteTeacher({ programs, accent }: { programs: Program[]; accent: stri
                   <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "rgba(34,197,94,0.2)" }}>
                     <Check size={16} color="#4ade80" />
                   </div>
-                  <p className="text-sm font-semibold text-white" style={{ fontFamily: FONT_HEAD }}>Invitation sent</p>
+                  <p className="text-sm font-semibold text-white" style={{ fontFamily: FONT_HEAD }}>Invitation created</p>
                 </div>
                 <p className="text-[11px]" style={{ color: MUTED, fontFamily: FONT_BODY }}>
-                  We emailed an invite to <span className="text-white/80">{sentTo}</span> to join
-                  {selectedProgramName ? <span className="text-white/80"> {selectedProgramName}</span> : " the program"} as a teacher.
+                  An invite for <span className="text-white/80">{sentTo}</span> to join
+                  {selectedProgramName ? <span className="text-white/80"> {selectedProgramName}</span> : " the organization"} as a teacher is ready.
+                  Share this link with them:
                 </p>
+                {redeemUrl && (
+                  <div className="flex items-center gap-2 px-3 h-9 rounded-lg" style={{ background: INPUT_BG, border: `1px solid ${BORDER}` }}>
+                    <span className="flex-1 text-[11px] text-white/70 truncate" style={{ fontFamily: FONT_BODY }}>{redeemUrl}</span>
+                    <button type="button" onClick={copyLink} className="flex items-center gap-1 text-[11px] font-semibold focus:outline-none flex-shrink-0" style={{ color: accent, fontFamily: FONT_BODY }}>
+                      {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                )}
                 <button type="button" onClick={reset} className="self-start text-[11px] font-semibold focus:outline-none" style={{ color: accent, fontFamily: FONT_BODY }}>
                   Invite another
                 </button>
@@ -116,7 +146,7 @@ function InviteTeacher({ programs, accent }: { programs: Program[]; accent: stri
                   className="h-9 rounded-lg px-2 text-xs text-white outline-none"
                   style={{ background: INPUT_BG, border: `1px solid ${BORDER}`, fontFamily: FONT_BODY }}
                 >
-                  <option value="">{programs[0] ? programs[0].name : "No programs"}</option>
+                  <option value="">{programs[0] ? programs[0].name : "Organization-wide"}</option>
                   {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
                 <div className="flex items-center gap-2 px-3 h-9 rounded-lg" style={{ background: INPUT_BG, border: `1px solid ${BORDER}` }}>
@@ -129,10 +159,10 @@ function InviteTeacher({ programs, accent }: { programs: Program[]; accent: stri
                     style={{ fontFamily: FONT_BODY }}
                   />
                 </div>
-                <button type="button" onClick={sendInvite} className="h-9 rounded-lg text-xs font-semibold focus:outline-none" style={{ background: accent, color: "#111", fontFamily: FONT_BODY }}>
-                  Send invitation
+                <button type="button" onClick={sendInvite} disabled={busy} className="h-9 rounded-lg text-xs font-semibold focus:outline-none disabled:opacity-50" style={{ background: accent, color: "#111", fontFamily: FONT_BODY }}>
+                  {busy ? "Creating…" : "Create invitation"}
                 </button>
-                <p className="text-[10px]" style={{ color: MUTED, fontFamily: FONT_BODY }}>They'll get an email invite and land scoped to that program when they accept.</p>
+                <p className="text-[10px]" style={{ color: MUTED, fontFamily: FONT_BODY }}>They land scoped to that program as a teacher when they accept the link.</p>
                 {error && <p className="text-xs text-red-400" style={{ fontFamily: FONT_BODY }}>{error}</p>}
               </>
             )}
@@ -225,6 +255,9 @@ function OrgOverview({
 
       {error && <p className="text-xs text-red-400" style={{ fontFamily: FONT_BODY }}>{error}</p>}
 
+      {/* Incoming affiliation requests from other organizations (accept/decline) */}
+      <IncomingAffiliationRequests orgId={orgId} accent={accent} />
+
       {/* KPI tiles */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {tiles.map((t) => (
@@ -241,7 +274,7 @@ function OrgOverview({
           <p className="text-[10px] font-bold tracking-[0.18em] uppercase" style={{ color: MUTED, fontFamily: FONT_BODY }}>
             Teachers · {teachers.length}
           </p>
-          <InviteTeacher programs={programs} accent={accent} />
+          <InviteTeacher orgId={orgId} programs={programs} accent={accent} />
         </div>
         <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${BORDER}`, background: "rgba(255,255,255,0.03)" }}>
           <div className="grid grid-cols-[1.3fr_1.6fr_1.3fr_auto] gap-3 px-5 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
@@ -330,6 +363,9 @@ function OrgOverview({
           )}
         </div>
       </section>
+
+      {/* Organization relationships (partner / member / chapter networks) */}
+      <OrgRelationshipsPanel orgId={orgId} accent={accent} />
     </div>
   );
 }
@@ -511,6 +547,9 @@ function ProgramsGrid({
           );
         })}
       </div>
+
+      {/* Programs shared with this org by others (accepted affiliations), read-only */}
+      <AffiliatedProgramsSection orgId={orgId} accent={accent} />
     </div>
   );
 }
@@ -795,6 +834,12 @@ export function ProgramDetail({
           </div>
         )}
       </section>
+
+      {/* Groups (classes / clubs / cohorts within this program) */}
+      <GroupsSection orgId={program.org_id} programId={program.id} offerings={offerings || []} accent={accent} />
+
+      {/* Affiliated organizations (invite another org → they accept) */}
+      <ProgramOrgAffiliationsSection orgId={program.org_id} programId={program.id} accent={accent} />
     </div>
   );
 }

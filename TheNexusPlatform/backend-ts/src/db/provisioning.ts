@@ -9,6 +9,8 @@
  * Onboarding org #5,000 costs the same as #5: create record → boundary → owner →
  * default entitlements → storage scope → theme → audit, all-or-nothing.
  */
+import { randomUUID } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 
 import { asPrivileged, type Tx } from "./context";
@@ -29,6 +31,8 @@ export interface ProvisionResult {
   organizationId: string;
   slug: string;
   ownerProfileId: string;
+  /** The shared auth credential (RLS context / login) behind the owner profile. */
+  ownerAuthUserId: string;
   modules: ModuleKey[];
   storagePrefix: string;
 }
@@ -52,61 +56,54 @@ async function uniqueSlug(tx: Tx, base: string): Promise<string> {
   }
 }
 
-/** Resolve the owner's profile, creating it if this is a brand-new person. */
-async function ensureOwnerProfile(tx: Tx, owner: ProvisionOrganizationInput["owner"]): Promise<string> {
-  if (owner.userId) {
-    const byId = await tx.select({ id: profiles.id }).from(profiles).where(eq(profiles.id, owner.userId));
-    if (byId.length > 0) return byId[0].id;
-  }
-  const byEmail = await tx.select({ id: profiles.id }).from(profiles).where(eq(profiles.email, owner.email));
-  if (byEmail.length > 0) return byEmail[0].id;
-
-  const [created] = await tx
-    .insert(profiles)
-    .values({
-      ...(owner.userId ? { id: owner.userId } : {}),
-      email: owner.email,
-      role: "org_admin",
-      displayName: owner.displayName ?? null,
-    })
-    .returning({ id: profiles.id });
-  return created.id;
-}
-
 export async function provisionOrganization(input: ProvisionOrganizationInput): Promise<ProvisionResult> {
   const modules = input.defaultModules ?? ["nexus", "learning"];
+  // The shared auth credential behind this owner (org-scoped profiles link to it).
+  const ownerAuthUserId = input.owner.userId ?? randomUUID();
 
   return asPrivileged(async (tx) => {
-    // 1. Owner account.
-    const ownerProfileId = await ensureOwnerProfile(tx, input.owner);
+    const theme = {
+      primaryColor: input.theme?.primaryColor ?? null,
+      secondaryColor: input.theme?.secondaryColor ?? null,
+      logoUrl: input.theme?.logoUrl ?? null,
+    };
 
-    // 2. Organization record (+ isolation boundary = its id). Theme, dataResidency,
-    //    and the storage prefix live in `settings` (the org table's config bag).
+    // 1. Organization record (+ isolation boundary = its id). Owner set after the
+    //    owner profile is created (org-scoped profile → needs org id first).
     const slug = await uniqueSlug(tx, input.slug ? slugify(input.slug) : slugify(input.name));
     const [org] = await tx
       .insert(organizations)
       .values({
         name: input.name,
         slug,
-        ownerId: ownerProfileId,
-        settings: {
-          dataResidency: "shared",
-          theme: {
-            primaryColor: input.theme?.primaryColor ?? null,
-            secondaryColor: input.theme?.secondaryColor ?? null,
-            logoUrl: input.theme?.logoUrl ?? null,
-          },
-        },
+        tenantMode: "full_tenant",
+        status: "active",
+        dataResidency: "shared",
+        themeJson: theme,
+        settings: { dataResidency: "shared", theme },
       })
       .returning({ id: organizations.id });
+
+    // 2. Org-scoped owner profile (one login → many org profiles: auth_user_id links).
+    const [ownerProfile] = await tx
+      .insert(profiles)
+      .values({
+        authUserId: ownerAuthUserId,
+        organizationId: org.id,
+        email: input.owner.email,
+        role: "org_admin",
+        displayName: input.owner.displayName ?? null,
+      })
+      .returning({ id: profiles.id });
+    const ownerProfileId = ownerProfile.id;
 
     const storagePrefix = `orgs/${org.id}/`;
     await tx
       .update(organizations)
-      .set({ settings: { dataResidency: "shared", storagePrefix, theme: input.theme ?? {} } })
+      .set({ ownerId: ownerProfileId, createdByUserId: ownerProfileId, settings: { dataResidency: "shared", storagePrefix, theme } })
       .where(eq(organizations.id, org.id));
 
-    // 3. First owner membership (what RLS keys on).
+    // 3. First owner membership (what RLS keys on, via the profile's auth_user_id).
     await tx.insert(orgMemberships).values({
       orgId: org.id,
       profileId: ownerProfileId,
@@ -137,6 +134,6 @@ export async function provisionOrganization(input: ProvisionOrganizationInput): 
       metadata: { modules, storagePrefix, slug },
     });
 
-    return { organizationId: org.id, slug, ownerProfileId, modules, storagePrefix };
+    return { organizationId: org.id, slug, ownerProfileId, ownerAuthUserId, modules, storagePrefix };
   });
 }

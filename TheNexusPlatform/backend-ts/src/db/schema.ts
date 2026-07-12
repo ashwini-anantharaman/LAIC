@@ -14,11 +14,15 @@ import { pgTable, uuid, text, integer, boolean, timestamp, jsonb } from "drizzle
 
 export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey().defaultRandom(),
-  email: text("email").notNull(),
+  authUserId: uuid("auth_user_id"),
+  organizationId: uuid("organization_id"),
+  email: text("email"),
   role: text("role").notNull().default("student"),
   name: text("name"),
   grade: text("grade"),
   displayName: text("display_name"),
+  phone: text("phone"),
+  status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -29,6 +33,18 @@ export const organizations = pgTable("organizations", {
   slug: text("slug").notNull(),
   ownerId: uuid("owner_id"),
   settings: jsonb("settings").notNull().default({}),
+  shortName: text("short_name"),
+  organizationType: text("organization_type"),
+  tenantMode: text("tenant_mode").notNull().default("full_tenant"),
+  parentOrganizationId: uuid("parent_organization_id"),
+  status: text("status").notNull().default("active"),
+  missionSummary: text("mission_summary"),
+  websiteUrl: text("website_url"),
+  logoUrl: text("logo_url"),
+  themeJson: jsonb("theme_json"),
+  dataResidency: text("data_residency").notNull().default("shared"),
+  publicProfileEnabled: boolean("public_profile_enabled").notNull().default(false),
+  createdByUserId: uuid("created_by_user_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -98,6 +114,9 @@ export const orgMemberships = pgTable("org_memberships", {
   programId: uuid("program_id"),
   stageNodeId: uuid("stage_node_id"),
   access: text("access").notNull().default("view"),
+  scopeType: text("scope_type").notNull().default("organization"),
+  scopeId: uuid("scope_id"),
+  status: text("status").notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -120,6 +139,10 @@ export const programs = pgTable("programs", {
   icon: text("icon"),
   instructorLabel: text("instructor_label"),
   learnerLabel: text("learner_label"),
+  status: text("status").notNull().default("active"),
+  defaultVisibility: text("default_visibility").notNull().default("private"),
+  ownerUserId: uuid("owner_user_id"),
+  metadataJson: jsonb("metadata_json").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -206,6 +229,7 @@ export const participants = pgTable("participants", {
   userId: uuid("user_id"),
   participantType: text("participant_type").notNull().default("learner"),
   status: text("status").notNull().default("active"),
+  groupId: uuid("group_id"),
   addedByUserId: uuid("added_by_user_id"),
   registrationId: uuid("registration_id"),
   metadata: jsonb("metadata").notNull().default({}),
@@ -275,6 +299,120 @@ export const enrollments = pgTable("enrollments", {
   orgId: uuid("org_id"),
   programId: uuid("program_id"),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Slice 9: relationships, affiliations, groups, RBAC, invitations, identities ──
+export const identities = pgTable("identities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  identifierType: text("identifier_type").notNull(),
+  identifier: text("identifier").notNull(),
+  verified: boolean("verified").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const groups = pgTable("groups", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id"),
+  offeringId: uuid("offering_id"),
+  name: text("name").notNull(),
+  label: text("label"),
+  visibility: text("visibility").notNull().default("private"),
+  parentGroupId: uuid("parent_group_id"),
+  ownerUserId: uuid("owner_user_id"),
+  ownerOrganizationId: uuid("owner_organization_id"),
+  metadataJson: jsonb("metadata_json").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const groupMemberships = pgTable("group_memberships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  groupId: uuid("group_id").notNull(),
+  userId: uuid("user_id"),
+  role: text("role"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const organizationRelationships = pgTable("organization_relationships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceOrganizationId: uuid("source_organization_id").notNull(),
+  targetOrganizationId: uuid("target_organization_id").notNull(),
+  relationshipType: text("relationship_type").notNull(),
+  status: text("status").notNull().default("proposed"),
+  metadataJson: jsonb("metadata_json").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const programOrganizationAffiliations = pgTable("program_organization_affiliations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  programId: uuid("program_id").notNull(),
+  organizationId: uuid("organization_id").notNull(),
+  affiliationType: text("affiliation_type").notNull(),
+  tenantAccessMode: text("tenant_access_mode").notNull().default("none"),
+  visibility: text("visibility").notNull().default("program"),
+  status: text("status").notNull().default("invited"),
+  metadataJson: jsonb("metadata_json").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const programAffiliations = pgTable("program_affiliations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  programId: uuid("program_id").notNull(),
+  subjectType: text("subject_type").notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  affiliationType: text("affiliation_type").notNull(),
+  representedOrganizationId: uuid("represented_organization_id"),
+  status: text("status").notNull().default("invited"),
+  visibility: text("visibility").notNull().default("program"),
+  metadataJson: jsonb("metadata_json").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const roles = pgTable("roles", {
+  roleKey: text("role_key").primaryKey(),
+  label: text("label"),
+  defaultScope: text("default_scope"),
+});
+
+export const permissions = pgTable("permissions", {
+  permissionKey: text("permission_key").primaryKey(),
+  description: text("description"),
+});
+
+export const rolePermissions = pgTable("role_permissions", {
+  roleKey: text("role_key").notNull(),
+  permissionKey: text("permission_key").notNull(),
+});
+
+export const roleAssignments = pgTable("role_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id"),
+  userId: uuid("user_id").notNull(),
+  roleKey: text("role_key").notNull(),
+  scopeType: text("scope_type").notNull(),
+  scopeId: uuid("scope_id"),
+  status: text("status").notNull().default("active"),
+  createdByUserId: uuid("created_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const invitations = pgTable("invitations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id"),
+  offeringId: uuid("offering_id"),
+  groupId: uuid("group_id"),
+  tokenHash: text("token_hash").notNull(),
+  email: text("email"),
+  role: text("role").notNull().default("learner"),
+  invitedByUserId: uuid("invited_by_user_id"),
+  status: text("status").notNull().default("pending"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  acceptedByUserId: uuid("accepted_by_user_id"),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /** All tenant-scoped tables + their org-id column — used by the Slice 2 RLS check. */

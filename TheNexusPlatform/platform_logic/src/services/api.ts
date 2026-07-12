@@ -17,9 +17,17 @@ import type {
   Offering,
   OfferingStatus,
   OfferingType,
+  Group,
+  GroupMember,
+  Invitation,
   OrgMember,
+  OrgRelationship,
   Participant,
   ParticipantType,
+  ProgramAffiliation,
+  ProgramOrgAffiliation,
+  AffiliatedProgram,
+  AffiliatedProgramDetail,
   PlatformModule,
   Program,
   ProgramCategory,
@@ -199,6 +207,125 @@ export async function listPrograms(orgId: string): Promise<Program[]> {
 
 export async function listMembers(orgId: string): Promise<OrgMember[]> {
   return request<OrgMember[]>(`/api/platform/orgs/${orgId}/members`);
+}
+
+export interface OrgSummary {
+  id: string;
+  name: string;
+  slug: string;
+  status?: string;
+  organization_type?: string;
+  created_at?: string;
+}
+
+/** Platform-admin only: every organization on the platform. */
+export async function listAllOrganizations(): Promise<OrgSummary[]> {
+  return request<OrgSummary[]>("/api/platform/admin/organizations");
+}
+
+// ── Slice 11: org graph ─────────────────────────────────────────────────────
+export async function createInvitation(
+  orgId: string,
+  payload: { email?: string; role: string; program_id?: string; offering_id?: string; group_id?: string; expires_at?: string },
+): Promise<Invitation> {
+  return request<Invitation>(`/api/platform/orgs/${orgId}/invitations`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function listGroups(orgId: string, programId?: string): Promise<Group[]> {
+  const qs = programId ? `?program_id=${programId}` : "";
+  return request<Group[]>(`/api/platform/orgs/${orgId}/groups${qs}`);
+}
+export async function createGroup(
+  orgId: string,
+  payload: { program_id?: string; offering_id?: string; name: string; label?: string; parent_group_id?: string },
+): Promise<Group> {
+  return request<Group>(`/api/platform/orgs/${orgId}/groups`, { method: "POST", body: JSON.stringify(payload) });
+}
+export async function listGroupMembers(groupId: string): Promise<GroupMember[]> {
+  return request<GroupMember[]>(`/api/platform/groups/${groupId}/members`);
+}
+export async function coachAddToGroup(
+  groupId: string,
+  payload: { email?: string; name?: string; offering_id?: string; participant_type?: string },
+): Promise<{ id: string }> {
+  return request(`/api/groups/${groupId}/participants/coach-add`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export interface SelectableOrg { id: string; name?: string; slug?: string }
+export async function listSelectableOrgs(): Promise<SelectableOrg[]> {
+  return request<SelectableOrg[]>(`/api/platform/orgs/selectable`);
+}
+
+// Peek an invitation by its raw token (no auth required — the invitee isn't a
+// member yet). Returns 404 if the token is unknown.
+export async function getInvitation(token: string): Promise<Invitation> {
+  return request<Invitation>(`/api/platform/invitations/${encodeURIComponent(token)}`);
+}
+// Accept an invitation as the currently signed-in user (must be authenticated).
+export async function acceptInvitation(token: string, displayName?: string): Promise<Invitation> {
+  return request<Invitation>(`/api/platform/invitations/${encodeURIComponent(token)}/accept`, {
+    method: "POST", body: JSON.stringify({ display_name: displayName ?? null }),
+  });
+}
+
+export async function listProgramAffiliations(programId: string): Promise<ProgramAffiliation[]> {
+  return request<ProgramAffiliation[]>(`/api/platform/programs/${programId}/affiliations`);
+}
+export async function createProgramAffiliation(
+  programId: string,
+  payload: { subject_type: string; subject_id: string; affiliation_type: string; represented_organization_id?: string },
+): Promise<ProgramAffiliation> {
+  return request<ProgramAffiliation>(`/api/platform/programs/${programId}/affiliations`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateProgramAffiliation(id: string, status: string): Promise<ProgramAffiliation> {
+  return request<ProgramAffiliation>(`/api/platform/affiliations/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+}
+
+// ── Program ↔ organization affiliations (invite / accept between orgs) ──────
+export async function listProgramOrgAffiliations(programId: string): Promise<ProgramOrgAffiliation[]> {
+  return request<ProgramOrgAffiliation[]>(`/api/platform/programs/${programId}/org-affiliations`);
+}
+export async function createProgramOrgAffiliation(
+  programId: string,
+  payload: { organization_id: string; affiliation_type: string; tenant_access_mode?: string },
+): Promise<ProgramOrgAffiliation> {
+  return request<ProgramOrgAffiliation>(`/api/platform/programs/${programId}/org-affiliations`, { method: "POST", body: JSON.stringify(payload) });
+}
+export async function updateProgramOrgAffiliation(id: string, status: string): Promise<ProgramOrgAffiliation> {
+  return request<ProgramOrgAffiliation>(`/api/platform/org-affiliations/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+}
+export async function listIncomingOrgAffiliations(orgId: string): Promise<ProgramOrgAffiliation[]> {
+  return request<ProgramOrgAffiliation[]>(`/api/platform/orgs/${orgId}/incoming-affiliations`);
+}
+export async function listAffiliatedPrograms(orgId: string): Promise<AffiliatedProgram[]> {
+  return request<AffiliatedProgram[]>(`/api/platform/orgs/${orgId}/affiliated-programs`);
+}
+export async function getAffiliatedProgramDetail(orgId: string, programId: string): Promise<AffiliatedProgramDetail> {
+  return request<AffiliatedProgramDetail>(`/api/platform/orgs/${orgId}/affiliated-programs/${programId}`);
+}
+
+export async function listOrgRelationships(orgId: string): Promise<OrgRelationship[]> {
+  return request<OrgRelationship[]>(`/api/platform/orgs/${orgId}/relationships`);
+}
+export async function updateOrgRelationship(id: string, status: string): Promise<OrgRelationship> {
+  return request<OrgRelationship>(`/api/platform/relationships/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+}
+export async function deleteOrgRelationship(id: string): Promise<void> {
+  await request(`/api/platform/relationships/${id}`, { method: "DELETE" });
+}
+export async function createOrgRelationship(
+  orgId: string,
+  payload: { target_organization_id: string; relationship_type: string },
+): Promise<OrgRelationship> {
+  return request<OrgRelationship>(`/api/platform/orgs/${orgId}/relationships`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function bulkImportRegistrations(
+  offeringId: string,
+  rows: Array<{ email?: string; name?: string; age?: number }>,
+): Promise<{ created: number }> {
+  return request(`/api/offerings/${offeringId}/registrations/bulk-import`, { method: "POST", body: JSON.stringify({ rows }) });
 }
 
 export async function deleteProgram(programId: string): Promise<void> {

@@ -9,6 +9,8 @@ import { Hono } from "hono";
 import { getCurrentUser, type PlatformUser } from "../auth";
 import { HttpError } from "../httpError";
 import * as db from "../platformDb";
+import { dbEnabled } from "../db/client";
+import * as graph from "../db/orgGraphRepo";
 import { isOfferingAdmin } from "../permissions";
 import {
   adminAddRegistrationSchema,
@@ -26,12 +28,14 @@ type Row = Record<string, any>;
 export const offeringsRouter = new Hono();
 
 function _requireOfferingAdmin(user: PlatformUser, orgId: string, programId: string | null): void {
+  if (user.role === "platform_admin") return;
   if (!isOfferingAdmin(user.memberships, orgId, programId)) {
     throw new HttpError(403, "Offering admin access required");
   }
 }
 
 function _requireOrgMember(user: PlatformUser, orgId: string): void {
+  if (user.role === "platform_admin") return;
   if (!user.memberships.some((m) => m.org_id === orgId)) {
     throw new HttpError(403, "Not a member of this organization");
   }
@@ -417,7 +421,8 @@ offeringsRouter.post("/offerings/:offering_id/registrations/admin-add", async (c
   if (!offering) throw new HttpError(404, "Offering not found");
   _requireOfferingAdmin(user, offering.organization_id, offering.program_id);
 
-  const profile = await db.getProfileByEmail(req.email);
+  // Org-scoped world: an admin-added person is identified by email until they
+  // authenticate into this org (then their org profile links via registration).
   const row = await db.createRegistration(offering.organization_id, offeringId, {
     programId: offering.program_id ?? null,
     stageNodeId: req.stage_node_id ?? offering.stage_node_id ?? null,
@@ -426,7 +431,7 @@ offeringsRouter.post("/offerings/:offering_id/registrations/admin-add", async (c
     phone: req.phone ?? null,
     name: req.name ?? null,
     age: req.age ?? null,
-    userId: profile ? profile.id : null,
+    userId: null,
     status: "directly_added",
     fieldData: req.field_data,
     createdByUserId: user.id,
@@ -487,4 +492,41 @@ offeringsRouter.post("/registrations/:registration_id/reject", async (c) => {
     metadata: { name: reg.name ?? null, email: reg.email ?? null },
   });
   return c.json(_registrationResponse(result));
+});
+
+// ── Slice 11: coach-add + bulk import ──────────────────────────────────────
+offeringsRouter.post("/groups/:group_id/participants/coach-add", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const groupId = c.req.param("group_id");
+  const group = await graph.getGroup(groupId);
+  if (!group) throw new HttpError(404, "Group not found");
+  _requireOfferingAdmin(user, group.organization_id as string, (group.program_id as string) ?? null);
+  const req = (await c.req.json()) as Row;
+  const row = await graph.coachAddParticipant(groupId, user.id, {
+    email: req.email ?? null, name: req.name ?? null,
+    offeringId: req.offering_id ?? null, participantType: (req.participant_type as string) ?? "learner",
+  });
+  await db.recordAuditEvent("participant.coach_added", {
+    orgId: group.organization_id as string, actorUserId: user.id, scopeType: "group", scopeId: groupId,
+    targetType: "participant", targetId: row.id as string, metadata: { email: req.email ?? null },
+  });
+  return c.json(row);
+});
+
+offeringsRouter.post("/offerings/:offering_id/registrations/bulk-import", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const offeringId = c.req.param("offering_id");
+  const offering = await db.getOffering(offeringId);
+  if (!offering) throw new HttpError(404, "Offering not found");
+  _requireOfferingAdmin(user, offering.organization_id, offering.program_id);
+  const req = (await c.req.json()) as { rows?: Array<{ email?: string; name?: string; age?: number; field_data?: Row }> };
+  const rows = Array.isArray(req.rows) ? req.rows : [];
+  const result = await graph.bulkImportRegistrations(offering.organization_id, offeringId, rows, user.id);
+  await db.recordAuditEvent("registration.bulk_imported", {
+    orgId: offering.organization_id, actorUserId: user.id, scopeType: "offering", scopeId: offeringId,
+    metadata: { count: result.created },
+  });
+  return c.json(result);
 });

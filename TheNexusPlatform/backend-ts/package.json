@@ -10,10 +10,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "migrate": "tsx scripts/runMigrations.ts",
+    "seed:admin": "tsx scripts/seedPlatformAdmin.ts",
+    "import:local": "tsx scripts/importLocalToPostgres.ts",
     "parity": "tsx scripts/parityCheck.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@aws-sdk/client-s3": "^3.1085.0",
+    "@aws-sdk/s3-request-presigner": "^3.1085.0",
     "@hono/node-server": "^1.13.7",
     "@supabase/supabase-js": "^2.47.10",
     "dotenv": "^16.4.7",

@@ -207,6 +207,11 @@ export function localGetOrganization(orgId: string): Row | null {
   return null;
 }
 
+/** All organizations — platform-admin view only (no per-org scoping). */
+export function localListAllOrganizations(): Row[] {
+  return _read("organizations");
+}
+
 export function localUpdateOrgTheme(
   orgId: string,
   accentColor: string | null | undefined,

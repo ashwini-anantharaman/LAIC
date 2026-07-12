@@ -15,14 +15,16 @@ import {
   updateOrgTheme,
   getToken,
   clearToken,
+  getInvitation,
+  acceptInvitation,
 } from "../services/api";
 import type { DeliveryMethod, StageKey } from "../types/platform";
-import type { DashboardData, JoinCodeKind, Program, ProgramCategory, SignupType } from "../types/platform";
+import type { DashboardData, Invitation, JoinCodeKind, Program, ProgramCategory, SignupType } from "../types/platform";
 import { BASE, PANEL, INPUT_BG, BORDER, MUTED, FONT_HEAD, FONT_BODY, slide } from "./theme";
 import { OfferingsSection } from "./components/offerings/OfferingsSection";
 import { PlatformWorkspace } from "./components/platform/PlatformWorkspace";
+import { PlatformAdminConsole } from "./components/platform/PlatformAdminConsole";
 import { TeacherWorkspace } from "./components/platform/TeacherWorkspace";
-import { ActivityFeed } from "./components/ActivityFeed";
 import type { MembershipSummary } from "../types/platform";
 import { getAppLaunchContext, listEntitlements, setEntitlement } from "../services/api";
 import type { Entitlement, ModuleKey } from "../types/platform";
@@ -39,7 +41,7 @@ const ATMO = [
   BASE,
 ].join(", ");
 
-type Screen = "landing" | "login" | "signup-role" | "signup" | "org-setup" | "dashboard" | "teacher" | "game-handoff";
+type Screen = "landing" | "login-role" | "login" | "signup-role" | "signup" | "org-setup" | "dashboard" | "teacher" | "platform-admin" | "game-handoff" | "invite";
 
 function Grain({ opacity = 0.22 }: { opacity?: number }) {
   const raw = useId();
@@ -142,7 +144,7 @@ function ErrorText({ msg }: { msg: string }) {
 
 // ─── Landing ──────────────────────────────────────────────────────────────────
 
-function Landing({ onLogin, onSignup }: { onLogin: () => void; onSignup: () => void }) {
+function Landing({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen overflow-hidden" style={{ background: BASE }}>
       <Grain opacity={0.22} />
@@ -158,12 +160,45 @@ function Landing({ onLogin, onSignup }: { onLogin: () => void; onSignup: () => v
           The unified infrastructure for academic AI challenges and organizational management.
         </p>
         <div className="flex gap-3">
-          <button onClick={onLogin} className="h-12 px-7 rounded-full bg-white text-[#111] text-sm font-semibold hover:bg-white/92 active:scale-[0.97] transition-all duration-150 focus:outline-none" style={{ fontFamily: FONT_BODY }}>
-            Organization Log In
+          <button onClick={onLogin} className="h-12 px-9 rounded-full bg-white text-[#111] text-sm font-semibold hover:bg-white/92 active:scale-[0.97] transition-all duration-150 focus:outline-none" style={{ fontFamily: FONT_BODY }}>
+            Login
           </button>
-          <button onClick={onSignup} className="h-12 px-7 rounded-full text-sm font-medium text-white/75 hover:text-white hover:bg-white/8 active:scale-[0.97] transition-all duration-150 focus:outline-none" style={{ fontFamily: FONT_BODY, border: "1px solid rgba(255,255,255,0.2)" }}>
-            Organization Sign Up
-          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Login Role ─────────────────────────────────────────────────────────────
+
+type LoginType = "org" | "administrator";
+
+function LoginRole({ onBack, onSelect }: { onBack: () => void; onSelect: (type: LoginType) => void }) {
+  const options: { type: LoginType; label: string; desc: string }[] = [
+    { type: "org", label: "Organization", desc: "Sign in to your organization's workspace" },
+    { type: "administrator", label: "Administrator", desc: "Sign in as an administrator" },
+  ];
+
+  return (
+    <div className="relative min-h-screen overflow-hidden flex items-center justify-center" style={{ background: BASE }}>
+      <Grain opacity={0.2} />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] pointer-events-none" style={{ background: "radial-gradient(ellipse at 0% 100%, rgba(120,28,20,0.35) 0%, transparent 60%)" }} />
+      <motion.div className="relative z-10 w-full max-w-md px-6 py-14" {...slide}>
+        <BackBtn onClick={onBack} />
+        <h1 className="text-3xl font-bold text-white tracking-tight mb-2" style={{ fontFamily: FONT_HEAD }}>Log In</h1>
+        <p className="text-sm mb-8" style={{ color: MUTED, fontFamily: FONT_BODY }}>How are you signing in?</p>
+        <div className="flex flex-col gap-3">
+          {options.map(({ type, label, desc }) => (
+            <button
+              key={type}
+              onClick={() => onSelect(type)}
+              className="w-full text-left p-5 rounded-2xl transition-all hover:bg-white/6 active:scale-[0.99] focus:outline-none"
+              style={{ border: `1px solid ${BORDER}`, background: "rgba(255,255,255,0.03)" }}
+            >
+              <p className="text-base font-semibold text-white" style={{ fontFamily: FONT_HEAD }}>{label}</p>
+              <p className="text-xs mt-1" style={{ color: MUTED, fontFamily: FONT_BODY }}>{desc}</p>
+            </button>
+          ))}
         </div>
       </motion.div>
     </div>
@@ -172,7 +207,7 @@ function Landing({ onLogin, onSignup }: { onLogin: () => void; onSignup: () => v
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-function Login({ onBack, onSuccess, onGoSignup }: { onBack: () => void; onSuccess: () => void; onGoSignup: () => void }) {
+function Login({ onBack, onSuccess, onGoSignup, loginType }: { onBack: () => void; onSuccess: () => void; onGoSignup: () => void; loginType?: LoginType }) {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -197,7 +232,9 @@ function Login({ onBack, onSuccess, onGoSignup }: { onBack: () => void; onSucces
     <AuthPanel>
       <motion.div className="w-full max-w-[280px]" {...slide}>
         <BackBtn onClick={onBack} />
-        <p className="text-center text-[10px] tracking-[0.2em] uppercase mb-1" style={{ color: MUTED, fontFamily: FONT_BODY }}>Log in to</p>
+        <p className="text-center text-[10px] tracking-[0.2em] uppercase mb-1" style={{ color: MUTED, fontFamily: FONT_BODY }}>
+          {loginType === "administrator" ? "Administrator log in to" : loginType === "org" ? "Organization log in to" : "Log in to"}
+        </p>
         <h1 className="text-center text-[1.75rem] font-bold text-white mb-8 tracking-tight" style={{ fontFamily: FONT_HEAD }}>MindBrainAI Nexus Platform</h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
           <InputField type="email" placeholder="Your Email" value={email} onChange={setEmail} Icon={Mail} required />
@@ -225,9 +262,7 @@ function Login({ onBack, onSuccess, onGoSignup }: { onBack: () => void; onSucces
 
 function SignupRole({ onBack, onSelect }: { onBack: () => void; onSelect: (type: SignupType) => void }) {
   const options: { type: SignupType; label: string; desc: string }[] = [
-    { type: "org", label: "Organization", desc: "Create a new organization and set up your challenge" },
-    { type: "administrator", label: "Administrator", desc: "Join with an admin join code" },
-    { type: "teacher", label: "Teacher", desc: "Join with a teacher join code" },
+    { type: "org", label: "Organization", desc: "Create a new organization and set up your programs" },
   ];
 
   return (
@@ -1177,7 +1212,6 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
             <PlatformWorkspace orgId={data.org_id} orgName={data.org_name} accent={accent} />
           </div>
         )}
-        {data?.org_id && <ActivityFeed orgId={data.org_id} />}
       </motion.div>
     </div>
   );
@@ -1230,17 +1264,151 @@ function firstGameMembership(
   return { programName: m.program_name || "Your Game Program", appId: m.registered_app_id, launchUrl: m.app_launch_url };
 }
 
+// ─── Invitation acceptance (redeem link: /?invite=<token>) ───────────────────
+
+function inviteRoleLabel(role: string): string {
+  const r = role.toLowerCase();
+  if (r === "owner") return "Owner";
+  if (r === "administrator" || r === "org_admin") return "Administrator";
+  if (r === "instructor" || r === "teacher") return "Teacher";
+  if (r === "coach") return "Coach";
+  return "Learner";
+}
+
+function InviteAccept({ token, onAccepted, onCancel }: { token: string; onAccepted: () => void; onCancel: () => void }) {
+  const [info, setInfo] = useState<Invitation | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [mode, setMode] = useState<"login" | "signup">("signup");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const loggedIn = !!getToken();
+
+  useEffect(() => {
+    getInvitation(token)
+      .then((inv) => { setInfo(inv); if (inv.email) setEmail(inv.email); })
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "This invitation link is invalid."));
+  }, [token]);
+
+  const pending = info?.status === "pending";
+
+  async function accept() {
+    setBusy(true); setError("");
+    try {
+      await acceptInvitation(token);
+      onAccepted();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not accept the invitation."); setBusy(false); }
+  }
+
+  async function authThenAccept() {
+    if (!email.trim() || !password) { setError("Enter your email and password"); return; }
+    if (mode === "signup" && !name.trim()) { setError("Enter your name"); return; }
+    setBusy(true); setError("");
+    try {
+      if (mode === "signup") {
+        await signup({ signup_type: "student", email: email.trim(), password, display_name: name.trim() });
+      } else {
+        await login(email.trim(), password);
+      }
+      await acceptInvitation(token, mode === "signup" ? name.trim() : undefined);
+      onAccepted();
+    } catch (e) { setError(e instanceof Error ? e.message : "Sign-in failed"); setBusy(false); }
+  }
+
+  const orgName = info?.organization_name || "the organization";
+  const roleLabel = info ? inviteRoleLabel(info.role) : "";
+
+  return (
+    <AuthPanel>
+      <div className="w-full">
+        <BackBtn onClick={onCancel} />
+        {loadError ? (
+          <>
+            <h1 className="text-2xl font-bold text-white tracking-tight mb-2" style={{ fontFamily: FONT_HEAD }}>Invitation unavailable</h1>
+            <p className="text-sm" style={{ color: MUTED, fontFamily: FONT_BODY }}>{loadError}</p>
+          </>
+        ) : !info ? (
+          <p className="text-sm" style={{ color: MUTED, fontFamily: FONT_BODY }}>Loading invitation…</p>
+        ) : !pending ? (
+          <>
+            <h1 className="text-2xl font-bold text-white tracking-tight mb-2" style={{ fontFamily: FONT_HEAD }}>Invitation {info.status}</h1>
+            <p className="text-sm" style={{ color: MUTED, fontFamily: FONT_BODY }}>
+              This invitation is no longer available (status: {info.status}). Ask {orgName} to send a new one.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-[11px] font-bold tracking-[0.22em] uppercase mb-3" style={{ color: MUTED, fontFamily: FONT_BODY }}>You're invited</p>
+            <h1 className="text-2xl font-bold text-white tracking-tight mb-2" style={{ fontFamily: FONT_HEAD }}>
+              Join {orgName}
+            </h1>
+            <p className="text-sm mb-8" style={{ color: MUTED, fontFamily: FONT_BODY }}>
+              You've been invited to join <span className="text-white/80">{orgName}</span> as a <span className="text-white/80">{roleLabel}</span>
+              {info.email ? <> — sent to <span className="text-white/80">{info.email}</span></> : null}.
+            </p>
+
+            {loggedIn ? (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs" style={{ color: MUTED, fontFamily: FONT_BODY }}>
+                  You're signed in. Accept to add this organization to your account.
+                </p>
+                <WhiteBtn onClick={accept} disabled={busy}>{busy ? "Joining…" : `Accept & join ${orgName}`}</WhiteBtn>
+                <ErrorText msg={error} />
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-1 w-full rounded-xl p-1 mb-1" style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${BORDER}` }}>
+                  {(["signup", "login"] as const).map((m) => (
+                    <button
+                      key={m} type="button" onClick={() => { setMode(m); setError(""); }}
+                      className="flex-1 py-2 rounded-lg text-[11px] font-bold tracking-widest uppercase transition-all focus:outline-none"
+                      style={{ background: mode === m ? "white" : "transparent", color: mode === m ? "#111" : MUTED, fontFamily: FONT_BODY }}
+                    >{m === "signup" ? "Create account" : "Log in"}</button>
+                  ))}
+                </div>
+                {mode === "signup" && (
+                  <InputField placeholder="Your name" value={name} onChange={setName} Icon={AtSign} />
+                )}
+                <InputField type="email" placeholder="you@email.com" value={email} onChange={setEmail} Icon={Mail} />
+                <InputField type="password" placeholder="Password" value={password} onChange={setPassword} Icon={Lock} />
+                <WhiteBtn onClick={authThenAccept} disabled={busy}>
+                  {busy ? "Joining…" : mode === "signup" ? "Create account & join" : "Log in & join"}
+                </WhiteBtn>
+                <ErrorText msg={error} />
+                <p className="text-[11px] mt-1" style={{ color: MUTED, fontFamily: FONT_BODY }}>
+                  {mode === "signup"
+                    ? "Creates your personal account, then joins you to this organization."
+                    : "Use your existing account — this organization will be added to it."}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </AuthPanel>
+  );
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>("landing");
+  const [pendingInvite, setPendingInvite] = useState<string | null>(null);
   const [signupType, setSignupType] = useState<SignupType>("org");
   const [orgId, setOrgId] = useState("");
   const [orgName, setOrgName] = useState("");
   const [gameHandoff, setGameHandoff] = useState<GameMembershipInfo | null>(null);
   const [teacherMemberships, setTeacherMemberships] = useState<MembershipSummary[]>([]);
+  const [loginType, setLoginType] = useState<LoginType>("org");
 
   function routeAfterAuth() {
     getMe()
       .then((me) => {
+        // Platform admins manage every organization (not scoped to one).
+        if (me.role === "platform_admin") {
+          setScreen("platform-admin");
+          return;
+        }
         // Org owners/admins get the supervisory dashboard (all programs, teachers,
         // students, offerings). Everyone else is scoped to what they belong to.
         const isOrgAdmin = me.memberships.some((m) => m.role === "owner" || m.role === "administrator");
@@ -1267,8 +1435,35 @@ export default function App() {
   }
 
   useEffect(() => {
+    // A redeem link (…/?invite=<token>) opens the acceptance flow directly,
+    // whether or not the visitor is already signed in.
+    const inviteToken = new URLSearchParams(window.location.search).get("invite");
+    if (inviteToken) {
+      setPendingInvite(inviteToken);
+      setScreen("invite");
+      return;
+    }
     if (getToken() && screen === "landing") routeAfterAuth();
   }, []);
+
+  function clearInviteParam() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("invite");
+    window.history.replaceState({}, "", url.pathname + url.search);
+  }
+
+  function handleInviteAccepted() {
+    clearInviteParam();
+    setPendingInvite(null);
+    routeAfterAuth();
+  }
+
+  function handleInviteCancel() {
+    clearInviteParam();
+    setPendingInvite(null);
+    if (getToken()) routeAfterAuth();
+    else setScreen("landing");
+  }
 
   function handleLogout() {
     clearToken();
@@ -1282,14 +1477,24 @@ export default function App() {
   return (
     <div style={{ background: BASE, minHeight: "100vh" }}>
       <AnimatePresence mode="wait">
+        {screen === "invite" && pendingInvite && (
+          <motion.div key="invite" {...slide}>
+            <InviteAccept token={pendingInvite} onAccepted={handleInviteAccepted} onCancel={handleInviteCancel} />
+          </motion.div>
+        )}
         {screen === "landing" && (
           <motion.div key="landing" {...slide}>
-            <Landing onLogin={() => setScreen("login")} onSignup={() => setScreen("signup-role")} />
+            <Landing onLogin={() => setScreen("login-role")} />
+          </motion.div>
+        )}
+        {screen === "login-role" && (
+          <motion.div key="login-role" {...slide}>
+            <LoginRole onBack={() => setScreen("landing")} onSelect={(type) => { setLoginType(type); setScreen("login"); }} />
           </motion.div>
         )}
         {screen === "login" && (
           <motion.div key="login" {...slide}>
-            <Login onBack={() => setScreen("landing")} onSuccess={routeAfterAuth} onGoSignup={() => setScreen("signup-role")} />
+            <Login onBack={() => setScreen("login-role")} onSuccess={routeAfterAuth} onGoSignup={() => { setSignupType("org"); setScreen("signup"); }} loginType={loginType} />
           </motion.div>
         )}
         {screen === "signup-role" && (
@@ -1301,7 +1506,7 @@ export default function App() {
           <motion.div key="signup" {...slide}>
             <Signup
               signupType={signupType}
-              onBack={() => setScreen("signup-role")}
+              onBack={() => setScreen("login-role")}
               onGoLogin={() => setScreen("login")}
               onSuccess={(newOrgId) => {
                 if (signupType === "org" && newOrgId) {
@@ -1322,6 +1527,11 @@ export default function App() {
         {screen === "dashboard" && (
           <motion.div key="dashboard" {...slide}>
             <Dashboard onLogout={handleLogout} />
+          </motion.div>
+        )}
+        {screen === "platform-admin" && (
+          <motion.div key="platform-admin" {...slide}>
+            <PlatformAdminConsole onLogout={handleLogout} />
           </motion.div>
         )}
         {screen === "teacher" && (
