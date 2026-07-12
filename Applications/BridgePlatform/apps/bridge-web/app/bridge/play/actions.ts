@@ -257,3 +257,36 @@ export async function saveTableProfile(formData: FormData) {
   });
   revalidatePath("/bridge/play");
 }
+
+/**
+ * The prototype's live-config loop (§11.4-honest): flip one setting at the
+ * table → fork this session (same board/seats/package, primed with the full
+ * event log, NEW resolved values) and continue there. Combine with Undo +
+ * Step to watch the same decision come out differently.
+ */
+export async function changeTableSetting(formData: FormData) {
+  const context = await requireContext();
+  const id = String(formData.get("sessionId"));
+  const key = String(formData.get("key"));
+  const view = await sessionService().getSession(id, context);
+  const { knowledgeStore } = await import("@/lib/knowledge");
+  const pkgRecord = await knowledgeStore().getPackage(
+    view.record.packageRef.packageId,
+    view.record.packageRef.version,
+  );
+  if (!pkgRecord) throw new Error("The session's package version is no longer available");
+  const setting = pkgRecord.pkg.settings.find((s) => s.key === key);
+  if (!setting) throw new Error(`No setting "${key}" in this package version`);
+  const newValues = {
+    ...view.record.resolvedValues,
+    [key]: !view.record.resolvedValues[key],
+  };
+  const forked = await sessionService().forkSession(id, context, pkgRecord.pkg, newValues);
+  const { audit } = await import("@/lib/audit");
+  await audit(context, "session.fork", "bridge_session", forked.bridgeSessionId, {
+    forkedFrom: id,
+    changed: key,
+    to: newValues[key],
+  });
+  redirect(`/bridge/play/${forked.bridgeSessionId}`);
+}

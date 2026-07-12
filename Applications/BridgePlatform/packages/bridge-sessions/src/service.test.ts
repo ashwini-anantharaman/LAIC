@@ -328,3 +328,107 @@ describe("Phase 14: scoring, lifecycle, snapshots, board library", () => {
     expect(await service.getSharedBoard("nonexistent")).toBeNull();
   });
 });
+
+describe("fork on settings change (prototype live-config loop)", () => {
+  // Partner (N) opens 1S; South holds 6 HCP with no 1-level suit — bids 1NT
+  // with the setting on, passes with it off (same fixture as bridge-profiles).
+  const fixtureBoard = () => {
+    const board = seededBoard(1);
+    board.hands.S = [
+      { suit: "S" as const, rank: 7 as const }, { suit: "S" as const, rank: 2 as const },
+      { suit: "H" as const, rank: 12 as const }, { suit: "H" as const, rank: 5 as const },
+      { suit: "H" as const, rank: 4 as const }, { suit: "H" as const, rank: 3 as const },
+      { suit: "D" as const, rank: 13 as const }, { suit: "D" as const, rank: 5 as const },
+      { suit: "D" as const, rank: 4 as const }, { suit: "D" as const, rank: 3 as const },
+      { suit: "C" as const, rank: 11 as const }, { suit: "C" as const, rank: 9 as const },
+      { suit: "C" as const, rank: 2 as const },
+    ];
+    // Give N a clean 13-HCP 1S opening (12-21 gate) so S is next to respond.
+    board.hands.N = [
+      { suit: "S" as const, rank: 14 as const }, { suit: "S" as const, rank: 13 as const },
+      { suit: "S" as const, rank: 12 as const }, { suit: "S" as const, rank: 11 as const },
+      { suit: "S" as const, rank: 10 as const },
+      { suit: "H" as const, rank: 13 as const }, { suit: "H" as const, rank: 5 as const },
+      { suit: "H" as const, rank: 4 as const },
+      { suit: "D" as const, rank: 6 as const }, { suit: "D" as const, rank: 2 as const },
+      { suit: "C" as const, rank: 7 as const }, { suit: "C" as const, rank: 3 as const },
+      { suit: "C" as const, rank: 4 as const },
+    ];
+    // Rebuild E/W from the leftover deck so the deal stays valid 52.
+    const used = new Set(
+      [...board.hands.S, ...board.hands.N].map((c) => `${c.suit}${c.rank}`),
+    );
+    const rest: { suit: "S" | "H" | "D" | "C"; rank: number }[] = [];
+    for (const suit of ["S", "H", "D", "C"] as const)
+      for (let rank = 2; rank <= 14; rank++)
+        if (!used.has(`${suit}${rank}`)) rest.push({ suit, rank });
+    board.hands.E = rest.slice(0, 13) as typeof board.hands.E;
+    board.hands.W = rest.slice(13, 26) as typeof board.hands.W;
+    board.dealer = "N";
+    return board;
+  };
+
+  it("step → undo → fork with a changed setting → the same seat decides differently", async () => {
+    const { store, service } = makeService();
+    const caller = ctx({});
+    const record = await service.createSession({
+      context: caller,
+      sessionType: "single_board",
+      board: fixtureBoard(),
+      pkg,
+      resolvedValues: values(),
+    });
+    const id = record.bridgeSessionId;
+
+    // N opens 1S, E passes, S responds — capture S's call under the default config.
+    await service.step(id, caller); // N
+    await service.step(id, caller); // E
+    const afterS = await service.step(id, caller); // S
+    const sCallOn = afterS.state.auction[2]!;
+    expect(sCallOn).toEqual({ seat: "S", call: "1N" });
+
+    // The prototype loop: undo S's call, flip the setting, continue from here.
+    await service.undo(id, caller);
+    const forked = await service.forkSession(id, caller, pkg, {
+      ...values(),
+      bn_1nt_response: false,
+    });
+
+    // Lineage + immutability: new hash, source recorded, source untouched.
+    expect(forked.forkedFromSessionId).toBe(id);
+    expect(forked.resolvedValueHash).not.toBe(record.resolvedValueHash);
+    const sourceEvents = await store.getEvents(id);
+    const forkEvents = await store.getEvents(forked.bridgeSessionId);
+    expect(forkEvents).toEqual(sourceEvents); // primed with the exact prefix
+
+    // Same seat, same position, new configuration: S now passes.
+    const afterFork = await service.step(forked.bridgeSessionId, caller);
+    expect(afterFork.state.auction[2]).toEqual({ seat: "S", call: "P" });
+
+    // And the source still replays its own truth (1NT under the old config).
+    const sourceView = await service.getSession(id, caller);
+    expect(sourceView.record.resolvedValueHash).toBe(record.resolvedValueHash);
+    const redo = await service.step(id, caller);
+    expect(redo.state.auction[2]).toEqual({ seat: "S", call: "1N" });
+
+    // The fork's lifecycle records the configuration change.
+    const lifecycle = await service.getLifecycle(forked.bridgeSessionId, caller);
+    const cfg = lifecycle.filter((e) => e.type === "configuration_selected");
+    expect(cfg.some((e) => e.payload.forkedFrom === id)).toBe(true);
+  });
+
+  it("fork rejects a different package version (replay stability §11.4)", async () => {
+    const { service } = makeService();
+    const caller = ctx({});
+    const record = await service.createSession({
+      context: caller,
+      sessionType: "single_board",
+      board: seededBoard(3),
+      pkg,
+      resolvedValues: values(),
+    });
+    await expect(
+      service.forkSession(record.bridgeSessionId, caller, { ...pkg, version: "9.9.9" }, values()),
+    ).rejects.toThrow("exact package version");
+  });
+});

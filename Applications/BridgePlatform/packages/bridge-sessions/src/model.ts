@@ -43,6 +43,13 @@ export interface BridgeSessionRecord {
   seats: Record<Seat, SeatAssignment>;
   /** Learning-platform activity launch this session fulfils (LP §13.3). */
   launchRef?: string;
+  /**
+   * Set when this session was forked from another to change settings
+   * mid-board (the prototype's live-config loop): same board/seats/package,
+   * primed with the source's events, NEW resolved values. The source stays
+   * untouched — each session's configuration remains immutable (§11.4).
+   */
+  forkedFromSessionId?: string;
   createdBy: string; // nexusUserId
   createdAt: string;
   completedAt?: string;

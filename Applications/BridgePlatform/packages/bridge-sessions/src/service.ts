@@ -77,6 +77,7 @@ export interface CreateSessionInput {
   /** Defaults to four deterministic AI seats. */
   seats?: Partial<Record<Seat, SeatAssignment>>;
   launchRef?: string;
+  forkedFromSessionId?: string;
 }
 
 export interface SessionView {
@@ -140,6 +141,7 @@ export class SessionService {
       board: input.board,
       seats,
       launchRef: input.launchRef,
+      forkedFromSessionId: input.forkedFromSessionId,
       createdBy: input.context.nexusUserId,
       createdAt: this.now(),
     };
@@ -403,6 +405,50 @@ export class SessionService {
       await this.deps.store.appendEvents(record.bridgeSessionId, snapshot.events);
     await this.emitLifecycle(record.bridgeSessionId, null, [
       ["board_loaded", { fromSnapshot: snapshotId, asOfSeq: snapshot.asOfSeq }],
+    ]);
+    return record;
+  }
+
+  /**
+   * The prototype's "flip a setting mid-board" loop, honestly: a session's
+   * configuration is pinned for replay stability (§11.4), so changing values
+   * at the table FORKS — a new session on the same board, seats, and exact
+   * package version, primed with the full event log so far, carrying the new
+   * resolved values. Undo/step then explore how decisions differ from here;
+   * the source session and its history stay untouched.
+   */
+  async forkSession(
+    id: string,
+    context: NexusBridgeContext,
+    pkg: BridgeRulePackage,
+    resolvedValues: Record<string, SettingValue>,
+  ): Promise<BridgeSessionRecord> {
+    const source = await this.requireRecord(id, context);
+    if (
+      pkg.packageId !== source.packageRef.packageId ||
+      pkg.version !== source.packageRef.version
+    )
+      throw new Error("Fork must use the session's exact package version (replay stability §11.4)");
+    const events = await this.deps.store.getEvents(id);
+    const record = await this.createSession({
+      context,
+      sessionType: source.sessionType,
+      board: source.board,
+      pkg,
+      resolvedValues,
+      seats: source.seats,
+      forkedFromSessionId: id,
+    });
+    if (events.length) await this.deps.store.appendEvents(record.bridgeSessionId, events);
+    await this.emitLifecycle(record.bridgeSessionId, null, [
+      [
+        "configuration_selected",
+        {
+          forkedFrom: id,
+          asOfSeq: events.length ? events[events.length - 1]!.seq : null,
+          resolvedValueHash: record.resolvedValueHash,
+        },
+      ],
     ]);
     return record;
   }

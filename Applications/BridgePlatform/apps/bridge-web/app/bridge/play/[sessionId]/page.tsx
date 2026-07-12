@@ -15,6 +15,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import {
   autoplaySession,
+  changeTableSetting,
   humanBid,
   humanPlay,
   saveBoardToLibraryAction,
@@ -144,6 +145,12 @@ export default async function SessionPage({
   const me = await (await profileService()).getUserProfile(context);
   const feedbackMode = me?.preferredFeedbackMode ?? "full_trace";
 
+  // The EXACT package version this session pins — its settings drive the
+  // live-config panel below (§11.4: never "latest").
+  const pinnedPkg = (
+    await knowledgeStore().getPackage(record.packageRef.packageId, record.packageRef.version)
+  )?.pkg;
+
   const mySeats = (Object.values(record.seats) as { seat: Seat; playerKind: string; occupantId?: string }[])
     .filter((s) => s.playerKind === "human" && s.occupantId === context.nexusUserId)
     .map((s) => s.seat);
@@ -243,6 +250,19 @@ export default async function SessionPage({
           {state.trickCount.NS} / EW {state.trickCount.EW}
         </p>
       </header>
+
+      {record.forkedFromSessionId && (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm text-emerald-900">
+          Settings changed mid-board — this table continues{" "}
+          <Link
+            href={`/bridge/play/${record.forkedFromSessionId}`}
+            className="font-mono underline underline-offset-2"
+          >
+            {record.forkedFromSessionId}
+          </Link>{" "}
+          under a new configuration. The original and its decisions are untouched.
+        </p>
+      )}
 
       {/* The table: seats around a felt board */}
       <div
@@ -346,12 +366,20 @@ export default async function SessionPage({
           </>
         )}
         {isParticipant && !humansTurn && state.phase !== "complete" && (
-          <form action={autoplaySession}>
-            <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
-            <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
-              Advance AI
-            </button>
-          </form>
+          <>
+            <form action={stepSession}>
+              <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+              <button className="rounded bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-900">
+                Step AI
+              </button>
+            </form>
+            <form action={autoplaySession}>
+              <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+              <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
+                Advance AI
+              </button>
+            </form>
+          </>
         )}
         <form action={undoSession}>
           <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
@@ -417,6 +445,50 @@ export default async function SessionPage({
               </span>
             )}
           </p>
+        </section>
+      )}
+
+      {/* The prototype's live-config loop: flip a setting -> the deal forks
+          and continues under the new configuration. Undo + Step AI around it
+          to watch the same decision come out differently. */}
+      {pinnedPkg && pinnedPkg.settings.length > 0 && (
+        <section className="rounded-lg border border-neutral-200 p-4">
+          <h2 className="mb-1 text-sm font-medium uppercase tracking-wide text-neutral-500">
+            Table settings — {record.packageRef.packageId}@{record.packageRef.version} · config{" "}
+            <span className="font-mono normal-case">{record.resolvedValueHash}</span>
+          </h2>
+          <p className="mb-3 text-xs text-neutral-500">
+            A session’s configuration is pinned so its decisions replay forever. Flipping a
+            setting continues this deal at a forked table under the new configuration — try
+            Undo, change a setting, then Step AI to see the same position decided differently.
+          </p>
+          <ul className="space-y-2">
+            {pinnedPkg.settings.map((s) => {
+              const on = Boolean(record.resolvedValues[s.key]);
+              return (
+                <li key={s.key} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <span className="min-w-0">
+                    <span className="font-medium">{s.label}</span>{" "}
+                    <span
+                      className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
+                        on ? "bg-emerald-50 text-emerald-800" : "bg-neutral-100 text-neutral-500"
+                      }`}
+                    >
+                      {on ? "on" : "off"}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-neutral-500">{s.description}</span>
+                  </span>
+                  <form action={changeTableSetting}>
+                    <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+                    <input type="hidden" name="key" value={s.key} />
+                    <button className="whitespace-nowrap rounded border border-neutral-300 px-2.5 py-1 text-xs hover:border-emerald-400 hover:bg-emerald-50">
+                      {on ? "Turn off & continue here" : "Turn on & continue here"}
+                    </button>
+                  </form>
+                </li>
+              );
+            })}
+          </ul>
         </section>
       )}
 

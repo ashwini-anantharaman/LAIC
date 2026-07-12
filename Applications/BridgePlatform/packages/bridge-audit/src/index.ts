@@ -25,7 +25,8 @@ export type AuditAction =
   | "scope.customize"
   | "org.profile.update"
   | "org.affiliation.change"
-  | "session.undo";
+  | "session.undo"
+  | "session.fork";
 
 export interface AuditRecord {
   auditId: string;
