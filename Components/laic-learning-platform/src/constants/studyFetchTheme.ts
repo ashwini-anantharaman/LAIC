@@ -1,0 +1,21 @@
+/** Study Fetch–style layout tokens (Owlwise branding, SF chrome). */
+export const sf = {
+  blue: "#2563EB",
+  blueHover: "#1D4ED8",
+  blueLight: "#EFF6FF",
+  blueBanner: "#E8F0FE",
+  green: "#22C55E",
+  greenDark: "#16A34A",
+  bg: "#F8FAFC",
+  surface: "#FFFFFF",
+  border: "#E5E7EB",
+  borderLight: "#F3F4F6",
+  text: "#111827",
+  textMuted: "#6B7280",
+  textLight: "#9CA3AF",
+  sidebarWidth: 280,
+  radius: 12,
+  radiusLg: 16,
+  shadow: "0 1px 3px rgba(0,0,0,0.06)",
+  font: "'Inter', system-ui, sans-serif",
+} as const;

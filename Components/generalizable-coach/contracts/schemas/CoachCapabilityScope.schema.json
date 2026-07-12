@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.nexus/coach/contracts/CoachCapabilityScope.schema.json",
+  "title": "CoachCapabilityScope",
+  "description": "What a coach may DO, independent of what it knows. A disabled capability is structurally unavailable, not merely discouraged. See LAIC architecture §8.4.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "name"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "canAnswerQuestions": { "type": "boolean" },
+    "canExplainConcepts": { "type": "boolean" },
+    "canAskSocraticQuestions": { "type": "boolean" },
+    "canGenerateHints": { "type": "boolean" },
+    "canEvaluateResponses": { "type": "boolean" },
+    "canRecommendLearningObjects": { "type": "boolean" },
+    "canRecommendPractice": { "type": "boolean" },
+    "canCreateFlashcardReview": { "type": "boolean" },
+    "canGeneratePostmortems": { "type": "boolean" },
+    "canGuideReplay": { "type": "boolean" },
+    "canSummarizeForHumanCoach": { "type": "boolean" },
+    "canUpdateLearnerModel": { "type": "boolean" },
+    "canTriggerNotifications": { "type": "boolean" },
+    "canChatConversationally": { "type": "boolean" },
+    "canChainTools": { "type": "boolean" }
+  }
+}

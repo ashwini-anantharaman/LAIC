@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SQL_FILES = [
     ROOT / "supabase" / "schema.sql",
     ROOT / "supabase" / "migration_platform.sql",
+    ROOT / "supabase" / "migration_programs.sql",
+    ROOT / "supabase" / "migration_nexus_addendum.sql",
+    ROOT / "supabase" / "migration_offerings_apps_hook.sql",
+    ROOT / "supabase" / "migration_audit_entitlements.sql",
 ]
 
 

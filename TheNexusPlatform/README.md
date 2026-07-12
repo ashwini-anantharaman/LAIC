@@ -1,57 +1,106 @@
-# The Nexus Platform
+# Life in AI Center
 
-Self-contained home for the **Nexus Platform** (organization / coach / learner
-management), separate from the Life-in-AI mobile student app. Everything the
-platform needs lives in this folder.
+A mobile-first, AI-enabled learning platform. Students learn any concept in three
+switchable explanation modes, and educators build & manage courses — all in one
+unified mobile interface.
+
+## Learning modes
+
+The same concept is regenerated in a different voice; the UI adapts per mode:
+
+- **Conversational** (owl) — a tutor talking you through it, message by message.
+- **Summary** — a clear, textbook-style explanation.
+- **Real-world (Narrative)** — analogies and everyday examples.
+
+Modes the instructor didn't generate appear grayed out; a separate indicator shows
+whether an interactive animation/simulation exists for the module. The default mode
+comes from the student's onboarding preference.
+
+## Structure
+
+- `src/app/App.tsx` — root navigation + splash (role select), student login,
+  onboarding, and courses.
+- `src/app/Unit.tsx` — the lesson view and the mode switcher.
+- `src/app/Teacher.tsx` — full educator flow: login, onboarding, upload materials,
+  unit builder, and the teacher app (Lessons, Students, Challenge, Settings).
+- `src/app/shared.tsx` — shared mobile UI primitives (Shell, StatusBar, ObShell, OwlAnim).
+- `src/services/` — a typed, mock-backed service layer (`auth`, `courses`,
+  `content`, `teacher`) with per-mode prompt templates. Swap the mock
+  implementations for HTTP clients against the FastAPI/Supabase backend with no UI
+  changes.
+
+## Running
 
 ```
-TheNexusPlatform/
-├── frontend/   # Platform admin UI (Vite + React): landing → login/signup →
-│               # org setup → dashboard, plus the persona prototype
-│               # (Organization / Coach / Learner). See src/main.tsx.
-└── backend/    # Platform API (FastAPI): auth, orgs, stages, join codes,
-                # dashboard. Backed by Supabase. Mobile-app routers
-                # (content/courses/learning/uploads) were removed.
-```
-
-## Run locally (two terminals)
-
-### 1. Backend (FastAPI + Supabase)
-
-```powershell
-cd backend
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-# .env already contains SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
-uvicorn app.main:app --port 8000 --reload
-```
-
-Health check: http://localhost:8000/health → `{"ok":true,...,"supabase":true}`
-
-**Database migrations** (run once against Supabase). Get the connection string
-from Supabase → Connect → Session pooler (IPv4):
-
-```powershell
-$env:DATABASE_URL="postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres"
-python scripts/run_platform_migrations.py
-```
-
-### 2. Frontend (platform admin UI)
-
-```powershell
-cd frontend
 npm install
 npm run dev
 ```
 
-`frontend/.env` sets `VITE_API_URL=http://localhost:8000`. Open the URL Vite prints.
+Then open http://localhost:5173/.
 
-## Notes
+### Backend (local)
 
-- The backend uses `truststore` so TLS to Supabase works on networks that
-  intercept HTTPS (school proxies / AV SSL scanning). Harmless on normal hosts.
-- The persona prototype (Organization / Coach / Learner) uses mock data and
-  needs no backend; it's reached from the dashboard via "Open Platform".
-- **Secrets:** `backend/.env` holds the Supabase service-role key — never commit
-  it or expose it to the frontend.
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # add ANTHROPIC_API_KEY, Supabase keys
+uvicorn app.main:app --port 8000 --reload
+```
+
+### Platform admin UI (local)
+
+```bash
+cd platform_logic
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Open http://localhost:5180/ (or the port Vite prints).
+
+## Deploying to Vercel
+
+This repo supports **two frontends + one API**:
+
+| App | Vercel setup | API URL |
+|-----|----------------|---------|
+| **Student app + API** | One project, repo root, uses root `vercel.json` | Same domain — `/api` rewrites to FastAPI |
+| **Platform admin** | Second project, root directory `platform_logic` | Set `VITE_API_URL` to student deployment URL |
+
+### 1. Student app + backend (single Vercel project)
+
+1. Import the GitHub repo in [Vercel](https://vercel.com/new).
+2. Leave **Root Directory** empty (repo root).
+3. Vercel reads `vercel.json` — builds the Vite student app and deploys FastAPI from `backend/`.
+4. **Environment variables** (Project → Settings → Environment Variables):
+
+   | Variable | Example | Notes |
+   |----------|---------|--------|
+   | `ANTHROPIC_API_KEY` | `sk-ant-...` | Required for course generation |
+   | `SUPABASE_URL` | `https://xxx.supabase.co` | Required for auth/data |
+   | `SUPABASE_SERVICE_ROLE_KEY` | `eyJ...` | Server-side only |
+   | `FRONTEND_ORIGIN` | `https://your-app.vercel.app` | Your production URL |
+   | `EXTRA_CORS_ORIGINS` | `https://your-platform.vercel.app` | Platform admin URL (optional; `*.vercel.app` already allowed) |
+
+5. **Do not set** `VITE_API_URL` on this project — the student app uses same-origin `/api` in production.
+
+6. Deploy. Test: `https://your-app.vercel.app/health` → `{"ok":true,...}`
+
+### 2. Platform admin (second Vercel project)
+
+1. Create **another** Vercel project from the same repo.
+2. Set **Root Directory** to `platform_logic`.
+3. Set environment variable:
+
+   | Variable | Value |
+   |----------|--------|
+   | `VITE_API_URL` | `https://your-student-app.vercel.app` (no trailing slash) |
+
+4. Deploy. The platform UI calls the API on your student deployment.
+
+### Notes
+
+- **Join codes** only work when students and teachers use the **same API** (same student Vercel URL or same local backend).
+- Long-running course generation may hit **serverless timeouts** on Vercel; for heavy PDF ingest, consider hosting the backend on Railway, Fly.io, or Render instead and pointing both frontends at that URL via `VITE_API_URL`.
+- Run Supabase migrations before production: `backend/supabase/schema.sql` and `migration_platform.sql`.

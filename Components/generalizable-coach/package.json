@@ -1,0 +1,61 @@
+{
+  "name": "@laic/coach",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LAIC Generalizable Coach — a UI-agnostic adaptive coaching engine (Bridge domain)",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./source": "./index.ts"
+  },
+  "files": [
+    "dist",
+    "index.ts",
+    "contracts",
+    "api",
+    "platform",
+    "domains"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "contracts:gen": "node contracts/generate.mjs",
+    "lint": "eslint .",
+    "cli": "node --import tsx scripts/coach-cli.mjs",
+    "m1:demo": "node --import tsx scripts/m1-demo.mjs",
+    "m2:demo": "node --import tsx scripts/m2-demo.mjs",
+    "m3:demo": "node --import tsx scripts/m3-demo.mjs",
+    "chat:demo": "node --import tsx scripts/chat-demo.mjs",
+    "eval:graded": "node --env-file-if-exists=.env --import tsx scripts/eval-graded.mjs",
+    "dev": "node --env-file-if-exists=.env --watch --import tsx domains/bridge/api/server.ts",
+    "start": "node --env-file-if-exists=.env --import tsx domains/bridge/api/server.ts",
+    "start:coach": "node --env-file-if-exists=.env --import tsx api/server.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "better-sqlite3": "^12.11.1",
+    "express": "^4.19.2",
+    "tsx": "^4.16.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "eslint": "^10.6.0",
+    "json-schema-to-typescript": "^15.0.4",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.63.0",
+    "vitest": "^2.0.0"
+  }
+}

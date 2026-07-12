@@ -1,22 +1,12 @@
-# Use the OS (Windows) certificate store for TLS verification. Required on
-# networks/machines that intercept HTTPS (school proxies, AV SSL scanning),
-# where Python's bundled CA set can't verify Supabase's re-signed certificate.
-try:
-    import truststore
-
-    truststore.inject_into_ssl()
-except ImportError:
-    pass
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import bridge_context, platform
+from .routers import bridge_context, content, courses, game, hook, learning, offerings, platform, uploads
 
 settings = get_settings()
 
-app = FastAPI(title="The Nexus Platform API", version="0.1.0")
+app = FastAPI(title="Life in AI Center API", version="0.1.0")
 
 _extra_origins = [
     o.strip()
@@ -33,7 +23,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(content.router)
+app.include_router(uploads.router)
+app.include_router(courses.router)
+app.include_router(learning.router)
 app.include_router(platform.router)
+app.include_router(game.router)
+app.include_router(offerings.router)
+app.include_router(hook.router)
 app.include_router(bridge_context.router)
 
 

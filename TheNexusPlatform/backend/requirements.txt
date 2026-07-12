@@ -1,9 +1,10 @@
 fastapi
 uvicorn[standard]
+anthropic
 supabase
 pydantic
 pydantic-settings
 python-dotenv
+python-multipart
+pypdf
 email-validator
-truststore
-psycopg2-binary
