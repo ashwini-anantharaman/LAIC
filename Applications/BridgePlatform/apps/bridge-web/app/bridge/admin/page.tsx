@@ -9,7 +9,7 @@ export default async function AdminPage() {
     store.listGaps(),
     store.listPackages(),
   ]);
-  const needsReview = items.filter((i) => i.status === "needs_review").length;
+  const uncited = items.filter((i) => i.status === "active" && i.citations.length === 0).length;
   const openGaps = gaps.filter(
     (g) => g.resolutionStatus === "open" || g.resolutionStatus === "expert_decision_needed",
   ).length;
@@ -22,8 +22,8 @@ export default async function AdminPage() {
     },
     {
       href: "/bridge/admin/knowledge",
-      title: "Human-readable knowledge base",
-      body: `${items.length} items (${needsReview} awaiting review). The reviewed source of truth.`,
+      title: "Knowledge browser",
+      body: `${items.length} items (${uncited} uncited). The human-readable source of truth.`,
     },
     {
       href: "/bridge/admin/gaps",
@@ -33,16 +33,17 @@ export default async function AdminPage() {
     {
       href: "/bridge/admin/runs",
       title: "Generation runs & packages",
-      body: `${packages.length} package versions. Approved knowledge → validated, versioned rule packages.`,
+      body: `${packages.length} package versions. Active knowledge → validated, versioned rule packages.`,
     },
   ];
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Admin & Expert Review</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Knowledge admin</h1>
         <p className="text-sm text-neutral-600">
-          Bridge knowledge base authoring, review, and package publication.
+          Author and edit bridge knowledge, then generate versioned rule
+          packages players run against.
         </p>
       </header>
       <div className="grid gap-4 sm:grid-cols-2">

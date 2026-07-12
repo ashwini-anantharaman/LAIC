@@ -74,23 +74,33 @@ the folder's `.env.example`.
 ## Bridge Platform specifics (Applications/BridgePlatform)
 
 Work proceeds in phases per `laicdocs/Bridge_Workstream_Execution_Plan_v1.md`
-(currently: Phases 0–6 complete — shell, contracts, engine + interpreter,
-knowledge base with published Beginner Natural v0, persistent sessions,
-playable table with citation-resolving Why panel, constrained dealing with
-evaluator-filtered teaching scopes). Before touching bridge code, read that plan's
-§1 (locked decisions) and §6 (cross-cutting invariants). The short version:
+(currently: Phases 0–10 + 12 complete — shell, contracts, engine +
+interpreter, knowledge base + generated Beginner Natural packages, persistent
+sessions, playable table with citation-resolving Why panel, constrained
+dealing with evaluator-filtered teaching scopes, package-backed player
+profiles with generated convention cards, evaluator + learner-model evidence
+layer, ingestion jobs + Level-2 content, coach-owned teaching scopes,
+Coaching/Learning integration surfaces; Phase 13 revamp IN PROGRESS —
+approval gates removed per deviation 6, coach book→player tooling landing).
+Remaining: Phases 13–17 (Part II of the plan). Phase 10 shipped: shared
+Supabase project 'nexus-platform' exists (bridge migrations applied, RLS on);
+GET /api/platform/bridge/context added to TheNexusPlatform backend — see
+TheNexusPlatform/backend/NEXUS_BRIDGE_INTEGRATION.md for the review notes.
+Before touching bridge code, read that plan's §1 (locked decisions, decisions
+3/7 revised 2026-07-09) and §6 (cross-cutting invariants). The short version:
 
 - **Rules are data**, in versioned knowledge packages with cited sources —
-  never hand-edited rule code. The engine interprets published packages.
-- Package status gates audience: `draft` (dev) / `review` (experts, flagged) /
-  `published` (learners; all entries human-approved; immutable).
+  never hand-edited rule code. The engine interprets generated packages.
+- **Provenance over approval** (deviation 6): every rule click-throughs to a
+  readable knowledge item and its cited passage. Generated versions are
+  immutable (sessions pin them); uncited items are badged, never blocked.
 - Deterministic engine, event-sourced single-writer game state, attribution
   honesty (human/AI/BEN/fallback always distinguished).
 - Domain isolation: everything stamped `domainId = "bridge"`; no context-free
   progress endpoints; the interpreted learner model belongs to Coaching, not
   Bridge.
 - **LLMs never decide bids/plays or evaluate learners** — ingestion assistance
-  only, with human approval before publication.
+  only; extracted items are attributed, editable content citing exact passages.
 
 ## Cross-workstream integration points
 

@@ -2,13 +2,19 @@
 
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import {
-  publishPackage,
+  chunkSourceText,
+  PrototypeRegistryExtractor,
   runGeneration,
+  runIngestion,
+  runLlmIngestion,
   type BridgeKnowledgeSource,
   type BridgeReadableKnowledgeItem,
 } from "@bridge/knowledge";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { extractionClient } from "@/lib/extraction";
 import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
 
@@ -56,17 +62,15 @@ export async function saveItemEdit(formData: FormData) {
     throw new Error("structuredFields must be valid JSON");
   }
 
-  // Any edit sends the item back to review (correction loop §12.10 step 10).
+  // Edits bump the version (revision history keeps the old one); packages
+  // already generated are pinned to the version they consumed.
   const edited: BridgeReadableKnowledgeItem = {
     ...existing,
     title: str(formData, "title"),
     humanReadableRule: str(formData, "humanReadableRule"),
     structuredFields,
     reviewerNotes: (formData.get("reviewerNotes") as string) || existing.reviewerNotes,
-    status: "needs_review",
     version: String(Number(existing.version) + 1),
-    approvedBy: undefined,
-    approvedAt: undefined,
     createdBy: existing.createdBy,
   };
   void context;
@@ -76,18 +80,13 @@ export async function saveItemEdit(formData: FormData) {
 }
 
 export async function setItemStatus(formData: FormData) {
-  const context = await requireReviewer();
+  await requireReviewer();
   const store = knowledgeStore();
   const itemId = str(formData, "itemId");
   const status = str(formData, "status") as BridgeReadableKnowledgeItem["status"];
   const existing = await store.getItem(itemId);
   if (!existing) throw new Error(`No item ${itemId}`);
-  await store.saveItem({
-    ...existing,
-    status,
-    approvedBy: status === "approved" ? context.nexusUserId : undefined,
-    approvedAt: status === "approved" ? new Date().toISOString() : undefined,
-  });
+  await store.saveItem({ ...existing, status });
   revalidatePath(`/bridge/admin/knowledge`);
   redirect(`/bridge/admin/knowledge/${itemId}`);
 }
@@ -120,15 +119,91 @@ export async function triggerGeneration(formData: FormData) {
   redirect(`/bridge/admin/runs/${run.runId}`);
 }
 
-export async function publishGeneratedPackage(formData: FormData) {
-  const context = await requireReviewer();
-  await publishPackage(
-    knowledgeStore(),
-    str(formData, "packageId"),
-    str(formData, "version"),
-    context.nexusUserId,
-    new Date().toISOString(),
+/**
+ * Upload a book/document for a registered source: extract text (txt/md
+ * directly, PDF via unpdf), chunk into deterministic passages, store both.
+ */
+export async function uploadSourceDocument(formData: FormData) {
+  await requireReviewer();
+  const store = knowledgeStore();
+  const sourceId = str(formData, "sourceId");
+  const source = await store.getSource(sourceId);
+  if (!source) throw new Error(`No source ${sourceId} — register it first`);
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || !file.size) throw new Error("No file uploaded");
+
+  let text: string;
+  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const pdf = await getDocumentProxy(new Uint8Array(await file.arrayBuffer()));
+    const extracted = await extractText(pdf, { mergePages: true });
+    text = extracted.text;
+  } else {
+    text = await file.text();
+  }
+  text = text.trim();
+  if (!text) throw new Error("No text could be extracted from the file");
+
+  const passages = chunkSourceText(sourceId, text);
+  await store.saveSourceDocument(
+    {
+      sourceId,
+      fileName: file.name,
+      mediaType: file.type || "text/plain",
+      charCount: text.length,
+      uploadedAt: new Date().toISOString(),
+      text,
+    },
+    passages,
   );
-  revalidatePath("/bridge/admin/runs");
-  redirect(`/bridge/admin/runs`);
+  await store.saveSource({ ...source, locator: source.locator ?? file.name });
+  revalidatePath("/bridge/admin/sources");
+  redirect(`/bridge/admin/sources/${sourceId}`);
+}
+
+/** LLM extraction over a source's uploaded passages (needs ANTHROPIC_API_KEY). */
+export async function runLlmExtraction(formData: FormData) {
+  const context = await requireReviewer();
+  const client = extractionClient();
+  if (!client)
+    throw new Error("Set ANTHROPIC_API_KEY in apps/bridge-web/.env.local to enable LLM extraction");
+  await runLlmIngestion(knowledgeStore(), client, {
+    sourceId: str(formData, "sourceId"),
+    systemFamily: str(formData, "systemFamily") as never,
+    requestedBy: context.nexusUserId,
+    now: new Date().toISOString(),
+    jobId: `job_${crypto.randomUUID().slice(0, 8)}`,
+  });
+  revalidatePath("/bridge/admin/sources");
+  revalidatePath("/bridge/admin/knowledge");
+  redirect("/bridge/admin/knowledge");
+}
+
+/**
+ * Deterministic extraction of the bridgebot prototype's setting registry
+ * (Phase 9 reconciliation: items land active but uncited until matched).
+ */
+export async function extractPrototypeRegistry() {
+  const context = await requireReviewer();
+  const registryPath = join(
+    process.cwd(),
+    "../../../../bridgebot/src/vendor/config/data/registry.ts",
+  );
+  let text: string;
+  try {
+    text = readFileSync(registryPath, "utf8");
+  } catch {
+    throw new Error(`Prototype registry not found at ${registryPath} — clone bridgebot alongside the repo`);
+  }
+  await runIngestion(knowledgeStore(), new PrototypeRegistryExtractor(), {
+    sourceId: "src_prototype_artifacts",
+    sourceText: text,
+    systemFamily: "SAYC",
+    requestedBy: context.nexusUserId,
+    now: new Date().toISOString(),
+    jobId: `job_${crypto.randomUUID().slice(0, 8)}`,
+  });
+  revalidatePath("/bridge/admin/sources");
+  revalidatePath("/bridge/admin/knowledge");
 }

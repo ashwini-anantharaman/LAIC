@@ -10,7 +10,6 @@ import {
   BEGINNER_NATURAL_PACKAGE_ID,
   BEGINNER_NATURAL_V0_SEED,
   InMemoryKnowledgeStore,
-  publishPackage,
   runGeneration,
   type BridgeReadableKnowledgeItem,
 } from "@bridge/knowledge";
@@ -37,9 +36,7 @@ beforeAll(async () => {
     now: NOW,
     runId: "run_dealer",
   });
-  published = (
-    await publishPackage(store, BEGINNER_NATURAL_PACKAGE_ID, "0.1.0", "test", NOW)
-  ).pkg;
+  published = (await store.getPackage(BEGINNER_NATURAL_PACKAGE_ID, "0.1.0"))!.pkg;
   scopeItem = (await store.getItem("ki_bn_scope_level1"))!;
 });
 
@@ -114,7 +111,6 @@ describe('the original example: "no hands where 1NT is the systemic action"', ()
           provenance: {
             knowledgeItemIds: ["ki_test_nt"],
             sourceIds: ["src_test"],
-            reviewStatus: "needs_review",
           },
           explanationItemId: "ki_test_nt",
         },
@@ -206,17 +202,18 @@ describe("test boards join the publication workflow (§22 Q8)", () => {
       report.boards,
       [scopeItem.itemId],
     );
-    const rec = await publishPackage(store, run.resultPackageId!, run.resultVersion!, "test", NOW);
+    const rec = (await store.getPackage(run.resultPackageId!, run.resultVersion!))!;
 
     const testBoards = rec.artifacts.filter((a) => a.artifactType === "test_board_reference");
     expect(testBoards.length).toBe(5);
     expect(testBoards[0]!.generatedFromKnowledgeItemIds).toContain("ki_bn_scope_level1");
-    expect(testBoards.every((a) => a.status === "published")).toBe(true);
+    expect(testBoards.every((a) => a.status === "active")).toBe(true);
 
-    // Attaching to a published record is refused.
-    await expect(
-      attachTestBoardArtifacts(store, rec.packageId, rec.version, report.boards, []),
-    ).rejects.toThrow(/immutable/);
+    // Appending more boards is allowed — artifacts are additive; only the
+    // version's rule content is immutable.
+    await attachTestBoardArtifacts(store, rec.packageId, rec.version, report.boards, []);
+    const rec2 = (await store.getPackage(rec.packageId, rec.version))!;
+    expect(rec2.artifacts.filter((a) => a.artifactType === "test_board_reference").length).toBe(10);
 
     // The attached set runs in the golden-board harness.
     const harness = await runBoards(

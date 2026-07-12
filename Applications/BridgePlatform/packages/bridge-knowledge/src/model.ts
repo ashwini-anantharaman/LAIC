@@ -1,7 +1,8 @@
 // Knowledge base model (Bridge plan §12.4, §12.10 step 3, §12.11). The
-// human-readable Bridge Knowledge Base is the reviewed SOURCE OF TRUTH:
-// runtime rule packages are GENERATED from approved items, and every
-// generated artifact links back through items to registered sources.
+// human-readable Bridge Knowledge Base is the SOURCE OF TRUTH: runtime rule
+// packages are GENERATED from active items, and every generated artifact
+// links back through items to registered sources — so a bid at the table
+// resolves to a readable rule and the passage it came from.
 
 import type { BidRuleEntry, PlayRuleEntry, BridgeRulePackage } from "@bridge/engine";
 import type { Setting } from "@bridge/config";
@@ -55,8 +56,41 @@ export type KnowledgeItemType =
 
 export interface Citation {
   sourceId: string;
-  /** Passage reference. Prefix "paraphrase:" when not an exact quote. */
+  /**
+   * Passage reference — prefer a page/section anchor into the source's
+   * locator (e.g. 'SAYC booklet p.3: "…"'); prefix "paraphrase:" when the
+   * text is neither quoted nor anchored.
+   */
   passage: string;
+  /** Anchor into an uploaded source document (SourcePassage.passageId). */
+  passageId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Uploaded source documents & passages (§12.4: locators resolve to real text)
+// ---------------------------------------------------------------------------
+
+export interface SourceDocument {
+  sourceId: string;
+  fileName: string;
+  mediaType: string;
+  charCount: number;
+  uploadedAt: string;
+  /** Full extracted text (PDF/markdown/plain text). */
+  text: string;
+}
+
+/**
+ * Deterministic chunk of a source document. Citations reference passages by
+ * id so "where is this rule from?" resolves to the actual book text.
+ */
+export interface SourcePassage {
+  passageId: string; // `${sourceId}#p${ordinal}`
+  sourceId: string;
+  ordinal: number;
+  /** Human label, e.g. "¶12 (chars 8014–9382)". */
+  anchor: string;
+  text: string;
 }
 
 export interface BridgeReadableKnowledgeItem {
@@ -80,12 +114,16 @@ export interface BridgeReadableKnowledgeItem {
   relatedItemIds?: string[];
   gapIds: string[];
   reviewerNotes?: string;
-  status: "draft" | "needs_review" | "approved" | "deprecated";
+  /**
+   * active items feed generation; deprecated items are kept for provenance
+   * (sessions pinned to old package versions still resolve them) but are
+   * excluded from new packages. Uncited items are badged, never blocked
+   * (revised decision 3).
+   */
+  status: "active" | "deprecated";
   version: string;
   createdBy: string;
   createdAt: string;
-  approvedBy?: string;
-  approvedAt?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +145,7 @@ export interface BridgeKnowledgeGap {
 }
 
 // ---------------------------------------------------------------------------
-// Generation runs, artifacts, published packages (§12.10 steps 7-8, §12.11)
+// Generation runs, artifacts, generated packages (§12.10 steps 7-8, §12.11)
 // ---------------------------------------------------------------------------
 
 export interface BridgeGeneratedArtifact {
@@ -124,7 +162,7 @@ export interface BridgeGeneratedArtifact {
   generatedFromSourceIds: string[];
   packageId: string;
   version: string;
-  status: "draft" | "review" | "published" | "deprecated";
+  status: "active" | "deprecated";
   artifactPayload: unknown;
 }
 
@@ -140,6 +178,19 @@ export interface GenerationDiff {
   settings: RuleDiffEntry[];
 }
 
+export interface BridgeIngestionJob {
+  jobId: string;
+  sourceId: string;
+  extractor: "prototype_registry" | "llm";
+  systemFamily: SystemFamily;
+  requestedBy: string;
+  createdAt: string;
+  status: "completed" | "failed";
+  stats: { parsedEntries: number; candidatesCreated: number; skipped: number };
+  candidateItemIds: string[];
+  errors: string[];
+}
+
 export interface BridgeGenerationRun {
   runId: string;
   systemFamily: SystemFamily;
@@ -150,21 +201,32 @@ export interface BridgeGenerationRun {
   inputItems: Array<{ itemId: string; version: string }>;
   diff: GenerationDiff | null;
   errors: string[];
+  /** §19.3 quality warnings (non-blocking): unreferenced settings, etc. */
+  warnings?: string[];
   /** Set when status is completed. */
   resultPackageId?: string;
   resultVersion?: string;
 }
 
-export interface PublishedPackageRecord {
+/**
+ * A generated package version. The pkg content is IMMUTABLE once written —
+ * generation always bumps to a new version — so sessions pinned to a version
+ * stay truthful. Artifacts may be appended (e.g. test boards) and status may
+ * flip to deprecated; the rules themselves never change in place.
+ */
+export interface RulePackageRecord {
   packageId: string;
   version: string;
-  status: "draft" | "published" | "deprecated";
+  status: "active" | "deprecated";
   createdAt: string;
-  publishedBy?: string;
-  publishedAt?: string;
   pkg: BridgeRulePackage;
   artifacts: BridgeGeneratedArtifact[];
+  /** Golden-board fallback baseline measured at generation (§19.3). */
+  baseline?: { boards: number; bidFallbackRate: number; playFallbackRate: number };
 }
+
+/** @deprecated legacy alias from the pre-revamp publish workflow. */
+export type PublishedPackageRecord = RulePackageRecord;
 
 // Payload helper types used by structuredFields
 export type BidRulePayload = Omit<BidRuleEntry, "provenance" | "explanationItemId">;

@@ -1,16 +1,22 @@
-// Generation runs (Bridge plan §12.10 steps 7-8): approved readable knowledge
-// items -> generated artifacts -> an assembled BridgeRulePackage draft, with
-// lineage on every artifact and a diff against the last published version.
-// Publication (step 8) validates the publish gate and freezes the version.
+// Generation runs (Bridge plan §12.10 steps 7-8): active readable knowledge
+// items -> generated artifacts -> an assembled, immediately usable
+// BridgeRulePackage version, with lineage on every artifact and a diff
+// against the previous version. There is no separate publish step (revised
+// decision 3): every generated version is immutable and carries its
+// golden-board baseline; citation gaps surface as warnings, never blockers.
 
 import {
+  createPackageDecider,
+  GOLDEN_BOARDS,
   KNOWN_PREDICATES,
   KNOWN_PRIMITIVES,
+  runBoards,
   validatePackage,
   type BidRuleEntry,
   type BridgeRulePackage,
   type PlayRuleEntry,
 } from "@bridge/engine";
+import { defaultSettingValues } from "@bridge/config";
 import type { Setting } from "@bridge/config";
 import type {
   BidRulePayload,
@@ -18,7 +24,7 @@ import type {
   BridgeGenerationRun,
   GenerationDiff,
   PlayRulePayload,
-  PublishedPackageRecord,
+  RulePackageRecord,
   RuleDiffEntry,
   SystemFamily,
 } from "./model";
@@ -61,18 +67,20 @@ function diffEntries<T extends object>(
 }
 
 /**
- * Run a generation: collect this system's APPROVED items, assemble the
- * package, validate, diff against the latest published version, and persist
- * a draft package record + the run (with full input-item snapshot).
+ * Run a generation: collect this system's ACTIVE items, assemble the package,
+ * validate structurally, diff against the latest version, measure the
+ * golden-board baseline, and persist the new immutable version + the run
+ * (with full input-item snapshot and citation warnings).
  */
 export async function runGeneration(
   store: KnowledgeStore,
   req: GenerationRequest,
 ): Promise<BridgeGenerationRun> {
   const errors: string[] = [];
-  const approved = await store.listItems({
+  const warnings: string[] = [];
+  const active = await store.listItems({
     systemFamily: req.systemFamily,
-    status: "approved",
+    status: "active",
   });
 
   const fail = async (why: string[]): Promise<BridgeGenerationRun> => {
@@ -82,7 +90,7 @@ export async function runGeneration(
       requestedBy: req.requestedBy,
       createdAt: req.now,
       status: "failed",
-      inputItems: approved.map((i) => ({ itemId: i.itemId, version: i.version })),
+      inputItems: active.map((i) => ({ itemId: i.itemId, version: i.version })),
       diff: null,
       errors: why,
     };
@@ -90,14 +98,20 @@ export async function runGeneration(
     return run;
   };
 
-  const systemItem = approved.find((i) => i.itemType === "system");
-  if (!systemItem) return fail([`no approved "system" item for family ${req.systemFamily}`]);
+  const systemItem = active.find((i) => i.itemType === "system");
+  if (!systemItem) return fail([`no active "system" item for family ${req.systemFamily}`]);
   const packageId = systemItem.structuredFields.packageId as string | undefined;
   if (!packageId) return fail([`system item ${systemItem.itemId} has no structuredFields.packageId`]);
 
+  // Citation coverage: visibility, not a gate (revised decision 3).
+  const warnUncited = (itemId: string, citations: unknown[], sourceIds: string[]): void => {
+    if (!citations.length || !sourceIds.length)
+      warnings.push(`${itemId}: uncited — no source citations; rule will be badged in the UI`);
+  };
+
   const settings: Setting[] = [];
   const settingArtifactSources = new Map<string, string>(); // setting key -> itemId
-  for (const item of approved.filter((i) => i.itemType === "setting_definition")) {
+  for (const item of active.filter((i) => i.itemType === "setting_definition")) {
     const setting = item.structuredFields.setting as Setting | undefined;
     if (!setting) errors.push(`${item.itemId}: setting_definition without structuredFields.setting`);
     else {
@@ -107,55 +121,66 @@ export async function runGeneration(
   }
 
   const bidRules: BidRuleEntry[] = [];
-  for (const item of approved.filter((i) => i.itemType === "bidding_rule")) {
+  for (const item of active.filter((i) => i.itemType === "bidding_rule")) {
     const payload = item.structuredFields.rule as BidRulePayload | undefined;
     if (!payload) {
       errors.push(`${item.itemId}: bidding_rule without structuredFields.rule`);
       continue;
     }
+    warnUncited(item.itemId, item.citations, item.sourceIds);
     bidRules.push({
       ...payload,
       provenance: {
         knowledgeItemIds: [item.itemId, ...(item.relatedItemIds ?? [])],
         sourceIds: item.sourceIds,
-        reviewStatus: "approved",
       },
       explanationItemId: item.itemId,
     });
   }
 
   const playRules: PlayRuleEntry[] = [];
-  for (const item of approved.filter((i) => i.itemType === "play_rule" || i.itemType === "lead_rule")) {
+  for (const item of active.filter((i) => i.itemType === "play_rule" || i.itemType === "lead_rule")) {
     const payload = item.structuredFields.rule as PlayRulePayload | undefined;
     if (!payload) {
       errors.push(`${item.itemId}: ${item.itemType} without structuredFields.rule`);
       continue;
     }
+    warnUncited(item.itemId, item.citations, item.sourceIds);
     playRules.push({
       ...payload,
       provenance: {
         knowledgeItemIds: [item.itemId, ...(item.relatedItemIds ?? [])],
         sourceIds: item.sourceIds,
-        reviewStatus: "approved",
       },
       explanationItemId: item.itemId,
     });
   }
 
-  const previous = await store.getLatestPublished(packageId);
+  const previous = await store.getLatest(packageId);
   const version = bumpVersion(previous?.version ?? null, req.bump ?? "minor");
 
   const pkg: BridgeRulePackage = {
     packageId,
     systemFamily: req.systemFamily,
     version,
-    status: "draft",
+    status: "active",
     settings,
     bidRules,
     playRules,
   };
   errors.push(...validatePackage(pkg, KNOWN_PREDICATES, KNOWN_PRIMITIVES));
   if (errors.length) return fail(errors);
+
+  // §19.3 quality checks (non-blocking warnings, surfaced on the run view):
+  // every setting must be referenced by >=1 rule gate or marked UI-only.
+  const referencedKeys = new Set(
+    [...bidRules, ...playRules].flatMap((r) => r.settingGates.map((g) => g.key)),
+  );
+  warnings.push(
+    ...settings
+      .filter((s) => !referencedKeys.has(s.key) && !s.uiOnly)
+      .map((s) => `§19.3: setting "${s.key}" is referenced by no rule and not marked uiOnly`),
+  );
 
   const diff: GenerationDiff = {
     previousVersion: previous?.version ?? null,
@@ -172,7 +197,7 @@ export async function runGeneration(
       generatedFromSourceIds: r.provenance.sourceIds,
       packageId,
       version,
-      status: "draft" as const,
+      status: "active" as const,
       artifactPayload: r,
     })),
     ...playRules.map((r) => ({
@@ -182,7 +207,7 @@ export async function runGeneration(
       generatedFromSourceIds: r.provenance.sourceIds,
       packageId,
       version,
-      status: "draft" as const,
+      status: "active" as const,
       artifactPayload: r,
     })),
     ...settings.map((s) => ({
@@ -190,22 +215,35 @@ export async function runGeneration(
       artifactType: "setting_registry_entry" as const,
       generatedFromKnowledgeItemIds: [settingArtifactSources.get(s.key)!],
       generatedFromSourceIds:
-        approved.find((i) => i.itemId === settingArtifactSources.get(s.key))?.sourceIds ?? [],
+        active.find((i) => i.itemId === settingArtifactSources.get(s.key))?.sourceIds ?? [],
       packageId,
       version,
-      status: "draft" as const,
+      status: "active" as const,
       artifactPayload: s,
     })),
   ];
 
-  await store.savePackage({
+  // §19.3: measure the golden-board fallback baseline at generation so every
+  // usable version carries a quality number.
+  const harness = await runBoards(
+    GOLDEN_BOARDS,
+    createPackageDecider({ pkg, values: defaultSettingValues(pkg.settings) }),
+  );
+
+  const record: RulePackageRecord = {
     packageId,
     version,
-    status: "draft",
+    status: "active",
     createdAt: req.now,
     pkg,
     artifacts,
-  });
+    baseline: {
+      boards: harness.totals.boards,
+      bidFallbackRate: harness.totals.bidFallbackRate,
+      playFallbackRate: harness.totals.playFallbackRate,
+    },
+  };
+  await store.savePackage(record);
 
   const run: BridgeGenerationRun = {
     runId: req.runId,
@@ -213,9 +251,10 @@ export async function runGeneration(
     requestedBy: req.requestedBy,
     createdAt: req.now,
     status: "completed",
-    inputItems: approved.map((i) => ({ itemId: i.itemId, version: i.version })),
+    inputItems: active.map((i) => ({ itemId: i.itemId, version: i.version })),
     diff,
     errors: [],
+    warnings,
     resultPackageId: packageId,
     resultVersion: version,
   };
@@ -224,42 +263,9 @@ export async function runGeneration(
 }
 
 /**
- * Publish a generated draft (Bridge plan §12.8): re-validate with the
- * publish gate active, flip to published, freeze. Published versions are
- * immutable; corrections create new versions via edit -> re-approve ->
- * regenerate (§12.10 step 10).
- */
-export async function publishPackage(
-  store: KnowledgeStore,
-  packageId: string,
-  version: string,
-  publishedBy: string,
-  now: string,
-): Promise<PublishedPackageRecord> {
-  const record = await store.getPackage(packageId, version);
-  if (!record) throw new Error(`No package ${packageId}@${version}`);
-  if (record.status === "published") throw new Error(`${packageId}@${version} already published`);
-
-  const publishedPkg: BridgeRulePackage = { ...record.pkg, status: "published" };
-  const errors = validatePackage(publishedPkg, KNOWN_PREDICATES, KNOWN_PRIMITIVES);
-  if (errors.length) throw new Error(`Publish gate failed:\n${errors.join("\n")}`);
-
-  const published: PublishedPackageRecord = {
-    ...record,
-    status: "published",
-    publishedBy,
-    publishedAt: now,
-    pkg: publishedPkg,
-    artifacts: record.artifacts.map((a) => ({ ...a, status: "published" })),
-  };
-  await store.savePackage(published);
-  return published;
-}
-
-/**
- * Attach generated test boards to a DRAFT package (Bridge plan §22 Q8: test
- * boards join the publication workflow). Must happen before publishing —
- * published records are immutable. Boards carry their own lineage payload.
+ * Attach generated test boards to a package version (Bridge plan §22 Q8).
+ * Boards are artifacts with their own lineage payload; appending them never
+ * touches the version's rule content (which stays immutable).
  */
 export async function attachTestBoardArtifacts(
   store: KnowledgeStore,
@@ -270,8 +276,6 @@ export async function attachTestBoardArtifacts(
 ): Promise<void> {
   const record = await store.getPackage(packageId, version);
   if (!record) throw new Error(`No package ${packageId}@${version}`);
-  if (record.status === "published")
-    throw new Error("Published packages are immutable — attach test boards before publishing");
   await store.savePackage({
     ...record,
     artifacts: [
@@ -283,7 +287,7 @@ export async function attachTestBoardArtifacts(
         generatedFromSourceIds: [],
         packageId,
         version,
-        status: "draft" as const,
+        status: "active" as const,
         artifactPayload: board,
       })),
     ],

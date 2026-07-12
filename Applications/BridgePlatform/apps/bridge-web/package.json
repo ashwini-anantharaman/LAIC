@@ -10,19 +10,25 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "@bridge/config": "workspace:*",
     "@bridge/dealer": "workspace:*",
     "@bridge/engine": "workspace:*",
+    "@bridge/evaluator": "workspace:*",
     "@bridge/events": "workspace:*",
     "@bridge/knowledge": "workspace:*",
     "@bridge/nexus-client": "workspace:*",
+    "@bridge/pg-stores": "workspace:*",
+    "@bridge/profiles": "workspace:*",
+    "@bridge/progress": "workspace:*",
     "@bridge/sessions": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.110.1",
     "next": "^16.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "unpdf": "^1.6.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",

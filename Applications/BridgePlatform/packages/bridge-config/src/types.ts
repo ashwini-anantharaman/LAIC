@@ -71,6 +71,8 @@ export interface Setting {
   max?: number;
   /** Origin tag (informational; provenance proper lives on knowledge items). */
   origin: string;
+  /** §19.3: settings must be referenced by >=1 rule gate OR marked UI-only. */
+  uiOnly?: boolean;
 }
 
 export interface Module {

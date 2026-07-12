@@ -4,16 +4,15 @@ import {
   specFromTeachingScope,
   verifyBoards,
   type DealGenerationReport,
-  type TeachingScopeFields,
 } from "@bridge/dealer";
 import { rankLabel, type Card } from "@bridge/events";
 import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
-import { latestPublishedPackage } from "@/lib/sessions";
+import { profileService } from "@/lib/profiles";
+import { latestPackage } from "@/lib/sessions";
 
 const GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const handString = (hand: Card[]): string =>
@@ -31,28 +30,25 @@ const handString = (hand: Card[]): string =>
 
 export default async function BoardsPage({
   searchParams,
-}: Readonly<{ searchParams: Promise<{ seed?: string; count?: string }> }>) {
+}: Readonly<{ searchParams: Promise<{ seed?: string; count?: string; scopeId?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const isAdmin = canAccessAdminArea(context);
-  const { seed, count } = await searchParams;
+  const { seed, count, scopeId } = await searchParams;
 
-  const scopeItem = await knowledgeStore().getItem("ki_bn_scope_level1");
+  const service = await profileService();
+  const scopes = await service.listScopes(context);
+  const scopeRec = scopes.find((s) => s.teachingScopeId === (scopeId ?? "ts_system_bn_level1")) ?? scopes[0];
 
   let report: DealGenerationReport | null = null;
   let violations = 0;
-  if (isAdmin && seed && scopeItem) {
-    const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  if (isAdmin && seed && scopeRec) {
+    const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
     const ctx = { pkg, values: defaultSettingValues(pkg.settings) };
     const spec = specFromTeachingScope(
-      scopeItem.itemId,
-      scopeItem.structuredFields.scope as TeachingScopeFields,
-      {
-        seed: Number(seed),
-        count: Math.min(Number(count) || 10, 50),
-        dealer: "S",
-        namePrefix: "L1",
-      },
+      scopeRec.teachingScopeId,
+      { scopeId: scopeRec.teachingScopeId, evaluatorFilter: scopeRec.evaluatorFilter, targetConceptIds: scopeRec.targetConceptIds },
+      { seed: Number(seed), count: Math.min(Number(count) || 10, 50), dealer: "S", namePrefix: scopeRec.name },
     );
     report = generateConstrainedBoards(spec, ctx);
     violations = verifyBoards(report.boards, spec, ctx).length;
@@ -62,19 +58,16 @@ export default async function BoardsPage({
     <div className="mx-auto max-w-4xl space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Boards & Deals</h1>
 
-      {scopeItem && (
+      {scopeRec && (
         <section className="rounded-lg border border-neutral-200 p-4">
-          <h2 className="mb-1 font-medium">{scopeItem.title}</h2>
-          <p className="text-sm text-neutral-600">{scopeItem.humanReadableRule}</p>
-          <p className="mt-1 text-xs text-neutral-500">
-            Teaching scope{" "}
-            <Link
-              href={`/bridge/admin/knowledge/${scopeItem.itemId}`}
-              className="text-emerald-700 hover:underline"
-            >
-              {scopeItem.itemId}
-            </Link>{" "}
-            ({scopeItem.status}) — used by “Practice at my level” on the Play page.
+          <h2 className="mb-1 font-medium">{scopeRec.name}</h2>
+          <p className="text-sm text-neutral-600">
+            {scopeRec.description ?? "Coach-defined teaching scope."} Levels are
+            coach judgment — manage yours on the{" "}
+            <Link href="/bridge/players" className="text-emerald-700 hover:underline">
+              Players page
+            </Link>
+            .
           </p>
         </section>
       )}

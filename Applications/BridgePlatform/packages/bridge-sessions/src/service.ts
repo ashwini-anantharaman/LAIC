@@ -68,6 +68,7 @@ export interface CreateSessionInput {
   resolvedValues: Record<string, SettingValue>;
   /** Defaults to four deterministic AI seats. */
   seats?: Partial<Record<Seat, SeatAssignment>>;
+  launchRef?: string;
 }
 
 export interface SessionView {
@@ -105,9 +106,9 @@ export class SessionService {
   }
 
   async createSession(input: CreateSessionInput): Promise<BridgeSessionRecord> {
-    if (input.pkg.status !== "published")
+    if (input.pkg.status === "deprecated")
       throw new Error(
-        `Sessions run against published packages only (got ${input.pkg.packageId}@${input.pkg.version}: ${input.pkg.status})`,
+        `Package ${input.pkg.packageId}@${input.pkg.version} is deprecated — generate a current version`,
       );
     const seats: Record<Seat, SeatAssignment> = {
       N: { seat: "N", playerKind: "deterministic_ai" },
@@ -126,6 +127,7 @@ export class SessionService {
       resolvedValueHash: hashValues(input.resolvedValues),
       board: input.board,
       seats,
+      launchRef: input.launchRef,
       createdBy: input.context.nexusUserId,
       createdAt: this.now(),
     };

@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_role_key: str = ""
 
+    # --- Bridge Program integration surface (added by the bridge workstream;
+    # see NEXUS_BRIDGE_INTEGRATION.md). Program-level roles are config-seeded
+    # until a proper grant UI exists.
+    laic_org_id: str = "org_laic"
+    bridge_program_admin_emails: str = ""
+    bridge_reviewer_emails: str = ""
+
     # CORS: primary frontend origin (owlwise-2 on Vercel or local dev).
     frontend_origin: str = "http://localhost:5173"
     # Comma-separated extra origins (e.g. platform_logic Vercel URL).

@@ -1,5 +1,5 @@
 // Trace resolution (Bridge plan §12.10 step 9): runtime rule -> generated
-// artifact -> approved readable knowledge item -> source documents. This is
+// artifact -> readable knowledge item -> source documents. This is
 // what the table's "why did the AI do that?" panel calls (Phase 5).
 
 import type {

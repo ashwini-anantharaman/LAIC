@@ -32,7 +32,7 @@ export interface BridgeSessionRecord {
   sessionType: SessionType;
   status: SessionStatus;
   /**
-   * Replay stability (Bridge plan §11.4): the exact published package version
+   * Replay stability (Bridge plan §11.4): the exact package version
    * and resolved configuration this session runs under, plus a hash so drift
    * is detectable even if values are re-derived later.
    */
@@ -41,6 +41,8 @@ export interface BridgeSessionRecord {
   resolvedValueHash: string;
   board: BoardInput;
   seats: Record<Seat, SeatAssignment>;
+  /** Learning-platform activity launch this session fulfils (LP §13.3). */
+  launchRef?: string;
   createdBy: string; // nexusUserId
   createdAt: string;
   completedAt?: string;

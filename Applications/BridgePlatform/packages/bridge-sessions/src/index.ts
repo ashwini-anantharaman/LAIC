@@ -2,7 +2,7 @@
  * @bridge/sessions
  *
  * Persistent, tenant-scoped bridge sessions (Bridge plan §8, §15-16, §21):
- * event-sourced session records pinned to an exact published package version
+ * event-sourced session records pinned to an exact generated package version
  * + resolved-config hash (replay stability, §11.4), a stateless service that
  * reconstructs games from the persisted event log via the engine's primed
  * histories, honest human-action commits, and undo across the persistence

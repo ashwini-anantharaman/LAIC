@@ -21,7 +21,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/bridge/progress", label: "Progress" },
   {
     href: "/bridge/admin",
-    label: "Admin & Expert Review",
+    label: "Knowledge admin",
     requiresRoles: ADMIN_AREA_ROLES,
   },
 ];

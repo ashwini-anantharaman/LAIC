@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { publishGeneratedPackage } from "@/app/bridge/admin/actions";
+import { createPlayerFromPackage } from "@/app/bridge/players/actions";
 import { knowledgeStore } from "@/lib/knowledge";
 import type { RuleDiffEntry } from "@bridge/knowledge";
 
@@ -64,6 +64,17 @@ export default async function RunPage({
         </section>
       )}
 
+      {(run.warnings?.length ?? 0) > 0 && (
+        <section className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <h2 className="mb-1 text-sm font-medium text-amber-800">Quality warnings (§19.3)</h2>
+          <ul className="list-inside list-disc text-sm text-amber-700">
+            {run.warnings!.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {run.diff && (
         <section className="space-y-3 rounded-lg border border-neutral-200 p-4">
           <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
@@ -76,25 +87,37 @@ export default async function RunPage({
       )}
 
       {pkg && (
-        <section className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4">
-          <span className="font-mono text-sm">
-            {pkg.packageId}@{pkg.version}
-          </span>
-          <span className={pkg.status === "published" ? "text-sm text-emerald-700" : "text-sm text-amber-700"}>
-            {pkg.status}
-          </span>
-          {pkg.status === "draft" && (
-            <form action={publishGeneratedPackage}>
-              <input type="hidden" name="packageId" value={pkg.packageId} />
-              <input type="hidden" name="version" value={pkg.version} />
-              <button type="submit" className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
-                Publish {pkg.version}
-              </button>
-            </form>
-          )}
-          <span className="text-xs text-neutral-500">
-            Publishing re-validates the provenance gate and freezes this version.
-          </span>
+        <section className="space-y-2 rounded-lg border border-neutral-200 p-4">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm">
+              {pkg.packageId}@{pkg.version}
+            </span>
+            <span className={pkg.status === "deprecated" ? "text-sm text-red-700" : "text-sm text-emerald-700"}>
+              {pkg.status}
+            </span>
+            {pkg.baseline && (
+              <span className="text-xs text-neutral-500">
+                baseline: {pkg.baseline.boards} boards, fallback bid{" "}
+                {(pkg.baseline.bidFallbackRate * 100).toFixed(1)}% / play{" "}
+                {(pkg.baseline.playFallbackRate * 100).toFixed(1)}%
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-neutral-500">
+            This version is immutable — sessions and players pin it exactly.
+          </p>
+          <form action={createPlayerFromPackage} className="flex items-center gap-2">
+            <input type="hidden" name="packageId" value={pkg.packageId} />
+            <input type="hidden" name="version" value={pkg.version} />
+            <input
+              name="name"
+              placeholder={`Player name (default: ${pkg.packageId}@${pkg.version} player)`}
+              className="w-72 rounded border border-neutral-300 px-2 py-1 text-xs"
+            />
+            <button type="submit" className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
+              Create player from this version
+            </button>
+          </form>
         </section>
       )}
 

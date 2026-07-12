@@ -1,19 +1,17 @@
 "use server";
 
 import { defaultSettingValues } from "@bridge/config";
-import {
-  generateConstrainedBoards,
-  specFromTeachingScope,
-  type TeachingScopeFields,
-} from "@bridge/dealer";
+import { generateConstrainedBoards, specFromTeachingScope } from "@bridge/dealer";
 import { seededBoard } from "@bridge/engine";
 import type { Seat } from "@bridge/events";
 import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { knowledgeStore } from "@/lib/knowledge";
+import { resolveProfileValues } from "@bridge/profiles";
 import { getBridgeContext } from "@/lib/nexus";
-import { latestPublishedPackage, sessionService } from "@/lib/sessions";
+import { profileService } from "@/lib/profiles";
+import { recomputeSignalsSafe } from "@/lib/progress";
+import { latestPackage, sessionService } from "@/lib/sessions";
 
 async function requireContext() {
   const context = await getBridgeContext();
@@ -25,13 +23,20 @@ export async function createPracticeSession(formData: FormData) {
   const context = await requireContext();
   const seed = Number(formData.get("seed")) || 1;
   const humanSeat = formData.get("humanSeat") as Seat | "watch" | null;
-  const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const profileId = String(formData.get("profileId") || "");
+  const profile = profileId
+    ? await (await profileService()).getProfile(profileId, context)
+    : null;
+  const resolvedValues = profile
+    ? resolveProfileValues(pkg.settings, profile.selectedPresetId, profile.valueOverrides).values
+    : defaultSettingValues(pkg.settings);
   const record = await sessionService().createSession({
     context,
     sessionType: "single_board",
     board: seededBoard(seed),
     pkg,
-    resolvedValues: defaultSettingValues(pkg.settings),
+    resolvedValues,
     seats:
       humanSeat && humanSeat !== "watch"
         ? {
@@ -54,6 +59,7 @@ export async function stepSession(formData: FormData) {
   const context = await requireContext();
   const id = String(formData.get("sessionId"));
   await sessionService().step(id, context);
+  await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
 
@@ -61,6 +67,7 @@ export async function autoplaySession(formData: FormData) {
   const context = await requireContext();
   const id = String(formData.get("sessionId"));
   await sessionService().autoplay(id, context);
+  await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
 
@@ -68,6 +75,7 @@ export async function undoSession(formData: FormData) {
   const context = await requireContext();
   const id = String(formData.get("sessionId"));
   await sessionService().undo(id, context);
+  await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
 
@@ -78,6 +86,7 @@ export async function humanBid(formData: FormData) {
   const call = String(formData.get("call"));
   await sessionService().applyExternalAction(id, context, seat, { kind: "bid", call });
   await sessionService().autoplay(id, context); // AI responds up to the next human turn
+  await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
 
@@ -88,6 +97,7 @@ export async function humanPlay(formData: FormData) {
   const cardId = String(formData.get("cardId"));
   await sessionService().applyExternalAction(id, context, seat, { kind: "play", cardId });
   await sessionService().autoplay(id, context);
+  await recomputeSignalsSafe(id);
   revalidatePath(`/bridge/play/${id}`);
 }
 
@@ -98,15 +108,16 @@ export async function humanPlay(formData: FormData) {
 export async function createLevelPracticeSession(formData: FormData) {
   const context = await requireContext();
   const seed = Number(formData.get("seed")) || Math.floor(Math.random() * 1_000_000);
-  const scopeItem = await knowledgeStore().getItem("ki_bn_scope_level1");
-  if (!scopeItem || scopeItem.status !== "approved")
-    throw new Error("Level-1 teaching scope is not approved in the knowledge base");
-  const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  // The scope is the COACH'S (or default) record — never an objective level.
+  const scopeId = String(formData.get("scopeId") || "ts_system_bn_level1");
+  const scope = await (await profileService()).getScope(scopeId, context);
+  if (!scope) throw new Error("Teaching scope not found in your scope");
+  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
   const values = defaultSettingValues(pkg.settings);
   const spec = specFromTeachingScope(
-    scopeItem.itemId,
-    scopeItem.structuredFields.scope as TeachingScopeFields,
-    { seed, count: 1, dealer: "S", namePrefix: "Level 1 practice" },
+    scope.derivedFromItemId ?? scope.teachingScopeId,
+    { scopeId: scope.teachingScopeId, evaluatorFilter: scope.evaluatorFilter, targetConceptIds: scope.targetConceptIds },
+    { seed, count: 1, dealer: "S", namePrefix: scope.name },
   );
   const board = generateConstrainedBoards(spec, { pkg, values }).boards[0]!;
   const record = await sessionService().createSession({

@@ -18,25 +18,39 @@ export default async function KnowledgeItemPage({
         <h1 className="text-2xl font-semibold tracking-tight">{item.title}</h1>
         <p className="text-xs text-neutral-500">
           {item.itemId} · {item.itemType} · {item.systemFamily} · v{item.version} ·{" "}
-          {item.status}
-          {item.approvedBy ? ` (approved by ${item.approvedBy})` : ""} ·{" "}
-          {revisions.length} prior revision{revisions.length === 1 ? "" : "s"}
+          {item.status} · {revisions.length} prior revision{revisions.length === 1 ? "" : "s"}
+          {item.citations.length === 0 && (
+            <span className="ml-2 rounded bg-amber-50 px-2 py-0.5 text-amber-800">uncited</span>
+          )}
         </p>
       </header>
 
       <section className="rounded-lg border border-neutral-200 p-4">
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">Citations</h2>
+        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
+          Where this rule comes from
+        </h2>
         {item.citations.length ? (
           <ul className="space-y-1 text-sm">
             {item.citations.map((c, i) => (
               <li key={i}>
                 <span className="font-medium">{c.sourceId}:</span>{" "}
                 <span className="text-neutral-600">{c.passage}</span>
+                {c.passageId && (
+                  <a
+                    href={`/bridge/admin/sources/${c.sourceId}#${c.passageId.split("#")[1]}`}
+                    className="ml-2 text-xs text-emerald-700 hover:underline"
+                  >
+                    open passage →
+                  </a>
+                )}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-amber-700">No citations — this item cannot support published rules.</p>
+          <p className="text-sm text-amber-700">
+            No citations yet — rules from this item are badged "uncited" until a
+            passage is matched.
+          </p>
         )}
         {gaps.length > 0 && (
           <p className="mt-2 text-xs text-neutral-500">
@@ -47,7 +61,7 @@ export default async function KnowledgeItemPage({
 
       <form action={saveItemEdit} className="space-y-3 rounded-lg border border-neutral-200 p-4">
         <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
-          Edit (any edit returns the item to review and bumps its version)
+          Edit (bumps the version; existing package versions keep the old text)
         </h2>
         <input type="hidden" name="itemId" value={item.itemId} />
         <input
@@ -71,7 +85,7 @@ export default async function KnowledgeItemPage({
           name="reviewerNotes"
           defaultValue={item.reviewerNotes}
           rows={2}
-          placeholder="Reviewer notes"
+          placeholder="Notes"
           className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
         />
         <button type="submit" className="rounded bg-neutral-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-900">
@@ -80,21 +94,20 @@ export default async function KnowledgeItemPage({
       </form>
 
       <div className="flex gap-2">
-        {item.status !== "approved" && (
+        {item.status === "active" ? (
           <form action={setItemStatus}>
             <input type="hidden" name="itemId" value={item.itemId} />
-            <input type="hidden" name="status" value="approved" />
-            <button type="submit" className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
-              Approve
+            <input type="hidden" name="status" value="deprecated" />
+            <button type="submit" className="rounded border border-red-600 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50">
+              Deprecate (exclude from future generations)
             </button>
           </form>
-        )}
-        {item.status === "approved" && (
+        ) : (
           <form action={setItemStatus}>
             <input type="hidden" name="itemId" value={item.itemId} />
-            <input type="hidden" name="status" value="needs_review" />
-            <button type="submit" className="rounded border border-amber-600 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50">
-              Send back to review
+            <input type="hidden" name="status" value="active" />
+            <button type="submit" className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
+              Restore to active
             </button>
           </form>
         )}

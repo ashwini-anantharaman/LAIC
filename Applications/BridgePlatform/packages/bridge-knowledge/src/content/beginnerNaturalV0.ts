@@ -2,16 +2,15 @@
 // through the pipeline (execution plan Phase 3 task 5).
 //
 // HONESTY NOTES
-// - Citations marked "paraphrase:" summarize the cited section from the
-//   workstream developer's knowledge of the source; gap
-//   `gap_bn_citation_verification` stays open until a bridge fellow verifies
-//   each passage against the physical documents.
-// - Approval below is the dev-world reviewer (stub user Rhea Kapoor). Every
-//   item's reviewerNotes flag that bridge-fellow re-review is pending; any
-//   item can be edited and regenerated (correction loop, Bridge plan §12.10
-//   step 10).
+// - Sources are real published documents with working URLs (the ACBL SAYC
+//   System Booklet PDF and the WBF Laws of Duplicate Bridge 2017 PDF).
+//   Citations carry page/section anchors verified against those PDFs on
+//   2026-07-09 (gap_bn_citation_verification records the verification).
 // - Teaching-level simplifications are EXPERT DECISIONS with their own items
-//   and gap entries — never silently blended into source claims.
+//   and gap entries — never silently blended into source claims. Those cite
+//   src_bn_expert_notes, the workstream's own decision record: the decisions
+//   are OURS, and pinning them on an external source would be false
+//   provenance. Fellows ratify or overturn them by editing the items.
 
 import type {
   BidRulePayload,
@@ -34,40 +33,43 @@ const REVIEWER = "user_reviewer_rhea"; // dev-world stub reviewer
 export const SOURCES: BridgeKnowledgeSource[] = [
   {
     sourceId: "src_sayc_booklet",
-    title: "ACBL Standard American Yellow Card (SAYC) System Booklet",
+    title: "ACBL SAYC System Booklet (Revised January 2006, SP3 #170358)",
     sourceType: "standard_doc",
     systemFamily: "SAYC",
     rightsStatus: "public_reference",
     uploadedBy: AUTHOR,
     uploadedAt: NOW,
     status: "registered",
-    locator: "ACBL published SAYC pamphlet (acbl.org)",
+    locator:
+      "https://web2.acbl.org/documentlibrary/play/SP3%20(bk)%20single%20pages.pdf",
     notes:
-      "Baseline reference for natural/SAYC agreements. Beginner Natural v0 simplifies from it via explicit expert decisions.",
+      "The ACBL's published SAYC system booklet (8-page PDF). Baseline reference for natural/SAYC agreements; Beginner Natural v0 simplifies from it via explicit expert decisions. Page anchors in citations refer to this PDF's printed page numbers.",
   },
   {
     sourceId: "src_laws_duplicate",
-    title: "Laws of Duplicate Bridge 2017 (WBF)",
+    title: "Laws of Duplicate Bridge 2017 (World Bridge Federation)",
     sourceType: "standard_doc",
     rightsStatus: "public_reference",
     uploadedBy: AUTHOR,
     uploadedAt: NOW,
     status: "registered",
-    locator: "worldbridge.org — Laws of Duplicate Bridge 2017",
+    locator:
+      "https://www.worldbridge.org/wp-content/uploads/2017/03/2017LawsofDuplicateBridge-nohighlights.pdf",
     notes:
-      "Cited for game mechanics implemented in the engine's predicate/legality layer (legal calls, follow suit, trick winner).",
+      "Official WBF PDF (overview page: https://www.worldbridge.org/regulations/2017-laws-of-duplicate-bridge/). Cited for game mechanics implemented in the engine's predicate/legality layer (legal calls, follow suit, trick winner).",
   },
   {
     sourceId: "src_bn_expert_notes",
-    title: "LAIC Bridge fellow / expert notes — Beginner Natural teaching system",
+    title: "Bridge workstream teaching decisions — Beginner Natural",
     sourceType: "expert_notes",
     systemFamily: "natural",
     rightsStatus: "owned",
     uploadedBy: AUTHOR,
     uploadedAt: NOW,
     status: "registered",
+    locator: "this repository — the expert_decision items themselves are the record",
     notes:
-      "Placeholder for the fellows' teaching decisions. v0 expert decisions were drafted by the workstream developer and await fellow ratification.",
+      "Internal decision record for deliberate teaching simplifications (e.g. HCP-only ranges, equal-minors 1C, crude v0 play rules). These decisions are the workstream's own — citing an external document for them would be false provenance. Underlying bridge facts cite the published sources; fellows ratify or overturn decisions by editing the items.",
   },
   {
     sourceId: "src_prototype_artifacts",
@@ -93,10 +95,14 @@ export const GAPS: BridgeKnowledgeGap[] = [
     systemFamily: "natural",
     area: "citation",
     description:
-      "All v0 citations are paraphrases from developer knowledge. A bridge fellow must verify each passage against the physical SAYC booklet / Laws and replace paraphrases with exact section references.",
+      "v0 citations were originally paraphrases from developer knowledge without locators. Resolved: sources now carry working URLs to the published PDFs, and every citation was checked against the ACBL SAYC booklet (Rev. 1/06) and given a page/section anchor. One real discrepancy was found and fixed: the 1NT response range is 6-9 per the booklet (p.3), not the 6-10 originally written.",
     detectedFrom: ["src_sayc_booklet", "src_laws_duplicate"],
     severity: "important",
-    resolutionStatus: "expert_decision_needed",
+    resolutionStatus: "resolved",
+    expertResolution:
+      "Verified against the published PDFs on 2026-07-09; citations updated to page/section anchors; 1NT response corrected to 6-9.",
+    resolvedBy: AUTHOR,
+    resolvedAt: "2026-07-09T00:00:00.000Z",
     createdAt: NOW,
   },
   {
@@ -166,31 +172,34 @@ export const GAPS: BridgeKnowledgeGap[] = [
 // Item helpers
 // ---------------------------------------------------------------------------
 
-const sayc = (passage: string): Citation => ({
+/** Citation into the ACBL SAYC booklet PDF, anchored to a printed page/section. */
+const sayc = (ref: string, passage: string): Citation => ({
   sourceId: "src_sayc_booklet",
-  passage: `paraphrase: ${passage}`,
+  passage: `SAYC booklet ${ref}: ${passage}`,
+});
+const laws = (ref: string, passage: string): Citation => ({
+  sourceId: "src_laws_duplicate",
+  passage: `Laws of Duplicate Bridge 2017, ${ref}: ${passage}`,
 });
 const expertNote = (passage: string): Citation => ({
   sourceId: "src_bn_expert_notes",
   passage,
 });
 
-const PENDING = "Initial v0 approval by workstream developer in the dev store; bridge-fellow re-review pending (gap_bn_citation_verification).";
+const PENDING = "Citations verified against the published PDFs (see gap_bn_citation_verification); fellows adjust by editing this item.";
 
 type ItemSeed = Omit<
   BridgeReadableKnowledgeItem,
-  "version" | "createdBy" | "createdAt" | "approvedBy" | "approvedAt" | "status" | "systemFamily"
+  "version" | "createdBy" | "createdAt" | "status" | "systemFamily"
 > & { systemFamily?: BridgeReadableKnowledgeItem["systemFamily"] };
 
-const approved = (seed: ItemSeed): BridgeReadableKnowledgeItem => ({
+const item = (seed: ItemSeed): BridgeReadableKnowledgeItem => ({
   systemFamily: "natural",
   ...seed,
-  status: "approved",
+  status: "active",
   version: "1",
   createdBy: AUTHOR,
   createdAt: NOW,
-  approvedBy: REVIEWER,
-  approvedAt: NOW,
   reviewerNotes: seed.reviewerNotes ? `${seed.reviewerNotes} ${PENDING}` : PENDING,
 });
 
@@ -203,7 +212,7 @@ const playRule = (rule: PlayRulePayload) => ({ rule });
 
 export const ITEMS: BridgeReadableKnowledgeItem[] = [
   // ---- expert decisions ---------------------------------------------------
-  approved({
+  item({
     itemId: "ed_bn_scope",
     itemType: "expert_decision",
     title: "Beginner Natural v0 teaching scope",
@@ -214,21 +223,21 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     citations: [expertNote("Level-1 scope decision drafted for fellow ratification.")],
     gapIds: ["gap_bn_no_nt_openings", "gap_bn_competitive", "gap_bn_opener_rebids"],
   }),
-  approved({
+  item({
     itemId: "ed_bn_hcp_only",
     itemType: "expert_decision",
     title: "v0 uses HCP-only ranges",
     humanReadableRule:
-      "SAYC evaluates openings with total points (HCP + distribution). v0 uses HCP only — open with 12–21 HCP — because beginners learn HCP first. Distribution points return at Level 2.",
+      "SAYC evaluates hands in total points (HCP + length); its opener-rebid ranges start at a 13–15 point minimum, i.e. openings begin around 13 total points. v0 uses HCP only with a 12-HCP opening threshold — beginners learn HCP first, and 12 HCP approximates 13 total points. Distribution points return at Level 2.",
     structuredFields: {},
     sourceIds: ["src_bn_expert_notes"],
     citations: [
-      expertNote("HCP-only simplification for Level 1."),
-      sayc("Opening bids are evaluated with high-card points plus length points; about 13 points opens the bidding."),
+      expertNote("HCP-only ranges and the 12-HCP threshold are Level-1 simplification decisions."),
+      sayc("p.3, opener's rebids", "\"Rebids with a minimum hand (13–15 points)\" — openings are counted in total points starting around 13."),
     ],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ed_bn_equal_minors",
     itemType: "expert_decision",
     title: "Equal-length minors open 1♣",
@@ -237,14 +246,14 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     structuredFields: {},
     sourceIds: ["src_bn_expert_notes"],
     citations: [
-      expertNote("One-rule simplification accepted for Level 1."),
-      sayc("With no five-card major, open the longer minor; open 1C with 3-3, 1D with 4-4 in the minors."),
+      expertNote("One-rule simplification accepted for Level 1 (deviates from SAYC in the 4-4 case)."),
+      sayc("p.1, General Approach", "\"Normally open 1D with 4–4 in the minors. Normally open 1C with 3–3 in the minors.\""),
     ],
     gapIds: ["gap_bn_equal_minors"],
   }),
 
   // ---- system + settings --------------------------------------------------
-  approved({
+  item({
     itemId: "ki_bn_system",
     itemType: "system",
     title: "Beginner Natural (Level 1) system definition",
@@ -252,20 +261,20 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       "A five-card-major natural system reduced to Level-1 scope (see ed_bn_scope). Intended learner level: new/beginner. Package: bridge_system_beginner_natural.",
     structuredFields: { packageId: "bridge_system_beginner_natural" },
     sourceIds: ["src_sayc_booklet", "src_bn_expert_notes"],
-    citations: [sayc("SAYC is a five-card major system.")],
+    citations: [sayc("p.1, General Approach", "\"Normally open five-card majors in all seats.\"")],
     relatedItemIds: ["ed_bn_scope"],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_setting_1nt_response",
     itemType: "setting_definition",
     title: "Setting: 1NT response to a suit opening",
     humanReadableRule:
-      "Toggle whether the 1NT response (6–10 HCP catch-all over partner's suit opening) is part of the system. Default on.",
+      "Toggle whether the 1NT response (6–9 HCP catch-all over partner's suit opening) is part of the system. Default on.",
     structuredFields: {
       setting: {
         key: "bn_1nt_response",
-        label: "1NT response (6–10)",
+        label: "1NT response (6–9)",
         control: "toggle",
         default: true,
         module: "bn_responses",
@@ -275,21 +284,21 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
         coach_supported: true,
         binds_to: "convention_rules",
         aliases: [],
-        description: "Respond 1NT with 6–10 HCP when no raise or new suit at the one level is available.",
+        description: "Respond 1NT with 6–9 HCP when no raise or new suit at the one level is available.",
         origin: "SAYC",
       },
     },
     sourceIds: ["src_sayc_booklet"],
-    citations: [sayc("A 1NT response to a suit opening shows 6–10 points.")],
+    citations: [sayc("p.3, responses to 1H/1S", "\"1NT = 6–9 points, denies four spades or three hearts. NOT forcing.\"")],
     gapIds: [],
   }),
 
-  approved({
+  item({
     itemId: "ki_bn_scope_level1",
     itemType: "teaching_scope",
-    title: "Level 1 practice scope: dealer holds a one-of-a-suit opening",
+    title: "SUGGESTED Level-1 scope: dealer holds a one-of-a-suit opening",
     humanReadableRule:
-      "Level 1 practice deals are constrained so the dealer's systemic action is a one-of-a-suit opening (1\u2663/1\u2666/1\u2665/1\u2660) \u2014 never pass, and never an action outside Level-1 scope (no NT openings by system definition; enforced by evaluator filter so it stays true even when later systems add NT openings). Learners therefore always practice opening or responding.",
+      "FELLOW-SUGGESTED DEFAULT — there is no objective Level 1: coaches own their teaching scopes and set levels per their judgment (this item only seeds the system-default scope record). Suggested Level-1 practice deals are constrained so the dealer's systemic action is a one-of-a-suit opening (1\u2663/1\u2666/1\u2665/1\u2660) \u2014 never pass, and never an action outside Level-1 scope (no NT openings by system definition; enforced by evaluator filter so it stays true even when later systems add NT openings). Learners therefore always practice opening or responding.",
     structuredFields: {
       scope: {
         scopeId: "bn_level1",
@@ -308,7 +317,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
   }),
 
   // ---- bidding rules -------------------------------------------------------
-  approved({
+  item({
     itemId: "ki_bn_open_major",
     itemType: "bidding_rule",
     title: "Open the longest major (12–21 HCP, 5+ cards)",
@@ -330,12 +339,12 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     }),
     sourceIds: ["src_sayc_booklet", "src_bn_expert_notes"],
     citations: [
-      sayc("Major-suit openings promise at least a five-card suit; with two five-card suits open the higher-ranking."),
+      sayc("p.1, General Approach", "\"Normally open five-card majors in all seats. Open the higher of long suits of equal length: 5–5 or 6–6.\""),
     ],
     relatedItemIds: ["ed_bn_hcp_only"],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_open_minor",
     itemType: "bidding_rule",
     title: "Open the longer minor (12–21 HCP, no 5-card major)",
@@ -356,11 +365,14 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       action: { kind: "openLongest", among: "minors", level: 1, tieBreak: "lower" },
     }),
     sourceIds: ["src_sayc_booklet", "src_bn_expert_notes"],
-    citations: [sayc("With no five-card major, open the longer minor.")],
+    citations: [
+      sayc("p.5, responses to 1C/1D", "\"A 1D opener suggests a four-card or longer suit, since 1C is preferred on hands where a three-card minor suit must be opened.\""),
+      sayc("p.1, General Approach", "1D with 4–4 in the minors, 1C with 3–3 (v0 deviates in the 4–4 case — see ed_bn_equal_minors)."),
+    ],
     relatedItemIds: ["ed_bn_hcp_only", "ed_bn_equal_minors"],
     gapIds: ["gap_bn_equal_minors"],
   }),
-  approved({
+  item({
     itemId: "ki_bn_open_pass",
     itemType: "bidding_rule",
     title: "Pass in opening position with 0–11 HCP",
@@ -375,11 +387,11 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       action: { kind: "pass" },
     }),
     sourceIds: ["src_sayc_booklet", "src_bn_expert_notes"],
-    citations: [sayc("Hands below opening strength pass.")],
+    citations: [sayc("p.3, opener's rebids", "opening strength starts around 13 total points (\"minimum hand (13–15 points)\") — hands below it pass.")],
     relatedItemIds: ["ed_bn_hcp_only"],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_raise_partner",
     itemType: "bidding_rule",
     title: "Single raise of partner's suit opening (6–10 HCP, 3+ support)",
@@ -400,10 +412,10 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       action: { kind: "raisePartner", toLevel: 2 },
     }),
     sourceIds: ["src_sayc_booklet"],
-    citations: [sayc("A single raise shows 6–10 points and adequate trump support (three cards for a major).")],
+    citations: [sayc("p.3, responses to 1H/1S", "\"2H = three-card or longer heart support; 6–10 dummy points.\"")],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_new_suit",
     itemType: "bidding_rule",
     title: "New suit at the one level (6+ HCP, 4+ cards)",
@@ -420,31 +432,32 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
     }),
     sourceIds: ["src_sayc_booklet", "src_bn_expert_notes"],
     citations: [
-      sayc("A new suit at the one level shows 6+ points and four or more cards."),
-      expertNote("v0 orders candidates longest-first, cheaper suit on ties (up-the-line refinement deferred)."),
+      sayc("p.3, responses to 1H/1S", "\"1S = at least four spades, 6 or more points.\""),
+      sayc("p.5, responses to 1C/1D", "\"Bidding at the one level is up-the-line in principle.\""),
+      expertNote("v0 deviates from up-the-line: candidates are ordered longest-first, cheaper suit on ties (refinement deferred)."),
     ],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_1nt_response",
     itemType: "bidding_rule",
-    title: "1NT response (6–10 HCP catch-all)",
+    title: "1NT response (6–9 HCP catch-all)",
     humanReadableRule:
-      "Over partner's suit opening, with 6–10 HCP and neither a raise nor a one-level new suit available, respond 1NT.",
+      "Over partner's suit opening, with 6–9 HCP and neither a raise nor a one-level new suit available, respond 1NT.",
     structuredFields: bidRule({
       ruleId: "bn_1nt_response",
-      title: "1NT response (6–10 HCP catch-all)",
+      title: "1NT response (6–9 HCP catch-all)",
       priority: 30,
       settingGates: [{ key: "bn_1nt_response" }],
       auctionContext: { role: "response", partnerLastBidRegex: "^1[CDHS]$" },
-      handConditions: { predicate: "hcpRange", params: { min: 6, max: 10 } },
+      handConditions: { predicate: "hcpRange", params: { min: 6, max: 9 } },
       action: { kind: "call", call: "1N" },
     }),
     sourceIds: ["src_sayc_booklet"],
-    citations: [sayc("A 1NT response to a suit opening shows 6–10 points.")],
+    citations: [sayc("p.3, responses to 1H/1S", "\"1NT = 6–9 points, denies four spades or three hearts. NOT forcing.\"")],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_response_pass",
     itemType: "bidding_rule",
     title: "Pass partner's opening with 0–5 HCP",
@@ -459,10 +472,10 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       action: { kind: "pass" },
     }),
     sourceIds: ["src_sayc_booklet"],
-    citations: [sayc("Responder needs about 6 points to respond.")],
+    citations: [sayc("p.3, responses to 1H/1S", "responses start at 6 points (e.g. \"1S = at least four spades, 6 or more points\") — with less, pass.")],
     gapIds: [],
   }),
-  approved({
+  item({
     itemId: "ki_bn_pass_otherwise",
     itemType: "bidding_rule",
     title: "No agreement defined: pass",
@@ -472,6 +485,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       ruleId: "bn_pass_otherwise",
       title: "No agreement defined: pass",
       priority: 900,
+      noAgreement: true,
       settingGates: [],
       auctionContext: { role: "any" },
       handConditions: { predicate: "hcpRange", params: { min: 0, max: 40 } },
@@ -484,7 +498,7 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
   }),
 
   // ---- play rules ----------------------------------------------------------
-  approved({
+  item({
     itemId: "ki_bn_lead_longest",
     itemType: "lead_rule",
     title: "Lead from your longest suit (v0: top card)",
@@ -498,11 +512,14 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       when: { role: "lead" },
       action: { kind: "topOfLongestSuit" },
     }),
-    sourceIds: ["src_bn_expert_notes"],
-    citations: [expertNote("Simplified Level-1 lead rule; refinement deferred.")],
+    sourceIds: ["src_sayc_booklet", "src_bn_expert_notes"],
+    citations: [
+      sayc("p.8, Defensive Leads and Signals", "\"From four cards or longer lead fourth best\" — leading from length is standard; v0 simplifies to the TOP card."),
+      expertNote("Top-of-longest is a Level-1 simplification; fourth-best and honor-sequence leads are deferred."),
+    ],
     gapIds: ["gap_bn_play_technique"],
   }),
-  approved({
+  item({
     itemId: "ki_bn_follow_low",
     itemType: "play_rule",
     title: "Follow suit with your lowest card (v0)",
@@ -516,8 +533,11 @@ export const ITEMS: BridgeReadableKnowledgeItem[] = [
       when: { role: "follow" },
       action: { kind: "lowestFollowing" },
     }),
-    sourceIds: ["src_bn_expert_notes"],
-    citations: [expertNote("Simplified Level-1 follow rule; refinement deferred.")],
+    sourceIds: ["src_laws_duplicate", "src_bn_expert_notes"],
+    citations: [
+      laws("Law 44C", "\"In playing to a trick, each player must follow suit if possible.\" Which card to follow with is agreement, not law."),
+      expertNote("Lowest-card follow/discard is a Level-1 simplification; third-hand-high and win-cheaply are deferred."),
+    ],
     gapIds: ["gap_bn_play_technique"],
   }),
 ];

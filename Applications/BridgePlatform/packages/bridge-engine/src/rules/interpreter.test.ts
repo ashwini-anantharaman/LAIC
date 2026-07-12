@@ -120,23 +120,6 @@ describe("validatePackage", () => {
     expect(validatePackage(TEST_PACKAGE, KNOWN_PREDICATES, KNOWN_PRIMITIVES)).toEqual([]);
   });
 
-  it("blocks unreviewed entries from published packages (provenance gate)", () => {
-    const published: BridgeRulePackage = {
-      ...TEST_PACKAGE,
-      status: "published",
-      bidRules: TEST_PACKAGE.bidRules.map((r, i) =>
-        i === 0
-          ? {
-              ...r,
-              provenance: { ...r.provenance, reviewStatus: "unreviewed_prototype_derived" },
-            }
-          : r,
-      ),
-    };
-    const errors = validatePackage(published, KNOWN_PREDICATES, KNOWN_PRIMITIVES);
-    expect(errors.some((e) => e.includes("not allowed in a published package"))).toBe(true);
-  });
-
   it("rejects unknown predicates, primitives, and duplicate rule ids", () => {
     const bad: BridgeRulePackage = {
       ...TEST_PACKAGE,

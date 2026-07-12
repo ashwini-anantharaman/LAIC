@@ -64,7 +64,7 @@ export default async function HomePage() {
         </Card>
 
         {canAccessAdminArea(context) && (
-          <Card title="Knowledge base & review">
+          <Card title="Knowledge base">
             Sources, human-readable rules, gap registry, and package
             publication.{" "}
             <Link
