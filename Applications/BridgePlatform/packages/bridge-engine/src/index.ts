@@ -19,6 +19,7 @@ export * from "./state";
 export * from "./apply";
 export * from "./decision";
 export * from "./game";
+export { scoreBoard, resultLabel, type ScoreBreakdown } from "./scoring";
 
 // Rules-as-data system
 export * from "./rules/schema";

@@ -47,6 +47,9 @@ importers:
       '@bridge/events':
         specifier: workspace:*
         version: link:../../packages/bridge-events
+      '@bridge/formats':
+        specifier: workspace:*
+        version: link:../../packages/bridge-formats
       '@bridge/knowledge':
         specifier: workspace:*
         version: link:../../packages/bridge-knowledge

@@ -80,9 +80,14 @@ sessions, playable table with citation-resolving Why panel, constrained
 dealing with evaluator-filtered teaching scopes, package-backed player
 profiles with generated convention cards, evaluator + learner-model evidence
 layer, ingestion jobs + Level-2 content, coach-owned teaching scopes,
-Coaching/Learning integration surfaces; Phase 13 revamp IN PROGRESS —
-approval gates removed per deviation 6, coach book→player tooling landing).
-Remaining: Phases 13–17 (Part II of the plan). Phase 10 shipped: shared
+Coaching/Learning integration surfaces; Phase 13 revamp complete — approval
+gates removed per deviation 6, coach book→player tooling with LLM extraction
+citing exact passages, real online sources; Phase 14 complete — Law 77
+scoring at board end, session lifecycle event stream in its own seq space,
+position snapshots with exact-package resume, PBN/LIN paste-import and export
+with attribution-honest imported histories, board library + share-link
+capabilities, server-rendered replay viewer, per-user table profiles with
+feedback modes). Remaining: Phases 15–17 (Part II of the plan). Phase 10 shipped: shared
 Supabase project 'nexus-platform' exists (bridge migrations applied, RLS on);
 GET /api/platform/bridge/context added to TheNexusPlatform backend — see
 TheNexusPlatform/backend/NEXUS_BRIDGE_INTEGRATION.md for the review notes.

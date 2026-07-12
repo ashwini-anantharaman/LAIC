@@ -17,11 +17,14 @@ import {
   autoplaySession,
   humanBid,
   humanPlay,
+  saveBoardToLibraryAction,
+  savePositionSnapshot,
   stepSession,
   undoSession,
 } from "@/app/bridge/play/actions";
 import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
+import { profileService } from "@/lib/profiles";
 import { sessionService } from "@/lib/sessions";
 
 const GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
@@ -111,6 +114,9 @@ export default async function SessionPage({
   }
   const { record, state } = view;
 
+  const me = await (await profileService()).getUserProfile(context);
+  const feedbackMode = me?.preferredFeedbackMode ?? "full_trace";
+
   const mySeats = (Object.values(record.seats) as { seat: Seat; playerKind: string; occupantId?: string }[])
     .filter((s) => s.playerKind === "human" && s.occupantId === context.nexusUserId)
     .map((s) => s.seat);
@@ -153,7 +159,11 @@ export default async function SessionPage({
     <div className={`rounded-lg border p-3 ${state.turn === seat && state.phase !== "complete" ? "border-emerald-500" : "border-neutral-200"}`}>
       <p className="mb-1 text-xs font-medium text-neutral-500">
         {seat}
-        {mySeats.includes(seat) ? " (you)" : record.seats[seat].playerKind === "human" ? " (human)" : " (AI)"}
+        {mySeats.includes(seat)
+          ? ` (${me?.displayNameAtTable || "you"})`
+          : record.seats[seat].playerKind === "human"
+            ? " (human)"
+            : " (AI)"}
         {dummy === seat && playStarted ? " — dummy" : ""}
       </p>
       <Hand
@@ -275,9 +285,70 @@ export default async function SessionPage({
             Undo
           </button>
         </form>
+        {state.phase !== "complete" && (
+          <form action={savePositionSnapshot} className="flex items-center gap-1">
+            <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+            <input
+              name="name"
+              placeholder="snapshot name"
+              className="w-36 rounded border border-neutral-300 px-2 py-1 text-sm"
+            />
+            <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50">
+              Save position
+            </button>
+          </form>
+        )}
+        <form action={saveBoardToLibraryAction} className="flex items-center gap-1">
+          <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+          <input
+            name="name"
+            placeholder={record.board.name}
+            className="w-36 rounded border border-neutral-300 px-2 py-1 text-sm"
+          />
+          <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50">
+            Save board
+          </button>
+        </form>
+        <a
+          href={`/api/bridge/export?sessionId=${record.bridgeSessionId}&format=pbn`}
+          className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+        >
+          Export PBN
+        </a>
+        <a
+          href={`/api/bridge/export?sessionId=${record.bridgeSessionId}&format=lin`}
+          className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+        >
+          Export LIN
+        </a>
       </div>
 
-      {/* Auction + decisions with Why links */}
+      {/* Score (§8.2) */}
+      {view.score && (
+        <section className="rounded-lg border border-emerald-300 bg-emerald-50/40 p-4">
+          <h2 className="mb-1 text-sm font-medium text-emerald-900">{view.resultLabel}</h2>
+          <p className="text-sm text-neutral-700">
+            Score: <span className="font-medium">NS {view.score.nsScore >= 0 ? "+" : ""}{view.score.nsScore}</span>
+            {view.score.contract && (
+              <span className="text-neutral-500">
+                {" "}
+                — trick points {view.score.trickScore}
+                {view.score.overtrickScore ? ` · overtricks ${view.score.overtrickScore}` : ""}
+                {view.score.gameBonus ? ` · game bonus ${view.score.gameBonus}` : ""}
+                {view.score.partscoreBonus ? ` · partscore ${view.score.partscoreBonus}` : ""}
+                {view.score.slamBonus ? ` · slam ${view.score.slamBonus}` : ""}
+                {view.score.insultBonus ? ` · insult ${view.score.insultBonus}` : ""}
+                {view.score.penalty ? ` · penalty ${view.score.penalty}` : ""}
+                {view.score.vulnerable ? " · vulnerable" : " · not vulnerable"}
+              </span>
+            )}
+          </p>
+        </section>
+      )}
+
+      {/* Auction + decisions with Why links. "minimal" feedback defers this
+          panel until the board is over; the events still exist regardless. */}
+      {(feedbackMode !== "minimal" || !isParticipant || state.phase === "complete") && (
       <section className="rounded-lg border border-neutral-200 p-4">
         <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
           Decisions — click “why?” to resolve any AI action to its cited source
@@ -305,6 +376,7 @@ export default async function SessionPage({
           ))}
         </ul>
       </section>
+      )}
 
       {/* Why panel */}
       {whyEvent && (
@@ -342,6 +414,7 @@ export default async function SessionPage({
               </ul>
             </div>
           )}
+          {feedbackMode === "full_trace" && (
           <details className="mt-3 text-xs">
             <summary className="cursor-pointer text-neutral-500">
               Full rule trace ({whyEvent.trace.length} rules considered)
@@ -354,12 +427,21 @@ export default async function SessionPage({
               ))}
             </ul>
           </details>
+          )}
         </section>
       )}
 
-      <Link href="/bridge/play" className="text-sm text-emerald-700 hover:underline">
-        ← All sessions
-      </Link>
+      <div className="flex gap-4">
+        <Link href="/bridge/play" className="text-sm text-emerald-700 hover:underline">
+          ← All sessions
+        </Link>
+        <Link
+          href={`/bridge/play/${record.bridgeSessionId}/replay`}
+          className="text-sm text-emerald-700 hover:underline"
+        >
+          Replay step-by-step →
+        </Link>
+      </div>
     </div>
   );
 }

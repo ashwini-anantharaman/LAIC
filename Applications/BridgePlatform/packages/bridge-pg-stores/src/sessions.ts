@@ -8,7 +8,15 @@
 // stay available for a later fully-relational pass.
 
 import type { GameEvent } from "@bridge/events";
-import type { BridgeSessionRecord, SessionStore, SessionStatus } from "@bridge/sessions";
+import type {
+  BridgeSessionRecord,
+  PositionSnapshotRecord,
+  SavedBoardRecord,
+  SessionLifecycleEvent,
+  SessionStatus,
+  SessionStore,
+  ShareLinkRecord,
+} from "@bridge/sessions";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { check } from "./client";
 
@@ -123,5 +131,138 @@ export class PgSessionStore implements SessionStore {
       await this.db.from("bridge_events").delete().eq("bridge_session_id", id).gte("seq", fromSeq),
       "rollbackEvents",
     );
+  }
+
+  // ---- lifecycle stream (0008 bridge_session_lifecycle) --------------------
+
+  async appendLifecycle(id: string, events: SessionLifecycleEvent[]) {
+    if (!events.length) return;
+    check(
+      await this.db.from("bridge_session_lifecycle").insert(
+        events.map((e) => ({
+          bridge_session_id: id,
+          lifecycle_seq: e.lifecycleSeq,
+          ts: e.ts,
+          event_type: e.type,
+          payload: e.payload,
+        })),
+      ),
+      "appendLifecycle",
+    );
+  }
+
+  async getLifecycle(id: string) {
+    const rows = check(
+      await this.db
+        .from("bridge_session_lifecycle")
+        .select("*")
+        .eq("bridge_session_id", id)
+        .order("lifecycle_seq"),
+      "getLifecycle",
+    );
+    return rows.map((r: any): SessionLifecycleEvent => ({
+      lifecycleSeq: r.lifecycle_seq,
+      ts: r.ts,
+      type: r.event_type,
+      payload: r.payload ?? {},
+    }));
+  }
+
+  // ---- position snapshots (0002 bridge_position_snapshots) -----------------
+
+  async saveSnapshot(snapshot: PositionSnapshotRecord) {
+    check(
+      await this.db.from("bridge_position_snapshots").insert({
+        snapshot_id: snapshot.snapshotId,
+        bridge_session_id: snapshot.sourceSessionId,
+        as_of_seq: snapshot.asOfSeq,
+        state: snapshot,
+        created_at: snapshot.createdAt,
+      }),
+      "saveSnapshot",
+    );
+  }
+
+  async getSnapshot(snapshotId: string) {
+    const rows = check(
+      await this.db.from("bridge_position_snapshots").select("state").eq("snapshot_id", snapshotId),
+      "getSnapshot",
+    );
+    return rows.length ? ((rows[0] as any).state as PositionSnapshotRecord) : null;
+  }
+
+  async listSnapshots() {
+    const rows = check(
+      await this.db.from("bridge_position_snapshots").select("state").order("created_at"),
+      "listSnapshots",
+    );
+    return rows.map((r: any) => r.state as PositionSnapshotRecord);
+  }
+
+  // ---- board library + share links (0008) ----------------------------------
+
+  async saveBoard(board: SavedBoardRecord) {
+    check(
+      await this.db.from("bridge_saved_boards").insert({
+        board_id: board.boardId,
+        name: board.name,
+        board: board.board,
+        context_snapshot: board.context,
+        program_organization_id: board.context.programOrganizationId ?? null,
+        tags: board.tags,
+        created_by: board.createdBy,
+        created_at: board.createdAt,
+      }),
+      "saveBoard",
+    );
+  }
+
+  private rowToBoard = (r: any): SavedBoardRecord => ({
+    boardId: r.board_id,
+    name: r.name,
+    board: r.board,
+    context: r.context_snapshot,
+    tags: r.tags ?? [],
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+  });
+
+  async getBoard(boardId: string) {
+    const rows = check(
+      await this.db.from("bridge_saved_boards").select("*").eq("board_id", boardId),
+      "getBoard",
+    );
+    return rows.length ? this.rowToBoard(rows[0]) : null;
+  }
+
+  async listBoards() {
+    const rows = check(
+      await this.db.from("bridge_saved_boards").select("*").order("created_at"),
+      "listBoards",
+    );
+    return rows.map(this.rowToBoard);
+  }
+
+  async saveShareLink(link: ShareLinkRecord) {
+    const { error } = await this.db.from("bridge_share_links").insert({
+      token: link.token,
+      board_id: link.boardId,
+      created_by: link.createdBy,
+      created_at: link.createdAt,
+    });
+    if (error) {
+      if (error.code === "23505") throw new Error("Share token collision");
+      throw new Error(`[pg-stores] saveShareLink: ${error.message}`);
+    }
+  }
+
+  async getShareLink(token: string) {
+    const rows = check(
+      await this.db.from("bridge_share_links").select("*").eq("token", token),
+      "getShareLink",
+    );
+    if (!rows.length) return null;
+    const r = rows[0] as any;
+    return { token: r.token, boardId: r.board_id, createdBy: r.created_by, createdAt: r.created_at };
   }
 }

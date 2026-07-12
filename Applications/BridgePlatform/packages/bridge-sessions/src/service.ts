@@ -11,12 +11,15 @@ import {
   initialState,
   legalCalls,
   legalPlays,
+  resultLabel,
+  scoreBoard,
   type AsyncDecider,
   type BoardInput,
   type BridgeRulePackage,
   type Decision,
   type Game,
   type GameState,
+  type ScoreBreakdown,
 } from "@bridge/engine";
 import {
   cardId,
@@ -33,8 +36,13 @@ import type { NexusBridgeContext } from "@laic/learner-contracts";
 import {
   hashValues,
   type BridgeSessionRecord,
+  type LifecycleEventType,
+  type PositionSnapshotRecord,
+  type SavedBoardRecord,
   type SeatAssignment,
+  type SessionLifecycleEvent,
   type SessionType,
+  type ShareLinkRecord,
 } from "./model";
 import type { SessionStore } from "./store";
 
@@ -75,6 +83,10 @@ export interface SessionView {
   record: BridgeSessionRecord;
   state: GameState;
   eventCount: number;
+  /** Present once the board is complete (§8.2). */
+  score?: ScoreBreakdown;
+  /** Readable result ("4♠ by N, made +1") when complete. */
+  resultLabel?: string;
 }
 
 /**
@@ -132,7 +144,41 @@ export class SessionService {
       createdAt: this.now(),
     };
     await this.deps.store.createSession(record);
+    // Lifecycle events (§9.1 categories 5–8) — audit stream, never folded.
+    await this.emitLifecycle(record.bridgeSessionId, 0, [
+      ["session_created", { sessionType: record.sessionType, createdBy: record.createdBy }],
+      ["board_loaded", { name: input.board.name, dealer: input.board.dealer, vul: input.board.vul }],
+      ...(["N", "E", "S", "W"] as Seat[]).map(
+        (seat): [LifecycleEventType, Record<string, unknown>] => [
+          "seat_assigned",
+          { seat, playerKind: seats[seat].playerKind, occupantId: seats[seat].occupantId },
+        ],
+      ),
+      ["configuration_selected", { resolvedValueHash: record.resolvedValueHash }],
+      ["knowledge_package_used", { ...record.packageRef }],
+    ]);
     return record;
+  }
+
+  private async emitLifecycle(
+    sessionId: string,
+    fromSeq: number | null,
+    entries: Array<[LifecycleEventType, Record<string, unknown>]>,
+  ): Promise<void> {
+    const start =
+      fromSeq ?? (await this.deps.store.getLifecycle(sessionId)).reduce((m, e) => Math.max(m, e.lifecycleSeq + 1), 0);
+    const events: SessionLifecycleEvent[] = entries.map(([type, payload], i) => ({
+      lifecycleSeq: start + i,
+      ts: this.now(),
+      type,
+      payload,
+    }));
+    await this.deps.store.appendLifecycle(sessionId, events);
+  }
+
+  async getLifecycle(id: string, context: NexusBridgeContext) {
+    await this.requireRecord(id, context);
+    return this.deps.store.getLifecycle(id);
   }
 
   async listSessions(context: NexusBridgeContext): Promise<BridgeSessionRecord[]> {
@@ -140,9 +186,21 @@ export class SessionService {
     return all.filter((r) => canAccessSession(r, context));
   }
 
+  /** Assemble a view, attaching the §8.2 score once the board is complete. */
+  private view(record: BridgeSessionRecord, state: GameState, eventCount: number): SessionView {
+    const score = scoreBoard(state) ?? undefined;
+    return {
+      record,
+      state,
+      eventCount,
+      score,
+      resultLabel: score ? resultLabel(score) : undefined,
+    };
+  }
+
   async getSession(id: string, context: NexusBridgeContext): Promise<SessionView> {
     const { record, game, events } = await this.reconstruct(id, context);
-    return { record, state: game.getState(), eventCount: events.length };
+    return this.view(record, game.getState(), events.length);
   }
 
   async getEvents(id: string, context: NexusBridgeContext): Promise<GameEvent[]> {
@@ -157,7 +215,7 @@ export class SessionService {
   async step(id: string, context: NexusBridgeContext): Promise<SessionView> {
     const { record, game, log } = await this.reconstruct(id, context);
     if (game.getState().phase === "complete")
-      return { record, state: game.getState(), eventCount: (await this.deps.store.getEvents(id)).length };
+      return this.view(record, game.getState(), (await this.deps.store.getEvents(id)).length);
     const acting = game.actingSeat();
     if (record.seats[acting].playerKind === "human") throw new AwaitingHumanError(acting);
     await game.step();
@@ -244,12 +302,132 @@ export class SessionService {
     const { record, game } = await this.reconstruct(id, context);
     const logicSeq = game.undo();
     if (logicSeq === null)
-      return { record, state: game.getState(), eventCount: (await this.deps.store.getEvents(id)).length };
+      return this.view(record, game.getState(), (await this.deps.store.getEvents(id)).length);
     await this.deps.store.rollbackEvents(id, logicSeq);
     if (record.status === "completed")
       await this.deps.store.setSessionStatus(id, "active");
+    await this.emitLifecycle(id, null, [
+      ["undo_performed", { rolledBackToSeq: logicSeq, by: context.nexusUserId }],
+    ]);
     const events = await this.deps.store.getEvents(id);
-    return { record: { ...record, status: "active" }, state: game.getState(), eventCount: events.length };
+    return this.view({ ...record, status: "active" }, game.getState(), events.length);
+  }
+
+  // ---- position snapshots (§8.4) -------------------------------------------
+
+  /** Freeze the current position: board + full event prefix + exact config. */
+  async saveSnapshot(id: string, context: NexusBridgeContext, name: string): Promise<PositionSnapshotRecord> {
+    const record = await this.requireRecord(id, context);
+    const events = await this.deps.store.getEvents(id);
+    const snapshot: PositionSnapshotRecord = {
+      snapshotId: crypto.randomUUID(),
+      sourceSessionId: id,
+      name: name || `${record.board.name} position`,
+      context: record.context,
+      board: record.board,
+      packageRef: record.packageRef,
+      resolvedValues: record.resolvedValues,
+      events,
+      asOfSeq: events.length ? events[events.length - 1]!.seq : -1,
+      createdBy: context.nexusUserId,
+      createdAt: this.now(),
+    };
+    await this.deps.store.saveSnapshot(snapshot);
+    await this.emitLifecycle(id, null, [
+      ["snapshot_saved", { snapshotId: snapshot.snapshotId, asOfSeq: snapshot.asOfSeq }],
+    ]);
+    return snapshot;
+  }
+
+  async listSnapshots(context: NexusBridgeContext): Promise<PositionSnapshotRecord[]> {
+    return (await this.deps.store.listSnapshots()).filter((s) =>
+      canAccessSession({ ...s, createdBy: s.createdBy } as unknown as BridgeSessionRecord, context),
+    );
+  }
+
+  /**
+   * Resume a snapshot as a NEW session primed with the snapshot's events —
+   * the engine adopts them (createGame primedActions) and play continues.
+   */
+  async resumeSnapshot(
+    snapshotId: string,
+    context: NexusBridgeContext,
+    pkg: BridgeRulePackage,
+    seats?: Partial<Record<Seat, SeatAssignment>>,
+  ): Promise<BridgeSessionRecord> {
+    const snapshot = await this.deps.store.getSnapshot(snapshotId);
+    if (!snapshot || !canAccessSession(snapshot as unknown as BridgeSessionRecord, context))
+      throw new SessionAccessError("Snapshot not found");
+    if (pkg.packageId !== snapshot.packageRef.packageId || pkg.version !== snapshot.packageRef.version)
+      throw new Error("Resume must use the snapshot's exact package version (replay stability §11.4)");
+    const record = await this.createSession({
+      context,
+      sessionType: "single_board",
+      board: snapshot.board,
+      pkg,
+      resolvedValues: snapshot.resolvedValues,
+      seats,
+    });
+    if (snapshot.events.length)
+      await this.deps.store.appendEvents(record.bridgeSessionId, snapshot.events);
+    await this.emitLifecycle(record.bridgeSessionId, null, [
+      ["board_loaded", { fromSnapshot: snapshotId, asOfSeq: snapshot.asOfSeq }],
+    ]);
+    return record;
+  }
+
+  // ---- board library + share links (§15.1) ---------------------------------
+
+  async saveBoardToLibrary(
+    context: NexusBridgeContext,
+    name: string,
+    board: BoardInput,
+    tags: string[] = [],
+  ): Promise<SavedBoardRecord> {
+    const saved: SavedBoardRecord = {
+      boardId: crypto.randomUUID(),
+      name,
+      board,
+      context,
+      tags,
+      createdBy: context.nexusUserId,
+      createdAt: this.now(),
+    };
+    await this.deps.store.saveBoard(saved);
+    return saved;
+  }
+
+  async listBoards(context: NexusBridgeContext): Promise<SavedBoardRecord[]> {
+    return (await this.deps.store.listBoards()).filter((b) =>
+      canAccessSession(b as unknown as BridgeSessionRecord, context),
+    );
+  }
+
+  async getBoard(boardId: string, context: NexusBridgeContext): Promise<SavedBoardRecord> {
+    const b = await this.deps.store.getBoard(boardId);
+    if (!b || !canAccessSession(b as unknown as BridgeSessionRecord, context))
+      throw new SessionAccessError("Board not found");
+    return b;
+  }
+
+  /** Short immutable capability token for a saved board. */
+  async createShareLink(boardId: string, context: NexusBridgeContext): Promise<ShareLinkRecord> {
+    await this.getBoard(boardId, context); // access check
+    const link: ShareLinkRecord = {
+      token: crypto.randomUUID().replace(/-/g, "").slice(0, 10),
+      boardId,
+      createdBy: context.nexusUserId,
+      createdAt: this.now(),
+    };
+    await this.deps.store.saveShareLink(link);
+    return link;
+  }
+
+  /** Token IS the capability — any signed-in user with the link may view. */
+  async getSharedBoard(token: string): Promise<SavedBoardRecord | null> {
+    const link = await this.deps.store.getShareLink(token);
+    if (!link) return null;
+    return this.deps.store.getBoard(link.boardId);
   }
 
   // -------------------------------------------------------------------------
@@ -306,8 +484,17 @@ export class SessionService {
     if (state.phase === "complete" && record.status !== "completed") {
       await this.deps.store.setSessionStatus(record.bridgeSessionId, "completed", this.now());
       record = { ...record, status: "completed", completedAt: this.now() };
+      const score = scoreBoard(state);
+      await this.emitLifecycle(record.bridgeSessionId, null, [
+        [
+          "session_completed",
+          score
+            ? { result: resultLabel(score), declarerScore: score.declarerScore, nsScore: score.nsScore }
+            : {},
+        ],
+      ]);
     }
     const events = await this.deps.store.getEvents(record.bridgeSessionId);
-    return { record, state, eventCount: events.length };
+    return this.view(record, state, events.length);
   }
 }

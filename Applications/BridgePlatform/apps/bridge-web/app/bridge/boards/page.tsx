@@ -12,7 +12,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
-import { latestPackage } from "@/lib/sessions";
+import { latestPackage, sessionService } from "@/lib/sessions";
+import {
+  createBoardShareLink,
+  importBoard,
+  playSavedBoard,
+  resumePositionSnapshot,
+} from "../play/actions";
 
 const GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const handString = (hand: Card[]): string =>
@@ -30,11 +36,17 @@ const handString = (hand: Card[]): string =>
 
 export default async function BoardsPage({
   searchParams,
-}: Readonly<{ searchParams: Promise<{ seed?: string; count?: string; scopeId?: string }> }>) {
+}: Readonly<{
+  searchParams: Promise<{ seed?: string; count?: string; scopeId?: string; shared?: string }>;
+}>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const isAdmin = canAccessAdminArea(context);
-  const { seed, count, scopeId } = await searchParams;
+  const { seed, count, scopeId, shared } = await searchParams;
+
+  const sessions = sessionService();
+  const savedBoards = await sessions.listBoards(context);
+  const snapshots = await sessions.listSnapshots(context);
 
   const service = await profileService();
   const scopes = await service.listScopes(context);
@@ -109,10 +121,105 @@ export default async function BoardsPage({
         </section>
       )}
 
-      {!isAdmin && (
-        <p className="text-sm text-neutral-500">
-          Saved boards, PBN/LIN import, and shared board libraries land in Phase 7.
+      <section className="rounded-lg border border-neutral-200 p-4">
+        <h2 className="mb-1 font-medium">Import a board</h2>
+        <p className="mb-3 text-sm text-neutral-600">
+          Paste PBN or LIN. Any recorded auction/play is imported as history —
+          without decision traces, since those calls weren’t made at this table.
         </p>
+        <form action={importBoard} className="space-y-2">
+          <textarea
+            name="text"
+            rows={5}
+            required
+            placeholder={'[Dealer "S"]\n[Vulnerable "None"]\n[Deal "S:AKQ2.876... "]\n…'}
+            className="w-full rounded border border-neutral-300 px-2 py-1 font-mono text-xs"
+          />
+          <button type="submit" className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
+            Import & open at the table
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 p-4">
+        <h2 className="mb-1 font-medium">Board library</h2>
+        {shared && (
+          <p className="mb-2 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            Share link created:{" "}
+            <Link href={`/shared/${shared}`} className="font-mono underline">
+              /shared/{shared}
+            </Link>{" "}
+            — anyone with this link can view the board.
+          </p>
+        )}
+        {savedBoards.length === 0 ? (
+          <p className="text-sm text-neutral-500">
+            No saved boards yet — save one from the table after a deal you want to keep.
+          </p>
+        ) : (
+          <ul className="space-y-2 text-xs">
+            {savedBoards.map((b) => (
+              <li key={b.boardId} className="rounded border border-neutral-200 p-2">
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="font-medium">
+                    {b.name} <span className="font-normal text-neutral-500">— dealer {b.board.dealer}, vul {b.board.vul}</span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <form action={playSavedBoard}>
+                      <input type="hidden" name="boardId" value={b.boardId} />
+                      <input type="hidden" name="humanSeat" value="S" />
+                      <button type="submit" className="rounded bg-emerald-700 px-2 py-1 font-medium text-white hover:bg-emerald-800">
+                        Play as South
+                      </button>
+                    </form>
+                    <form action={createBoardShareLink}>
+                      <input type="hidden" name="boardId" value={b.boardId} />
+                      <button type="submit" className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-50">
+                        Share link
+                      </button>
+                    </form>
+                  </div>
+                </div>
+                <div className="font-mono">
+                  {(["N", "E", "S", "W"] as const).map((seat) => (
+                    <p key={seat}>
+                      {seat}: {handString(b.board.hands[seat])}
+                    </p>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {snapshots.length > 0 && (
+        <section className="rounded-lg border border-neutral-200 p-4">
+          <h2 className="mb-1 font-medium">Position snapshots</h2>
+          <p className="mb-2 text-sm text-neutral-600">
+            Mid-board positions saved from the table. Resuming replays the exact
+            events under the exact package version they were made with.
+          </p>
+          <ul className="space-y-2 text-xs">
+            {snapshots.map((s) => (
+              <li key={s.snapshotId} className="flex items-center justify-between rounded border border-neutral-200 p-2">
+                <p>
+                  <span className="font-medium">{s.name}</span>{" "}
+                  <span className="text-neutral-500">
+                    — {s.events.length} events · {s.packageRef.packageId}@{s.packageRef.version}
+                  </span>
+                </p>
+                <form action={resumePositionSnapshot}>
+                  <input type="hidden" name="snapshotId" value={s.snapshotId} />
+                  <input type="hidden" name="humanSeat" value="S" />
+                  <button type="submit" className="rounded bg-emerald-700 px-2 py-1 font-medium text-white hover:bg-emerald-800">
+                    Resume as South
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );

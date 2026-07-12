@@ -216,3 +216,115 @@ describe("dummy control", () => {
     expect(trick.plays[1]!.seat).toBe("S"); // dummy's card, played via N
   });
 });
+
+describe("Phase 14: scoring, lifecycle, snapshots, board library", () => {
+  it("a completed board carries a Law-77 score and readable result", async () => {
+    const { service } = makeService();
+    const caller = ctx({});
+    const record = await service.createSession({
+      context: caller, sessionType: "single_board", board: BOARD_G1, pkg, resolvedValues: values(),
+    });
+    const done = await service.autoplay(record.bridgeSessionId, caller);
+    expect(done.state.phase).toBe("complete");
+    expect(done.score).toBeDefined();
+    expect(done.resultLabel).toMatch(/by [NESW]|Passed out/);
+    // NS perspective flips with the declaring side.
+    const s = done.score!;
+    if (s.contract) {
+      const nsDeclared = s.contract.declarer === "N" || s.contract.declarer === "S";
+      expect(s.nsScore).toBe(nsDeclared ? s.declarerScore : -s.declarerScore);
+    }
+    // In-progress boards carry no score.
+    const record2 = await service.createSession({
+      context: caller, sessionType: "single_board", board: BOARD_G1, pkg, resolvedValues: values(),
+    });
+    const mid = await service.step(record2.bridgeSessionId, caller);
+    expect(mid.score).toBeUndefined();
+  });
+
+  it("emits §9.1 lifecycle events across create/undo/complete", async () => {
+    const { service } = makeService();
+    const caller = ctx({});
+    const record = await service.createSession({
+      context: caller, sessionType: "single_board", board: BOARD_G1, pkg, resolvedValues: values(),
+    });
+    const created = await service.getLifecycle(record.bridgeSessionId, caller);
+    const types = created.map((e) => e.type);
+    expect(types).toContain("session_created");
+    expect(types).toContain("board_loaded");
+    expect(types.filter((t) => t === "seat_assigned")).toHaveLength(4);
+    expect(types).toContain("configuration_selected");
+    expect(types).toContain("knowledge_package_used");
+    // Monotonic separate seq space.
+    created.forEach((e, i) => expect(e.lifecycleSeq).toBe(i));
+
+    await service.step(record.bridgeSessionId, caller);
+    await service.undo(record.bridgeSessionId, caller);
+    const afterUndo = await service.getLifecycle(record.bridgeSessionId, caller);
+    expect(afterUndo.map((e) => e.type)).toContain("undo_performed");
+
+    await service.autoplay(record.bridgeSessionId, caller);
+    const done = await service.getLifecycle(record.bridgeSessionId, caller);
+    const completed = done.find((e) => e.type === "session_completed");
+    expect(completed).toBeDefined();
+    expect(completed!.payload.result).toBeDefined();
+    // The game-event stream itself is untouched by lifecycle events.
+    const events = await service.getEvents(record.bridgeSessionId, caller);
+    expect(events.every((e) => e.category.endsWith("event"))).toBe(true);
+  });
+
+  it("saves a position snapshot and resumes it as a new identical session", async () => {
+    const { service } = makeService();
+    const caller = ctx({});
+    const record = await service.createSession({
+      context: caller, sessionType: "single_board", board: BOARD_G1, pkg, resolvedValues: values(),
+    });
+    // Play a few actions, then freeze.
+    for (let i = 0; i < 3; i++) await service.step(record.bridgeSessionId, caller);
+    const source = await service.getSession(record.bridgeSessionId, caller);
+    const snapshot = await service.saveSnapshot(record.bridgeSessionId, caller, "after three calls");
+    expect(snapshot.events.filter(isActionEvent)).toHaveLength(3);
+
+    const resumed = await service.resumeSnapshot(snapshot.snapshotId, caller, pkg);
+    const view = await service.getSession(resumed.bridgeSessionId, caller);
+    expect(view.state.auction).toEqual(source.state.auction);
+    expect(view.state.turn).toBe(source.state.turn);
+    // And the resumed session plays on to completion independently.
+    const done = await service.autoplay(resumed.bridgeSessionId, caller);
+    expect(done.state.phase).toBe("complete");
+    // The original is untouched by the resumed session's play.
+    const original = await service.getSession(record.bridgeSessionId, caller);
+    expect(original.state.auction).toEqual(source.state.auction);
+
+    // Wrong package version is refused (replay stability).
+    await expect(
+      service.resumeSnapshot(snapshot.snapshotId, caller, { ...pkg, version: "9.9.9" }),
+    ).rejects.toThrow(/exact package version/);
+    // Foreign org cannot see the snapshot.
+    const foreign = ctx({ nexusUserId: "user_x", programOrganizationId: "bporg_other" });
+    await expect(service.resumeSnapshot(snapshot.snapshotId, foreign, pkg)).rejects.toThrow(
+      SessionAccessError,
+    );
+  });
+
+  it("board library is org-scoped; share links are capability tokens", async () => {
+    const { service } = makeService();
+    const owner = ctx({});
+    const saved = await service.saveBoardToLibrary(owner, "G1 teaching board", BOARD_G1, ["openings"]);
+
+    // Org peer sees it; foreign org does not.
+    const peer = ctx({ nexusUserId: "user_b" });
+    expect((await service.listBoards(peer)).map((b) => b.boardId)).toContain(saved.boardId);
+    const foreign = ctx({ nexusUserId: "user_x", programOrganizationId: "bporg_other" });
+    expect(await service.listBoards(foreign)).toHaveLength(0);
+    await expect(service.getBoard(saved.boardId, foreign)).rejects.toThrow(SessionAccessError);
+
+    // Share link: short immutable token; the token IS the capability.
+    const link = await service.createShareLink(saved.boardId, owner);
+    expect(link.token).toMatch(/^[a-z0-9]{10}$/);
+    const shared = await service.getSharedBoard(link.token);
+    expect(shared?.boardId).toBe(saved.boardId);
+    expect(shared?.board.hands.N).toEqual(BOARD_G1.hands.N);
+    expect(await service.getSharedBoard("nonexistent")).toBeNull();
+  });
+});

@@ -122,12 +122,29 @@ export interface TeachingScopeRecord {
 }
 
 // ---------------------------------------------------------------------------
+// Bridge user profile (Bridge plan §3.4 — bridge_user_profiles in 0002):
+// per-person table preferences, self-owned.
+// ---------------------------------------------------------------------------
+
+export type FeedbackMode = "full_trace" | "hints_only" | "minimal";
+
+export interface BridgeUserProfile {
+  nexusUserId: string;
+  displayNameAtTable?: string;
+  preferredSeat?: "N" | "E" | "S" | "W";
+  preferredFeedbackMode?: FeedbackMode;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Store + tenant-scoped service
 // ---------------------------------------------------------------------------
 
 export interface ProfileStoreData {
   profiles: BridgeAiPlayerProfile[];
   scopes?: TeachingScopeRecord[];
+  userProfiles?: BridgeUserProfile[];
 }
 
 export interface ProfileStore {
@@ -137,6 +154,8 @@ export interface ProfileStore {
   listScopes(): Promise<TeachingScopeRecord[]>;
   getScope(id: string): Promise<TeachingScopeRecord | null>;
   saveScope(scope: TeachingScopeRecord): Promise<void>;
+  getUserProfile(nexusUserId: string): Promise<BridgeUserProfile | null>;
+  saveUserProfile(profile: BridgeUserProfile): Promise<void>;
 }
 
 export class InMemoryProfileStore implements ProfileStore {
@@ -170,6 +189,17 @@ export class InMemoryProfileStore implements ProfileStore {
     this.data.scopes = [
       ...(this.data.scopes ?? []).filter((x) => x.teachingScopeId !== scope.teachingScopeId),
       structuredClone(scope),
+    ];
+    this.persist();
+  }
+  async getUserProfile(nexusUserId: string): Promise<BridgeUserProfile | null> {
+    const u = (this.data.userProfiles ?? []).find((x) => x.nexusUserId === nexusUserId);
+    return u ? structuredClone(u) : null;
+  }
+  async saveUserProfile(profile: BridgeUserProfile): Promise<void> {
+    this.data.userProfiles = [
+      ...(this.data.userProfiles ?? []).filter((x) => x.nexusUserId !== profile.nexusUserId),
+      structuredClone(profile),
     ];
     this.persist();
   }
@@ -363,6 +393,27 @@ export class ProfileService {
     };
     await this.store.saveScope(record);
     return record;
+  }
+
+  /** A user's own table preferences (§3.4) — always self-owned. */
+  async getUserProfile(ctx: NexusBridgeContext): Promise<BridgeUserProfile | null> {
+    return this.store.getUserProfile(ctx.nexusUserId);
+  }
+
+  async saveUserProfile(
+    ctx: NexusBridgeContext,
+    changes: Partial<Pick<BridgeUserProfile, "displayNameAtTable" | "preferredSeat" | "preferredFeedbackMode">>,
+  ): Promise<BridgeUserProfile> {
+    const existing = await this.store.getUserProfile(ctx.nexusUserId);
+    const profile: BridgeUserProfile = {
+      nexusUserId: ctx.nexusUserId,
+      createdAt: existing?.createdAt ?? this.now(),
+      ...existing,
+      ...changes,
+      updatedAt: this.now(),
+    };
+    await this.store.saveUserProfile(profile);
+    return profile;
   }
 
   /** Idempotent system-profile seed (dev bootstrap). */

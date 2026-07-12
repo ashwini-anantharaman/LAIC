@@ -16,6 +16,7 @@
     "@bridge/engine": "workspace:*",
     "@bridge/evaluator": "workspace:*",
     "@bridge/events": "workspace:*",
+    "@bridge/formats": "workspace:*",
     "@bridge/knowledge": "workspace:*",
     "@bridge/nexus-client": "workspace:*",
     "@bridge/pg-stores": "workspace:*",

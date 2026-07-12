@@ -51,6 +51,74 @@ export interface BridgeSessionRecord {
 /** Events are stored exactly as emitted (GameEvent) keyed by session + seq. */
 export type PersistedGameEvent = GameEvent;
 
+// ---------------------------------------------------------------------------
+// Session lifecycle events (Bridge plan §9.1 categories 5–8). These live in
+// their OWN stream with their own sequence — the game-event seq space belongs
+// to the engine's single-writer controller and must stay gap-free for
+// refold/undo. Lifecycle events are audit/telemetry, never folded into state.
+// ---------------------------------------------------------------------------
+
+export type LifecycleEventType =
+  | "session_created"
+  | "board_loaded"
+  | "seat_assigned"
+  | "configuration_selected"
+  | "knowledge_package_used"
+  | "undo_performed"
+  | "snapshot_saved"
+  | "session_completed";
+
+export interface SessionLifecycleEvent {
+  lifecycleSeq: number;
+  ts: string;
+  type: LifecycleEventType;
+  payload: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Position snapshots (§8.4): board + the event prefix up to the cut, plus the
+// exact package/config so a resumed session replays identically. Resume =
+// create a session and prime it with the snapshot's action events.
+// ---------------------------------------------------------------------------
+
+export interface PositionSnapshotRecord {
+  snapshotId: string;
+  sourceSessionId: string;
+  name: string;
+  /** Tenant anchor (§21) — same access rule as sessions. */
+  context: NexusBridgeContext;
+  board: BoardInput;
+  packageRef: { packageId: string; version: string };
+  resolvedValues: Record<string, SettingValue>;
+  /** Full event prefix (logic + action) so provenance survives the resume. */
+  events: GameEvent[];
+  asOfSeq: number;
+  createdBy: string;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Board library + share links (§15.1 bridge_saved_boards / bridge_share_links)
+// ---------------------------------------------------------------------------
+
+export interface SavedBoardRecord {
+  boardId: string;
+  name: string;
+  board: BoardInput;
+  context: NexusBridgeContext;
+  tags: string[];
+  createdBy: string;
+  createdAt: string;
+}
+
+/** Short immutable capability token pointing at a saved board. */
+export interface ShareLinkRecord {
+  token: string;
+  boardId: string;
+  createdBy: string;
+  createdAt: string;
+}
+
 /** FNV-1a 32-bit over a stable JSON encoding (no crypto dependency). */
 export function hashValues(values: Record<string, SettingValue>): string {
   const stable = JSON.stringify(

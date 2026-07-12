@@ -1,6 +1,11 @@
 // ProfileStore over db/migrations/0003 (+0005 bridge_teaching_scopes).
 
-import type { BridgeAiPlayerProfile, ProfileStore, TeachingScopeRecord } from "@bridge/profiles";
+import type {
+  BridgeAiPlayerProfile,
+  BridgeUserProfile,
+  ProfileStore,
+  TeachingScopeRecord,
+} from "@bridge/profiles";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { check } from "./client";
 
@@ -65,5 +70,35 @@ export class PgProfileStore implements ProfileStore {
       evaluator_filter: s.evaluatorFilter, target_concept_ids: s.targetConceptIds,
       created_at: s.createdAt, updated_at: s.updatedAt,
     }, { onConflict: "teaching_scope_id" }), "scopes.save");
+  }
+
+  // ---- bridge user profiles (0002 bridge_user_profiles, §3.4) --------------
+
+  async getUserProfile(nexusUserId: string) {
+    const rows = check(
+      await this.db.from("bridge_user_profiles").select("*").eq("nexus_user_id", nexusUserId),
+      "userProfiles.get",
+    );
+    if (!rows.length) return null;
+    const r = rows[0] as any;
+    return {
+      nexusUserId: r.nexus_user_id,
+      displayNameAtTable: r.display_name_at_table ?? undefined,
+      preferredSeat: r.preferred_seat ?? undefined,
+      preferredFeedbackMode: r.preferred_feedback_mode ?? undefined,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    } as BridgeUserProfile;
+  }
+
+  async saveUserProfile(p: BridgeUserProfile) {
+    check(await this.db.from("bridge_user_profiles").upsert({
+      nexus_user_id: p.nexusUserId,
+      display_name_at_table: p.displayNameAtTable ?? null,
+      preferred_seat: p.preferredSeat ?? null,
+      preferred_feedback_mode: p.preferredFeedbackMode ?? null,
+      created_at: p.createdAt,
+      updated_at: p.updatedAt,
+    }, { onConflict: "nexus_user_id" }), "userProfiles.save");
   }
 }

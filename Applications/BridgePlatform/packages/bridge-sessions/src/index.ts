@@ -13,10 +13,15 @@
 export { hashValues } from "./model";
 export type {
   BridgeSessionRecord,
+  LifecycleEventType,
   PersistedGameEvent,
+  PositionSnapshotRecord,
+  SavedBoardRecord,
   SeatAssignment,
+  SessionLifecycleEvent,
   SessionStatus,
   SessionType,
+  ShareLinkRecord,
 } from "./model";
 export {
   emptySessionData,

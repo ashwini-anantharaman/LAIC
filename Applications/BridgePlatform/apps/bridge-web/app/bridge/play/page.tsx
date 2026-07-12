@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createLevelPracticeSession, createPracticeSession } from "@/app/bridge/play/actions";
+import {
+  createLevelPracticeSession,
+  createPracticeSession,
+  saveTableProfile,
+} from "@/app/bridge/play/actions";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
 import { sessionService } from "@/lib/sessions";
@@ -12,6 +16,7 @@ export default async function PlayPage() {
   const service = await profileService();
   const profiles = await service.listProfiles(context);
   const scopes = await service.listScopes(context);
+  const me = await service.getUserProfile(context);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -35,7 +40,11 @@ export default async function PlayPage() {
             </option>
           ))}
         </select>
-        <select name="humanSeat" className="rounded border border-neutral-300 px-2 py-1 text-sm">
+        <select
+          name="humanSeat"
+          defaultValue={me?.preferredSeat ?? "S"}
+          className="rounded border border-neutral-300 px-2 py-1 text-sm"
+        >
           <option value="S">Sit South</option>
           <option value="N">Sit North (dealer on seeded boards)</option>
           <option value="E">Sit East</option>
@@ -76,6 +85,46 @@ export default async function PlayPage() {
           Players page. You deal; boards are evaluator-filtered to the scope.
         </span>
       </form>
+
+      <section className="rounded-lg border border-neutral-200 p-4">
+        <h2 className="mb-1 text-sm font-medium uppercase tracking-wide text-neutral-500">
+          You at the table
+        </h2>
+        <form action={saveTableProfile} className="flex flex-wrap items-center gap-2">
+          <input
+            name="displayNameAtTable"
+            defaultValue={me?.displayNameAtTable ?? ""}
+            placeholder="Name shown at your seat"
+            className="w-48 rounded border border-neutral-300 px-2 py-1 text-sm"
+          />
+          <select
+            name="preferredSeat"
+            defaultValue={me?.preferredSeat ?? ""}
+            className="rounded border border-neutral-300 px-2 py-1 text-sm"
+          >
+            <option value="">No preferred seat</option>
+            <option value="N">Prefer North</option>
+            <option value="E">Prefer East</option>
+            <option value="S">Prefer South</option>
+            <option value="W">Prefer West</option>
+          </select>
+          <select
+            name="preferredFeedbackMode"
+            defaultValue={me?.preferredFeedbackMode ?? "full_trace"}
+            className="rounded border border-neutral-300 px-2 py-1 text-sm"
+          >
+            <option value="full_trace">Show every AI decision + trace</option>
+            <option value="hints_only">Show decisions, hide rule traces</option>
+            <option value="minimal">Minimal — decisions only after the board</option>
+          </select>
+          <button
+            type="submit"
+            className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
+          >
+            Save
+          </button>
+        </form>
+      </section>
 
       <section className="space-y-2">
         <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
