@@ -85,7 +85,7 @@ export default async function BoardsPage({
       )}
 
       {isAdmin && (
-        <form className="flex items-center gap-2 rounded-lg border border-neutral-200 p-4">
+        <form className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 p-4">
           <label className="text-sm text-neutral-600">Generate Level-1 set — seed</label>
           <input name="seed" type="number" defaultValue={seed ?? 7} className="w-24 rounded border border-neutral-300 px-2 py-1 text-sm" />
           <label className="text-sm text-neutral-600">count</label>

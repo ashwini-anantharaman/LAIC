@@ -36,10 +36,16 @@ function Hand({ cards }: Readonly<{ cards: Card[] }>) {
   );
   return (
     <span className="flex flex-wrap gap-1">
-      {sorted.length === 0 && <span className="text-sm text-neutral-400">—</span>}
+      {sorted.length === 0 && <span className="text-sm text-neutral-400">all played</span>}
       {sorted.map((c) => (
-        <span key={cardId(c)} className="rounded border border-neutral-200 bg-white px-1.5 py-0.5 text-sm">
-          <CardFace card={c} />
+        <span
+          key={cardId(c)}
+          className={`flex h-10 w-7 flex-col items-center justify-center rounded-[5px] border border-neutral-200 bg-white leading-none shadow-sm ${
+            red(c.suit) ? "text-red-600" : "text-neutral-900"
+          }`}
+        >
+          <span className="text-[13px] font-semibold">{rankLabel(c.rank)}</span>
+          <span className="text-[11px]">{GLYPH[c.suit]}</span>
         </span>
       ))}
     </span>
@@ -102,15 +108,28 @@ export default async function ReplayPage({
       </Link>
     );
 
-  const seatBox = (seat: Seat) => (
-    <div className={`rounded-lg border p-3 ${state.turn === seat && state.phase !== "complete" && n < total ? "border-emerald-500" : "border-neutral-200"}`}>
-      <p className="mb-1 text-xs font-medium text-neutral-500">
-        {seat}
-        {record.seats[seat].playerKind === "human" ? " (human)" : " (AI)"}
-      </p>
-      <Hand cards={state.hands[seat]} />
-    </div>
-  );
+  const seatBox = (seat: Seat) => {
+    const onTurn = state.turn === seat && state.phase !== "complete" && n < total;
+    return (
+      <div
+        className={`rounded-xl bg-[#fffdf6]/95 p-3 shadow-md ${
+          onTurn ? "ring-2 ring-[var(--gold)] shadow-[0_0_0_5px_rgba(200,165,88,0.25)]" : ""
+        }`}
+      >
+        <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-neutral-500">
+          <span
+            className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${
+              onTurn ? "bg-[var(--gold)] text-emerald-950" : "bg-emerald-800 text-emerald-50"
+            }`}
+          >
+            {seat}
+          </span>
+          {record.seats[seat].playerKind === "human" ? "human" : "AI"}
+        </p>
+        <Hand cards={state.hands[seat]} />
+      </div>
+    );
+  };
 
   const currentTrick = state.tricks[state.tricks.length - 1];
 
@@ -134,30 +153,50 @@ export default async function ReplayPage({
         {stepLink(total, "End ⏭", n >= total)}
       </div>
 
-      <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-3">
-        <div className="hidden sm:block" />
-        {seatBox("N")}
-        <div className="hidden sm:block" />
-        {seatBox("W")}
-        <div className="rounded-lg border border-dashed border-neutral-300 p-3 text-center">
-          <p className="mb-1 text-xs text-neutral-400">current trick</p>
-          {currentTrick?.plays.length ? (
-            <p className="space-x-2 text-sm">
-              {currentTrick.plays.map((p) => (
-                <span key={p.seat}>
-                  {p.seat}:<CardFace card={p.card} />
-                </span>
-              ))}
-              {currentTrick.winner && <span className="text-neutral-400">→ {currentTrick.winner}</span>}
+      <div
+        className="rounded-[1.75rem] border-8 border-[#463323] p-4 shadow-xl sm:p-6"
+        style={{
+          background:
+            "radial-gradient(ellipse at 50% 30%, #386850 0%, #2a523c 55%, #1f4231 100%)",
+        }}
+      >
+        <div className="grid grid-cols-1 items-center gap-4 sm:grid-cols-3">
+          <div className="hidden sm:block" />
+          {seatBox("N")}
+          <div className="hidden sm:block" />
+          {seatBox("W")}
+          <div className="self-stretch p-2 text-center">
+            <p className="mb-2 text-[11px] uppercase tracking-[0.25em] text-emerald-100/60">
+              current trick
             </p>
-          ) : (
-            <p className="text-sm text-neutral-400">—</p>
-          )}
+            {currentTrick?.plays.length ? (
+              <div className="flex flex-wrap items-end justify-center gap-2">
+                {currentTrick.plays.map((p) => (
+                  <span key={p.seat} className="flex flex-col items-center gap-1">
+                    <span className="text-[10px] font-bold text-emerald-100/70">{p.seat}</span>
+                    <span
+                      className={`flex h-10 w-7 flex-col items-center justify-center rounded-[5px] border border-neutral-200 bg-white leading-none shadow-sm ${
+                        red(p.card.suit) ? "text-red-600" : "text-neutral-900"
+                      }`}
+                    >
+                      <span className="text-[13px] font-semibold">{rankLabel(p.card.rank)}</span>
+                      <span className="text-[11px]">{GLYPH[p.card.suit]}</span>
+                    </span>
+                  </span>
+                ))}
+                {currentTrick.winner && (
+                  <span className="pb-3 text-sm text-[var(--gold)]">→ {currentTrick.winner}</span>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-emerald-100/40">—</p>
+            )}
+          </div>
+          {seatBox("E")}
+          <div className="hidden sm:block" />
+          {seatBox("S")}
+          <div className="hidden sm:block" />
         </div>
-        {seatBox("E")}
-        <div className="hidden sm:block" />
-        {seatBox("S")}
-        <div className="hidden sm:block" />
       </div>
 
       {lastAction && (

@@ -24,6 +24,8 @@ test("coach declares an affiliation (pending) and it is audited", async ({ page,
   await page.locator('select[name="affiliationType"]').selectOption("class_coach");
   await page.locator('input[name="programOrganizationId"]').fill("org_other_club");
   await page.getByRole("button", { name: "Declare affiliation" }).click();
-  await expect(page.locator("text=/class_coach — org_other_club/")).toBeVisible();
+  // .first(): the dev file store persists between runs, so re-runs accumulate
+  // identical pending declarations — any one of them proves the flow.
+  await expect(page.locator("text=/class_coach — org_other_club/").first()).toBeVisible();
   await expect(page.locator("text=(pending)").first()).toBeVisible();
 });

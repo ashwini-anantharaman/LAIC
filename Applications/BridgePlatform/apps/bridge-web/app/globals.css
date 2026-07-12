@@ -1,11 +1,142 @@
 @import "tailwindcss";
 
-/* System font stack: builds stay hermetic (no font downloads at build time). */
+/*
+ * Bridge Platform — "club room" design language.
+ *
+ * Self-hosted variable fonts (app/fonts): builds stay hermetic — no font
+ * downloads at build time. Fraunces carries display type (headings, score),
+ * Karla carries UI text.
+ */
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("./fonts/fraunces-var.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Karla";
+  src: url("./fonts/karla-var.woff2") format("woff2");
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Karla";
+  src: url("./fonts/karla-italic-var.woff2") format("woff2");
+  font-weight: 300 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+@theme {
+  /* Type */
+  --font-sans: "Karla", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-serif: "Fraunces", ui-serif, Georgia, serif;
+
+  /* Felt greens — the emerald scale every page already uses, re-tuned from
+     mint toward card-table baize. */
+  --color-emerald-50: #f0f5f0;
+  --color-emerald-100: #dfeadf;
+  --color-emerald-200: #c0d6c3;
+  --color-emerald-300: #98ba9f;
+  --color-emerald-400: #6b9a78;
+  --color-emerald-500: #497c5d;
+  --color-emerald-600: #346449;
+  --color-emerald-700: #2a523c;
+  --color-emerald-800: #224231;
+  --color-emerald-900: #1b3527;
+  --color-emerald-950: #0d1f15;
+
+  /* Warm stone neutrals on paper. */
+  --color-neutral-50: #faf9f6;
+  --color-neutral-100: #f1efe9;
+  --color-neutral-200: #e4e0d6;
+  --color-neutral-300: #d0cabc;
+  --color-neutral-400: #a49d8e;
+  --color-neutral-500: #7b7466;
+  --color-neutral-600: #5e5749;
+  --color-neutral-700: #48423a;
+  --color-neutral-800: #312d26;
+  --color-neutral-900: #201d18;
+  --color-neutral-950: #131109;
+}
+
 :root {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  --paper: #f7f5ef;
+  --felt: #2a523c;
+  --felt-deep: #1b3527;
+  --gold: #c8a558;
 }
 
 body {
+  background-color: var(--paper);
   font-family: var(--font-sans);
+}
+
+/* Display type: real headings get the serif voice; the small-caps section
+   labels (class "uppercase") stay in the UI sans. */
+h1,
+h2:not(.uppercase),
+h3:not(.uppercase) {
+  font-family: var(--font-serif);
+  font-variation-settings: "opsz" 40;
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: var(--color-emerald-200);
+  color: var(--color-emerald-950);
+}
+
+/* Quiet, consistent interactivity everywhere without touching each page. */
+a,
+button,
+input,
+select,
+textarea,
+summary {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+button:not(:disabled),
+summary {
+  cursor: pointer;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+input,
+select,
+textarea {
+  background-color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-emerald-500);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Bordered sections read as cards on the paper background. */
+main section[class*="border"] {
+  background-color: #fffefb;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

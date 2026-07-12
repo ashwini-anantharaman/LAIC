@@ -24,7 +24,7 @@ export default async function PlayPage() {
 
       <form
         action={createPracticeSession}
-        className="flex items-center gap-2 rounded-lg border border-neutral-200 p-4"
+        className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 p-4"
       >
         <label className="text-sm text-neutral-600">Deal seed</label>
         <input
@@ -53,7 +53,7 @@ export default async function PlayPage() {
         </select>
         <button
           type="submit"
-          className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+          className="whitespace-nowrap rounded-md bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-emerald-800"
         >
           Deal a board
         </button>
@@ -64,7 +64,7 @@ export default async function PlayPage() {
 
       <form
         action={createLevelPracticeSession}
-        className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50/40 p-4"
+        className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50/40 p-4"
       >
         <select name="scopeId" className="rounded border border-neutral-300 px-2 py-1 text-sm">
           {scopes.map((s) => (
@@ -76,7 +76,7 @@ export default async function PlayPage() {
         </select>
         <button
           type="submit"
-          className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+          className="whitespace-nowrap rounded-md bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-emerald-800"
         >
           Practice at this level
         </button>
@@ -138,13 +138,22 @@ export default async function PlayPage() {
             <li key={s.bridgeSessionId}>
               <Link
                 href={`/bridge/play/${s.bridgeSessionId}`}
-                className="block rounded border border-neutral-200 px-3 py-2 text-sm hover:border-emerald-400"
+                className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-lg border border-neutral-200 bg-[#fffefb] px-3 py-2 text-sm shadow-sm hover:border-emerald-400 hover:shadow"
               >
-                <span className="font-mono">{s.bridgeSessionId}</span> · {s.board.name} ·{" "}
-                <span className={s.status === "completed" ? "text-emerald-700" : "text-amber-700"}>
-                  {s.status}
-                </span>{" "}
-                · {s.packageRef.packageId}@{s.packageRef.version} · by {s.createdBy}
+                <span className="font-medium">{s.board.name}</span>
+                <span
+                  className={
+                    s.status === "completed"
+                      ? "rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800"
+                      : "rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800"
+                  }
+                >
+                  {s.status === "completed" ? "completed" : "in play"}
+                </span>
+                <span className="text-xs text-neutral-400">
+                  {s.packageRef.packageId}@{s.packageRef.version} · by {s.createdBy} ·{" "}
+                  <span className="font-mono">{s.bridgeSessionId}</span>
+                </span>
               </Link>
             </li>
           ))}

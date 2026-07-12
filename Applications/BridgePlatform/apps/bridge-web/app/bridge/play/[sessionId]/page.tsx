@@ -39,6 +39,35 @@ function CardFace({ card }: Readonly<{ card: Card }>) {
   );
 }
 
+/** A card as a chip: rank over suit, like the corner index of a real card. */
+function CardChip({ card, dim }: Readonly<{ card: Card; dim?: boolean }>) {
+  return (
+    <span
+      className={`flex h-10 w-7 flex-col items-center justify-center rounded-[5px] border border-neutral-200 bg-white leading-none shadow-sm ${
+        red(card.suit) ? "text-red-600" : "text-neutral-900"
+      } ${dim ? "opacity-55" : ""}`}
+    >
+      <span className="text-[13px] font-semibold">{rankLabel(card.rank)}</span>
+      <span className="text-[11px]">{GLYPH[card.suit]}</span>
+    </span>
+  );
+}
+
+/** Fanned card backs for a hidden hand. */
+function HiddenHand({ count }: Readonly<{ count: number }>) {
+  if (!count) return <span className="text-sm text-neutral-400">no cards left</span>;
+  return (
+    <span className="flex -space-x-2.5 pt-0.5">
+      {Array.from({ length: Math.min(count, 13) }, (_, i) => (
+        <span
+          key={i}
+          className="inline-block h-9 w-6 rounded-[4px] border border-white/40 bg-emerald-800 shadow-sm [background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.07)_0_2px,transparent_2px_5px)]"
+        />
+      ))}
+    </span>
+  );
+}
+
 function Hand({
   cards,
   hidden,
@@ -52,8 +81,7 @@ function Hand({
   sessionId?: string;
   actingAs?: Seat;
 }>) {
-  if (hidden)
-    return <span className="text-sm text-neutral-400">{"🂠".repeat(Math.min(cards.length, 13)) || "—"}</span>;
+  if (hidden) return <HiddenHand count={cards.length} />;
   const sorted = [...cards].sort(
     (a, b) => "SHDC".indexOf(a.suit) - "SHDC".indexOf(b.suit) || b.rank - a.rank,
   );
@@ -71,22 +99,21 @@ function Hand({
               <button
                 type="submit"
                 disabled={!legal}
-                className={`rounded border px-1.5 py-0.5 text-sm ${
+                className={`flex h-10 w-7 flex-col items-center justify-center rounded-[5px] border bg-white leading-none ${
+                  red(c.suit) ? "text-red-600" : "text-neutral-900"
+                } ${
                   legal
-                    ? "border-emerald-400 bg-white hover:bg-emerald-50"
-                    : "border-neutral-200 bg-neutral-50 opacity-40"
+                    ? "border-emerald-400 shadow-md hover:-translate-y-1 hover:shadow-lg"
+                    : "border-neutral-200 opacity-35"
                 }`}
               >
-                <CardFace card={c} />
+                <span className="text-[13px] font-semibold">{rankLabel(c.rank)}</span>
+                <span className="text-[11px]">{GLYPH[c.suit]}</span>
               </button>
             </form>
           );
         }
-        return (
-          <span key={id} className="rounded border border-neutral-200 bg-white px-1.5 py-0.5 text-sm">
-            <CardFace card={c} />
-          </span>
-        );
+        return <CardChip key={id} card={c} />;
       })}
     </span>
   );
@@ -155,26 +182,53 @@ export default async function SessionPage({
         )
       : null;
 
-  const seatBox = (seat: Seat) => (
-    <div className={`rounded-lg border p-3 ${state.turn === seat && state.phase !== "complete" ? "border-emerald-500" : "border-neutral-200"}`}>
-      <p className="mb-1 text-xs font-medium text-neutral-500">
-        {seat}
-        {mySeats.includes(seat)
-          ? ` (${me?.displayNameAtTable || "you"})`
-          : record.seats[seat].playerKind === "human"
-            ? " (human)"
-            : " (AI)"}
-        {dummy === seat && playStarted ? " — dummy" : ""}
-      </p>
-      <Hand
-        cards={state.hands[seat]}
-        hidden={!showHand(seat)}
-        playable={humansTurn && state.turn === seat ? legalPlaySet : undefined}
-        sessionId={record.bridgeSessionId}
-        actingAs={controllerOf(seat)}
-      />
-    </div>
-  );
+  const seatBox = (seat: Seat) => {
+    const onTurn = state.turn === seat && state.phase !== "complete";
+    // Once the board is over, show the ORIGINAL deal so the hand can be
+    // reviewed — the remaining-cards view would just be thirteen empty boxes.
+    const boardOver = state.phase === "complete";
+    return (
+      <div
+        className={`rounded-xl bg-[#fffdf6]/95 p-3 shadow-md ${
+          onTurn ? "ring-2 ring-[var(--gold)] shadow-[0_0_0_5px_rgba(200,165,88,0.25)]" : ""
+        }`}
+      >
+        <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-neutral-500">
+          <span
+            className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${
+              onTurn ? "bg-[var(--gold)] text-emerald-950" : "bg-emerald-800 text-emerald-50"
+            }`}
+          >
+            {seat}
+          </span>
+          {mySeats.includes(seat)
+            ? `${me?.displayNameAtTable || "you"}`
+            : record.seats[seat].playerKind === "human"
+              ? "human"
+              : "AI"}
+          {dummy === seat && playStarted ? " · dummy" : ""}
+          {boardOver ? " · the deal" : ""}
+        </p>
+        {boardOver ? (
+          <span className="flex flex-wrap gap-1">
+            {[...record.board.hands[seat]]
+              .sort((a, b) => "SHDC".indexOf(a.suit) - "SHDC".indexOf(b.suit) || b.rank - a.rank)
+              .map((c) => (
+                <CardChip key={cardId(c)} card={c} dim />
+              ))}
+          </span>
+        ) : (
+          <Hand
+            cards={state.hands[seat]}
+            hidden={!showHand(seat)}
+            playable={humansTurn && state.turn === seat ? legalPlaySet : undefined}
+            sessionId={record.bridgeSessionId}
+            actingAs={controllerOf(seat)}
+          />
+        )}
+      </div>
+    );
+  };
 
   const currentTrick = state.tricks[state.tricks.length - 1];
 
@@ -190,31 +244,51 @@ export default async function SessionPage({
         </p>
       </header>
 
-      {/* Table */}
-      <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-3">
-        <div className="hidden sm:block" />
-        {seatBox("N")}
-        <div className="hidden sm:block" />
-        {seatBox("W")}
-        <div className="rounded-lg border border-dashed border-neutral-300 p-3 text-center">
-          <p className="mb-1 text-xs text-neutral-400">current trick</p>
-          {currentTrick?.plays.length ? (
-            <p className="space-x-2 text-sm">
-              {currentTrick.plays.map((p) => (
-                <span key={p.seat}>
-                  {p.seat}:<CardFace card={p.card} />
-                </span>
-              ))}
-              {currentTrick.winner && <span className="text-neutral-400">→ {currentTrick.winner}</span>}
+      {/* The table: seats around a felt board */}
+      <div
+        className="rounded-[1.75rem] border-8 border-[#463323] p-4 shadow-xl sm:p-6"
+        style={{
+          background:
+            "radial-gradient(ellipse at 50% 30%, #386850 0%, #2a523c 55%, #1f4231 100%)",
+        }}
+      >
+        <div className="grid grid-cols-1 items-center gap-4 sm:grid-cols-3">
+          <div className="hidden sm:block" />
+          {seatBox("N")}
+          <div className="hidden sm:block" />
+          {seatBox("W")}
+          <div className="self-stretch p-2 text-center">
+            <p className="mb-2 text-[11px] uppercase tracking-[0.25em] text-emerald-100/60">
+              current trick
             </p>
-          ) : (
-            <p className="text-sm text-neutral-400">—</p>
-          )}
+            {currentTrick?.plays.length ? (
+              <div className="flex flex-wrap items-end justify-center gap-2">
+                {currentTrick.plays.map((p) => (
+                  <span key={p.seat} className="flex flex-col items-center gap-1">
+                    <span className="text-[10px] font-bold text-emerald-100/70">{p.seat}</span>
+                    <CardChip card={p.card} />
+                  </span>
+                ))}
+                {currentTrick.winner && (
+                  <span className="pb-3 text-sm text-[var(--gold)]">→ {currentTrick.winner}</span>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-emerald-100/40">
+                {state.phase === "auction" ? "the auction is on" : "—"}
+              </p>
+            )}
+            {state.contract && (
+              <p className="mt-2 text-xs text-emerald-100/60">
+                {contractLabel(state.contract)} · NS {state.trickCount.NS} · EW {state.trickCount.EW}
+              </p>
+            )}
+          </div>
+          {seatBox("E")}
+          <div className="hidden sm:block" />
+          {seatBox("S")}
+          <div className="hidden sm:block" />
         </div>
-        {seatBox("E")}
-        <div className="hidden sm:block" />
-        {seatBox("S")}
-        <div className="hidden sm:block" />
       </div>
 
       {/* Bidding box */}
@@ -325,8 +399,8 @@ export default async function SessionPage({
 
       {/* Score (§8.2) */}
       {view.score && (
-        <section className="rounded-lg border border-emerald-300 bg-emerald-50/40 p-4">
-          <h2 className="mb-1 text-sm font-medium text-emerald-900">{view.resultLabel}</h2>
+        <section className="rounded-lg border border-emerald-300 border-l-4 border-l-[var(--gold)] bg-emerald-50/40 p-4">
+          <h2 className="mb-1 text-xl font-medium text-emerald-900">{view.resultLabel}</h2>
           <p className="text-sm text-neutral-700">
             Score: <span className="font-medium">NS {view.score.nsScore >= 0 ? "+" : ""}{view.score.nsScore}</span>
             {view.score.contract && (
