@@ -10,10 +10,11 @@ const tempDir = mkdtempSync(join(tmpdir(), "owlwise-flow-"));
 process.env.LOCAL_DATA_DIR = tempDir;
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-// Pin to local-store mode: these flows exercise the legacy path (the Postgres
-// data path is converted incrementally; identity is done, the rest lands Slice 5).
-delete process.env.DATABASE_URL;
-delete process.env.SUPABASE_DB_URL;
+// Pin to local-store mode: these flows exercise the legacy JSON-store path.
+// Set to "" (not delete) so `import "dotenv/config"` — which loads backend-ts/.env
+// — doesn't repopulate DATABASE_URL and silently flip these into Postgres mode.
+process.env.DATABASE_URL = "";
+process.env.SUPABASE_DB_URL = "";
 
 const { createApp } = await import("../src/app");
 
