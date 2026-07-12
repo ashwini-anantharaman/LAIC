@@ -14,7 +14,6 @@ Key documents:
 - `Learning_Platform_Implementation_Plan_v2.md` — Learning platform
 - `Coaching_Platform_Implementation_Plan_v2.md` — Coaching platform
 - `Bridge_Platform_Implementation_Plan_v2.md` — Bridge platform
-- `Bridge_Workstream_Execution_Plan_v1.md` — Bridge phase-by-phase execution plan
 - `learner-model-architecture-context.md` — how the learner model is split across platforms
 - `Shared_Data_Model_and_API_Contract_v1.md` — shared types, contexts, API contracts
 - `App_Shell_Implementation_Spec.md` — app shell / launch context
@@ -73,26 +72,44 @@ the folder's `.env.example`.
 
 ## Bridge Platform specifics (Applications/BridgePlatform)
 
-Work proceeds in phases per `laicdocs/Bridge_Workstream_Execution_Plan_v1.md`
-(currently: Phases 0–10 + 12 complete — shell, contracts, engine +
-interpreter, knowledge base + generated Beginner Natural packages, persistent
-sessions, playable table with citation-resolving Why panel, constrained
-dealing with evaluator-filtered teaching scopes, package-backed player
-profiles with generated convention cards, evaluator + learner-model evidence
-layer, ingestion jobs + Level-2 content, coach-owned teaching scopes,
-Coaching/Learning integration surfaces; Phase 13 revamp complete — approval
-gates removed per deviation 6, coach book→player tooling with LLM extraction
-citing exact passages, real online sources; Phase 14 complete — Law 77
-scoring at board end, session lifecycle event stream in its own seq space,
-position snapshots with exact-package resume, PBN/LIN paste-import and export
-with attribution-honest imported histories, board library + share-link
-capabilities, server-rendered replay viewer, per-user table profiles with
-feedback modes). Remaining: Phases 15–17 (Part II of the plan). Phase 10 shipped: shared
-Supabase project 'nexus-platform' exists (bridge migrations applied, RLS on);
-GET /api/platform/bridge/context added to TheNexusPlatform backend — see
+Work proceeds in numbered phases. Phases 0–14 are complete: shell, contracts,
+engine + interpreter, knowledge base + generated Beginner Natural packages,
+persistent sessions, playable table with citation-resolving Why panel,
+constrained dealing with evaluator-filtered teaching scopes, package-backed
+player profiles with generated convention cards, evaluator + learner-model
+evidence layer, ingestion jobs + Level-2 content, coach-owned teaching
+scopes, Coaching/Learning integration surfaces, provenance-over-approval
+revamp with coach book→player tooling (LLM extraction citing exact passages,
+real online sources), and the table/play completion (Law 77 scoring, session
+lifecycle event stream in its own seq space, position snapshots with
+exact-package resume, PBN/LIN import/export with attribution-honest imported
+histories, board library + share links, server-rendered replay viewer,
+per-user table profiles with feedback modes). Remaining:
+
+- **Phase 15 — knowledge, taxonomy & content machinery**: full skill taxonomy
+  (~32 skills) + concept taxonomy, skill tags on knowledge items so evaluator/
+  progress derive skills from the package (retire the hardcoded
+  RULE_SKILL_MAP), ingestion intents + side-by-side passage view in the
+  Knowledge Browser, "every rule has ≥1 test hand" warning gate, presets as
+  content + additional evaluator modes, content program (SAYC v1, 2/1 v1,
+  golden boards), optional pgvector search layer (human search only — rule
+  retrieval at decision time stays exact/deterministic).
+- **Phase 16 — platform, security & org model**: append-only audit log +
+  admin view, server-side permission enforcement, REST parity (configurations
+  resolve/convention-card/clone, knowledge APIs, seat-assignments + start),
+  org model completion (org profiles with allowed systems/allowAi, coach
+  affiliations with context switching, groups).
+- **Phase 17 — runtime & operations**: Postgres completion (apply pending
+  migrations, live-verify Pg stores, flip STORE_BACKEND=postgres as team
+  default), Playwright suite, deployment + responsive/mobile pass. BEN
+  adapter deferred by decision 2026-07-12 — the ben-service container stays
+  parked until a BEN table server is available.
+
+Phase 10 shipped: shared Supabase project 'nexus-platform' exists (bridge
+migrations applied, RLS on); GET /api/platform/bridge/context added to
+TheNexusPlatform backend — see
 TheNexusPlatform/backend/NEXUS_BRIDGE_INTEGRATION.md for the review notes.
-Before touching bridge code, read that plan's §1 (locked decisions, decisions
-3/7 revised 2026-07-09) and §6 (cross-cutting invariants). The short version:
+Locked invariants for anyone touching bridge code:
 
 - **Rules are data**, in versioned knowledge packages with cited sources —
   never hand-edited rule code. The engine interprets generated packages.
