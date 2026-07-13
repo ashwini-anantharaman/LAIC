@@ -100,3 +100,18 @@ describe("NT toolkit (ported from the prototype, sourced)", () => {
     }
   });
 });
+
+describe("numeric-parameter binding ($setting)", () => {
+  it("the 1NT opening range comes FROM nt1_range — changing it changes the opening", () => {
+    // 13 HCP balanced: A(4)+K(3)+Q(2)+Q(2)+J(1)+J(1).
+    const thirteen = at("N", [], hand({ S: [14, 5, 3, 2], H: [13, 12, 4], D: [12, 11, 6], C: [11, 7, 2] }));
+    const defaults15to17 = { ...defaults(), bn2_1nt_open: true };
+    const tuned12to14 = { ...defaults15to17, nt1_range: { low: 12, high: 14 } };
+
+    expect(interpretBid(thirteen, "N", { pkg, values: defaults15to17 }).action).not.toBe("1N");
+    const tuned = interpretBid(thirteen, "N", { pkg, values: tuned12to14 });
+    expect(tuned.action).toBe("1N");
+    // The range that drove the decision is cited.
+    expect(tuned.citedSettings.map((c) => c.key)).toContain("nt1_range");
+  });
+});

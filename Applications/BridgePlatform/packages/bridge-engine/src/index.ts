@@ -24,11 +24,14 @@ export { scoreBoard, resultLabel, type ScoreBreakdown } from "./scoring";
 // Rules-as-data system
 export * from "./rules/schema";
 export {
+  collectSettingParamRefs,
   evalConstraint,
   hcpRangeWidth,
   KNOWN_PREDICATES,
   PREDICATES,
+  resolveParams,
   type PredicateContext,
+  type SettingParamRef,
 } from "./rules/predicates";
 export {
   classifyRole,

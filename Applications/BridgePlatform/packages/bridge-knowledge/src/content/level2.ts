@@ -27,6 +27,48 @@ export const LEVEL2_GAPS: BridgeKnowledgeGap[] = [
 
 export const LEVEL2_ITEMS: BridgeReadableKnowledgeItem[] = [
   {
+    itemId: "ki_bn2_setting_nt1_range",
+    systemFamily: "natural",
+    itemType: "setting_definition",
+    title: "Setting: 1NT opening range",
+    humanReadableRule:
+      "The HCP range for the 1NT opening. The rule reads this range directly (numeric-parameter binding), so changing it changes what the AI opens 1NT on.",
+    structuredFields: {
+      setting: {
+        key: "nt1_range",
+        label: "1NT opening range",
+        control: "range_hcp",
+        default: { low: 15, high: 17 },
+        module: "bn2_nt_toolkit",
+        exclusive_group: null,
+        depends_on: null,
+        skill_level: "Beginner",
+        coach_supported: true,
+        binds_to: "numeric_parameter",
+        aliases: ["nt range", "1nt range"],
+        description: "Low and high HCP bounds for opening 1NT.",
+        min: 10,
+        max: 22,
+        origin: "SAYC",
+      },
+    },
+    sourceIds: ["src_sayc_booklet"],
+    citations: [
+      {
+        sourceId: "src_sayc_booklet",
+        passage: "p.2, notrump openings: paraphrase: 1NT shows 15–17 balanced (the default bounds; the range is the partnership's to tune)",
+      },
+    ],
+    relatedSkillIds: ["sk_notrump_ranges"],
+    relatedConceptIds: ["bn2_nt_opening"],
+    gapIds: [],
+    status: "active",
+    version: "1",
+    createdBy: AUTHOR,
+    createdAt: NOW,
+    reviewerNotes: PENDING,
+  },
+  {
     itemId: "ki_bn2_setting_1nt_open",
     systemFamily: "natural",
     itemType: "setting_definition",
@@ -77,7 +119,7 @@ export const LEVEL2_ITEMS: BridgeReadableKnowledgeItem[] = [
         auctionContext: { role: "opening" },
         handConditions: {
           all: [
-            { predicate: "hcpRange", params: { min: 15, max: 17 } },
+            { predicate: "hcpRange", params: { min: { $setting: "nt1_range", field: "low" }, max: { $setting: "nt1_range", field: "high" } } },
             { predicate: "balanced" },
           ],
         },

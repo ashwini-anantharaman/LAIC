@@ -196,6 +196,13 @@ export function validatePackage(
     if ("not" in expr) return checkExpr(ruleId, expr.not);
     if (!knownPredicates.has(expr.predicate))
       errors.push(`${ruleId}: unknown predicate "${expr.predicate}"`);
+    for (const v of Object.values(expr.params ?? {})) {
+      if (typeof v === "object" && v !== null && "$setting" in v) {
+        const key = (v as { $setting: string }).$setting;
+        if (!settingKeys.has(key))
+          errors.push(`${ruleId}: $setting param references unknown setting "${key}"`);
+      }
+    }
   };
 
   for (const rule of [...pkg.bidRules, ...pkg.playRules]) {

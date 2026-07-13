@@ -2,7 +2,7 @@
 // store seeded with Beginner Natural v0 (mirrors TheNexusPlatform's
 // local-store fallback); swaps to the Postgres store when Supabase lands.
 
-import { BEGINNER_NATURAL_V0_SEED, LEVEL2_GAPS, LEVEL2_ITEMS, NT_TOOLKIT_ITEMS, NT_TOOLKIT_SOURCES, type KnowledgeStore } from "@bridge/knowledge";
+import { BEGINNER_NATURAL_V0_SEED, LEVEL2_GAPS, LEVEL2_ITEMS, NT_TOOLKIT_ITEMS, NT_TOOLKIT_SOURCES, PROTOTYPE_REGISTRY_ITEMS, type KnowledgeStore } from "@bridge/knowledge";
 import { JsonFileKnowledgeStore } from "@bridge/knowledge/fileStore";
 import { PgKnowledgeStore } from "@bridge/pg-stores";
 import { join } from "node:path";
@@ -15,7 +15,7 @@ export function knowledgeStore(): KnowledgeStore {
     const seed = {
       ...BEGINNER_NATURAL_V0_SEED,
       sources: [...(BEGINNER_NATURAL_V0_SEED.sources ?? []), ...NT_TOOLKIT_SOURCES],
-      items: [...(BEGINNER_NATURAL_V0_SEED.items ?? []), ...LEVEL2_ITEMS, ...NT_TOOLKIT_ITEMS],
+      items: [...(BEGINNER_NATURAL_V0_SEED.items ?? []), ...LEVEL2_ITEMS, ...NT_TOOLKIT_ITEMS, ...PROTOTYPE_REGISTRY_ITEMS],
       gaps: [...(BEGINNER_NATURAL_V0_SEED.gaps ?? []), ...LEVEL2_GAPS],
     };
     if (storeBackend() === "postgres") {

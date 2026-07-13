@@ -1,5 +1,6 @@
 import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
 import { packagePresets } from "@bridge/profiles";
+import { SettingControl } from "@/components/SettingControl";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
@@ -94,14 +95,14 @@ export default async function PlayersPage() {
                 <div className="flex flex-wrap gap-x-5 gap-y-1.5">
                   {sb.exposedSettingKeys.map((key) => {
                     const setting = pkg.settings.find((s) => s.key === key);
-                    const baseline = Boolean(
+                    if (!setting) return null;
+                    const baseline =
                       sb.baseOverrides[key] ??
-                        presets.find((p) => p.presetId === sb.basePresetId)?.values[key] ??
-                        setting?.default,
-                    );
+                      presets.find((p) => p.presetId === sb.basePresetId)?.values[key] ??
+                      setting.default;
                     return (
-                      <label key={key} className="flex items-center gap-1.5 text-sm" title={setting?.description}>
-                        <input type="checkbox" name={`setting:${key}`} defaultChecked={baseline} />
+                      <label key={key} className="flex items-center gap-1.5 text-sm" title={setting.description}>
+                        <SettingControl setting={setting} value={baseline} />
                         {settingLabel(key)}
                       </label>
                     );
@@ -148,15 +149,34 @@ export default async function PlayersPage() {
                 className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
               />
               <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                Exposed settings — learners may flip ONLY these
+                Exposed settings — learners may change ONLY these
               </p>
-              <div className="flex flex-wrap gap-x-5 gap-y-1.5">
-                {pkg.settings.map((s) => (
-                  <label key={s.key} className="flex items-center gap-1.5 text-sm" title={s.description}>
-                    <input type="checkbox" name="exposed" value={s.key} />
-                    {s.label}
-                    <span className="text-[10px] text-neutral-400">{s.module}</span>
-                  </label>
+              <div className="max-h-80 space-y-2 overflow-y-auto rounded border border-neutral-100 p-2">
+                {Object.entries(
+                  pkg.settings.reduce<Record<string, typeof pkg.settings>>((acc, s) => {
+                    (acc[s.module] ??= [] as never).push(s as never);
+                    return acc;
+                  }, {}),
+                ).map(([module, settings]) => (
+                  <details key={module}>
+                    <summary className="cursor-pointer text-xs font-medium text-neutral-600">
+                      {module.replace(/_/g, " ")}{" "}
+                      <span className="text-neutral-400">({settings.length})</span>
+                    </summary>
+                    <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1.5 pl-3">
+                      {settings.map((s) => (
+                        <label key={s.key} className="flex items-center gap-1.5 text-sm" title={s.description}>
+                          <input type="checkbox" name="exposed" value={s.key} />
+                          {s.label}
+                          {s.uiOnly && (
+                            <span className="text-[10px] text-neutral-400" title="No rule consumes it yet">
+                              not wired
+                            </span>
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                  </details>
                 ))}
               </div>
               <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-emerald-800">

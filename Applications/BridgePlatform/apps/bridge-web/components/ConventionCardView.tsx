@@ -1,5 +1,6 @@
 import type { SettingValue } from "@bridge/config";
 import type { ConventionCard } from "@bridge/profiles";
+import { formatSettingValue } from "./SettingControl";
 
 /**
  * The convention card as a card (prototype parity, ACBL spirit): a printable
@@ -46,19 +47,29 @@ export function ConventionCardView({
           <span className="font-medium uppercase tracking-wide text-neutral-500">
             Agreements
           </span>
-          {card.settings.map((s) => (
-            <span
-              key={s.key}
-              className={
-                offBase(s.key, s.value)
-                  ? "rounded bg-amber-100 px-1.5 py-0.5 text-amber-900"
-                  : "text-neutral-600"
-              }
-              title={offBase(s.key, s.value) ? "Differs from the package default" : undefined}
-            >
-              {s.label}: <span className="font-medium">{String(s.value)}</span>
-            </span>
-          ))}
+          {card.settings
+            .filter((s) => !s.uiOnly || offBase(s.key, s.value))
+            .map((s) => (
+              <span
+                key={s.key}
+                className={
+                  offBase(s.key, s.value)
+                    ? "rounded bg-amber-100 px-1.5 py-0.5 text-amber-900"
+                    : "text-neutral-600"
+                }
+                title={offBase(s.key, s.value) ? "Differs from the package default" : undefined}
+              >
+                {s.label}: <span className="font-medium">{formatSettingValue(s.value)}</span>
+              </span>
+            ))}
+          {(() => {
+            const hidden = card.settings.filter((s) => s.uiOnly && !offBase(s.key, s.value)).length;
+            return hidden > 0 ? (
+              <span className="text-neutral-400">
+                + {hidden} recorded agreement{hidden === 1 ? "" : "s"} at their defaults
+              </span>
+            ) : null;
+          })()}
         </p>
       </div>
 

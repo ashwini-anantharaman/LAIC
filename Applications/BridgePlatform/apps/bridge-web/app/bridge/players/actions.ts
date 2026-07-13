@@ -60,17 +60,17 @@ export async function updateProfile(formData: FormData) {
   const sandbox = existing?.sandboxId
     ? await service.getSandbox(existing.sandboxId, context)
     : null;
-  const overrides: Record<string, boolean> = {};
+  const { parseSettingValue } = await import("@/lib/settingForm");
+  const overrides: Record<string, import("@bridge/config").SettingValue> = {};
   for (const setting of pkg.settings) {
-    if (setting.control !== "toggle") continue;
     // Sandboxed profiles: the form only renders exposed settings — keep the
-    // stored value for everything else instead of defaulting it to off.
+    // stored value for everything else instead of re-deriving it.
     if (sandbox && !sandbox.exposedSettingKeys.includes(setting.key)) {
       const kept = existing?.valueOverrides[setting.key];
-      if (kept !== undefined) overrides[setting.key] = Boolean(kept);
+      if (kept !== undefined) overrides[setting.key] = kept;
       continue;
     }
-    overrides[setting.key] = formData.get(`setting:${setting.key}`) === "on";
+    overrides[setting.key] = parseSettingValue(setting, formData);
   }
   await (await profileService()).updateValues(
     id,
@@ -151,9 +151,12 @@ export async function configureFromSandboxAction(formData: FormData) {
   const sandbox = await service.getSandbox(sandboxId, context);
   if (!sandbox) throw new Error("Sandbox not found");
   // Only exposed keys are read from the form; the service re-enforces anyway.
-  const overrides: Record<string, boolean> = {};
-  for (const key of sandbox.exposedSettingKeys)
-    overrides[key] = formData.get(`setting:${key}`) === "on";
+  const { parseSettingValue } = await import("@/lib/settingForm");
+  const overrides: Record<string, import("@bridge/config").SettingValue> = {};
+  for (const key of sandbox.exposedSettingKeys) {
+    const setting = pkg.settings.find((s) => s.key === key);
+    if (setting) overrides[key] = parseSettingValue(setting, formData);
+  }
   const profile = await service.configureFromSandbox(context, sandboxId, {
     name: String(formData.get("name") || "").trim() || undefined,
     overrides,

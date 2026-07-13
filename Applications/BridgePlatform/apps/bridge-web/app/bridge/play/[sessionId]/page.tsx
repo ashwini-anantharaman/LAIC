@@ -24,6 +24,7 @@ import {
   stepSession,
   undoSession,
 } from "@/app/bridge/play/actions";
+import { SettingControl, formatSettingValue } from "@/components/SettingControl";
 import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
@@ -601,37 +602,60 @@ export default async function SessionPage({
             )}
           </p>
           <ul className="space-y-2">
-            {pinnedPkg.settings.map((s) => {
-              const effective =
-                scope === "table"
-                  ? record.resolvedValues
-                  : (record.seatValues?.[scope] ?? record.resolvedValues);
-              const on = Boolean(effective[s.key]);
-              return (
-                <li key={s.key} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <span className="min-w-0">
-                    <span className="font-medium">{s.label}</span>{" "}
-                    <span
-                      className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
-                        on ? "bg-emerald-50 text-emerald-800" : "bg-neutral-100 text-neutral-500"
-                      }`}
-                    >
-                      {on ? "on" : "off"}
+            {pinnedPkg.settings
+              .filter((s) => !s.uiOnly)
+              .map((s) => {
+                const effective =
+                  scope === "table"
+                    ? record.resolvedValues
+                    : (record.seatValues?.[scope] ?? record.resolvedValues);
+                const on = Boolean(effective[s.key]);
+                return (
+                  <li key={s.key} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span className="min-w-0">
+                      <span className="font-medium">{s.label}</span>{" "}
+                      <span
+                        className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
+                          s.control !== "toggle"
+                            ? "bg-emerald-50 text-emerald-800"
+                            : on
+                              ? "bg-emerald-50 text-emerald-800"
+                              : "bg-neutral-100 text-neutral-500"
+                        }`}
+                      >
+                        {formatSettingValue(effective[s.key]!)}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-neutral-500">{s.description}</span>
                     </span>
-                    <span className="mt-0.5 block text-xs text-neutral-500">{s.description}</span>
-                  </span>
-                  <form action={changeTableSetting}>
-                    <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
-                    <input type="hidden" name="key" value={s.key} />
-                    <input type="hidden" name="scope" value={scope} />
-                    <button className="whitespace-nowrap rounded border border-neutral-300 px-2.5 py-1 text-xs hover:border-emerald-400 hover:bg-emerald-50">
-                      {on ? "Turn off & continue here" : "Turn on & continue here"}
-                    </button>
-                  </form>
-                </li>
-              );
-            })}
+                    {s.control === "toggle" ? (
+                      <form action={changeTableSetting}>
+                        <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+                        <input type="hidden" name="key" value={s.key} />
+                        <input type="hidden" name="scope" value={scope} />
+                        <button className="whitespace-nowrap rounded border border-neutral-300 px-2.5 py-1 text-xs hover:border-emerald-400 hover:bg-emerald-50">
+                          {on ? "Turn off & continue here" : "Turn on & continue here"}
+                        </button>
+                      </form>
+                    ) : (
+                      <form action={changeTableSetting} className="flex items-center gap-1.5">
+                        <input type="hidden" name="sessionId" value={record.bridgeSessionId} />
+                        <input type="hidden" name="key" value={s.key} />
+                        <input type="hidden" name="scope" value={scope} />
+                        <SettingControl setting={s} value={effective[s.key]!} />
+                        <button className="whitespace-nowrap rounded border border-neutral-300 px-2.5 py-1 text-xs hover:border-emerald-400 hover:bg-emerald-50">
+                          Apply & continue here
+                        </button>
+                      </form>
+                    )}
+                  </li>
+                );
+              })}
           </ul>
+          <p className="mt-1 text-[11px] text-neutral-400">
+            Showing the {pinnedPkg.settings.filter((s) => !s.uiOnly).length} settings wired to
+            rules; {pinnedPkg.settings.filter((s) => s.uiOnly).length} recorded agreements are
+            edited on the player page.
+          </p>
           <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-dashed border-neutral-200 pt-2 text-xs text-neutral-500">
             <span className="font-medium uppercase tracking-wide">Exercised so far</span>
             {coverage.size === 0 && <span>no setting has driven a decision yet</span>}

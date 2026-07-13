@@ -835,7 +835,7 @@ export interface ConventionCard {
   profileName: string;
   packageRef: { packageId: string; version: string };
   resolvedValueHash: string;
-  settings: Array<{ key: string; label: string; value: SettingValue }>;
+  settings: Array<{ key: string; label: string; value: SettingValue; uiOnly?: boolean }>;
   sections: Array<{ title: string; entries: CardEntry[] }>;
 }
 
@@ -868,7 +868,12 @@ export function generateConventionCard(
     profileName,
     packageRef: { packageId: pkg.packageId, version: pkg.version },
     resolvedValueHash: hashSettingValues(values),
-    settings: pkg.settings.map((s) => ({ key: s.key, label: s.label, value: values[s.key]! })),
+    settings: pkg.settings.map((s) => ({
+      key: s.key,
+      label: s.label,
+      value: values[s.key]!,
+      uiOnly: s.uiOnly,
+    })),
     sections: [
       { title: "Opening bids", entries: openings.map(entry) },
       { title: "Responses", entries: responses.map(entry) },

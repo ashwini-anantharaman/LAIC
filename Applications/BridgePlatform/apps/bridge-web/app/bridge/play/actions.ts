@@ -302,13 +302,22 @@ export async function changeTableSetting(formData: FormData) {
   const setting = pkgRecord.pkg.settings.find((s) => s.key === key);
   if (!setting) throw new Error(`No setting "${key}" in this package version`);
   const scope = (String(formData.get("scope") || "table")) as "table" | Seat;
+  // Toggles flip; richer controls (ranges, selects) send their new value.
+  const { parseSettingValue } = await import("@/lib/settingForm");
+  const currentScope =
+    scope === "table"
+      ? view.record.resolvedValues
+      : (view.record.seatValues?.[scope] ?? view.record.resolvedValues);
+  const newValue =
+    setting.control === "toggle" && formData.get(`setting:${key}`) === null
+      ? !currentScope[key]
+      : parseSettingValue(setting, formData);
   let newTable = view.record.resolvedValues;
   let newSeatValues = view.record.seatValues;
   if (scope === "table") {
-    newTable = { ...view.record.resolvedValues, [key]: !view.record.resolvedValues[key] };
+    newTable = { ...view.record.resolvedValues, [key]: newValue };
   } else {
-    const current = view.record.seatValues?.[scope] ?? view.record.resolvedValues;
-    newSeatValues = { ...view.record.seatValues, [scope]: { ...current, [key]: !current[key] } };
+    newSeatValues = { ...view.record.seatValues, [scope]: { ...currentScope, [key]: newValue } };
   }
   const forked = await sessionService().forkSession(id, context, pkgRecord.pkg, newTable, newSeatValues);
   const { audit } = await import("@/lib/audit");

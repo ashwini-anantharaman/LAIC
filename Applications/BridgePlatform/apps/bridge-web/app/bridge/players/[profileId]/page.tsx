@@ -8,7 +8,9 @@ import {
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { customizeProfile, updateProfile } from "@/app/bridge/players/actions";
+import { dependencyMet } from "@bridge/config";
 import { ConventionCardView } from "@/components/ConventionCardView";
+import { SettingControl, formatSettingValue } from "@/components/SettingControl";
 import { PrintButton } from "@/components/PrintButton";
 import { knowledgeStore } from "@/lib/knowledge";
 import { getBridgeContext } from "@/lib/nexus";
@@ -144,19 +146,32 @@ export default async function ProfilePage({
                       s.default;
                     const modified =
                       JSON.stringify(values[s.key]) !== JSON.stringify(presetBaseline);
+                    const enabled = dependencyMet(s, (k) => values[k]);
                     return (
-                      <label key={s.key} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          name={`setting:${s.key}`}
-                          defaultChecked={Boolean(values[s.key])}
-                        />
+                      <label
+                        key={s.key}
+                        className={`flex flex-wrap items-center gap-2 text-sm ${enabled ? "" : "opacity-50"}`}
+                        title={
+                          enabled
+                            ? s.description
+                            : `Requires ${s.depends_on?.key} — currently gated off`
+                        }
+                      >
+                        <SettingControl setting={s} value={values[s.key]!} disabled={!enabled} />
                         <span>{s.label}</span>
                         {modified && (
                           <span
                             className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
                             title="Differs from the preset baseline"
                           />
+                        )}
+                        {s.uiOnly && (
+                          <span
+                            className="rounded bg-neutral-100 px-1 text-[10px] text-neutral-400"
+                            title="Recorded as a partnership agreement; no rule consumes it yet"
+                          >
+                            not yet wired
+                          </span>
                         )}
                         <span className="rounded bg-neutral-100 px-1 text-[10px] text-neutral-400">
                           {s.skill_level}

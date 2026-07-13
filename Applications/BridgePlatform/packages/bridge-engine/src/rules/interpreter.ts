@@ -26,7 +26,7 @@ import type { Decision } from "../decision";
 import { hcp, longestSuits, shape, suitCounts } from "../hand";
 import type { GameState } from "../state";
 import { matchesAuctionPattern } from "./auctionPattern";
-import { evalConstraint, hcpRangeWidth, type PredicateContext } from "./predicates";
+import { collectSettingParamRefs, evalConstraint, hcpRangeWidth, type PredicateContext } from "./predicates";
 import { selectMatch, type SelectableMatch, type SelectionPolicy } from "./policies";
 import type {
   BidRuleAction,
@@ -194,6 +194,20 @@ export function interpretBid(
   const rules = [...pkg.bidRules].sort((a, b) => a.priority - b.priority);
   for (const rule of rules) {
     const gates = checkGates(rule.settingGates, values, settingsByKey);
+    // Numeric-parameter bindings: settings consumed via $setting params are
+    // consulted too — cite them so "why?" shows the range that drove this.
+    for (const key of collectSettingParamRefs(rule.handConditions)) {
+      const s = settingsByKey.get(key);
+      if (s && !gates.cited.some((c) => c.key === key))
+        gates.cited.push({
+          key,
+          label: s.label,
+          value: values[key]!,
+          binds_to: s.binds_to,
+          module: s.module,
+          matched: true,
+        });
+    }
     const record = (matched: boolean, reason: string) =>
       trace.push({ ruleId: rule.ruleId, matched, settingsConsulted: gates.cited, reason });
 

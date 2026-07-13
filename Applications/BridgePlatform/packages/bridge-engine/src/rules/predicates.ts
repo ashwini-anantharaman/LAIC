@@ -79,13 +79,57 @@ export const KNOWN_PREDICATES: ReadonlySet<string> = new Set(Object.keys(PREDICA
 
 const isRef = (e: HandConstraintExpr): e is HandPredicateRef => "predicate" in e;
 
+/**
+ * Setting-valued parameter (the prototype's numeric_parameter binding, as
+ * data): `{ $setting: "nt1_range", field: "low" }` resolves to the RESOLVED
+ * configuration value at decision time — so a coach's HCP range genuinely
+ * drives the rule, deterministically and citably.
+ */
+export interface SettingParamRef {
+  $setting: string;
+  /** For HcpRange values: which end of the range. */
+  field?: "low" | "high";
+}
+
+const isSettingRef = (v: unknown): v is SettingParamRef =>
+  typeof v === "object" && v !== null && "$setting" in v;
+
+export function resolveParams(
+  params: Record<string, unknown>,
+  values: Record<string, SettingValue>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (isSettingRef(v)) {
+      const resolved = values[v.$setting];
+      out[k] =
+        v.field && typeof resolved === "object" && resolved !== null && !Array.isArray(resolved)
+          ? (resolved as { low: number; high: number })[v.field]
+          : resolved;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** Every setting key referenced via $setting anywhere in the expression. */
+export function collectSettingParamRefs(expr: HandConstraintExpr): string[] {
+  if ("all" in expr) return expr.all.flatMap(collectSettingParamRefs);
+  if ("any" in expr) return expr.any.flatMap(collectSettingParamRefs);
+  if ("not" in expr) return collectSettingParamRefs(expr.not);
+  return Object.values(expr.params ?? {})
+    .filter(isSettingRef)
+    .map((v) => v.$setting);
+}
+
 export function evalConstraint(expr: HandConstraintExpr, ctx: PredicateContext): boolean {
   if ("all" in expr) return expr.all.every((e) => evalConstraint(e, ctx));
   if ("any" in expr) return expr.any.some((e) => evalConstraint(e, ctx));
   if ("not" in expr) return !evalConstraint(expr.not, ctx);
   const fn = PREDICATES[expr.predicate];
   if (!fn) throw new Error(`Unknown predicate "${expr.predicate}" (validate the package first)`);
-  return fn(ctx, expr.params ?? {});
+  return fn(ctx, resolveParams(expr.params ?? {}, ctx.values));
 }
 
 /**
