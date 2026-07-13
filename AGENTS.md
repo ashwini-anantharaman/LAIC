@@ -127,7 +127,7 @@ admin generation loop, org flows — `pnpm e2e`), and the §7.3 responsive pass
 (shell stacks on small screens, table grid restacks). Still blocked on
 external access, not code:
 
-- **Supabase**: apply migrations 0005–0010, live-verify the five Pg stores,
+- **Supabase**: apply migrations 0005–0011, live-verify the five Pg stores,
   then flip STORE_BACKEND=postgres as the team default (needs a Supabase
   sign-in; JSON file stores remain the dev default meanwhile).
 - **Deployment**: Vercel web + managed Postgres (§17.2 Option A) — needs
