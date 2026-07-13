@@ -1,9 +1,18 @@
+import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
+import { packagePresets } from "@bridge/profiles";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { customizeProfile, customizeScope, updateScope } from "@/app/bridge/players/actions";
+import {
+  configureFromSandboxAction,
+  createSandboxAction,
+  customizeProfile,
+  customizeScope,
+  updateScope,
+} from "@/app/bridge/players/actions";
 import { canEditProfile } from "@bridge/profiles";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
+import { latestPackage } from "@/lib/sessions";
 
 export default async function PlayersPage() {
   const context = await getBridgeContext();
@@ -11,6 +20,11 @@ export default async function PlayersPage() {
   const service = await profileService();
   const profiles = await service.listProfiles(context);
   const scopes = await service.listScopes(context);
+  const sandboxes = await service.listSandboxes(context);
+  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const presets = packagePresets(pkg);
+  const canCoach = ["coach", "reviewer", "admin"].includes(context.accessLevel);
+  const settingLabel = (key: string) => pkg.settings.find((s) => s.key === key)?.label ?? key;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -50,6 +64,109 @@ export default async function PlayersPage() {
           </li>
         ))}
       </ul>
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
+          Sandboxes — configure a player the easy way
+        </h2>
+        <p className="text-sm text-neutral-600">
+          A coach picks which settings are on the table; you flip just those
+          toggles and get your own player. Everything else stays locked to the
+          coach’s baseline — enforced, not just hidden.
+        </p>
+        {sandboxes.length === 0 && (
+          <p className="text-sm text-neutral-500">
+            No sandboxes yet{canCoach ? " — create one below." : " — ask your coach to publish one."}
+          </p>
+        )}
+        <ul className="space-y-3">
+          {sandboxes.map((sb) => (
+            <li key={sb.sandboxId} className="rounded-lg border border-emerald-200 bg-[#fffefb] p-4 shadow-sm">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="font-medium">{sb.name}</p>
+                <p className="text-xs text-neutral-400">
+                  base: {presets.find((p) => p.presetId === sb.basePresetId)?.name ?? "package defaults"} ·{" "}
+                  {sb.packageRef.packageId}@{sb.packageRef.version}
+                </p>
+              </div>
+              {sb.description && <p className="mt-0.5 text-sm text-neutral-600">{sb.description}</p>}
+              <form action={configureFromSandboxAction} className="mt-2 space-y-2">
+                <input type="hidden" name="sandboxId" value={sb.sandboxId} />
+                <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+                  {sb.exposedSettingKeys.map((key) => {
+                    const setting = pkg.settings.find((s) => s.key === key);
+                    const baseline = Boolean(
+                      sb.baseOverrides[key] ??
+                        presets.find((p) => p.presetId === sb.basePresetId)?.values[key] ??
+                        setting?.default,
+                    );
+                    return (
+                      <label key={key} className="flex items-center gap-1.5 text-sm" title={setting?.description}>
+                        <input type="checkbox" name={`setting:${key}`} defaultChecked={baseline} />
+                        {settingLabel(key)}
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    name="name"
+                    placeholder={`My ${sb.name} player`}
+                    className="w-64 rounded border border-neutral-300 px-2 py-1 text-sm"
+                  />
+                  <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-emerald-800">
+                    Create my player
+                  </button>
+                </div>
+              </form>
+            </li>
+          ))}
+        </ul>
+        {canCoach && (
+          <details className="rounded-lg border border-neutral-200 p-4">
+            <summary className="cursor-pointer text-sm font-medium">
+              Create a sandbox (coach) — choose what your learners may touch
+            </summary>
+            <form action={createSandboxAction} className="mt-3 space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <input
+                  name="name"
+                  required
+                  placeholder="Sandbox name (e.g. Week 3 — the 1NT toolkit)"
+                  className="w-80 rounded border border-neutral-300 px-2 py-1 text-sm"
+                />
+                <select name="basePresetId" className="rounded border border-neutral-300 px-2 py-1 text-sm">
+                  {presets.map((p) => (
+                    <option key={p.presetId} value={p.presetId}>
+                      base: {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <input
+                name="description"
+                placeholder="What this week is about (optional)"
+                className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+              />
+              <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                Exposed settings — learners may flip ONLY these
+              </p>
+              <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+                {pkg.settings.map((s) => (
+                  <label key={s.key} className="flex items-center gap-1.5 text-sm" title={s.description}>
+                    <input type="checkbox" name="exposed" value={s.key} />
+                    {s.label}
+                    <span className="text-[10px] text-neutral-400">{s.module}</span>
+                  </label>
+                ))}
+              </div>
+              <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-emerald-800">
+                Publish sandbox
+              </button>
+            </form>
+          </details>
+        )}
+      </section>
+
       <section className="space-y-3">
         <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
           Teaching scopes (your levels, your judgment)

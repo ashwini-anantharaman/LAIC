@@ -2,6 +2,7 @@
 
 import type {
   BridgeAiPlayerProfile,
+  BridgeSandbox,
   BridgeCoachAffiliation,
   BridgeProgramOrganizationProfile,
   BridgeUserProfile,
@@ -21,6 +22,7 @@ const rowToProfile = (r: any): BridgeAiPlayerProfile => ({
   packageRef: { packageId: r.package_id, version: r.package_version },
   selectedPresetId: r.selected_preset_id ?? undefined,
   valueOverrides: r.value_overrides ?? {}, resolvedValueHash: r.resolved_value_hash,
+  sandboxId: r.sandbox_id ?? undefined,
   status: r.status, createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
@@ -51,9 +53,39 @@ export class PgProfileStore implements ProfileStore {
       owner_id: p.ownerId ?? null, program_organization_id: p.programOrganizationId ?? null,
       package_id: p.packageRef.packageId, package_version: p.packageRef.version,
       selected_preset_id: p.selectedPresetId ?? null, value_overrides: p.valueOverrides,
-      resolved_value_hash: p.resolvedValueHash, status: p.status,
+      resolved_value_hash: p.resolvedValueHash, sandbox_id: p.sandboxId ?? null,
+      status: p.status,
       created_at: p.createdAt, updated_at: p.updatedAt,
     }, { onConflict: "ai_player_profile_id" }), "profiles.save");
+  }
+
+  // ---- sandboxes (0011: record jsonb + tenant columns) ----------------------
+
+  async listSandboxes() {
+    const rows = check(await this.db.from("bridge_sandboxes").select("record"), "sandboxes.list");
+    return rows.map((r: any) => r.record as BridgeSandbox);
+  }
+  async getSandbox(id: string) {
+    const rows = check(
+      await this.db.from("bridge_sandboxes").select("record").eq("sandbox_id", id),
+      "sandboxes.get",
+    );
+    return rows.length ? ((rows[0] as any).record as BridgeSandbox) : null;
+  }
+  async saveSandbox(s: BridgeSandbox) {
+    check(
+      await this.db.from("bridge_sandboxes").upsert(
+        {
+          sandbox_id: s.sandboxId,
+          program_organization_id: s.programOrganizationId ?? null,
+          owner_id: s.ownerId ?? null,
+          record: s,
+          updated_at: s.updatedAt,
+        },
+        { onConflict: "sandbox_id" },
+      ),
+      "sandboxes.save",
+    );
   }
 
   async listScopes() {

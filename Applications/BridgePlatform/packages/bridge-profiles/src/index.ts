@@ -63,6 +63,9 @@ export interface BridgeAiPlayerProfile {
   selectedPresetId?: string;
   valueOverrides: Record<string, SettingValue>;
   resolvedValueHash: string;
+  /** Set when this player was configured inside a coach's sandbox — only the
+   *  sandbox's exposed settings may ever be changed on it. */
+  sandboxId?: string;
   status: "active" | "archived";
   createdAt: string;
   updatedAt: string;
@@ -100,6 +103,30 @@ export function resolveProfileValues(
   const preset = presets.find((p) => p.presetId === presetId);
   Object.assign(values, preset?.values ?? {}, overrides);
   return { values, hash: hashSettingValues(values) };
+}
+
+// ---------------------------------------------------------------------------
+// Sandboxes: a coach curates WHICH settings a learner may touch (the
+// prototype's visibility layer, made first-class). The learner configures a
+// player inside the sandbox: base preset + coach overrides form the
+// baseline, and ONLY exposedSettingKeys accept learner overrides — enforced
+// server-side, not just hidden in the UI.
+// ---------------------------------------------------------------------------
+
+export interface BridgeSandbox {
+  sandboxId: string;
+  name: string;
+  description?: string;
+  ownerType: "system" | "program_org" | "coach" | "learner";
+  ownerId?: string;
+  programOrganizationId?: string;
+  packageRef: { packageId: string; version: string };
+  basePresetId?: string;
+  baseOverrides: Record<string, SettingValue>;
+  /** The only setting keys a learner may override inside this sandbox. */
+  exposedSettingKeys: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +227,7 @@ export interface BridgeCoachAffiliation {
 
 export interface ProfileStoreData {
   profiles: BridgeAiPlayerProfile[];
+  sandboxes?: BridgeSandbox[];
   scopes?: TeachingScopeRecord[];
   userProfiles?: BridgeUserProfile[];
   orgProfiles?: BridgeProgramOrganizationProfile[];
@@ -210,6 +238,9 @@ export interface ProfileStore {
   list(): Promise<BridgeAiPlayerProfile[]>;
   get(id: string): Promise<BridgeAiPlayerProfile | null>;
   save(profile: BridgeAiPlayerProfile): Promise<void>;
+  listSandboxes(): Promise<BridgeSandbox[]>;
+  getSandbox(id: string): Promise<BridgeSandbox | null>;
+  saveSandbox(sandbox: BridgeSandbox): Promise<void>;
   listScopes(): Promise<TeachingScopeRecord[]>;
   getScope(id: string): Promise<TeachingScopeRecord | null>;
   saveScope(scope: TeachingScopeRecord): Promise<void>;
@@ -240,6 +271,19 @@ export class InMemoryProfileStore implements ProfileStore {
     );
     if (i >= 0) this.data.profiles[i] = structuredClone(profile);
     else this.data.profiles.push(structuredClone(profile));
+    this.persist();
+  }
+  async listSandboxes(): Promise<BridgeSandbox[]> {
+    return structuredClone(this.data.sandboxes ?? []);
+  }
+  async getSandbox(id: string): Promise<BridgeSandbox | null> {
+    return structuredClone((this.data.sandboxes ?? []).find((s) => s.sandboxId === id) ?? null);
+  }
+  async saveSandbox(sandbox: BridgeSandbox): Promise<void> {
+    this.data.sandboxes = [
+      ...(this.data.sandboxes ?? []).filter((s) => s.sandboxId !== sandbox.sandboxId),
+      structuredClone(sandbox),
+    ];
     this.persist();
   }
   async listScopes(): Promise<TeachingScopeRecord[]> {
@@ -414,6 +458,25 @@ export class ProfileService {
     if (!p || !canSeeProfile(p, ctx)) throw new Error("Profile not found");
     if (!canEditProfile(p, ctx))
       throw new Error("System and foreign profiles are read-only — customize to make your own copy");
+    // Sandboxed profiles: unexposed settings must stay at the sandbox
+    // baseline — enforced here so no edit path can bypass the sandbox.
+    if (p.sandboxId && changes.valueOverrides) {
+      const sandbox = await this.store.getSandbox(p.sandboxId);
+      if (sandbox) {
+        const baseline = resolveProfileValues(
+          settings,
+          sandbox.basePresetId,
+          sandbox.baseOverrides,
+          presets,
+        ).values;
+        const offending = Object.keys(changes.valueOverrides).filter(
+          (k) =>
+            !sandbox.exposedSettingKeys.includes(k) &&
+            JSON.stringify(changes.valueOverrides![k]) !== JSON.stringify(baseline[k]),
+        );
+        this.assertWithinSandboxChanged(sandbox, offending);
+      }
+    }
     const selectedPresetId = changes.selectedPresetId ?? p.selectedPresetId;
     const valueOverrides = changes.valueOverrides ?? p.valueOverrides;
     const { hash } = resolveProfileValues(settings, selectedPresetId, valueOverrides, presets);
@@ -427,6 +490,119 @@ export class ProfileService {
     };
     await this.store.save(updated);
     return updated;
+  }
+
+  // ---- sandboxes (§ coach-curated configuration surfaces) ------------------
+
+  /** Coaches (and reviewers/admins) curate sandboxes for their learners. */
+  async createSandbox(
+    ctx: NexusBridgeContext,
+    input: {
+      name: string;
+      description?: string;
+      packageRef: { packageId: string; version: string };
+      basePresetId?: string;
+      baseOverrides?: Record<string, SettingValue>;
+      exposedSettingKeys: string[];
+    },
+  ): Promise<BridgeSandbox> {
+    if (!["coach", "reviewer", "admin"].includes(ctx.accessLevel))
+      throw new Error("Sandboxes are coach tools — coach, reviewer, or admin access required");
+    if (!input.exposedSettingKeys.length)
+      throw new Error("A sandbox must expose at least one setting");
+    const sandbox: BridgeSandbox = {
+      sandboxId: this.newId().replace("aip_", "sbx_"),
+      name: input.name,
+      description: input.description,
+      ownerType: ctx.accessLevel === "coach" ? "coach" : "program_org",
+      ownerId: ctx.nexusUserId,
+      programOrganizationId: ctx.programOrganizationId,
+      packageRef: input.packageRef,
+      basePresetId: input.basePresetId,
+      baseOverrides: input.baseOverrides ?? {},
+      exposedSettingKeys: input.exposedSettingKeys,
+      createdAt: this.now(),
+      updatedAt: this.now(),
+    };
+    await this.store.saveSandbox(sandbox);
+    return sandbox;
+  }
+
+  async listSandboxes(ctx: NexusBridgeContext): Promise<BridgeSandbox[]> {
+    return (await this.store.listSandboxes()).filter((s) => canSeeProfile(s, ctx));
+  }
+
+  async getSandbox(id: string, ctx: NexusBridgeContext): Promise<BridgeSandbox | null> {
+    const s = await this.store.getSandbox(id);
+    return s && canSeeProfile(s, ctx) ? s : null;
+  }
+
+  private assertWithinSandboxChanged(sandbox: BridgeSandbox, changedKeys: string[]): void {
+    const outside = changedKeys.filter((k) => !sandbox.exposedSettingKeys.includes(k));
+    if (outside.length)
+      throw new Error(
+        `Setting${outside.length > 1 ? "s" : ""} [${outside.join(", ")}] ${outside.length > 1 ? "are" : "is"} not exposed by this sandbox`,
+      );
+  }
+
+  /** Reject any learner override outside the sandbox's exposed keys. */
+  private assertWithinSandbox(
+    sandbox: BridgeSandbox,
+    overrides: Record<string, SettingValue>,
+  ): void {
+    const outside = Object.keys(overrides).filter(
+      (k) => !sandbox.exposedSettingKeys.includes(k),
+    );
+    if (outside.length)
+      throw new Error(
+        `Setting${outside.length > 1 ? "s" : ""} [${outside.join(", ")}] ${outside.length > 1 ? "are" : "is"} not exposed by this sandbox`,
+      );
+  }
+
+  /**
+   * A learner configures THEIR player inside a coach's sandbox: baseline =
+   * sandbox preset + coach overrides; the learner's choices are accepted only
+   * for exposed settings. The result is a normal pinned AI profile carrying
+   * sandboxId lineage.
+   */
+  async configureFromSandbox(
+    ctx: NexusBridgeContext,
+    sandboxId: string,
+    input: {
+      name?: string;
+      overrides: Record<string, SettingValue>;
+      settings: readonly Setting[];
+      presets?: readonly ConfigPreset[];
+    },
+  ): Promise<BridgeAiPlayerProfile> {
+    const sandbox = await this.getSandbox(sandboxId, ctx);
+    if (!sandbox) throw new Error("Sandbox not found");
+    this.assertWithinSandbox(sandbox, input.overrides);
+    const valueOverrides = { ...sandbox.baseOverrides, ...input.overrides };
+    const { hash } = resolveProfileValues(
+      input.settings,
+      sandbox.basePresetId,
+      valueOverrides,
+      input.presets ?? BN_PRESETS,
+    );
+    const profile: BridgeAiPlayerProfile = {
+      aiPlayerProfileId: this.newId(),
+      name: input.name || `My ${sandbox.name} player`,
+      description: `Configured inside the "${sandbox.name}" sandbox.`,
+      ownerType: ctx.accessLevel === "coach" ? "coach" : "learner",
+      ownerId: ctx.nexusUserId,
+      programOrganizationId: ctx.programOrganizationId,
+      packageRef: sandbox.packageRef,
+      selectedPresetId: sandbox.basePresetId,
+      valueOverrides,
+      resolvedValueHash: hash,
+      sandboxId: sandbox.sandboxId,
+      status: "active",
+      createdAt: this.now(),
+      updatedAt: this.now(),
+    };
+    await this.store.save(profile);
+    return profile;
   }
 
   // ---- teaching scopes (same ownership semantics as profiles) -------------

@@ -97,7 +97,14 @@ presets are package content (configuration_preset items → pkg.presets;
 BN_PRESETS is a legacy fallback for pre-15 versions). Still open from 15's
 content program (fellow work, ongoing): SAYC v1, 2/1 v1, more golden boards,
 citation verification; the optional pgvector search layer is parked with the
-Supabase work.
+Supabase work. The first prototype content port landed 2026-07-12: the NT
+toolkit (strong 2♣, 2NT opening, weak twos, Stayman, Jacoby transfers) as
+knowledge items — SAYC-booklet paraphrase citations where published, the
+registered src_claude source for prototype judgments (owner's sourcing
+policy: Claude is NAMED as the source when no external source exists).
+Sandboxes shipped with it: a coach curates which settings a learner may
+touch (BridgeSandbox, migration 0011); learners configure players inside
+the sandbox with server-side exposure enforcement on every edit path.
 
 Phase 16 (platform, security & org model) is complete: @bridge/audit is an
 append-only trail of every privileged mutation (generation, item edits, gap

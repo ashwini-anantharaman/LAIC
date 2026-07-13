@@ -17,14 +17,26 @@ import { latestPackage } from "@/lib/sessions";
 
 export default async function ProfilePage({
   params,
-}: Readonly<{ params: Promise<{ profileId: string }> }>) {
+  searchParams,
+}: Readonly<{
+  params: Promise<{ profileId: string }>;
+  searchParams: Promise<{ q?: string }>;
+}>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { profileId } = await params;
-  const profile = await (await profileService()).getProfile(profileId, context);
+  const { q } = await searchParams;
+  const service = await profileService();
+  const profile = await service.getProfile(profileId, context);
   if (!profile) notFound();
 
-  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  // The profile's PINNED package version — never silently "latest".
+  const pinned = await knowledgeStore().getPackage(
+    profile.packageRef.packageId,
+    profile.packageRef.version,
+  );
+  const pkg = pinned?.pkg ?? (await latestPackage(BEGINNER_NATURAL_PACKAGE_ID));
+  const sandbox = profile.sandboxId ? await service.getSandbox(profile.sandboxId, context) : null;
   const presets = packagePresets(pkg); // §11.3: presets ship IN the package
   const { values } = resolveProfileValues(
     pkg.settings,
@@ -54,6 +66,8 @@ export default async function ProfilePage({
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
+      {/* GET form for the settings search box (lives inside the save form). */}
+      <form id="setting-search" method="get" />
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">{profile.name}</h1>
         <p className="text-xs text-neutral-500">
@@ -84,17 +98,75 @@ export default async function ProfilePage({
               ))}
             </select>
           </div>
-          <div className="space-y-1">
-            {pkg.settings.map((s) => (
-              <label key={s.key} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  name={`setting:${s.key}`}
-                  defaultChecked={Boolean(values[s.key])}
-                />
-                <span>{s.label}</span>
-                <span className="text-xs text-neutral-400">— {s.description}</span>
-              </label>
+          {sandbox && (
+            <p className="rounded bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+              Configured inside the “{sandbox.name}” sandbox — only the settings
+              your coach exposed can be changed; the rest are locked to the
+              sandbox baseline (enforced server-side).
+            </p>
+          )}
+          <p className="flex items-center gap-2">
+            <input
+              name="q"
+              defaultValue={q ?? ""}
+              placeholder="Search settings… (press Enter)"
+              className="w-72 rounded border border-neutral-300 px-2 py-1 text-sm"
+              form="setting-search"
+            />
+            <span className="text-xs text-neutral-400">
+              amber dot = differs from the preset baseline
+            </span>
+          </p>
+          <div className="space-y-3">
+            {Object.entries(
+              pkg.settings
+                .filter((s) => !sandbox || sandbox.exposedSettingKeys.includes(s.key))
+                .filter(
+                  (s) =>
+                    !q ||
+                    `${s.label} ${s.description} ${s.key} ${s.module}`
+                      .toLowerCase()
+                      .includes(q.toLowerCase()),
+                )
+                .reduce<Record<string, typeof pkg.settings>>((acc, s) => {
+                  (acc[s.module] ??= [] as never).push(s as never);
+                  return acc;
+                }, {}),
+            ).map(([module, settings]) => (
+              <div key={module}>
+                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-400">
+                  {module.replace(/_/g, " ")}
+                </p>
+                <div className="space-y-1">
+                  {settings.map((s) => {
+                    const presetBaseline =
+                      presets.find((p) => p.presetId === profile.selectedPresetId)?.values[s.key] ??
+                      s.default;
+                    const modified =
+                      JSON.stringify(values[s.key]) !== JSON.stringify(presetBaseline);
+                    return (
+                      <label key={s.key} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          name={`setting:${s.key}`}
+                          defaultChecked={Boolean(values[s.key])}
+                        />
+                        <span>{s.label}</span>
+                        {modified && (
+                          <span
+                            className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
+                            title="Differs from the preset baseline"
+                          />
+                        )}
+                        <span className="rounded bg-neutral-100 px-1 text-[10px] text-neutral-400">
+                          {s.skill_level}
+                        </span>
+                        <span className="text-xs text-neutral-400">— {s.description}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
           </div>
           <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">

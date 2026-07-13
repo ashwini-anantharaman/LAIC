@@ -38,6 +38,7 @@ export {
 export { chunkSourceText } from "./passages";
 export { resolveRuleProvenance, type ResolvedRuleProvenance } from "./resolve";
 export { LEVEL2_GAPS, LEVEL2_ITEMS } from "./content/level2";
+export { NT_TOOLKIT_ITEMS, NT_TOOLKIT_SOURCES } from "./content/ntToolkit";
 export {
   BEGINNER_NATURAL_PACKAGE_ID,
   BEGINNER_NATURAL_V0_SEED,

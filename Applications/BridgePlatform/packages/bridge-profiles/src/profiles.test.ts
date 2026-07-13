@@ -253,3 +253,67 @@ describe("org model (§3.4–3.5)", () => {
     expect((await service.getUserProfile(admin))?.activeProgramOrganizationId).toBeUndefined();
   });
 });
+
+describe("sandboxes (coach-curated configuration surfaces)", () => {
+  const coach = ctx({ nexusUserId: "user_coach", accessLevel: "coach", roles: ["bridge_coach"] });
+  const learner = ctx({ nexusUserId: "user_learner" });
+
+  const makeSandbox = (service: ProfileService) =>
+    service.createSandbox(coach, {
+      name: "Week 3 — the 1NT response",
+      packageRef: { packageId: pkg.packageId, version: pkg.version },
+      basePresetId: "bn_default",
+      exposedSettingKeys: ["bn_1nt_response"],
+    });
+
+  it("learners configure ONLY the exposed settings; the rest is locked to the baseline", async () => {
+    let n = 0;
+    const service = new ProfileService(new InMemoryProfileStore(), () => `id_${n++}`, () => NOW);
+    const sandbox = await makeSandbox(service);
+
+    // Exposed key: accepted, becomes a normal pinned profile with lineage.
+    const mine = await service.configureFromSandbox(learner, sandbox.sandboxId, {
+      overrides: { bn_1nt_response: false },
+      settings: pkg.settings,
+    });
+    expect(mine.sandboxId).toBe(sandbox.sandboxId);
+    expect(mine.ownerId).toBe("user_learner");
+    expect(mine.valueOverrides.bn_1nt_response).toBe(false);
+
+    // Unexposed key: rejected loudly at creation…
+    await expect(
+      service.configureFromSandbox(learner, sandbox.sandboxId, {
+        overrides: { bn_1nt_open: true },
+        settings: pkg.settings,
+      }),
+    ).rejects.toThrow("not exposed by this sandbox");
+
+    // …and on ANY later edit path of the sandboxed profile.
+    await expect(
+      service.updateValues(mine.aiPlayerProfileId, learner, pkg.settings, {
+        valueOverrides: { bn_1nt_response: true, bn_1nt_open: true },
+      }),
+    ).rejects.toThrow("not exposed by this sandbox");
+
+    // Editing only the exposed key is fine.
+    const updated = await service.updateValues(mine.aiPlayerProfileId, learner, pkg.settings, {
+      valueOverrides: { bn_1nt_response: true },
+    });
+    expect(updated.valueOverrides.bn_1nt_response).toBe(true);
+  });
+
+  it("creation is a coach tool; visibility follows profile tenancy", async () => {
+    let n = 0;
+    const service = new ProfileService(new InMemoryProfileStore(), () => `id_${n++}`, () => NOW);
+    await expect(makeSandbox.call(null, service).then(() => service.createSandbox(learner, {
+      name: "x",
+      packageRef: { packageId: pkg.packageId, version: pkg.version },
+      exposedSettingKeys: ["bn_1nt_response"],
+    }))).rejects.toThrow("coach");
+
+    const sameOrg = ctx({ nexusUserId: "user_other" });
+    const otherOrg = ctx({ nexusUserId: "user_far", programOrganizationId: "bporg_club_b" });
+    expect((await service.listSandboxes(sameOrg)).length).toBe(1);
+    expect((await service.listSandboxes(otherOrg)).length).toBe(0);
+  });
+});

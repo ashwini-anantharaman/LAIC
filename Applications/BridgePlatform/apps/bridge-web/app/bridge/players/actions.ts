@@ -55,10 +55,22 @@ export async function updateProfile(formData: FormData) {
   const context = await requireContext();
   const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
   const id = String(formData.get("profileId"));
+  const service = await profileService();
+  const existing = await service.getProfile(id, context);
+  const sandbox = existing?.sandboxId
+    ? await service.getSandbox(existing.sandboxId, context)
+    : null;
   const overrides: Record<string, boolean> = {};
   for (const setting of pkg.settings) {
-    if (setting.control === "toggle")
-      overrides[setting.key] = formData.get(`setting:${setting.key}`) === "on";
+    if (setting.control !== "toggle") continue;
+    // Sandboxed profiles: the form only renders exposed settings — keep the
+    // stored value for everything else instead of defaulting it to off.
+    if (sandbox && !sandbox.exposedSettingKeys.includes(setting.key)) {
+      const kept = existing?.valueOverrides[setting.key];
+      if (kept !== undefined) overrides[setting.key] = Boolean(kept);
+      continue;
+    }
+    overrides[setting.key] = formData.get(`setting:${setting.key}`) === "on";
   }
   await (await profileService()).updateValues(
     id,
@@ -108,4 +120,49 @@ export async function updateScope(formData: FormData) {
   await audit(context, "scope.update", "teaching_scope", String(formData.get("scopeId")), {});
   revalidatePath("/bridge/players");
   redirect("/bridge/players");
+}
+
+// ---- sandboxes (coach-curated configuration surfaces) -----------------------
+
+export async function createSandboxAction(formData: FormData) {
+  const context = await requireContext();
+  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const exposed = formData.getAll("exposed").map(String);
+  const service = await profileService();
+  const sandbox = await service.createSandbox(context, {
+    name: String(formData.get("name") || "").trim() || "Untitled sandbox",
+    description: String(formData.get("description") || "").trim() || undefined,
+    packageRef: { packageId: pkg.packageId, version: pkg.version },
+    basePresetId: String(formData.get("basePresetId") || "") || undefined,
+    exposedSettingKeys: exposed,
+  });
+  await audit(context, "profile.create", "sandbox", sandbox.sandboxId, {
+    exposed: sandbox.exposedSettingKeys,
+  });
+  revalidatePath("/bridge/players");
+  redirect("/bridge/players");
+}
+
+export async function configureFromSandboxAction(formData: FormData) {
+  const context = await requireContext();
+  const sandboxId = String(formData.get("sandboxId"));
+  const pkg = await latestPackage(BEGINNER_NATURAL_PACKAGE_ID);
+  const service = await profileService();
+  const sandbox = await service.getSandbox(sandboxId, context);
+  if (!sandbox) throw new Error("Sandbox not found");
+  // Only exposed keys are read from the form; the service re-enforces anyway.
+  const overrides: Record<string, boolean> = {};
+  for (const key of sandbox.exposedSettingKeys)
+    overrides[key] = formData.get(`setting:${key}`) === "on";
+  const profile = await service.configureFromSandbox(context, sandboxId, {
+    name: String(formData.get("name") || "").trim() || undefined,
+    overrides,
+    settings: pkg.settings,
+    presets: packagePresets(pkg),
+  });
+  await audit(context, "profile.create", "ai_player_profile", profile.aiPlayerProfileId, {
+    sandboxId,
+  });
+  revalidatePath("/bridge/players");
+  redirect(`/bridge/players/${profile.aiPlayerProfileId}`);
 }
