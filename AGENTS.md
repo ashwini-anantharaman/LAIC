@@ -121,17 +121,26 @@ systems + allowAi/allowBen enforced at session creation, many-to-many coach
 affiliations — pending unless self-administered — with explicit context
 switching applied in getBridgeContext, /bridge/org UI, migration 0010).
 
-Phase 17 (runtime & operations) is code-complete: Playwright suite in
+Phase 17 (runtime & operations) is complete: Playwright suite in
 apps/bridge-web/e2e (table play driven to completion through the real UI,
-admin generation loop, org flows — `pnpm e2e`), and the §7.3 responsive pass
-(shell stacks on small screens, table grid restacks). Still blocked on
-external access, not code:
+admin generation loop, org flows — `pnpm e2e`), the §7.3 responsive pass
+(shell stacks on small screens, table grid restacks), and deployment
+(2026-07-12):
 
-- **Supabase**: apply migrations 0005–0011, live-verify the five Pg stores,
-  then flip STORE_BACKEND=postgres as the team default (needs a Supabase
-  sign-in; JSON file stores remain the dev default meanwhile).
-- **Deployment**: Vercel web + managed Postgres (§17.2 Option A) — needs
-  Vercel account access.
+- **Supabase**: migrations 0005–0012 are applied to the shared
+  nexus-platform project; the Pg stores are live-verified (page renders,
+  knowledge lazy-seed, full session create/start/step via the REST API).
+  0012 exists because 0002 typed nexus_user_id as uuid — it is text now;
+  the contract's nexusUserId is an opaque string (stub ids aren't uuids).
+- **Deployment**: production runs at https://bridge-platform-gules.vercel.app
+  (Vercel project `bridge-platform`, STORE_BACKEND=postgres,
+  NEXUS_CLIENT_MODE=stub). Deploys go from the REPO root — the app depends
+  on Components/laic-learner-contracts via link:, so the upload must span
+  both; root .vercelignore scopes it. Project root directory is
+  Applications/BridgePlatform/apps/bridge-web. Note: stub sign-in means
+  anyone with the URL can enter as any test user — don't put real learner
+  data behind it until NEXUS_CLIENT_MODE=http lands.
+- Local dev default stays STORE_BACKEND=file (offline-friendly JSON stores).
 - **BEN adapter**: deferred by decision 2026-07-12 — the ben-service
   container stays parked until a BEN table server is available; org profiles
   already carry the allowBenPlayers switch (default off).

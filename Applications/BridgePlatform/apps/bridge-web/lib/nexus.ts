@@ -54,8 +54,10 @@ export const getBridgeContext = cache(
           devUserId,
         }).getBridgeContext();
         return await applyActiveOrg(context);
-      } catch {
+      } catch (err) {
         // Stale cookie pointing at a removed stub user: treat as signed out.
+        // Store failures land here too — keep them visible in server logs.
+        console.error("getBridgeContext failed:", err);
         return null;
       }
     }

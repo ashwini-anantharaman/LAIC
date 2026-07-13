@@ -12,3 +12,5 @@ coverage/
 # playwright
 apps/bridge-web/test-results/
 apps/bridge-web/playwright-report/
+.vercel
+.env*
