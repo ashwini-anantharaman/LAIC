@@ -21,7 +21,7 @@ export default async function SuggestionsPage({
   const row = (s: (typeof suggestions)[number]) => (
     <li key={s.suggestionId} className="rounded-lg border border-neutral-200 bg-[var(--card)] px-4 py-3">
       <p className="text-sm">{s.text}</p>
-      <p className="mt-1 flex flex-wrap items-center gap-3 text-xs text-neutral-500">
+      <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-neutral-500">
         <span>{s.createdBy}</span>
         <span>{s.createdAt.slice(0, 16).replace("T", " ")}</span>
         {s.itemId && (
@@ -48,7 +48,7 @@ export default async function SuggestionsPage({
             resolved by {s.resolvedBy} · {s.resolvedAt?.slice(0, 10)}
           </span>
         )}
-      </p>
+      </div>
     </li>
   );
 

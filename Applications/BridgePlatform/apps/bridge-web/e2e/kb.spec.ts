@@ -200,3 +200,44 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
   const floors = page.locator("dd").filter({ hasText: /^0$/ });
   await expect(floors.first()).toBeVisible(); // zero engine-floor events
 });
+
+test("table: session pins, trace drawer, flag lands in the KB queue", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  // Deal a board: human South, Floor players elsewhere.
+  await page.goto("/bridge/table");
+  const section = page.locator("section", { hasText: "SAYC e2e" }).last();
+  await section.locator('select[name="humanSeat"]').selectOption("S");
+  await section.locator('input[name="seed"]').fill("7");
+  for (const seat of ["N", "E", "W"]) {
+    await section
+      .locator(`select[name="player:${seat}"]`)
+      .selectOption({ label: "Minimal complete — Floor" });
+  }
+  await section.getByRole("button", { name: "Deal a board" }).click();
+  await page.waitForURL(/\/bridge\/table\/bs_/);
+
+  // Dealer N, then E — two AI advances, then South (us) is to act.
+  await page.getByRole("button", { name: "Advance AI" }).click();
+  await expect(page.getByText(/Decisions \(1\)/)).toBeVisible();
+  await page.getByRole("button", { name: "Advance AI" }).click();
+  await expect(page.getByText(/Decisions \(2\)/)).toBeVisible();
+  await expect(page.getByText("Your call")).toBeVisible();
+  const firstDecision = page.locator("details").filter({ hasText: "#0" }).last();
+  await firstDecision.locator("summary").click();
+  await expect(firstDecision.getByText(/fallback: pass/)).toBeVisible();
+
+  // Flag it → the suggestion appears in the KB's queue with the session link.
+  await firstDecision.locator('input[name="text"]').fill("Passing here looks wrong to me.");
+  await firstDecision.getByRole("button", { name: "Flag" }).click();
+
+  // We act as South: pass.
+  await page.getByRole("button", { name: "Pass", exact: true }).click();
+
+  await page.goto(`${kbUrl}/suggestions`);
+  await expect(page.getByText("Passing here looks wrong to me.")).toBeVisible();
+  await expect(page.getByText(/session bs_/)).toBeVisible();
+});

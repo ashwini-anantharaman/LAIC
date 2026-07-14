@@ -12,3 +12,4 @@ export { check, createPgClient, type PgConfig } from "./client";
 export { PgProfileStore } from "./profiles";
 export { PgAuditStore } from "./audit";
 export { PgKbStore } from "./kb";
+export { PgSessionStore } from "./sessions";

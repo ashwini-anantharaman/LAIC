@@ -28,7 +28,8 @@
     "react-dom": "^19.0.0",
     "@bridge/kb": "workspace:*",
     "@anthropic-ai/sdk": "^0.110.0",
-    "unpdf": "^1.6.2"
+    "unpdf": "^1.6.2",
+    "@bridge/sessions": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

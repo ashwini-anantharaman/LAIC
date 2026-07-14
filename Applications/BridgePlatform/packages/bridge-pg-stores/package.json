@@ -20,7 +20,8 @@
     "@bridge/audit": "workspace:*",
     "@bridge/kb": "workspace:*",
     "@bridge/profiles": "workspace:*",
-    "@supabase/supabase-js": "^2.110.1"
+    "@supabase/supabase-js": "^2.110.1",
+    "@bridge/sessions": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.13.2"

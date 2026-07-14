@@ -59,6 +59,9 @@ importers:
       '@bridge/profiles':
         specifier: workspace:*
         version: link:../../packages/bridge-profiles
+      '@bridge/sessions':
+        specifier: workspace:*
+        version: link:../../packages/bridge-sessions
       '@bridge/taxonomy':
         specifier: workspace:*
         version: link:../../packages/bridge-taxonomy
@@ -181,6 +184,9 @@ importers:
       '@bridge/profiles':
         specifier: workspace:*
         version: link:../bridge-profiles
+      '@bridge/sessions':
+        specifier: workspace:*
+        version: link:../bridge-sessions
       '@supabase/supabase-js':
         specifier: ^2.110.1
         version: 2.110.1
@@ -194,6 +200,31 @@ importers:
       '@laic/learner-contracts':
         specifier: link:../../../../Components/laic-learner-contracts
         version: link:../../../../Components/laic-learner-contracts
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)
+
+  packages/bridge-sessions:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+      '@bridge/kb':
+        specifier: workspace:*
+        version: link:../bridge-kb
     devDependencies:
       '@types/node':
         specifier: ^24.10.1
