@@ -4,7 +4,7 @@ import {
   addAffiliationAction,
   saveOrgProfileAction,
   switchActiveOrgAction,
-} from "@/app/bridge/admin/actions";
+} from "./actions";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
 
@@ -29,7 +29,7 @@ const AFFILIATION_TYPES = [
 export default async function OrgPage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  const service = await profileService();
+  const service = profileService();
   const org = await service.getOrgProfile(context);
   const affiliations = await service.listMyAffiliations(context);
   const me = await service.getUserProfile(context);

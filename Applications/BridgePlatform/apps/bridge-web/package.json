@@ -2,7 +2,7 @@
   "name": "bridge-web",
   "version": "0.1.0",
   "private": true,
-  "description": "Bridge Platform web app: table, players/configurations, boards, progress, admin/knowledge base.",
+  "description": "Bridge Platform web app: knowledge-base workspace, players, verification table (rebuilding on the knowledge-rework model).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,20 +11,14 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.110.0",
     "@bridge/audit": "workspace:*",
     "@bridge/config": "workspace:*",
-    "@bridge/dealer": "workspace:*",
     "@bridge/engine": "workspace:*",
-    "@bridge/evaluator": "workspace:*",
     "@bridge/events": "workspace:*",
     "@bridge/formats": "workspace:*",
-    "@bridge/knowledge": "workspace:*",
     "@bridge/nexus-client": "workspace:*",
     "@bridge/pg-stores": "workspace:*",
     "@bridge/profiles": "workspace:*",
-    "@bridge/progress": "workspace:*",
-    "@bridge/sessions": "workspace:*",
     "@bridge/taxonomy": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts",
     "@supabase/ssr": "^0.12.0",
@@ -32,7 +26,7 @@
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "unpdf": "^1.6.2"
+    "@bridge/kb": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

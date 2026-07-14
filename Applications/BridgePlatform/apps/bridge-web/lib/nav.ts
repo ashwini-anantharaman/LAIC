@@ -12,21 +12,20 @@ export type NavItem = {
   requiresRoles?: readonly BridgeRole[];
 };
 
-/** Core navigation per Bridge plan §7.2. */
+/**
+ * Navigation during the knowledge rework (spec 2026-07-14). Surfaces return
+ * stage by stage: knowledge bases (Stage D), players (E), the table (F).
+ */
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/bridge/home", label: "Home" },
-  { href: "/bridge/play", label: "Play & Practice" },
-  { href: "/bridge/players", label: "Players & Configurations" },
-  { href: "/bridge/boards", label: "Boards & Deals" },
-  { href: "/bridge/progress", label: "Progress" },
   {
     href: "/bridge/org",
     label: "Organization",
     requiresRoles: ["bridge_coach", "bridge_org_admin", "bridge_club_admin", "bridge_program_admin"],
   },
   {
-    href: "/bridge/admin",
-    label: "Knowledge admin",
+    href: "/bridge/admin/audit",
+    label: "Audit",
     requiresRoles: ADMIN_AREA_ROLES,
   },
 ];

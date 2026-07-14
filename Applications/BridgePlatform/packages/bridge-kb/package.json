@@ -1,0 +1,24 @@
+{
+  "name": "@bridge/kb",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Knowledge Rework data model: knowledge bases, typed items, edges, packs, players, compiled artifacts, and the store seam.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bridge/config": "workspace:*",
+    "@bridge/events": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

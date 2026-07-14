@@ -1,112 +1,20 @@
-// ProfileStore over db/migrations/0003 (+0005 bridge_teaching_scopes).
+// ProfileStore (identity layer) over the KEPT tables: bridge_user_profiles
+// (0002/0012), bridge_program_organization_profiles + bridge_coach_affiliations
+// (0010). These survive the knowledge-rework wipe (spec decision 18).
 
 import type {
-  BridgeAiPlayerProfile,
-  BridgeSandbox,
   BridgeCoachAffiliation,
   BridgeProgramOrganizationProfile,
   BridgeUserProfile,
   ProfileStore,
-  TeachingScopeRecord,
 } from "@bridge/profiles";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { check } from "./client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const rowToProfile = (r: any): BridgeAiPlayerProfile => ({
-  aiPlayerProfileId: r.ai_player_profile_id, name: r.name,
-  description: r.description ?? undefined, ownerType: r.owner_type,
-  ownerId: r.owner_id ?? undefined,
-  programOrganizationId: r.program_organization_id ?? undefined,
-  packageRef: { packageId: r.package_id, version: r.package_version },
-  selectedPresetId: r.selected_preset_id ?? undefined,
-  valueOverrides: r.value_overrides ?? {}, resolvedValueHash: r.resolved_value_hash,
-  sandboxId: r.sandbox_id ?? undefined,
-  status: r.status, createdAt: r.created_at, updatedAt: r.updated_at,
-});
-
-const rowToScope = (r: any): TeachingScopeRecord => ({
-  teachingScopeId: r.teaching_scope_id, name: r.name,
-  description: r.description ?? undefined, ownerType: r.owner_type,
-  ownerId: r.owner_id ?? undefined,
-  programOrganizationId: r.program_organization_id ?? undefined,
-  derivedFromItemId: r.derived_from_item_id ?? undefined,
-  evaluatorFilter: r.evaluator_filter, targetConceptIds: r.target_concept_ids ?? [],
-  createdAt: r.created_at, updatedAt: r.updated_at,
-});
-
 export class PgProfileStore implements ProfileStore {
   constructor(private readonly db: SupabaseClient) {}
-
-  async list() {
-    return check(await this.db.from("bridge_ai_player_profiles").select("*").order("created_at"), "profiles.list").map(rowToProfile);
-  }
-  async get(id: string) {
-    const rows = check(await this.db.from("bridge_ai_player_profiles").select("*").eq("ai_player_profile_id", id), "profiles.get");
-    return rows.length ? rowToProfile(rows[0]) : null;
-  }
-  async save(p: BridgeAiPlayerProfile) {
-    check(await this.db.from("bridge_ai_player_profiles").upsert({
-      ai_player_profile_id: p.aiPlayerProfileId, name: p.name,
-      description: p.description ?? null, owner_type: p.ownerType,
-      owner_id: p.ownerId ?? null, program_organization_id: p.programOrganizationId ?? null,
-      package_id: p.packageRef.packageId, package_version: p.packageRef.version,
-      selected_preset_id: p.selectedPresetId ?? null, value_overrides: p.valueOverrides,
-      resolved_value_hash: p.resolvedValueHash, sandbox_id: p.sandboxId ?? null,
-      status: p.status,
-      created_at: p.createdAt, updated_at: p.updatedAt,
-    }, { onConflict: "ai_player_profile_id" }), "profiles.save");
-  }
-
-  // ---- sandboxes (0011: record jsonb + tenant columns) ----------------------
-
-  async listSandboxes() {
-    const rows = check(await this.db.from("bridge_sandboxes").select("record"), "sandboxes.list");
-    return rows.map((r: any) => r.record as BridgeSandbox);
-  }
-  async getSandbox(id: string) {
-    const rows = check(
-      await this.db.from("bridge_sandboxes").select("record").eq("sandbox_id", id),
-      "sandboxes.get",
-    );
-    return rows.length ? ((rows[0] as any).record as BridgeSandbox) : null;
-  }
-  async saveSandbox(s: BridgeSandbox) {
-    check(
-      await this.db.from("bridge_sandboxes").upsert(
-        {
-          sandbox_id: s.sandboxId,
-          program_organization_id: s.programOrganizationId ?? null,
-          owner_id: s.ownerId ?? null,
-          record: s,
-          updated_at: s.updatedAt,
-        },
-        { onConflict: "sandbox_id" },
-      ),
-      "sandboxes.save",
-    );
-  }
-
-  async listScopes() {
-    return check(await this.db.from("bridge_teaching_scopes").select("*").order("created_at"), "scopes.list").map(rowToScope);
-  }
-  async getScope(id: string) {
-    const rows = check(await this.db.from("bridge_teaching_scopes").select("*").eq("teaching_scope_id", id), "scopes.get");
-    return rows.length ? rowToScope(rows[0]) : null;
-  }
-  async saveScope(s: TeachingScopeRecord) {
-    check(await this.db.from("bridge_teaching_scopes").upsert({
-      teaching_scope_id: s.teachingScopeId, name: s.name,
-      description: s.description ?? null, owner_type: s.ownerType,
-      owner_id: s.ownerId ?? null, program_organization_id: s.programOrganizationId ?? null,
-      derived_from_item_id: s.derivedFromItemId ?? null,
-      evaluator_filter: s.evaluatorFilter, target_concept_ids: s.targetConceptIds,
-      created_at: s.createdAt, updated_at: s.updatedAt,
-    }, { onConflict: "teaching_scope_id" }), "scopes.save");
-  }
-
-  // ---- bridge user profiles (0002 bridge_user_profiles, §3.4) --------------
 
   async getUserProfile(nexusUserId: string) {
     const rows = check(
@@ -127,18 +35,22 @@ export class PgProfileStore implements ProfileStore {
   }
 
   async saveUserProfile(p: BridgeUserProfile) {
-    check(await this.db.from("bridge_user_profiles").upsert({
-      nexus_user_id: p.nexusUserId,
-      display_name_at_table: p.displayNameAtTable ?? null,
-      preferred_seat: p.preferredSeat ?? null,
-      preferred_feedback_mode: p.preferredFeedbackMode ?? null,
-      active_program_organization_id: p.activeProgramOrganizationId ?? null,
-      created_at: p.createdAt,
-      updated_at: p.updatedAt,
-    }, { onConflict: "nexus_user_id" }), "userProfiles.save");
+    check(
+      await this.db.from("bridge_user_profiles").upsert(
+        {
+          nexus_user_id: p.nexusUserId,
+          display_name_at_table: p.displayNameAtTable ?? null,
+          preferred_seat: p.preferredSeat ?? null,
+          preferred_feedback_mode: p.preferredFeedbackMode ?? null,
+          active_program_organization_id: p.activeProgramOrganizationId ?? null,
+          created_at: p.createdAt,
+          updated_at: p.updatedAt,
+        },
+        { onConflict: "nexus_user_id" },
+      ),
+      "userProfiles.save",
+    );
   }
-
-  // ---- org model (0010) -----------------------------------------------------
 
   async getOrgProfile(programOrganizationId: string) {
     const rows = check(
@@ -188,15 +100,17 @@ export class PgProfileStore implements ProfileStore {
       await this.db.from("bridge_coach_affiliations").select("*").eq("nexus_user_id", nexusUserId),
       "affiliations.list",
     );
-    return rows.map((r: any): BridgeCoachAffiliation => ({
-      coachAffiliationId: r.coach_affiliation_id,
-      nexusUserId: r.nexus_user_id,
-      programOrganizationId: r.program_organization_id ?? undefined,
-      groupId: r.group_id ?? undefined,
-      affiliationType: r.affiliation_type,
-      status: r.status,
-      createdAt: r.created_at,
-    }));
+    return rows.map(
+      (r: any): BridgeCoachAffiliation => ({
+        coachAffiliationId: r.coach_affiliation_id,
+        nexusUserId: r.nexus_user_id,
+        programOrganizationId: r.program_organization_id ?? undefined,
+        groupId: r.group_id ?? undefined,
+        affiliationType: r.affiliation_type,
+        status: r.status,
+        createdAt: r.created_at,
+      }),
+    );
   }
 
   async saveAffiliation(a: BridgeCoachAffiliation) {

@@ -1,8 +1,8 @@
 {
   "name": "@bridge/profiles",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "AI player profiles (Bridge plan \u00a711): package-backed configuration with the defaults+preset+overrides resolution chain, tenant-scoped ownership with copy-on-customize, the generated convention card, and the 'rules this player follows' readable view.",
+  "description": "Identity layer: per-user table preferences, bridge-owned org profiles (§3.4), and coach affiliations with explicit context switching (§3.5). AI player configuration moved to @bridge/kb in the knowledge rework.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -21,14 +21,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bridge/config": "workspace:*",
-    "@bridge/dealer": "workspace:*",
-    "@bridge/engine": "workspace:*",
-    "@bridge/events": "workspace:*",
-    "@bridge/taxonomy": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts"
   },
   "devDependencies": {
-    "@bridge/knowledge": "workspace:*"
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   }
 }

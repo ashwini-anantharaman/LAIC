@@ -1,23 +1,62 @@
-// Undo and deal-edit behaviors, ported in spirit from the prototype's
-// game/undo.test.ts and game/dealEdit.test.ts (rewritten against the
-// package-decider API — the originals drove the content-coupled session.ts).
+// Undo and deal-edit behaviors of the single-writer Game controller (game-law
+// layer). Uses a scripted inline decider — the real decision layer lives in
+// ./decide against @bridge/kb compiled artifacts and has its own tests.
 
-import { createBus, createEventLog, type Card, type Seat } from "@bridge/events";
+import {
+  createBus,
+  createEventLog,
+  SEATS,
+  type Call,
+  type Card,
+  type Seat,
+  type Suit,
+} from "@bridge/events";
 import { describe, expect, it } from "vitest";
-import { BOARD_G1 } from "./fixtures/goldenBoards";
-import { TEST_PACKAGE, TEST_VALUES } from "./fixtures/testPackage";
-import { createGame } from "./game";
-import { createPackageDecider } from "./rules/decider";
+import type { Decision } from "./decision";
+import { createGame, type AsyncDecider } from "./game";
 import { initialState } from "./state";
+
+/** Deal the 52 cards in suit/rank order round-robin from N. */
+function dealtHands(): Record<Seat, Card[]> {
+  const suits: Suit[] = ["S", "H", "D", "C"];
+  const cards: Card[] = suits.flatMap((suit) =>
+    Array.from({ length: 13 }, (_, i) => ({ suit, rank: (i + 2) as Card["rank"] })),
+  );
+  const hands: Record<Seat, Card[]> = { N: [], E: [], S: [], W: [] };
+  cards.forEach((card, i) => hands[SEATS[i % 4] as Seat].push(card));
+  return hands;
+}
+
+const decide = <A>(action: A): Decision<A> => ({
+  action,
+  candidates: [action],
+  trace: [],
+  citedSettings: [],
+  facts: {},
+  reason: "scripted",
+  rejected: [],
+  fallback: false,
+});
+
+/** N opens 1S, everyone else passes. */
+const scriptedDecider: AsyncDecider = {
+  async decideBid(state, seat) {
+    const call: Call = seat === "N" && state.auction.length === 0 ? "1S" : "P";
+    return decide(call);
+  },
+  async decidePlay(state, seat) {
+    const legal = state.hands[seat];
+    return decide(legal[0]!);
+  },
+};
 
 function makeGame() {
   const bus = createBus();
   const log = createEventLog(bus);
-  const decider = createPackageDecider({ pkg: TEST_PACKAGE, values: TEST_VALUES });
   const game = createGame(
     bus,
-    { N: decider, E: decider, S: decider, W: decider },
-    initialState(BOARD_G1.name, BOARD_G1.dealer, BOARD_G1.vul, BOARD_G1.hands),
+    { N: scriptedDecider, E: scriptedDecider, S: scriptedDecider, W: scriptedDecider },
+    initialState("b_test", "N", "none", dealtHands()),
   );
   return { game, log };
 }
@@ -86,9 +125,7 @@ describe("editDeal", () => {
       W: [...hands.W],
     };
 
-    expect(() =>
-      game.editDeal({ ...base, N: base.N.slice(1) }),
-    ).toThrow(/must keep exactly/);
+    expect(() => game.editDeal({ ...base, N: base.N.slice(1) })).toThrow(/must keep exactly/);
 
     expect(() =>
       game.editDeal({ ...base, N: [base.E[0]!, ...base.N.slice(1)] }),
@@ -97,7 +134,6 @@ describe("editDeal", () => {
     expect(() =>
       game.editDeal({
         ...base,
-        // Replace one N card with itself... then W card with a card N kept -> duplicate
         W: [base.N[0]!, ...base.W.slice(1)],
       }),
     ).toThrow(/Duplicate card/);
