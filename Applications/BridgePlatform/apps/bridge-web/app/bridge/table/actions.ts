@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
+import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
 import { sessionService } from "@/lib/sessions";
 
 const SEATS: Seat[] = ["N", "E", "S", "W"];
@@ -19,6 +20,8 @@ export async function createSessionAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   await ensureSeeds();
   const kbId = String(formData.get("kbId"));
+  await assertAiAllowed(context);
+  await assertKbAllowed(context, kbId);
   const compiled = await kbService().liveCompile(kbId);
   if (!compiled) throw new Error("That knowledge base has no live compile yet");
 
@@ -123,4 +126,53 @@ export async function flagDecisionAction(formData: FormData): Promise<void> {
     fromTable: true,
   });
   revalidatePath(`/bridge/table/${sessionId}`);
+}
+
+/**
+ * Constrained drill (spec §5): an INCOMPLETE player may only play deals the
+ * closed loop accepts — full simulation with the actual seat configs must
+ * finish with zero engine-floor events. The player is never forced outside
+ * its knowledge.
+ */
+export async function createDrillAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  await ensureSeeds();
+  const kbId = String(formData.get("kbId"));
+  await assertAiAllowed(context);
+  await assertKbAllowed(context, kbId);
+  const compiled = await kbService().liveCompile(kbId);
+  if (!compiled) throw new Error("That knowledge base has no live compile yet");
+
+  const store = kbStore();
+  const playerId = String(formData.get("playerId"));
+  const player = await store.getPlayer(playerId);
+  if (!player) throw new Error("Pick a drill player");
+
+  const seat = SessionService.seatFromPlayer(player, compiled);
+  const humanSeat = String(formData.get("humanSeat") ?? "") as Seat | "";
+  const seats = { N: seat, E: seat, S: seat, W: seat } as Record<Seat, SeatConfig>;
+  if (humanSeat) seats[humanSeat] = { kind: "human", nexusUserId: context.nexusUserId };
+
+  const { findSafeSeed } = await import("@bridge/sessions");
+  const startSeed = Number(formData.get("seed") ?? 1) || 1;
+  const seed = await findSafeSeed({ compiled, seats, startSeed, maxAttempts: 80 });
+  if (seed === null)
+    throw new Error(
+      "No safe deal found in 80 attempts — this player's knowledge may be too narrow for open dealing",
+    );
+
+  const record = await sessionService().createSession({
+    kbId,
+    compiled,
+    seats,
+    seed,
+    createdBy: context.nexusUserId,
+  });
+  await audit(context, "profile.update", "kb_session", record.sessionId, {
+    kbId,
+    drill: true,
+    playerId,
+    safeSeed: seed,
+  });
+  redirect(`/bridge/table/${record.sessionId}`);
 }

@@ -268,6 +268,46 @@ export class KbService {
       lastCompileError: undefined,
       updatedAt: this.now(),
     });
+    await this.deriveEnvelopes(compiled, packs);
     return { compiled };
+  }
+
+  /**
+   * Spec §5: after each good compile, derive every pack's dealing envelope —
+   * the capability gaps a probe player carrying just that pack would have.
+   * Fellows read and tighten it; the CLOSED LOOP (zero-floor simulation with
+   * the actual configs) is what dealing actually enforces.
+   */
+  private async deriveEnvelopes(compiled: CompiledKb, packs: KbPack[]): Promise<void> {
+    const { validatePlayerStatic } = await import("./validatePlayer");
+    for (const pack of packs) {
+      const probe = {
+        playerId: "probe",
+        kbId: compiled.kbId,
+        name: "probe",
+        enabledPackIds: [pack.packId],
+        settingOverrides: {},
+        decisionPolicyId: "first_match" as const,
+        fallbackPolicyId: "standard" as const,
+        validationStatus: "draft" as const,
+        ownerType: "system" as const,
+        version: 1,
+        createdAt: this.now(),
+        updatedAt: this.now(),
+      };
+      const report = validatePlayerStatic(compiled, probe);
+      const missing = report.static.filter((r) => !r.ok);
+      const derived = {
+        requireZeroFloorEvents: true,
+        summary: missing.length
+          ? `Incomplete: no coverage for ${missing.map((m) => m.categoryId).join(", ")}. ` +
+            "Deals are accepted only when a full simulation with the actual players finishes with zero engine-floor events."
+          : "Complete on its own — any deal is safe.",
+      };
+      if (JSON.stringify(pack.derivedEnvelope) !== JSON.stringify(derived)) {
+        await this.store.putPack({ ...pack, derivedEnvelope: derived });
+      }
+    }
+    return;
   }
 }

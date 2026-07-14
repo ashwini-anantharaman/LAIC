@@ -388,3 +388,51 @@ export class SessionService {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Constrained environments (spec §5): the closed loop. A deal is safe for a
+// seat lineup exactly when simulating it with the ACTUAL configs completes
+// with zero engine-floor events — strictly stronger than any static filter.
+// ---------------------------------------------------------------------------
+
+export interface SafeSeedSearch {
+  compiled: CompiledKb;
+  seats: Record<Seat, SeatConfig>;
+  /** First candidate seed (search walks upward from here). */
+  startSeed: number;
+  maxAttempts?: number;
+}
+
+/**
+ * Find a deal seed whose full self-play (with each seat's real config; human
+ * seats simulated by the table-default surface) hits zero engine floors.
+ * Returns null when none found within the attempt budget.
+ */
+export async function findSafeSeed(search: SafeSeedSearch): Promise<number | null> {
+  const { simulateDeal } = await import("@bridge/engine");
+  const attempts = search.maxAttempts ?? 60;
+  // The most restrictive seat governs: simulate self-play under EACH distinct
+  // AI config; a human seat plays "anything legal" so it never floors.
+  const configs = (Object.values(search.seats) as SeatConfig[])
+    .filter((c): c is Extract<SeatConfig, { kind: "kb_player" }> => c.kind === "kb_player")
+    .map((c) => ({
+      enabledPackIds: c.enabledPackIds,
+      settingOverrides: c.settingOverrides,
+      decisionPolicyId: c.decisionPolicyId,
+      levelOrdinal: c.levelOrdinal,
+    }));
+  if (!configs.length) return search.startSeed;
+
+  for (let seed = search.startSeed; seed < search.startSeed + attempts; seed++) {
+    let safe = true;
+    for (const player of configs) {
+      const result = await simulateDeal({ compiled: search.compiled, player }, seed);
+      if (!result.completed || result.floorEvents > 0) {
+        safe = false;
+        break;
+      }
+    }
+    if (safe) return seed;
+  }
+  return null;
+}

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
-import { createSessionAction } from "./actions";
+import { createDrillAction, createSessionAction } from "./actions";
 
 const SEATS = ["N", "E", "S", "W"] as const;
 
@@ -135,6 +135,54 @@ export default async function TablePage() {
               >
                 Deal a board
               </button>
+            </form>
+
+            <form action={createDrillAction} className="mt-4 border-t border-[var(--line)] pt-4">
+              <p className="mb-2 text-sm font-medium">Constrained drill</p>
+              <p className="mb-2 text-xs text-neutral-500">
+                For incomplete players: the dealer searches seeds and accepts a deal only when a
+                full simulation with these exact configs finishes with zero engine-floor events.
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                <input type="hidden" name="kbId" value={kb.kbId} />
+                <label className="text-sm">
+                  <span className="mb-1 block text-xs text-neutral-500">Drill player (all four seats)</span>
+                  <select name="playerId" className="rounded border border-neutral-300 px-2 py-1.5">
+                    {players.map((p) => (
+                      <option key={p.playerId} value={p.playerId}>
+                        {p.name} {p.validationStatus === "invalid" ? "(incomplete)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-xs text-neutral-500">Your seat (optional)</span>
+                  <select name="humanSeat" className="rounded border border-neutral-300 px-2 py-1.5">
+                    <option value="">none</option>
+                    {SEATS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-xs text-neutral-500">Search from seed</span>
+                  <input
+                    name="seed"
+                    type="number"
+                    defaultValue={1}
+                    className="w-24 rounded border border-neutral-300 px-2 py-1.5"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-400"
+                  disabled={players.length === 0}
+                >
+                  Find a safe deal
+                </button>
+              </div>
             </form>
           </section>
         ))

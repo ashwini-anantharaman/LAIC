@@ -210,14 +210,15 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   // Deal a board: human South, Floor players elsewhere.
   await page.goto("/bridge/table");
   const section = page.locator("section", { hasText: "SAYC e2e" }).last();
-  await section.locator('select[name="humanSeat"]').selectOption("S");
-  await section.locator('input[name="seed"]').fill("7");
+  const dealForm = section.locator("form").first();
+  await dealForm.locator('select[name="humanSeat"]').selectOption("S");
+  await dealForm.locator('input[name="seed"]').fill("7");
   for (const seat of ["N", "E", "W"]) {
-    await section
+    await dealForm
       .locator(`select[name="player:${seat}"]`)
       .selectOption({ label: "Minimal complete — Floor" });
   }
-  await section.getByRole("button", { name: "Deal a board" }).click();
+  await dealForm.getByRole("button", { name: "Deal a board" }).click();
   await page.waitForURL(/\/bridge\/table\/bs_/);
 
   // Dealer N, then E — two AI advances, then South (us) is to act.
@@ -240,4 +241,28 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   await page.goto(`${kbUrl}/suggestions`);
   await expect(page.getByText("Passing here looks wrong to me.")).toBeVisible();
   await expect(page.getByText(/session bs_/)).toBeVisible();
+});
+
+test("constrained drill: an incomplete player never hits the engine floor", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  await page.goto("/bridge/table");
+  const section = page.locator("section", { hasText: "SAYC e2e" }).last();
+  const drillForm = section.locator("form").last();
+  await drillForm
+    .locator('select[name="playerId"]')
+    .selectOption({ label: "Minimal incomplete — Openings (incomplete) (incomplete)" });
+  await drillForm.locator('input[name="seed"]').fill("1");
+  await drillForm.getByRole("button", { name: "Find a safe deal" }).click();
+  await page.waitForURL(/\/bridge\/table\/bs_/, { timeout: 90_000 });
+
+  await page.getByRole("button", { name: "Play to end" }).click();
+  await expect(page.getByText(/Passed out|made|down/)).toBeVisible({ timeout: 60_000 });
+
+  // The verification panel proves the guarantee: zero engine-floor badges.
+  await expect(page.getByText(/Decisions \(\d+\)/)).toBeVisible();
+  await expect(page.getByText("engine floor")).toHaveCount(0);
 });

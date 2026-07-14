@@ -72,6 +72,60 @@ the folder's `.env.example`.
 
 ## Bridge Platform specifics (Applications/BridgePlatform)
 
+**KNOWLEDGE REWORK (2026-07-14, supersedes the phase history below).** The
+platform was rebuilt fresh-start per
+`laicdocs/Bridge_Platform_Knowledge_Rework_Spec_v1.md` (authoritative; the
+interview-derived spec elaborating the owner's rework PDF). Stages A–G all
+landed 2026-07-14:
+
+- **@bridge/kb** owns the model: knowledge BASES are the unit of
+  compilation/compatibility (SAYC, 2/1, …); items are typed
+  (11 knowledgeTypes, structured payloads in a regex-free knowledge
+  language), carry INLINE settings (enable gates + $setting parameters),
+  cite passages, and fork on divergence when shared across KBs. Edges
+  (requires/conflicts_with/teaches/exception_to) drive validation.
+  Status (draft→approved) is a trust badge, never a gate.
+- **Every save auto-recompiles** with last-good protection: broken compiles
+  never serve; the workspace banners the exact error. CompiledKb artifacts
+  are immutable; sessions pin compileId + per-seat config snapshots.
+- **Engine**: game-law layer (events, legality, Law-77 scoring, undo) kept;
+  decision layer v2 interprets CompiledKb — policies first_match /
+  weighted_random (session-seeded) / level_capped; pack fallback ITEMS act
+  before the engine floor, which is honestly labeled and never counts as an
+  agreement.
+- **Players are assembled**: packs pick items (ladder with extends chains),
+  settings tune within; the wizard suggests minimal-incomplete and
+  minimal-complete players; static capability checklist (17 categories)
+  gates `valid`; self-play simulation reports floor/fallback usage.
+  Sandboxes v2: coach exposes packs + setting keys, enforced server-side.
+- **Constrained drills** (spec §5): the closed loop — a deal is safe for an
+  incomplete player only if full simulation with the actual configs ends
+  with zero engine-floor events (findSafeSeed).
+- **Extraction v2**: one-shot structured — upload (txt/md/pdf) →
+  deterministic passages → per-section Claude jobs must emit compilable
+  items (the compiler IS the schema gate) or fail visibly into the job
+  report. Needs ANTHROPIC_API_KEY. Claude never decides play.
+- **UI** (paper/ink design language, spec §8): /bridge/kb workspace
+  (dashboard+tabs: Items/Ladder/Sources/Players/Suggestions/Activity, typed
+  item editors, source side-by-side); /bridge/table verification-first
+  table (decision traces → item links, flag→suggestion queue, learner
+  mode). REST under /api/bridge/kbs + /api/bridge/sessions.
+- **Wiped** (owner decision: hard wipe): all pre-rework content, packages
+  (knowledge/dealer/evaluator/progress), sessions, boards, sources.
+  KEPT: identity (org profiles §3.4–3.5, user profiles, affiliations),
+  audit log, taxonomy. Progress/evaluator re-emission for Coaching is
+  deliberately deferred; laic-learner-contracts is untouched.
+- **Operations**: migrations 0013 (wipe + bridge_kb_* tables) and 0014
+  (bridge_kb_sessions) exist but are NOT yet applied to the shared Supabase
+  project (needs the SQL-editor browser session); prod Vercel still serves
+  the pre-rework build until migrate+redeploy happen together. Dev default
+  remains STORE_BACKEND=file.
+- **Owner acceptance still open**: the live SAYC-document extraction run
+  (needs the owner's licensed SAYC PDF + an API key) — the pipeline and
+  workspace are ready for it.
+
+Historical phase notes (pre-rework, for archaeology only):
+
 Work proceeds in numbered phases. Phases 0–14 are complete: shell, contracts,
 engine + interpreter, knowledge base + generated Beginner Natural packages,
 persistent sessions, playable table with citation-resolving Why panel,
