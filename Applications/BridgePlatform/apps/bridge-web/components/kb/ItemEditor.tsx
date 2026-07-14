@@ -334,6 +334,195 @@ export function ItemEditor({
         </div>
       )}
 
+      {/* Per-type payload controls. Always rendered (the type select is
+          client-side; the server form must carry every field), collapsed
+          unless the current type uses them — parsePayload reads only the
+          section matching the saved knowledgeType. */}
+      <details open={knowledgeType === "fallback_rule"}>
+        <summary className="text-xs text-neutral-500">Fallback behavior (fallback_rule items)</summary>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          <label className="text-sm">
+            <span className={label}>Phase</span>
+            <select
+              name="fb:phase"
+              defaultValue={payload.kind === "fallback" ? payload.fallback.phase : "auction"}
+              className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+            >
+              <option value="auction">auction (pass)</option>
+              <option value="opening_lead">opening lead</option>
+              <option value="card_play">card play (lowest legal)</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className={label}>Lead style (opening-lead fallback)</span>
+            <select
+              name="fb:leadStyle"
+              defaultValue={
+                payload.kind === "fallback" && payload.fallback.phase === "opening_lead"
+                  ? payload.fallback.behavior
+                  : "low_from_longest"
+              }
+              className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+            >
+              {["low_from_longest", "fourth_best", "top_of_sequence", "low_from_honor", "top_of_nothing"].map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </details>
+
+      <details open={knowledgeType === "signal_agreement"}>
+        <summary className="text-xs text-neutral-500">Signals (signal_agreement items)</summary>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          {(
+            [
+              ["attitude", ["standard", "upside_down", "none"]],
+              ["count", ["standard", "reverse", "none"]],
+              ["firstDiscard", ["attitude", "count", "none"]],
+            ] as const
+          ).map(([field, options]) => (
+            <label key={field} className="text-sm">
+              <span className={label}>{field}</span>
+              <select
+                name={`sig:${field}`}
+                defaultValue={
+                  payload.kind === "signals" ? (payload.signals[field] ?? options[0]) : options[0]
+                }
+                className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+              >
+                {options.map((o) => (
+                  <option key={o}>{o}</option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      </details>
+
+      <details open={knowledgeType === "lead_agreement"}>
+        <summary className="text-xs text-neutral-500">Lead rules (lead_agreement items)</summary>
+        <div className="mt-2 space-y-2">
+          <input
+            type="hidden"
+            name="leadCount"
+            value={(payload.kind === "lead_rules" ? payload.leads.length : 0) + 1}
+          />
+          {[...(payload.kind === "lead_rules" ? payload.leads : []), null].map((lead, i) => (
+            <div key={i} className="flex flex-wrap items-end gap-2">
+              <label className="text-sm">
+                <span className={label}>Versus</span>
+                <select
+                  name={`lead${i}:versus`}
+                  defaultValue={lead?.versus ?? (i === 0 ? "" : "")}
+                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                >
+                  <option value="">— (skip)</option>
+                  <option value="suit">suit contracts</option>
+                  <option value="notrump">notrump</option>
+                  <option value="any">any</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className={label}>Style</span>
+                <select
+                  name={`lead${i}:style`}
+                  defaultValue={lead?.style ?? "fourth_best"}
+                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                >
+                  {["fourth_best", "top_of_sequence", "low_from_honor", "top_of_nothing", "low_from_longest"].map(
+                    (s) => (
+                      <option key={s}>{s}</option>
+                    ),
+                  )}
+                </select>
+              </label>
+              {lead && (
+                <label className="text-xs text-neutral-500">
+                  <input type="checkbox" name={`lead${i}:remove`} className="mr-1" /> remove
+                </label>
+              )}
+            </div>
+          ))}
+        </div>
+      </details>
+
+      <details open={knowledgeType === "declarer_technique" || knowledgeType === "defensive_technique"}>
+        <summary className="text-xs text-neutral-500">Play rules (technique items)</summary>
+        <div className="mt-2 space-y-2">
+          <input
+            type="hidden"
+            name="playCount"
+            value={(payload.kind === "play_rules" ? payload.rules.length : 0) + 1}
+          />
+          {[...(payload.kind === "play_rules" ? payload.rules : []), null].map((rule, i) => (
+            <div key={i} className="flex flex-wrap items-end gap-2">
+              <label className="text-sm">
+                <span className={label}>Behavior</span>
+                <select
+                  name={`play${i}:behavior`}
+                  defaultValue={rule?.behavior ?? ""}
+                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                >
+                  <option value="">— (skip)</option>
+                  {[
+                    "lowest_following",
+                    "highest_following",
+                    "win_cheaply",
+                    "second_hand_low",
+                    "third_hand_high",
+                    "cover_honor",
+                    "cash_winners",
+                    "lowest_legal",
+                    "discard_lowest",
+                  ].map((b) => (
+                    <option key={b}>{b}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className={label}>Position</span>
+                <select
+                  name={`play${i}:position`}
+                  defaultValue={rule?.position ?? "any"}
+                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                >
+                  {["lead", "second", "third", "fourth", "any"].map((p) => (
+                    <option key={p}>{p}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className={label}>Side</span>
+                <select
+                  name={`play${i}:side`}
+                  defaultValue={rule?.side ?? "any"}
+                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                >
+                  {["declarer", "defense", "any"].map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className={label}>Priority</span>
+                <input
+                  type="number"
+                  name={`play${i}:priority`}
+                  defaultValue={rule?.priority ?? 10}
+                  className="w-20 rounded border border-neutral-300 px-2 py-1 text-sm"
+                />
+              </label>
+              {rule && (
+                <label className="text-xs text-neutral-500">
+                  <input type="checkbox" name={`play${i}:remove`} className="mr-1" /> remove
+                </label>
+              )}
+            </div>
+          ))}
+        </div>
+      </details>
+
       {/* Inline settings the item exposes */}
       <div className="space-y-2">
         <input type="hidden" name="settingCount" value={(item?.settings.length ?? 0) + 1} />

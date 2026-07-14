@@ -133,4 +133,70 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
   await expect(page.getByText(/latest edit doesn't compile/)).toBeVisible();
   await expect(page.getByText(/does_not_exist/)).toBeVisible();
   await expect(page.getByText(/live compile/)).toBeVisible(); // last-good still live
+
+  // Repair via the typed fields — the banner clears and compiles resume.
+  await page.locator('input[name="rule0:hcpMin"]').fill("15");
+  await page.locator('input[name="rule0:hcpMax"]').fill("17");
+  await page.getByRole("button", { name: /Save \(recompiles/ }).click();
+  await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
+  await expect(page.getByText(/latest edit doesn't compile/)).not.toBeVisible();
+});
+
+test("wizard suggests minimal players; simulation counts floors honestly", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  // Give the KB a real ladder first: a complete floor pack.
+  await page.goto(`${kbUrl}/items/new`);
+  await page.getByLabel("Title").fill("Lead fallback: low from longest");
+  await page
+    .getByLabel("What a player reads (the agreement, in plain words)")
+    .fill("With no lead agreement, lead low from your longest suit.");
+  await page.getByLabel("Type").selectOption("fallback_rule");
+  await page.getByText("Fallback behavior (fallback_rule items)").click();
+  await page.locator('select[name="fb:phase"]').selectOption("opening_lead");
+  await page.getByRole("button", { name: "Create item" }).click();
+
+  await page.goto(`${kbUrl}/items/new`);
+  await page.getByLabel("Title").fill("Play fallback: lowest legal card");
+  await page
+    .getByLabel("What a player reads (the agreement, in plain words)")
+    .fill("With no technique that applies, play your lowest legal card.");
+  await page.getByLabel("Type").selectOption("fallback_rule");
+  await page.getByText("Fallback behavior (fallback_rule items)").click();
+  await page.locator('select[name="fb:phase"]').selectOption("card_play");
+  await page.getByRole("button", { name: "Create item" }).click();
+
+  await page.goto(`${kbUrl}/items/new`);
+  await page.getByLabel("Title").fill("No signals");
+  await page
+    .getByLabel("What a player reads (the agreement, in plain words)")
+    .fill("This partnership plays no defensive signals.");
+  await page.getByLabel("Type").selectOption("signal_agreement");
+  await page.getByRole("button", { name: "Create item" }).click();
+
+  await page.goto(`${kbUrl}/ladder`);
+  await page.getByLabel("Name").fill("Floor");
+  await page.getByRole("checkbox", { name: /Auction fallback/ }).check();
+  await page.getByRole("checkbox", { name: /Lead fallback/ }).check();
+  await page.getByRole("checkbox", { name: /Play fallback/ }).check();
+  await page.getByRole("checkbox", { name: /No signals/ }).check();
+  await page.getByRole("button", { name: "Save pack" }).click();
+  await expect(page.getByText("minimally complete on its own")).toBeVisible();
+
+  // The wizard.
+  await page.goto(`${kbUrl}/players`);
+  await page.getByRole("button", { name: "Suggest minimal players" }).click();
+  await expect(page.getByText(/Minimal complete — Floor/)).toBeVisible();
+  await expect(page.getByText(/Minimal incomplete/)).toBeVisible();
+
+  // Open the complete player: valid badge, simulate cleanly.
+  await page.getByText(/Minimal complete — Floor/).click();
+  await expect(page.getByText(/all 17 capabilities covered/)).toBeVisible();
+  await page.getByRole("button", { name: "Run 24 seeded deals" }).click();
+  await expect(page.getByText("24/24")).toBeVisible();
+  const floors = page.locator("dd").filter({ hasText: /^0$/ });
+  await expect(floors.first()).toBeVisible(); // zero engine-floor events
 });

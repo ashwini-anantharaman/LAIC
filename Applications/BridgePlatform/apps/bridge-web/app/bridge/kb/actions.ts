@@ -209,3 +209,161 @@ export async function resolveSuggestionAction(formData: FormData): Promise<void>
   });
   revalidatePath(kbPath(kbId, "/suggestions"));
 }
+
+// ---- players (Stage E) -----------------------------------------------------
+
+export async function suggestPlayersAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const compiled = await kbService().liveCompile(kbId);
+  if (!compiled) throw new Error("Compile the KB first (save any item)");
+
+  const { newId: mkId, suggestMinimalPlayers, validatePlayerStatic, playerIsValid } =
+    await import("@bridge/kb");
+  const store = kbStore();
+  const existing = await store.listPlayersForKb(kbId);
+  const now = new Date().toISOString();
+
+  for (const suggestion of suggestMinimalPlayers(compiled, kbId)) {
+    if (existing.some((p) => p.name === suggestion.name)) continue;
+    const player = {
+      playerId: mkId("pl"),
+      kbId,
+      name: suggestion.name,
+      description: suggestion.rationale,
+      enabledPackIds: suggestion.enabledPackIds,
+      settingOverrides: {},
+      decisionPolicyId: "first_match" as const,
+      fallbackPolicyId: "standard" as const,
+      validationStatus: "draft" as const,
+      ownerType: "system" as const,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const report = validatePlayerStatic(compiled, player);
+    await store.putPlayer({
+      ...player,
+      validationStatus: playerIsValid(report) ? "valid" : "invalid",
+      validationReport: report,
+    });
+    await audit(context, "profile.create", "kb_player", player.playerId, {
+      kbId,
+      suggested: suggestion.kind,
+    });
+  }
+  revalidatePath(kbPath(kbId, "/players"));
+}
+
+export async function savePlayerAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const playerId = String(formData.get("playerId") ?? "").trim();
+  const compiled = await kbService().liveCompile(kbId);
+  if (!compiled) throw new Error("Compile the KB first");
+
+  const { newId: mkId, validatePlayerStatic, playerIsValid, applySandboxConstraints } =
+    await import("@bridge/kb");
+  const { parseSettingOverrides } = await import("@/lib/playerForm");
+  const store = kbStore();
+  const existing = playerId ? await store.getPlayer(playerId) : null;
+  const now = new Date().toISOString();
+
+  let enabledPackIds = formData.getAll("enabledPackIds").map(String);
+  let settingOverrides = parseSettingOverrides(formData, compiled);
+
+  // Sandboxed players can never escape the coach's exposure (server-side).
+  const sandboxId = existing?.sandboxId ?? (String(formData.get("sandboxId") ?? "").trim() || undefined);
+  if (sandboxId) {
+    const sandbox = await store.getSandbox(sandboxId);
+    if (sandbox) {
+      const constrained = applySandboxConstraints(sandbox, { enabledPackIds, settingOverrides });
+      enabledPackIds = constrained.enabledPackIds;
+      settingOverrides = constrained.settingOverrides;
+    }
+  }
+
+  const player = {
+    playerId: existing?.playerId ?? mkId("pl"),
+    kbId,
+    name: String(formData.get("name") ?? "").trim() || existing?.name || "Unnamed player",
+    description: existing?.description,
+    levelId: String(formData.get("levelId") ?? "").trim() || undefined,
+    enabledPackIds,
+    settingOverrides,
+    decisionPolicyId: (String(formData.get("decisionPolicyId")) || "first_match") as never,
+    fallbackPolicyId: "standard" as const,
+    validationStatus: "draft" as const,
+    ownerType: existing?.ownerType ?? ("coach" as const),
+    ownerId: existing?.ownerId ?? context.nexusUserId,
+    programOrganizationId: existing?.programOrganizationId ?? context.programOrganizationId,
+    sandboxId,
+    version: (existing?.version ?? 0) + 1,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
+  const report = validatePlayerStatic(compiled, player);
+  await store.putPlayer({
+    ...player,
+    validationStatus: playerIsValid(report) ? "valid" : "invalid",
+    validationReport: report,
+  });
+  await audit(context, existing ? "profile.update" : "profile.create", "kb_player", player.playerId, { kbId });
+  revalidatePath(kbPath(kbId, "/players"), "layout");
+  redirect(kbPath(kbId, `/players/${player.playerId}?saved=1`));
+}
+
+export async function simulatePlayerAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const playerId = String(formData.get("playerId"));
+  const compiled = await kbService().liveCompile(kbId);
+  const store = kbStore();
+  const player = await store.getPlayer(playerId);
+  if (!compiled || !player) throw new Error("Player or compile missing");
+
+  const { simulateSelfPlay } = await import("@bridge/engine");
+  const levelOrdinal = compiled.packs.find((p) => p.levelId === player.levelId)?.ordinal;
+  const simulation = await simulateSelfPlay({
+    compiled,
+    player: {
+      enabledPackIds: player.enabledPackIds,
+      settingOverrides: player.settingOverrides,
+      decisionPolicyId: player.decisionPolicyId,
+      levelOrdinal,
+    },
+    deals: 24,
+    seed: 20260714,
+  });
+  await store.putPlayer({
+    ...player,
+    validationReport: { ...(player.validationReport ?? { static: [], conflicts: [], missingRequires: [] }), simulation },
+    updatedAt: new Date().toISOString(),
+  });
+  await audit(context, "profile.update", "kb_player", playerId, { kbId, simulated: true });
+  revalidatePath(kbPath(kbId, `/players/${playerId}`));
+}
+
+export async function createSandboxAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const { newId: mkId } = await import("@bridge/kb");
+  const now = new Date().toISOString();
+  const sandbox = {
+    sandboxId: mkId("sb"),
+    kbId,
+    name: String(formData.get("name") ?? "").trim(),
+    basePackIds: formData.getAll("basePackIds").map(String),
+    exposedPackIds: formData.getAll("exposedPackIds").map(String),
+    baseOverrides: {},
+    exposedSettingKeys: formData.getAll("exposedSettingKeys").map(String),
+    ownerType: "coach" as const,
+    ownerId: context.nexusUserId,
+    programOrganizationId: context.programOrganizationId,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await kbStore().putSandbox(sandbox);
+  await audit(context, "profile.create", "kb_sandbox", sandbox.sandboxId, { kbId });
+  revalidatePath(kbPath(kbId, "/players"));
+}
