@@ -1,11 +1,17 @@
 @import "tailwindcss";
 
 /*
- * Bridge Platform — "club room" design language.
+ * Bridge Platform — knowledge-rework design language (spec §8).
  *
- * Self-hosted variable fonts (app/fonts): builds stay hermetic — no font
- * downloads at build time. Fraunces carries display type (headings, score),
- * Karla carries UI text.
+ * A reading room with gauges: warm paper ground, near-black ink, ONE
+ * restrained petrol accent for everything interactive, and a fixed semantic
+ * set (draft amber / approved green / invalid madder / deprecated stone).
+ * Suit glyphs are the only ornament. The felt-and-gold club room retired
+ * with the old table.
+ *
+ * Self-hosted variable fonts (app/fonts): builds stay hermetic. Fraunces
+ * carries knowledge prose and headings (the reading voice); Karla carries
+ * UI chrome, data, and traces.
  */
 
 @font-face {
@@ -36,54 +42,71 @@
     sans-serif;
   --font-serif: "Fraunces", ui-serif, Georgia, serif;
 
-  /* Felt greens — the emerald scale every page already uses, re-tuned from
-     mint toward card-table baize. */
-  --color-emerald-50: #f0f5f0;
-  --color-emerald-100: #dfeadf;
-  --color-emerald-200: #c0d6c3;
-  --color-emerald-300: #98ba9f;
-  --color-emerald-400: #6b9a78;
-  --color-emerald-500: #497c5d;
-  --color-emerald-600: #346449;
-  --color-emerald-700: #2a523c;
-  --color-emerald-800: #224231;
-  --color-emerald-900: #1b3527;
-  --color-emerald-950: #0d1f15;
+  /* The accent scale existing pages already reference as `emerald-*`,
+     re-tuned from baize green to instrument petrol. */
+  --color-emerald-50: #eef4f4;
+  --color-emerald-100: #dce9e9;
+  --color-emerald-200: #b9d3d4;
+  --color-emerald-300: #8db5b7;
+  --color-emerald-400: #5d9296;
+  --color-emerald-500: #3a767c;
+  --color-emerald-600: #2a6167;
+  --color-emerald-700: #205e63;
+  --color-emerald-800: #1c4b50;
+  --color-emerald-900: #173c40;
+  --color-emerald-950: #0c2426;
 
   /* Warm stone neutrals on paper. */
-  --color-neutral-50: #faf9f6;
-  --color-neutral-100: #f1efe9;
-  --color-neutral-200: #e4e0d6;
-  --color-neutral-300: #d0cabc;
+  --color-neutral-50: #faf9f5;
+  --color-neutral-100: #f2f0e9;
+  --color-neutral-200: #e7e1d3;
+  --color-neutral-300: #d3ccbb;
   --color-neutral-400: #a49d8e;
   --color-neutral-500: #7b7466;
   --color-neutral-600: #5e5749;
   --color-neutral-700: #48423a;
   --color-neutral-800: #312d26;
-  --color-neutral-900: #201d18;
-  --color-neutral-950: #131109;
+  --color-neutral-900: #1d1a15;
+  --color-neutral-950: #12100b;
+
+  /* Semantic set (spec §8) — referenced as color utilities. */
+  --color-draft: #a16207;
+  --color-approved: #256e42;
+  --color-invalid: #8a2d23;
 }
 
 :root {
-  --paper: #f7f5ef;
-  --felt: #2a523c;
-  --felt-deep: #1b3527;
-  --gold: #c8a558;
+  --paper: #faf8f2;
+  --ink: #1d1a15;
+  --card: #fffefa;
+  --line: #e7e1d3;
+  --accent: #205e63;
+  --madder: #8a2d23;
 }
 
 body {
   background-color: var(--paper);
+  color: var(--ink);
   font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
 
-/* Display type: real headings get the serif voice; the small-caps section
-   labels (class "uppercase") stay in the UI sans. */
+/* The reading voice: headings and knowledge prose in the serif. */
 h1,
 h2:not(.uppercase),
 h3:not(.uppercase) {
   font-family: var(--font-serif);
   font-variation-settings: "opsz" 40;
   letter-spacing: -0.01em;
+}
+
+/* Knowledge prose blocks opt in with .prose-knowledge (reading measure). */
+.prose-knowledge {
+  font-family: var(--font-serif);
+  font-variation-settings: "opsz" 18;
+  font-size: 1.02rem;
+  line-height: 1.65;
+  max-width: 65ch;
 }
 
 ::selection {
@@ -122,14 +145,14 @@ textarea {
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-emerald-500);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 2px;
 }
 
 /* Bordered sections read as cards on the paper background. */
 main section[class*="border"] {
-  background-color: #fffefb;
+  background-color: var(--card);
 }
 
 @media (prefers-reduced-motion: reduce) {

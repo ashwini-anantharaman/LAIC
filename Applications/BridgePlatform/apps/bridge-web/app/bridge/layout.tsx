@@ -21,39 +21,39 @@ export default async function BridgeShellLayout({
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      <aside className="flex w-full shrink-0 flex-col bg-[var(--felt-deep)] text-emerald-50 md:w-64">
-        <div className="border-b border-white/10 p-4">
-          <p className="text-[11px] tracking-[0.35em] text-[var(--gold)]">
-            <span className="text-emerald-100/90">♠</span> ♥{" "}
-            <span className="text-emerald-100/90">♣</span> ♦
+      <aside className="flex w-full shrink-0 flex-col border-b border-[var(--line)] bg-[var(--card)] md:w-64 md:border-b-0 md:border-r">
+        <div className="border-b border-[var(--line)] p-4">
+          <p className="text-[11px] tracking-[0.35em] text-neutral-500">
+            ♠ <span className="text-[var(--madder)]">♥</span> ♣{" "}
+            <span className="text-[var(--madder)]">♦</span>
           </p>
-          <p className="mt-1 font-serif text-xl font-medium tracking-tight text-white">
+          <p className="mt-1 font-serif text-xl font-medium tracking-tight">
             Bridge Platform
           </p>
-          <p className="text-xs text-emerald-200/60">LAIC Bridge Program</p>
+          <p className="text-xs text-neutral-500">LAIC Bridge Program</p>
         </div>
         <nav className="flex flex-row flex-wrap gap-1 p-3 md:flex-1 md:flex-col md:flex-nowrap md:gap-0 md:space-y-1">
           {navForContext(context).map((item) => (
             <NavLink key={item.href} href={item.href} label={item.label} />
           ))}
         </nav>
-        <div className="space-y-1 border-t border-white/10 p-4 text-sm">
-          <p className="font-medium text-white">{displayName}</p>
-          <p className="text-xs text-emerald-200/60">
+        <div className="space-y-1 border-t border-[var(--line)] p-4 text-sm">
+          <p className="font-medium">{displayName}</p>
+          <p className="text-xs text-neutral-500">
             {context.roles.map(roleLabel).join(", ")}
           </p>
           {context.programOrganizationId ? (
-            <p className="text-xs text-emerald-200/60">
+            <p className="text-xs text-neutral-500">
               Org: {context.programOrganizationId}
             </p>
           ) : (
-            <p className="text-xs text-emerald-200/60">Program-level access</p>
+            <p className="text-xs text-neutral-500">Program-level access</p>
           )}
           {nexusMode() === "stub" && (
             <form action={clearDevUser}>
               <button
                 type="submit"
-                className="text-xs text-[var(--gold)] underline-offset-2 hover:underline"
+                className="text-xs text-emerald-700 underline-offset-2 hover:underline"
               >
                 Switch user
               </button>
