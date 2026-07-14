@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@bridge/config": "workspace:*",
-    "@bridge/events": "workspace:*"
+    "@bridge/events": "workspace:*",
+    "@bridge/kb": "workspace:*"
   }
 }

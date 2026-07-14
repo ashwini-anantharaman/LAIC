@@ -18,3 +18,7 @@ export * from "./capabilities";
 export * from "./store";
 export { JsonFileKbStore } from "./fileStore";
 export { fnv1a, hashValue, newId, stableStringify } from "./ids";
+export { compileKb, type CompileInput, type CompileResult } from "./compile";
+export { KbService, type KbServiceOptions } from "./service";
+export { playerIsValid, validatePlayerStatic } from "./validatePlayer";
+export { FIXTURE_EDGES, FIXTURE_ITEMS, fixturePacks } from "./fixture";

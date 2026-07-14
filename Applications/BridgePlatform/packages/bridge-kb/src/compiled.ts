@@ -101,8 +101,18 @@ export interface CompiledKb {
   /** requires edges (player validation + dependency gating). */
   requires: { itemId: string; requiresItemId: string }[];
   items: CompiledItemSummary[];
-  /** packId → effective itemIds (extends-chain flattened at compile time). */
-  packIndex: Record<string, string[]>;
+  /** Ladder snapshot: effective item sets with extends-chains flattened. */
+  packs: CompiledPack[];
+}
+
+export interface CompiledPack {
+  packId: string;
+  name: string;
+  levelId?: string;
+  /** Ladder position (0-based) — level_capped compares against this. */
+  ordinal: number;
+  /** Effective item set (union up the extends chain). */
+  itemIds: string[];
 }
 
 export interface CompileError {

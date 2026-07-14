@@ -123,6 +123,9 @@ importers:
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
+      '@bridge/kb':
+        specifier: workspace:*
+        version: link:../bridge-kb
 
   packages/bridge-events:
     dependencies:

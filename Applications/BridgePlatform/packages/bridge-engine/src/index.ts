@@ -16,3 +16,38 @@ export * from "./apply";
 export * from "./decision";
 export * from "./game";
 export { scoreBoard, resultLabel, type ScoreBreakdown } from "./scoring";
+
+// Decision layer v2 (Knowledge Rework §2): interprets @bridge/kb compiled
+// artifacts. Policies, fallback chain, engine floor, full traces.
+export {
+  analyzeSeat,
+  matchCallPattern,
+  matchContext,
+  type SeatAuctionFacts,
+} from "./decide/auctionContext";
+export {
+  evalCondition,
+  resolveNumParam,
+  resolveSuitRef,
+  totalPoints,
+  type ConditionEnv,
+} from "./decide/handConditions";
+export {
+  realizeAuctionAction,
+  realizeLead,
+  realizePlayBehavior,
+} from "./decide/actions";
+export {
+  createKbDecider,
+  effectiveSurface,
+  type KbDeciderOptions,
+  type KbPlayerConfig,
+} from "./decide/decider";
+export { mulberry32, seedFrom } from "./decide/rng";
+export {
+  seededDeal,
+  simulateDeal,
+  simulateSelfPlay,
+  type SimulatedDeal,
+  type SimulateOptions,
+} from "./decide/simulate";
