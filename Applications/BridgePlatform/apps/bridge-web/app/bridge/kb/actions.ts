@@ -5,7 +5,7 @@
 // fellow permission gate is bridge.knowledge.edit; suggestions only need
 // review access.
 
-import { chunkDocument, newId, type EdgeType, type KbSource } from "@bridge/kb";
+import { newId, type EdgeType, type KbSource } from "@bridge/kb";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdminContext, requireContext } from "@/lib/api";
@@ -155,6 +155,10 @@ export async function uploadDocumentAction(formData: FormData): Promise<void> {
   revalidatePath(kbPath(kbId, "/sources"));
 }
 
+/** Batch size per click: keeps each run well inside serverless time limits;
+ *  completed sections are skipped, so clicking through is resumable. */
+const EXTRACTION_BATCH = 3;
+
 export async function runExtractionAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));
@@ -162,31 +166,32 @@ export async function runExtractionAction(formData: FormData): Promise<void> {
   if (!extractionAvailable())
     throw new Error("Extraction needs ANTHROPIC_API_KEY on the server");
 
-  const store = kbStore();
-  const doc = await store.getDocument(sourceId);
-  if (!doc) throw new Error("Upload a document first");
-  const passages = await store.listPassages(sourceId);
-  const { sections } = chunkDocument(doc.text);
-  const byOrdinal = new Map(passages.map((p) => [p.ordinal, p]));
+  const { pendingSections } = await import("@/lib/documents");
+  const { remaining } = await pendingSections(kbId, sourceId);
+  if (!remaining.length) redirect(kbPath(kbId, "/sources?extracted=0&remaining=0"));
 
+  const batch = remaining.slice(0, EXTRACTION_BATCH);
   const { runExtraction } = await import("@bridge/kb");
-  const jobs = await runExtraction(store, kbService(), createClaudeExtractor(), {
+  const jobs = await runExtraction(kbStore(), kbService(), createClaudeExtractor(), {
     kbId,
     sourceId,
     requestedBy: context.nexusUserId,
-    sections: sections.map((s) => ({
-      anchor: s.anchor,
-      passages: s.passageOrdinals.map((o) => byOrdinal.get(o)!).filter(Boolean),
-    })),
+    sections: batch,
   });
+  const itemsCreated = jobs.reduce((n, j) => n + j.createdItemIds.length, 0);
   await audit(context, "kb.extraction.run", "kb_source", sourceId, {
     kbId,
     jobs: jobs.length,
     completed: jobs.filter((j) => j.status === "completed").length,
-    itemsCreated: jobs.reduce((n, j) => n + j.createdItemIds.length, 0),
+    itemsCreated,
   });
   revalidatePath(kbPath(kbId), "layout");
-  redirect(kbPath(kbId, "/sources?extracted=1"));
+  redirect(
+    kbPath(
+      kbId,
+      `/sources?extracted=${itemsCreated}&remaining=${remaining.length - batch.length}`,
+    ),
+  );
 }
 
 export async function createSuggestionAction(formData: FormData): Promise<void> {
@@ -310,7 +315,8 @@ export async function savePlayerAction(formData: FormData): Promise<void> {
   await store.putPlayer({
     ...player,
     validationStatus: playerIsValid(report) ? "valid" : "invalid",
-    validationReport: report,
+    // Keep the last simulation visible; it re-runs on demand.
+    validationReport: { ...report, simulation: existing?.validationReport?.simulation },
   });
   await audit(context, existing ? "profile.update" : "profile.create", "kb_player", player.playerId, { kbId });
   revalidatePath(kbPath(kbId, "/players"), "layout");

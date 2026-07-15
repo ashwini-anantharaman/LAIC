@@ -1,5 +1,6 @@
 import { CAPABILITY_CATEGORIES, validatePlayerStatic, type KbPlayer } from "@bridge/kb";
 import Link from "next/link";
+import { ItemPicker } from "@/components/kb/ItemPicker";
 import { kbService, kbStore } from "@/lib/kb";
 import { savePackAction } from "../../actions";
 
@@ -150,17 +151,11 @@ export default async function LadderPage({
           </div>
           <fieldset>
             <legend className="mb-1 text-xs text-neutral-500">Items in this pack</legend>
-            <div className="grid max-h-64 gap-1 overflow-y-auto rounded border border-neutral-200 p-3 sm:grid-cols-2">
-              {items
+            <ItemPicker
+              items={items
                 .filter((i) => i.status !== "deprecated")
-                .map((i) => (
-                  <label key={i.itemId} className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" name="itemIds" value={i.itemId} />
-                    {i.title}
-                    <span className="text-[10px] uppercase text-neutral-400">{i.knowledgeType}</span>
-                  </label>
-                ))}
-            </div>
+                .map((i) => ({ itemId: i.itemId, title: i.title, knowledgeType: i.knowledgeType }))}
+            />
           </fieldset>
           <button
             type="submit"

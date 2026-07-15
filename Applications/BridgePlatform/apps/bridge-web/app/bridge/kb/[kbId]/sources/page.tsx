@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { pendingSections } from "@/lib/documents";
 import { extractionAvailable } from "@/lib/extraction";
 import { kbStore } from "@/lib/kb";
 import {
@@ -14,10 +15,10 @@ export default async function SourcesPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ kbId: string }>;
-  searchParams: Promise<{ extracted?: string }>;
+  searchParams: Promise<{ extracted?: string; remaining?: string }>;
 }>) {
   const { kbId } = await params;
-  const { extracted } = await searchParams;
+  const { extracted, remaining: remainingParam } = await searchParams;
   const store = kbStore();
   const [sources, jobs] = await Promise.all([store.listSources(), store.listJobsForKb(kbId)]);
   const documents = new Map(
@@ -25,14 +26,21 @@ export default async function SourcesPage({
       sources.map(async (s) => [s.sourceId, await store.getDocument(s.sourceId)] as const),
     ),
   );
+  const pending = new Map(
+    await Promise.all(
+      sources.map(async (s) => [s.sourceId, await pendingSections(kbId, s.sourceId)] as const),
+    ),
+  );
   const llmReady = extractionAvailable();
   const base = `/bridge/kb/${kbId}`;
 
   return (
     <div className="space-y-8">
-      {extracted && (
+      {extracted !== undefined && (
         <p className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          Extraction finished — results below; extracted items are in the Items tab.
+          {Number(remainingParam ?? 0) > 0
+            ? `Batch done — ${extracted} item(s) created; ${remainingParam} section(s) to go. Click the button again to continue.`
+            : `Extraction finished — ${extracted} item(s) created in this last batch; everything is in the Items tab.`}
         </p>
       )}
       {!llmReady && (
@@ -79,23 +87,32 @@ export default async function SourcesPage({
                       {doc ? "Replace document" : "Upload document"}
                     </button>
                   </form>
-                  {doc && llmReady && (
-                    <form action={runExtractionAction}>
-                      <input type="hidden" name="kbId" value={kbId} />
-                      <input type="hidden" name="sourceId" value={source.sourceId} />
-                      <button
-                        type="submit"
-                        className="rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800"
-                      >
-                        Run extraction (all sections)
-                      </button>
-                      <p className="mt-1 text-[11px] text-neutral-400">
-                        Long documents can exceed serverless time limits — large runs can be
-                        driven locally (see lib/extractSayc.manual.test.ts); completed sections
-                        are skipped on re-runs.
-                      </p>
-                    </form>
-                  )}
+                  {doc &&
+                    llmReady &&
+                    (() => {
+                      const p = pending.get(source.sourceId);
+                      const left = p?.remaining.length ?? 0;
+                      return left > 0 ? (
+                        <form action={runExtractionAction}>
+                          <input type="hidden" name="kbId" value={kbId} />
+                          <input type="hidden" name="sourceId" value={source.sourceId} />
+                          <button
+                            type="submit"
+                            className="rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800"
+                          >
+                            Extract next {Math.min(3, left)} section{Math.min(3, left) > 1 ? "s" : ""} ({left} of {p!.total} remaining)
+                          </button>
+                          <p className="mt-1 text-[11px] text-neutral-400">
+                            Each batch takes a minute or two. Completed sections are skipped, so
+                            keep clicking until none remain.
+                          </p>
+                        </form>
+                      ) : (
+                        <p className="text-sm text-[color:var(--color-approved)]">
+                          ✓ all {p?.total ?? 0} sections extracted
+                        </p>
+                      );
+                    })()}
                 </div>
               </div>
             );

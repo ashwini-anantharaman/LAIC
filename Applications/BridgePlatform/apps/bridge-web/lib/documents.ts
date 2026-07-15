@@ -37,3 +37,25 @@ export async function uploadDocument(
   await store.replacePassages(sourceId, full);
   return { document, passageCount: full.length, sectionCount: sections.length };
 }
+
+/** Sections of a source's document that no completed job has covered yet. */
+export async function pendingSections(kbId: string, sourceId: string) {
+  const store = kbStore();
+  const doc = await store.getDocument(sourceId);
+  if (!doc) return { total: 0, remaining: [] as { anchor: string; passages: KbSourcePassage[] }[] };
+  const passages = await store.listPassages(sourceId);
+  const byOrdinal = new Map(passages.map((p) => [p.ordinal, p]));
+  const { sections } = chunkDocument(doc.text);
+  const done = new Set(
+    (await store.listJobsForKb(kbId))
+      .filter((j) => j.sourceId === sourceId && j.status === "completed")
+      .flatMap((j) => j.passageOrdinals),
+  );
+  const remaining = sections
+    .filter((s) => !s.passageOrdinals.every((o) => done.has(o)))
+    .map((s) => ({
+      anchor: s.anchor,
+      passages: s.passageOrdinals.map((o) => byOrdinal.get(o)!).filter(Boolean),
+    }));
+  return { total: sections.length, remaining };
+}
