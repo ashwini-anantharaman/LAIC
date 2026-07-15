@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UploadForm } from "@/components/kb/UploadForm";
 import { pendingSections } from "@/lib/documents";
 import { extractionAvailable } from "@/lib/extraction";
 import { kbStore } from "@/lib/kb";
@@ -15,10 +16,17 @@ export default async function SourcesPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ kbId: string }>;
-  searchParams: Promise<{ extracted?: string; remaining?: string }>;
+  searchParams: Promise<{
+    extracted?: string;
+    remaining?: string;
+    uploadError?: string;
+    uploaded?: string;
+    sections?: string;
+  }>;
 }>) {
   const { kbId } = await params;
-  const { extracted, remaining: remainingParam } = await searchParams;
+  const { extracted, remaining: remainingParam, uploadError, uploaded, sections } =
+    await searchParams;
   const store = kbStore();
   const [sources, jobs] = await Promise.all([store.listSources(), store.listJobsForKb(kbId)]);
   const documents = new Map(
@@ -36,6 +44,17 @@ export default async function SourcesPage({
 
   return (
     <div className="space-y-8">
+      {uploadError && (
+        <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--color-invalid)]">
+          {uploadError}
+        </p>
+      )}
+      {uploaded && (
+        <p className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Document uploaded — {uploaded} passages across {sections} sections. Extraction is ready
+          below.
+        </p>
+      )}
       {extracted !== undefined && (
         <p className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           {Number(remainingParam ?? 0) > 0
@@ -76,17 +95,12 @@ export default async function SourcesPage({
                   <p className="mt-1 text-sm italic text-neutral-500">No document yet.</p>
                 )}
                 <div className="mt-3 flex flex-wrap items-center gap-4">
-                  <form action={uploadDocumentAction} className="flex items-center gap-2">
-                    <input type="hidden" name="kbId" value={kbId} />
-                    <input type="hidden" name="sourceId" value={source.sourceId} />
-                    <input type="file" name="file" accept=".txt,.md,.pdf" className="text-xs" />
-                    <button
-                      type="submit"
-                      className="rounded border border-neutral-300 px-3 py-1 text-sm hover:border-emerald-400"
-                    >
-                      {doc ? "Replace document" : "Upload document"}
-                    </button>
-                  </form>
+                  <UploadForm
+                    kbId={kbId}
+                    sourceId={source.sourceId}
+                    replace={Boolean(doc)}
+                    action={uploadDocumentAction}
+                  />
                   {doc &&
                     llmReady &&
                     (() => {

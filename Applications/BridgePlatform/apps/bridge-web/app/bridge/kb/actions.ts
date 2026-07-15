@@ -140,19 +140,38 @@ export async function uploadDocumentAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));
   const sourceId = String(formData.get("sourceId"));
+  const fail = (message: string): never =>
+    redirect(kbPath(kbId, `/sources?uploadError=${encodeURIComponent(message)}`));
+
   const file = formData.get("file");
-  if (!(file instanceof File) || !file.size) throw new Error("No file uploaded");
-  if (file.size > 3_500_000)
-    throw new Error(
-      "That file is over 3.5 MB — the upload path caps at ~4 MB. Split the document or upload a text export.",
-    );
-  const text = await fileToText(file);
-  const { passageCount } = await uploadDocument(sourceId, file.name, file.type || "text/plain", text);
+  if (!(file instanceof File) || !file.size)
+    fail("No file was attached — choose the document first, then upload.");
+  const doc = file as File;
+  if (doc.size > 3_500_000)
+    fail("That file is over 3.5 MB — the upload path caps at ~4 MB. Split the document or upload a text export.");
+
+  let text: string;
+  try {
+    text = await fileToText(doc);
+  } catch {
+    return fail("Couldn't read that file as text — is it a valid PDF/markdown/text document?");
+  }
+  if (!text.trim()) return fail("The document came out empty after text extraction.");
+
+  const { passageCount, sectionCount } = await uploadDocument(
+    sourceId,
+    doc.name,
+    doc.type || "text/plain",
+    text,
+  );
   await audit(context, "knowledge.source.upload", "kb_source", sourceId, {
     kbId,
     passageCount,
   });
   revalidatePath(kbPath(kbId, "/sources"));
+  redirect(
+    kbPath(kbId, `/sources?uploaded=${passageCount}&sections=${sectionCount}`),
+  );
 }
 
 /** Batch size per click: keeps each run well inside serverless time limits;
