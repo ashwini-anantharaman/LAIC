@@ -142,6 +142,10 @@ export async function uploadDocumentAction(formData: FormData): Promise<void> {
   const sourceId = String(formData.get("sourceId"));
   const file = formData.get("file");
   if (!(file instanceof File) || !file.size) throw new Error("No file uploaded");
+  if (file.size > 3_500_000)
+    throw new Error(
+      "That file is over 3.5 MB — the upload path caps at ~4 MB. Split the document or upload a text export.",
+    );
   const text = await fileToText(file);
   const { passageCount } = await uploadDocument(sourceId, file.name, file.type || "text/plain", text);
   await audit(context, "knowledge.source.upload", "kb_source", sourceId, {

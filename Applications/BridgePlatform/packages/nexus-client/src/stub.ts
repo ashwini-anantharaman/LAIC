@@ -102,6 +102,7 @@ export const STUB_USERS: StubUser[] = [
         "bridge.program.manage",
         "bridge.org.manage",
         "bridge.knowledge.review",
+        "bridge.knowledge.edit",
         "bridge.knowledge.publish",
         "bridge.progress.read_program",
       ],

@@ -217,3 +217,26 @@ describe("runExtraction", () => {
     expect(compiled?.requires).toHaveLength(1);
   });
 });
+
+describe("chunkDocument on flat PDF text (no newlines)", () => {
+  it("explodes inline ALL-CAPS headings into sections with sentence passages", () => {
+    const pad =
+      "The auction proceeds naturally from there and partnerships should discuss their agreements in detail before play begins. ".repeat(4);
+    const flat =
+      "ACBL SAYC SYSTEM BOOKLET Revised January 2006 OVERVIEW " +
+      "The system was created to be simple. It should be easy to learn. " + pad +
+      "GENERAL APPROACH Five-card majors are used in first and second seat. " +
+      "The one notrump opening shows fifteen to seventeen points. " + pad +
+      "SLAM BIDDING Blackwood asks for aces. Gerber applies over notrump openings. " + pad;
+    const { passages, sections } = chunkDocument(flat);
+    expect(sections.length).toBeGreaterThanOrEqual(3);
+    const anchors = sections.map((s) => s.anchor);
+    expect(anchors).toContain("OVERVIEW");
+    expect(anchors).toContain("GENERAL APPROACH");
+    expect(anchors).toContain("SLAM BIDDING");
+    // No passage stays book-sized.
+    expect(Math.max(...passages.map((p) => p.text.length))).toBeLessThan(800);
+    // Determinism holds on the flat path too.
+    expect(chunkDocument(flat)).toEqual({ passages, sections });
+  });
+});

@@ -2,11 +2,7 @@ import { stubDisplayName } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
 import { getBridgeContext } from "@/lib/nexus";
 
-/**
- * Rebuild notice (Knowledge Rework spec, Stage A): the knowledge, player,
- * and table surfaces are being rebuilt on the knowledge-base model. Owner
- * accepted downtime for this window (decision: hard wipe, staged delivery).
- */
+/** Home: the knowledge-base platform, post-rework. */
 export default async function HomePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
@@ -21,19 +17,21 @@ export default async function HomePage() {
         Bridge Platform
       </p>
       <h1 className="mt-2 font-serif text-3xl font-medium">
-        Rebuilding, {firstName}.
+        Welcome back, {firstName}.
       </h1>
       <div className="mt-6 space-y-4 text-sm leading-relaxed text-neutral-600">
         <p>
-          The platform is moving to <strong>knowledge bases</strong>: every
-          rule belongs to a system (SAYC, 2/1, …), players are assembled from
-          capability packs, and editing a knowledge item changes how the AI
-          plays — immediately, with full provenance.
+          Every rule here belongs to a <strong>knowledge base</strong> (SAYC,
+          2/1, …). Players are assembled from capability packs; every AI
+          decision at the table traces to the rule, the knowledge item, and
+          the source passage that produced it — and editing an item changes
+          how the AI plays, immediately.
         </p>
         <p>
-          The knowledge workspace, player builder, and verification table are
-          being rebuilt stage by stage and will reappear here as they land.
-          Organization settings and the audit log remain available.
+          Head to the <strong>Table</strong> to play, or the{" "}
+          <strong>Knowledge bases</strong> workspace to upload a system
+          document, review extracted items, build the pack ladder, and
+          assemble players.
         </p>
       </div>
     </div>

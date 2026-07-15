@@ -36,12 +36,58 @@ export interface ChunkResult {
 }
 
 const MAX_PASSAGES_PER_SECTION = 14;
+const FLAT_PARAGRAPH_THRESHOLD = 1000;
+const TARGET_PASSAGE_CHARS = 600;
+
+/**
+ * PDF text extraction often yields NO newlines at all (one flat run). Explode
+ * an oversized flat paragraph into heading + sentence-grouped pseudo-
+ * paragraphs: inline ALL-CAPS runs (≥2 words, or one word ≥6 letters) are
+ * treated as section headings — calibrated against real system booklets.
+ */
+export function explodeFlatText(paragraph: string): string[] {
+  const headingRe =
+    /(?:\b[A-Z][A-Z0-9&'-]{3,}\b)(?:\s+(?:[A-Z0-9&'-]{2,}|OF|TO|THE|AND|A|IN|ON|BY|OR|VS\.?))*/g;
+  const cuts: { start: number; end: number; heading: string }[] = [];
+  for (const match of paragraph.matchAll(headingRe)) {
+    const heading = match[0].trim();
+    const words = heading.split(/\s+/);
+    const isHeadingRun =
+      words.length >= 2 || heading.replace(/[^A-Z]/g, "").length >= 6;
+    if (isHeadingRun) cuts.push({ start: match.index, end: match.index + match[0].length, heading });
+  }
+
+  const out: string[] = [];
+  const pushBody = (body: string) => {
+    const sentences = body.trim().split(/(?<=[.?!])\s+(?=[A-Z0-9])/);
+    let group = "";
+    for (const sentence of sentences) {
+      if (group && group.length + sentence.length > TARGET_PASSAGE_CHARS) {
+        out.push(group.trim());
+        group = "";
+      }
+      group += (group ? " " : "") + sentence;
+    }
+    if (group.trim()) out.push(group.trim());
+  };
+
+  let cursor = 0;
+  for (const cut of cuts) {
+    if (cut.start > cursor) pushBody(paragraph.slice(cursor, cut.start));
+    out.push(cut.heading);
+    cursor = cut.end;
+  }
+  if (cursor < paragraph.length) pushBody(paragraph.slice(cursor));
+  return out.filter(Boolean);
+}
 
 export function chunkDocument(text: string): ChunkResult {
   const paragraphs = text
     .split(/\r?\n\s*\r?\n/)
     .map((p) => p.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    // Flat extractions (PDFs) arrive as one huge run: explode those.
+    .flatMap((p) => (p.length > FLAT_PARAGRAPH_THRESHOLD ? explodeFlatText(p) : [p]));
 
   const passages: Omit<KbSourcePassage, "sourceId">[] = [];
   const sections: ChunkedSection[] = [];
