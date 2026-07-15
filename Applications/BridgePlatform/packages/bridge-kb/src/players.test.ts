@@ -74,3 +74,41 @@ describe("applySandboxConstraints", () => {
     expect(result.settingOverrides).toEqual({ nt_range: { low: 15, high: 17 } });
   });
 });
+
+describe("acblConventionCard", () => {
+  it("buckets rules into ACBL sections; off conventions stay visible", async () => {
+    const { acblConventionCard } = await import("./card");
+    const store = new InMemoryKbStore();
+    const service = new KbService(store, { now: () => NOW });
+    const kb = await service.createKb({ name: "SAYC", systemLabel: "SAYC", createdBy: "u" });
+    const { FIXTURE_ITEMS, fixturePacks } = await import("./fixture");
+    for (const item of FIXTURE_ITEMS) {
+      await store.putItem(item);
+      await store.addMembership({ kbId: kb.kbId, itemId: item.itemId });
+    }
+    for (const pack of fixturePacks(kb.kbId)) await store.putPack(pack);
+    await service.recompile(kb.kbId);
+    const compiled = (await service.liveCompile(kb.kbId))!;
+
+    const player = {
+      playerId: "pl", kbId: kb.kbId, name: "Test", enabledPackIds: ["pk_conventions"],
+      settingOverrides: { stayman_on: false }, decisionPolicyId: "first_match" as const,
+      fallbackPolicyId: "standard" as const, validationStatus: "draft" as const,
+      ownerType: "system" as const, version: 1, createdAt: NOW, updatedAt: NOW,
+    };
+    const card = acblConventionCard(compiled, player, { systemLabel: "SAYC", kbName: "SAYC" });
+
+    const section = (id: string) => card.sections.find((s) => s.id === id);
+    // 1NT opening + Stayman live in the notrump box; Stayman is OFF but visible.
+    const nt = section("notrump")!;
+    expect(nt.entries.some((e) => e.label === "Open 1NT")).toBe(true);
+    const stayman = nt.entries.find((e) => e.label.includes("Stayman"))!;
+    expect(stayman.on).toBe(false);
+    expect(nt.settings.some((s) => s.key === "nt_range")).toBe(true);
+    // Strong 2♣ → 2-level; majors → majors box; carding panel populated.
+    expect(section("two_level")!.entries.some((e) => e.label.includes("2♣"))).toBe(true);
+    expect(section("majors")!.entries.length).toBeGreaterThan(0);
+    expect(card.leads.length).toBeGreaterThan(0);
+    expect(card.signals.attitude).toBe("none");
+  });
+});

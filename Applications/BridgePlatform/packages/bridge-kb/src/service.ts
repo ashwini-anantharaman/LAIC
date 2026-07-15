@@ -16,6 +16,7 @@ import type {
   LevelDef,
 } from "./model";
 import type { KbStore } from "./store";
+import { validatePlayerStatic } from "./validatePlayer";
 
 export interface KbServiceOptions {
   now?: () => string;
@@ -279,7 +280,6 @@ export class KbService {
    * the actual configs) is what dealing actually enforces.
    */
   private async deriveEnvelopes(compiled: CompiledKb, packs: KbPack[]): Promise<void> {
-    const { validatePlayerStatic } = await import("./validatePlayer");
     for (const pack of packs) {
       const probe = {
         playerId: "probe",

@@ -1,9 +1,9 @@
-import { CATEGORY_BY_ID, effectiveAgreements } from "@bridge/kb";
+import { acblConventionCard, CATEGORY_BY_ID } from "@bridge/kb";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AcblCardView } from "@/components/kb/AcblCardView";
 import { ValidityBadge } from "@/components/kb/badges";
 import { PlayerEditor } from "@/components/kb/PlayerEditor";
-import { formatSettingValue } from "@/components/kb/PlayerSettingControl";
 import { kbService, kbStore } from "@/lib/kb";
 import { savePlayerAction, simulatePlayerAction } from "../../../actions";
 
@@ -19,16 +19,20 @@ export default async function PlayerPage({
   const { kbId, playerId } = await params;
   const { saved } = await searchParams;
   const store = kbStore();
-  const [player, packs, compiled] = await Promise.all([
+  const [player, packs, compiled, kb] = await Promise.all([
     store.getPlayer(playerId),
     store.listPacksForKb(kbId),
     kbService().liveCompile(kbId),
+    store.getKb(kbId),
   ]);
-  if (!player || !compiled) notFound();
+  if (!player || !compiled || !kb) notFound();
   const sandbox = player.sandboxId ? await store.getSandbox(player.sandboxId) : null;
   const report = player.validationReport;
   const base = `/bridge/kb/${kbId}`;
-  const card = effectiveAgreements(compiled, player);
+  const card = acblConventionCard(compiled, player, {
+    systemLabel: kb.systemLabel,
+    kbName: kb.name,
+  });
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -143,49 +147,7 @@ export default async function PlayerPage({
           </form>
         </section>
 
-        <section className="rounded-lg border-2 border-emerald-900/60 bg-[var(--card)] p-4 print:border-black">
-          <h3 className="mb-1 font-serif text-lg font-medium">Agreements in force</h3>
-          <p className="mb-3 text-xs text-neutral-400">
-            Generated from the configuration — never hand-edited. Amber values differ from the KB
-            defaults.
-          </p>
-          {card.sections.map((section) => (
-            <div key={section.title} className="mb-3">
-              <h4 className="border-b border-neutral-200 pb-0.5 text-sm font-medium text-emerald-900">
-                {section.title}
-              </h4>
-              <ul className="mt-1 space-y-0.5 text-[13px]">
-                {section.entries.map((e) => (
-                  <li key={e.ruleId} className="flex items-baseline justify-between gap-2">
-                    <Link href={`${base}/items/${e.itemId}`} className="hover:underline">
-                      {e.label}
-                    </Link>
-                    <span className="shrink-0 text-[10px] text-neutral-400">{e.itemTitle}</span>
-                  </li>
-                ))}
-                {section.entries.length === 0 && (
-                  <li className="text-neutral-400">none in force</li>
-                )}
-              </ul>
-            </div>
-          ))}
-          {card.settings.length > 0 && (
-            <p className="flex flex-wrap gap-x-3 gap-y-1 border-t border-dashed border-neutral-300 pt-2 text-xs">
-              {card.settings.map((s) => (
-                <span
-                  key={s.key}
-                  className={
-                    s.offDefault
-                      ? "rounded bg-amber-50 px-1.5 py-0.5 text-[color:var(--color-draft)]"
-                      : "text-neutral-600"
-                  }
-                >
-                  {s.label}: <span className="font-medium">{formatSettingValue(s.value)}</span>
-                </span>
-              ))}
-            </p>
-          )}
-        </section>
+        <AcblCardView card={card} kbId={kbId} />
       </aside>
     </div>
   );
