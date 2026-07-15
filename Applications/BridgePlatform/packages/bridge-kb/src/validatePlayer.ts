@@ -169,9 +169,21 @@ export function validatePlayerStatic(
       explanation: "both items are active in this configuration but conflict",
     }));
 
-  // requires edges: an activated item's requirement must also be activated.
+  // requires edges: an activated item's requirement must be carried — and,
+  // when the target actually bears rules, those rules must be live (a carried
+  // prose/concept target satisfies; a carried-but-toggled-off rule target is
+  // a real incoherence and flags).
+  const ruleBearing = new Set(
+    [...compiled.auctionRules, ...compiled.leadRules, ...compiled.playRules, ...compiled.fallbacks].map(
+      (r) => r.provenance.itemId,
+    ),
+  );
   const missingRequires = compiled.requires
-    .filter((r) => surface.itemIds.has(r.itemId) && !surface.itemIds.has(r.requiresItemId))
+    .filter((r) => {
+      if (!surface.itemIds.has(r.itemId)) return false; // source not active
+      if (!surface.allowed.has(r.requiresItemId)) return true; // not carried
+      return ruleBearing.has(r.requiresItemId) && !surface.itemIds.has(r.requiresItemId);
+    })
     .map((r) => ({ itemId: r.itemId, requiresItemId: r.requiresItemId }));
 
   return { static: staticResults, conflicts, missingRequires };

@@ -89,6 +89,11 @@ export default async function SourcesPage({
                       >
                         Run extraction (all sections)
                       </button>
+                      <p className="mt-1 text-[11px] text-neutral-400">
+                        Long documents can exceed serverless time limits — large runs can be
+                        driven locally (see lib/extractSayc.manual.test.ts); completed sections
+                        are skipped on re-runs.
+                      </p>
                     </form>
                   )}
                 </div>
