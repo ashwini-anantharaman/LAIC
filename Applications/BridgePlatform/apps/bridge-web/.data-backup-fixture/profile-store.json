@@ -1,0 +1,48 @@
+{
+  "userProfiles": [],
+  "orgProfiles": [
+    {
+      "programOrganizationId": "bporg_sunrise_bridge_club",
+      "bridgeOrgType": "bridge_club",
+      "allowedBiddingSystems": [],
+      "allowBenPlayers": false,
+      "allowAiPlayers": true,
+      "updatedBy": "user_orgadmin_olivia",
+      "updatedAt": "2026-07-16T21:48:32.208Z"
+    }
+  ],
+  "affiliations": [
+    {
+      "coachAffiliationId": "aff_mro1bl92xq",
+      "nexusUserId": "user_coach_carlos",
+      "programOrganizationId": "org_other_club",
+      "affiliationType": "class_coach",
+      "status": "pending",
+      "createdAt": "2026-07-16T21:42:21.782Z"
+    },
+    {
+      "coachAffiliationId": "aff_mro1ckodlm",
+      "nexusUserId": "user_coach_carlos",
+      "programOrganizationId": "org_other_club",
+      "affiliationType": "class_coach",
+      "status": "pending",
+      "createdAt": "2026-07-16T21:43:07.693Z"
+    },
+    {
+      "coachAffiliationId": "aff_mro1fs9pd4",
+      "nexusUserId": "user_coach_carlos",
+      "programOrganizationId": "org_other_club",
+      "affiliationType": "class_coach",
+      "status": "pending",
+      "createdAt": "2026-07-16T21:45:37.501Z"
+    },
+    {
+      "coachAffiliationId": "aff_mro1jjb5f9",
+      "nexusUserId": "user_coach_carlos",
+      "programOrganizationId": "org_other_club",
+      "affiliationType": "class_coach",
+      "status": "pending",
+      "createdAt": "2026-07-16T21:48:32.513Z"
+    }
+  ]
+}

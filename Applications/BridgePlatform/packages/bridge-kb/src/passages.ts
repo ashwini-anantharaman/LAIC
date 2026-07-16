@@ -7,6 +7,24 @@
 import { fnv1a } from "./ids";
 import type { KbSourcePassage } from "./model";
 
+/**
+ * PDF fonts often encode suit symbols as private-use-area glyphs; unpdf
+ * preserves the codepoints, which render as tofu boxes. Map the known suit
+ * codes (verified against the ACBL SAYC booklet: "open 1♦ with 4–4 in the
+ * minors", "2♦ transfers to hearts, 2♥ to spades", Stayman 2♣) to real
+ * glyphs, and drop any other PUA character rather than show a box.
+ */
+const PUA_SUITS: Record<string, string> = {
+  "\uE027": "\u2663", // club
+  "\uE03B": "\u2660", // spade
+  "\uE06B": "\u2665", // heart
+  "\uE06C": "\u2666", // diamond
+};
+
+export function normalizeExtractedText(text: string): string {
+  return text.replace(/[\uE000-\uF8FF]/g, (ch) => PUA_SUITS[ch] ?? "");
+}
+
 /** A heading: short, no terminal period, and either numbered, #-prefixed,
  *  ALL CAPS, or Title Case without sentence punctuation. */
 export function looksLikeHeading(line: string): boolean {

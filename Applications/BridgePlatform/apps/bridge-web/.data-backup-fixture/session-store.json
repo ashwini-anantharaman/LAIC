@@ -1,0 +1,6500 @@
+{
+  "sessions": [
+    {
+      "sessionId": "bs_mro0p5o9002",
+      "kbId": "kb_mro0nhnk001",
+      "compileRef": {
+        "compileId": "cmp_kb_mro0nhnk001_1_2d6f8126",
+        "version": 1
+      },
+      "board": {
+        "name": "seeded-95162",
+        "dealer": "N",
+        "vul": "none",
+        "seed": 95162
+      },
+      "seats": {
+        "N": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "E": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "S": {
+          "kind": "human",
+          "nexusUserId": "user_reviewer_rhea"
+        },
+        "W": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        }
+      },
+      "events": [
+        {
+          "seq": 0,
+          "ts": 1784237097452,
+          "boardRef": "seeded-95162",
+          "category": "bid-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 8,
+            "shape": [
+              4,
+              3,
+              3,
+              3
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 1,
+          "ts": 1784237097452,
+          "boardRef": "seeded-95162",
+          "category": "bid-event",
+          "seat": "N",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 2,
+          "ts": 1784237220823,
+          "boardRef": "seeded-95162",
+          "category": "bid-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 9,
+            "shape": [
+              5,
+              3,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 3,
+          "ts": 1784237220823,
+          "boardRef": "seeded-95162",
+          "category": "bid-event",
+          "seat": "E",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 4,
+          "ts": 1784237255851,
+          "boardRef": "seeded-95162",
+          "category": "bid-logic-event",
+          "seat": "S",
+          "candidates": [
+            "1D"
+          ],
+          "chosen": "1D",
+          "fallback": false,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {},
+          "reason": "human action",
+          "rejected": []
+        },
+        {
+          "seq": 5,
+          "ts": 1784237255851,
+          "boardRef": "seeded-95162",
+          "category": "bid-event",
+          "seat": "S",
+          "call": "1D",
+          "fallback": false
+        },
+        {
+          "seq": 6,
+          "ts": 1784237256814,
+          "boardRef": "seeded-95162",
+          "category": "bid-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7,
+            "shape": [
+              4,
+              4,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 7,
+          "ts": 1784237256814,
+          "boardRef": "seeded-95162",
+          "category": "bid-event",
+          "seat": "W",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 8,
+          "ts": 1784237257812,
+          "boardRef": "seeded-95162",
+          "category": "bid-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 8,
+            "shape": [
+              4,
+              3,
+              3,
+              3
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 9,
+          "ts": 1784237257812,
+          "boardRef": "seeded-95162",
+          "category": "bid-event",
+          "seat": "N",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 10,
+          "ts": 1784237258810,
+          "boardRef": "seeded-95162",
+          "category": "bid-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 9,
+            "shape": [
+              5,
+              3,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 11,
+          "ts": 1784237258810,
+          "boardRef": "seeded-95162",
+          "category": "bid-event",
+          "seat": "E",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 12,
+          "ts": 1784237259814,
+          "boardRef": "seeded-95162",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_lead.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 2
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 2
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 13,
+          "ts": 1784237259814,
+          "boardRef": "seeded-95162",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "S",
+            "rank": 2
+          },
+          "fallback": true
+        },
+        {
+          "seq": 14,
+          "ts": 1784237293852,
+          "boardRef": "seeded-95162",
+          "category": "play-logic-event",
+          "seat": "N",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 3
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 3
+          },
+          "fallback": false,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {},
+          "reason": "human action",
+          "rejected": []
+        },
+        {
+          "seq": 15,
+          "ts": 1784237293852,
+          "boardRef": "seeded-95162",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "S",
+            "rank": 3
+          },
+          "fallback": false
+        },
+        {
+          "seq": 16,
+          "ts": 1784237294820,
+          "boardRef": "seeded-95162",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 4
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 4
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 9
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 17,
+          "ts": 1784237294820,
+          "boardRef": "seeded-95162",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "S",
+            "rank": 4
+          },
+          "fallback": true
+        },
+        {
+          "seq": 18,
+          "ts": 1784237336608,
+          "boardRef": "seeded-95162",
+          "category": "play-logic-event",
+          "seat": "S",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 14
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 14
+          },
+          "fallback": false,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {},
+          "reason": "human action",
+          "rejected": []
+        },
+        {
+          "seq": 19,
+          "ts": 1784237336608,
+          "boardRef": "seeded-95162",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "S",
+            "rank": 14
+          },
+          "fallback": false
+        }
+      ],
+      "status": "active",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T21:24:55.161Z",
+      "updatedAt": "2026-07-16T21:28:56.608Z"
+    },
+    {
+      "sessionId": "bs_mro10i4l006",
+      "kbId": "kb_mro0nhnk001",
+      "compileRef": {
+        "compileId": "cmp_kb_mro0nhnk001_1_2d6f8126",
+        "version": 1
+      },
+      "board": {
+        "name": "Board 1",
+        "dealer": "S",
+        "vul": "none",
+        "seed": 1,
+        "hands": {
+          "S": [
+            {
+              "suit": "S",
+              "rank": 14
+            },
+            {
+              "suit": "S",
+              "rank": 13
+            },
+            {
+              "suit": "S",
+              "rank": 12
+            },
+            {
+              "suit": "S",
+              "rank": 2
+            },
+            {
+              "suit": "H",
+              "rank": 14
+            },
+            {
+              "suit": "H",
+              "rank": 13
+            },
+            {
+              "suit": "H",
+              "rank": 3
+            },
+            {
+              "suit": "H",
+              "rank": 2
+            },
+            {
+              "suit": "D",
+              "rank": 4
+            },
+            {
+              "suit": "D",
+              "rank": 3
+            },
+            {
+              "suit": "D",
+              "rank": 2
+            },
+            {
+              "suit": "C",
+              "rank": 3
+            },
+            {
+              "suit": "C",
+              "rank": 2
+            }
+          ],
+          "W": [
+            {
+              "suit": "S",
+              "rank": 5
+            },
+            {
+              "suit": "S",
+              "rank": 4
+            },
+            {
+              "suit": "S",
+              "rank": 3
+            },
+            {
+              "suit": "H",
+              "rank": 12
+            },
+            {
+              "suit": "H",
+              "rank": 11
+            },
+            {
+              "suit": "H",
+              "rank": 10
+            },
+            {
+              "suit": "H",
+              "rank": 4
+            },
+            {
+              "suit": "D",
+              "rank": 12
+            },
+            {
+              "suit": "D",
+              "rank": 11
+            },
+            {
+              "suit": "D",
+              "rank": 10
+            },
+            {
+              "suit": "C",
+              "rank": 6
+            },
+            {
+              "suit": "C",
+              "rank": 5
+            },
+            {
+              "suit": "C",
+              "rank": 4
+            }
+          ],
+          "N": [
+            {
+              "suit": "S",
+              "rank": 11
+            },
+            {
+              "suit": "S",
+              "rank": 10
+            },
+            {
+              "suit": "S",
+              "rank": 9
+            },
+            {
+              "suit": "H",
+              "rank": 9
+            },
+            {
+              "suit": "H",
+              "rank": 8
+            },
+            {
+              "suit": "H",
+              "rank": 7
+            },
+            {
+              "suit": "D",
+              "rank": 14
+            },
+            {
+              "suit": "D",
+              "rank": 13
+            },
+            {
+              "suit": "D",
+              "rank": 9
+            },
+            {
+              "suit": "D",
+              "rank": 8
+            },
+            {
+              "suit": "C",
+              "rank": 9
+            },
+            {
+              "suit": "C",
+              "rank": 8
+            },
+            {
+              "suit": "C",
+              "rank": 7
+            }
+          ],
+          "E": [
+            {
+              "suit": "S",
+              "rank": 8
+            },
+            {
+              "suit": "S",
+              "rank": 7
+            },
+            {
+              "suit": "S",
+              "rank": 6
+            },
+            {
+              "suit": "H",
+              "rank": 6
+            },
+            {
+              "suit": "H",
+              "rank": 5
+            },
+            {
+              "suit": "D",
+              "rank": 7
+            },
+            {
+              "suit": "D",
+              "rank": 6
+            },
+            {
+              "suit": "D",
+              "rank": 5
+            },
+            {
+              "suit": "C",
+              "rank": 14
+            },
+            {
+              "suit": "C",
+              "rank": 13
+            },
+            {
+              "suit": "C",
+              "rank": 12
+            },
+            {
+              "suit": "C",
+              "rank": 11
+            },
+            {
+              "suit": "C",
+              "rank": 10
+            }
+          ]
+        }
+      },
+      "seats": {
+        "N": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "E": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "S": {
+          "kind": "human",
+          "nexusUserId": "user_reviewer_rhea"
+        },
+        "W": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        }
+      },
+      "events": [],
+      "status": "active",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T21:33:44.517Z",
+      "updatedAt": "2026-07-16T21:33:44.517Z"
+    },
+    {
+      "sessionId": "bs_mro11yig007",
+      "kbId": "kb_mro0nhnk001",
+      "compileRef": {
+        "compileId": "cmp_kb_mro0nhnk001_1_2d6f8126",
+        "version": 1
+      },
+      "board": {
+        "name": "seeded-92409",
+        "dealer": "N",
+        "vul": "none",
+        "seed": 92409
+      },
+      "seats": {
+        "N": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "E": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "S": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "W": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        }
+      },
+      "events": [
+        {
+          "seq": 0,
+          "ts": 1784237693265,
+          "boardRef": "seeded-92409",
+          "category": "bid-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 1,
+            "shape": [
+              4,
+              4,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 1,
+          "ts": 1784237693265,
+          "boardRef": "seeded-92409",
+          "category": "bid-event",
+          "seat": "N",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 2,
+          "ts": 1784237694108,
+          "boardRef": "seeded-92409",
+          "category": "bid-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 7,
+            "shape": [
+              4,
+              4,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 3,
+          "ts": 1784237694108,
+          "boardRef": "seeded-92409",
+          "category": "bid-event",
+          "seat": "E",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 4,
+          "ts": 1784237694952,
+          "boardRef": "seeded-92409",
+          "category": "bid-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13,
+            "shape": [
+              5,
+              4,
+              3,
+              1
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 5,
+          "ts": 1784237694952,
+          "boardRef": "seeded-92409",
+          "category": "bid-event",
+          "seat": "S",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 6,
+          "ts": 1784237695802,
+          "boardRef": "seeded-92409",
+          "category": "bid-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_open_major.open",
+          "candidates": [
+            "1S"
+          ],
+          "chosen": "1S",
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would 1♠"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 19,
+            "shape": [
+              5,
+              3,
+              3,
+              2
+            ]
+          },
+          "reason": "Open five-card major",
+          "rejected": []
+        },
+        {
+          "seq": 7,
+          "ts": 1784237695802,
+          "boardRef": "seeded-92409",
+          "category": "bid-event",
+          "seat": "W",
+          "call": "1S",
+          "fallback": false
+        },
+        {
+          "seq": 8,
+          "ts": 1784237696658,
+          "boardRef": "seeded-92409",
+          "category": "bid-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1,
+            "shape": [
+              4,
+              4,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 9,
+          "ts": 1784237696658,
+          "boardRef": "seeded-92409",
+          "category": "bid-event",
+          "seat": "N",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 10,
+          "ts": 1784237697512,
+          "boardRef": "seeded-92409",
+          "category": "bid-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7,
+            "shape": [
+              4,
+              4,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 11,
+          "ts": 1784237697512,
+          "boardRef": "seeded-92409",
+          "category": "bid-event",
+          "seat": "E",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 12,
+          "ts": 1784237698365,
+          "boardRef": "seeded-92409",
+          "category": "bid-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13,
+            "shape": [
+              5,
+              4,
+              3,
+              1
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 13,
+          "ts": 1784237698365,
+          "boardRef": "seeded-92409",
+          "category": "bid-event",
+          "seat": "S",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 14,
+          "ts": 1784237699214,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_lead.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 3
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 3
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 15,
+          "ts": 1784237699214,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "S",
+            "rank": 3
+          },
+          "fallback": true
+        },
+        {
+          "seq": 16,
+          "ts": 1784237700062,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 6
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 6
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 17,
+          "ts": 1784237700062,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "S",
+            "rank": 6
+          },
+          "fallback": true
+        },
+        {
+          "seq": 18,
+          "ts": 1784237700896,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 9
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 9
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 19,
+          "ts": 1784237700896,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "S",
+            "rank": 9
+          },
+          "fallback": true
+        },
+        {
+          "seq": 20,
+          "ts": 1784237701728,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 2
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 2
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 19
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 21,
+          "ts": 1784237701728,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "S",
+            "rank": 2
+          },
+          "fallback": true
+        },
+        {
+          "seq": 22,
+          "ts": 1784237702587,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 2
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 2
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 23,
+          "ts": 1784237702587,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "C",
+            "rank": 2
+          },
+          "fallback": true
+        },
+        {
+          "seq": 24,
+          "ts": 1784237703432,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 11
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 11
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 19
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 25,
+          "ts": 1784237703432,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "C",
+            "rank": 11
+          },
+          "fallback": true
+        },
+        {
+          "seq": 26,
+          "ts": 1784237704279,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 6
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 6
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 27,
+          "ts": 1784237704279,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "C",
+            "rank": 6
+          },
+          "fallback": true
+        },
+        {
+          "seq": 28,
+          "ts": 1784237705110,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 4
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 4
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 29,
+          "ts": 1784237705110,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "C",
+            "rank": 4
+          },
+          "fallback": true
+        },
+        {
+          "seq": 30,
+          "ts": 1784237705973,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 4
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 4
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 18
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 31,
+          "ts": 1784237705973,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "D",
+            "rank": 4
+          },
+          "fallback": true
+        },
+        {
+          "seq": 32,
+          "ts": 1784237706826,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 5
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 5
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play 5D"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 33,
+          "ts": 1784237706826,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "D",
+            "rank": 5
+          },
+          "fallback": false
+        },
+        {
+          "seq": 34,
+          "ts": 1784237707682,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 2
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 2
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 35,
+          "ts": 1784237707682,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "D",
+            "rank": 2
+          },
+          "fallback": true
+        },
+        {
+          "seq": 36,
+          "ts": 1784237708542,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 3
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 3
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 37,
+          "ts": 1784237708542,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "D",
+            "rank": 3
+          },
+          "fallback": true
+        },
+        {
+          "seq": 38,
+          "ts": 1784237709399,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 2
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 2
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 39,
+          "ts": 1784237709399,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "H",
+            "rank": 2
+          },
+          "fallback": true
+        },
+        {
+          "seq": 40,
+          "ts": 1784237710258,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 3
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 3
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 41,
+          "ts": 1784237710258,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "H",
+            "rank": 3
+          },
+          "fallback": true
+        },
+        {
+          "seq": 42,
+          "ts": 1784237711172,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 8
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 8
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 43,
+          "ts": 1784237711172,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "H",
+            "rank": 8
+          },
+          "fallback": true
+        },
+        {
+          "seq": 44,
+          "ts": 1784237712027,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 4
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 4
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 18
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 45,
+          "ts": 1784237712027,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "H",
+            "rank": 4
+          },
+          "fallback": true
+        },
+        {
+          "seq": 46,
+          "ts": 1784237712882,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 3
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 3
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 47,
+          "ts": 1784237712882,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "C",
+            "rank": 3
+          },
+          "fallback": true
+        },
+        {
+          "seq": 48,
+          "ts": 1784237713383,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 14
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 14
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 18
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 49,
+          "ts": 1784237713383,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "C",
+            "rank": 14
+          },
+          "fallback": true
+        },
+        {
+          "seq": 50,
+          "ts": 1784237713383,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 8
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 8
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 51,
+          "ts": 1784237713383,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "C",
+            "rank": 8
+          },
+          "fallback": true
+        },
+        {
+          "seq": 52,
+          "ts": 1784237713384,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 5
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 5
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 53,
+          "ts": 1784237713384,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "C",
+            "rank": 5
+          },
+          "fallback": true
+        },
+        {
+          "seq": 54,
+          "ts": 1784237713384,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 6
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 6
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 14
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 55,
+          "ts": 1784237713384,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "H",
+            "rank": 6
+          },
+          "fallback": true
+        },
+        {
+          "seq": 56,
+          "ts": 1784237713384,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 5
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 5
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play 5H"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 57,
+          "ts": 1784237713384,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "H",
+            "rank": 5
+          },
+          "fallback": false
+        },
+        {
+          "seq": 58,
+          "ts": 1784237713385,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 7
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 7
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 59,
+          "ts": 1784237713385,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "H",
+            "rank": 7
+          },
+          "fallback": true
+        },
+        {
+          "seq": 60,
+          "ts": 1784237713385,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 12
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 12
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 61,
+          "ts": 1784237713385,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "H",
+            "rank": 12
+          },
+          "fallback": true
+        },
+        {
+          "seq": 62,
+          "ts": 1784237713385,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 9
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 9
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 11
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 63,
+          "ts": 1784237713385,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "C",
+            "rank": 9
+          },
+          "fallback": true
+        },
+        {
+          "seq": 64,
+          "ts": 1784237713386,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 8
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 8
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 14
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 65,
+          "ts": 1784237713386,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "D",
+            "rank": 8
+          },
+          "fallback": true
+        },
+        {
+          "seq": 66,
+          "ts": 1784237713386,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 4
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 4
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 67,
+          "ts": 1784237713386,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "S",
+            "rank": 4
+          },
+          "fallback": true
+        },
+        {
+          "seq": 68,
+          "ts": 1784237713387,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 7
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 7
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 69,
+          "ts": 1784237713387,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "C",
+            "rank": 7
+          },
+          "fallback": true
+        },
+        {
+          "seq": 70,
+          "ts": 1784237713388,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 5
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 5
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 71,
+          "ts": 1784237713388,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "S",
+            "rank": 5
+          },
+          "fallback": true
+        },
+        {
+          "seq": 72,
+          "ts": 1784237713388,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 8
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 8
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 73,
+          "ts": 1784237713388,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "S",
+            "rank": 8
+          },
+          "fallback": true
+        },
+        {
+          "seq": 74,
+          "ts": 1784237713389,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 10
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 10
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 11
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 75,
+          "ts": 1784237713389,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "C",
+            "rank": 10
+          },
+          "fallback": true
+        },
+        {
+          "seq": 76,
+          "ts": 1784237713390,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 11
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 11
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 14
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 77,
+          "ts": 1784237713390,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "S",
+            "rank": 11
+          },
+          "fallback": true
+        },
+        {
+          "seq": 78,
+          "ts": 1784237713391,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 10
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 10
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 79,
+          "ts": 1784237713391,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "H",
+            "rank": 10
+          },
+          "fallback": true
+        },
+        {
+          "seq": 80,
+          "ts": 1784237713391,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 9
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 9
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play 9H"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 81,
+          "ts": 1784237713391,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "H",
+            "rank": 9
+          },
+          "fallback": false
+        },
+        {
+          "seq": 82,
+          "ts": 1784237713392,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 11
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 11
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 83,
+          "ts": 1784237713392,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "H",
+            "rank": 11
+          },
+          "fallback": true
+        },
+        {
+          "seq": 84,
+          "ts": 1784237713392,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 13
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 13
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 11
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 85,
+          "ts": 1784237713392,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "H",
+            "rank": 13
+          },
+          "fallback": true
+        },
+        {
+          "seq": 86,
+          "ts": 1784237713393,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 10
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 10
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 8
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 87,
+          "ts": 1784237713393,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "D",
+            "rank": 10
+          },
+          "fallback": true
+        },
+        {
+          "seq": 88,
+          "ts": 1784237713393,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 14
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 14
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 89,
+          "ts": 1784237713393,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "D",
+            "rank": 14
+          },
+          "fallback": true
+        },
+        {
+          "seq": 90,
+          "ts": 1784237713394,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 7
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 7
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 91,
+          "ts": 1784237713394,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "D",
+            "rank": 7
+          },
+          "fallback": true
+        },
+        {
+          "seq": 92,
+          "ts": 1784237713394,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 6
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 6
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 6
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 93,
+          "ts": 1784237713394,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "D",
+            "rank": 6
+          },
+          "fallback": true
+        },
+        {
+          "seq": 94,
+          "ts": 1784237713395,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 12
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 12
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 9
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 95,
+          "ts": 1784237713395,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "S",
+            "rank": 12
+          },
+          "fallback": true
+        },
+        {
+          "seq": 96,
+          "ts": 1784237713395,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 7
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 7
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play 7S"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 97,
+          "ts": 1784237713395,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "S",
+            "rank": 7
+          },
+          "fallback": false
+        },
+        {
+          "seq": 98,
+          "ts": 1784237713396,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 10
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 10
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 6
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 99,
+          "ts": 1784237713396,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "S",
+            "rank": 10
+          },
+          "fallback": true
+        },
+        {
+          "seq": 100,
+          "ts": 1784237713396,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 12
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 12
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 8
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 101,
+          "ts": 1784237713396,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "D",
+            "rank": 12
+          },
+          "fallback": true
+        },
+        {
+          "seq": 102,
+          "ts": 1784237713397,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 13
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 13
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 103,
+          "ts": 1784237713397,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "S",
+            "rank": 13
+          },
+          "fallback": true
+        },
+        {
+          "seq": 104,
+          "ts": 1784237713397,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 9
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 9
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play 9D"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 105,
+          "ts": 1784237713397,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "D",
+            "rank": 9
+          },
+          "fallback": false
+        },
+        {
+          "seq": 106,
+          "ts": 1784237713399,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 12
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 12
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 6
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 107,
+          "ts": 1784237713399,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "C",
+            "rank": 12
+          },
+          "fallback": true
+        },
+        {
+          "seq": 108,
+          "ts": 1784237713401,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 13
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 13
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 6
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 109,
+          "ts": 1784237713401,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "C",
+            "rank": 13
+          },
+          "fallback": true
+        },
+        {
+          "seq": 110,
+          "ts": 1784237713401,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 14
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 14
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 4
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 111,
+          "ts": 1784237713401,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "S",
+            "rank": 14
+          },
+          "fallback": true
+        },
+        {
+          "seq": 112,
+          "ts": 1784237713402,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 11
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 11
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play JD"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 1
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 113,
+          "ts": 1784237713402,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "D",
+            "rank": 11
+          },
+          "fallback": false
+        },
+        {
+          "seq": 114,
+          "ts": 1784237713403,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 14
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 14
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 4
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 115,
+          "ts": 1784237713403,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "H",
+            "rank": 14
+          },
+          "fallback": true
+        },
+        {
+          "seq": 116,
+          "ts": 1784237713404,
+          "boardRef": "seeded-92409",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 13
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 13
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 117,
+          "ts": 1784237713404,
+          "boardRef": "seeded-92409",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "D",
+            "rank": 13
+          },
+          "fallback": true
+        }
+      ],
+      "status": "completed",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T21:34:52.408Z",
+      "updatedAt": "2026-07-16T21:35:13.404Z"
+    },
+    {
+      "sessionId": "bs_mro160lx009",
+      "kbId": "kb_mro0nhnk001",
+      "compileRef": {
+        "compileId": "cmp_kb_mro0nhnk001_1_2d6f8126",
+        "version": 1
+      },
+      "board": {
+        "name": "seeded-92409 · table — fresh deal",
+        "dealer": "N",
+        "vul": "none",
+        "seed": 81750
+      },
+      "seats": {
+        "N": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "E": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "S": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "W": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        }
+      },
+      "events": [
+        {
+          "seq": 0,
+          "ts": 1784237882813,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 3,
+            "shape": [
+              4,
+              4,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 1,
+          "ts": 1784237882813,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-event",
+          "seat": "N",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 2,
+          "ts": 1784237883813,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 8,
+            "shape": [
+              5,
+              3,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 3,
+          "ts": 1784237883813,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-event",
+          "seat": "E",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 4,
+          "ts": 1784237884813,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_open_major.open",
+          "candidates": [
+            "1S"
+          ],
+          "chosen": "1S",
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would 1♠"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 14,
+            "shape": [
+              6,
+              5,
+              1,
+              1
+            ]
+          },
+          "reason": "Open five-card major",
+          "rejected": []
+        },
+        {
+          "seq": 5,
+          "ts": 1784237884813,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-event",
+          "seat": "S",
+          "call": "1S",
+          "fallback": false
+        },
+        {
+          "seq": 6,
+          "ts": 1784237885807,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 15,
+            "shape": [
+              5,
+              5,
+              2,
+              1
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 7,
+          "ts": 1784237885807,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-event",
+          "seat": "W",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 8,
+          "ts": 1784237886812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3,
+            "shape": [
+              4,
+              4,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 9,
+          "ts": 1784237886812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-event",
+          "seat": "N",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 10,
+          "ts": 1784237887809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 8,
+            "shape": [
+              5,
+              3,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 11,
+          "ts": 1784237887809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "bid-event",
+          "seat": "E",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 12,
+          "ts": 1784237888803,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_lead.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 2
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 2
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 15
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 13,
+          "ts": 1784237888803,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "H",
+            "rank": 2
+          },
+          "fallback": true
+        },
+        {
+          "seq": 14,
+          "ts": 1784237889799,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 4
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 4
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 15,
+          "ts": 1784237889799,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "H",
+            "rank": 4
+          },
+          "fallback": true
+        },
+        {
+          "seq": 16,
+          "ts": 1784237890812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 7
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 7
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 8
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 17,
+          "ts": 1784237890812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "H",
+            "rank": 7
+          },
+          "fallback": true
+        },
+        {
+          "seq": 18,
+          "ts": 1784237891810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 14
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 14
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 14
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 19,
+          "ts": 1784237891810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "H",
+            "rank": 14
+          },
+          "fallback": true
+        },
+        {
+          "seq": 20,
+          "ts": 1784237892806,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 2
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 2
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 10
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 21,
+          "ts": 1784237892806,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "S",
+            "rank": 2
+          },
+          "fallback": true
+        },
+        {
+          "seq": 22,
+          "ts": 1784237893806,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 8
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 8
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play 8S"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 15
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 23,
+          "ts": 1784237893806,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "S",
+            "rank": 8
+          },
+          "fallback": false
+        },
+        {
+          "seq": 24,
+          "ts": 1784237894812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 4
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 4
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 25,
+          "ts": 1784237894812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "S",
+            "rank": 4
+          },
+          "fallback": true
+        },
+        {
+          "seq": 26,
+          "ts": 1784237895809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 9
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 9
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 8
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 27,
+          "ts": 1784237895809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "S",
+            "rank": 9
+          },
+          "fallback": true
+        },
+        {
+          "seq": 28,
+          "ts": 1784237896806,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 2
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 2
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 8
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 29,
+          "ts": 1784237896806,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "D",
+            "rank": 2
+          },
+          "fallback": true
+        },
+        {
+          "seq": 30,
+          "ts": 1784237897810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 4
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 4
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 10
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 31,
+          "ts": 1784237897810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "D",
+            "rank": 4
+          },
+          "fallback": true
+        },
+        {
+          "seq": 32,
+          "ts": 1784237898808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 7
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 7
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 15
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 33,
+          "ts": 1784237898808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "D",
+            "rank": 7
+          },
+          "fallback": true
+        },
+        {
+          "seq": 34,
+          "ts": 1784237899809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 3
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 3
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 35,
+          "ts": 1784237899809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "D",
+            "rank": 3
+          },
+          "fallback": true
+        },
+        {
+          "seq": 36,
+          "ts": 1784237900808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 2
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 2
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 15
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 37,
+          "ts": 1784237900808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "C",
+            "rank": 2
+          },
+          "fallback": true
+        },
+        {
+          "seq": 38,
+          "ts": 1784237901809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 7
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 7
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 39,
+          "ts": 1784237901809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "C",
+            "rank": 7
+          },
+          "fallback": true
+        },
+        {
+          "seq": 40,
+          "ts": 1784237902808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 4
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 4
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 8
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 41,
+          "ts": 1784237902808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "C",
+            "rank": 4
+          },
+          "fallback": true
+        },
+        {
+          "seq": 42,
+          "ts": 1784237903810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 5
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 5
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 10
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 43,
+          "ts": 1784237903810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "C",
+            "rank": 5
+          },
+          "fallback": true
+        },
+        {
+          "seq": 44,
+          "ts": 1784237904810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 5
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 5
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 45,
+          "ts": 1784237904810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "H",
+            "rank": 5
+          },
+          "fallback": true
+        },
+        {
+          "seq": 46,
+          "ts": 1784237905811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 8
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 8
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play 8H"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 8
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 47,
+          "ts": 1784237905811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "H",
+            "rank": 8
+          },
+          "fallback": false
+        },
+        {
+          "seq": 48,
+          "ts": 1784237906808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 3
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 3
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 10
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 49,
+          "ts": 1784237906808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "S",
+            "rank": 3
+          },
+          "fallback": true
+        },
+        {
+          "seq": 50,
+          "ts": 1784237907812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 3
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 3
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 15
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 51,
+          "ts": 1784237907812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "H",
+            "rank": 3
+          },
+          "fallback": true
+        },
+        {
+          "seq": 52,
+          "ts": 1784237908810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 5
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 5
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 10
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 53,
+          "ts": 1784237908810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "D",
+            "rank": 5
+          },
+          "fallback": true
+        },
+        {
+          "seq": 54,
+          "ts": 1784237909808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 14
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 14
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play AD"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 15
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 55,
+          "ts": 1784237909808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "D",
+            "rank": 14
+          },
+          "fallback": false
+        },
+        {
+          "seq": 56,
+          "ts": 1784237910811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 9
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 9
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 57,
+          "ts": 1784237910811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "D",
+            "rank": 9
+          },
+          "fallback": true
+        },
+        {
+          "seq": 58,
+          "ts": 1784237911812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 12
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 12
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 8
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 59,
+          "ts": 1784237911812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "D",
+            "rank": 12
+          },
+          "fallback": true
+        },
+        {
+          "seq": 60,
+          "ts": 1784237912810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 3
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 3
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 11
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 61,
+          "ts": 1784237912810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "C",
+            "rank": 3
+          },
+          "fallback": true
+        },
+        {
+          "seq": 62,
+          "ts": 1784237913806,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 9
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 9
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 63,
+          "ts": 1784237913806,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "C",
+            "rank": 9
+          },
+          "fallback": true
+        },
+        {
+          "seq": 64,
+          "ts": 1784237914809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 6
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 6
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 6
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 65,
+          "ts": 1784237914809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "C",
+            "rank": 6
+          },
+          "fallback": true
+        },
+        {
+          "seq": 66,
+          "ts": 1784237915808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 5
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 5
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 10
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 67,
+          "ts": 1784237915808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "S",
+            "rank": 5
+          },
+          "fallback": true
+        },
+        {
+          "seq": 68,
+          "ts": 1784237916808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 6
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 6
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 10
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 69,
+          "ts": 1784237916808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "D",
+            "rank": 6
+          },
+          "fallback": true
+        },
+        {
+          "seq": 70,
+          "ts": 1784237917810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 10
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 10
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play 10H"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 11
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 71,
+          "ts": 1784237917810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "H",
+            "rank": 10
+          },
+          "fallback": false
+        },
+        {
+          "seq": 72,
+          "ts": 1784237918812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 10
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 10
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 73,
+          "ts": 1784237918812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "D",
+            "rank": 10
+          },
+          "fallback": true
+        },
+        {
+          "seq": 74,
+          "ts": 1784237919812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 13
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 13
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 6
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 75,
+          "ts": 1784237919812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "D",
+            "rank": 13
+          },
+          "fallback": true
+        },
+        {
+          "seq": 76,
+          "ts": 1784237920809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 8
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 8
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 77,
+          "ts": 1784237920809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "C",
+            "rank": 8
+          },
+          "fallback": true
+        },
+        {
+          "seq": 78,
+          "ts": 1784237921810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 8
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 8
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 10
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 79,
+          "ts": 1784237921810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "D",
+            "rank": 8
+          },
+          "fallback": true
+        },
+        {
+          "seq": 80,
+          "ts": 1784237922810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 11
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 11
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 11
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 81,
+          "ts": 1784237922810,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "C",
+            "rank": 11
+          },
+          "fallback": true
+        },
+        {
+          "seq": 82,
+          "ts": 1784237923811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 6
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 6
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 83,
+          "ts": 1784237923811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "H",
+            "rank": 6
+          },
+          "fallback": true
+        },
+        {
+          "seq": 84,
+          "ts": 1784237924811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 11
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 11
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 10
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 85,
+          "ts": 1784237924811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "H",
+            "rank": 11
+          },
+          "fallback": true
+        },
+        {
+          "seq": 86,
+          "ts": 1784237925806,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 13
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 13
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 87,
+          "ts": 1784237925806,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "H",
+            "rank": 13
+          },
+          "fallback": true
+        },
+        {
+          "seq": 88,
+          "ts": 1784237926809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 9
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 9
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 89,
+          "ts": 1784237926809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "H",
+            "rank": 9
+          },
+          "fallback": true
+        },
+        {
+          "seq": 90,
+          "ts": 1784237927813,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "D",
+              "rank": 11
+            }
+          ],
+          "chosen": {
+            "suit": "D",
+            "rank": 11
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 10
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 91,
+          "ts": 1784237927813,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "D",
+            "rank": 11
+          },
+          "fallback": true
+        },
+        {
+          "seq": 92,
+          "ts": 1784237928808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 6
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 6
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 0
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 93,
+          "ts": 1784237928808,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "S",
+            "rank": 6
+          },
+          "fallback": true
+        },
+        {
+          "seq": 94,
+          "ts": 1784237929814,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 11
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 11
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play JS"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 95,
+          "ts": 1784237929815,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "S",
+            "rank": 11
+          },
+          "fallback": false
+        },
+        {
+          "seq": 96,
+          "ts": 1784237930811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 12
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 12
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 9
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 97,
+          "ts": 1784237930811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "S",
+            "rank": 12
+          },
+          "fallback": true
+        },
+        {
+          "seq": 98,
+          "ts": 1784237931809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "H",
+              "rank": 12
+            }
+          ],
+          "chosen": {
+            "suit": "H",
+            "rank": 12
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 9
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 99,
+          "ts": 1784237931809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "H",
+            "rank": 12
+          },
+          "fallback": true
+        },
+        {
+          "seq": 100,
+          "ts": 1784237932811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 13
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 13
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 101,
+          "ts": 1784237932811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "S",
+            "rank": 13
+          },
+          "fallback": true
+        },
+        {
+          "seq": 102,
+          "ts": 1784237933813,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 13
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 13
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play KC"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 7
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 103,
+          "ts": 1784237933813,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "C",
+            "rank": 13
+          },
+          "fallback": false
+        },
+        {
+          "seq": 104,
+          "ts": 1784237934812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 7
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 7
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 0
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 105,
+          "ts": 1784237934812,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "S",
+            "rank": 7
+          },
+          "fallback": true
+        },
+        {
+          "seq": 106,
+          "ts": 1784237935811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 10
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 10
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 2
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 107,
+          "ts": 1784237935811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "C",
+            "rank": 10
+          },
+          "fallback": true
+        },
+        {
+          "seq": 108,
+          "ts": 1784237936811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 14
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 14
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 4
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 109,
+          "ts": 1784237936811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "S",
+          "card": {
+            "suit": "S",
+            "rank": 14
+          },
+          "fallback": true
+        },
+        {
+          "seq": 110,
+          "ts": 1784237937811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_second_low.play0",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 14
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 14
+          },
+          "fallback": false,
+          "trace": [
+            {
+              "ruleId": "ki_second_low.play0",
+              "matched": true,
+              "settingsConsulted": [],
+              "reason": "matched — would play AC"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 4
+          },
+          "reason": "Second hand low",
+          "rejected": []
+        },
+        {
+          "seq": 111,
+          "ts": 1784237937811,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "W",
+          "card": {
+            "suit": "C",
+            "rank": 14
+          },
+          "fallback": false
+        },
+        {
+          "seq": 112,
+          "ts": 1784237938809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "S",
+              "rank": 10
+            }
+          ],
+          "chosen": {
+            "suit": "S",
+            "rank": 10
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 0
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 113,
+          "ts": 1784237938809,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "N",
+          "card": {
+            "suit": "S",
+            "rank": 10
+          },
+          "fallback": true
+        },
+        {
+          "seq": 114,
+          "ts": 1784237939823,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_play.fallback",
+          "candidates": [
+            {
+              "suit": "C",
+              "rank": 12
+            }
+          ],
+          "chosen": {
+            "suit": "C",
+            "rank": 12
+          },
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 2
+          },
+          "reason": "no technique applied — fallback: lowest legal card",
+          "rejected": []
+        },
+        {
+          "seq": 115,
+          "ts": 1784237939823,
+          "boardRef": "seeded-92409 · table — fresh deal",
+          "category": "play-event",
+          "seat": "E",
+          "card": {
+            "suit": "C",
+            "rank": 12
+          },
+          "fallback": true
+        }
+      ],
+      "status": "completed",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T21:38:01.749Z",
+      "updatedAt": "2026-07-16T21:38:59.823Z"
+    },
+    {
+      "sessionId": "bs_mro1ma1u01s",
+      "kbId": "kb_mro0nhnk001",
+      "compileRef": {
+        "compileId": "cmp_kb_mro0nhnk001_1_2d6f8126",
+        "version": 1
+      },
+      "board": {
+        "name": "seeded-40483",
+        "dealer": "N",
+        "vul": "none",
+        "seed": 40483
+      },
+      "seats": {
+        "N": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0nhnq003",
+          "label": "Floor only — Rhea",
+          "enabledPackIds": [
+            "pk_floor"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "E": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0nhnq003",
+          "label": "Floor only — Rhea",
+          "enabledPackIds": [
+            "pk_floor"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "S": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0nhnq003",
+          "label": "Floor only — Rhea",
+          "enabledPackIds": [
+            "pk_floor"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "W": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0nhnq003",
+          "label": "Floor only — Rhea",
+          "enabledPackIds": [
+            "pk_floor"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        }
+      },
+      "events": [
+        {
+          "seq": 0,
+          "ts": 1784238641353,
+          "boardRef": "seeded-40483",
+          "category": "bid-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13,
+            "shape": [
+              6,
+              3,
+              3,
+              1
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 1,
+          "ts": 1784238641353,
+          "boardRef": "seeded-40483",
+          "category": "bid-event",
+          "seat": "N",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 2,
+          "ts": 1784238642200,
+          "boardRef": "seeded-40483",
+          "category": "bid-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 11,
+            "shape": [
+              5,
+              4,
+              2,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 3,
+          "ts": 1784238642200,
+          "boardRef": "seeded-40483",
+          "category": "bid-event",
+          "seat": "E",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 4,
+          "ts": 1784238643014,
+          "boardRef": "seeded-40483",
+          "category": "bid-logic-event",
+          "seat": "S",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 3,
+            "shape": [
+              4,
+              4,
+              4,
+              1
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 5,
+          "ts": 1784238643014,
+          "boardRef": "seeded-40483",
+          "category": "bid-event",
+          "seat": "S",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 6,
+          "ts": 1784238643018,
+          "boardRef": "seeded-40483",
+          "category": "bid-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 13,
+            "shape": [
+              4,
+              4,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 7,
+          "ts": 1784238643018,
+          "boardRef": "seeded-40483",
+          "category": "bid-event",
+          "seat": "W",
+          "call": "P",
+          "fallback": true
+        }
+      ],
+      "status": "completed",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T21:50:40.482Z",
+      "updatedAt": "2026-07-16T21:50:43.018Z"
+    },
+    {
+      "sessionId": "bs_mro1muft01u",
+      "kbId": "kb_mro0nhnk001",
+      "compileRef": {
+        "compileId": "cmp_kb_mro0nhnk001_1_2d6f8126",
+        "version": 1
+      },
+      "board": {
+        "name": "seeded-66906",
+        "dealer": "N",
+        "vul": "none",
+        "seed": 66906
+      },
+      "seats": {
+        "N": {
+          "kind": "kb_player",
+          "playerId": "pl_mro1mufq01t",
+          "label": "House · Minimal complete",
+          "enabledPackIds": [
+            "pk_floor"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "E": {
+          "kind": "kb_player",
+          "playerId": "pl_mro1mufq01t",
+          "label": "House · Minimal complete",
+          "enabledPackIds": [
+            "pk_floor"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "S": {
+          "kind": "human",
+          "nexusUserId": "user_reviewer_rhea"
+        },
+        "W": {
+          "kind": "kb_player",
+          "playerId": "pl_mro1mufq01t",
+          "label": "House · Minimal complete",
+          "enabledPackIds": [
+            "pk_floor"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        }
+      },
+      "events": [
+        {
+          "seq": 0,
+          "ts": 1784238667734,
+          "boardRef": "seeded-66906",
+          "category": "bid-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 16,
+            "shape": [
+              4,
+              4,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 1,
+          "ts": 1784238667734,
+          "boardRef": "seeded-66906",
+          "category": "bid-event",
+          "seat": "N",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 2,
+          "ts": 1784238668571,
+          "boardRef": "seeded-66906",
+          "category": "bid-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 6,
+            "shape": [
+              5,
+              3,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 3,
+          "ts": 1784238668571,
+          "boardRef": "seeded-66906",
+          "category": "bid-event",
+          "seat": "E",
+          "call": "P",
+          "fallback": true
+        }
+      ],
+      "status": "active",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T21:51:06.905Z",
+      "updatedAt": "2026-07-16T21:51:08.571Z"
+    },
+    {
+      "sessionId": "bs_mro2ays9002",
+      "kbId": "kb_mro0nhnk001",
+      "compileRef": {
+        "compileId": "cmp_kb_mro0nhnk001_1_2d6f8126",
+        "version": 1
+      },
+      "board": {
+        "name": "seeded-92282",
+        "dealer": "N",
+        "vul": "none",
+        "seed": 92282
+      },
+      "seats": {
+        "N": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "E": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "S": {
+          "kind": "human",
+          "nexusUserId": "user_reviewer_rhea"
+        },
+        "W": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        }
+      },
+      "events": [
+        {
+          "seq": 0,
+          "ts": 1784239793810,
+          "boardRef": "seeded-92282",
+          "category": "bid-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 8,
+            "shape": [
+              4,
+              3,
+              3,
+              3
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 1,
+          "ts": 1784239793810,
+          "boardRef": "seeded-92282",
+          "category": "bid-event",
+          "seat": "N",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 2,
+          "ts": 1784239800293,
+          "boardRef": "seeded-92282",
+          "category": "bid-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 2,
+            "shape": [
+              4,
+              4,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 3,
+          "ts": 1784239800293,
+          "boardRef": "seeded-92282",
+          "category": "bid-event",
+          "seat": "E",
+          "call": "P",
+          "fallback": true
+        }
+      ],
+      "status": "active",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T22:09:52.281Z",
+      "updatedAt": "2026-07-16T22:10:00.293Z"
+    },
+    {
+      "sessionId": "bs_mro2bswm003",
+      "kbId": "kb_mro0nhnk001",
+      "compileRef": {
+        "compileId": "cmp_kb_mro0nhnk001_1_2d6f8126",
+        "version": 1
+      },
+      "board": {
+        "name": "seeded-31319",
+        "dealer": "N",
+        "vul": "none",
+        "seed": 31319
+      },
+      "seats": {
+        "N": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "E": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        },
+        "S": {
+          "kind": "human",
+          "nexusUserId": "user_reviewer_rhea"
+        },
+        "W": {
+          "kind": "kb_player",
+          "playerId": "pl_mro0p5o8001",
+          "label": "House · Conventions",
+          "enabledPackIds": [
+            "pk_conventions"
+          ],
+          "settingOverrides": {},
+          "decisionPolicyId": "first_match",
+          "levelOrdinal": 0
+        }
+      },
+      "events": [
+        {
+          "seq": 0,
+          "ts": 1784239832165,
+          "boardRef": "seeded-31319",
+          "category": "bid-logic-event",
+          "seat": "N",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 3,
+            "shape": [
+              5,
+              3,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 1,
+          "ts": 1784239832165,
+          "boardRef": "seeded-31319",
+          "category": "bid-event",
+          "seat": "N",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 2,
+          "ts": 1784239833001,
+          "boardRef": "seeded-31319",
+          "category": "bid-logic-event",
+          "seat": "E",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [],
+          "facts": {
+            "hcp": 11,
+            "shape": [
+              5,
+              4,
+              2,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 3,
+          "ts": 1784239833001,
+          "boardRef": "seeded-31319",
+          "category": "bid-event",
+          "seat": "E",
+          "call": "P",
+          "fallback": true
+        },
+        {
+          "seq": 4,
+          "ts": 1784239841742,
+          "boardRef": "seeded-31319",
+          "category": "bid-logic-event",
+          "seat": "S",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": false,
+          "trace": [],
+          "citedSettings": [],
+          "facts": {},
+          "reason": "human action",
+          "rejected": []
+        },
+        {
+          "seq": 5,
+          "ts": 1784239841742,
+          "boardRef": "seeded-31319",
+          "category": "bid-event",
+          "seat": "S",
+          "call": "P",
+          "fallback": false
+        },
+        {
+          "seq": 6,
+          "ts": 1784239842573,
+          "boardRef": "seeded-31319",
+          "category": "bid-logic-event",
+          "seat": "W",
+          "matchedRuleId": "ki_fb_auction.fallback",
+          "candidates": [
+            "P"
+          ],
+          "chosen": "P",
+          "fallback": true,
+          "trace": [
+            {
+              "ruleId": "ki_open_2c.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_1nt.open",
+              "matched": false,
+              "settingsConsulted": [
+                {
+                  "key": "nt_range",
+                  "label": "1NT range",
+                  "value": {
+                    "low": 15,
+                    "high": 17
+                  },
+                  "binds_to": "numeric_parameter",
+                  "module": "1NT opening",
+                  "matched": true
+                }
+              ],
+              "reason": "hand conditions not met"
+            },
+            {
+              "ruleId": "ki_open_major.open",
+              "matched": false,
+              "settingsConsulted": [],
+              "reason": "hand conditions not met"
+            }
+          ],
+          "citedSettings": [
+            {
+              "key": "nt_range",
+              "label": "1NT range",
+              "value": {
+                "low": 15,
+                "high": 17
+              },
+              "binds_to": "numeric_parameter",
+              "module": "1NT opening",
+              "matched": true
+            }
+          ],
+          "facts": {
+            "hcp": 21,
+            "shape": [
+              5,
+              3,
+              3,
+              2
+            ]
+          },
+          "reason": "no agreement applied — fallback: pass",
+          "rejected": []
+        },
+        {
+          "seq": 7,
+          "ts": 1784239842573,
+          "boardRef": "seeded-31319",
+          "category": "bid-event",
+          "seat": "W",
+          "call": "P",
+          "fallback": true
+        }
+      ],
+      "status": "completed",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T22:10:31.318Z",
+      "updatedAt": "2026-07-16T22:10:42.573Z"
+    }
+  ]
+}

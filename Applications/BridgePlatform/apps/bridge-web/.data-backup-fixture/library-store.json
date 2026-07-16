@@ -1,0 +1,777 @@
+{
+  "entries": [
+    {
+      "entryId": "le_mro0v8bk003",
+      "name": "seeded-95162 · board",
+      "tags": [],
+      "origin": "recorded",
+      "sourceSessionId": "bs_mro0p5o9002",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T21:29:38.528Z",
+      "kind": "board",
+      "hands": {
+        "N": [
+          {
+            "suit": "S",
+            "rank": 10
+          },
+          {
+            "suit": "C",
+            "rank": 8
+          },
+          {
+            "suit": "C",
+            "rank": 6
+          },
+          {
+            "suit": "H",
+            "rank": 9
+          },
+          {
+            "suit": "S",
+            "rank": 3
+          },
+          {
+            "suit": "D",
+            "rank": 4
+          },
+          {
+            "suit": "H",
+            "rank": 11
+          },
+          {
+            "suit": "D",
+            "rank": 13
+          },
+          {
+            "suit": "C",
+            "rank": 14
+          },
+          {
+            "suit": "D",
+            "rank": 8
+          },
+          {
+            "suit": "S",
+            "rank": 9
+          },
+          {
+            "suit": "C",
+            "rank": 5
+          },
+          {
+            "suit": "H",
+            "rank": 10
+          }
+        ],
+        "E": [
+          {
+            "suit": "H",
+            "rank": 8
+          },
+          {
+            "suit": "H",
+            "rank": 4
+          },
+          {
+            "suit": "H",
+            "rank": 13
+          },
+          {
+            "suit": "D",
+            "rank": 3
+          },
+          {
+            "suit": "C",
+            "rank": 2
+          },
+          {
+            "suit": "S",
+            "rank": 11
+          },
+          {
+            "suit": "C",
+            "rank": 7
+          },
+          {
+            "suit": "C",
+            "rank": 3
+          },
+          {
+            "suit": "H",
+            "rank": 12
+          },
+          {
+            "suit": "D",
+            "rank": 11
+          },
+          {
+            "suit": "S",
+            "rank": 4
+          },
+          {
+            "suit": "H",
+            "rank": 5
+          },
+          {
+            "suit": "S",
+            "rank": 12
+          }
+        ],
+        "S": [
+          {
+            "suit": "C",
+            "rank": 11
+          },
+          {
+            "suit": "C",
+            "rank": 9
+          },
+          {
+            "suit": "D",
+            "rank": 10
+          },
+          {
+            "suit": "C",
+            "rank": 13
+          },
+          {
+            "suit": "D",
+            "rank": 5
+          },
+          {
+            "suit": "D",
+            "rank": 12
+          },
+          {
+            "suit": "S",
+            "rank": 14
+          },
+          {
+            "suit": "S",
+            "rank": 5
+          },
+          {
+            "suit": "S",
+            "rank": 8
+          },
+          {
+            "suit": "D",
+            "rank": 9
+          },
+          {
+            "suit": "D",
+            "rank": 14
+          },
+          {
+            "suit": "H",
+            "rank": 2
+          },
+          {
+            "suit": "C",
+            "rank": 12
+          }
+        ],
+        "W": [
+          {
+            "suit": "S",
+            "rank": 13
+          },
+          {
+            "suit": "H",
+            "rank": 7
+          },
+          {
+            "suit": "S",
+            "rank": 2
+          },
+          {
+            "suit": "D",
+            "rank": 6
+          },
+          {
+            "suit": "D",
+            "rank": 7
+          },
+          {
+            "suit": "H",
+            "rank": 3
+          },
+          {
+            "suit": "C",
+            "rank": 10
+          },
+          {
+            "suit": "S",
+            "rank": 7
+          },
+          {
+            "suit": "D",
+            "rank": 2
+          },
+          {
+            "suit": "H",
+            "rank": 14
+          },
+          {
+            "suit": "S",
+            "rank": 6
+          },
+          {
+            "suit": "H",
+            "rank": 6
+          },
+          {
+            "suit": "C",
+            "rank": 4
+          }
+        ]
+      },
+      "dealer": "N",
+      "vul": "none"
+    },
+    {
+      "entryId": "le_mro0yzg1004",
+      "kind": "play",
+      "name": "Board 1",
+      "tags": [],
+      "hands": {
+        "S": [
+          {
+            "suit": "S",
+            "rank": 14
+          },
+          {
+            "suit": "S",
+            "rank": 13
+          },
+          {
+            "suit": "S",
+            "rank": 12
+          },
+          {
+            "suit": "S",
+            "rank": 2
+          },
+          {
+            "suit": "H",
+            "rank": 14
+          },
+          {
+            "suit": "H",
+            "rank": 13
+          },
+          {
+            "suit": "H",
+            "rank": 3
+          },
+          {
+            "suit": "H",
+            "rank": 2
+          },
+          {
+            "suit": "D",
+            "rank": 4
+          },
+          {
+            "suit": "D",
+            "rank": 3
+          },
+          {
+            "suit": "D",
+            "rank": 2
+          },
+          {
+            "suit": "C",
+            "rank": 3
+          },
+          {
+            "suit": "C",
+            "rank": 2
+          }
+        ],
+        "W": [
+          {
+            "suit": "S",
+            "rank": 5
+          },
+          {
+            "suit": "S",
+            "rank": 4
+          },
+          {
+            "suit": "S",
+            "rank": 3
+          },
+          {
+            "suit": "H",
+            "rank": 12
+          },
+          {
+            "suit": "H",
+            "rank": 11
+          },
+          {
+            "suit": "H",
+            "rank": 10
+          },
+          {
+            "suit": "H",
+            "rank": 4
+          },
+          {
+            "suit": "D",
+            "rank": 12
+          },
+          {
+            "suit": "D",
+            "rank": 11
+          },
+          {
+            "suit": "D",
+            "rank": 10
+          },
+          {
+            "suit": "C",
+            "rank": 6
+          },
+          {
+            "suit": "C",
+            "rank": 5
+          },
+          {
+            "suit": "C",
+            "rank": 4
+          }
+        ],
+        "N": [
+          {
+            "suit": "S",
+            "rank": 11
+          },
+          {
+            "suit": "S",
+            "rank": 10
+          },
+          {
+            "suit": "S",
+            "rank": 9
+          },
+          {
+            "suit": "H",
+            "rank": 9
+          },
+          {
+            "suit": "H",
+            "rank": 8
+          },
+          {
+            "suit": "H",
+            "rank": 7
+          },
+          {
+            "suit": "D",
+            "rank": 14
+          },
+          {
+            "suit": "D",
+            "rank": 13
+          },
+          {
+            "suit": "D",
+            "rank": 9
+          },
+          {
+            "suit": "D",
+            "rank": 8
+          },
+          {
+            "suit": "C",
+            "rank": 9
+          },
+          {
+            "suit": "C",
+            "rank": 8
+          },
+          {
+            "suit": "C",
+            "rank": 7
+          }
+        ],
+        "E": [
+          {
+            "suit": "S",
+            "rank": 8
+          },
+          {
+            "suit": "S",
+            "rank": 7
+          },
+          {
+            "suit": "S",
+            "rank": 6
+          },
+          {
+            "suit": "H",
+            "rank": 6
+          },
+          {
+            "suit": "H",
+            "rank": 5
+          },
+          {
+            "suit": "D",
+            "rank": 7
+          },
+          {
+            "suit": "D",
+            "rank": 6
+          },
+          {
+            "suit": "D",
+            "rank": 5
+          },
+          {
+            "suit": "C",
+            "rank": 14
+          },
+          {
+            "suit": "C",
+            "rank": 13
+          },
+          {
+            "suit": "C",
+            "rank": 12
+          },
+          {
+            "suit": "C",
+            "rank": 11
+          },
+          {
+            "suit": "C",
+            "rank": 10
+          }
+        ]
+      },
+      "dealer": "S",
+      "vul": "none",
+      "auction": [
+        {
+          "seat": "S",
+          "call": "1S"
+        },
+        {
+          "seat": "W",
+          "call": "P"
+        },
+        {
+          "seat": "N",
+          "call": "2S"
+        },
+        {
+          "seat": "E",
+          "call": "P"
+        },
+        {
+          "seat": "S",
+          "call": "P"
+        },
+        {
+          "seat": "W",
+          "call": "P"
+        }
+      ],
+      "play": [],
+      "origin": "imported",
+      "importFileName": "sample-boards.lin",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T21:32:33.649Z"
+    },
+    {
+      "entryId": "le_mro0yzg2005",
+      "kind": "play",
+      "name": "Board 2",
+      "tags": [],
+      "hands": {
+        "S": [
+          {
+            "suit": "S",
+            "rank": 14
+          },
+          {
+            "suit": "S",
+            "rank": 13
+          },
+          {
+            "suit": "S",
+            "rank": 4
+          },
+          {
+            "suit": "H",
+            "rank": 13
+          },
+          {
+            "suit": "H",
+            "rank": 3
+          },
+          {
+            "suit": "H",
+            "rank": 2
+          },
+          {
+            "suit": "D",
+            "rank": 12
+          },
+          {
+            "suit": "D",
+            "rank": 4
+          },
+          {
+            "suit": "D",
+            "rank": 3
+          },
+          {
+            "suit": "D",
+            "rank": 2
+          },
+          {
+            "suit": "C",
+            "rank": 13
+          },
+          {
+            "suit": "C",
+            "rank": 11
+          },
+          {
+            "suit": "C",
+            "rank": 2
+          }
+        ],
+        "W": [
+          {
+            "suit": "S",
+            "rank": 12
+          },
+          {
+            "suit": "S",
+            "rank": 11
+          },
+          {
+            "suit": "S",
+            "rank": 10
+          },
+          {
+            "suit": "S",
+            "rank": 9
+          },
+          {
+            "suit": "H",
+            "rank": 8
+          },
+          {
+            "suit": "H",
+            "rank": 7
+          },
+          {
+            "suit": "D",
+            "rank": 11
+          },
+          {
+            "suit": "D",
+            "rank": 10
+          },
+          {
+            "suit": "D",
+            "rank": 9
+          },
+          {
+            "suit": "C",
+            "rank": 12
+          },
+          {
+            "suit": "C",
+            "rank": 10
+          },
+          {
+            "suit": "C",
+            "rank": 9
+          },
+          {
+            "suit": "C",
+            "rank": 8
+          }
+        ],
+        "N": [
+          {
+            "suit": "S",
+            "rank": 8
+          },
+          {
+            "suit": "S",
+            "rank": 7
+          },
+          {
+            "suit": "S",
+            "rank": 6
+          },
+          {
+            "suit": "S",
+            "rank": 5
+          },
+          {
+            "suit": "H",
+            "rank": 14
+          },
+          {
+            "suit": "H",
+            "rank": 12
+          },
+          {
+            "suit": "H",
+            "rank": 11
+          },
+          {
+            "suit": "H",
+            "rank": 10
+          },
+          {
+            "suit": "D",
+            "rank": 14
+          },
+          {
+            "suit": "D",
+            "rank": 13
+          },
+          {
+            "suit": "D",
+            "rank": 8
+          },
+          {
+            "suit": "C",
+            "rank": 14
+          },
+          {
+            "suit": "C",
+            "rank": 7
+          }
+        ],
+        "E": [
+          {
+            "suit": "S",
+            "rank": 3
+          },
+          {
+            "suit": "S",
+            "rank": 2
+          },
+          {
+            "suit": "H",
+            "rank": 9
+          },
+          {
+            "suit": "H",
+            "rank": 6
+          },
+          {
+            "suit": "H",
+            "rank": 5
+          },
+          {
+            "suit": "H",
+            "rank": 4
+          },
+          {
+            "suit": "D",
+            "rank": 7
+          },
+          {
+            "suit": "D",
+            "rank": 6
+          },
+          {
+            "suit": "D",
+            "rank": 5
+          },
+          {
+            "suit": "C",
+            "rank": 6
+          },
+          {
+            "suit": "C",
+            "rank": 5
+          },
+          {
+            "suit": "C",
+            "rank": 4
+          },
+          {
+            "suit": "C",
+            "rank": 3
+          }
+        ]
+      },
+      "dealer": "N",
+      "vul": "ns",
+      "auction": [
+        {
+          "seat": "N",
+          "call": "1N"
+        },
+        {
+          "seat": "E",
+          "call": "P"
+        },
+        {
+          "seat": "S",
+          "call": "3N"
+        },
+        {
+          "seat": "W",
+          "call": "P"
+        },
+        {
+          "seat": "N",
+          "call": "P"
+        },
+        {
+          "seat": "E",
+          "call": "P"
+        }
+      ],
+      "play": [],
+      "origin": "imported",
+      "importFileName": "sample-boards.lin",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T21:32:33.649Z"
+    },
+    {
+      "entryId": "le_mro15l6y008",
+      "name": "seeded-92409 · table",
+      "tags": [],
+      "origin": "recorded",
+      "sourceSessionId": "bs_mro11yig007",
+      "createdBy": "user_reviewer_rhea",
+      "createdAt": "2026-07-16T21:37:41.770Z",
+      "kind": "table",
+      "kbId": "kb_mro0nhnk001",
+      "seats": {
+        "N": {
+          "label": "House · Conventions",
+          "playerId": "pl_mro0p5o8001"
+        },
+        "E": {
+          "label": "House · Conventions",
+          "playerId": "pl_mro0p5o8001"
+        },
+        "S": {
+          "label": "House · Conventions",
+          "playerId": "pl_mro0p5o8001"
+        },
+        "W": {
+          "label": "House · Conventions",
+          "playerId": "pl_mro0p5o8001"
+        }
+      }
+    }
+  ]
+}

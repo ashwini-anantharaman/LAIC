@@ -87,8 +87,22 @@ export default async function ItemPage({
               {citedPassages.map(({ ref, passage }, i) => (
                 <li key={i} className="border-l-2 border-emerald-300 pl-3">
                   <p className="text-[11px] uppercase tracking-wide text-neutral-400">
-                    {ref.sourceId}
-                    {passage && <> · passage {passage.ordinal}</>}
+                    {passage ? (
+                      <Link
+                        href={`/bridge/kb/${kbId}/sources/${ref.sourceId}?p=${passage.passageId}#${passage.passageId}`}
+                        className="text-emerald-800 underline-offset-2 hover:underline"
+                        title="Open this passage in the source document"
+                      >
+                        {ref.sourceId} · ¶{passage.ordinal} →
+                      </Link>
+                    ) : (
+                      <Link
+                        href={`/bridge/kb/${kbId}/sources/${ref.sourceId}`}
+                        className="underline-offset-2 hover:underline"
+                      >
+                        {ref.sourceId}
+                      </Link>
+                    )}
                   </p>
                   {passage ? (
                     <blockquote className="prose-knowledge mt-1 text-[15px] text-neutral-700">

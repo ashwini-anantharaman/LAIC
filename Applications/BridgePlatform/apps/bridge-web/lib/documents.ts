@@ -2,7 +2,12 @@
 // text-extracted (unpdf). Documents replace wholesale per source; passages
 // re-chunk deterministically (citations anchor to passages).
 
-import { chunkDocument, type KbSourceDocument, type KbSourcePassage } from "@bridge/kb";
+import {
+  chunkDocument,
+  normalizeExtractedText,
+  type KbSourceDocument,
+  type KbSourcePassage,
+} from "@bridge/kb";
 import { kbStore } from "./kb";
 
 export async function fileToText(file: File): Promise<string> {
@@ -10,9 +15,10 @@ export async function fileToText(file: File): Promise<string> {
     const { extractText, getDocumentProxy } = await import("unpdf");
     const pdf = await getDocumentProxy(new Uint8Array(await file.arrayBuffer()));
     const { text } = await extractText(pdf, { mergePages: true });
-    return text;
+    // PDF fonts encode suit symbols as private-use glyphs — map to ♠♥♦♣.
+    return normalizeExtractedText(text);
   }
-  return file.text();
+  return normalizeExtractedText(await file.text());
 }
 
 export async function uploadDocument(

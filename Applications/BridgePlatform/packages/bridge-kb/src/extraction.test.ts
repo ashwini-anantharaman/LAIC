@@ -240,3 +240,20 @@ describe("chunkDocument on flat PDF text (no newlines)", () => {
     expect(chunkDocument(flat)).toEqual({ passages, sections });
   });
 });
+
+describe("normalizeExtractedText", () => {
+  it("maps booklet private-use suit glyphs to real symbols, drops other PUA", async () => {
+    const { normalizeExtractedText } = await import("./passages");
+    expect(normalizeExtractedText("open 1 with 4–4 in the minors")).toBe(
+      "open 1♦ with 4–4 in the minors",
+    );
+    expect(normalizeExtractedText("1NT — 2 3 club bust")).toBe(
+      "1NT — 2♠ 3♣ club bust",
+    );
+    expect(normalizeExtractedText("2 transfers")).toBe("2♥ transfers");
+    // Unknown PUA never renders as tofu — it disappears.
+    expect(normalizeExtractedText("xy")).toBe("xy");
+    // Real glyphs pass through untouched.
+    expect(normalizeExtractedText("♠♥♦♣ stays")).toBe("♠♥♦♣ stays");
+  });
+});
