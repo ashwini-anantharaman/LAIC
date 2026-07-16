@@ -16,8 +16,10 @@ import type {
   KbSourcePassage,
   KbStore,
   KbSuggestion,
+  KbVersion,
   KnowledgeBase,
   KnowledgeItem,
+  KnowledgeItemVersion,
 } from "@bridge/kb";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { check } from "./client";
@@ -46,6 +48,9 @@ export class PgKbStore implements KbStore {
   async listKbs() {
     const rows = check(await this.db.from("bridge_kbs").select("record"), "kbs.list");
     return records<KnowledgeBase>(rows).sort((a, b) => a.name.localeCompare(b.name));
+  }
+  async deleteKb(kbId: string) {
+    check(await this.db.from("bridge_kbs").delete().eq("kb_id", kbId), "kbs.delete");
   }
 
   // ---- items + memberships ---------------------------------------------------
@@ -83,6 +88,9 @@ export class PgKbStore implements KbStore {
     );
     return this.getItems(ms.map((m: any) => m.item_id));
   }
+  async deleteItem(itemId: string) {
+    check(await this.db.from("bridge_kb_items").delete().eq("item_id", itemId), "items.delete");
+  }
   async addMembership(m: KbMembership) {
     check(
       await this.db
@@ -114,6 +122,109 @@ export class PgKbStore implements KbStore {
       "memberships.forKbList",
     );
     return rows.map((r: any): KbMembership => ({ kbId: r.kb_id, itemId: r.item_id }));
+  }
+
+  // ---- item versions (immutable snapshots) -----------------------------------
+
+  async putItemVersion(v: KnowledgeItemVersion) {
+    check(
+      await this.db.from("bridge_kb_item_versions").upsert(
+        {
+          item_id: v.itemId,
+          version_number: v.versionNumber,
+          record: v,
+          committed_at: v.committedAt,
+        },
+        { onConflict: "item_id,version_number" },
+      ),
+      "itemVersions.put",
+    );
+  }
+  async getItemVersion(itemId: string, versionNumber: number) {
+    const rows = check(
+      await this.db
+        .from("bridge_kb_item_versions")
+        .select("record")
+        .eq("item_id", itemId)
+        .eq("version_number", versionNumber),
+      "itemVersions.get",
+    );
+    return rows.length ? ((rows[0] as any).record as KnowledgeItemVersion) : null;
+  }
+  async listItemVersions(itemId: string) {
+    const rows = check(
+      await this.db
+        .from("bridge_kb_item_versions")
+        .select("record")
+        .eq("item_id", itemId)
+        .order("version_number", { ascending: false }),
+      "itemVersions.list",
+    );
+    return records<KnowledgeItemVersion>(rows);
+  }
+  async deleteItemVersion(itemId: string, versionNumber: number) {
+    check(
+      await this.db
+        .from("bridge_kb_item_versions")
+        .delete()
+        .eq("item_id", itemId)
+        .eq("version_number", versionNumber),
+      "itemVersions.delete",
+    );
+  }
+  async deleteItemVersionsForItem(itemId: string) {
+    check(
+      await this.db.from("bridge_kb_item_versions").delete().eq("item_id", itemId),
+      "itemVersions.deleteForItem",
+    );
+  }
+
+  // ---- KB versions (releases) ------------------------------------------------
+
+  async putKbVersion(v: KbVersion) {
+    check(
+      await this.db.from("bridge_kb_versions").upsert(
+        {
+          version_id: v.versionId,
+          kb_id: v.kbId,
+          version_number: v.versionNumber,
+          record: v,
+          published_at: v.publishedAt,
+        },
+        { onConflict: "version_id" },
+      ),
+      "kbVersions.put",
+    );
+  }
+  async getKbVersion(versionId: string) {
+    const rows = check(
+      await this.db.from("bridge_kb_versions").select("record").eq("version_id", versionId),
+      "kbVersions.get",
+    );
+    return rows.length ? ((rows[0] as any).record as KbVersion) : null;
+  }
+  async listKbVersions(kbId: string) {
+    const rows = check(
+      await this.db
+        .from("bridge_kb_versions")
+        .select("record")
+        .eq("kb_id", kbId)
+        .order("version_number", { ascending: false }),
+      "kbVersions.list",
+    );
+    return records<KbVersion>(rows);
+  }
+  async deleteKbVersion(versionId: string) {
+    check(
+      await this.db.from("bridge_kb_versions").delete().eq("version_id", versionId),
+      "kbVersions.delete",
+    );
+  }
+  async deleteKbVersionsForKb(kbId: string) {
+    check(
+      await this.db.from("bridge_kb_versions").delete().eq("kb_id", kbId),
+      "kbVersions.deleteForKb",
+    );
   }
 
   // ---- edges -----------------------------------------------------------------
@@ -211,6 +322,12 @@ export class PgKbStore implements KbStore {
     const rows = check(await this.db.from("bridge_kb_players").select("record"), "players.list");
     return records<KbPlayer>(rows);
   }
+  async deletePlayer(playerId: string) {
+    check(
+      await this.db.from("bridge_kb_players").delete().eq("player_id", playerId),
+      "players.delete",
+    );
+  }
   async putSandbox(sandbox: KbSandbox) {
     check(
       await this.db.from("bridge_kb_sandboxes").upsert(
@@ -238,6 +355,12 @@ export class PgKbStore implements KbStore {
       "sandboxes.forKb",
     );
     return records<KbSandbox>(rows);
+  }
+  async deleteSandbox(sandboxId: string) {
+    check(
+      await this.db.from("bridge_kb_sandboxes").delete().eq("sandbox_id", sandboxId),
+      "sandboxes.delete",
+    );
   }
 
   // ---- suggestions -------------------------------------------------------------
@@ -276,6 +399,12 @@ export class PgKbStore implements KbStore {
       "suggestions.forKb",
     );
     return records<KbSuggestion>(rows);
+  }
+  async deleteSuggestion(suggestionId: string) {
+    check(
+      await this.db.from("bridge_kb_suggestions").delete().eq("suggestion_id", suggestionId),
+      "suggestions.delete",
+    );
   }
 
   // ---- sources -------------------------------------------------------------------
@@ -380,6 +509,9 @@ export class PgKbStore implements KbStore {
     );
     return records<KbExtractionJob>(rows);
   }
+  async deleteJob(jobId: string) {
+    check(await this.db.from("bridge_kb_jobs").delete().eq("job_id", jobId), "jobs.delete");
+  }
 
   // ---- compiles ------------------------------------------------------------------------
 
@@ -416,5 +548,11 @@ export class PgKbStore implements KbStore {
       "compiles.forKb",
     );
     return rows.map((r: any) => r.artifact as CompiledKb);
+  }
+  async deleteCompilesForKb(kbId: string) {
+    check(
+      await this.db.from("bridge_kb_compiles").delete().eq("kb_id", kbId),
+      "compiles.deleteForKb",
+    );
   }
 }

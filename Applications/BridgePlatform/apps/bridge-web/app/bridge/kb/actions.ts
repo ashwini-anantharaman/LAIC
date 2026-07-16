@@ -373,6 +373,163 @@ export async function simulatePlayerAction(formData: FormData): Promise<void> {
   revalidatePath(kbPath(kbId, `/players/${playerId}`));
 }
 
+// ---- versioning (Stage H) --------------------------------------------------
+
+export async function publishKbVersionAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const { version, created } = await kbService().publishKbVersion(kbId, {
+    label: String(formData.get("label") ?? "").trim() || undefined,
+    notes: String(formData.get("notes") ?? "").trim() || undefined,
+    publishedBy: context.nexusUserId,
+  });
+  if (created) {
+    await audit(context, "kb.version.publish", "kb_version", version.versionId, {
+      kbId,
+      versionNumber: version.versionNumber,
+      items: version.items.length,
+    });
+    revalidatePath(kbPath(kbId), "layout");
+    redirect(kbPath(kbId, `/versions?published=${version.versionNumber}`));
+  }
+  // Nothing changed since the last release — no duplicate minted.
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, `/versions?unchanged=${version.versionNumber}`));
+}
+
+export async function deleteKbVersionAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const versionId = String(formData.get("versionId"));
+  try {
+    await kbService().deleteKbVersion(kbId, versionId);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not delete this version.";
+    redirect(kbPath(kbId, `/versions?versionError=${encodeURIComponent(message)}`));
+  }
+  await audit(context, "kb.version.delete", "kb_version", versionId, { kbId });
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, `/versions?versionDeleted=1`));
+}
+
+export async function deleteItemVersionAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const itemId = String(formData.get("itemId"));
+  const versionNumber = Number(formData.get("versionNumber"));
+  try {
+    await kbService().deleteItemVersion(kbId, itemId, versionNumber);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not delete this version.";
+    redirect(kbPath(kbId, `/items/${itemId}?versionError=${encodeURIComponent(message)}`));
+  }
+  await audit(context, "kb.item.version.delete", "kb_item", itemId, { kbId, versionNumber });
+  revalidatePath(kbPath(kbId, `/items/${itemId}`));
+  redirect(kbPath(kbId, `/items/${itemId}?versionDeleted=${versionNumber}`));
+}
+
+export async function setActiveVersionAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const versionId = String(formData.get("versionId"));
+  await kbService().setActiveVersion(kbId, versionId);
+  await audit(context, "kb.version.publish", "kb_version", versionId, {
+    kbId,
+    activated: true,
+  });
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, `/versions?activated=1`));
+}
+
+export async function commitItemVersionAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const itemId = String(formData.get("itemId"));
+  const version = await kbService().commitItemVersion(
+    itemId,
+    context.nexusUserId,
+    String(formData.get("changeNote") ?? "").trim() || undefined,
+  );
+  await audit(context, "kb.item.version.commit", "kb_item", itemId, {
+    kbId,
+    versionNumber: version.versionNumber,
+  });
+  revalidatePath(kbPath(kbId, `/items/${itemId}`));
+  redirect(kbPath(kbId, `/items/${itemId}?committed=${version.versionNumber}`));
+}
+
+export async function setItemMainVersionAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const itemId = String(formData.get("itemId"));
+  const versionNumber = Number(formData.get("versionNumber"));
+  const updated = await kbService().setItemMainVersion(
+    kbId,
+    itemId,
+    versionNumber,
+    context.nexusUserId,
+  );
+  await audit(context, "kb.item.version.restore", "kb_item", updated.itemId, {
+    kbId,
+    from: itemId,
+    versionNumber,
+    forked: updated.itemId !== itemId,
+  });
+  revalidatePath(kbPath(kbId), "layout");
+  // A shared item forks — land on whichever item now lives here.
+  redirect(kbPath(kbId, `/items/${updated.itemId}?madeMain=${versionNumber}`));
+}
+
+// ---- derivation (master → limited; duplicate & build on top) ----------------
+
+export async function deriveKbAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  await ensureSeeds();
+  const masterKbId = String(formData.get("masterKbId"));
+  const includeItemIds = formData.getAll("includeItemIds").map(String);
+  const child = await kbService().deriveKb(masterKbId, {
+    name: String(formData.get("name") ?? "").trim(),
+    description: String(formData.get("description") ?? "").trim() || undefined,
+    createdBy: context.nexusUserId,
+    mode: (String(formData.get("mode")) as "linked" | "copied") || "linked",
+    includeItemIds: includeItemIds.length ? includeItemIds : undefined,
+    includePacks: formData.get("includePacks") === "on",
+  });
+  await audit(context, "kb.derive", "kb", child.kbId, {
+    masterKbId,
+    mode: String(formData.get("mode")),
+    items: includeItemIds.length || "all",
+  });
+  redirect(kbPath(child.kbId));
+}
+
+export async function deleteKbAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const kb = await kbService().getKb(kbId);
+  try {
+    await kbService().deleteKb(kbId);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not delete this knowledge base.";
+    redirect(`/bridge/kb?deleteError=${encodeURIComponent(message)}`);
+  }
+  await audit(context, "kb.delete", "kb", kbId, { name: kb.name });
+  redirect("/bridge/kb?deleted=1");
+}
+
+export async function duplicateKbAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  await ensureSeeds();
+  const kbId = String(formData.get("kbId"));
+  const copy = await kbService().duplicateKb(kbId, {
+    name: String(formData.get("name") ?? "").trim(),
+    description: String(formData.get("description") ?? "").trim() || undefined,
+    createdBy: context.nexusUserId,
+  });
+  await audit(context, "kb.derive", "kb", copy.kbId, { masterKbId: kbId, mode: "duplicate" });
+  redirect(kbPath(copy.kbId));
+}
+
 export async function createSandboxAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));

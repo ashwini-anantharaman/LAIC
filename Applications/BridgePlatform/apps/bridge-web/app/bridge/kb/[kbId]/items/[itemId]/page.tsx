@@ -1,10 +1,18 @@
-import type { EdgeType } from "@bridge/kb";
+import { itemIsDirty, type EdgeType } from "@bridge/kb";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { StatusBadge, TypeChip } from "@/components/kb/badges";
+import { ConfirmButton } from "@/components/kb/ConfirmButton";
 import { ItemEditor } from "@/components/kb/ItemEditor";
 import { kbStore } from "@/lib/kb";
-import { addEdgeAction, removeEdgeAction, saveItemAction } from "../../../actions";
+import {
+  addEdgeAction,
+  commitItemVersionAction,
+  deleteItemVersionAction,
+  removeEdgeAction,
+  saveItemAction,
+  setItemMainVersionAction,
+} from "../../../actions";
 
 const EDGE_LABEL: Record<EdgeType, string> = {
   requires: "requires",
@@ -21,19 +29,34 @@ export default async function ItemPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ kbId: string; itemId: string }>;
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{
+    saved?: string;
+    committed?: string;
+    madeMain?: string;
+    versionDeleted?: string;
+    versionError?: string;
+  }>;
 }>) {
   const { kbId, itemId } = await params;
-  const { saved } = await searchParams;
+  const { saved, committed, madeMain, versionDeleted, versionError } = await searchParams;
   const store = kbStore();
   const item = await store.getItem(itemId);
   if (!item) notFound();
 
-  const [edges, kbItems, memberships] = await Promise.all([
+  const [edges, kbItems, memberships, versions] = await Promise.all([
     store.listEdgesTouching([itemId]),
     store.listItemsForKb(kbId),
     store.listMembershipsForItem(itemId),
+    store.listItemVersions(itemId),
   ]);
+  // "Dirty" is measured against the MAIN version (the one the head should
+  // reflect), not merely the newest — so pointing main at an older version
+  // reads as clean until you actually edit.
+  const mainSnapshot =
+    item.mainVersion != null
+      ? (versions.find((v) => v.versionNumber === item.mainVersion) ?? null)
+      : null;
+  const dirty = itemIsDirty(item, mainSnapshot);
   const titleOf = new Map(kbItems.map((i) => [i.itemId, i.title]));
 
   // Resolve cited passages for the side-by-side pane.
@@ -56,13 +79,36 @@ export default async function ItemPage({
           <Link href={`${base}/items`} className="hover:underline">
             Items
           </Link>{" "}
-          / {item.itemId} · v{item.version}
+          / {item.itemId} · rev {item.version}
+          {item.mainVersion ? <> · main v{item.mainVersion}</> : <> · uncommitted</>}
           {item.forkedFromItemId && <> · forked from {item.forkedFromItemId}</>}
           {memberships.length > 1 && <> · shared with {memberships.length - 1} other KB(s)</>}
         </p>
         {saved && (
           <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             Saved — the knowledge base recompiled. New sessions use it immediately.
+          </p>
+        )}
+        {committed && (
+          <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            Committed <span className="font-medium">v{committed}</span> — an immutable
+            snapshot, now the main version.
+          </p>
+        )}
+        {madeMain && (
+          <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            <span className="font-medium">v{madeMain}</span> is now the main version —
+            no new version was created.
+          </p>
+        )}
+        {versionDeleted && (
+          <p className="mb-3 rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
+            Version v{versionDeleted} deleted.
+          </p>
+        )}
+        {versionError && (
+          <p className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--color-invalid)]">
+            {versionError}
           </p>
         )}
         <div className="mb-4 flex items-center gap-2">
@@ -183,6 +229,109 @@ export default async function ItemPage({
               Add
             </button>
           </form>
+        </section>
+
+        <section className="rounded-lg border border-neutral-200 p-4">
+          <h3 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
+            Versions
+          </h3>
+          <p className="text-sm text-neutral-600">
+            {dirty
+              ? item.mainVersion
+                ? `Uncommitted edits since v${item.mainVersion} — commit to create a new version.`
+                : "The head has uncommitted edits."
+              : versions.length
+                ? `The main version (highlighted) is what's in use. Click "Make main" on any version to switch — no new version is created.`
+                : "This item has never been committed."}
+          </p>
+
+          <form action={commitItemVersionAction} className="mt-3 flex flex-wrap items-end gap-2 border-b border-[var(--line)] pb-3">
+            <input type="hidden" name="kbId" value={kbId} />
+            <input type="hidden" name="itemId" value={itemId} />
+            <label className="flex-1 text-xs">
+              <span className="mb-0.5 block text-neutral-500">Change note (optional)</span>
+              <input
+                name="changeNote"
+                placeholder="what changed in this version"
+                className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={!dirty}
+              className="rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
+            >
+              Commit v{(versions[0]?.versionNumber ?? 0) + 1}
+            </button>
+          </form>
+
+          {versions.length === 0 ? (
+            <p className="mt-3 text-sm text-neutral-500">No committed versions yet.</p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {versions.map((v) => {
+                const isMain = v.versionNumber === item.mainVersion;
+                return (
+                  <li
+                    key={v.versionNumber}
+                    className={
+                      isMain
+                        ? "flex items-start gap-2 rounded-md border border-emerald-300 bg-emerald-50/60 p-2 text-sm"
+                        : "flex items-start gap-2 p-2 text-sm"
+                    }
+                  >
+                    <span
+                      className={
+                        isMain
+                          ? "mt-0.5 rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white"
+                          : "mt-0.5 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-600"
+                      }
+                    >
+                      v{v.versionNumber}
+                    </span>
+                    <span className="flex-1">
+                      <span className="text-neutral-700">{v.title}</span>
+                      {isMain && (
+                        <span className="ml-2 text-[10px] font-medium uppercase tracking-wide text-emerald-700">
+                          main{dirty ? " (edited)" : ""}
+                        </span>
+                      )}
+                      {v.changeNote && (
+                        <span className="block text-xs text-neutral-500">{v.changeNote}</span>
+                      )}
+                      <span className="block text-[11px] text-neutral-400">
+                        {new Date(v.committedAt).toLocaleString()}
+                      </span>
+                    </span>
+                    {!isMain && (
+                      <span className="flex shrink-0 items-center gap-2">
+                        <form action={setItemMainVersionAction}>
+                          <input type="hidden" name="kbId" value={kbId} />
+                          <input type="hidden" name="itemId" value={itemId} />
+                          <input type="hidden" name="versionNumber" value={v.versionNumber} />
+                          <button
+                            type="submit"
+                            className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:border-emerald-400 hover:text-emerald-800"
+                            title="Make this the main version (no new version is created)"
+                          >
+                            Make main
+                          </button>
+                        </form>
+                        <ConfirmButton
+                          action={deleteItemVersionAction}
+                          hidden={{ kbId, itemId, versionNumber: v.versionNumber }}
+                          confirm={`Delete v${v.versionNumber}? This permanently removes the snapshot.`}
+                          label="delete"
+                          className="text-xs text-neutral-400 hover:text-[var(--madder)]"
+                          title="Delete this version snapshot"
+                        />
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       </aside>
     </div>

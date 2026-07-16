@@ -15,8 +15,10 @@ import type {
   KbSourceDocument,
   KbSourcePassage,
   KbSuggestion,
+  KbVersion,
   KnowledgeBase,
   KnowledgeItem,
+  KnowledgeItemVersion,
 } from "./model";
 
 export interface KbStore {
@@ -24,6 +26,7 @@ export interface KbStore {
   putKb(kb: KnowledgeBase): Promise<void>;
   getKb(kbId: string): Promise<KnowledgeBase | null>;
   listKbs(): Promise<KnowledgeBase[]>;
+  deleteKb(kbId: string): Promise<void>;
 
   // items + memberships
   putItem(item: KnowledgeItem): Promise<void>;
@@ -31,10 +34,27 @@ export interface KbStore {
   getItems(itemIds: string[]): Promise<KnowledgeItem[]>;
   /** Items belonging to the KB (via memberships), any status. */
   listItemsForKb(kbId: string): Promise<KnowledgeItem[]>;
+  deleteItem(itemId: string): Promise<void>;
   addMembership(m: KbMembership): Promise<void>;
   removeMembership(m: KbMembership): Promise<void>;
   listMembershipsForItem(itemId: string): Promise<KbMembership[]>;
   listMembershipsForKb(kbId: string): Promise<KbMembership[]>;
+
+  // immutable item versions (committed snapshots)
+  putItemVersion(v: KnowledgeItemVersion): Promise<void>;
+  getItemVersion(itemId: string, versionNumber: number): Promise<KnowledgeItemVersion | null>;
+  /** Committed versions of an item, newest first. */
+  listItemVersions(itemId: string): Promise<KnowledgeItemVersion[]>;
+  deleteItemVersion(itemId: string, versionNumber: number): Promise<void>;
+  deleteItemVersionsForItem(itemId: string): Promise<void>;
+
+  // KB versions (releases)
+  putKbVersion(v: KbVersion): Promise<void>;
+  getKbVersion(versionId: string): Promise<KbVersion | null>;
+  /** Published releases of a KB, newest first. */
+  listKbVersions(kbId: string): Promise<KbVersion[]>;
+  deleteKbVersion(versionId: string): Promise<void>;
+  deleteKbVersionsForKb(kbId: string): Promise<void>;
 
   // edges
   putEdge(edge: KbEdge): Promise<void>;
@@ -53,14 +73,17 @@ export interface KbStore {
   getPlayer(playerId: string): Promise<KbPlayer | null>;
   listPlayersForKb(kbId: string): Promise<KbPlayer[]>;
   listPlayers(): Promise<KbPlayer[]>;
+  deletePlayer(playerId: string): Promise<void>;
   putSandbox(sandbox: KbSandbox): Promise<void>;
   getSandbox(sandboxId: string): Promise<KbSandbox | null>;
   listSandboxesForKb(kbId: string): Promise<KbSandbox[]>;
+  deleteSandbox(sandboxId: string): Promise<void>;
 
   // suggestions
   putSuggestion(s: KbSuggestion): Promise<void>;
   getSuggestion(suggestionId: string): Promise<KbSuggestion | null>;
   listSuggestionsForKb(kbId: string): Promise<KbSuggestion[]>;
+  deleteSuggestion(suggestionId: string): Promise<void>;
 
   // sources
   putSource(source: KbSource): Promise<void>;
@@ -76,16 +99,20 @@ export interface KbStore {
   putJob(job: KbExtractionJob): Promise<void>;
   getJob(jobId: string): Promise<KbExtractionJob | null>;
   listJobsForKb(kbId: string): Promise<KbExtractionJob[]>;
+  deleteJob(jobId: string): Promise<void>;
 
   // compiles
   putCompile(compile: CompiledKb): Promise<void>;
   getCompile(compileId: string): Promise<CompiledKb | null>;
   listCompilesForKb(kbId: string, limit?: number): Promise<CompiledKb[]>;
+  deleteCompilesForKb(kbId: string): Promise<void>;
 }
 
 export interface KbStoreData {
   kbs: KnowledgeBase[];
   items: KnowledgeItem[];
+  itemVersions: KnowledgeItemVersion[];
+  kbVersions: KbVersion[];
   memberships: KbMembership[];
   edges: KbEdge[];
   packs: KbPack[];
@@ -103,6 +130,8 @@ export function emptyKbStoreData(): KbStoreData {
   return {
     kbs: [],
     items: [],
+    itemVersions: [],
+    kbVersions: [],
     memberships: [],
     edges: [],
     packs: [],
@@ -146,6 +175,10 @@ export class InMemoryKbStore implements KbStore {
   async listKbs() {
     return [...this.data.kbs].sort((a, b) => a.name.localeCompare(b.name));
   }
+  async deleteKb(kbId: string) {
+    this.data.kbs = this.data.kbs.filter((k) => k.kbId !== kbId);
+    this.persist();
+  }
 
   // items + memberships
   async putItem(item: KnowledgeItem) {
@@ -163,6 +196,10 @@ export class InMemoryKbStore implements KbStore {
       this.data.memberships.filter((m) => m.kbId === kbId).map((m) => m.itemId),
     );
     return this.data.items.filter((i) => ids.has(i.itemId));
+  }
+  async deleteItem(itemId: string) {
+    this.data.items = this.data.items.filter((i) => i.itemId !== itemId);
+    this.persist();
   }
   async addMembership(m: KbMembership) {
     if (
@@ -185,6 +222,60 @@ export class InMemoryKbStore implements KbStore {
   }
   async listMembershipsForKb(kbId: string) {
     return this.data.memberships.filter((m) => m.kbId === kbId);
+  }
+
+  // immutable item versions
+  async putItemVersion(v: KnowledgeItemVersion) {
+    this.upsert(
+      this.data.itemVersions,
+      (x) => `${x.itemId}@${x.versionNumber}`,
+      v,
+    );
+  }
+  async getItemVersion(itemId: string, versionNumber: number) {
+    return (
+      this.data.itemVersions.find(
+        (v) => v.itemId === itemId && v.versionNumber === versionNumber,
+      ) ?? null
+    );
+  }
+  async listItemVersions(itemId: string) {
+    return this.data.itemVersions
+      .filter((v) => v.itemId === itemId)
+      .sort((a, b) => b.versionNumber - a.versionNumber);
+  }
+  async deleteItemVersion(itemId: string, versionNumber: number) {
+    this.data.itemVersions = this.data.itemVersions.filter(
+      (v) => !(v.itemId === itemId && v.versionNumber === versionNumber),
+    );
+    this.persist();
+  }
+  async deleteItemVersionsForItem(itemId: string) {
+    this.data.itemVersions = this.data.itemVersions.filter((v) => v.itemId !== itemId);
+    this.persist();
+  }
+
+  // KB versions (releases)
+  async putKbVersion(v: KbVersion) {
+    this.upsert(this.data.kbVersions, (x) => x.versionId, v);
+  }
+  async getKbVersion(versionId: string) {
+    return (
+      this.data.kbVersions.find(byId((v) => v.versionId, versionId)) ?? null
+    );
+  }
+  async listKbVersions(kbId: string) {
+    return this.data.kbVersions
+      .filter((v) => v.kbId === kbId)
+      .sort((a, b) => b.versionNumber - a.versionNumber);
+  }
+  async deleteKbVersion(versionId: string) {
+    this.data.kbVersions = this.data.kbVersions.filter((v) => v.versionId !== versionId);
+    this.persist();
+  }
+  async deleteKbVersionsForKb(kbId: string) {
+    this.data.kbVersions = this.data.kbVersions.filter((v) => v.kbId !== kbId);
+    this.persist();
   }
 
   // edges
@@ -232,6 +323,10 @@ export class InMemoryKbStore implements KbStore {
   async listPlayers() {
     return [...this.data.players];
   }
+  async deletePlayer(playerId: string) {
+    this.data.players = this.data.players.filter((p) => p.playerId !== playerId);
+    this.persist();
+  }
   async putSandbox(sandbox: KbSandbox) {
     this.upsert(this.data.sandboxes, (s) => s.sandboxId, sandbox);
   }
@@ -242,6 +337,10 @@ export class InMemoryKbStore implements KbStore {
   }
   async listSandboxesForKb(kbId: string) {
     return this.data.sandboxes.filter((s) => s.kbId === kbId);
+  }
+  async deleteSandbox(sandboxId: string) {
+    this.data.sandboxes = this.data.sandboxes.filter((s) => s.sandboxId !== sandboxId);
+    this.persist();
   }
 
   // suggestions
@@ -258,6 +357,12 @@ export class InMemoryKbStore implements KbStore {
     return this.data.suggestions
       .filter((s) => s.kbId === kbId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async deleteSuggestion(suggestionId: string) {
+    this.data.suggestions = this.data.suggestions.filter(
+      (s) => s.suggestionId !== suggestionId,
+    );
+    this.persist();
   }
 
   // sources
@@ -300,6 +405,10 @@ export class InMemoryKbStore implements KbStore {
       .filter((j) => j.kbId === kbId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
+  async deleteJob(jobId: string) {
+    this.data.jobs = this.data.jobs.filter((j) => j.jobId !== jobId);
+    this.persist();
+  }
 
   // compiles
   async putCompile(compile: CompiledKb) {
@@ -315,5 +424,9 @@ export class InMemoryKbStore implements KbStore {
       .filter((c) => c.kbId === kbId)
       .sort((a, b) => b.version - a.version)
       .slice(0, limit);
+  }
+  async deleteCompilesForKb(kbId: string) {
+    this.data.compiles = this.data.compiles.filter((c) => c.kbId !== kbId);
+    this.persist();
   }
 }
