@@ -298,7 +298,21 @@ export async function savePlayerAction(formData: FormData): Promise<void> {
   const now = new Date().toISOString();
 
   let enabledPackIds = formData.getAll("enabledPackIds").map(String);
-  let settingOverrides = parseSettingOverrides(formData, compiled);
+  // Only settings the submitted packs expose were rendered — parse those, and
+  // carry prior tuning forward for the rest (inert while un-carried, back at
+  // the fellow's values if the pack returns).
+  const carried = new Set(
+    compiled.packs
+      .filter((p) => enabledPackIds.includes(p.packId))
+      .flatMap((p) => p.itemIds),
+  );
+  let settingOverrides = parseSettingOverrides(formData, compiled, carried);
+  for (const [key, value] of Object.entries(existing?.settingOverrides ?? {})) {
+    const spec = compiled.settings.find((s) => s.key === key);
+    if (spec && !carried.has(spec.itemId) && !(key in settingOverrides)) {
+      settingOverrides[key] = value;
+    }
+  }
 
   // Sandboxed players can never escape the coach's exposure (server-side).
   const sandboxId = existing?.sandboxId ?? (String(formData.get("sandboxId") ?? "").trim() || undefined);

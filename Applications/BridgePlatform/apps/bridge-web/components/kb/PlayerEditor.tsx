@@ -1,8 +1,13 @@
+"use client";
+
 // The player configuration editor (Stage E): packs pick items, settings tune
 // within, policy selects how the AI chooses among matches. The settings shown
-// are exactly those declared by items the enabled packs carry.
+// are exactly those declared by items the CHECKED packs carry — the list
+// follows the checkboxes live, so the packs→settings dependency is visible
+// while editing, not only after save.
 
 import type { CompiledKb, KbPack, KbPlayer, KbSandbox } from "@bridge/kb";
+import { useMemo, useState } from "react";
 import { PlayerSettingControl } from "./PlayerSettingControl";
 
 export function PlayerEditor({
@@ -20,23 +25,38 @@ export function PlayerEditor({
   sandbox: KbSandbox | null;
   action: (formData: FormData) => Promise<void>;
 }>) {
-  const enabled = new Set(
-    player?.enabledPackIds.length ? player.enabledPackIds : [],
-  );
   const values = { ...compiled.defaults, ...(player?.settingOverrides ?? {}) };
-
-  // Settings visible = declared by items carried by the enabled packs (all
-  // settings when nothing is enabled yet, so a new player sees the surface).
-  const carried = new Set(
-    compiled.packs
-      .filter((p) => enabled.size === 0 || enabled.has(p.packId))
-      .flatMap((p) => p.itemIds),
-  );
-  const visibleSettings = compiled.settings.filter((s) => carried.has(s.itemId));
   const exposedKeys = sandbox ? new Set(sandbox.exposedSettingKeys) : null;
   const exposedPacks = sandbox
     ? new Set([...sandbox.basePackIds, ...sandbox.exposedPackIds])
     : null;
+  const lockedPacks = useMemo(
+    () => new Set(sandbox?.basePackIds ?? []),
+    [sandbox],
+  );
+
+  const [checked, setChecked] = useState<Set<string>>(
+    () =>
+      new Set([
+        ...(player?.enabledPackIds ?? []),
+        ...(sandbox?.basePackIds ?? []),
+      ]),
+  );
+  const togglePack = (packId: string) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(packId)) next.delete(packId);
+      else next.add(packId);
+      return next;
+    });
+
+  // Settings visible = declared by items the checked packs carry (live).
+  const visibleSettings = useMemo(() => {
+    const carried = new Set(
+      compiled.packs.filter((p) => checked.has(p.packId)).flatMap((p) => p.itemIds),
+    );
+    return compiled.settings.filter((s) => carried.has(s.itemId));
+  }, [compiled, checked]);
 
   const label = "mb-0.5 block text-[11px] text-neutral-500";
 
@@ -72,9 +92,13 @@ export function PlayerEditor({
 
       <fieldset>
         <legend className="mb-2 text-sm font-medium">Capability packs</legend>
+        <p className="mb-2 text-xs text-neutral-500">
+          Packs decide what the player <em>carries</em>; the settings below tune within that.
+          Unchecking a pack removes its knowledge — and its settings — from this player.
+        </p>
         <div className="grid gap-2 sm:grid-cols-2">
           {packs.map((pack) => {
-            const locked = sandbox ? sandbox.basePackIds.includes(pack.packId) : false;
+            const locked = lockedPacks.has(pack.packId);
             const allowed = exposedPacks ? exposedPacks.has(pack.packId) : true;
             return (
               <label
@@ -87,7 +111,8 @@ export function PlayerEditor({
                   type="checkbox"
                   name="enabledPackIds"
                   value={pack.packId}
-                  defaultChecked={locked || enabled.has(pack.packId)}
+                  checked={locked || checked.has(pack.packId)}
+                  onChange={() => togglePack(pack.packId)}
                   disabled={locked || !allowed}
                   className="mt-0.5"
                 />
@@ -114,7 +139,11 @@ export function PlayerEditor({
       <fieldset>
         <legend className="mb-2 text-sm font-medium">Settings</legend>
         {visibleSettings.length === 0 ? (
-          <p className="text-sm text-neutral-500">The enabled packs expose no settings.</p>
+          <p className="text-sm text-neutral-500">
+            {checked.size === 0
+              ? "Enable a pack — the settings its knowledge exposes appear here."
+              : "The enabled packs expose no settings."}
+          </p>
         ) : (
           <div className="divide-y divide-[var(--line)] rounded-lg border border-neutral-200 bg-[var(--card)]">
             {visibleSettings.map((spec) => {
