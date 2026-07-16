@@ -250,7 +250,16 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
           }),
         };
 
-  await libraryStore().putEntry(entry);
+  try {
+    await libraryStore().putEntry(entry);
+  } catch {
+    // Most likely: bridge_kb_library missing (migration 0015 not applied).
+    redirect(
+      `/bridge/table/${sessionId}?error=${encodeURIComponent(
+        "Couldn't save — the library isn't provisioned on this backend yet (migration 0015_library.sql).",
+      )}`,
+    );
+  }
   await audit(context, "profile.create", "kb_library", entry.entryId, {
     sessionId,
     kind,

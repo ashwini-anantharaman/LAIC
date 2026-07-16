@@ -58,7 +58,13 @@ export async function importFileAction(formData: FormData): Promise<void> {
       createdBy: context.nexusUserId,
       createdAt: now,
     };
-    await lib.putEntry(entry);
+    try {
+      await lib.putEntry(entry);
+    } catch {
+      fail(
+        "Couldn't import — the library isn't provisioned on this backend yet (migration 0015_library.sql).",
+      );
+    }
     if (saved === 0) firstKind = entry.kind;
     saved++;
   }

@@ -32,12 +32,12 @@ export default async function SessionPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ mode?: string; hands?: string; saved?: string }>;
+  searchParams: Promise<{ mode?: string; hands?: string; saved?: string; error?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { mode, hands: handsParam, saved } = await searchParams;
+  const { mode, hands: handsParam, saved, error } = await searchParams;
 
   let view;
   try {
@@ -253,6 +253,11 @@ export default async function SessionPage({
         </span>
       </header>
 
+      {error && (
+        <p className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          {error}
+        </p>
+      )}
       {saved && (
         <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           Saved to the library.{" "}
