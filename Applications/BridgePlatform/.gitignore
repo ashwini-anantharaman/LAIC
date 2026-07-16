@@ -8,3 +8,9 @@ dist/
 .DS_Store
 coverage/
 .data/
+
+# playwright
+apps/bridge-web/test-results/
+apps/bridge-web/playwright-report/
+.vercel
+.env*

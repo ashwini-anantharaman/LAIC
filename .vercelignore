@@ -1,0 +1,11 @@
+# Deploy only the Bridge Platform workspace + the shared contracts package
+/*
+!Applications
+Applications/*
+!Applications/BridgePlatform
+!Components
+Components/*
+!Components/laic-learner-contracts
+Applications/BridgePlatform/apps/bridge-web/.data
+Applications/BridgePlatform/apps/bridge-web/e2e
+Applications/BridgePlatform/apps/bridge-web/test-results

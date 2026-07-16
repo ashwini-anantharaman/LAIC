@@ -10,7 +10,7 @@ describe("LIN adapter", () => {
     const res = parseLinToContexts(SAMPLE_LIN);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    const ctx = res.contexts[0];
+    const ctx = res.contexts[0]!;
     expect(ctx.dealer).toBe("S");
     expect(ctx.hands.S.length).toBe(13);
     expect(validateDeal(ctx.hands)).toBeNull();
@@ -22,7 +22,7 @@ describe("PBN parser", () => {
     const res = parsePbn(SAMPLE_PBN);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    const ctx = res.contexts[0];
+    const ctx = res.contexts[0]!;
     expect(ctx.dealer).toBe("N");
     expect(ctx.vul).toBe("none");
     expect(validateDeal(ctx.hands)).toBeNull();

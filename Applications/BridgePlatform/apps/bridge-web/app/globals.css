@@ -1,11 +1,177 @@
 @import "tailwindcss";
 
-/* System font stack: builds stay hermetic (no font downloads at build time). */
+/*
+ * Bridge Platform — knowledge-rework design language (spec §8).
+ *
+ * A reading room with gauges: warm paper ground, near-black ink, ONE
+ * restrained petrol accent for everything interactive, and a fixed semantic
+ * set (draft amber / approved green / invalid madder / deprecated stone).
+ * Suit glyphs are the only ornament. The felt-and-gold club room retired
+ * with the old table.
+ *
+ * Self-hosted variable fonts (app/fonts): builds stay hermetic. Fraunces
+ * carries knowledge prose and headings (the reading voice); Karla carries
+ * UI chrome, data, and traces.
+ */
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("./fonts/fraunces-var.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Karla";
+  src: url("./fonts/karla-var.woff2") format("woff2");
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Karla";
+  src: url("./fonts/karla-italic-var.woff2") format("woff2");
+  font-weight: 300 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+@theme {
+  /* Type */
+  --font-sans: "Karla", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-serif: "Fraunces", ui-serif, Georgia, serif;
+
+  /* The accent scale existing pages already reference as `emerald-*`,
+     re-tuned from baize green to instrument petrol. */
+  --color-emerald-50: #eef4f4;
+  --color-emerald-100: #dce9e9;
+  --color-emerald-200: #b9d3d4;
+  --color-emerald-300: #8db5b7;
+  --color-emerald-400: #5d9296;
+  --color-emerald-500: #3a767c;
+  --color-emerald-600: #2a6167;
+  --color-emerald-700: #205e63;
+  --color-emerald-800: #1c4b50;
+  --color-emerald-900: #173c40;
+  --color-emerald-950: #0c2426;
+
+  /* Warm stone neutrals on paper. */
+  --color-neutral-50: #faf9f5;
+  --color-neutral-100: #f2f0e9;
+  --color-neutral-200: #e7e1d3;
+  --color-neutral-300: #d3ccbb;
+  --color-neutral-400: #a49d8e;
+  --color-neutral-500: #7b7466;
+  --color-neutral-600: #5e5749;
+  --color-neutral-700: #48423a;
+  --color-neutral-800: #312d26;
+  --color-neutral-900: #1d1a15;
+  --color-neutral-950: #12100b;
+
+  /* Semantic set (spec §8) — referenced as color utilities. */
+  --color-draft: #a16207;
+  --color-approved: #256e42;
+  --color-invalid: #8a2d23;
+}
+
 :root {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  --paper: #faf8f2;
+  --ink: #1d1a15;
+  --card: #fffefa;
+  --line: #e7e1d3;
+  --accent: #205e63;
+  --madder: #8a2d23;
 }
 
 body {
+  background-color: var(--paper);
+  color: var(--ink);
   font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The reading voice: headings and knowledge prose in the serif. */
+h1,
+h2:not(.uppercase),
+h3:not(.uppercase) {
+  font-family: var(--font-serif);
+  font-variation-settings: "opsz" 40;
+  letter-spacing: -0.01em;
+}
+
+/* Knowledge prose blocks opt in with .prose-knowledge (reading measure). */
+.prose-knowledge {
+  font-family: var(--font-serif);
+  font-variation-settings: "opsz" 18;
+  font-size: 1.02rem;
+  line-height: 1.65;
+  max-width: 65ch;
+}
+
+::selection {
+  background: var(--color-emerald-200);
+  color: var(--color-emerald-950);
+}
+
+/* Quiet, consistent interactivity everywhere without touching each page. */
+a,
+button,
+input,
+select,
+textarea,
+summary {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+button:not(:disabled),
+summary {
+  cursor: pointer;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+input,
+select,
+textarea {
+  background-color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Bordered sections read as cards on the paper background. */
+main section[class*="border"] {
+  background-color: var(--card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  aside {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  main {
+    padding: 0 !important;
+  }
 }

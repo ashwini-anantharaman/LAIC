@@ -1,50 +1,71 @@
-import { seededBoard } from "@bridge/engine";
-import { defaultSettingValues } from "@bridge/config";
-import { BEGINNER_NATURAL_PACKAGE_ID } from "@bridge/knowledge";
+// POST /api/bridge/sessions — start a session (players by id; optional human
+// seat). GET — recent sessions.
+
+import type { Seat } from "@bridge/events";
+import { SessionService, type SeatConfig } from "@bridge/sessions";
 import { NextResponse, type NextRequest } from "next/server";
 import { apiError, requireContext } from "@/lib/api";
-import { latestPublishedPackage, sessionService } from "@/lib/sessions";
+import { audit } from "@/lib/audit";
+import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
+import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
+import { sessionService } from "@/lib/sessions";
 
-/** GET /api/bridge/sessions — list sessions visible in the caller's scope. */
+const SEATS: Seat[] = ["N", "E", "S", "W"];
+
 export async function GET() {
   try {
-    const context = await requireContext();
-    const sessions = await sessionService().listSessions(context);
-    return NextResponse.json({ sessions });
+    await requireContext();
+    const sessions = await sessionService().listRecent();
+    return NextResponse.json({
+      sessions: sessions.map((s) => ({
+        sessionId: s.sessionId,
+        kbId: s.kbId,
+        board: s.board,
+        status: s.status,
+        compileRef: s.compileRef,
+      })),
+    });
   } catch (e) {
     return apiError(e);
   }
 }
 
-/**
- * POST /api/bridge/sessions — create a session.
- * Body: { seed?: number, sessionType?: string, humanSeat?: "N"|"E"|"S"|"W" }
- */
 export async function POST(request: NextRequest) {
   try {
     const context = await requireContext();
-    const body = (await request.json().catch(() => ({}))) as {
+    await ensureSeeds();
+    const body = (await request.json()) as {
+      kbId: string;
       seed?: number;
-      sessionType?: string;
-      humanSeat?: "N" | "E" | "S" | "W";
+      humanSeat?: Seat;
+      players: Partial<Record<Seat, string>>;
     };
-    const seed = Number.isFinite(body.seed) ? Number(body.seed) : 1;
-    const pkg = await latestPublishedPackage(BEGINNER_NATURAL_PACKAGE_ID);
+    await assertAiAllowed(context);
+    await assertKbAllowed(context, body.kbId);
+    const compiled = await kbService().liveCompile(body.kbId);
+    if (!compiled) throw new Error("No live compile for that knowledge base");
+
+    const store = kbStore();
+    const seats = {} as Record<Seat, SeatConfig>;
+    for (const seat of SEATS) {
+      if (seat === body.humanSeat) {
+        seats[seat] = { kind: "human", nexusUserId: context.nexusUserId };
+        continue;
+      }
+      const player = body.players[seat] ? await store.getPlayer(body.players[seat]!) : null;
+      if (!player) throw new Error(`Missing player for seat ${seat}`);
+      seats[seat] = SessionService.seatFromPlayer(player, compiled);
+    }
     const record = await sessionService().createSession({
-      context,
-      sessionType: (body.sessionType as never) ?? "single_board",
-      board: seededBoard(seed),
-      pkg,
-      resolvedValues: defaultSettingValues(pkg.settings),
-      seats: body.humanSeat
-        ? {
-            [body.humanSeat]: {
-              seat: body.humanSeat,
-              playerKind: "human",
-              occupantId: context.nexusUserId,
-            },
-          }
-        : undefined,
+      kbId: body.kbId,
+      compiled,
+      seats,
+      seed: body.seed ?? 1,
+      createdBy: context.nexusUserId,
+    });
+    await audit(context, "profile.update", "kb_session", record.sessionId, {
+      kbId: body.kbId,
+      api: true,
     });
     return NextResponse.json({ session: record }, { status: 201 });
   } catch (e) {

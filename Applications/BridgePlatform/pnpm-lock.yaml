@@ -29,24 +29,27 @@ importers:
 
   apps/bridge-web:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.110.0
+        version: 0.110.0
+      '@bridge/audit':
+        specifier: workspace:*
+        version: link:../../packages/bridge-audit
       '@bridge/config':
         specifier: workspace:*
         version: link:../../packages/bridge-config
-      '@bridge/dealer':
-        specifier: workspace:*
-        version: link:../../packages/bridge-dealer
       '@bridge/engine':
         specifier: workspace:*
         version: link:../../packages/bridge-engine
-      '@bridge/evaluator':
-        specifier: workspace:*
-        version: link:../../packages/bridge-evaluator
       '@bridge/events':
         specifier: workspace:*
         version: link:../../packages/bridge-events
-      '@bridge/knowledge':
+      '@bridge/formats':
         specifier: workspace:*
-        version: link:../../packages/bridge-knowledge
+        version: link:../../packages/bridge-formats
+      '@bridge/kb':
+        specifier: workspace:*
+        version: link:../../packages/bridge-kb
       '@bridge/nexus-client':
         specifier: workspace:*
         version: link:../../packages/nexus-client
@@ -56,12 +59,12 @@ importers:
       '@bridge/profiles':
         specifier: workspace:*
         version: link:../../packages/bridge-profiles
-      '@bridge/progress':
-        specifier: workspace:*
-        version: link:../../packages/bridge-progress
       '@bridge/sessions':
         specifier: workspace:*
         version: link:../../packages/bridge-sessions
+      '@bridge/taxonomy':
+        specifier: workspace:*
+        version: link:../../packages/bridge-taxonomy
       '@laic/learner-contracts':
         specifier: link:../../../../Components/laic-learner-contracts
         version: link:../../../../Components/laic-learner-contracts
@@ -73,14 +76,20 @@ importers:
         version: 2.110.1
       next:
         specifier: ^16.0.0
-        version: 16.2.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        version: 16.2.10(@playwright/test@1.61.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       react:
         specifier: ^19.0.0
         version: 19.2.7
       react-dom:
         specifier: ^19.0.0
         version: 19.2.7(react@19.2.7)
+      unpdf:
+        specifier: ^1.6.2
+        version: 1.6.2
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.61.1
       '@tailwindcss/postcss':
         specifier: ^4.0.0
         version: 4.3.2
@@ -103,23 +112,17 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
-  packages/bridge-config: {}
-
-  packages/bridge-dealer:
+  packages/bridge-audit:
     dependencies:
-      '@bridge/config':
-        specifier: workspace:*
-        version: link:../bridge-config
-      '@bridge/engine':
-        specifier: workspace:*
-        version: link:../bridge-engine
-      '@bridge/events':
-        specifier: workspace:*
-        version: link:../bridge-events
+      '@laic/learner-contracts':
+        specifier: link:../../../../Components/laic-learner-contracts
+        version: link:../../../../Components/laic-learner-contracts
     devDependencies:
-      '@bridge/knowledge':
-        specifier: workspace:*
-        version: link:../bridge-knowledge
+      '@types/node':
+        specifier: ^24.13.2
+        version: 24.13.2
+
+  packages/bridge-config: {}
 
   packages/bridge-engine:
     dependencies:
@@ -129,18 +132,9 @@ importers:
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
-
-  packages/bridge-evaluator:
-    dependencies:
-      '@bridge/config':
+      '@bridge/kb':
         specifier: workspace:*
-        version: link:../bridge-config
-      '@bridge/engine':
-        specifier: workspace:*
-        version: link:../bridge-engine
-      '@bridge/events':
-        specifier: workspace:*
-        version: link:../bridge-events
+        version: link:../bridge-kb
 
   packages/bridge-events:
     dependencies:
@@ -160,41 +154,41 @@ importers:
         specifier: workspace:*
         version: link:../bridge-events
 
-  packages/bridge-knowledge:
+  packages/bridge-kb:
     dependencies:
       '@bridge/config':
         specifier: workspace:*
         version: link:../bridge-config
-      '@bridge/engine':
-        specifier: workspace:*
-        version: link:../bridge-engine
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
     devDependencies:
-      '@bridge/dealer':
-        specifier: workspace:*
-        version: link:../bridge-dealer
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)
 
   packages/bridge-pg-stores:
     dependencies:
-      '@bridge/events':
+      '@bridge/audit':
         specifier: workspace:*
-        version: link:../bridge-events
-      '@bridge/knowledge':
+        version: link:../bridge-audit
+      '@bridge/kb':
         specifier: workspace:*
-        version: link:../bridge-knowledge
+        version: link:../bridge-kb
       '@bridge/profiles':
         specifier: workspace:*
         version: link:../bridge-profiles
-      '@bridge/progress':
-        specifier: workspace:*
-        version: link:../bridge-progress
       '@bridge/sessions':
         specifier: workspace:*
         version: link:../bridge-sessions
       '@supabase/supabase-js':
-        specifier: ^2.45.0
+        specifier: ^2.110.1
         version: 2.110.1
     devDependencies:
       '@types/node':
@@ -203,50 +197,19 @@ importers:
 
   packages/bridge-profiles:
     dependencies:
-      '@bridge/config':
-        specifier: workspace:*
-        version: link:../bridge-config
-      '@bridge/dealer':
-        specifier: workspace:*
-        version: link:../bridge-dealer
-      '@bridge/engine':
-        specifier: workspace:*
-        version: link:../bridge-engine
-      '@bridge/events':
-        specifier: workspace:*
-        version: link:../bridge-events
       '@laic/learner-contracts':
         specifier: link:../../../../Components/laic-learner-contracts
         version: link:../../../../Components/laic-learner-contracts
     devDependencies:
-      '@bridge/knowledge':
-        specifier: workspace:*
-        version: link:../bridge-knowledge
-
-  packages/bridge-progress:
-    dependencies:
-      '@bridge/config':
-        specifier: workspace:*
-        version: link:../bridge-config
-      '@bridge/engine':
-        specifier: workspace:*
-        version: link:../bridge-engine
-      '@bridge/evaluator':
-        specifier: workspace:*
-        version: link:../bridge-evaluator
-      '@bridge/events':
-        specifier: workspace:*
-        version: link:../bridge-events
-      '@bridge/sessions':
-        specifier: workspace:*
-        version: link:../bridge-sessions
-      '@laic/learner-contracts':
-        specifier: link:../../../../Components/laic-learner-contracts
-        version: link:../../../../Components/laic-learner-contracts
-    devDependencies:
-      '@bridge/knowledge':
-        specifier: workspace:*
-        version: link:../bridge-knowledge
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)
 
   packages/bridge-sessions:
     dependencies:
@@ -259,13 +222,21 @@ importers:
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
-      '@laic/learner-contracts':
-        specifier: link:../../../../Components/laic-learner-contracts
-        version: link:../../../../Components/laic-learner-contracts
-    devDependencies:
-      '@bridge/knowledge':
+      '@bridge/kb':
         specifier: workspace:*
-        version: link:../bridge-knowledge
+        version: link:../bridge-kb
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)
+
+  packages/bridge-taxonomy: {}
 
   packages/nexus-client:
     dependencies:
@@ -278,6 +249,19 @@ packages:
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
+
+  '@anthropic-ai/sdk@0.110.0':
+    resolution: {integrity: sha512-hOP4bNYXDFHDxxiEgzlILXrxZIYCDnhe8sry0RDRKD/QnsEpvZcQpablCdm9X/WuD/YgOiSIkkqsL1mLLlTqJw==}
+    hasBin: true
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
+  '@babel/runtime@7.29.7':
+    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
+    engines: {node: '>=6.9.0'}
 
   '@emnapi/runtime@1.11.2':
     resolution: {integrity: sha512-kyOl3X0DuTiT1h2ft8r2fYO8JYtU9a9Xis/zBSiGArNaagCOWx90N1k2wxp18czFDH+OgcWGb5ZP/XMt3dcyPA==}
@@ -720,6 +704,11 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@playwright/test@1.61.1':
+    resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   '@rollup/rollup-android-arm-eabi@4.62.2':
     resolution: {integrity: sha512-6o7ZLZK+BeenkZCFNDXqpbjw9bD6nuWonvS/lwQJp7NoVVxm6p3qE7qQ5jGuBjiFsgvqjD8mZAU5oWxTmbOeOg==}
     cpu: [arm]
@@ -857,6 +846,9 @@ packages:
     resolution: {integrity: sha512-BfzEnDJOt9T8M989/lA37EcJgat01wLRnoi5dQf3QzOH7jzpqTAzdDbVfRljVr5r+jzKqpbHeyOfAaXxAd0PAA==}
     cpu: [x64]
     os: [win32]
+
+  '@stablelib/base64@1.0.1':
+    resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
 
   '@supabase/auth-js@2.110.1':
     resolution: {integrity: sha512-8EJUoRoqzAYWkieHrLCrGrxs3cBbRB94xK8GzHe0aSLlSa4mt1enYLCiMgLiKJOF8GNYeX6PLTBNef0XAhILgw==}
@@ -1284,6 +1276,9 @@ packages:
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
 
+  fast-sha256@1.3.0:
+    resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
+
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
     engines: {node: '>=12.0.0'}
@@ -1307,6 +1302,11 @@ packages:
 
   flatted@3.4.2:
     resolution: {integrity: sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==}
+
+  fsevents@2.3.2:
+    resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
+    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
+    os: [darwin]
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -1372,6 +1372,10 @@ packages:
 
   json-buffer@3.0.1:
     resolution: {integrity: sha512-4bV5BfR2mqfQTJm+V5tPPdf+ZpuhiIvTuAB5g8kcrXOZpTT/QwwVRWBywX1ozr6lEuPdbHxwaJlm9G6mI2sfSQ==}
+
+  json-schema-to-ts@3.1.1:
+    resolution: {integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==}
+    engines: {node: '>=16'}
 
   json-schema-traverse@0.4.1:
     resolution: {integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==}
@@ -1553,6 +1557,16 @@ packages:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
 
+  playwright-core@1.61.1:
+    resolution: {integrity: sha512-h7Qlt6m4REp25qvIdvbDtVmD4LqVXfpRxhORv9L0jzETM05p4fuPJ3dKyuSXQxDSbXnmS79HAgi9589lGSpLkg==}
+    engines: {node: '>=18'}
+    hasBin: true
+
+  playwright@1.61.1:
+    resolution: {integrity: sha512-DWnY5o3YbLWK4GovuAVwpqL+1VwGNdUGrRr++8j8PtQQzvAVZUIMjKQ90fY689sEJZJBbZVw1rXaOKSTitkzPQ==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   postcss@8.4.31:
     resolution: {integrity: sha512-PS08Iboia9mts/2ygV3eLpY5ghnUcfLV/EXTOW1E2qYxJKGGBUtNjN76FYHnMs36RmARn41bC0AZmn+rR0OVpQ==}
     engines: {node: ^10 || ^12 || >=14}
@@ -1617,6 +1631,9 @@ packages:
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
 
+  standardwebhooks@1.0.0:
+    resolution: {integrity: sha512-BbHGOQK9olHPMvQNHWul6MYlrRTAOKn03rOe4A8O3CLWhNf4YHBqq2HJKKC+sfqpxiBY52pNeesD6jIiLDz8jg==}
+
   std-env@3.10.0:
     resolution: {integrity: sha512-5GS12FdOZNliM5mAOxFRg7Ir0pWz8MdpYm6AY6VPkGpbA7ZzmbzNcBJQ0GPvvyWgcY7QAhCgf9Uy89I03faLkg==}
 
@@ -1673,6 +1690,9 @@ packages:
     resolution: {integrity: sha512-azl+t0z7pw/z958Gy9svOTuzqIk6xq+NSheJzn5MMWtWTFywIacg2wUlzKFGtt3cthx0r2SxMK0yzJOR0IES7Q==}
     engines: {node: '>=14.0.0'}
 
+  ts-algebra@2.0.0:
+    resolution: {integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==}
+
   ts-api-utils@2.5.0:
     resolution: {integrity: sha512-OJ/ibxhPlqrMM0UiNHJ/0CKQkoKF243/AEmplt3qpRgkW8VG7IfOS41h7V8TjITqdByHzrjcS/2si+y4lIh8NA==}
     engines: {node: '>=18.12'}
@@ -1705,6 +1725,14 @@ packages:
 
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
+
+  unpdf@1.6.2:
+    resolution: {integrity: sha512-zQ80ySoPuPHOsvIoRp/nJyQt8TOUoTh1+WBCGcBvlddQNgKDLRwm0AY3x8Q35I7+kIiRSgqMx+Ma2pl9McIp7A==}
+    peerDependencies:
+      '@napi-rs/canvas': ^0.1.69
+    peerDependenciesMeta:
+      '@napi-rs/canvas':
+        optional: true
 
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
@@ -1803,6 +1831,13 @@ packages:
 snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
+
+  '@anthropic-ai/sdk@0.110.0':
+    dependencies:
+      json-schema-to-ts: 3.1.1
+      standardwebhooks: 1.0.0
+
+  '@babel/runtime@7.29.7': {}
 
   '@emnapi/runtime@1.11.2':
     dependencies:
@@ -2091,6 +2126,10 @@ snapshots:
   '@next/swc-win32-x64-msvc@16.2.10':
     optional: true
 
+  '@playwright/test@1.61.1':
+    dependencies:
+      playwright: 1.61.1
+
   '@rollup/rollup-android-arm-eabi@4.62.2':
     optional: true
 
@@ -2165,6 +2204,8 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
+
+  '@stablelib/base64@1.0.1': {}
 
   '@supabase/auth-js@2.110.1':
     dependencies:
@@ -2639,6 +2680,8 @@ snapshots:
 
   fast-levenshtein@2.0.6: {}
 
+  fast-sha256@1.3.0: {}
+
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
@@ -2658,6 +2701,9 @@ snapshots:
       keyv: 4.5.4
 
   flatted@3.4.2: {}
+
+  fsevents@2.3.2:
+    optional: true
 
   fsevents@2.3.3:
     optional: true
@@ -2702,6 +2748,11 @@ snapshots:
       argparse: 2.0.1
 
   json-buffer@3.0.1: {}
+
+  json-schema-to-ts@3.1.1:
+    dependencies:
+      '@babel/runtime': 7.29.7
+      ts-algebra: 2.0.0
 
   json-schema-traverse@0.4.1: {}
 
@@ -2793,7 +2844,7 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  next@16.2.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  next@16.2.10(@playwright/test@1.61.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:
       '@next/env': 16.2.10
       '@swc/helpers': 0.5.15
@@ -2812,6 +2863,7 @@ snapshots:
       '@next/swc-linux-x64-musl': 16.2.10
       '@next/swc-win32-arm64-msvc': 16.2.10
       '@next/swc-win32-x64-msvc': 16.2.10
+      '@playwright/test': 1.61.1
       sharp: 0.34.5
     transitivePeerDependencies:
       - '@babel/core'
@@ -2849,6 +2901,14 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.5: {}
+
+  playwright-core@1.61.1: {}
+
+  playwright@1.61.1:
+    dependencies:
+      playwright-core: 1.61.1
+    optionalDependencies:
+      fsevents: 2.3.2
 
   postcss@8.4.31:
     dependencies:
@@ -2954,6 +3014,11 @@ snapshots:
 
   stackback@0.0.2: {}
 
+  standardwebhooks@1.0.0:
+    dependencies:
+      '@stablelib/base64': 1.0.1
+      fast-sha256: 1.3.0
+
   std-env@3.10.0: {}
 
   strip-json-comments@3.1.1: {}
@@ -2990,6 +3055,8 @@ snapshots:
 
   tinyspy@4.0.4: {}
 
+  ts-algebra@2.0.0: {}
+
   ts-api-utils@2.5.0(typescript@5.9.3):
     dependencies:
       typescript: 5.9.3
@@ -3020,6 +3087,8 @@ snapshots:
   typescript@5.9.3: {}
 
   undici-types@7.18.2: {}
+
+  unpdf@1.6.2: {}
 
   uri-js@4.4.1:
     dependencies:

@@ -1,17 +1,18 @@
-import { NextResponse } from "next/server";
+// GET /api/bridge/sessions/:id/events — the full traced stream.
+
+import { NextResponse, type NextRequest } from "next/server";
 import { apiError, requireContext } from "@/lib/api";
 import { sessionService } from "@/lib/sessions";
 
-/** GET /api/bridge/sessions/:id/events — the full ordered event log. */
 export async function GET(
-  _request: Request,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const context = await requireContext();
+    await requireContext();
     const { id } = await params;
-    const events = await sessionService().getEvents(id, context);
-    return NextResponse.json({ events });
+    const record = await sessionService().requireSession(id);
+    return NextResponse.json({ events: record.events, status: record.status });
   } catch (e) {
     return apiError(e);
   }

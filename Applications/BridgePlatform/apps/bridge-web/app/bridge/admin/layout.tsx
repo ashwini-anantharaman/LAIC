@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getBridgeContext } from "@/lib/nexus";
 
 /**
- * Role gate for the entire Admin & Expert Review area. Server-side check:
+ * Role gate for the knowledge admin area. Server-side check:
  * hiding the nav item is cosmetic; this layout is the enforcement point for
  * every /bridge/admin/* route.
  */

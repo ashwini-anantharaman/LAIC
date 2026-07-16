@@ -2,13 +2,16 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { InMemoryProfileStore, type ProfileStoreData } from "./index";
+import { emptyProfileStoreData, InMemoryProfileStore, type ProfileStoreData } from "./index";
 
 export class JsonFileProfileStore extends InMemoryProfileStore {
   constructor(private readonly filePath: string) {
     super(
       existsSync(filePath)
-        ? (JSON.parse(readFileSync(filePath, "utf8")) as ProfileStoreData)
+        ? {
+            ...emptyProfileStoreData(),
+            ...(JSON.parse(readFileSync(filePath, "utf8")) as Partial<ProfileStoreData>),
+          }
         : undefined,
     );
     if (!existsSync(filePath)) this.persist();

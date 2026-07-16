@@ -12,8 +12,8 @@ export function NavLink({ href, label }: { href: string; label: string }) {
       aria-current={active ? "page" : undefined}
       className={
         active
-          ? "block rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900"
-          : "block rounded-md px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+          ? "block rounded-md border-l-2 border-[var(--accent)] bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900"
+          : "block rounded-md border-l-2 border-transparent px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
       }
     >
       {label}

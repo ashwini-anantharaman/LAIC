@@ -34,3 +34,28 @@ const ROLE_LABELS: Record<BridgeRole, string> = {
 export function roleLabel(role: BridgeRole): string {
   return ROLE_LABELS[role] ?? role;
 }
+
+// ---------------------------------------------------------------------------
+// Permission enforcement (§21): role gates answer "may they see the area";
+// permissions answer "may they DO this" — server actions check both.
+// ---------------------------------------------------------------------------
+
+export class PermissionError extends Error {
+  constructor(permission: string) {
+    super(`Missing permission: ${permission}`);
+    this.name = "PermissionError";
+  }
+}
+
+export function hasPermission(context: NexusBridgeContext, permission: string): boolean {
+  return context.permissions.includes(permission);
+}
+
+/** Throws PermissionError unless the context carries ANY of the permissions. */
+export function requirePermission(
+  context: NexusBridgeContext,
+  ...permissions: string[]
+): void {
+  if (!permissions.some((p) => hasPermission(context, p)))
+    throw new PermissionError(permissions.join(" | "));
+}

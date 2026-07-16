@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import content, courses, game, hook, learning, offerings, platform, uploads
+from .routers import bridge_context, content, courses, game, hook, learning, offerings, platform, uploads
 
 settings = get_settings()
 
@@ -31,6 +31,7 @@ app.include_router(platform.router)
 app.include_router(game.router)
 app.include_router(offerings.router)
 app.include_router(hook.router)
+app.include_router(bridge_context.router)
 
 
 @app.get("/health")

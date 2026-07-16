@@ -39,8 +39,8 @@ function parseVul(v: string): Vul {
 function parseDeal(spec: string): { hands: Record<Seat, Card[]> } | null {
   const m = spec.match(/^\s*([NESW])\s*:\s*(.+)$/);
   if (!m) return null;
-  let seat = SEAT_CHARS[m[1]];
-  const segs = m[2].trim().split(/\s+/);
+  let seat = SEAT_CHARS[m[1]!]!; // regex guarantees one of NESW
+  const segs = m[2]!.trim().split(/\s+/);
   const hands: Record<Seat, Card[]> = { N: [], E: [], S: [], W: [] };
   for (const seg of segs) {
     if (seg && seg !== "-") {
@@ -76,10 +76,10 @@ function normPbnCall(tok: string): Call | null {
   if (up === "X" || up === "DBL") return "X";
   if (up === "XX" || up === "RDBL") return "XX";
   if (up === "AP") return "AP"; // handled by caller
-  const level = up[0];
+  const level = up.charAt(0);
   if (!/[1-7]/.test(level)) return null;
   const rest = up.slice(1);
-  const strain = rest === "NT" || rest === "N" ? "N" : rest[0];
+  const strain = rest === "NT" || rest === "N" ? "N" : rest.charAt(0);
   if (!"CDHSN".includes(strain)) return null;
   return `${level}${strain}`;
 }
@@ -95,10 +95,11 @@ function parseChunk(chunk: string): GameContext | null {
   for (const line of lines) {
     const tagMatch = line.match(/^\s*\[(\w+)\s+"([^"]*)"\]/);
     if (tagMatch) {
-      const [, tag, value] = tagMatch;
+      const tag = tagMatch[1]!;
+      const value = tagMatch[2]!;
       tags[tag] = value;
       if (tag === "Auction") {
-        auctionFirst = SEAT_CHARS[value.trim()[0]] ?? null;
+        auctionFirst = SEAT_CHARS[value.trim().charAt(0)] ?? null;
         mode = "auction";
       } else if (tag === "Play") {
         mode = "play";
@@ -117,7 +118,7 @@ function parseChunk(chunk: string): GameContext | null {
   const deal = parseDeal(tags.Deal);
   if (!deal) return null;
 
-  const dealer: Seat = SEAT_CHARS[(tags.Dealer ?? "N").trim()[0]] ?? "N";
+  const dealer: Seat = SEAT_CHARS[(tags.Dealer ?? "N").trim().charAt(0)] ?? "N";
   const vul = parseVul(tags.Vulnerable ?? "None");
 
   // Build the auction, rotating clockwise from the auction's first seat.
@@ -144,18 +145,18 @@ function parseChunk(chunk: string): GameContext | null {
   // actual play order rotates from each trick's leader (winner of the last).
   let play: PlayedCard[] | undefined;
   if (playLines.length && contract) {
-    const anchor: Seat = SEAT_CHARS[(tags.Play ?? "").trim()[0]] ?? nextSeat(contract.declarer);
+    const anchor: Seat = SEAT_CHARS[(tags.Play ?? "").trim().charAt(0)] ?? nextSeat(contract.declarer);
     const cols: Seat[] = [anchor, nextSeat(anchor), nextSeat(nextSeat(anchor)), nextSeat(nextSeat(nextSeat(anchor)))];
     const parseCard = (tok: string): Card | null => {
       const m = tok.toUpperCase().match(/^([SHDC])(10|[AKQJT2-9])$/);
       if (!m) return null;
-      const rank = m[2] === "10" ? 10 : RANK_BY_CHAR[m[2]];
+      const rank = m[2] === "10" ? 10 : RANK_BY_CHAR[m[2]!];
       return rank ? { suit: m[1] as Suit, rank } : null;
     };
     play = [];
     let leader: Seat = nextSeat(contract.declarer);
     for (let t = 0; t < playLines.length; t++) {
-      const toks = playLines[t].split(/\s+/);
+      const toks = playLines[t]!.split(/\s+/);
       const bySeat: Partial<Record<Seat, Card>> = {};
       cols.forEach((s, i) => {
         const card = toks[i] && toks[i] !== "-" ? parseCard(toks[i]) : null;

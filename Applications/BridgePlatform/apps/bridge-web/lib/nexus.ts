@@ -21,6 +21,23 @@ export function nexusMode(): NexusMode {
 }
 
 /**
+ * §3.5 explicit context switching: when the user has selected an acting org
+ * AND holds an ACTIVE affiliation to it, the bridge context is re-scoped to
+ * that org. Applied on top of whatever Nexus says — Nexus stays the identity
+ * authority; the switch is bridge-owned state.
+ */
+async function applyActiveOrg(context: NexusBridgeContext): Promise<NexusBridgeContext> {
+  const { profileService } = await import("./profiles");
+  const service = await profileService();
+  const me = await service.getUserProfile(context);
+  const target = me?.activeProgramOrganizationId;
+  if (!target || target === context.programOrganizationId) return context;
+  const affiliations = await service.listMyAffiliations(context);
+  const ok = affiliations.some((a) => a.status === "active" && a.programOrganizationId === target);
+  return ok ? { ...context, programOrganizationId: target } : context;
+}
+
+/**
  * Resolve the caller's NexusBridgeContext for this request, or null when not
  * signed in (no dev user selected / no Supabase session). Cached per request
  * so layout and pages can each call it cheaply.
@@ -32,12 +49,15 @@ export const getBridgeContext = cache(
       const devUserId = cookieStore.get(DEV_USER_COOKIE)?.value;
       if (!devUserId) return null;
       try {
-        return await createNexusClient({
+        const context = await createNexusClient({
           mode: "stub",
           devUserId,
         }).getBridgeContext();
-      } catch {
+        return await applyActiveOrg(context);
+      } catch (err) {
         // Stale cookie pointing at a removed stub user: treat as signed out.
+        // Store failures land here too — keep them visible in server logs.
+        console.error("getBridgeContext failed:", err);
         return null;
       }
     }

@@ -1,0 +1,14 @@
+{
+  "name": "@bridge/taxonomy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bridge skill + concept taxonomy reference data (Bridge plan §13.5, §15.1). Domain-scoped reference lists only — learning-path design lives elsewhere.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -68,3 +68,6 @@ Thumbs.db
 # Third-party copyrighted book used only as a local knowledge source.
 # ─────────────────────────────────────────────────────────────
 Components/Generalizable Coach/domains/bridge/knowledge/*.pdf
+
+# Vercel project link (bridge-platform deploy)
+.vercel

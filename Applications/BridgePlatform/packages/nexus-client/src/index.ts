@@ -25,6 +25,9 @@ export {
   ADMIN_AREA_ROLES,
   canAccessAdminArea,
   hasAnyRole,
+  hasPermission,
+  PermissionError,
+  requirePermission,
   roleLabel,
 } from "./access";
 export { HttpNexusClient } from "./http";

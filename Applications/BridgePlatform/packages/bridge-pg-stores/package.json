@@ -2,7 +2,7 @@
   "name": "@bridge/pg-stores",
   "version": "0.1.0",
   "private": true,
-  "description": "Supabase/Postgres implementations of the four store seams (knowledge / sessions / profiles / progress) over the db/migrations schema. Server-side only: uses the service-role key (RLS bypass; tenant checks live in the service layer by design).",
+  "description": "Supabase/Postgres implementations of the store seams (identity + knowledge-base model) over the db/migrations schema. Server-side only.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -17,12 +17,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bridge/events": "workspace:*",
-    "@bridge/knowledge": "workspace:*",
+    "@bridge/audit": "workspace:*",
+    "@bridge/kb": "workspace:*",
     "@bridge/profiles": "workspace:*",
-    "@bridge/progress": "workspace:*",
-    "@bridge/sessions": "workspace:*",
-    "@supabase/supabase-js": "^2.45.0"
+    "@supabase/supabase-js": "^2.110.1",
+    "@bridge/sessions": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.13.2"

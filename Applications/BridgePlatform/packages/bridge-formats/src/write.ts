@@ -71,7 +71,7 @@ export function toPbn(ctx: GameContext): string {
   if (ctx.play?.length) {
     // Standard PBN: columns are anchored to the [Play] seat (the opening
     // leader) for EVERY trick, regardless of who actually led that trick.
-    const anchor = ctx.play[0].seat;
+    const anchor = ctx.play[0]!.seat; // guarded by ctx.play?.length above
     const cols: Seat[] = [anchor, nextSeat(anchor), nextSeat(nextSeat(anchor)), nextSeat(nextSeat(nextSeat(anchor)))];
     lines.push(`[Play "${anchor}"]`);
     const trickCount = Math.max(...ctx.play.map((p) => p.trickIndex)) + 1;
