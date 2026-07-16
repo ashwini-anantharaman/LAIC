@@ -294,7 +294,11 @@ export async function savePlayerAction(formData: FormData): Promise<void> {
     await import("@bridge/kb");
   const { parseSettingOverrides } = await import("@/lib/playerForm");
   const store = kbStore();
-  const existing = playerId ? await store.getPlayer(playerId) : null;
+  // "Save as a new player" copies instead of mutating: the source player is
+  // read for carried-over fields but never written.
+  const saveAsNew = String(formData.get("saveAs") ?? "") === "new";
+  const source = playerId ? await store.getPlayer(playerId) : null;
+  const existing = saveAsNew ? null : source;
   const now = new Date().toISOString();
 
   let enabledPackIds = formData.getAll("enabledPackIds").map(String);
@@ -307,15 +311,16 @@ export async function savePlayerAction(formData: FormData): Promise<void> {
       .flatMap((p) => p.itemIds),
   );
   let settingOverrides = parseSettingOverrides(formData, compiled, carried);
-  for (const [key, value] of Object.entries(existing?.settingOverrides ?? {})) {
+  for (const [key, value] of Object.entries(source?.settingOverrides ?? {})) {
     const spec = compiled.settings.find((s) => s.key === key);
     if (spec && !carried.has(spec.itemId) && !(key in settingOverrides)) {
       settingOverrides[key] = value;
     }
   }
 
-  // Sandboxed players can never escape the coach's exposure (server-side).
-  const sandboxId = existing?.sandboxId ?? (String(formData.get("sandboxId") ?? "").trim() || undefined);
+  // Sandboxed players can never escape the coach's exposure (server-side) —
+  // a copy stays inside its source's sandbox.
+  const sandboxId = source?.sandboxId ?? (String(formData.get("sandboxId") ?? "").trim() || undefined);
   if (sandboxId) {
     const sandbox = await store.getSandbox(sandboxId);
     if (sandbox) {
@@ -325,11 +330,21 @@ export async function savePlayerAction(formData: FormData): Promise<void> {
     }
   }
 
+  // A copy saved under an unchanged name gets a "(copy)" suffix so the two
+  // stay distinguishable in rosters and seat menus.
+  let name = String(formData.get("name") ?? "").trim() || source?.name || "Unnamed player";
+  if (saveAsNew && source && name === source.name) {
+    const names = new Set((await store.listPlayersForKb(kbId)).map((p) => p.name));
+    let candidate = `${name} (copy)`;
+    for (let n = 2; names.has(candidate); n++) candidate = `${name} (copy ${n})`;
+    name = candidate;
+  }
+
   const player = {
     playerId: existing?.playerId ?? mkId("pl"),
     kbId,
-    name: String(formData.get("name") ?? "").trim() || existing?.name || "Unnamed player",
-    description: existing?.description,
+    name,
+    description: source?.description,
     levelId: String(formData.get("levelId") ?? "").trim() || undefined,
     enabledPackIds,
     settingOverrides,

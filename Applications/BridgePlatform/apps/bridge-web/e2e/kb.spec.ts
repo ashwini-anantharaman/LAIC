@@ -199,6 +199,15 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
   await expect(page.getByText("24/24")).toBeVisible();
   const floors = page.locator("dd").filter({ hasText: /^0$/ });
   await expect(floors.first()).toBeVisible(); // zero engine-floor events
+
+  // "Save as a new player" copies — the original is untouched and the copy
+  // gets a distinguishable name.
+  const beforeUrl = page.url();
+  await page.getByRole("button", { name: "Save as a new player" }).click();
+  await page.waitForURL((u) => /players\/pl_/.test(u.pathname) && u.href !== beforeUrl);
+  await expect(
+    page.getByRole("heading", { name: "Minimal complete — Floor (copy)" }),
+  ).toBeVisible();
 });
 
 test("table: session pins, trace drawer, flag lands in the KB queue", async ({

@@ -170,12 +170,31 @@ export function PlayerEditor({
         )}
       </fieldset>
 
-      <button
-        type="submit"
-        className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
-      >
-        {player ? "Save & revalidate" : "Create player"}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="submit"
+          name="saveAs"
+          value={player ? "existing" : "new"}
+          className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+        >
+          {player ? "Save changes" : "Create player"}
+        </button>
+        {player && (
+          <>
+            <button
+              type="submit"
+              name="saveAs"
+              value="new"
+              className="rounded border border-neutral-300 px-4 py-1.5 text-sm hover:border-emerald-400"
+            >
+              Save as a new player
+            </button>
+            <span className="text-xs text-neutral-400">
+              — leaves “{player.name}” untouched
+            </span>
+          </>
+        )}
+      </div>
     </form>
   );
 }
