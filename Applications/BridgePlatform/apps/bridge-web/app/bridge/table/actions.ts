@@ -144,6 +144,50 @@ export async function undoAction(formData: FormData): Promise<void> {
 }
 
 /**
+ * Swap who sits in a seat (2026-07-16). Sessions snapshot their seats, so a
+ * swap is a FORK: same board, same pinned compile, new lineup. Mid-board the
+ * fork adopts the played prefix (the trace keeps attributing past decisions
+ * to whoever made them); a completed board replays fresh from the deal.
+ */
+export async function swapSeatAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const sessionId = String(formData.get("sessionId"));
+  const seat = String(formData.get("seat")) as Seat;
+  const playerId = String(formData.get("playerId"));
+  if (!SEATS.includes(seat)) throw new Error("Pick a seat");
+
+  const service = sessionService();
+  const record = await service.requireSession(sessionId);
+  await assertKbAllowed(context, record.kbId);
+
+  let config: SeatConfig;
+  if (playerId === "me") {
+    config = { kind: "human", nexusUserId: context.nexusUserId };
+  } else {
+    await assertAiAllowed(context);
+    const player = await kbStore().getPlayer(playerId);
+    if (!player || player.kbId !== record.kbId)
+      throw new Error("That player doesn't belong to this knowledge base");
+    const compiled = await service.compiledFor(record);
+    config = SessionService.seatFromPlayer(player, compiled);
+  }
+
+  const forked = await service.fork(
+    sessionId,
+    { ...record.seats, [seat]: config },
+    context.nexusUserId,
+    { fresh: record.status === "completed" },
+  );
+  await audit(context, "profile.update", "kb_session", forked.sessionId, {
+    kbId: record.kbId,
+    swappedSeat: seat,
+    playerId,
+    forkedFrom: sessionId,
+  });
+  redirect(`/bridge/table/${forked.sessionId}`);
+}
+
+/**
  * Record the current board into the library (2026-07-16 rework). The DEAL
  * layer is always the original distribution (never the mid-play remainder);
  * `play` captures the calls and cards as they stand right now.

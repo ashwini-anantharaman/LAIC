@@ -14,11 +14,13 @@ import { BiddingBox } from "@/components/table/BiddingBox";
 import { DecisionEntry } from "@/components/table/DecisionEntry";
 import { HandRow } from "@/components/table/HandRow";
 import { PlayingCard } from "@/components/table/PlayingCard";
+import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import {
   playToEndAction,
   saveToLibraryAction,
+  swapSeatAction,
   undoAction,
 } from "../actions";
 
@@ -72,6 +74,17 @@ export default async function SessionPage({
   const logicEvents = record.events.filter(isLogicEvent);
   const aiToAct = !actingIsHuman && state.phase !== "complete";
 
+  // The seat menus' swap roster (valid players first, then drafts).
+  const roster = learnerMode
+    ? []
+    : (await kbStore().listPlayersForKb(record.kbId)).sort((a, b) =>
+        a.validationStatus === b.validationStatus
+          ? a.name.localeCompare(b.name)
+          : a.validationStatus === "valid"
+            ? -1
+            : 1,
+      );
+
   const seatLabel = (seat: Seat) => {
     const config = record.seats[seat];
     return config.kind === "human"
@@ -83,30 +96,99 @@ export default async function SessionPage({
   const seatTag = (seat: Seat, align: "center" | "left" | "right" = "center") => {
     const acting = seat === actingSeat && state.phase !== "complete";
     const config = record.seats[seat];
-    const player =
-      config.kind === "kb_player" ? (
-        <Link
-          href={`/bridge/kb/${record.kbId}/players/${config.playerId}`}
-          className="truncate hover:underline"
-          title={`Edit ${config.label}`}
-        >
-          {config.label}
-        </Link>
-      ) : (
-        <span className="truncate">{seatLabel(seat)}</span>
-      );
-    return (
-      <p
-        className={`flex max-w-40 items-center gap-1.5 text-xs text-neutral-500 ${
-          align === "center" ? "justify-center" : align === "right" ? "justify-end" : ""
-        }`}
-      >
+    const tag = (
+      <>
         {acting && (
           <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-600" />
         )}
         <span className="font-semibold text-neutral-800">{seat}</span>
-        {player}
-      </p>
+        <span className="truncate">{seatLabel(seat)}</span>
+      </>
+    );
+    const justify =
+      align === "center" ? "justify-center" : align === "right" ? "justify-end" : "";
+    if (learnerMode) {
+      return (
+        <p className={`flex max-w-40 items-center gap-1.5 text-xs text-neutral-500 ${justify}`}>
+          {tag}
+        </p>
+      );
+    }
+    const iAmHere = config.kind === "human" && config.nexusUserId === context.nexusUserId;
+    const panelAlign =
+      align === "center" ? "left-1/2 -translate-x-1/2" : align === "right" ? "right-0" : "left-0";
+    return (
+      <details className={`relative flex ${justify}`}>
+        <summary
+          className={`flex max-w-40 cursor-pointer list-none items-center gap-1.5 rounded-full px-1.5 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 ${justify}`}
+          title="Seat options — swap or edit this player"
+        >
+          {tag}
+          <span aria-hidden className="text-[9px] text-neutral-400">
+            ▾
+          </span>
+        </summary>
+        <div
+          className={`absolute top-full z-20 mt-1 w-56 rounded-lg border border-neutral-200 bg-white p-2 text-left shadow-md ${panelAlign}`}
+        >
+          <p className="px-1 pb-1 text-[10px] uppercase tracking-wide text-neutral-400">
+            {state.phase === "complete"
+              ? "swap & replay this board"
+              : "swap (forks this board)"}
+          </p>
+          <div className="max-h-52 space-y-0.5 overflow-y-auto">
+            {roster.map((p) => {
+              const current = config.kind === "kb_player" && config.playerId === p.playerId;
+              return (
+                <form key={p.playerId} action={swapSeatAction}>
+                  <input type="hidden" name="sessionId" value={sessionId} />
+                  <input type="hidden" name="seat" value={seat} />
+                  <input type="hidden" name="playerId" value={p.playerId} />
+                  <button
+                    type="submit"
+                    disabled={current}
+                    className="w-full rounded px-1.5 py-1 text-left text-xs enabled:hover:bg-emerald-50 disabled:cursor-default"
+                  >
+                    <span className={current ? "font-semibold" : ""}>{p.name}</span>
+                    {current && <span className="ml-1 text-[9px] uppercase text-neutral-400">seated</span>}
+                    {p.validationStatus === "invalid" && (
+                      <span className="ml-1 text-[9px] uppercase text-[color:var(--color-invalid)]">
+                        incomplete
+                      </span>
+                    )}
+                  </button>
+                </form>
+              );
+            })}
+            {roster.length === 0 && (
+              <p className="px-1.5 py-1 text-xs text-neutral-400">No players in this KB yet.</p>
+            )}
+          </div>
+          <div className="mt-1 space-y-0.5 border-t border-[var(--line)] pt-1">
+            {!iAmHere && (
+              <form action={swapSeatAction}>
+                <input type="hidden" name="sessionId" value={sessionId} />
+                <input type="hidden" name="seat" value={seat} />
+                <input type="hidden" name="playerId" value="me" />
+                <button
+                  type="submit"
+                  className="w-full rounded px-1.5 py-1 text-left text-xs hover:bg-emerald-50"
+                >
+                  Sit here yourself
+                </button>
+              </form>
+            )}
+            {config.kind === "kb_player" && (
+              <Link
+                href={`/bridge/kb/${record.kbId}/players/${config.playerId}`}
+                className="block rounded px-1.5 py-1 text-xs text-emerald-800 hover:bg-emerald-50"
+              >
+                Edit {config.label} →
+              </Link>
+            )}
+          </div>
+        </div>
+      </details>
     );
   };
 
@@ -274,7 +356,7 @@ export default async function SessionPage({
             {/* West · center · East */}
             <div className="my-3 grid grid-cols-[minmax(2.5rem,auto)_1fr_minmax(2.5rem,auto)] items-center gap-2 sm:my-4 sm:gap-4">
               <div className="flex flex-col items-center gap-1.5 justify-self-start">
-                {seatTag("W")}
+                {seatTag("W", "left")}
                 <HandRow
                   hand={state.hands.W}
                   hidden={!canSee("W")}
@@ -370,7 +452,7 @@ export default async function SessionPage({
               </div>
 
               <div className="flex flex-col items-center gap-1.5 justify-self-end">
-                {seatTag("E")}
+                {seatTag("E", "right")}
                 <HandRow
                   hand={state.hands.E}
                   hidden={!canSee("E")}

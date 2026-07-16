@@ -194,6 +194,14 @@ describe("SessionService", () => {
     // The source session is untouched by the fork.
     const sourceAgain = await service.view(record.sessionId);
     expect(sourceAgain.record.events).toHaveLength(source.record.events.length);
+
+    // A FRESH fork keeps the board but replays from the deal (seat swaps on
+    // completed boards).
+    const fresh = await service.fork(record.sessionId, allAi, "u", { fresh: true });
+    expect(fresh.events).toHaveLength(0);
+    expect(fresh.board.seed).toBe(record.board.seed);
+    const freshView = await service.view(fresh.sessionId);
+    expect(freshView.state.auction).toHaveLength(0);
   });
 });
 

@@ -360,11 +360,14 @@ export class SessionService {
   /**
    * Fork (spec §7): same board and pinned compile, NEW seat configs, primed
    * with this session's event prefix. The source session stays untouched.
+   * `fresh: true` drops the prefix — the same board replays from the deal
+   * (how a completed board is re-run with a different lineup).
    */
   async fork(
     sessionId: string,
     seats: Record<Seat, SeatConfig>,
     createdBy: string,
+    options: { fresh?: boolean } = {},
   ): Promise<SessionRecord> {
     const source = await this.requireSession(sessionId);
     const compiled = await this.compiledFor(source);
@@ -379,7 +382,7 @@ export class SessionService {
       boardName: source.board.name,
       createdBy,
       forkedFromSessionId: source.sessionId,
-      primedEvents: [...source.events],
+      primedEvents: options.fresh ? [] : [...source.events],
     });
   }
 
