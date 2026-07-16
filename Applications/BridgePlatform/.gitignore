@@ -16,3 +16,4 @@ apps/bridge-web/playwright-report/
 .env*
 .data-e2e/
 .next-e2e/
+.data-backup*/
