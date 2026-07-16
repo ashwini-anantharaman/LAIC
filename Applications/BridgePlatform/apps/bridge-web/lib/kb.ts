@@ -10,7 +10,7 @@ import {
 } from "@bridge/kb";
 import { PgKbStore } from "@bridge/pg-stores";
 import { join } from "node:path";
-import { pgClient, storeBackend } from "./backend";
+import { dataDir, pgClient, storeBackend } from "./backend";
 
 const globalCache = globalThis as unknown as {
   __bridgeKbStore?: KbStore;
@@ -22,7 +22,7 @@ export function kbStore(): KbStore {
   globalCache.__bridgeKbStore ??=
     storeBackend() === "postgres"
       ? new PgKbStore(pgClient())
-      : new JsonFileKbStore(join(process.cwd(), ".data", "kb-store.json"));
+      : new JsonFileKbStore(join(process.cwd(), dataDir(), "kb-store.json"));
   return globalCache.__bridgeKbStore;
 }
 
