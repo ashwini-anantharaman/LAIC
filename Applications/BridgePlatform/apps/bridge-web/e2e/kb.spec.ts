@@ -207,10 +207,11 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
 }) => {
   await signInAs(context, "user_reviewer_rhea");
 
-  // Deal a board: human South, Floor players elsewhere.
+  // Deal a board via the custom-table setup: human South, Floor elsewhere.
   await page.goto("/bridge/table");
-  const section = page.locator("section", { hasText: "SAYC e2e" }).last();
-  const dealForm = section.locator("form").first();
+  await page.getByText("Set up a custom table").click();
+  const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
+  const dealForm = block.locator("form").first();
   await dealForm.locator('select[name="humanSeat"]').selectOption("S");
   await dealForm.locator('input[name="seed"]').fill("7");
   for (const seat of ["N", "E", "W"]) {
@@ -221,19 +222,22 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   await dealForm.getByRole("button", { name: "Deal a board" }).click();
   await page.waitForURL(/\/bridge\/table\/bs_/);
 
-  // Dealer N, then E — two AI advances, then South (us) is to act.
-  await page.getByRole("button", { name: "Advance AI" }).click();
-  await expect(page.getByText(/Decisions \(1\)/)).toBeVisible();
-  await page.getByRole("button", { name: "Advance AI" }).click();
-  await expect(page.getByText(/Decisions \(2\)/)).toBeVisible();
+  // Dealer N, then E — the table auto-advances AI turns until South (us).
+  await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Your call")).toBeVisible();
   const firstDecision = page.locator("details").filter({ hasText: "#0" }).last();
   await firstDecision.locator("summary").click();
   await expect(firstDecision.getByText(/fallback: pass/)).toBeVisible();
 
   // Flag it → the suggestion appears in the KB's queue with the session link.
+  // Wait for the action POST to finish — navigating away aborts it otherwise.
   await firstDecision.locator('input[name="text"]').fill("Passing here looks wrong to me.");
-  await firstDecision.getByRole("button", { name: "Flag" }).click();
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.request().method() === "POST" && r.url().includes("/bridge/table/"),
+    ),
+    firstDecision.getByRole("button", { name: "Flag" }).click(),
+  ]);
 
   // We act as South: pass.
   await page.getByRole("button", { name: "Pass", exact: true }).click();
@@ -250,8 +254,9 @@ test("constrained drill: an incomplete player never hits the engine floor", asyn
   await signInAs(context, "user_reviewer_rhea");
 
   await page.goto("/bridge/table");
-  const section = page.locator("section", { hasText: "SAYC e2e" }).last();
-  const drillForm = section.locator("form").last();
+  await page.getByText("Set up a custom table").click();
+  const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
+  const drillForm = block.locator("form").last();
   await drillForm
     .locator('select[name="playerId"]')
     .selectOption({ label: "Minimal incomplete — Openings (incomplete) (incomplete)" });
@@ -259,8 +264,8 @@ test("constrained drill: an incomplete player never hits the engine floor", asyn
   await drillForm.getByRole("button", { name: "Find a safe deal" }).click();
   await page.waitForURL(/\/bridge\/table\/bs_/, { timeout: 90_000 });
 
-  await page.getByRole("button", { name: "Play to end" }).click();
-  await expect(page.getByText(/Passed out|made|down/)).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "play to end" }).click();
+  await expect(page.getByText(/Passed out|made|down/).first()).toBeVisible({ timeout: 60_000 });
 
   // The verification panel proves the guarantee: zero engine-floor badges.
   await expect(page.getByText(/Decisions \(\d+\)/)).toBeVisible();

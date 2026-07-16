@@ -12,9 +12,47 @@ import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
-import { sessionService } from "@/lib/sessions";
+import { libraryStore, sessionService } from "@/lib/sessions";
 
 const SEATS: Seat[] = ["N", "E", "S", "W"];
+
+/**
+ * Play Arena (2026-07-16 rework): one click on a ladder rung seats you South
+ * against three auto-provisioned house players of that strength. Fellows
+ * edit the house players afterwards instead of assembling one up front.
+ */
+export async function arenaPlayAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  await ensureSeeds();
+  const kbId = String(formData.get("kbId"));
+  const packId = String(formData.get("packId"));
+  const watch = formData.get("watch") === "1";
+  await assertAiAllowed(context);
+  await assertKbAllowed(context, kbId);
+  const compiled = await kbService().liveCompile(kbId);
+  if (!compiled) throw new Error("That knowledge base has no live compile yet");
+  const pack = compiled.packs.find((p) => p.packId === packId);
+  if (!pack) throw new Error("Pick a ladder rung");
+
+  const { ensureHousePlayer } = await import("@/lib/arena");
+  const house = await ensureHousePlayer(kbStore(), compiled, pack, context.nexusUserId);
+  const ai = SessionService.seatFromPlayer(house, compiled);
+  const seats = { N: ai, E: ai, S: ai, W: ai } as Record<Seat, SeatConfig>;
+  if (!watch) seats.S = { kind: "human", nexusUserId: context.nexusUserId };
+
+  const record = await sessionService().createSession({
+    kbId,
+    compiled,
+    seats,
+    seed: (Date.now() % 100_000) + 1,
+    createdBy: context.nexusUserId,
+  });
+  await audit(context, "profile.update", "kb_session", record.sessionId, {
+    kbId,
+    arena: pack.packId,
+  });
+  redirect(`/bridge/table/${record.sessionId}`);
+}
 
 export async function createSessionAction(formData: FormData): Promise<void> {
   const context = await requireContext();
@@ -103,6 +141,77 @@ export async function undoAction(formData: FormData): Promise<void> {
   await sessionService().undo(sessionId);
   await audit(context, "session.undo", "kb_session", sessionId);
   revalidatePath(`/bridge/table/${sessionId}`);
+}
+
+/**
+ * Record the current board into the library (2026-07-16 rework). The DEAL
+ * layer is always the original distribution (never the mid-play remainder);
+ * `play` captures the calls and cards as they stand right now.
+ */
+export async function saveToLibraryAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const sessionId = String(formData.get("sessionId"));
+  const kind = String(formData.get("kind")) as "deal" | "board" | "play" | "table";
+  if (!["deal", "board", "play", "table"].includes(kind)) throw new Error("Pick what to save");
+
+  const { record, state } = await sessionService().view(sessionId);
+  const { seededDeal, resultLabel, scoreBoard } = await import("@bridge/engine");
+  const { newId } = await import("@bridge/kb");
+  const { callLabel } = await import("@bridge/events");
+
+  const originalHands = record.board.hands ?? seededDeal(record.board.seed);
+  const name =
+    String(formData.get("name") ?? "").trim() ||
+    `${record.board.name} · ${kind}`;
+  const now = new Date().toISOString();
+
+  const base = {
+    entryId: newId("le"),
+    name,
+    tags: [] as string[],
+    origin: "recorded" as const,
+    sourceSessionId: sessionId,
+    createdBy: context.nexusUserId,
+    createdAt: now,
+  };
+
+  const score = scoreBoard(state);
+  const entry =
+    kind === "table"
+      ? {
+          ...base,
+          kind,
+          kbId: record.kbId,
+          seats: Object.fromEntries(
+            (Object.entries(record.seats) as [Seat, SeatConfig][]).map(([seat, c]) => [
+              seat,
+              c.kind === "human"
+                ? { label: "you", human: true }
+                : { label: c.label, playerId: c.playerId },
+            ]),
+          ) as Record<Seat, { label: string; playerId?: string; human?: boolean }>,
+        }
+      : {
+          ...base,
+          kind,
+          hands: originalHands,
+          ...(kind !== "deal" && { dealer: record.board.dealer, vul: record.board.vul }),
+          ...(kind === "play" && {
+            auction: state.auction.map((a) => ({ seat: a.seat, call: a.call })),
+            play: state.tricks.flatMap((t) => t.plays.map((p) => ({ seat: p.seat, card: p.card }))),
+            contractLabel: state.contract
+              ? `${callLabel(`${state.contract.level}${state.contract.strain}`)} by ${state.contract.declarer}`
+              : undefined,
+            resultLabel: score ? resultLabel(score) : undefined,
+          }),
+        };
+
+  await libraryStore().putEntry(entry);
+  await audit(context, "profile.create", "kb_library", entry.entryId, {
+    sessionId,
+    kind,
+  });
+  redirect(`/bridge/table/${sessionId}?saved=${kind}`);
 }
 
 /** Flag a decision → a suggestion in the KB's queue (spec §7). */

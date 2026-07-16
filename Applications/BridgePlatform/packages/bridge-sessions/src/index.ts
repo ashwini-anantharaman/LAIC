@@ -35,6 +35,8 @@ import {
 import type { CompiledKb, DecisionPolicyId, KbPlayer, KbStore } from "@bridge/kb";
 import { newId } from "@bridge/kb";
 
+export * from "./library";
+
 // ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
@@ -58,7 +60,14 @@ export interface SessionRecord {
   kbId: string;
   /** The exact artifact this session plays on (last-good at creation). */
   compileRef: { compileId: string; version: number };
-  board: { name: string; dealer: Seat; vul: Vul; seed: number };
+  /** Explicit `hands` (library/imported boards) win over the seed deal. */
+  board: {
+    name: string;
+    dealer: Seat;
+    vul: Vul;
+    seed: number;
+    hands?: Record<Seat, Card[]>;
+  };
   seats: Record<Seat, SeatConfig>;
   /** Full stream: action events (state) + logic events (traces). */
   events: GameEvent[];
@@ -155,6 +164,9 @@ export class SessionService {
     seed: number;
     dealer?: Seat;
     vul?: Vul;
+    /** Explicit deal (library/imported board) — overrides the seed deal. */
+    hands?: Record<Seat, Card[]>;
+    boardName?: string;
     createdBy: string;
     forkedFromSessionId?: string;
     /** Adopted event prefix (forks resume mid-board). */
@@ -165,10 +177,11 @@ export class SessionService {
       kbId: input.kbId,
       compileRef: { compileId: input.compiled.compileId, version: input.compiled.version },
       board: {
-        name: `seeded-${input.seed}`,
+        name: input.boardName ?? `seeded-${input.seed}`,
         dealer: input.dealer ?? "N",
         vul: input.vul ?? "none",
         seed: input.seed,
+        hands: input.hands,
       },
       seats: input.seats,
       events: input.primedEvents ?? [],
@@ -233,7 +246,7 @@ export class SessionService {
       ]),
     ) as Record<Seat, ReturnType<typeof createKbDecider>>;
 
-    const hands = seededDeal(record.board.seed);
+    const hands = record.board.hands ?? seededDeal(record.board.seed);
     const primed = record.events.filter(isActionEvent);
     const game = createGame(
       bus,
@@ -307,7 +320,7 @@ export class SessionService {
         return decision(action.card);
       },
     };
-    const hands = seededDeal(record.board.seed);
+    const hands = record.board.hands ?? seededDeal(record.board.seed);
     const bus = createBus();
     const log = createEventLog(bus);
     const deciders = Object.fromEntries(
@@ -362,6 +375,8 @@ export class SessionService {
       seed: source.board.seed,
       dealer: source.board.dealer,
       vul: source.board.vul,
+      hands: source.board.hands,
+      boardName: source.board.name,
       createdBy,
       forkedFromSessionId: source.sessionId,
       primedEvents: [...source.events],

@@ -1,11 +1,7 @@
 import {
   callLabel,
   isLogicEvent,
-  rankLabel,
-  SUIT_RANK,
   type Card,
-  type Hand,
-  type LogicEvent,
   type Seat,
   type Suit,
 } from "@bridge/events";
@@ -13,187 +9,33 @@ import { legalCalls, legalPlays, resultLabel, scoreBoard } from "@bridge/engine"
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { AutoAdvance } from "@/components/table/AutoAdvance";
+import { BiddingBox } from "@/components/table/BiddingBox";
+import { DecisionEntry } from "@/components/table/DecisionEntry";
+import { HandRow } from "@/components/table/HandRow";
+import { PlayingCard } from "@/components/table/PlayingCard";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import {
-  bidAction,
-  flagDecisionAction,
-  playCardAction,
   playToEndAction,
-  stepAction,
+  saveToLibraryAction,
   undoAction,
 } from "../actions";
 
-const SUITS: Suit[] = ["S", "H", "D", "C"];
-const GLYPH: Record<Suit, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
-const red = (suit: Suit) => suit === "H" || suit === "D";
-
-function HandView({
-  hand,
-  hidden,
-  playable,
-  sessionId,
-}: Readonly<{
-  hand: Hand;
-  hidden: boolean;
-  playable: Card[] | null;
-  sessionId: string;
-}>) {
-  if (hidden)
-    return (
-      <p className="text-xs text-neutral-400">
-        {hand.length} card{hand.length === 1 ? "" : "s"} (hidden)
-      </p>
-    );
-  const legal = new Set((playable ?? []).map((c) => `${c.suit}${c.rank}`));
-  return (
-    <div className="space-y-0.5">
-      {SUITS.map((suit) => {
-        const cards = hand
-          .filter((c) => c.suit === suit)
-          .sort((a, b) => b.rank - a.rank);
-        return (
-          <p key={suit} className="flex flex-wrap items-center gap-1 text-sm leading-tight">
-            <span className={red(suit) ? "w-4 text-[var(--madder)]" : "w-4"}>{GLYPH[suit]}</span>
-            {cards.map((card) =>
-              playable ? (
-                <form key={card.rank} action={playCardAction} className="inline">
-                  <input type="hidden" name="sessionId" value={sessionId} />
-                  <input type="hidden" name="suit" value={card.suit} />
-                  <input type="hidden" name="rank" value={card.rank} />
-                  <button
-                    type="submit"
-                    disabled={!legal.has(`${card.suit}${card.rank}`)}
-                    className="rounded border border-neutral-300 px-1.5 py-0.5 font-medium enabled:border-emerald-400 enabled:hover:bg-emerald-50 disabled:opacity-35"
-                  >
-                    {rankLabel(card.rank)}
-                  </button>
-                </form>
-              ) : (
-                <span key={card.rank} className="px-0.5 font-medium">
-                  {rankLabel(card.rank)}
-                </span>
-              ),
-            )}
-            {cards.length === 0 && <span className="text-neutral-300">—</span>}
-          </p>
-        );
-      })}
-    </div>
-  );
-}
-
-function DecisionEntry({
-  event,
-  sessionId,
-  kbId,
-}: Readonly<{ event: LogicEvent; sessionId: string; kbId: string }>) {
-  const chosen =
-    event.category === "bid-logic-event"
-      ? callLabel(event.chosen)
-      : `${rankLabel(event.chosen.rank)}${GLYPH[event.chosen.suit]}`;
-  const floor = event.reason.startsWith("ENGINE FLOOR");
-  const itemId = event.matchedRuleId?.split(".")[0];
-  const human = event.reason === "human action";
-  return (
-    <details className="rounded border border-neutral-200 bg-[var(--card)] px-3 py-2">
-      <summary className="flex flex-wrap items-baseline gap-2 text-sm">
-        <span className="font-mono text-xs text-neutral-400">#{event.seq}</span>
-        <span className="font-medium">{event.seat}</span>
-        <span>{chosen}</span>
-        <span className="truncate text-xs text-neutral-500">{event.reason}</span>
-        {floor ? (
-          <span className="rounded bg-red-50 px-1.5 text-[10px] uppercase tracking-wide text-[color:var(--color-invalid)]">
-            engine floor
-          </span>
-        ) : event.fallback ? (
-          <span className="rounded bg-amber-50 px-1.5 text-[10px] uppercase tracking-wide text-[color:var(--color-draft)]">
-            fallback item
-          </span>
-        ) : human ? (
-          <span className="rounded bg-neutral-100 px-1.5 text-[10px] uppercase tracking-wide text-neutral-500">
-            human
-          </span>
-        ) : null}
-      </summary>
-      <div className="mt-2 space-y-2 border-t border-[var(--line)] pt-2 text-xs">
-        {event.matchedRuleId && (
-          <p>
-            Rule <span className="font-mono">{event.matchedRuleId}</span>
-            {itemId && (
-              <>
-                {" "}
-                ·{" "}
-                <Link
-                  href={`/bridge/kb/${kbId}/items/${itemId}`}
-                  className="text-emerald-800 underline-offset-2 hover:underline"
-                >
-                  open the knowledge item →
-                </Link>
-              </>
-            )}
-          </p>
-        )}
-        {event.candidates.length > 1 && (
-          <p className="text-neutral-500">
-            Pool:{" "}
-            {event.candidates
-              .map((c) =>
-                typeof c === "string" ? callLabel(c) : `${rankLabel(c.rank)}${GLYPH[c.suit]}`,
-              )
-              .join(", ")}
-          </p>
-        )}
-        {event.citedSettings.length > 0 && (
-          <p className="text-neutral-500">
-            Settings consulted:{" "}
-            {event.citedSettings.map((s) => `${s.label} = ${JSON.stringify(s.value)}`).join("; ")}
-          </p>
-        )}
-        {event.trace.length > 0 && (
-          <ul className="max-h-40 space-y-0.5 overflow-y-auto text-neutral-500">
-            {event.trace.map((t, i) => (
-              <li key={i}>
-                {t.matched ? "✓" : "·"} <span className="font-mono">{t.ruleId}</span> — {t.reason}
-              </li>
-            ))}
-          </ul>
-        )}
-        <form action={flagDecisionAction} className="flex items-end gap-2 border-t border-[var(--line)] pt-2">
-          <input type="hidden" name="sessionId" value={sessionId} />
-          <input type="hidden" name="seq" value={event.seq} />
-          {itemId && <input type="hidden" name="itemId" value={itemId} />}
-          <label className="flex-1">
-            <span className="mb-0.5 block text-neutral-400">Flag this decision</span>
-            <input
-              name="text"
-              placeholder="What looks wrong?"
-              className="w-full rounded border border-neutral-300 px-1.5 py-1"
-            />
-          </label>
-          <button
-            type="submit"
-            className="rounded border border-neutral-300 px-2 py-1 hover:border-emerald-400"
-          >
-            Flag
-          </button>
-        </form>
-      </div>
-    </details>
-  );
-}
-
+/** Table v3 (2026-07-16 rework): the board looks like a card table — hands
+ *  as cards, trick in the middle, AI turns advance themselves. Verification
+ *  stays one tap away, never in the way. */
 export default async function SessionPage({
   params,
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ mode?: string }>;
+  searchParams: Promise<{ mode?: string; hands?: string; saved?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { mode } = await searchParams;
+  const { mode, hands: handsParam, saved } = await searchParams;
 
   let view;
   try {
@@ -209,16 +51,16 @@ export default async function SessionPage({
     ([, c]) => c.kind === "human" && c.nexusUserId === context.nexusUserId,
   )?.[0];
 
-  // Visibility: fellows (verification) see everything; learners see their
-  // hand + dummy once play starts.
   const dummy =
     state.phase !== "auction" && state.contract
       ? (({ N: "S", S: "N", E: "W", W: "E" }) as Record<Seat, Seat>)[state.contract.declarer]
       : null;
+  // Watching four AIs defaults to open cards; sitting in defaults to table
+  // realism. The toggle overrides either way.
+  const showAll = handsParam === "all" || (handsParam !== "mine" && !mySeat && !learnerMode);
   const canSee = (seat: Seat) =>
-    !learnerMode || seat === mySeat || seat === dummy || state.phase === "complete";
+    showAll || seat === mySeat || seat === dummy || state.phase === "complete";
 
-  const humanTurn = actingIsHuman && (!learnerMode || record.seats[actingSeat].kind === "human");
   const myTurn =
     actingIsHuman &&
     record.seats[actingSeat].kind === "human" &&
@@ -228,243 +70,364 @@ export default async function SessionPage({
 
   const score = scoreBoard(state);
   const logicEvents = record.events.filter(isLogicEvent);
+  const aiToAct = !actingIsHuman && state.phase !== "complete";
 
-  const seatPanel = (seat: Seat) => {
+  const seatLabel = (seat: Seat) => {
     const config = record.seats[seat];
+    return config.kind === "human"
+      ? config.nexusUserId === context.nexusUserId
+        ? "you"
+        : "human"
+      : config.label;
+  };
+  const seatTag = (seat: Seat, align: "center" | "left" | "right" = "center") => {
     const acting = seat === actingSeat && state.phase !== "complete";
-    const playableHere = legalNow && seat === state.turn ? legalNow : null;
+    const config = record.seats[seat];
+    const player =
+      config.kind === "kb_player" ? (
+        <Link
+          href={`/bridge/kb/${record.kbId}/players/${config.playerId}`}
+          className="truncate hover:underline"
+          title={`Edit ${config.label}`}
+        >
+          {config.label}
+        </Link>
+      ) : (
+        <span className="truncate">{seatLabel(seat)}</span>
+      );
     return (
-      <section
-        className={`rounded-lg border p-3 ${acting ? "border-emerald-500" : "border-neutral-200"}`}
+      <p
+        className={`flex max-w-40 items-center gap-1.5 text-xs text-neutral-500 ${
+          align === "center" ? "justify-center" : align === "right" ? "justify-end" : ""
+        }`}
       >
-        <p className="mb-1.5 flex items-baseline gap-2 text-xs">
-          <span className="font-medium">{seat}</span>
-          <span className="truncate text-neutral-500">
-            {config.kind === "human"
-              ? config.nexusUserId === context.nexusUserId
-                ? "you"
-                : "human"
-              : config.label}
-          </span>
-          {acting && <span className="ml-auto text-[10px] uppercase tracking-wide text-emerald-700">to act</span>}
-        </p>
-        <HandView
-          hand={state.hands[seat]}
-          hidden={!canSee(seat)}
-          playable={playableHere}
-          sessionId={sessionId}
-        />
-      </section>
+        {acting && (
+          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-600" />
+        )}
+        <span className="font-semibold text-neutral-800">{seat}</span>
+        {player}
+      </p>
     );
   };
 
-  const auctionRows: (typeof state.auction)[] = [];
+  // Current (unfinished) trick, by seat.
+  const trick = state.tricks[state.tricks.length - 1];
+  const trickCards: Partial<Record<Seat, Card>> = {};
+  if (state.phase !== "auction" && trick && trick.plays.length < 5) {
+    for (const p of trick.plays) trickCards[p.seat] = p.card;
+  }
+
+  const auctionRows: (typeof state.auction | null[])[] = [];
   {
     const order: Seat[] = ["W", "N", "E", "S"];
     const offset = order.indexOf(record.board.dealer);
-    const padded = [
-      ...Array.from({ length: offset }, () => null),
-      ...state.auction,
-    ];
-    for (let i = 0; i < padded.length; i += 4)
-      auctionRows.push(padded.slice(i, i + 4) as never);
+    const padded = [...Array.from({ length: offset }, () => null), ...state.auction];
+    for (let i = 0; i < padded.length; i += 4) auctionRows.push(padded.slice(i, i + 4) as never);
   }
+
+  const toggleHref = (params: Record<string, string | undefined>) => {
+    const q = new URLSearchParams();
+    if (learnerMode && isFellow) q.set("mode", "learner");
+    for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
+    const s = q.toString();
+    return s ? `/bridge/table/${sessionId}?${s}` : `/bridge/table/${sessionId}`;
+  };
 
   return (
     <div className="mx-auto max-w-6xl">
-      <header className="mb-4 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">
-          <Link href="/bridge/table" className="hover:underline">
-            Table
-          </Link>
-        </p>
-        <h1 className="text-2xl font-medium">{record.board.name}</h1>
-        <span className="text-xs text-neutral-500">
-          compile v{record.compileRef.version} · dealer {record.board.dealer}
+      {/* Status bar */}
+      <header className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Link
+          href="/bridge/table"
+          className="text-xs uppercase tracking-[0.3em] text-neutral-400 hover:text-neutral-700"
+        >
+          ← Play
+        </Link>
+        <h1 className="text-lg font-medium sm:text-xl">{record.board.name}</h1>
+        <span className="text-xs text-neutral-400">
+          dealer {record.board.dealer} · vul {record.board.vul}
           {record.forkedFromSessionId && " · fork"}
         </span>
-        {state.contract && (
-          <span className="text-sm">
-            Contract: <strong>{callLabel(`${state.contract.level}${state.contract.strain}`)}</strong> by{" "}
-            {state.contract.declarer}
-          </span>
-        )}
-        {score && (
-          <span className="rounded bg-emerald-50 px-2 py-0.5 text-sm font-medium text-emerald-900">
-            {resultLabel(score)}
-            {score.contract
-              ? ` · ${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}`
-              : ""}
-          </span>
-        )}
-        <span className="ml-auto flex items-center gap-3 text-xs">
-          {isFellow && (
-            <Link
-              href={learnerMode ? `/bridge/table/${sessionId}` : `/bridge/table/${sessionId}?mode=learner`}
-              className="text-neutral-500 underline-offset-2 hover:underline"
-            >
-              {learnerMode ? "verification view" : "learner view"}
-            </Link>
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {state.contract && (
+            <span className="rounded border border-neutral-300 bg-white px-2 py-0.5 text-sm font-semibold">
+              {callLabel(`${state.contract.level}${state.contract.strain}`)}
+              <span className="ml-1 font-normal text-neutral-500">by {state.contract.declarer}</span>
+            </span>
           )}
-          <form action={undoAction}>
-            <input type="hidden" name="sessionId" value={sessionId} />
-            <button type="submit" className="rounded border border-neutral-300 px-2 py-1 hover:border-emerald-400">
-              Undo
-            </button>
-          </form>
+          {state.phase !== "auction" && (
+            <span className="rounded bg-neutral-100 px-2 py-0.5 text-sm tabular-nums">
+              NS {state.trickCount.NS} · EW {state.trickCount.EW}
+            </span>
+          )}
+          {score && (
+            <span className="rounded bg-emerald-50 px-2 py-0.5 text-sm font-medium text-emerald-900">
+              {resultLabel(score)}
+              {score.contract
+                ? ` · ${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}`
+                : ""}
+            </span>
+          )}
         </span>
       </header>
 
-      <div className={`grid gap-6 ${learnerMode ? "" : "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"}`}>
-        <div className="space-y-4">
-          {/* Quadrants: flat, spatial */}
-          <div className="grid grid-cols-3 gap-3">
-            <div />
-            {seatPanel("N")}
-            <div />
-            {seatPanel("W")}
-            <section className="rounded-lg border border-dashed border-neutral-300 p-3">
-              <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-400">
-                {state.phase === "auction" ? "Auction" : "Current trick"}
-              </p>
-              {state.phase !== "auction" &&
-                (() => {
-                  const trick = state.tricks[state.tricks.length - 1];
-                  const plays = trick && trick.plays.length < 5 ? trick.plays : [];
-                  return plays.length ? (
-                    <ul className="space-y-0.5 text-sm">
-                      {plays.map((p) => (
-                        <li key={p.seat}>
-                          <span className="font-medium">{p.seat}</span>{" "}
-                          <span className={red(p.card.suit) ? "text-[var(--madder)]" : ""}>
-                            {rankLabel(p.card.rank)}
-                            {GLYPH[p.card.suit]}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-neutral-400">—</p>
-                  );
-                })()}
-              {state.phase !== "auction" && (
-                <p className="mt-2 text-xs text-neutral-500">
-                  Tricks: NS {state.trickCount.NS} · EW {state.trickCount.EW}
-                </p>
-              )}
-              {state.phase === "auction" && (
-                <table className="w-full text-center text-sm">
-                  <thead>
-                    <tr className="text-[10px] uppercase tracking-wide text-neutral-400">
-                      {["W", "N", "E", "S"].map((s) => (
-                        <th key={s} className="font-normal">
-                          {s}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {auctionRows.map((row, i) => (
-                      <tr key={i}>
-                        {[0, 1, 2, 3].map((j) => (
-                          <td key={j} className="py-0.5">
-                            {row[j] ? callLabel(row[j]!.call) : ""}
-                          </td>
+      {saved && (
+        <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Saved to the library.{" "}
+          <Link
+            href={`/bridge/library?kind=${saved}`}
+            className="font-medium underline-offset-2 hover:underline"
+          >
+            Open the {saved} shelf →
+          </Link>
+        </p>
+      )}
+
+      {/* Toolbar */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+        <AutoAdvance sessionId={sessionId} active={aiToAct} seq={record.events.length} />
+        {!learnerMode && (
+          <Link
+            href={toggleHref({ hands: showAll ? "mine" : "all" })}
+            className={
+              showAll
+                ? "rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-emerald-800"
+                : "rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
+            }
+          >
+            {showAll ? "all hands shown" : "show all hands"}
+          </Link>
+        )}
+        {!learnerMode && (
+          <details className="relative">
+            <summary className="cursor-pointer list-none rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400">
+              save to library ▾
+            </summary>
+            <div className="absolute z-10 mt-1 flex w-44 flex-col gap-1 rounded-lg border border-neutral-200 bg-white p-2 shadow-md">
+              {(
+                [
+                  ["deal", "Deal (cards only)"],
+                  ["board", "Board (+dealer/vul)"],
+                  ["play", "Play (calls + cards)"],
+                  ["table", "Table lineup"],
+                ] as const
+              ).map(([kind, label]) => (
+                <form key={kind} action={saveToLibraryAction}>
+                  <input type="hidden" name="sessionId" value={sessionId} />
+                  <input type="hidden" name="kind" value={kind} />
+                  <button
+                    type="submit"
+                    className="w-full rounded px-2 py-1 text-left hover:bg-emerald-50"
+                  >
+                    {label}
+                  </button>
+                </form>
+              ))}
+            </div>
+          </details>
+        )}
+        {!learnerMode && aiToAct && (
+          <form action={playToEndAction}>
+            <input type="hidden" name="sessionId" value={sessionId} />
+            <button
+              type="submit"
+              className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
+            >
+              play to end
+            </button>
+          </form>
+        )}
+        <form action={undoAction}>
+          <input type="hidden" name="sessionId" value={sessionId} />
+          <button
+            type="submit"
+            className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
+          >
+            undo
+          </button>
+        </form>
+        {isFellow && (
+          <Link
+            href={learnerMode ? `/bridge/table/${sessionId}` : `/bridge/table/${sessionId}?mode=learner`}
+            className="ml-auto text-neutral-400 underline-offset-2 hover:underline"
+          >
+            {learnerMode ? "verification view" : "learner view"}
+          </Link>
+        )}
+      </div>
+
+      <div className={`grid gap-6 ${learnerMode ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"}`}>
+        <div>
+          {/* The table */}
+          <div className="rounded-2xl border border-neutral-200 bg-[var(--card)] p-3 shadow-sm sm:p-6">
+            {/* North */}
+            <div className="flex flex-col items-center gap-1.5">
+              {seatTag("N")}
+              <HandRow
+                hand={state.hands.N}
+                hidden={!canSee("N")}
+                playable={legalNow && state.turn === "N" ? legalNow : null}
+                sessionId={sessionId}
+              />
+            </div>
+
+            {/* West · center · East */}
+            <div className="my-3 grid grid-cols-[minmax(2.5rem,auto)_1fr_minmax(2.5rem,auto)] items-center gap-2 sm:my-4 sm:gap-4">
+              <div className="flex flex-col items-center gap-1.5 justify-self-start">
+                {seatTag("W")}
+                <HandRow
+                  hand={state.hands.W}
+                  hidden={!canSee("W")}
+                  playable={legalNow && state.turn === "W" ? legalNow : null}
+                  sessionId={sessionId}
+                  vertical
+                  size="sm"
+                />
+              </div>
+
+              {/* Center: auction, live trick, or the result */}
+              <div className="flex min-h-44 items-center justify-center self-stretch rounded-xl border border-dashed border-neutral-300/80 px-2 py-3">
+                {state.phase === "auction" ? (
+                  <table className="w-full max-w-60 text-center text-sm">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-wide text-neutral-400">
+                        {["W", "N", "E", "S"].map((s) => (
+                          <th key={s} className="pb-1 font-normal">
+                            {s}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </section>
-            {seatPanel("E")}
-            <div />
-            {seatPanel("S")}
-            <div />
+                    </thead>
+                    <tbody>
+                      {auctionRows.map((row, i) => (
+                        <tr key={i}>
+                          {[0, 1, 2, 3].map((j) => {
+                            const entry = row[j];
+                            return (
+                              <td key={j} className="py-0.5 tabular-nums">
+                                {entry ? callLabel(entry.call) : ""}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                      {state.auction.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="pt-2 text-xs text-neutral-400">
+                            {seatLabel(record.board.dealer) === "you"
+                              ? "you deal"
+                              : `${seatLabel(record.board.dealer)} deals`}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                ) : state.phase === "complete" && score ? (
+                  <div className="text-center">
+                    <p className="font-serif text-xl">{resultLabel(score)}</p>
+                    {score.contract && (
+                      <p className="mt-1 text-sm text-neutral-500">
+                        {score.declarerScore >= 0 ? "+" : ""}
+                        {score.declarerScore} for{" "}
+                        {["N", "S"].includes(score.contract.declarer) ? "NS" : "EW"}
+                      </p>
+                    )}
+                    <p className="mt-2 text-xs text-neutral-400">
+                      NS {state.trickCount.NS} · EW {state.trickCount.EW}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="relative h-40 w-full max-w-56 sm:h-44">
+                    {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
+                      const pos =
+                        seat === "N"
+                          ? "left-1/2 top-0 -translate-x-1/2"
+                          : seat === "S"
+                            ? "bottom-0 left-1/2 -translate-x-1/2"
+                            : seat === "W"
+                              ? "left-0 top-1/2 -translate-y-1/2"
+                              : "right-0 top-1/2 -translate-y-1/2";
+                      const card = trickCards[seat];
+                      return (
+                        <div key={seat} className={`absolute ${pos}`}>
+                          {card ? (
+                            <PlayingCard card={card} size="sm" />
+                          ) : (
+                            <span
+                              className={`block aspect-[5/7] w-8 rounded-md border border-dashed border-neutral-300 ${
+                                seat === state.turn ? "border-emerald-400" : ""
+                              }`}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                    <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] uppercase tracking-wide text-neutral-300">
+                      trick {state.tricks.length}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col items-center gap-1.5 justify-self-end">
+                {seatTag("E")}
+                <HandRow
+                  hand={state.hands.E}
+                  hidden={!canSee("E")}
+                  playable={legalNow && state.turn === "E" ? legalNow : null}
+                  sessionId={sessionId}
+                  vertical
+                  size="sm"
+                />
+              </div>
+            </div>
+
+            {/* South */}
+            <div className="flex flex-col items-center gap-1.5">
+              <HandRow
+                hand={state.hands.S}
+                hidden={!canSee("S")}
+                playable={legalNow && state.turn === "S" ? legalNow : null}
+                sessionId={sessionId}
+                size="lg"
+              />
+              {seatTag("S")}
+            </div>
           </div>
 
-          {/* Controls */}
-          {state.phase !== "complete" && (
-            <section className="rounded-lg border border-neutral-200 p-4">
-              {myTurn && callsNow ? (
-                <div>
-                  <p className="mb-2 text-sm font-medium">Your call</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {["P", "X", "XX"]
-                      .filter((c) => callsNow.has(c))
-                      .map((c) => (
-                        <form key={c} action={bidAction}>
-                          <input type="hidden" name="sessionId" value={sessionId} />
-                          <input type="hidden" name="call" value={c} />
-                          <button
-                            type="submit"
-                            className="rounded border border-neutral-300 px-2.5 py-1 text-sm font-medium hover:border-emerald-400"
-                          >
-                            {c === "P" ? "Pass" : callLabel(c)}
-                          </button>
-                        </form>
-                      ))}
-                  </div>
-                  <div className="mt-2 grid grid-cols-5 gap-1.5 sm:grid-cols-10">
-                    {[1, 2, 3, 4, 5, 6, 7].flatMap((level) =>
-                      (["C", "D", "H", "S", "N"] as const)
-                        .map((strain) => `${level}${strain}`)
-                        .filter((call) => callsNow.has(call))
-                        .map((call) => (
-                          <form key={call} action={bidAction}>
-                            <input type="hidden" name="sessionId" value={sessionId} />
-                            <input type="hidden" name="call" value={call} />
-                            <button
-                              type="submit"
-                              className="w-full rounded border border-neutral-300 px-1 py-1 text-sm hover:border-emerald-400"
-                            >
-                              {callLabel(call)}
-                            </button>
-                          </form>
-                        )),
-                    )}
-                  </div>
-                </div>
-              ) : myTurn && legalNow ? (
-                <p className="text-sm text-neutral-600">
-                  Your play — choose a highlighted card{state.turn !== actingSeat ? "" : ""} in
-                  seat {state.turn}&apos;s hand.
-                </p>
-              ) : humanTurn ? (
-                <p className="text-sm text-neutral-600">
-                  Waiting for the human in seat {actingSeat}.
-                </p>
-              ) : (
-                <div className="flex flex-wrap items-center gap-3">
-                  <form action={stepAction}>
-                    <input type="hidden" name="sessionId" value={sessionId} />
-                    <button
-                      type="submit"
-                      className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
-                    >
-                      Advance AI
-                    </button>
-                  </form>
-                  <form action={playToEndAction}>
-                    <input type="hidden" name="sessionId" value={sessionId} />
-                    <button
-                      type="submit"
-                      className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-400"
-                    >
-                      Play to end
-                    </button>
-                  </form>
-                  <span className="text-xs text-neutral-400">
-                    {record.seats[actingSeat].kind === "kb_player" &&
-                      `${(record.seats[actingSeat] as { label: string }).label} to act`}
-                  </span>
-                </div>
-              )}
-            </section>
-          )}
+          {/* Action strip below the table */}
+          <div className="mt-4 flex flex-col items-center gap-2">
+            {myTurn && callsNow && (
+              <>
+                <p className="text-sm font-medium">Your call</p>
+                <BiddingBox sessionId={sessionId} legal={callsNow} />
+              </>
+            )}
+            {myTurn && legalNow && (
+              <p className="text-sm text-neutral-600">
+                Your play — tap a raised card{state.turn !== mySeat ? ` (dummy, seat ${state.turn})` : ""}.
+              </p>
+            )}
+            {actingIsHuman && !myTurn && state.phase !== "complete" && (
+              <p className="text-sm text-neutral-500">
+                Waiting for the human in seat {actingSeat}.
+              </p>
+            )}
+            {state.phase === "complete" && (
+              <p className="text-sm text-neutral-500">
+                Board complete.{" "}
+                <Link
+                  href="/bridge/table"
+                  className="text-emerald-700 underline-offset-4 hover:underline"
+                >
+                  Play another →
+                </Link>
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* The verification instrument: every decision, traceable + flaggable */}
+        {/* The verification rail */}
         {!learnerMode && (
           <aside>
             <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
@@ -481,7 +444,7 @@ export default async function SessionPage({
               ))}
               {logicEvents.length === 0 && (
                 <p className="rounded border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
-                  No decisions yet — advance the AI to see the first trace.
+                  No decisions yet — the first trace appears as soon as an AI acts.
                 </p>
               )}
             </div>

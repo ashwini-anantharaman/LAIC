@@ -28,10 +28,13 @@ export default async function HomePage() {
           how the AI plays, immediately.
         </p>
         <p>
-          Head to the <strong>Table</strong> to play, or the{" "}
-          <strong>Knowledge bases</strong> workspace to upload a system
-          document, review extracted items, build the pack ladder, and
-          assemble players.
+          Jump into <strong>Play</strong> — pick a strength and the house
+          players are provisioned for you. <strong>Players</strong> collects
+          everyone&apos;s configured players (one click per ladder rung to
+          make your own); the <strong>Library</strong> keeps the deals,
+          boards, lineups and plays worth returning to, and imports LIN/PBN.
+          The <strong>Knowledge bases</strong> workspace remains where you
+          upload a system document and shape what the players know.
         </p>
       </div>
     </div>
