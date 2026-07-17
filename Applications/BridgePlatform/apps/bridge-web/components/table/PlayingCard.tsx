@@ -12,9 +12,9 @@ const red = (s: Suit) => s === "H" || s === "D";
 export type CardSize = "sm" | "md" | "lg";
 
 const FACE_SIZE: Record<CardSize, string> = {
-  sm: "w-8 text-[13px]",
-  md: "w-10 text-[15px] sm:w-11",
-  lg: "w-11 text-base sm:w-14 sm:text-lg",
+  sm: "w-8 text-[13px] xl:w-10 xl:text-[15px]",
+  md: "w-10 text-[15px] sm:w-11 xl:w-12 xl:text-base",
+  lg: "w-11 text-base sm:w-14 sm:text-lg xl:w-16 xl:text-xl",
 };
 
 export function PlayingCard({

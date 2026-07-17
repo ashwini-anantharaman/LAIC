@@ -129,7 +129,7 @@ export function HandRow({
   const legal = new Set((playable ?? []).map((c) => `${c.suit}${c.rank}`));
   const cards = sortedHand(hand);
   return (
-    <div className="flex pt-2 [&>*:not(:first-child)]:-ml-6 sm:[&>*:not(:first-child)]:-ml-7">
+    <div className="flex pt-2 [&>*:not(:first-child)]:-ml-6 sm:[&>*:not(:first-child)]:-ml-7 xl:[&>*:not(:first-child)]:-ml-8">
       {cards.map((card) => {
         const id = `${card.suit}${card.rank}`;
         if (playable && legal.has(id)) {

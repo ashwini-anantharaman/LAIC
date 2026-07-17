@@ -110,8 +110,8 @@ export default async function SessionPage({
         </span>
       </>
     );
-    const barClass = `flex w-full items-center gap-1.5 rounded-[3px] px-1 py-0.5 shadow-sm ${
-      acting ? "bg-amber-300/95" : "bg-neutral-100/90"
+    const barClass = `flex w-full items-center gap-1.5 rounded-[3px] px-1 py-0.5 shadow ${
+      acting ? "bg-amber-300" : "bg-neutral-100"
     }`;
     if (learnerMode) {
       return <p className={barClass}>{tag}</p>;
@@ -218,7 +218,7 @@ export default async function SessionPage({
   };
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-7xl">
       {/* Status bar */}
       <header className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
         <Link
@@ -367,7 +367,7 @@ export default async function SessionPage({
       <div className={`grid gap-6 ${learnerMode ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"}`}>
         <div>
           {/* The table — green felt, BBO-style */}
-          <div className="rounded-2xl border border-emerald-950/50 bg-[radial-gradient(120%_120%_at_50%_30%,#3e8266_0%,#2c614a_70%,#26543f_100%)] p-3 shadow-md sm:p-6">
+          <div className="rounded-2xl border border-emerald-950/60 bg-[radial-gradient(120%_120%_at_50%_30%,#35825e_0%,#256a49_65%,#1c573a_100%)] p-3 shadow-md sm:p-6 xl:p-8">
             {/* North */}
             <div className="flex flex-col items-center gap-1">
               <HandRow
@@ -395,7 +395,7 @@ export default async function SessionPage({
               </div>
 
               {/* Center: auction, live trick, or the result */}
-              <div className="flex min-h-44 items-center justify-center self-stretch px-2 py-3">
+              <div className="flex min-h-44 items-center justify-center self-stretch px-2 py-3 xl:min-h-56">
                 {state.phase === "auction" ? (
                   <table className="w-full max-w-60 rounded-lg bg-white/95 py-1 text-center text-sm shadow-sm">
                     <thead>
@@ -449,7 +449,7 @@ export default async function SessionPage({
                     </p>
                   </div>
                 ) : (
-                  <div className="relative h-40 w-full max-w-56 sm:h-44">
+                  <div className="relative h-40 w-full max-w-56 sm:h-44 xl:h-52 xl:max-w-64">
                     {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
                       const pos =
                         seat === "N"
@@ -466,7 +466,7 @@ export default async function SessionPage({
                             <PlayingCard card={card} size="sm" />
                           ) : (
                             <span
-                              className={`block aspect-[5/7] w-8 rounded-md border border-dashed ${
+                              className={`block aspect-[5/7] w-8 rounded-md border border-dashed xl:w-10 ${
                                 seat === state.turn ? "border-amber-300" : "border-white/30"
                               }`}
                             />
