@@ -71,10 +71,12 @@ export interface Invitation {
   id: string;
   organization_id: string;
   organization_name?: string;
+  organization_slug?: string | null;
   program_id?: string;
   offering_id?: string;
   group_id?: string;
   email?: string;
+  display_name?: string | null;
   role: string;
   status: string;
   expires_at?: string;
@@ -269,6 +271,7 @@ export interface Offering {
   registered_app_id?: string;
   external_runtime_url?: string;
   participant_label_singular?: string;
+  content_package?: Record<string, unknown> | null;
   participant_label_plural?: string;
   metadata: Record<string, unknown>;
   registration_count: number;

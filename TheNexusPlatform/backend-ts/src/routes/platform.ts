@@ -1,6 +1,7 @@
 /** Platform layer API routes for orgs, challenges, permissions, and join codes. */
 
 import { Hono } from "hono";
+import { z } from "zod";
 
 import {
   exchangeLaunchToken,
@@ -290,6 +291,135 @@ platformRouter.post("/auth/login", async (c) => {
   return c.json(_authUserResponse(user, session.access_token));
 });
 
+// ── Dev-only test login (local/dev only) ────────────────────────────────────
+// Enabled when Supabase auth isn't configured (local demo mode) or explicitly
+// via NEXUS_ENABLE_DEV_LOGIN=1. Lets the UI's "Test as…" lists become any real
+// org member/admin without knowing their password, and auto-activates a pending
+// invitee's account on first use. NEVER enabled in a Supabase-backed prod env.
+const DEV_LOGIN_PASSWORD = "dev-password-123";
+function _devLoginEnabled(): boolean {
+  return process.env.NEXUS_ENABLE_DEV_LOGIN === "1" || !getSettings().supabaseEnabled;
+}
+function _profileRoleForMembership(role: string): string {
+  return role === "administrator" || role === "owner" ? "org_admin" : "student";
+}
+
+// Every org's name + slug (dev only): powers the gate's dynamic portal list so
+// a freshly provisioned org — and everyone invited into it — is immediately
+// discoverable without editing any hardcoded list.
+platformRouter.get("/dev/orgs", async (c) => {
+  if (!_devLoginEnabled()) throw new HttpError(404, "Not found");
+  const orgs = await db.listAllOrganizations();
+  return c.json(orgs.map((o: Row) => ({ id: o.id, name: o.name, slug: o.slug })));
+});
+
+platformRouter.get("/dev/personas", async (c) => {
+  if (!_devLoginEnabled()) throw new HttpError(404, "Not found");
+  const slug = c.req.query("org_slug");
+  const orgIdParam = c.req.query("org_id");
+  if (!slug && !orgIdParam) throw new HttpError(400, "org_slug or org_id required");
+  const org = orgIdParam ? await db.getOrganization(orgIdParam) : await db.getOrganizationBySlug(slug!);
+  if (!org) throw new HttpError(404, "Organization not found");
+  const members = (await db.listMembers(org.id))
+    .map((m: Row) => {
+      const p = (m.profiles ?? {}) as Row;
+      return {
+        email: (p.email ?? m.email ?? null) as string | null,
+        display_name: (p.display_name ?? p.name ?? null) as string | null,
+        role: m.role as string,
+        program_id: (m.program_id ?? null) as string | null,
+        kind: "member" as const,
+      };
+    })
+    .filter((m) => m.email);
+  const invites = (await graph.listInvitations(org.id))
+    .filter((i: Row) => i.status === "pending" && i.email)
+    .map((i: Row) => ({
+      email: i.email as string,
+      display_name: (i.display_name ?? null) as string | null,
+      role: i.role as string,
+      program_id: (i.program_id ?? null) as string | null,
+      kind: "invite" as const,
+    }));
+  // Dedupe by email (a person may hold several memberships); members win over
+  // pending invites, and org-level admin/owner rows win over program-scoped ones.
+  const rank = (p: { role: string; program_id: string | null; kind: string }) =>
+    (p.kind === "member" ? 100 : 0) +
+    (p.program_id === null ? 10 : 0) +
+    (p.role === "owner" ? 3 : p.role === "administrator" ? 2 : 1);
+  const byEmail = new Map<string, (typeof members)[number] | (typeof invites)[number]>();
+  for (const p of [...members, ...invites]) {
+    const key = (p.email as string).toLowerCase();
+    const cur = byEmail.get(key);
+    if (!cur || rank(p) > rank(cur)) byEmail.set(key, p);
+  }
+  return c.json({ org: { id: org.id, name: org.name, slug: org.slug }, personas: [...byEmail.values()] });
+});
+
+platformRouter.post("/dev/login-as", async (c) => {
+  if (!_devLoginEnabled()) throw new HttpError(404, "Not found");
+  const body = (await c.req.json().catch(() => ({}))) as Row;
+  const email = String(body?.email ?? "").trim().toLowerCase();
+  const orgSlug = body?.org_slug as string | undefined;
+  const orgIdParam = body?.org_id as string | undefined;
+  if (!email) throw new HttpError(400, "email required");
+
+  let profile = await db.getProfileByEmail(email);
+  let authId: string;
+
+  if (profile) {
+    // Use the auth CREDENTIAL id, not this profile row's own id — they can
+    // differ (one auth id → many org-scoped profiles, migration 0010). The
+    // token verifier only recognizes the auth id; using profile.id here was
+    // the bug behind "test as" silently bouncing back to the wrong session.
+    authId = (profile.auth_user_id as string | undefined) ?? (profile.id as string);
+  } else {
+    // Auto-activate: create the account, then honor any pending invitation's
+    // org + role so the new user lands where the invite intended.
+    let created: Row;
+    try {
+      created = await createAuthUser(email, DEV_LOGIN_PASSWORD);
+    } catch {
+      created = await signInUser(email, DEV_LOGIN_PASSWORD);
+    }
+    authId = created.id as string;
+    let displayName = email.split("@")[0];
+    let membershipRole = "administrator";
+    let org: Row | null = orgIdParam
+      ? await db.getOrganization(orgIdParam)
+      : orgSlug
+        ? await db.getOrganizationBySlug(orgSlug)
+        : null;
+    let programId: string | null = null;
+    if (org) {
+      const invite = (await graph.listInvitations(org.id)).find(
+        (i: Row) => (i.email as string)?.toLowerCase() === email && i.status === "pending",
+      );
+      if (invite) {
+        membershipRole = (invite.role as string) ?? "administrator";
+        programId = (invite.program_id as string) ?? null;
+        // Honor the name the inviter typed — don't fall back to the email prefix.
+        if (invite.display_name) displayName = invite.display_name as string;
+      }
+    }
+    if (org) {
+      // Proper org-scoped profile (organization_id set → visible under org RLS),
+      // with the membership pointing at the profile's own id, not the auth id.
+      const profileId = await db.ensureOrgProfile(authId, org.id, {
+        email,
+        role: _profileRoleForMembership(membershipRole),
+        displayName,
+      });
+      await db.addMembership(org.id, profileId, membershipRole, null, "edit", programId);
+    } else {
+      await db.createProfile(authId, email, _profileRoleForMembership(membershipRole), displayName);
+    }
+  }
+
+  const user = await loadPlatformUser(authId, email);
+  return c.json(_authUserResponse(user, authId));
+});
+
 /**
  * Swap a short-lived launch token (from GET /api/apps/{id}/launch-context)
  * for a real session access_token — replaces handing a raw platform session
@@ -395,6 +525,12 @@ platformRouter.post("/orgs/:org_id/programs", async (c) => {
   const orgId = c.req.param("org_id");
   const req = parseBody(programInput, await c.req.json());
   _assertOrgAccess(user, orgId, true);
+  if (user.role !== "platform_admin") {
+    const caps = await db.getOrgCapabilities(orgId);
+    if (!(caps.programTypes as Row)[req.category]) {
+      throw new HttpError(403, `This organization is not permitted to create '${req.category}' programs`);
+    }
+  }
   const row = await db.createProgram(orgId, req.name, req.category, {
     description: req.description ?? null,
     icon: req.icon ?? null,
@@ -491,6 +627,12 @@ platformRouter.post("/orgs/:org_id/integrations", async (c) => {
   const orgId = c.req.param("org_id");
   const req = parseBody(integrationInputSchema, await c.req.json());
   _assertOrgAccess(user, orgId, true);
+  if (user.role !== "platform_admin") {
+    const caps = await db.getOrgCapabilities(orgId);
+    if (!(caps.features as Row).integrations) {
+      throw new HttpError(403, "Integrations aren't enabled for this organization");
+    }
+  }
   const row = await db.createIntegration(
     orgId,
     req.integration_type,
@@ -574,6 +716,23 @@ platformRouter.post("/stages/:stage_id/join-codes", async (c) => {
   const org = await db.getOrganization(stage.org_id);
   const orgName = (stage.organizations ?? {}).name || org?.name || "";
   return c.json(_invitationResponse(row, orgName, stage.name, null));
+});
+
+// Public org branding by slug — powers the per-org login portal (/@/:slug),
+// which must render an org's name/logo/accent BEFORE anyone authenticates.
+// Returns only a safe, non-sensitive branding subset.
+platformRouter.get("/orgs/by-slug/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  const org = await db.getOrganizationBySlug(slug);
+  if (!org) throw new HttpError(404, "Organization not found");
+  const theme = (org.settings ?? {}).theme ?? {};
+  return c.json({
+    id: org.id,
+    name: org.name,
+    slug: org.slug,
+    theme_accent_color: theme.accent_color ?? null,
+    theme_logo_url: theme.logo_url ?? org.logo_url ?? null,
+  });
 });
 
 platformRouter.get("/join-codes/:code", async (c) => {
@@ -811,6 +970,77 @@ platformRouter.patch("/members/:member_id", async (c) => {
   return c.json(_memberResponse(updated, profile, stageName));
 });
 
+// True administrators only (owner / administrator) — deliberately stricter
+// than isOfferingAdmin, which counts instructors for offering-management tasks.
+// Removing PEOPLE is an admin act; an instructor must never be able to do it.
+function _canManageMembers(user: PlatformUser, orgId: string, programId: string | null): boolean {
+  if (user.role === "platform_admin") return true;
+  return user.memberships.some(
+    (m) =>
+      m.org_id === orgId &&
+      (m.role === "owner" || m.role === "administrator") &&
+      (!m.program_id || m.program_id === programId),
+  );
+}
+
+// Remove a member. Org-scoped memberships require org edit access; program-
+// scoped ones may also be removed by that program's administrator (§3.5 — the
+// program admin governs their own team). Owners can't be removed here (the
+// org must always have one; ownership transfer is a separate concern).
+platformRouter.delete("/members/:member_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const memberId = c.req.param("member_id");
+  const row = await db.getMembership(memberId);
+  if (!row) throw new HttpError(404, "Member not found");
+  if (row.role === "owner") throw new HttpError(400, "The organization owner cannot be removed");
+  if (row.program_id) {
+    if (!_canManageMembers(user, row.org_id, row.program_id)) {
+      throw new HttpError(403, "Program admin access required");
+    }
+  } else {
+    _assertOrgAccess(user, row.org_id, true);
+  }
+  await db.deleteMembership(memberId);
+  await db.recordAuditEvent("member.removed", {
+    orgId: row.org_id,
+    actorUserId: user.id,
+    scopeType: row.program_id ? "program" : "organization",
+    scopeId: row.program_id ?? row.org_id,
+    targetType: "membership",
+    targetId: memberId,
+    metadata: { role: row.role },
+  });
+  return c.json({ ok: true });
+});
+
+// Withdraw a pending invitation — the activation link stops working.
+platformRouter.delete("/invitations/:invitation_id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const invId = c.req.param("invitation_id");
+  const inv = await graph.getInvitation(invId);
+  if (!inv) throw new HttpError(404, "Invitation not found");
+  if (inv.program_id) {
+    if (!_canManageMembers(user, inv.organization_id as string, inv.program_id as string)) {
+      throw new HttpError(403, "Program admin access required");
+    }
+  } else {
+    _assertOrgAccess(user, inv.organization_id as string, true);
+  }
+  const revoked = await graph.revokeInvitation(invId);
+  if (!revoked) throw new HttpError(410, "This invitation is no longer pending");
+  await db.recordAuditEvent("invitation.revoked", {
+    orgId: inv.organization_id as string,
+    actorUserId: user.id,
+    scopeType: inv.program_id ? "program" : "organization",
+    scopeId: (inv.program_id as string) ?? (inv.organization_id as string),
+    targetType: "invitation",
+    targetId: invId,
+    metadata: { email: inv.email },
+  });
+  return c.json({ ok: true });
+});
+
 platformRouter.get("/orgs/mine", async (c) => {
   const user = await getCurrentUser(c);
   const rows = await db.getUserOrgs(user.id);
@@ -886,6 +1116,49 @@ platformRouter.get("/orgs/:org_id/audit", async (c) => {
   );
 });
 
+// Platform operator: audit feed across every organization — boundary-level
+// actions only (provisioning, governance, entitlements), never an org's content.
+platformRouter.get("/admin/audit", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  const rawLimit = c.req.query("limit");
+  let limit = 100;
+  if (rawLimit !== undefined) {
+    limit = Number(rawLimit);
+    if (!Number.isInteger(limit)) throw new HttpError(422, [{ loc: ["query", "limit"], msg: "Input should be a valid integer", type: "int_parsing" }]);
+    if (limit > 500) throw new HttpError(422, [{ loc: ["query", "limit"], msg: "Input should be less than or equal to 500", type: "less_than_equal" }]);
+  }
+  const events = await db.listAllAuditEvents(limit);
+  const orgIds = new Set(events.map((e) => e.organization_id).filter(Boolean) as string[]);
+  const orgNames = new Map<string, string>();
+  for (const oid of orgIds) {
+    const org = await db.getOrganization(oid);
+    if (org) orgNames.set(oid, org.name as string);
+  }
+  const actorIds = new Set(events.map((e) => e.actor_user_id).filter(Boolean) as string[]);
+  const names = new Map<string, string>();
+  for (const aid of actorIds) {
+    const profile = (await db.getProfile(aid)) ?? {};
+    names.set(aid, profile.display_name || profile.name || profile.email || "");
+  }
+  return c.json(
+    events.map((e) => ({
+      id: e.id,
+      organization_id: e.organization_id ?? null,
+      organization_name: e.organization_id ? (orgNames.get(e.organization_id) ?? null) : null,
+      actor_user_id: e.actor_user_id ?? null,
+      actor_name: names.get(e.actor_user_id ?? "") ?? null,
+      action: e.action,
+      scope_type: e.scope_type ?? null,
+      scope_id: e.scope_id ?? null,
+      target_type: e.target_type ?? null,
+      target_id: e.target_id ?? null,
+      metadata: e.metadata ?? {},
+      created_at: e.created_at,
+    })),
+  );
+});
+
 // ── Entitlements ─────────────────────────────────────────────────────────────
 function _entitlementResponse(row: Row): Row {
   return {
@@ -917,7 +1190,7 @@ platformRouter.put("/orgs/:org_id/entitlements/:module", async (c) => {
     throw new HttpError(422, [
       {
         loc: ["path", "module"],
-        msg: "Input should be 'nexus', 'learning', 'coaching' or 'analytics'",
+        msg: "Input should be 'nexus', 'learning', 'coaching', 'analytics' or 'community'",
         type: "enum",
       },
     ]);
@@ -941,6 +1214,37 @@ platformRouter.put("/orgs/:org_id/entitlements/:module", async (c) => {
     },
   );
   return c.json(_entitlementResponse(row));
+});
+
+// ── Capability envelope (§3.5 governance): what an org may create — program
+// categories, offering types, platform features. Boundary control only, so
+// read is any org member (they see their own envelope), write is operator-only.
+platformRouter.get("/orgs/:org_id/capabilities", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId);
+  return c.json(await db.getOrgCapabilities(orgId));
+});
+
+const capabilityPatchSchema = z.object({
+  programTypes: z.record(z.string(), z.boolean()).optional(),
+  offeringTypes: z.record(z.string(), z.boolean()).optional(),
+  features: z.record(z.string(), z.boolean()).optional(),
+});
+
+platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  if (user.role !== "platform_admin") throw new HttpError(403, "Platform admin access required");
+  const req = parseBody(capabilityPatchSchema, await c.req.json());
+  const caps = await db.setOrgCapabilities(orgId, req);
+  await db.recordAuditEvent("organization.capabilities_updated", {
+    orgId,
+    actorUserId: user.id,
+    scopeType: "organization",
+    scopeId: orgId,
+  });
+  return c.json(caps);
 });
 
 // ─── Slice 11: relationships, affiliations, groups, invitations ─────────────
@@ -967,6 +1271,41 @@ platformRouter.get("/admin/organizations", async (c) => {
   const user = await getCurrentUser(c);
   _requirePlatformAdmin(user);
   return c.json(await db.listAllOrganizations());
+});
+
+// The operator's provisioning event — a fixed, repeatable sequence: create the
+// org + isolation boundary, grant default entitlements, then invite every named
+// administrator (first = owner). No password is ever set by the operator; each
+// administrator activates through their own invitation link, same as any invite.
+const provisionOrgSchema = z.object({
+  name: z.string().min(1),
+  admins: z.array(z.object({ email: z.string().email(), display_name: z.string().nullish() })).min(1),
+});
+
+platformRouter.post("/admin/organizations", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(provisionOrgSchema, await c.req.json());
+  const result = await graph.provisionOrganizationWithAdmins(
+    req.name,
+    req.admins.map((a) => ({ email: a.email, displayName: a.display_name ?? null })),
+  );
+  await db.recordAuditEvent("organization.provisioned", {
+    orgId: result.organization.id as string,
+    actorUserId: user.id,
+    scopeType: "organization",
+    scopeId: result.organization.id as string,
+    metadata: { name: req.name, admin_count: req.admins.length },
+  });
+  const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
+  return c.json({
+    organization: result.organization,
+    invitations: result.invitations.map((inv) => ({
+      ...inv,
+      redeem_url: base ? `${base}/invite/${inv.token}` : `/invite/${inv.token}`,
+    })),
+  });
 });
 
 // Organizations the caller may reference (affiliations / relationships).
@@ -1255,7 +1594,7 @@ platformRouter.post("/orgs/:org_id/invitations", async (c) => {
   _assertOrgAccess(user, orgId, true);
   const body = (await c.req.json()) as Row;
   const { invitation, token } = await graph.createInvitation(orgId, user.id, {
-    email: body.email ?? null, role: (body.role as string) ?? "learner",
+    email: body.email ?? null, displayName: body.display_name ?? null, role: (body.role as string) ?? "learner",
     programId: body.program_id ?? null, offeringId: body.offering_id ?? null, groupId: body.group_id ?? null,
     expiresAt: body.expires_at ?? null,
   });
@@ -1263,7 +1602,17 @@ platformRouter.post("/orgs/:org_id/invitations", async (c) => {
     orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, targetType: "invitation", targetId: invitation.id as string,
   });
   const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
-  return c.json({ ...invitation, token, redeem_url: base ? `${base}/?invite=${token}` : `/?invite=${token}` });
+  return c.json({ ...invitation, token, redeem_url: base ? `${base}/invite/${token}` : `/invite/${token}` });
+});
+// List pending invitations for an org — lets the Members UI show "invited" people
+// immediately (before anyone accepts), which is otherwise invisible.
+platformRouter.get("/orgs/:org_id/invitations", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId);
+  const rows = (await graph.listInvitations(orgId)).filter((i: Row) => i.status === "pending");
+  return c.json(rows);
 });
 platformRouter.get("/invitations/:token", async (c) => {
   _requireDb();
@@ -1275,7 +1624,12 @@ platformRouter.post("/invitations/:token/accept", async (c) => {
   const user = await getCurrentUser(c);
   _requireDb();
   const body = (await c.req.json().catch(() => ({}))) as Row;
-  const row = await graph.acceptInvitation(c.req.param("token"), user.id, (body?.display_name as string) ?? null);
+  const row = await graph.acceptInvitation(
+    c.req.param("token"),
+    user.id,
+    (body?.display_name as string) ?? null,
+    user.email ?? null,
+  );
   return c.json(row);
 });
 

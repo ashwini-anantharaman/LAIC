@@ -9,6 +9,7 @@ import * as local from "./platformLocalStore";
 import type { Membership } from "./permissions";
 import { createEphemeralClient, requireAdminClient, requireClient } from "./supabaseClient";
 import { dbEnabled } from "./db/client";
+import * as demoAuth from "./db/demoAuthRepo";
 import * as pg from "./db/identityRepo";
 
 type Row = Record<string, any>;
@@ -92,7 +93,7 @@ function _bearerToken(c: Context): string | null {
 
 export async function verifyToken(token: string): Promise<{ id: string; email: string }> {
   if (await demoMode()) {
-    const user = local.localAuthGetUser(token);
+    const user = dbEnabled() ? await demoAuth.getDemoAuthUser(token) : local.localAuthGetUser(token);
     if (user === null) throw new HttpError(401, "Invalid token");
     return { id: user.id, email: user.email };
   }
@@ -207,7 +208,9 @@ export async function getOptionalUser(c: Context): Promise<PlatformUser | null> 
 }
 
 export async function createAuthUser(email: string, password: string): Promise<Row> {
-  if (await demoMode()) return local.localAuthCreateUser(email, password);
+  if (await demoMode()) {
+    return dbEnabled() ? demoAuth.createDemoAuthUser(email, password) : local.localAuthCreateUser(email, password);
+  }
   const client = requireAdminClient();
   try {
     const { data, error } = await client.auth.admin.createUser({
@@ -300,7 +303,9 @@ export async function exchangeLaunchToken(rawToken: string): Promise<Row> {
 }
 
 export async function signInUser(email: string, password: string): Promise<Row> {
-  if (await demoMode()) return local.localAuthSignIn(email, password);
+  if (await demoMode()) {
+    return dbEnabled() ? demoAuth.signInDemoAuthUser(email, password) : local.localAuthSignIn(email, password);
+  }
   // Ephemeral client so login never overwrites the admin client's service-role session.
   const client = createEphemeralClient();
   try {

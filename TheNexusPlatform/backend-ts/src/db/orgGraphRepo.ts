@@ -7,8 +7,9 @@
  * bulk registration import. Postgres-only (RLS-scoped via `scoped()`); returns
  * snake_case rows for the routes.
  */
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 
+import { HttpError } from "../httpError";
 import * as localKeys from "../platformLocalStore";
 import { asPrivileged } from "./context";
 import { resolveProfileId, ensureOrgProfile } from "./resolveProfile";
@@ -16,9 +17,178 @@ import { scoped } from "./tenantRepo";
 import {
   organizations, offerings, organizationRelationships, programOrganizationAffiliations,
   programAffiliations, groups, groupMemberships, invitations, registrations, participants, profiles, programs,
+  programRoles, programRoleAssignments, entitlements, orgMemberships, registeredApps, appConfigVersions,
 } from "./schema";
 
 type Row = Record<string, unknown>;
+
+// ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
+const programRoleRow = (r: typeof programRoles.$inferSelect): Row => ({
+  id: r.id, organization_id: r.organizationId, program_id: r.programId,
+  name: r.name, perms: r.perms, created_at: r.createdAt,
+});
+
+export async function listProgramRoles(programId: string): Promise<Row[]> {
+  return scoped(async (tx) =>
+    (await tx.select().from(programRoles).where(eq(programRoles.programId, programId))).map(programRoleRow),
+  );
+}
+
+export async function getProgramRole(id: string): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(programRoles).where(eq(programRoles.id, id)).limit(1);
+    return r.length ? programRoleRow(r[0]) : null;
+  });
+}
+
+export async function createProgramRole(
+  orgId: string,
+  programId: string,
+  name: string,
+  perms: Row,
+  createdByUserId?: string | null,
+): Promise<Row> {
+  return scoped(async (tx) => {
+    const [r] = await tx
+      .insert(programRoles)
+      .values({ organizationId: orgId, programId, name, perms, createdByUserId: createdByUserId ?? null })
+      .returning();
+    return programRoleRow(r);
+  });
+}
+
+export async function updateProgramRole(id: string, patch: { name?: string; perms?: Row }): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const set: Row = {};
+    if (patch.name != null) set.name = patch.name;
+    if (patch.perms != null) set.perms = patch.perms;
+    if (Object.keys(set).length === 0) return getProgramRole(id);
+    const [r] = await tx.update(programRoles).set(set).where(eq(programRoles.id, id)).returning();
+    return r ? programRoleRow(r) : null;
+  });
+}
+
+export async function deleteProgramRole(id: string): Promise<void> {
+  await scoped(async (tx) => {
+    await tx.delete(programRoles).where(eq(programRoles.id, id));
+  });
+}
+
+// ── Program members + role assignments (§3.5: assign people to roles) ───────
+// A program's people are its program-scoped memberships plus its pending
+// invitations; each may carry one custom-role assignment (matched by email so
+// it works before AND after the person activates).
+
+/** Everyone in a program: active members and pending invitees, with their assigned role. */
+// Privileged read: the route verifies the caller belongs to this org, and some
+// profiles (e.g. dev-activated ones) carry no organization_id, so org-scoped
+// RLS would hide exactly the names/emails this listing exists to show.
+export async function listProgramMembers(orgId: string, programId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const mships = await tx
+      .select()
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.programId, programId)));
+    const pids = [...new Set(mships.map((m) => m.profileId))];
+    // Memberships may reference either a profile's own id OR its auth-credential
+    // id (dev auto-activation does the latter) — resolve both.
+    const profs = pids.length
+      ? await tx.select().from(profiles).where(or(inArray(profiles.id, pids), inArray(profiles.authUserId, pids)))
+      : [];
+    const profMap = new Map<string, (typeof profs)[number]>();
+    for (const p of profs) {
+      profMap.set(p.id, p);
+      if (p.authUserId) profMap.set(p.authUserId, p);
+    }
+
+    const assignments = await tx
+      .select({ a: programRoleAssignments, roleName: programRoles.name, rolePerms: programRoles.perms })
+      .from(programRoleAssignments)
+      .leftJoin(programRoles, eq(programRoles.id, programRoleAssignments.roleId))
+      .where(eq(programRoleAssignments.programId, programId));
+    const byEmail = new Map(
+      assignments.map((r) => [
+        (r.a.email ?? "").toLowerCase(),
+        { role_id: r.a.roleId, role_name: r.roleName ?? null, role_perms: r.rolePerms ?? {} },
+      ]),
+    );
+
+    const members = mships.map((m) => {
+      const p = profMap.get(m.profileId);
+      const email = ((p?.email as string | null) ?? "").toLowerCase();
+      const asg = byEmail.get(email);
+      return {
+        membership_id: m.id,
+        invitation_id: null as string | null,
+        email: p?.email ?? null,
+        display_name: p?.displayName ?? p?.name ?? null,
+        membership_role: m.role,
+        status: "active",
+        role_id: asg?.role_id ?? null,
+        role_name: asg?.role_name ?? null,
+      };
+    });
+
+    const invites = (
+      await tx
+        .select()
+        .from(invitations)
+        .where(and(eq(invitations.organizationId, orgId), eq(invitations.programId, programId), eq(invitations.status, "pending")))
+    ).map((i) => {
+      const asg = byEmail.get((i.email ?? "").toLowerCase());
+      return {
+        membership_id: null as string | null,
+        invitation_id: i.id,
+        email: i.email,
+        display_name: i.displayName ?? null,
+        membership_role: i.role,
+        status: "invited",
+        role_id: asg?.role_id ?? null,
+        role_name: asg?.role_name ?? null,
+      };
+    });
+
+    // Members win over their own leftover pending invite (dev auto-activation
+    // doesn't consume the invitation row).
+    const seen = new Set(members.map((m) => (m.email as string | null)?.toLowerCase()).filter(Boolean));
+    return [...members, ...invites.filter((i) => !seen.has((i.email ?? "").toLowerCase()))];
+  });
+}
+
+/** Assign (or clear, with roleId=null) a person's custom role in a program. */
+export async function setProgramRoleAssignment(
+  orgId: string,
+  programId: string,
+  email: string,
+  roleId: string | null,
+): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const key = email.trim().toLowerCase();
+    await tx
+      .delete(programRoleAssignments)
+      .where(and(eq(programRoleAssignments.programId, programId), eq(programRoleAssignments.email, key)));
+    if (!roleId) return null;
+    const [a] = await tx
+      .insert(programRoleAssignments)
+      .values({ organizationId: orgId, programId, roleId, email: key })
+      .returning();
+    return { id: a.id, program_id: a.programId, role_id: a.roleId, email: a.email };
+  });
+}
+
+/** The current user's assigned role (+perms) in a program, or null. */
+export async function getProgramRoleForEmail(programId: string, email: string): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx
+      .select({ a: programRoleAssignments, roleName: programRoles.name, rolePerms: programRoles.perms })
+      .from(programRoleAssignments)
+      .leftJoin(programRoles, eq(programRoles.id, programRoleAssignments.roleId))
+      .where(and(eq(programRoleAssignments.programId, programId), eq(programRoleAssignments.email, email.trim().toLowerCase())))
+      .limit(1);
+    if (!r.length) return null;
+    return { role_id: r[0].a.roleId, role_name: r[0].roleName ?? null, perms: r[0].rolePerms ?? {} };
+  });
+}
 
 // ── Organization relationships ──────────────────────────────────────────────
 const relRow = (r: typeof organizationRelationships.$inferSelect): Row => ({
@@ -324,16 +494,16 @@ export async function coachAddParticipant(groupId: string, actorAuthId: string, 
 // ── Invitations (secure-token invite link) ──────────────────────────────────
 const inviteRow = (i: typeof invitations.$inferSelect): Row => ({
   id: i.id, organization_id: i.organizationId, program_id: i.programId, offering_id: i.offeringId, group_id: i.groupId,
-  email: i.email, role: i.role, status: i.status, expires_at: i.expiresAt, created_at: i.createdAt,
+  email: i.email, display_name: i.displayName, role: i.role, status: i.status, expires_at: i.expiresAt, created_at: i.createdAt,
 });
 
-export async function createInvitation(orgId: string, invitedByAuthId: string, opts: { email?: string | null; role?: string; programId?: string | null; offeringId?: string | null; groupId?: string | null; expiresAt?: string | null }): Promise<{ invitation: Row; token: string }> {
+export async function createInvitation(orgId: string, invitedByAuthId: string, opts: { email?: string | null; displayName?: string | null; role?: string; programId?: string | null; offeringId?: string | null; groupId?: string | null; expiresAt?: string | null }): Promise<{ invitation: Row; token: string }> {
   return scoped(async (tx) => {
     const [rawToken, tokenHash] = localKeys.generateApiKey();
     const invitedBy = await resolveProfileId(tx, invitedByAuthId, orgId);
     const [i] = await tx.insert(invitations).values({
       organizationId: orgId, programId: opts.programId ?? null, offeringId: opts.offeringId ?? null, groupId: opts.groupId ?? null,
-      tokenHash, email: opts.email ?? null, role: opts.role ?? "learner", invitedByUserId: invitedBy,
+      tokenHash, email: opts.email ?? null, displayName: opts.displayName ?? null, role: opts.role ?? "learner", invitedByUserId: invitedBy,
       expiresAt: (opts.expiresAt as unknown as Date) ?? null,
     }).returning();
     return { invitation: inviteRow(i), token: rawToken };
@@ -346,25 +516,74 @@ export async function getInvitationByToken(rawToken: string): Promise<Row | null
     const r = await tx.select().from(invitations).where(eq(invitations.tokenHash, localKeys.hashApiKey(rawToken))).limit(1);
     if (!r.length) return null;
     const i = r[0];
-    const org = await tx.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, i.organizationId)).limit(1);
-    return { ...inviteRow(i), organization_name: org.length ? org[0].name : null };
+    const org = await tx.select({ name: organizations.name, slug: organizations.slug }).from(organizations).where(eq(organizations.id, i.organizationId)).limit(1);
+    return {
+      ...inviteRow(i),
+      organization_name: org.length ? org[0].name : null,
+      organization_slug: org.length ? org[0].slug : null,
+    };
+  });
+}
+
+/** List invitations for an org (no token — that's hashed). Dev tooling + admin views. */
+export async function listInvitations(orgId: string): Promise<Row[]> {
+  return scoped(async (tx) =>
+    (await tx.select().from(invitations).where(eq(invitations.organizationId, orgId))).map(inviteRow),
+  );
+}
+
+/** Fetch one invitation by id (for authorization before revoking). */
+export async function getInvitation(id: string): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(invitations).where(eq(invitations.id, id)).limit(1);
+    return r.length ? inviteRow(r[0]) : null;
+  });
+}
+
+/** Withdraw a pending invitation — its activation link stops working. */
+export async function revokeInvitation(id: string): Promise<boolean> {
+  return scoped(async (tx) => {
+    const r = await tx
+      .update(invitations)
+      .set({ status: "revoked" })
+      .where(and(eq(invitations.id, id), eq(invitations.status, "pending")))
+      .returning({ id: invitations.id });
+    return r.length > 0;
   });
 }
 
 /** Accept an invitation → ensure the invitee's org profile + membership/participant. */
-export async function acceptInvitation(rawToken: string, authUserId: string, displayName?: string | null): Promise<Row> {
+export async function acceptInvitation(
+  rawToken: string,
+  authUserId: string,
+  displayName?: string | null,
+  accepterEmail?: string | null,
+): Promise<Row> {
   return asPrivileged(async (tx) => {
     const r = await tx.select().from(invitations).where(eq(invitations.tokenHash, localKeys.hashApiKey(rawToken))).limit(1);
-    if (!r.length) throw new Error("Invalid invitation");
+    if (!r.length) throw new HttpError(404, "Invalid invitation");
     const inv = r[0];
-    if (inv.status !== "pending") throw new Error("Invitation is no longer pending");
-    if (inv.expiresAt && new Date(inv.expiresAt) < new Date()) throw new Error("Invitation expired");
+    if (inv.status !== "pending") throw new HttpError(410, "This invitation has already been used or withdrawn");
+    if (inv.expiresAt && new Date(inv.expiresAt) < new Date()) throw new HttpError(410, "This invitation has expired");
+    // An email-addressed invitation may only be accepted by that email's owner.
+    // Without this, an admin who opens the activation link while still signed in
+    // absorbs the invitation into THEIR account — the invited person is never
+    // created, and the admin silently accumulates stacked memberships.
+    if (inv.email && accepterEmail && inv.email.toLowerCase() !== accepterEmail.toLowerCase()) {
+      throw new HttpError(
+        409,
+        `This invitation was issued to ${inv.email}. You're signed in as ${accepterEmail} — sign out first, then open the link to create ${inv.email}'s account.`,
+      );
+    }
 
     const adminish = ["administrator", "owner"].includes(inv.role);
     const staff = ["instructor", "teacher", "coach"].includes(inv.role);
     // profiles.role vocabulary is student/teacher/org_admin; membership role is separate.
     const profileRole = adminish ? "org_admin" : staff ? "teacher" : "student";
-    const profileId = await ensureOrgProfile(tx, authUserId, inv.organizationId, { email: inv.email, role: profileRole, displayName });
+    // Prefer the name the invitee confirms at accept time; fall back to what the
+    // inviter typed when creating the invitation, so a name is never dropped.
+    const resolvedDisplayName = displayName ?? inv.displayName ?? null;
+    const profileId = await ensureOrgProfile(tx, authUserId, inv.organizationId, { email: inv.email, role: profileRole, displayName: resolvedDisplayName });
     // instructor/admin roles → membership; learner/participant → offering participant.
     if (adminish || staff) {
       const mrole = adminish ? (inv.role === "owner" ? "owner" : "administrator") : "instructor";
@@ -405,5 +624,168 @@ export async function bulkImportRegistrations(orgId: string, offeringId: string,
       created += 1;
     }
     return { created };
+  });
+}
+
+// ── Operator provisioning (§3.5 Nexus → Org boundary event) ─────────────────
+// The Nexus operator's one repeatable event: create the org record + isolation
+// boundary + default entitlements, then invite every named administrator (the
+// first becomes owner). No one signs a password on the operator's behalf —
+// each administrator activates via their own invitation link, exactly like any
+// other invite. This is the honest version of "provision an org": the operator
+// never creates a login for someone else.
+export interface ProvisionAdminInput {
+  email: string;
+  displayName?: string | null;
+}
+
+export interface ProvisionedInvite {
+  email: string;
+  role: string;
+  token: string;
+  invitation_id: string;
+}
+
+export async function provisionOrganizationWithAdmins(
+  name: string,
+  admins: ProvisionAdminInput[],
+): Promise<{ organization: Row; invitations: ProvisionedInvite[] }> {
+  return asPrivileged(async (tx) => {
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "org";
+    let slug = base;
+    let n = 1;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const hit = await tx.select({ id: organizations.id }).from(organizations).where(eq(organizations.slug, slug));
+      if (!hit.length) break;
+      n += 1;
+      slug = `${base}-${n}`;
+    }
+
+    // 1. Organization record — the isolation boundary is its id, enforced by
+    //    RLS on every org-scoped table from this point on.
+    const [org] = await tx
+      .insert(organizations)
+      .values({ name, slug, tenantMode: "full_tenant", status: "active", dataResidency: "shared" })
+      .returning();
+
+    // 2. Default entitlements — nexus (mandatory) + learning, so the org can
+    //    begin the moment its first administrator activates.
+    await tx.insert(entitlements).values([
+      { organizationId: org.id, subjectType: "organization", subjectId: org.id, module: "nexus", status: "active" },
+      { organizationId: org.id, subjectType: "organization", subjectId: org.id, module: "learning", status: "active" },
+    ]);
+
+    // 3. Activation invitations — first admin = owner, the rest = administrator.
+    const invited: ProvisionedInvite[] = [];
+    for (let i = 0; i < admins.length; i++) {
+      const admin = admins[i];
+      const [rawToken, tokenHash] = localKeys.generateApiKey();
+      const [inv] = await tx
+        .insert(invitations)
+        .values({
+          organizationId: org.id,
+          tokenHash,
+          email: admin.email,
+          role: i === 0 ? "owner" : "administrator",
+        })
+        .returning();
+      invited.push({ email: admin.email, role: inv.role, token: rawToken, invitation_id: inv.id });
+    }
+
+    return {
+      organization: { id: org.id, name: org.name, slug: org.slug, status: org.status },
+      invitations: invited,
+    };
+  });
+}
+
+// ── App Shell config + immutable version snapshots (Phase 4) ────────────────
+export async function getShellConfig(appId: string): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx
+      .select({ id: registeredApps.id, orgId: registeredApps.organizationId, config: registeredApps.shellConfig })
+      .from(registeredApps)
+      .where(eq(registeredApps.id, appId))
+      .limit(1);
+    return r.length ? { app_id: r[0].id, organization_id: r[0].orgId, config: r[0].config ?? {} } : null;
+  });
+}
+
+export async function setShellConfig(appId: string, config: Row): Promise<Row> {
+  return scoped(async (tx) => {
+    const [r] = await tx
+      .update(registeredApps)
+      .set({ shellConfig: config, updatedAt: new Date() })
+      .where(eq(registeredApps.id, appId))
+      .returning({ id: registeredApps.id, config: registeredApps.shellConfig });
+    return { app_id: r.id, config: r.config ?? {} };
+  });
+}
+
+const versionRow = (v: typeof appConfigVersions.$inferSelect): Row => ({
+  id: v.id, registered_app_id: v.registeredAppId, version: v.version,
+  config: v.config, created_at: v.createdAt,
+});
+
+export async function listConfigVersions(appId: string): Promise<Row[]> {
+  return scoped(async (tx) =>
+    (
+      await tx
+        .select()
+        .from(appConfigVersions)
+        .where(eq(appConfigVersions.registeredAppId, appId))
+        .orderBy(desc(appConfigVersions.version))
+    ).map(versionRow),
+  );
+}
+
+/** Snapshot the current working config as the next immutable version. */
+export async function publishConfigVersion(orgId: string, appId: string): Promise<Row> {
+  return scoped(async (tx) => {
+    const app = await tx
+      .select({ config: registeredApps.shellConfig })
+      .from(registeredApps)
+      .where(eq(registeredApps.id, appId))
+      .limit(1);
+    if (!app.length) throw new HttpError(404, "App not found");
+    const latest = await tx
+      .select({ version: appConfigVersions.version })
+      .from(appConfigVersions)
+      .where(eq(appConfigVersions.registeredAppId, appId))
+      .orderBy(desc(appConfigVersions.version))
+      .limit(1);
+    const next = (latest[0]?.version ?? 0) + 1;
+    const [v] = await tx
+      .insert(appConfigVersions)
+      .values({ organizationId: orgId, registeredAppId: appId, version: next, config: app[0].config ?? {} })
+      .returning();
+    return versionRow(v);
+  });
+}
+
+/** The latest PUBLISHED config (what a runtime should serve), or null if never published. */
+export async function getPublishedConfig(appId: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select()
+      .from(appConfigVersions)
+      .where(eq(appConfigVersions.registeredAppId, appId))
+      .orderBy(desc(appConfigVersions.version))
+      .limit(1);
+    return r.length ? versionRow(r[0]) : null;
+  });
+}
+
+/** Registered app by slug (privileged: powers the public pre-auth boot endpoint). */
+export async function getRegisteredAppBySlug(slug: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx.select().from(registeredApps).where(eq(registeredApps.appSlug, slug)).limit(1);
+    if (!r.length) return null;
+    const a = r[0];
+    return {
+      id: a.id, organization_id: a.organizationId, program_id: a.programId, offering_id: a.offeringId,
+      app_name: a.appName, app_slug: a.appSlug, status: a.status, launch_url: a.launchUrl,
+    };
   });
 }

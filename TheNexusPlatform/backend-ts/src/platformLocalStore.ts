@@ -233,6 +233,19 @@ export function localUpdateOrgTheme(
   throw new HttpError(404, "Organization not found");
 }
 
+/** Generic settings replace (used for capability envelope, etc.). */
+export function localSetOrgSettings(orgId: string, settings: Row): Row {
+  const orgs = _read("organizations");
+  for (const org of orgs) {
+    if (org.id === orgId) {
+      org.settings = settings;
+      _write("organizations", orgs);
+      return org;
+    }
+  }
+  throw new HttpError(404, "Organization not found");
+}
+
 export interface CreateProgramOptions {
   description?: string | null;
   icon?: string | null;
@@ -1242,6 +1255,12 @@ export function localRecordAuditEvent(action: string, opts: AuditEventOptions = 
 
 export function localListAuditEvents(orgId: string, limit = 50): Row[] {
   const rows = _read("audit_events").filter((r) => r.organization_id === orgId);
+  rows.sort((a, b) => ((a.created_at ?? "") < (b.created_at ?? "") ? 1 : -1));
+  return rows.slice(0, limit);
+}
+
+export function localListAllAuditEvents(limit = 100): Row[] {
+  const rows = _read("audit_events");
   rows.sort((a, b) => ((a.created_at ?? "") < (b.created_at ?? "") ? 1 : -1));
   return rows.slice(0, limit);
 }

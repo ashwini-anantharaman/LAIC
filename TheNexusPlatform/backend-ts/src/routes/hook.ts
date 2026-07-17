@@ -11,6 +11,8 @@ import type { Context } from "hono";
 
 import { getAuthenticatedApp, type AuthenticatedApp } from "../auth";
 import { getSettings } from "../config";
+import { dbEnabled } from "../db/client";
+import * as graph from "../db/orgGraphRepo";
 import { HttpError } from "../httpError";
 import * as db from "../platformDb";
 import { allowRequest } from "../rateLimit";
@@ -88,11 +90,20 @@ hookRouter.get("/signup-fields", async (c) => {
     throw new HttpError(403, "App slug does not match the provided API key");
   }
   const offering = await _resolveOffering(app, offeringId);
+  // Signup fields: the App Shell config wins when the app defines them (the
+  // shell's Sign-up & Login tab IS the app's signup screen — Phase 4 §3.4);
+  // fall back to the offering's own fields otherwise.
+  let fields = (offering.signup_fields ?? []) as Row[];
+  if (dbEnabled()) {
+    const shell = await graph.getShellConfig(app.id);
+    const shellFields = ((shell?.config as Row | undefined)?.signupFields ?? null) as Row[] | null;
+    if (Array.isArray(shellFields) && shellFields.length > 0) fields = shellFields;
+  }
   return c.json({
     offering_id: offering.id,
     offering_name: offering.name,
     registration_open: offering.registration_open ?? false,
-    fields: (offering.signup_fields ?? []).map(normalizeSignupField),
+    fields: fields.map(normalizeSignupField),
   });
 });
 

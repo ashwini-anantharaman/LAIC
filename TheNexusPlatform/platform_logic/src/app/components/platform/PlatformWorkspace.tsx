@@ -23,12 +23,7 @@ import { DEFAULT_SIGNUP_FIELDS } from "../../../types/platform";
 import type { Offering, OrgMember, Participant, Program, ProgramCategory } from "../../../types/platform";
 import { BORDER, INPUT_BG, MUTED, FONT_HEAD, FONT_BODY } from "../../theme";
 import { OfferingDetail } from "./OfferingDetail";
-// Cross-org panels (ProgramOrgAffiliationsSection, IncomingAffiliationRequests,
-// OrgRelationshipsPanel) are hidden for now — immediate need is one org (LAIC).
-// The backend + tests stay; re-import and re-render them when multi-org matters.
-// AffiliatedProgramsSection stays: it self-hides until a shared program exists
-// and becomes relevant at Learning Platform integration.
-import { GroupsSection, AffiliatedProgramsSection } from "./OrgGraphSections";
+import { GroupsSection, ProgramOrgAffiliationsSection, IncomingAffiliationRequests, AffiliatedProgramsSection, OrgRelationshipsPanel } from "./OrgGraphSections";
 
 const LEARNING_APP_URL =
   (import.meta.env.VITE_LEARNING_APP_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:5180";
@@ -260,6 +255,9 @@ function OrgOverview({
 
       {error && <p className="text-xs text-red-400" style={{ fontFamily: FONT_BODY }}>{error}</p>}
 
+      {/* Incoming affiliation requests from other organizations (accept/decline) */}
+      <IncomingAffiliationRequests orgId={orgId} accent={accent} />
+
       {/* KPI tiles */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {tiles.map((t) => (
@@ -366,6 +364,8 @@ function OrgOverview({
         </div>
       </section>
 
+      {/* Organization relationships (partner / member / chapter networks) */}
+      <OrgRelationshipsPanel orgId={orgId} accent={accent} />
     </div>
   );
 }
@@ -838,6 +838,8 @@ export function ProgramDetail({
       {/* Groups (classes / clubs / cohorts within this program) */}
       <GroupsSection orgId={program.org_id} programId={program.id} offerings={offerings || []} accent={accent} />
 
+      {/* Affiliated organizations (invite another org → they accept) */}
+      <ProgramOrgAffiliationsSection orgId={program.org_id} programId={program.id} accent={accent} />
     </div>
   );
 }

@@ -5,8 +5,10 @@
  */
 
 import { Hono } from "hono";
+import { z } from "zod";
 
 import { getCurrentUser, type PlatformUser } from "../auth";
+import { getSettings } from "../config";
 import { HttpError } from "../httpError";
 import * as db from "../platformDb";
 import { dbEnabled } from "../db/client";
@@ -63,6 +65,7 @@ function _offeringResponse(row: Row): Row {
     participant_label_singular: row.participant_label_singular ?? null,
     participant_label_plural: row.participant_label_plural ?? null,
     metadata: row.metadata ?? {},
+    content_package: row.content_package ?? null,
     registration_count: row.registration_count ?? 0,
     pending_count: row.pending_count ?? 0,
     participant_count: row.participant_count ?? 0,
@@ -124,6 +127,12 @@ offeringsRouter.post("/programs/:program_id/offerings", async (c) => {
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
   _requireOfferingAdmin(user, program.org_id, programId);
+  if (user.role !== "platform_admin" && ["course", "challenge", "app"].includes(req.offering_type)) {
+    const caps = await db.getOrgCapabilities(program.org_id);
+    if (!(caps.offeringTypes as Row)[req.offering_type]) {
+      throw new HttpError(403, `This organization is not permitted to publish '${req.offering_type}' offerings`);
+    }
+  }
   const row = await db.createOffering(program.org_id, programId, req.name, req.offering_type, {
     slug: req.slug ?? null,
     stageNodeId: req.stage_node_id ?? null,
@@ -244,6 +253,12 @@ offeringsRouter.post("/programs/:program_id/apps", async (c) => {
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
   _requireOfferingAdmin(user, program.org_id, programId);
+  if (user.role !== "platform_admin") {
+    const caps = await db.getOrgCapabilities(program.org_id);
+    if (!(caps.features as Row).appShells) {
+      throw new HttpError(403, "App Shell building isn't enabled for this organization");
+    }
+  }
   const [row, rawKey] = await db.createRegisteredApp(program.org_id, programId, req.app_name, {
     appSlug: req.app_slug ?? null,
     offeringId: req.offering_id ?? null,
@@ -529,4 +544,404 @@ offeringsRouter.post("/offerings/:offering_id/registrations/bulk-import", async 
     metadata: { count: result.created },
   });
   return c.json(result);
+});
+
+// ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
+const _ACCESS_LEVEL = z.enum(["view", "edit", "comment"]);
+const _programRolePerms = z.record(z.string(), _ACCESS_LEVEL);
+const programRoleCreateSchema = z.object({ name: z.string().min(1), perms: _programRolePerms.default({}) });
+const programRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _programRolePerms.optional() });
+
+offeringsRouter.get("/programs/:program_id/roles", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgMember(user, program.org_id);
+  return c.json(await graph.listProgramRoles(programId));
+});
+
+offeringsRouter.post("/programs/:program_id/roles", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const req = parseBody(programRoleCreateSchema, await c.req.json());
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOfferingAdmin(user, program.org_id, programId);
+  // created_by is provenance only; skip it to avoid the demo-mode auth-id vs
+  // profile-id mismatch (the FK targets profiles.id).
+  const row = await graph.createProgramRole(program.org_id, programId, req.name, req.perms);
+  await db.recordAuditEvent("program.role.created", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { name: req.name },
+  });
+  return c.json(row);
+});
+
+offeringsRouter.patch("/roles/:role_id", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const roleId = c.req.param("role_id");
+  const req = parseBody(programRoleUpdateSchema, await c.req.json());
+  const existing = await graph.getProgramRole(roleId);
+  if (!existing) throw new HttpError(404, "Role not found");
+  _requireOfferingAdmin(user, existing.organization_id as string, existing.program_id as string);
+  const row = await graph.updateProgramRole(roleId, { name: req.name, perms: req.perms });
+  await db.recordAuditEvent("program.role.updated", {
+    orgId: existing.organization_id as string, actorUserId: user.id, scopeType: "program",
+    scopeId: existing.program_id as string, metadata: { name: req.name ?? existing.name },
+  });
+  return c.json(row);
+});
+
+offeringsRouter.delete("/roles/:role_id", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const roleId = c.req.param("role_id");
+  const existing = await graph.getProgramRole(roleId);
+  if (!existing) throw new HttpError(404, "Role not found");
+  _requireOfferingAdmin(user, existing.organization_id as string, existing.program_id as string);
+  await graph.deleteProgramRole(roleId);
+  await db.recordAuditEvent("program.role.deleted", {
+    orgId: existing.organization_id as string, actorUserId: user.id, scopeType: "program",
+    scopeId: existing.program_id as string, metadata: { name: existing.name },
+  });
+  return c.json({ ok: true });
+});
+
+// ── Program-administrator assignment (§3.5 delegation) ──────────────────────
+// The org-altitude action: name the administrator of a program without the
+// org admin having to manage that program's internal roles (those are the
+// program admin's own job — see /programs/:id/roles above). Reuses the
+// existing invitation mechanism, scoped with role="administrator" + program_id.
+offeringsRouter.get("/programs/:program_id/administrators", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgMember(user, program.org_id);
+  const members = (await db.listMembers(program.org_id))
+    .filter((m: Row) => m.program_id === programId && (m.role === "administrator" || m.role === "owner"))
+    .map((m: Row) => {
+      const p = (m.profiles ?? {}) as Row;
+      return { email: p.email ?? null, display_name: p.display_name ?? p.name ?? null, role: m.role, status: "active" };
+    });
+  const invited = dbEnabled()
+    ? (await graph.listInvitations(program.org_id))
+        .filter((i: Row) => i.status === "pending" && i.program_id === programId && i.role === "administrator")
+        .map((i: Row) => ({ email: i.email, display_name: i.display_name ?? null, role: "administrator", status: "invited" }))
+    : [];
+  return c.json([...members, ...invited]);
+});
+
+const assignAdminSchema = z.object({ email: z.string().email(), display_name: z.string().nullish() });
+
+offeringsRouter.post("/programs/:program_id/administrators", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const req = parseBody(assignAdminSchema, await c.req.json());
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  // Org-altitude action: requires org-level access (owner/administrator),
+  // NOT program-scoped access — this is how the org assigns a program's admin.
+  _requireOfferingAdmin(user, program.org_id, null);
+  const { invitation, token } = await graph.createInvitation(program.org_id, user.id, {
+    email: req.email,
+    displayName: req.display_name ?? null,
+    role: "administrator",
+    programId,
+  });
+  await db.recordAuditEvent("program.administrator.assigned", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { email: req.email },
+  });
+  const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
+  return c.json({ ...invitation, token, redeem_url: base ? `${base}/invite/${token}` : `/invite/${token}` });
+});
+
+// ── Program members + custom-role assignment (§3.5 Team & Roles: People) ────
+offeringsRouter.get("/programs/:program_id/members", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgMember(user, program.org_id);
+  return c.json(await graph.listProgramMembers(program.org_id, programId));
+});
+
+const inviteMemberSchema = z.object({
+  email: z.string().email(),
+  display_name: z.string().nullish(),
+  role_id: z.string().nullish(),
+});
+
+offeringsRouter.post("/programs/:program_id/members", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const req = parseBody(inviteMemberSchema, await c.req.json());
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOfferingAdmin(user, program.org_id, programId);
+  const { invitation, token } = await graph.createInvitation(program.org_id, user.id, {
+    email: req.email,
+    displayName: req.display_name ?? null,
+    role: "instructor",
+    programId,
+  });
+  if (req.role_id) {
+    await graph.setProgramRoleAssignment(program.org_id, programId, req.email, req.role_id);
+  }
+  await db.recordAuditEvent("program.member.invited", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { email: req.email, role_id: req.role_id ?? null },
+  });
+  const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
+  return c.json({ ...invitation, token, redeem_url: base ? `${base}/invite/${token}` : `/invite/${token}` });
+});
+
+const setMemberRoleSchema = z.object({ email: z.string().email(), role_id: z.string().nullable() });
+
+offeringsRouter.put("/programs/:program_id/members/role", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const req = parseBody(setMemberRoleSchema, await c.req.json());
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOfferingAdmin(user, program.org_id, programId);
+  const row = await graph.setProgramRoleAssignment(program.org_id, programId, req.email, req.role_id);
+  await db.recordAuditEvent("program.member.role_assigned", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { email: req.email, role_id: req.role_id },
+  });
+  return c.json(row ?? { ok: true, cleared: true });
+});
+
+// The signed-in member's own custom role in this program (drives the confined
+// member view). Program admins/owners get full access regardless — the
+// frontend checks membership role first and only confines non-admin members.
+offeringsRouter.get("/programs/:program_id/my-role", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgMember(user, program.org_id);
+  if (!user.email) return c.json(null);
+  return c.json(await graph.getProgramRoleForEmail(programId, user.email));
+});
+
+// ── App Shell config + versions (Phase 4) ───────────────────────────────────
+// The working config the editor edits. Loose zod validation on purpose — the
+// shape evolves with the editor; the runtime validates strictly on its side.
+const shellConfigSchema = z.record(z.string(), z.any());
+
+offeringsRouter.get("/apps/:app_id/config", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const appId = c.req.param("app_id");
+  const app = await db.getRegisteredApp(appId);
+  if (!app) throw new HttpError(404, "App not found");
+  _requireOrgMember(user, app.organization_id);
+  const row = await graph.getShellConfig(appId);
+  const versions = await graph.listConfigVersions(appId);
+  return c.json({
+    app_id: appId,
+    config: row?.config ?? {},
+    latest_version: versions.length ? versions[0].version : null,
+    versions: versions.map((v: Row) => ({ version: v.version, created_at: v.created_at })),
+  });
+});
+
+offeringsRouter.put("/apps/:app_id/config", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const appId = c.req.param("app_id");
+  const config = parseBody(shellConfigSchema, await c.req.json());
+  const app = await db.getRegisteredApp(appId);
+  if (!app) throw new HttpError(404, "App not found");
+  _requireOfferingAdmin(user, app.organization_id, app.program_id ?? null);
+  const row = await graph.setShellConfig(appId, config);
+  return c.json(row);
+});
+
+offeringsRouter.post("/apps/:app_id/publish-version", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const appId = c.req.param("app_id");
+  const app = await db.getRegisteredApp(appId);
+  if (!app) throw new HttpError(404, "App not found");
+  _requireOfferingAdmin(user, app.organization_id, app.program_id ?? null);
+  const version = await graph.publishConfigVersion(app.organization_id, appId);
+  await db.recordAuditEvent("app_shell.version_published", {
+    orgId: app.organization_id,
+    actorUserId: user.id,
+    scopeType: "program",
+    scopeId: app.program_id ?? app.organization_id,
+    targetType: "registered_app",
+    targetId: appId,
+    metadata: { version: version.version },
+  });
+  return c.json(version);
+});
+
+// ── Public app boot config (Phase 4: the real runtime's config source) ──────
+// No auth: an app boots BEFORE anyone signs in, exactly like fetching a static
+// config file. Serves only the latest PUBLISHED snapshot (never the working
+// draft, never keys), adapted to the @laic/app-shell AppShellConfig contract.
+function _adaptShellConfig(app: Row, cfg: Row, version: number): Row {
+  const identity = (cfg.identity ?? {}) as Row;
+  const branding = (cfg.branding ?? {}) as Row;
+  const copy = (cfg.copy ?? {}) as Row;
+  const auth = (cfg.auth ?? {}) as Row;
+  const navigation = ((cfg.navigation ?? []) as Row[]).filter((t) => t.label);
+  const onboarding = ((cfg.onboarding ?? []) as Row[]).filter((q) => q.label);
+  const KNOWN_METHODS = ["email", "phone", "otp", "google", "apple"];
+  const methods = ((auth.methods as string[] | undefined) ?? ["email"]).filter((m) => KNOWN_METHODS.includes(m));
+  // All tabs live under the learning module's /learn prefix so the demo
+  // runtime always has a mounted module behind the door.
+  const tabs = (navigation.length ? navigation : [{ key: "home", label: "Home" }]).map((t, i) => ({
+    key: String(t.key ?? `t${i}`),
+    label: String(t.label),
+    route: i === 0 ? "/learn" : `/learn/${t.key ?? i}`,
+  }));
+  const homeRoute = tabs[0].route;
+  return {
+    appId: app.id,
+    slug: app.app_slug,
+    status: "published",
+    version: `${version}.0.0`,
+    identity: {
+      displayName: (identity.displayName as string) || (app.app_name as string),
+      shortName: (identity.shortName as string) || (app.app_name as string),
+    },
+    programContext: {
+      nexusOrgId: app.organization_id,
+      programId: app.program_id ?? "",
+      offeringId: app.offering_id ?? undefined,
+      defaultDomainId: "general",
+    },
+    branding: {
+      primaryColor: (branding.primaryColor as string) || "#4f46e5",
+      accentColor: (branding.accentColor as string) || undefined,
+      backgroundColor: (branding.backgroundColor as string) || undefined,
+      textColor: (branding.textColor as string) || undefined,
+      markGlyph: (branding.logoText as string) || undefined,
+      scheme: "light",
+    },
+    copy: {
+      welcomeTitle: (copy.welcomeTitle as string) || (app.app_name as string),
+      welcomeSubtitle: (copy.welcomeSubtitle as string) || undefined,
+      footerText: (copy.footerText as string) || undefined,
+    },
+    auth: {
+      allowedMethods: methods.length ? methods : ["email"],
+      requireInviteCode: Boolean(auth.requireInviteCode),
+      allowSelfSignup: auth.allowSelfSignup !== false,
+      allowAdminEnrollment: false,
+    },
+    roleButtons: [
+      {
+        key: "member",
+        label: "Get started",
+        roleRequested: "learner",
+        entryFlow: "signup",
+        defaultRouteAfterLogin: homeRoute,
+        visible: true,
+        sortOrder: 0,
+      },
+    ],
+    onboarding: {
+      questions: [
+        // The runtime's auth form is fixed (name/email/password), so the
+        // shell's EXTRA sign-up fields are collected right after — as
+        // onboarding questions — and the registration posts with them.
+        ...((cfg.signupFields ?? []) as Row[])
+          .filter((f) => f.key && !["name", "email"].includes(String(f.key)))
+          .map((f) => ({
+            key: String(f.key),
+            label: String(f.label ?? f.key),
+            type: "text",
+            required: Boolean(f.required),
+          })),
+        ...onboarding.map((q, i) => ({
+          key: String(q.key ?? `q${i}`),
+          label: String(q.label),
+          type: "text",
+          required: false,
+        })),
+      ],
+    },
+    navigation: { homeRoute, tabs },
+    enabledModules: { learning: true },
+    featureFlags: {},
+    entitlements: { requiredEntitlementKeys: [] },
+    build: {
+      appVariant: app.app_slug,
+      runtimeTemplate: "general-app",
+      environment: "dev",
+      configFrozenAtBuild: false,
+    },
+  };
+}
+
+offeringsRouter.get("/apps/by-slug/:slug/boot-config", async (c) => {
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const app = await graph.getRegisteredAppBySlug(c.req.param("slug"));
+  if (!app || app.status !== "active") throw new HttpError(404, "App not found");
+  const published = await graph.getPublishedConfig(app.id as string);
+  if (!published) throw new HttpError(404, "This app has no published configuration yet");
+  return c.json(_adaptShellConfig(app, published.config as Row, published.version as number));
+});
+
+// ── Learning Platform launch seam (Phase 5 — placeholder interior) ──────────
+// The LP is launched like any registered app: find-or-create its app record
+// for this program, mint a single-use launch token, hand back the context.
+// Today launch_url is null and the console shows a branded placeholder pane;
+// when a real LP lands, set launch_url on the "learning-platform" app and this
+// same seam opens it with the token — no console changes.
+offeringsRouter.post("/programs/:program_id/learning-platform/launch", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgMember(user, program.org_id);
+  if (!(await db.checkModuleAccess(program.org_id, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+
+  // Find-or-create the program's LP app record.
+  const apps = await db.listRegisteredApps(programId);
+  let lp = apps.find((a: Row) => a.app_slug?.startsWith("learning-platform"));
+  if (!lp) {
+    const [row] = await db.createRegisteredApp(program.org_id, programId, "Learning Platform", {
+      appSlug: `learning-platform-${programId.slice(0, 8)}`,
+    });
+    lp = row;
+    await db.recordAuditEvent("learning_platform.provisioned", {
+      orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+      targetType: "registered_app", targetId: lp.id,
+    });
+  }
+
+  const [tokenRow, rawToken] = await db.createLaunchToken(lp.id, user.id);
+  const membership = user.memberships.find((m) => m.org_id === program.org_id) ?? null;
+  return c.json({
+    app_slug: lp.app_slug,
+    launch_url: lp.launch_url ?? null,
+    launch_token: rawToken,
+    expires_at: tokenRow.expires_at,
+    context: {
+      organization_id: program.org_id,
+      program_id: programId,
+      program_name: program.name,
+      role: membership?.role ?? user.role,
+    },
+  });
 });

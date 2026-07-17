@@ -247,6 +247,16 @@ export async function getOrganization(orgId: string): Promise<Row | null> {
   return rows.length > 0 ? rows[0] : null;
 }
 
+export async function getOrganizationBySlug(slug: string): Promise<Row | null> {
+  if (usePg()) return pg.getOrganizationBySlug(slug);
+  if (await useLocal()) {
+    return local.localListAllOrganizations().find((o) => o.slug === slug) ?? null;
+  }
+  const client = requireClient();
+  const rows = await _select(client.from("organizations").select("*").eq("slug", slug).limit(1));
+  return rows.length > 0 ? rows[0] : null;
+}
+
 export async function updateOrgTheme(
   orgId: string,
   accentColor: string | null | undefined,
@@ -266,6 +276,46 @@ export async function updateOrgTheme(
     client.from("organizations").update({ settings }).eq("id", orgId).select("*"),
     "Failed to update organization theme",
   );
+}
+
+// ── Capability envelope (§3.5 governance) — a Nexus operator's boundary
+// controls over what an org may create: program categories, offering types,
+// platform features. Stored in organizations.settings.capabilities.
+function _mergeCapabilities(base: Row, patch: Row): Row {
+  const merge = (a: Row, b: Row): Row => ({ ...a, ...b });
+  return {
+    programTypes: merge((tpg.DEFAULT_CAPABILITIES.programTypes as Row), merge((base.programTypes as Row) ?? {}, (patch.programTypes as Row) ?? {})),
+    offeringTypes: merge((tpg.DEFAULT_CAPABILITIES.offeringTypes as Row), merge((base.offeringTypes as Row) ?? {}, (patch.offeringTypes as Row) ?? {})),
+    features: merge((tpg.DEFAULT_CAPABILITIES.features as Row), merge((base.features as Row) ?? {}, (patch.features as Row) ?? {})),
+  };
+}
+
+export async function getOrgCapabilities(orgId: string): Promise<Row> {
+  if (usePg()) return tpg.getOrgCapabilities(orgId);
+  const org = (await useLocal()) ? local.localGetOrganization(orgId) : await getOrganization(orgId);
+  if (!org) throw new HttpError(404, "Organization not found");
+  const settings = (org.settings as Row) ?? {};
+  return _mergeCapabilities({}, (settings.capabilities as Row) ?? {});
+}
+
+export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row> {
+  if (usePg()) return tpg.setOrgCapabilities(orgId, patch);
+  const org = (await useLocal()) ? local.localGetOrganization(orgId) : await getOrganization(orgId);
+  if (!org) throw new HttpError(404, "Organization not found");
+  const settings: Row = { ...((org.settings as Row) ?? {}) };
+  const merged = _mergeCapabilities({}, { ...((settings.capabilities as Row) ?? {}) });
+  const next = _mergeCapabilities(merged, patch);
+  settings.capabilities = next;
+  if (await useLocal()) {
+    local.localSetOrgSettings(orgId, settings);
+  } else {
+    const client = requireClient();
+    await _mutateOne(
+      client.from("organizations").update({ settings }).eq("id", orgId).select("*"),
+      "Failed to update organization capabilities",
+    );
+  }
+  return next;
 }
 
 export async function getJoinCode(code: string): Promise<Row | null> {
@@ -864,6 +914,18 @@ export async function updateMemberAccess(memberId: string, access: string): Prom
   );
 }
 
+/** Remove a membership. PG mode only in practice (Slice-11-era feature). */
+export async function deleteMembership(memberId: string): Promise<boolean> {
+  if (usePg()) return tpg.deleteMembership(memberId);
+  if (await useLocal()) throw new HttpError(501, "This feature requires the database backend");
+  const client = requireClient();
+  await _mutateOne(
+    client.from("org_memberships").delete().eq("id", memberId).select("*"),
+    "Member not found",
+  );
+  return true;
+}
+
 export async function getStageNode(stageId: string): Promise<Row | null> {
   if (usePg()) return tpg.getStageNode(stageId);
   if (await useLocal()) return local.localGetStage(stageId);
@@ -1398,6 +1460,14 @@ export async function listAuditEvents(orgId: string, limit = 50): Promise<Row[]>
       .order("created_at", { ascending: false })
       .limit(limit),
   );
+}
+
+/** Platform operator: every audit event across every org (PG mode only). */
+export async function listAllAuditEvents(limit = 100): Promise<Row[]> {
+  if (usePg()) return tpg.listAllAuditEvents(limit);
+  if (await useLocal()) return local.localListAllAuditEvents(limit);
+  const client = requireClient();
+  return _select(client.from("audit_events").select("*").order("created_at", { ascending: false }).limit(limit));
 }
 
 // ── Entitlements: module access grants for orgs/programs/offerings ──────────

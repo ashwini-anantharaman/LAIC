@@ -170,8 +170,19 @@ export const registeredApps = pgTable("registered_apps", {
   status: text("status").notNull().default("active"),
   launchUrl: text("launch_url"),
   launchContext: jsonb("launch_context").notNull().default({}),
+  shellConfig: jsonb("shell_config").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const appConfigVersions = pgTable("app_config_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  registeredAppId: uuid("registered_app_id").notNull(),
+  version: integer("version").notNull(),
+  config: jsonb("config").notNull(),
+  publishedByUserId: uuid("published_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const offerings = pgTable("offerings", {
@@ -195,6 +206,7 @@ export const offerings = pgTable("offerings", {
   participantLabelSingular: text("participant_label_singular"),
   participantLabelPlural: text("participant_label_plural"),
   metadata: jsonb("metadata").notNull().default({}),
+  contentPackage: jsonb("content_package"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -326,6 +338,25 @@ export const groups = pgTable("groups", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const programRoles = pgTable("program_roles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  name: text("name").notNull(),
+  perms: jsonb("perms").notNull().default({}),
+  createdByUserId: uuid("created_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const programRoleAssignments = pgTable("program_role_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  roleId: uuid("role_id").notNull(),
+  email: text("email").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const groupMemberships = pgTable("group_memberships", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull(),
@@ -406,6 +437,7 @@ export const invitations = pgTable("invitations", {
   groupId: uuid("group_id"),
   tokenHash: text("token_hash").notNull(),
   email: text("email"),
+  displayName: text("display_name"),
   role: text("role").notNull().default("learner"),
   invitedByUserId: uuid("invited_by_user_id"),
   status: text("status").notNull().default("pending"),
@@ -421,3 +453,11 @@ export const schema = {
   orgPermissionDefaults, orgMemberships, studentRegistrations, programs, integrations,
   registeredApps, offerings, registrations, participants, appLaunchTokens, auditEvents, entitlements,
 };
+
+/** Demo-mode auth (Supabase unconfigured): one row per login. Token == id. */
+export const demoAuthUsers = pgTable("demo_auth_users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

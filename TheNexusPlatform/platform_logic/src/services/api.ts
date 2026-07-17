@@ -223,12 +223,120 @@ export async function listAllOrganizations(): Promise<OrgSummary[]> {
   return request<OrgSummary[]>("/api/platform/admin/organizations");
 }
 
+/** Operator: create an organization record (minimal; boundary governance added in Phase 3). */
+export async function createOrganization(name: string): Promise<OrgSummary> {
+  return request<OrgSummary>("/api/platform/orgs", { method: "POST", body: JSON.stringify({ name }) });
+}
+
+export interface ProvisionedInvite {
+  email: string;
+  role: string;
+  token: string;
+  invitation_id: string;
+  redeem_url: string;
+}
+
+export interface ProvisionResult {
+  organization: { id: string; name: string; slug: string; status: string };
+  invitations: ProvisionedInvite[];
+}
+
+/**
+ * Operator: the full provisioning event — org + isolation boundary + default
+ * entitlements + an activation invite per named administrator (first = owner).
+ */
+export async function provisionOrganization(
+  name: string,
+  admins: { email: string; display_name?: string }[],
+): Promise<ProvisionResult> {
+  return request<ProvisionResult>("/api/platform/admin/organizations", {
+    method: "POST",
+    body: JSON.stringify({ name, admins }),
+  });
+}
+
+// ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
+export type AccessLevel = "view" | "edit" | "comment";
+export type RoleArea = "learning" | "appbuilder" | "community" | "teams" | "partners";
+export type RolePerms = Partial<Record<RoleArea, AccessLevel>>;
+
+export interface ProgramRole {
+  id: string;
+  organization_id: string;
+  program_id: string;
+  name: string;
+  perms: RolePerms;
+  created_at?: string;
+}
+
+export async function listProgramRoles(programId: string): Promise<ProgramRole[]> {
+  return request<ProgramRole[]>(`/api/programs/${programId}/roles`);
+}
+export async function createProgramRole(programId: string, payload: { name: string; perms: RolePerms }): Promise<ProgramRole> {
+  return request<ProgramRole>(`/api/programs/${programId}/roles`, { method: "POST", body: JSON.stringify(payload) });
+}
+export async function updateProgramRole(roleId: string, patch: { name?: string; perms?: RolePerms }): Promise<ProgramRole> {
+  return request<ProgramRole>(`/api/roles/${roleId}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+export async function deleteProgramRole(roleId: string): Promise<void> {
+  await request(`/api/roles/${roleId}`, { method: "DELETE" });
+}
+
+// ── Dev-only test login (local only; backend gates it) ──────────────────────
+export interface DevPersonaEntry {
+  email: string;
+  display_name: string | null;
+  role: string;
+  program_id: string | null;
+  kind: "member" | "invite";
+}
+
+export async function getDevPersonas(
+  org: { slug?: string; id?: string },
+): Promise<{ org: { id: string; name: string; slug: string }; personas: DevPersonaEntry[] }> {
+  const qs = org.id ? `org_id=${encodeURIComponent(org.id)}` : `org_slug=${encodeURIComponent(org.slug ?? "")}`;
+  return request(`/api/platform/dev/personas?${qs}`);
+}
+
+/** Become a real member/admin (dev only). Auto-activates a pending invitee. */
+export async function devLoginAs(email: string, org?: { slug?: string; id?: string }): Promise<AuthUser> {
+  const user = await request<AuthUser>("/api/platform/dev/login-as", {
+    method: "POST",
+    body: JSON.stringify({ email, org_slug: org?.slug, org_id: org?.id }),
+  });
+  setToken(user.access_token);
+  return user;
+}
+
+export interface OrgBranding {
+  id: string;
+  name: string;
+  slug: string;
+  theme_accent_color: string | null;
+  theme_logo_url: string | null;
+}
+
+/** Orgs the signed-in user belongs to (id/name/slug/role). */
+export async function listMyOrgs(): Promise<{ id: string; name: string; slug: string; role: string }[]> {
+  return request(`/api/platform/orgs/mine`);
+}
+
+/** Public: an org's branding subset, for rendering its login portal pre-auth. */
+export async function getOrgBySlug(slug: string): Promise<OrgBranding> {
+  return request<OrgBranding>(`/api/platform/orgs/by-slug/${encodeURIComponent(slug)}`);
+}
+
 // ── Slice 11: org graph ─────────────────────────────────────────────────────
 export async function createInvitation(
   orgId: string,
-  payload: { email?: string; role: string; program_id?: string; offering_id?: string; group_id?: string; expires_at?: string },
+  payload: { email?: string; display_name?: string; role: string; program_id?: string; offering_id?: string; group_id?: string; expires_at?: string },
 ): Promise<Invitation> {
   return request<Invitation>(`/api/platform/orgs/${orgId}/invitations`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+/** Pending invitations for an org — makes an invite visible before anyone accepts. */
+export async function listOrgInvitations(orgId: string): Promise<Invitation[]> {
+  return request<Invitation[]>(`/api/platform/orgs/${orgId}/invitations`);
 }
 
 export async function listGroups(orgId: string, programId?: string): Promise<Group[]> {
@@ -364,9 +472,32 @@ export async function listIntegrations(orgId: string): Promise<Integration[]> {
   return request<Integration[]>(`/api/platform/orgs/${orgId}/integrations`);
 }
 
+/** Upload the org's logo (≤1 MB image). Returns its serving URL and sets it on the theme. */
+export async function uploadOrgLogo(orgId: string, file: File): Promise<{ logo_url: string }> {
+  const data = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve((r.result as string).split(",")[1] ?? "");
+    r.onerror = () => reject(new Error("Could not read file"));
+    r.readAsDataURL(file);
+  });
+  return request<{ logo_url: string }>(`/api/platform/orgs/${orgId}/logo`, {
+    method: "POST",
+    body: JSON.stringify({ data, content_type: file.type }),
+  });
+}
+
 // ── Audit log + Entitlements ─────────────────────────────────────────────────
 export async function listAuditEvents(orgId: string, limit = 50): Promise<AuditEvent[]> {
   return request<AuditEvent[]>(`/api/platform/orgs/${orgId}/audit?limit=${limit}`);
+}
+
+export interface PlatformAuditEvent extends AuditEvent {
+  organization_name: string | null;
+}
+
+/** Platform operator: audit feed across every organization. */
+export async function listAllAuditEvents(limit = 100): Promise<PlatformAuditEvent[]> {
+  return request<PlatformAuditEvent[]>(`/api/platform/admin/audit?limit=${limit}`);
 }
 
 export async function listEntitlements(orgId: string): Promise<Entitlement[]> {
@@ -377,6 +508,24 @@ export async function setEntitlement(orgId: string, module: ModuleKey, status: E
   return request<Entitlement>(`/api/platform/orgs/${orgId}/entitlements/${module}`, {
     method: "PUT",
     body: JSON.stringify({ status }),
+  });
+}
+
+// ── Capability envelope (§3.5 governance): what an org may create ───────────
+export interface OrgCapabilities {
+  programTypes: Record<string, boolean>;
+  offeringTypes: Record<string, boolean>;
+  features: Record<string, boolean>;
+}
+
+export async function getOrgCapabilities(orgId: string): Promise<OrgCapabilities> {
+  return request<OrgCapabilities>(`/api/platform/orgs/${orgId}/capabilities`);
+}
+
+export async function setOrgCapabilities(orgId: string, patch: Partial<OrgCapabilities>): Promise<OrgCapabilities> {
+  return request<OrgCapabilities>(`/api/platform/orgs/${orgId}/capabilities`, {
+    method: "PUT",
+    body: JSON.stringify(patch),
   });
 }
 
@@ -495,5 +644,159 @@ export async function adminAddRegistration(offeringId: string, payload: AdminAdd
   return request<Registration>(`/api/offerings/${offeringId}/registrations/admin-add`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+// ── Program-administrator assignment (§3.5 delegation) ──────────────────────
+export interface ProgramAdministrator {
+  email: string;
+  display_name: string | null;
+  role: string;
+  status: "active" | "invited";
+}
+
+export async function listProgramAdministrators(programId: string): Promise<ProgramAdministrator[]> {
+  return request<ProgramAdministrator[]>(`/api/programs/${programId}/administrators`);
+}
+
+export async function assignProgramAdministrator(
+  programId: string,
+  email: string,
+  displayName?: string,
+): Promise<Invitation> {
+  return request<Invitation>(`/api/programs/${programId}/administrators`, {
+    method: "POST",
+    body: JSON.stringify({ email, display_name: displayName || undefined }),
+  });
+}
+
+// ── Program members + custom-role assignment (Team & Roles: People) ─────────
+export interface ProgramMember {
+  membership_id: string | null;
+  invitation_id: string | null;
+  email: string | null;
+  display_name: string | null;
+  membership_role: string;
+  status: "active" | "invited";
+  role_id: string | null;
+  role_name: string | null;
+}
+
+/** Remove a member (org- or program-scoped membership). */
+export async function removeMember(membershipId: string): Promise<void> {
+  await request(`/api/platform/members/${membershipId}`, { method: "DELETE" });
+}
+
+/** Withdraw a pending invitation — its activation link stops working. */
+export async function revokeInvitation(invitationId: string): Promise<void> {
+  await request(`/api/platform/invitations/${invitationId}`, { method: "DELETE" });
+}
+
+export async function listProgramMembers(programId: string): Promise<ProgramMember[]> {
+  return request<ProgramMember[]>(`/api/programs/${programId}/members`);
+}
+
+export async function inviteProgramMember(
+  programId: string,
+  payload: { email: string; display_name?: string; role_id?: string },
+): Promise<Invitation> {
+  return request<Invitation>(`/api/programs/${programId}/members`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function setProgramMemberRole(programId: string, email: string, roleId: string | null): Promise<void> {
+  await request(`/api/programs/${programId}/members/role`, {
+    method: "PUT",
+    body: JSON.stringify({ email, role_id: roleId }),
+  });
+}
+
+/** The signed-in member's own custom role (+perms) in a program, or null. */
+export async function getMyProgramRole(
+  programId: string,
+): Promise<{ role_id: string; role_name: string | null; perms: RolePerms } | null> {
+  return request(`/api/programs/${programId}/my-role`);
+}
+
+/** Dev only: every org (name + slug) so the gate can link all portals. */
+export async function listDevOrgs(): Promise<{ id: string; name: string; slug: string }[]> {
+  return request(`/api/platform/dev/orgs`);
+}
+
+// ── App Shell config + versions (Phase 4) ───────────────────────────────────
+export interface ShellSignupField {
+  key: string;
+  label: string;
+  type: string;
+  required: boolean;
+}
+
+export interface ShellNavTab {
+  key: string;
+  label: string;
+}
+
+/** The App Shell working config. All sections optional — the editor fills them in. */
+export interface ShellConfig {
+  identity?: { displayName?: string; shortName?: string };
+  branding?: {
+    primaryColor?: string;
+    accentColor?: string;
+    backgroundColor?: string;
+    textColor?: string;
+    logoText?: string;
+  };
+  copy?: { welcomeTitle?: string; welcomeSubtitle?: string; footerText?: string };
+  auth?: { methods?: string[]; allowSelfSignup?: boolean; requireInviteCode?: boolean };
+  signupFields?: ShellSignupField[];
+  onboarding?: { key: string; label: string; type: string }[];
+  navigation?: ShellNavTab[];
+}
+
+export interface AppConfigResponse {
+  app_id: string;
+  config: ShellConfig;
+  latest_version: number | null;
+  versions: { version: number; created_at: string }[];
+}
+
+export async function getAppConfig(appId: string): Promise<AppConfigResponse> {
+  return request<AppConfigResponse>(`/api/apps/${appId}/config`);
+}
+
+export async function saveAppConfig(appId: string, config: ShellConfig): Promise<void> {
+  await request(`/api/apps/${appId}/config`, { method: "PUT", body: JSON.stringify(config) });
+}
+
+export async function publishAppVersion(appId: string): Promise<{ version: number }> {
+  return request<{ version: number }>(`/api/apps/${appId}/publish-version`, { method: "POST" });
+}
+
+// ── Learning Platform launch seam (Phase 5) ─────────────────────────────────
+export interface LpLaunch {
+  app_slug: string;
+  launch_url: string | null;
+  launch_token: string;
+  expires_at: string;
+  context: {
+    organization_id: string;
+    program_id: string;
+    program_name: string;
+    role: string;
+  };
+}
+
+/** Mint a verified launch context for the program's Learning Platform. */
+export async function launchLearningPlatform(programId: string): Promise<LpLaunch> {
+  return request<LpLaunch>(`/api/programs/${programId}/learning-platform/launch`, { method: "POST" });
+}
+
+/** Prove the handshake: swap the single-use launch token for a session (what the LP itself does). */
+export async function exchangeLaunchToken(launchToken: string): Promise<{ access_token: string }> {
+  return request<{ access_token: string }>(`/api/platform/auth/launch-exchange`, {
+    method: "POST",
+    body: JSON.stringify({ launch_token: launchToken }),
   });
 }

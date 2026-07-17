@@ -12,7 +12,8 @@
     "migrate": "tsx scripts/runMigrations.ts",
     "seed:admin": "tsx scripts/seedPlatformAdmin.ts",
     "import:local": "tsx scripts/importLocalToPostgres.ts",
-    "parity": "tsx scripts/parityCheck.ts"
+    "parity": "tsx scripts/parityCheck.ts",
+    "build:vercel": "esbuild src/vercelEntry.ts --bundle --platform=node --target=node20 --format=esm --outfile=api/index.mjs --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

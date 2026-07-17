@@ -1,8 +1,0 @@
-node_modules
-dist
-dev-dist
-build
-android
-ios
-*.local
-.DS_Store

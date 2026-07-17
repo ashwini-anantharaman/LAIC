@@ -47,7 +47,7 @@ const offeringRow = (o: typeof offerings.$inferSelect): Row => ({
   start_date: o.startDate, end_date: o.endDate, registration_open: o.registrationOpen, approval_mode: o.approvalMode,
   signup_fields: o.signupFields, platform_module: o.platformModule, registered_app_id: o.registeredAppId,
   external_runtime_url: o.externalRuntimeUrl, participant_label_singular: o.participantLabelSingular,
-  participant_label_plural: o.participantLabelPlural, metadata: o.metadata, created_at: o.createdAt, updated_at: o.updatedAt,
+  participant_label_plural: o.participantLabelPlural, metadata: o.metadata, content_package: o.contentPackage, created_at: o.createdAt, updated_at: o.updatedAt,
 });
 const appRow = (a: typeof registeredApps.$inferSelect): Row => ({
   id: a.id, organization_id: a.organizationId, program_id: a.programId, offering_id: a.offeringId,
@@ -483,9 +483,24 @@ export async function updateMemberAccess(memberId: string, access: string): Prom
   });
 }
 
+/** Remove a membership (org- or program-scoped). Returns true if a row was deleted. */
+export async function deleteMembership(memberId: string): Promise<boolean> {
+  return scoped(async (tx) => {
+    const r = await tx.delete(orgMemberships).where(eq(orgMemberships.id, memberId)).returning({ id: orgMemberships.id });
+    return r.length > 0;
+  });
+}
+
 export async function getUserOrgs(profileId: string): Promise<Row[]> {
   return scoped(async (tx) => {
-    const rows = await tx.select().from(orgMemberships).where(eq(orgMemberships.profileId, profileId));
+    // The caller may hold the auth-credential id, while memberships point at
+    // org-scoped profile ids (one login -> many org profiles). Resolve both.
+    const myProfiles = await tx
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(eq(profiles.authUserId, profileId));
+    const ids = [...new Set([profileId, ...myProfiles.map((p) => p.id)])];
+    const rows = await tx.select().from(orgMemberships).where(inArray(orgMemberships.profileId, ids));
     const oids = [...new Set(rows.map((r) => r.orgId))];
     const orgs = oids.length ? await tx.select().from(organizations).where(inArray(organizations.id, oids)) : [];
     const orgMap = new Map(orgs.map((o) => [o.id, o]));
@@ -531,14 +546,25 @@ export async function createIntegration(orgId: string, integrationType: string, 
 }
 
 // ── Audit (read) ──────────────────────────────────────────────────────────
+function auditRow(e: typeof auditEvents.$inferSelect): Row {
+  return {
+    id: e.id, organization_id: e.organizationId, actor_user_id: e.actorUserId, action: e.action,
+    scope_type: e.scopeType, scope_id: e.scopeId, target_type: e.targetType, target_id: e.targetId,
+    metadata: e.metadata, created_at: e.createdAt,
+  };
+}
+
 export async function listAuditEvents(orgId: string, limit = 50): Promise<Row[]> {
   return scoped(async (tx) =>
     (await tx.select().from(auditEvents).where(eq(auditEvents.organizationId, orgId)).orderBy(desc(auditEvents.createdAt)).limit(limit))
-      .map((e) => ({
-        id: e.id, organization_id: e.organizationId, actor_user_id: e.actorUserId, action: e.action,
-        scope_type: e.scopeType, scope_id: e.scopeId, target_type: e.targetType, target_id: e.targetId,
-        metadata: e.metadata, created_at: e.createdAt,
-      })),
+      .map(auditRow),
+  );
+}
+
+/** Platform operator: every audit event across every org, newest first. */
+export async function listAllAuditEvents(limit = 100): Promise<Row[]> {
+  return asPrivileged(async (tx) =>
+    (await tx.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(limit)).map(auditRow),
   );
 }
 
@@ -596,6 +622,48 @@ export async function updateOrgTheme(orgId: string, accentColor: string | null |
     settings.theme = theme;
     const [o] = await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId)).returning();
     return { id: o.id, name: o.name, slug: o.slug, owner_id: o.ownerId, settings: o.settings, created_at: o.createdAt };
+  });
+}
+
+// ── Capability envelope (Nexus §3.5 governance — boundary, not content) ─────
+// Stored in organizations.settings.capabilities, mirroring the theme pattern.
+// Default envelope: a freshly-provisioned org can do everything until an
+// operator restricts it (matches "grant default entitlements" at provisioning
+// — a locked-out-by-default org would be unusable on day one).
+export const DEFAULT_CAPABILITIES = {
+  programTypes: { edu: true, game: true },
+  offeringTypes: { course: true, challenge: true, app: true },
+  features: { appShells: true, integrations: true },
+} as const;
+
+export async function getOrgCapabilities(orgId: string): Promise<Row> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
+    if (!r.length) throw new Error("Organization not found");
+    const settings = (r[0].settings as Record<string, unknown>) ?? {};
+    const caps = (settings.capabilities as Row | undefined) ?? {};
+    return {
+      programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((caps.programTypes as Row) ?? {}) },
+      offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((caps.offeringTypes as Row) ?? {}) },
+      features: { ...DEFAULT_CAPABILITIES.features, ...((caps.features as Row) ?? {}) },
+    };
+  });
+}
+
+export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
+    if (!r.length) throw new Error("Organization not found");
+    const settings: Record<string, unknown> = { ...((r[0].settings as Record<string, unknown>) ?? {}) };
+    const existing = (settings.capabilities as Row | undefined) ?? {};
+    const merged: Row = {
+      programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((existing.programTypes as Row) ?? {}), ...((patch.programTypes as Row) ?? {}) },
+      offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((existing.offeringTypes as Row) ?? {}), ...((patch.offeringTypes as Row) ?? {}) },
+      features: { ...DEFAULT_CAPABILITIES.features, ...((existing.features as Row) ?? {}), ...((patch.features as Row) ?? {}) },
+    };
+    settings.capabilities = merged;
+    await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));
+    return merged;
   });
 }
 

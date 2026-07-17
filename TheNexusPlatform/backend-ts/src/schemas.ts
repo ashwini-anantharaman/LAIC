@@ -282,7 +282,7 @@ export const adminAddRegistrationSchema = z.object({
 });
 
 // ── Audit Log + Entitlements (Nexus v0.3 Sections 32 / 20) ──────────────────
-export const moduleKey = z.enum(["nexus", "learning", "coaching", "analytics"]);
+export const moduleKey = z.enum(["nexus", "learning", "coaching", "analytics", "community"]);
 export const entitlementStatus = z.enum(["active", "trial", "requested", "disabled"]);
 export type ModuleKey = z.infer<typeof moduleKey>;
 
