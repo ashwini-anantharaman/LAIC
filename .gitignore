@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Env / secrets — never commit keys
+.env
+.env.*
+!.env.example
+
+# Build / cache
+dist/
+build/
+.vite/
+*.local
+.DS_Store
+
+# Logs / temp
+*.log
+npm-debug.log*
+tmp/
+.temp/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
