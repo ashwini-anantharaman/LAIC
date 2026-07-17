@@ -42,7 +42,7 @@ export default async function PlayersPage({
 
   const compiled = activeKb ? await kbService().liveCompile(activeKb.kb.kbId) : null;
   const packById = new Map((compiled?.packs ?? []).map((p) => [p.packId, p]));
-  const rungs = [...(compiled?.packs ?? [])].sort((a, b) => a.ordinal - b.ordinal);
+  const sets = [...(compiled?.packs ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 
   const playersHref = (params: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
@@ -54,8 +54,8 @@ export default async function PlayersPage({
   return (
     <div className="mx-auto max-w-4xl">
       <header className="mb-6">
-        <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">Players</p>
-        <h1 className="mt-1 text-3xl font-medium">Who sits at the table</h1>
+        <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">Bridge</p>
+        <h1 className="mt-1 text-3xl font-medium">Players</h1>
       </header>
 
       <UnderlineTabs
@@ -120,16 +120,16 @@ export default async function PlayersPage({
             </div>
           )}
 
-          {/* One-click creation from the ladder */}
-          {rungs.length > 0 && (
+          {/* One-click creation from a knowledge set */}
+          {sets.length > 0 && (
             <section className="mt-6 rounded-lg border border-neutral-200 bg-[var(--card)] p-4">
               <p className="text-sm font-medium">New player, one click</p>
               <p className="mt-0.5 text-xs text-neutral-500">
-                Pick how much of the {activeKb.kb.systemLabel} ladder it knows — name, validation
-                and report happen automatically. Refine it afterwards.
+                Choose the {activeKb.kb.systemLabel} knowledge set it plays from — name,
+                validation and report happen automatically. Refine it afterwards.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {rungs.map((pack) => (
+                {sets.map((pack) => (
                   <form key={pack.packId} action={createRungPlayerAction}>
                     <input type="hidden" name="kbId" value={activeKb.kb.kbId} />
                     <input type="hidden" name="packId" value={pack.packId} />
@@ -137,9 +137,6 @@ export default async function PlayersPage({
                       type="submit"
                       className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50"
                     >
-                      <span className="mr-1.5 text-[10px] uppercase tracking-wide text-neutral-400">
-                        L{pack.ordinal}
-                      </span>
                       {pack.name}
                     </button>
                   </form>
@@ -178,7 +175,7 @@ export default async function PlayersPage({
                       type="submit"
                       className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
                     >
-                      Try at the table
+                      Play
                     </button>
                   </form>
                   <form action={tryPlayerAction}>
@@ -202,7 +199,7 @@ export default async function PlayersPage({
             ))}
             {visible.length === 0 && (
               <li className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 sm:col-span-2">
-                No players here yet — create one from the ladder above.
+                No players here yet — create one from a knowledge set above.
               </li>
             )}
           </ul>

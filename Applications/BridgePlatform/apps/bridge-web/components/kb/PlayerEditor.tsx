@@ -85,21 +85,24 @@ export function PlayerEditor({
           >
             <option value="first_match">first match (deterministic)</option>
             <option value="weighted_random">weighted random (variety)</option>
-            <option value="level_capped">level capped (plays down)</option>
+            {/* Retired with the ladder — shown only for players still using it. */}
+            {player?.decisionPolicyId === "level_capped" && (
+              <option value="level_capped">level capped (plays down)</option>
+            )}
           </select>
         </label>
       </div>
 
       <fieldset>
-        <legend className="mb-2 text-sm font-medium">Capability packs</legend>
+        <legend className="mb-2 text-sm font-medium">Knowledge sets</legend>
         <p className="mb-2 text-xs text-neutral-500">
-          Select every pack this player carries; the settings below tune within that selection.
-          Deselecting a pack removes its knowledge — and its settings — from this player.
+          Select every set this player carries; the settings below tune within that selection.
+          Deselecting a set removes its knowledge — and its settings — from this player.
         </p>
         <div
           role="listbox"
           aria-multiselectable="true"
-          aria-label="Capability packs"
+          aria-label="Knowledge sets"
           className="max-h-72 divide-y divide-[var(--line)] overflow-y-auto rounded-lg border border-neutral-200 bg-white"
         >
           {packs.map((pack) => {
@@ -140,7 +143,7 @@ export function PlayerEditor({
             );
           })}
           {packs.length === 0 && (
-            <p className="px-3 py-2 text-sm text-neutral-400">No packs on the ladder yet.</p>
+            <p className="px-3 py-2 text-sm text-neutral-400">No knowledge sets yet.</p>
           )}
         </div>
         {/* The selection travels with the form (locked base packs are re-added server-side). */}
@@ -162,8 +165,8 @@ export function PlayerEditor({
         {visibleSettings.length === 0 ? (
           <p className="text-sm text-neutral-500">
             {checked.size === 0
-              ? "Enable a pack — the settings its knowledge exposes appear here."
-              : "The enabled packs expose no settings."}
+              ? "Enable a knowledge set — the settings its knowledge exposes appear here."
+              : "The enabled sets expose no settings."}
           </p>
         ) : (
           <div className="divide-y divide-[var(--line)] rounded-lg border border-neutral-200 bg-[var(--card)]">

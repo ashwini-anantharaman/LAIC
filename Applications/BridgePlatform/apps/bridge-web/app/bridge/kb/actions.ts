@@ -137,20 +137,72 @@ export async function removeEdgeAction(formData: FormData): Promise<void> {
 export async function savePackAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));
-  const pack = await kbService().savePack({
-    packId: String(formData.get("packId") ?? "").trim() || undefined,
-    kbId,
-    name: String(formData.get("name") ?? "").trim(),
-    description: String(formData.get("description") ?? "").trim() || undefined,
-    levelId: String(formData.get("levelId") ?? "").trim() || undefined,
-    ordinal: Number(formData.get("ordinal") ?? 0),
-    extendsPackId: String(formData.get("extendsPackId") ?? "").trim() || undefined,
-    itemIds: formData.getAll("itemIds").map(String),
-    createdBy: context.nexusUserId,
-  });
-  await audit(context, "kb.pack.save", "kb_pack", pack.packId, { kbId });
+  const packId = String(formData.get("packId") ?? "").trim() || undefined;
+  let pack;
+  try {
+    pack = await kbService().savePack({
+      packId,
+      kbId,
+      name: String(formData.get("name") ?? "").trim(),
+      description: String(formData.get("description") ?? "").trim() || undefined,
+      extendsPackId: String(formData.get("extendsPackId") ?? "").trim() || undefined,
+      intendedComplete: formData.get("intendedComplete") === "on" || undefined,
+      itemIds: formData.getAll("itemIds").map(String),
+      createdBy: context.nexusUserId,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not save this set.";
+    redirect(
+      kbPath(
+        kbId,
+        packId
+          ? `/sets/${packId}?error=${encodeURIComponent(message)}`
+          : `/sets/new?error=${encodeURIComponent(message)}`,
+      ),
+    );
+  }
+  const version = (await kbService().listPackVersions(pack.packId))[0]?.versionNumber;
+  await audit(context, "kb.pack.save", "kb_pack", pack.packId, { kbId, version });
   revalidatePath(kbPath(kbId), "layout");
-  redirect(kbPath(kbId, "/ladder"));
+  redirect(kbPath(kbId, `/sets/${pack.packId}?saved=1`));
+}
+
+export async function restorePackVersionAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const packId = String(formData.get("packId"));
+  const versionNumber = Number(formData.get("versionNumber"));
+  let result;
+  try {
+    result = await kbService().restorePackVersion(kbId, packId, versionNumber, context.nexusUserId);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not restore this version.";
+    redirect(kbPath(kbId, `/sets/${packId}?error=${encodeURIComponent(message)}`));
+  }
+  await audit(context, "kb.pack.version.restore", "kb_pack", packId, {
+    kbId,
+    versionNumber,
+    droppedItemIds: result.droppedItemIds.length,
+    droppedInclude: result.droppedInclude,
+  });
+  revalidatePath(kbPath(kbId), "layout");
+  const dropped = result.droppedItemIds.length + (result.droppedInclude ? 1 : 0);
+  redirect(kbPath(kbId, `/sets/${packId}?restored=${versionNumber}&dropped=${dropped}`));
+}
+
+export async function deletePackAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const packId = String(formData.get("packId"));
+  try {
+    await kbService().deletePack(kbId, packId); // refuses while referenced
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not delete this set.";
+    redirect(kbPath(kbId, `/sets/${packId}?error=${encodeURIComponent(message)}`));
+  }
+  await audit(context, "kb.pack.delete", "kb_pack", packId, { kbId });
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, "/sets?deleted=1"));
 }
 
 export async function registerSourceAction(formData: FormData): Promise<void> {

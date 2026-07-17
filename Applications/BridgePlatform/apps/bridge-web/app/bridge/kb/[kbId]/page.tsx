@@ -58,17 +58,17 @@ export default async function KbOverviewPage({
         )}
       {packs.length === 0 && items.length > 0
         ? card(
-            "Build the ladder",
-            "Group items into capability packs — minimal-incomplete up to full-system — that players are assembled from.",
-            `${base}/ladder`,
-            "Create packs",
+            "Knowledge sets",
+            "Group knowledge items into named sets — players are assembled from them.",
+            `${base}/sets`,
+            "Create a set",
           )
         : packs.length > 0
           ? card(
-              `${packs.length} packs on the ladder`,
-              "The capability ladder this KB offers players.",
-              `${base}/ladder`,
-              "View ladder",
+              `${packs.length} knowledge set${packs.length === 1 ? "" : "s"}`,
+              "The groups of knowledge this KB offers players.",
+              `${base}/sets`,
+              "View sets",
             )
           : null}
       {failures.length > 0 &&

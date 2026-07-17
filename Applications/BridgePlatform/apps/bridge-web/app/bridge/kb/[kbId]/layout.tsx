@@ -103,7 +103,7 @@ export default async function KbLayout({
         <nav className="mt-6 flex flex-wrap gap-5 border-b border-[var(--line)]">
           <TabLink href={base} exact label="Overview" />
           <TabLink href={`${base}/items`} label="Capabilities" />
-          <TabLink href={`${base}/ladder`} label="Ladder" />
+          <TabLink href={`${base}/sets`} label="Knowledge sets" />
           <TabLink href={`${base}/sources`} label="Sources" />
           <TabLink href={`${base}/players`} label="Players" />
           <TabLink href={`${base}/versions`} label="Versions" />

@@ -1,7 +1,7 @@
 import { playerIsValid, validatePlayerStatic } from "@bridge/kb";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { HOUSE_PREFIX, ladderRungs } from "@/lib/arena";
+import { arenaSets, HOUSE_PREFIX } from "@/lib/arena";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore, sessionService } from "@/lib/sessions";
@@ -35,7 +35,7 @@ export default async function TablePage() {
       players.filter((p) => p.name.startsWith(HOUSE_PREFIX)).map((p) => [p.name, p]),
     );
     const valid = players.filter((p) => playerIsValid(validatePlayerStatic(compiled, p)));
-    arenas.push({ kb, compiled, rungs: ladderRungs(compiled), players, valid, houseByName });
+    arenas.push({ kb, compiled, sets: arenaSets(compiled), players, valid, houseByName });
   }
 
   return (
@@ -44,9 +44,9 @@ export default async function TablePage() {
         <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">Play</p>
         <h1 className="mt-1 text-3xl font-medium">Arena</h1>
         <p className="mt-2 max-w-xl text-sm text-neutral-600">
-          Pick a strength and sit down — the house players are provisioned for you, and every
-          decision they make at the table stays traceable. Edit a house player any time; the
-          arena reuses it.
+          Choose a knowledge set to play against — house players are provisioned for you, and
+          every decision they make at the table stays traceable. Edit a house player any time;
+          the arena reuses it.
         </p>
       </header>
 
@@ -56,40 +56,35 @@ export default async function TablePage() {
           <Link href="/bridge/kb" className="text-emerald-700 underline-offset-4 hover:underline">
             Build one in the workspace
           </Link>{" "}
-          — upload a system document and the ladder appears here.
+          — upload a system document and its knowledge sets appear here.
         </p>
       ) : (
-        arenas.map(({ kb, rungs, houseByName }) => (
+        arenas.map(({ kb, sets, houseByName }) => (
           <section key={kb.kbId} className="mb-8">
             <h2 className="mb-3 font-serif text-lg font-medium">{kb.name}</h2>
-            {rungs.length === 0 ? (
+            {sets.length === 0 ? (
               <p className="rounded-lg border border-dashed border-neutral-300 p-5 text-sm text-neutral-500">
-                This knowledge base has no ladder packs yet —{" "}
+                This knowledge base has no knowledge sets yet —{" "}
                 <Link
-                  href={`/bridge/kb/${kb.kbId}/ladder`}
+                  href={`/bridge/kb/${kb.kbId}/sets`}
                   className="text-emerald-700 underline-offset-4 hover:underline"
                 >
-                  build the ladder
+                  create one
                 </Link>{" "}
                 to unlock the arena.
               </p>
             ) : (
               <ul className="grid gap-3 sm:grid-cols-2">
-                {rungs.map((pack) => {
+                {sets.map((pack) => {
                   const house = houseByName.get(`${HOUSE_PREFIX}${pack.name}`);
                   return (
                     <li
                       key={pack.packId}
                       className="flex flex-col rounded-lg border border-neutral-200 bg-[var(--card)] p-4"
                     >
-                      <p className="flex items-baseline gap-2">
-                        <span className="text-[10px] uppercase tracking-wide text-neutral-400">
-                          L{pack.ordinal}
-                        </span>
-                        <span className="font-medium">{pack.name}</span>
-                      </p>
+                      <p className="font-medium">{pack.name}</p>
                       <p className="mt-1 flex-1 text-xs text-neutral-500">
-                        {pack.itemIds.length} capabilities at the table
+                        {pack.itemIds.length} knowledge items
                         {house ? (
                           <>
                             {" · "}

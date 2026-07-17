@@ -74,17 +74,20 @@ test("edits the 1NT range — the KB recompiles to a new version", async ({ page
   expect(after).not.toBe(before);
 });
 
-test("builds a ladder pack and reads its capability coverage", async ({ page, context }) => {
+test("creates a knowledge set and reads its completeness checklist", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
-  await page.goto(`${kbUrl}/ladder`);
+  await page.goto(`${kbUrl}/sets/new`);
   await page.getByLabel("Name").fill("Openings (incomplete)");
+  await page.getByRole("checkbox", { name: /Intended to be complete/ }).check();
   await page.getByRole("checkbox", { name: /1NT opening/ }).check();
   await page.getByRole("checkbox", { name: /Auction fallback/ }).check();
-  await page.getByRole("button", { name: "Save pack" }).click();
+  await page.getByRole("button", { name: "Create set" }).click();
 
-  await expect(page.getByRole("heading", { name: "Openings (incomplete)" })).toBeVisible();
-  // Missing lead/play fallbacks and signals: the pack must read incomplete.
-  await expect(page.getByText(/incomplete \(constrained play only\)/)).toBeVisible();
+  // Lands on the set detail page; the opt-in checklist shows the gaps
+  // (missing lead/play fallbacks and signals: the set must read incomplete).
+  await expect(page.getByText("Openings (incomplete)").first()).toBeVisible();
+  await expect(page.getByText(/Completeness · \d+\/17/)).toBeVisible();
+  await expect(page.getByText(/✗/).first()).toBeVisible();
 });
 
 test("flags and resolves a suggestion", async ({ page, context }) => {
@@ -177,14 +180,15 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
   await page.getByLabel("Type").selectOption("signal_agreement");
   await page.getByRole("button", { name: "Create capability" }).click();
 
-  await page.goto(`${kbUrl}/ladder`);
+  await page.goto(`${kbUrl}/sets/new`);
   await page.getByLabel("Name").fill("Floor");
+  await page.getByRole("checkbox", { name: /Intended to be complete/ }).check();
   await page.getByRole("checkbox", { name: /Auction fallback/ }).check();
   await page.getByRole("checkbox", { name: /Lead fallback/ }).check();
   await page.getByRole("checkbox", { name: /Play fallback/ }).check();
   await page.getByRole("checkbox", { name: /No signals/ }).check();
-  await page.getByRole("button", { name: "Save pack" }).click();
-  await expect(page.getByText("minimally complete on its own")).toBeVisible();
+  await page.getByRole("button", { name: "Create set" }).click();
+  await expect(page.getByText(/Completeness · 17\/17/)).toBeVisible();
 
   // The wizard.
   await page.goto(`${kbUrl}/players`);

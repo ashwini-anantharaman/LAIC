@@ -11,7 +11,7 @@ import { SessionService, type LibraryEntry, type SeatConfig } from "@bridge/sess
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
-import { ensureHousePlayer, ladderRungs } from "@/lib/arena";
+import { arenaSets, ensureHousePlayer } from "@/lib/arena";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
@@ -108,9 +108,13 @@ export async function playEntryAction(formData: FormData): Promise<void> {
   const compiled = await kbService().liveCompile(kbId);
   if (!compiled) throw new Error("This knowledge base has no live compile yet");
 
-  const rungs = ladderRungs(compiled);
-  const top = rungs[rungs.length - 1];
-  if (!top) throw new Error("This knowledge base has no ladder packs yet");
+  // The most capable set (largest effective roster) hosts library play.
+  const sets = arenaSets(compiled);
+  const top = sets.reduce(
+    (best, p) => (!best || p.itemIds.length > best.itemIds.length ? p : best),
+    sets[0],
+  );
+  if (!top) throw new Error("This knowledge base has no knowledge sets yet");
   const house = await ensureHousePlayer(store, compiled, top, context.nexusUserId);
   const ai = SessionService.seatFromPlayer(house, compiled);
   const seats = { N: ai, E: ai, S: ai, W: ai } as Record<Seat, SeatConfig>;
