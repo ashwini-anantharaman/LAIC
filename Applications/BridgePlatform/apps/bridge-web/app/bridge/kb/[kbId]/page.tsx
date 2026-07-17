@@ -1,13 +1,20 @@
 import Link from "next/link";
 import { kbService, kbStore } from "@/lib/kb";
+import { deleteKbAction } from "../actions";
 
 /** Overview: where to go next, and what needs attention. */
 export default async function KbOverviewPage({
   params,
-}: Readonly<{ params: Promise<{ kbId: string }> }>) {
+  searchParams,
+}: Readonly<{
+  params: Promise<{ kbId: string }>;
+  searchParams: Promise<{ deleteError?: string }>;
+}>) {
   const { kbId } = await params;
+  const { deleteError } = await searchParams;
   const store = kbStore();
-  const [items, packs, sources, jobs, compiled] = await Promise.all([
+  const [kb, items, packs, sources, jobs, compiled] = await Promise.all([
+    store.getKb(kbId),
     store.listItemsForKb(kbId),
     store.listPacksForKb(kbId),
     store.listSources(),
@@ -44,10 +51,10 @@ export default async function KbOverviewPage({
         )}
       {items.length > 0 &&
         card(
-          `${items.length} knowledge items`,
+          `${items.length} capabilities`,
           "Read, edit, and relate the agreements extraction produced. Every edit recompiles the KB immediately.",
           `${base}/items`,
-          "Browse items",
+          "Browse capabilities",
         )}
       {packs.length === 0 && items.length > 0
         ? card(
@@ -81,10 +88,48 @@ export default async function KbOverviewPage({
       {sources.length > 0 &&
         card(
           `${sources.length} registered source(s)`,
-          "The provenance registry — every item cites passages from these.",
+          "The provenance registry — every capability cites passages from these.",
           `${base}/sources`,
           "Manage sources",
         )}
+
+      {/* Danger zone */}
+      <details className="rounded-lg border border-red-200 sm:col-span-2">
+        <summary className="cursor-pointer px-5 py-3 text-sm font-medium text-red-800 hover:bg-red-50/50">
+          Delete this knowledge base…
+        </summary>
+        <div className="border-t border-red-100 px-5 py-4">
+          {deleteError && (
+            <p className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              {deleteError}
+            </p>
+          )}
+          <p className="text-sm text-neutral-600">
+            This permanently removes the knowledge base with its {items.length} capabilit
+            {items.length === 1 ? "y" : "ies"} (except any shared with another KB), packs,
+            players, suggestions, compiles, and every board played on it. There is no undo.
+          </p>
+          <form action={deleteKbAction} className="mt-3 flex flex-wrap items-end gap-2">
+            <input type="hidden" name="kbId" value={kbId} />
+            <label className="text-sm">
+              <span className="mb-1 block text-xs text-neutral-500">
+                Type <span className="font-mono font-medium">{kb?.name}</span> to confirm
+              </span>
+              <input
+                name="confirmName"
+                autoComplete="off"
+                className="w-64 rounded border border-neutral-300 px-2 py-1.5"
+              />
+            </label>
+            <button
+              type="submit"
+              className="rounded border border-red-300 bg-red-50 px-4 py-1.5 text-sm font-medium text-red-800 hover:bg-red-100"
+            >
+              Delete forever
+            </button>
+          </form>
+        </div>
+      </details>
     </div>
   );
 }

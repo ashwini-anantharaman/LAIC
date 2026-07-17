@@ -134,7 +134,7 @@ export function AcblCardView({
       </div>
 
       <footer className="border-t-2 border-neutral-900 px-4 py-1.5 text-[10px] text-neutral-500">
-        Generated from the configuration — every line resolves to a cited knowledge item. ☒ in
+        Generated from the configuration — every line resolves to a cited capability. ☒ in
         force · ☐ carried but switched off
         {card.fallbacks.length > 0 && (
           <> · fallbacks: {card.fallbacks.map((f) => f.label).join("; ")}</>

@@ -89,7 +89,7 @@ export default async function TablePage() {
                         <span className="font-medium">{pack.name}</span>
                       </p>
                       <p className="mt-1 flex-1 text-xs text-neutral-500">
-                        {pack.itemIds.length} knowledge items at the table
+                        {pack.itemIds.length} capabilities at the table
                         {house ? (
                           <>
                             {" · "}

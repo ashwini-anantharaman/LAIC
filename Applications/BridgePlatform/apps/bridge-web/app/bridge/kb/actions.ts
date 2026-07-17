@@ -30,6 +30,28 @@ export async function createKbAction(formData: FormData): Promise<void> {
   redirect(kbPath(kb.kbId));
 }
 
+/**
+ * Delete a knowledge base and everything scoped to it — memberships, items
+ * that belong only to this KB (with their edges), packs, players, sandboxes,
+ * suggestions, jobs, compiles, and the KB's play sessions. Irreversible.
+ * The typed-name confirmation is checked server-side.
+ */
+export async function deleteKbAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const kb = await kbService().getKb(kbId);
+  const confirm = String(formData.get("confirmName") ?? "").trim();
+  if (confirm !== kb.name) {
+    redirect(kbPath(kbId, `?deleteError=${encodeURIComponent("Type the knowledge base's exact name to confirm deletion.")}`));
+  }
+  const { sessionService } = await import("@/lib/sessions");
+  await sessionService().deleteForKb(kbId);
+  await kbService().deleteKb(kbId);
+  await audit(context, "kb.delete", "kb", kbId, { name: kb.name });
+  revalidatePath("/bridge/kb");
+  redirect("/bridge/kb");
+}
+
 export async function createItemAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   await ensureSeeds();

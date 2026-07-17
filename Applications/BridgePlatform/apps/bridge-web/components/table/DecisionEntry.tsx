@@ -57,7 +57,7 @@ export function DecisionEntry({
                   href={`/bridge/kb/${kbId}/items/${itemId}`}
                   className="text-emerald-800 underline-offset-2 hover:underline"
                 >
-                  open the knowledge item →
+                  open the capability →
                 </Link>
               </>
             )}

@@ -32,7 +32,7 @@ test("hand-authors a fallback item and a 1NT agreement", async ({ page, context 
     .getByLabel("What a player reads (the agreement, in plain words)")
     .fill("With no agreement that applies, pass.");
   await page.getByLabel("Type").selectOption("fallback_rule");
-  await page.getByRole("button", { name: "Create item" }).click();
+  await page.getByRole("button", { name: "Create capability" }).click();
   await expect(page.getByRole("heading", { name: "Auction fallback: pass" })).toBeVisible();
 
   // 1NT agreement with an inline range setting, via typed rule fields.
@@ -50,7 +50,7 @@ test("hand-authors a fallback item and a 1NT agreement", async ({ page, context 
   await page.locator('select[name="rule0:actionType"]').selectOption("bid");
   await page.locator('input[name="rule0:actionLevel"]').fill("1");
   await page.locator('select[name="rule0:actionStrain"]').selectOption("N");
-  await page.getByRole("button", { name: "Create item" }).click();
+  await page.getByRole("button", { name: "Create capability" }).click();
   await expect(page.getByRole("heading", { name: "1NT opening" })).toBeVisible();
 
   // Both items listed; the KB compiled (health strip shows a live version).
@@ -157,7 +157,7 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
   await page.getByLabel("Type").selectOption("fallback_rule");
   await page.getByText("Fallback behavior (fallback_rule items)").click();
   await page.locator('select[name="fb:phase"]').selectOption("opening_lead");
-  await page.getByRole("button", { name: "Create item" }).click();
+  await page.getByRole("button", { name: "Create capability" }).click();
 
   await page.goto(`${kbUrl}/items/new`);
   await page.getByLabel("Title").fill("Play fallback: lowest legal card");
@@ -167,7 +167,7 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
   await page.getByLabel("Type").selectOption("fallback_rule");
   await page.getByText("Fallback behavior (fallback_rule items)").click();
   await page.locator('select[name="fb:phase"]').selectOption("card_play");
-  await page.getByRole("button", { name: "Create item" }).click();
+  await page.getByRole("button", { name: "Create capability" }).click();
 
   await page.goto(`${kbUrl}/items/new`);
   await page.getByLabel("Title").fill("No signals");
@@ -175,7 +175,7 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
     .getByLabel("What a player reads (the agreement, in plain words)")
     .fill("This partnership plays no defensive signals.");
   await page.getByLabel("Type").selectOption("signal_agreement");
-  await page.getByRole("button", { name: "Create item" }).click();
+  await page.getByRole("button", { name: "Create capability" }).click();
 
   await page.goto(`${kbUrl}/ladder`);
   await page.getByLabel("Name").fill("Floor");

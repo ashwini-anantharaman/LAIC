@@ -626,7 +626,7 @@ export function ItemEditor({
           type="submit"
           className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
         >
-          {item ? "Save (recompiles the KB)" : "Create item"}
+          {item ? "Save (recompiles the KB)" : "Create capability"}
         </button>
         <span className="text-xs text-neutral-400">
           A broken save can&apos;t reach the table — the last good compile keeps serving.

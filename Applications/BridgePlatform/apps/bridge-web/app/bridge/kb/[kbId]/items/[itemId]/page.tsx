@@ -54,7 +54,7 @@ export default async function ItemPage({
       <div>
         <p className="mb-2 text-xs text-neutral-400">
           <Link href={`${base}/items`} className="hover:underline">
-            Items
+            Capabilities
           </Link>{" "}
           / {item.itemId} · v{item.version}
           {item.forkedFromItemId && <> · forked from {item.forkedFromItemId}</>}

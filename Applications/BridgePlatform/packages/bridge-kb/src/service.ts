@@ -62,6 +62,17 @@ export class KbService {
     return kb;
   }
 
+  /**
+   * Delete a KB and everything scoped to it (memberships, sole-membership
+   * items and their edges, packs, players, sandboxes, suggestions, jobs,
+   * compiles). Irreversible; sessions are the caller's to clean up (they
+   * live in the session store).
+   */
+  async deleteKb(kbId: string): Promise<void> {
+    await this.getKb(kbId); // throws if unknown
+    await this.store.deleteKbCascade(kbId);
+  }
+
   /** The compile sessions/players resolve against (last-good). */
   async liveCompile(kbId: string): Promise<CompiledKb | null> {
     const kb = await this.getKb(kbId);

@@ -81,6 +81,14 @@ export interface KbStore {
   putCompile(compile: CompiledKb): Promise<void>;
   getCompile(compileId: string): Promise<CompiledKb | null>;
   listCompilesForKb(kbId: string, limit?: number): Promise<CompiledKb[]>;
+
+  /**
+   * Delete a KB and everything scoped to it: memberships, packs, players,
+   * sandboxes, suggestions, jobs, compiles, plus items whose ONLY membership
+   * was this KB (shared items survive in their other KBs) and edges touching
+   * the deleted items. Sources/documents are global and untouched.
+   */
+  deleteKbCascade(kbId: string): Promise<void>;
 }
 
 export interface KbStoreData {
@@ -315,5 +323,30 @@ export class InMemoryKbStore implements KbStore {
       .filter((c) => c.kbId === kbId)
       .sort((a, b) => b.version - a.version)
       .slice(0, limit);
+  }
+
+  async deleteKbCascade(kbId: string) {
+    const mine = this.data.memberships.filter((m) => m.kbId === kbId);
+    const mineIds = new Set(mine.map((m) => m.itemId));
+    // Items shared with another KB survive; the rest go, with their edges.
+    const orphaned = new Set(
+      [...mineIds].filter(
+        (itemId) =>
+          !this.data.memberships.some((m) => m.itemId === itemId && m.kbId !== kbId),
+      ),
+    );
+    this.data.memberships = this.data.memberships.filter((m) => m.kbId !== kbId);
+    this.data.items = this.data.items.filter((i) => !orphaned.has(i.itemId));
+    this.data.edges = this.data.edges.filter(
+      (e) => !orphaned.has(e.fromItemId) && !(e.toItemId && orphaned.has(e.toItemId)),
+    );
+    this.data.packs = this.data.packs.filter((p) => p.kbId !== kbId);
+    this.data.players = this.data.players.filter((p) => p.kbId !== kbId);
+    this.data.sandboxes = this.data.sandboxes.filter((s) => s.kbId !== kbId);
+    this.data.suggestions = this.data.suggestions.filter((s) => s.kbId !== kbId);
+    this.data.jobs = this.data.jobs.filter((j) => j.kbId !== kbId);
+    this.data.compiles = this.data.compiles.filter((c) => c.kbId !== kbId);
+    this.data.kbs = this.data.kbs.filter((k) => k.kbId !== kbId);
+    this.persist();
   }
 }

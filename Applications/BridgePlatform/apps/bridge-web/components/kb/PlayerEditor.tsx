@@ -93,41 +93,62 @@ export function PlayerEditor({
       <fieldset>
         <legend className="mb-2 text-sm font-medium">Capability packs</legend>
         <p className="mb-2 text-xs text-neutral-500">
-          Packs decide what the player <em>carries</em>; the settings below tune within that.
-          Unchecking a pack removes its knowledge — and its settings — from this player.
+          Select every pack this player carries; the settings below tune within that selection.
+          Deselecting a pack removes its knowledge — and its settings — from this player.
         </p>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div
+          role="listbox"
+          aria-multiselectable="true"
+          aria-label="Capability packs"
+          className="max-h-72 divide-y divide-[var(--line)] overflow-y-auto rounded-lg border border-neutral-200 bg-white"
+        >
           {packs.map((pack) => {
             const locked = lockedPacks.has(pack.packId);
             const allowed = exposedPacks ? exposedPacks.has(pack.packId) : true;
+            const selected = locked || checked.has(pack.packId);
             return (
-              <label
+              <button
                 key={pack.packId}
-                className={`flex items-start gap-2 rounded border px-3 py-2 text-sm ${
-                  allowed ? "border-neutral-200" : "border-neutral-100 text-neutral-400"
-                }`}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                disabled={locked || !allowed}
+                onClick={() => togglePack(pack.packId)}
+                className={`flex w-full items-start gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                  selected ? "bg-emerald-50/60" : ""
+                } ${allowed ? "enabled:hover:bg-emerald-50" : "text-neutral-400"} disabled:cursor-default`}
               >
-                <input
-                  type="checkbox"
-                  name="enabledPackIds"
-                  value={pack.packId}
-                  checked={locked || checked.has(pack.packId)}
-                  onChange={() => togglePack(pack.packId)}
-                  disabled={locked || !allowed}
-                  className="mt-0.5"
-                />
-                <span>
+                <span
+                  aria-hidden
+                  className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded border text-[10px] ${
+                    selected
+                      ? "border-emerald-700 bg-emerald-700 text-white"
+                      : "border-neutral-300 bg-white"
+                  }`}
+                >
+                  {selected ? "✓" : ""}
+                </span>
+                <span className="min-w-0">
                   <span className="font-medium">{pack.name}</span>
                   {locked && <span className="ml-2 text-[10px] uppercase text-neutral-400">sandbox base</span>}
                   {!allowed && <span className="ml-2 text-[10px] uppercase text-neutral-400">not exposed</span>}
                   {pack.description && (
-                    <span className="block text-xs text-neutral-500">{pack.description}</span>
+                    <span className="block truncate text-xs text-neutral-500">{pack.description}</span>
                   )}
                 </span>
-              </label>
+              </button>
             );
           })}
+          {packs.length === 0 && (
+            <p className="px-3 py-2 text-sm text-neutral-400">No packs on the ladder yet.</p>
+          )}
         </div>
+        {/* The selection travels with the form (locked base packs are re-added server-side). */}
+        {[...checked]
+          .filter((id) => !lockedPacks.has(id))
+          .map((id) => (
+            <input key={id} type="hidden" name="enabledPackIds" value={id} />
+          ))}
         {sandbox && (
           <p className="mt-1 text-xs text-neutral-400">
             Sandbox &ldquo;{sandbox.name}&rdquo;: base packs are always on; only exposed packs and

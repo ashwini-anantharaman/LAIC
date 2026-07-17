@@ -87,6 +87,8 @@ export interface SessionStore {
   putSession(record: SessionRecord): Promise<void>;
   getSession(sessionId: string): Promise<SessionRecord | null>;
   listSessions(): Promise<SessionRecord[]>;
+  /** Remove every session of a KB (part of KB deletion — their pinned compiles go with the KB). */
+  deleteSessionsForKb(kbId: string): Promise<void>;
 }
 
 export class InMemorySessionStore implements SessionStore {
@@ -103,6 +105,10 @@ export class InMemorySessionStore implements SessionStore {
   }
   async listSessions() {
     return [...this.data.sessions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async deleteSessionsForKb(kbId: string) {
+    this.data.sessions = this.data.sessions.filter((s) => s.kbId !== kbId);
+    this.persist();
   }
 }
 
@@ -197,6 +203,11 @@ export class SessionService {
 
   async listRecent(): Promise<SessionRecord[]> {
     return this.store.listSessions();
+  }
+
+  /** Part of KB deletion — the pinned compiles vanish with the KB. */
+  async deleteForKb(kbId: string): Promise<void> {
+    await this.store.deleteSessionsForKb(kbId);
   }
 
   async requireSession(sessionId: string): Promise<SessionRecord> {

@@ -98,3 +98,39 @@ describe("ids", () => {
     expect(a).not.toBe(b);
   });
 });
+
+describe("deleteKbCascade", () => {
+  it("removes the KB's world but leaves shared items in their other KBs", async () => {
+    const { InMemoryKbStore } = await import("./store");
+    const store = new InMemoryKbStore();
+    const now = "2026-07-17T10:00:00.000Z";
+    const item = (itemId: string) =>
+      ({
+        itemId, title: itemId, humanReadableText: "x", knowledgeType: "concept",
+        phase: "auction", payload: { kind: "none" }, settings: [], sourceReferences: [],
+        supportedLevels: [], status: "draft", version: 1, createdBy: "u",
+        createdAt: now, updatedAt: now,
+      }) as never;
+
+    await store.putKb({ kbId: "kb_a", name: "A", systemLabel: "S", levels: [], status: "active", createdBy: "u", createdAt: now, updatedAt: now });
+    await store.putKb({ kbId: "kb_b", name: "B", systemLabel: "S", levels: [], status: "active", createdBy: "u", createdAt: now, updatedAt: now });
+    await store.putItem(item("ki_sole"));
+    await store.putItem(item("ki_shared"));
+    await store.addMembership({ kbId: "kb_a", itemId: "ki_sole" });
+    await store.addMembership({ kbId: "kb_a", itemId: "ki_shared" });
+    await store.addMembership({ kbId: "kb_b", itemId: "ki_shared" });
+    await store.putEdge({ edgeId: "ke_1", fromItemId: "ki_sole", toItemId: "ki_shared", edgeType: "requires", origin: "fellow", confirmed: true, createdBy: "u", createdAt: now });
+    await store.putPack({ packId: "pk_1", kbId: "kb_a", name: "P", ordinal: 0, itemIds: ["ki_sole"], createdBy: "u", createdAt: now, updatedAt: now });
+    await store.putPlayer({ playerId: "pl_1", kbId: "kb_a", name: "X", enabledPackIds: [], settingOverrides: {}, decisionPolicyId: "first_match", fallbackPolicyId: "standard", validationStatus: "draft", ownerType: "system", version: 1, createdAt: now, updatedAt: now });
+
+    await store.deleteKbCascade("kb_a");
+
+    expect(await store.getKb("kb_a")).toBeNull();
+    expect(await store.getItem("ki_sole")).toBeNull(); // sole membership → gone
+    expect(await store.getItem("ki_shared")).not.toBeNull(); // shared → survives
+    expect(await store.listEdgesTouching(["ki_sole", "ki_shared"])).toHaveLength(0);
+    expect(await store.listPacksForKb("kb_a")).toHaveLength(0);
+    expect(await store.listPlayersForKb("kb_a")).toHaveLength(0);
+    expect((await store.listItemsForKb("kb_b")).map((i) => i.itemId)).toEqual(["ki_shared"]);
+  });
+});

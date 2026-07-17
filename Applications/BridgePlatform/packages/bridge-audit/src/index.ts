@@ -13,6 +13,7 @@ import type { NexusBridgeContext } from "@laic/learner-contracts";
 export type AuditAction =
   | "generation.run"
   | "kb.create"
+  | "kb.delete"
   | "kb.item.create"
   | "kb.item.edit"
   | "kb.edge.change"

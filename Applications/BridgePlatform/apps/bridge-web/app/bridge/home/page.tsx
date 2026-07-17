@@ -23,8 +23,8 @@ export default async function HomePage() {
         <p>
           Every rule here belongs to a <strong>knowledge base</strong> (SAYC,
           2/1, …). Players are assembled from capability packs; every AI
-          decision at the table traces to the rule, the knowledge item, and
-          the source passage that produced it — and editing an item changes
+          decision at the table traces to the rule, the capability, and
+          the source passage that produced it — and editing a capability changes
           how the AI plays, immediately.
         </p>
         <p>

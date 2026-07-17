@@ -417,4 +417,58 @@ export class PgKbStore implements KbStore {
     );
     return rows.map((r: any) => r.artifact as CompiledKb);
   }
+
+  // ---- cascade delete --------------------------------------------------------------------
+
+  async deleteKbCascade(kbId: string) {
+    // Items shared with another KB survive; only sole-membership items go.
+    const mine = check(
+      await this.db.from("bridge_kb_memberships").select("item_id").eq("kb_id", kbId),
+      "kb.cascade.memberships",
+    ).map((r: any) => r.item_id as string);
+    let orphaned: string[] = [];
+    if (mine.length) {
+      const elsewhere = new Set(
+        check(
+          await this.db
+            .from("bridge_kb_memberships")
+            .select("item_id")
+            .in("item_id", mine)
+            .neq("kb_id", kbId),
+          "kb.cascade.shared",
+        ).map((r: any) => r.item_id as string),
+      );
+      orphaned = mine.filter((id) => !elsewhere.has(id));
+    }
+
+    check(
+      await this.db.from("bridge_kb_memberships").delete().eq("kb_id", kbId),
+      "kb.cascade.m",
+    );
+    if (orphaned.length) {
+      check(
+        await this.db.from("bridge_kb_edges").delete().in("from_item_id", orphaned),
+        "kb.cascade.edges.from",
+      );
+      check(
+        await this.db.from("bridge_kb_edges").delete().in("to_item_id", orphaned),
+        "kb.cascade.edges.to",
+      );
+      check(
+        await this.db.from("bridge_kb_items").delete().in("item_id", orphaned),
+        "kb.cascade.items",
+      );
+    }
+    for (const table of [
+      "bridge_kb_packs",
+      "bridge_kb_players",
+      "bridge_kb_sandboxes",
+      "bridge_kb_suggestions",
+      "bridge_kb_jobs",
+      "bridge_kb_compiles",
+    ]) {
+      check(await this.db.from(table).delete().eq("kb_id", kbId), `kb.cascade.${table}`);
+    }
+    check(await this.db.from("bridge_kbs").delete().eq("kb_id", kbId), "kb.cascade.kb");
+  }
 }
