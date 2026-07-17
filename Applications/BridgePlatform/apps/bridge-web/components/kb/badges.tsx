@@ -20,6 +20,15 @@ export function StatusBadge({ status }: Readonly<{ status: ItemStatus }>) {
   );
 }
 
+/** Owner terminology (2026-07-17): players are "complete"/"incomplete" in the
+ *  UI — the model's valid/invalid stays as the storage value. */
+export const VALIDITY_LABEL: Record<PlayerValidationStatus, string> = {
+  valid: "complete",
+  invalid: "incomplete",
+  draft: "draft",
+  published: "published",
+};
+
 export function ValidityBadge({ status }: Readonly<{ status: PlayerValidationStatus }>) {
   const style =
     status === "valid" || status === "published"
@@ -31,7 +40,7 @@ export function ValidityBadge({ status }: Readonly<{ status: PlayerValidationSta
     <span
       className={`inline-block rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${style}`}
     >
-      {status}
+      {VALIDITY_LABEL[status]}
     </span>
   );
 }

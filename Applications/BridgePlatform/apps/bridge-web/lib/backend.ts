@@ -13,6 +13,14 @@ export function storeBackend(): "file" | "postgres" {
   return v;
 }
 
+/**
+ * Where the JSON dev stores live. Overridable so isolated environments
+ * (Playwright uses .data-e2e) never pollute the store a human browses.
+ */
+export function dataDir(): string {
+  return process.env.BRIDGE_DATA_DIR ?? ".data";
+}
+
 export function pgClient(): SupabaseClient {
   if (!globalCache.__bridgePgClient) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

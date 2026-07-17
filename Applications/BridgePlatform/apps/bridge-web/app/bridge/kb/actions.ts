@@ -30,6 +30,41 @@ export async function createKbAction(formData: FormData): Promise<void> {
   redirect(kbPath(kb.kbId));
 }
 
+/**
+ * Delete a knowledge base and everything scoped to it — memberships, items
+ * that belong only to this KB (with their edges), packs, players, sandboxes,
+ * suggestions, jobs, compiles, and the KB's play sessions. Irreversible.
+ * The typed-name confirmation is checked server-side.
+ */
+export async function deleteKbAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const kb = await kbService().getKb(kbId);
+  // Two confirmed entry points share this action: the Overview danger zone
+  // (the fellow types the KB's name) and the list-row button (client-side
+  // confirm + hidden name). The name check is the server-side bar for both.
+  const confirm = String(formData.get("confirmName") ?? "").trim();
+  const from = String(formData.get("from") ?? "list");
+  if (confirm !== kb.name) {
+    redirect(kbPath(kbId, `?deleteError=${encodeURIComponent("Type the knowledge base's exact name to confirm deletion.")}`));
+  }
+  try {
+    await kbService().deleteKb(kbId); // refuses while derived KBs exist
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not delete this knowledge base.";
+    redirect(
+      from === "overview"
+        ? kbPath(kbId, `?deleteError=${encodeURIComponent(message)}`)
+        : `/bridge/kb?deleteError=${encodeURIComponent(message)}`,
+    );
+  }
+  const { sessionService } = await import("@/lib/sessions");
+  await sessionService().deleteForKb(kbId);
+  await audit(context, "kb.delete", "kb", kbId, { name: kb.name });
+  revalidatePath("/bridge/kb");
+  redirect("/bridge/kb?deleted=1");
+}
+
 export async function createItemAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   await ensureSeeds();
@@ -294,14 +329,33 @@ export async function savePlayerAction(formData: FormData): Promise<void> {
     await import("@bridge/kb");
   const { parseSettingOverrides } = await import("@/lib/playerForm");
   const store = kbStore();
-  const existing = playerId ? await store.getPlayer(playerId) : null;
+  // "Save as a new player" copies instead of mutating: the source player is
+  // read for carried-over fields but never written.
+  const saveAsNew = String(formData.get("saveAs") ?? "") === "new";
+  const source = playerId ? await store.getPlayer(playerId) : null;
+  const existing = saveAsNew ? null : source;
   const now = new Date().toISOString();
 
   let enabledPackIds = formData.getAll("enabledPackIds").map(String);
-  let settingOverrides = parseSettingOverrides(formData, compiled);
+  // Only settings the submitted packs expose were rendered — parse those, and
+  // carry prior tuning forward for the rest (inert while un-carried, back at
+  // the fellow's values if the pack returns).
+  const carried = new Set(
+    compiled.packs
+      .filter((p) => enabledPackIds.includes(p.packId))
+      .flatMap((p) => p.itemIds),
+  );
+  let settingOverrides = parseSettingOverrides(formData, compiled, carried);
+  for (const [key, value] of Object.entries(source?.settingOverrides ?? {})) {
+    const spec = compiled.settings.find((s) => s.key === key);
+    if (spec && !carried.has(spec.itemId) && !(key in settingOverrides)) {
+      settingOverrides[key] = value;
+    }
+  }
 
-  // Sandboxed players can never escape the coach's exposure (server-side).
-  const sandboxId = existing?.sandboxId ?? (String(formData.get("sandboxId") ?? "").trim() || undefined);
+  // Sandboxed players can never escape the coach's exposure (server-side) —
+  // a copy stays inside its source's sandbox.
+  const sandboxId = source?.sandboxId ?? (String(formData.get("sandboxId") ?? "").trim() || undefined);
   if (sandboxId) {
     const sandbox = await store.getSandbox(sandboxId);
     if (sandbox) {
@@ -311,11 +365,21 @@ export async function savePlayerAction(formData: FormData): Promise<void> {
     }
   }
 
+  // A copy saved under an unchanged name gets a "(copy)" suffix so the two
+  // stay distinguishable in rosters and seat menus.
+  let name = String(formData.get("name") ?? "").trim() || source?.name || "Unnamed player";
+  if (saveAsNew && source && name === source.name) {
+    const names = new Set((await store.listPlayersForKb(kbId)).map((p) => p.name));
+    let candidate = `${name} (copy)`;
+    for (let n = 2; names.has(candidate); n++) candidate = `${name} (copy ${n})`;
+    name = candidate;
+  }
+
   const player = {
     playerId: existing?.playerId ?? mkId("pl"),
     kbId,
-    name: String(formData.get("name") ?? "").trim() || existing?.name || "Unnamed player",
-    description: existing?.description,
+    name,
+    description: source?.description,
     levelId: String(formData.get("levelId") ?? "").trim() || undefined,
     enabledPackIds,
     settingOverrides,
@@ -501,20 +565,6 @@ export async function deriveKbAction(formData: FormData): Promise<void> {
     items: includeItemIds.length || "all",
   });
   redirect(kbPath(child.kbId));
-}
-
-export async function deleteKbAction(formData: FormData): Promise<void> {
-  const context = await requireAdminContext("bridge.knowledge.edit");
-  const kbId = String(formData.get("kbId"));
-  const kb = await kbService().getKb(kbId);
-  try {
-    await kbService().deleteKb(kbId);
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Could not delete this knowledge base.";
-    redirect(`/bridge/kb?deleteError=${encodeURIComponent(message)}`);
-  }
-  await audit(context, "kb.delete", "kb", kbId, { name: kb.name });
-  redirect("/bridge/kb?deleted=1");
 }
 
 export async function duplicateKbAction(formData: FormData): Promise<void> {

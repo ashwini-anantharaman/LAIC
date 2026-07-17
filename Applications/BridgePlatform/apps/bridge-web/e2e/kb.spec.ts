@@ -32,7 +32,7 @@ test("hand-authors a fallback item and a 1NT agreement", async ({ page, context 
     .getByLabel("What a player reads (the agreement, in plain words)")
     .fill("With no agreement that applies, pass.");
   await page.getByLabel("Type").selectOption("fallback_rule");
-  await page.getByRole("button", { name: "Create item" }).click();
+  await page.getByRole("button", { name: "Create capability" }).click();
   await expect(page.getByRole("heading", { name: "Auction fallback: pass" })).toBeVisible();
 
   // 1NT agreement with an inline range setting, via typed rule fields.
@@ -50,27 +50,27 @@ test("hand-authors a fallback item and a 1NT agreement", async ({ page, context 
   await page.locator('select[name="rule0:actionType"]').selectOption("bid");
   await page.locator('input[name="rule0:actionLevel"]').fill("1");
   await page.locator('select[name="rule0:actionStrain"]').selectOption("N");
-  await page.getByRole("button", { name: "Create item" }).click();
+  await page.getByRole("button", { name: "Create capability" }).click();
   await expect(page.getByRole("heading", { name: "1NT opening" })).toBeVisible();
 
   // Both items listed; the KB compiled (health strip shows a live version).
   await page.goto(`${kbUrl}/items`);
   await expect(page.getByText("Auction fallback: pass")).toBeVisible();
   await expect(page.getByText("1NT opening")).toBeVisible();
-  await expect(page.getByText(/live compile/)).toBeVisible();
+  await expect(page.getByText(/draft compile/)).toBeVisible();
 });
 
 test("edits the 1NT range — the KB recompiles to a new version", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
   await page.goto(`${kbUrl}/items`);
-  const before = await page.getByText(/live compile/).textContent();
+  const before = await page.getByText(/draft compile/).textContent();
 
   await page.getByText("1NT opening").click();
   await page.locator('input[name="rule0:hcpMin"]').fill("14");
   await page.getByRole("button", { name: /Save \(recompiles/ }).click();
   await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
 
-  const after = await page.getByText(/live compile/).textContent();
+  const after = await page.getByText(/draft compile/).textContent();
   expect(after).not.toBe(before);
 });
 
@@ -132,7 +132,7 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
 
   await expect(page.getByText(/latest edit doesn't compile/)).toBeVisible();
   await expect(page.getByText(/does_not_exist/)).toBeVisible();
-  await expect(page.getByText(/live compile/)).toBeVisible(); // last-good still live
+  await expect(page.getByText(/draft compile/)).toBeVisible(); // last-good still live
 
   // Repair via the typed fields — the banner clears and compiles resume.
   await page.locator('input[name="rule0:hcpMin"]').fill("15");
@@ -157,7 +157,7 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
   await page.getByLabel("Type").selectOption("fallback_rule");
   await page.getByText("Fallback behavior (fallback_rule items)").click();
   await page.locator('select[name="fb:phase"]').selectOption("opening_lead");
-  await page.getByRole("button", { name: "Create item" }).click();
+  await page.getByRole("button", { name: "Create capability" }).click();
 
   await page.goto(`${kbUrl}/items/new`);
   await page.getByLabel("Title").fill("Play fallback: lowest legal card");
@@ -167,7 +167,7 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
   await page.getByLabel("Type").selectOption("fallback_rule");
   await page.getByText("Fallback behavior (fallback_rule items)").click();
   await page.locator('select[name="fb:phase"]').selectOption("card_play");
-  await page.getByRole("button", { name: "Create item" }).click();
+  await page.getByRole("button", { name: "Create capability" }).click();
 
   await page.goto(`${kbUrl}/items/new`);
   await page.getByLabel("Title").fill("No signals");
@@ -175,7 +175,7 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
     .getByLabel("What a player reads (the agreement, in plain words)")
     .fill("This partnership plays no defensive signals.");
   await page.getByLabel("Type").selectOption("signal_agreement");
-  await page.getByRole("button", { name: "Create item" }).click();
+  await page.getByRole("button", { name: "Create capability" }).click();
 
   await page.goto(`${kbUrl}/ladder`);
   await page.getByLabel("Name").fill("Floor");
@@ -199,6 +199,15 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
   await expect(page.getByText("24/24")).toBeVisible();
   const floors = page.locator("dd").filter({ hasText: /^0$/ });
   await expect(floors.first()).toBeVisible(); // zero engine-floor events
+
+  // "Save as a new player" copies — the original is untouched and the copy
+  // gets a distinguishable name.
+  const beforeUrl = page.url();
+  await page.getByRole("button", { name: "Save as a new player" }).click();
+  await page.waitForURL((u) => /players\/pl_/.test(u.pathname) && u.href !== beforeUrl);
+  await expect(
+    page.getByRole("heading", { name: "Minimal complete — Floor (copy)" }),
+  ).toBeVisible();
 });
 
 test("table: session pins, trace drawer, flag lands in the KB queue", async ({
@@ -207,10 +216,11 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
 }) => {
   await signInAs(context, "user_reviewer_rhea");
 
-  // Deal a board: human South, Floor players elsewhere.
+  // Deal a board via the custom-table setup: human South, Floor elsewhere.
   await page.goto("/bridge/table");
-  const section = page.locator("section", { hasText: "SAYC e2e" }).last();
-  const dealForm = section.locator("form").first();
+  await page.getByText("Set up a custom table").click();
+  const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
+  const dealForm = block.locator("form").first();
   await dealForm.locator('select[name="humanSeat"]').selectOption("S");
   await dealForm.locator('input[name="seed"]').fill("7");
   for (const seat of ["N", "E", "W"]) {
@@ -221,19 +231,22 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   await dealForm.getByRole("button", { name: "Deal a board" }).click();
   await page.waitForURL(/\/bridge\/table\/bs_/);
 
-  // Dealer N, then E — two AI advances, then South (us) is to act.
-  await page.getByRole("button", { name: "Advance AI" }).click();
-  await expect(page.getByText(/Decisions \(1\)/)).toBeVisible();
-  await page.getByRole("button", { name: "Advance AI" }).click();
-  await expect(page.getByText(/Decisions \(2\)/)).toBeVisible();
+  // Dealer N, then E — the table auto-advances AI turns until South (us).
+  await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Your call")).toBeVisible();
   const firstDecision = page.locator("details").filter({ hasText: "#0" }).last();
   await firstDecision.locator("summary").click();
   await expect(firstDecision.getByText(/fallback: pass/)).toBeVisible();
 
   // Flag it → the suggestion appears in the KB's queue with the session link.
+  // Wait for the action POST to finish — navigating away aborts it otherwise.
   await firstDecision.locator('input[name="text"]').fill("Passing here looks wrong to me.");
-  await firstDecision.getByRole("button", { name: "Flag" }).click();
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.request().method() === "POST" && r.url().includes("/bridge/table/"),
+    ),
+    firstDecision.getByRole("button", { name: "Flag" }).click(),
+  ]);
 
   // We act as South: pass.
   await page.getByRole("button", { name: "Pass", exact: true }).click();
@@ -250,8 +263,9 @@ test("constrained drill: an incomplete player never hits the engine floor", asyn
   await signInAs(context, "user_reviewer_rhea");
 
   await page.goto("/bridge/table");
-  const section = page.locator("section", { hasText: "SAYC e2e" }).last();
-  const drillForm = section.locator("form").last();
+  await page.getByText("Set up a custom table").click();
+  const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
+  const drillForm = block.locator("form").last();
   await drillForm
     .locator('select[name="playerId"]')
     .selectOption({ label: "Minimal incomplete — Openings (incomplete) (incomplete)" });
@@ -259,8 +273,8 @@ test("constrained drill: an incomplete player never hits the engine floor", asyn
   await drillForm.getByRole("button", { name: "Find a safe deal" }).click();
   await page.waitForURL(/\/bridge\/table\/bs_/, { timeout: 90_000 });
 
-  await page.getByRole("button", { name: "Play to end" }).click();
-  await expect(page.getByText(/Passed out|made|down/)).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "play to end" }).click();
+  await expect(page.getByText(/Passed out|made|down/).first()).toBeVisible({ timeout: 60_000 });
 
   // The verification panel proves the guarantee: zero engine-floor badges.
   await expect(page.getByText(/Decisions \(\d+\)/)).toBeVisible();

@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Next's dev-server lock lives under distDir — a separate dir lets the
+  // isolated Playwright server (port 3105, own data dir) run alongside the
+  // dev server a human is using on :3000.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // Workspace packages ship TypeScript source directly (internal-package
   // pattern); Next transpiles them.
   transpilePackages: [

@@ -35,6 +35,8 @@ import {
 import type { CompiledKb, DecisionPolicyId, KbPlayer, KbStore } from "@bridge/kb";
 import { newId } from "@bridge/kb";
 
+export * from "./library";
+
 // ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
@@ -58,7 +60,14 @@ export interface SessionRecord {
   kbId: string;
   /** The exact artifact this session plays on (last-good at creation). */
   compileRef: { compileId: string; version: number };
-  board: { name: string; dealer: Seat; vul: Vul; seed: number };
+  /** Explicit `hands` (library/imported boards) win over the seed deal. */
+  board: {
+    name: string;
+    dealer: Seat;
+    vul: Vul;
+    seed: number;
+    hands?: Record<Seat, Card[]>;
+  };
   seats: Record<Seat, SeatConfig>;
   /** Full stream: action events (state) + logic events (traces). */
   events: GameEvent[];
@@ -78,6 +87,8 @@ export interface SessionStore {
   putSession(record: SessionRecord): Promise<void>;
   getSession(sessionId: string): Promise<SessionRecord | null>;
   listSessions(): Promise<SessionRecord[]>;
+  /** Remove every session of a KB (part of KB deletion — their pinned compiles go with the KB). */
+  deleteSessionsForKb(kbId: string): Promise<void>;
 }
 
 export class InMemorySessionStore implements SessionStore {
@@ -94,6 +105,10 @@ export class InMemorySessionStore implements SessionStore {
   }
   async listSessions() {
     return [...this.data.sessions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async deleteSessionsForKb(kbId: string) {
+    this.data.sessions = this.data.sessions.filter((s) => s.kbId !== kbId);
+    this.persist();
   }
 }
 
@@ -155,6 +170,9 @@ export class SessionService {
     seed: number;
     dealer?: Seat;
     vul?: Vul;
+    /** Explicit deal (library/imported board) — overrides the seed deal. */
+    hands?: Record<Seat, Card[]>;
+    boardName?: string;
     createdBy: string;
     forkedFromSessionId?: string;
     /** Adopted event prefix (forks resume mid-board). */
@@ -165,10 +183,11 @@ export class SessionService {
       kbId: input.kbId,
       compileRef: { compileId: input.compiled.compileId, version: input.compiled.version },
       board: {
-        name: `seeded-${input.seed}`,
+        name: input.boardName ?? `seeded-${input.seed}`,
         dealer: input.dealer ?? "N",
         vul: input.vul ?? "none",
         seed: input.seed,
+        hands: input.hands,
       },
       seats: input.seats,
       events: input.primedEvents ?? [],
@@ -184,6 +203,11 @@ export class SessionService {
 
   async listRecent(): Promise<SessionRecord[]> {
     return this.store.listSessions();
+  }
+
+  /** Part of KB deletion — the pinned compiles vanish with the KB. */
+  async deleteForKb(kbId: string): Promise<void> {
+    await this.store.deleteSessionsForKb(kbId);
   }
 
   async requireSession(sessionId: string): Promise<SessionRecord> {
@@ -233,7 +257,7 @@ export class SessionService {
       ]),
     ) as Record<Seat, ReturnType<typeof createKbDecider>>;
 
-    const hands = seededDeal(record.board.seed);
+    const hands = record.board.hands ?? seededDeal(record.board.seed);
     const primed = record.events.filter(isActionEvent);
     const game = createGame(
       bus,
@@ -307,7 +331,7 @@ export class SessionService {
         return decision(action.card);
       },
     };
-    const hands = seededDeal(record.board.seed);
+    const hands = record.board.hands ?? seededDeal(record.board.seed);
     const bus = createBus();
     const log = createEventLog(bus);
     const deciders = Object.fromEntries(
@@ -347,11 +371,14 @@ export class SessionService {
   /**
    * Fork (spec §7): same board and pinned compile, NEW seat configs, primed
    * with this session's event prefix. The source session stays untouched.
+   * `fresh: true` drops the prefix — the same board replays from the deal
+   * (how a completed board is re-run with a different lineup).
    */
   async fork(
     sessionId: string,
     seats: Record<Seat, SeatConfig>,
     createdBy: string,
+    options: { fresh?: boolean } = {},
   ): Promise<SessionRecord> {
     const source = await this.requireSession(sessionId);
     const compiled = await this.compiledFor(source);
@@ -362,9 +389,11 @@ export class SessionService {
       seed: source.board.seed,
       dealer: source.board.dealer,
       vul: source.board.vul,
+      hands: source.board.hands,
+      boardName: source.board.name,
       createdBy,
       forkedFromSessionId: source.sessionId,
-      primedEvents: [...source.events],
+      primedEvents: options.fresh ? [] : [...source.events],
     });
   }
 

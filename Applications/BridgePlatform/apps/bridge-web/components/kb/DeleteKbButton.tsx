@@ -38,6 +38,8 @@ export function DeleteKbButton({
       }}
     >
       <input type="hidden" name="kbId" value={kbId} />
+      <input type="hidden" name="confirmName" value={name} />
+      <input type="hidden" name="from" value="list" />
       <button
         type="submit"
         disabled={pending}

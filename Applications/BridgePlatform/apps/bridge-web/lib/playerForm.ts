@@ -10,9 +10,17 @@ import { stableStringify } from "@bridge/kb";
 export function parseSettingOverrides(
   fd: FormData,
   compiled: CompiledKb,
+  /**
+   * Items carried by the SUBMITTED packs. Settings declared by other items
+   * were not rendered in the form — parsing them would read every absent
+   * toggle as "off" and mint phantom overrides. When given, those settings
+   * are skipped entirely (the action preserves any prior tuning instead).
+   */
+  carriedItemIds?: Set<string>,
 ): Record<string, SettingValue> {
   const overrides: Record<string, SettingValue> = {};
   for (const spec of compiled.settings) {
+    if (carriedItemIds && !carriedItemIds.has(spec.itemId)) continue;
     const name = `setting:${spec.key}`;
     let value: SettingValue;
     switch (spec.control) {

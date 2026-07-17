@@ -101,7 +101,7 @@ export default async function PlayerPage({
               </ul>
               {player.validationStatus === "invalid" && (
                 <p className="mt-2 text-xs text-neutral-500">
-                  Invalid players are drill material: they only play in constrained environments
+                  Incomplete players are drill material: they only play in constrained environments
                   where deals never leave their knowledge.
                 </p>
               )}

@@ -29,7 +29,7 @@ export {
 } from "./versioning";
 export { playerIsValid, validatePlayerStatic } from "./validatePlayer";
 export { FIXTURE_EDGES, FIXTURE_ITEMS, fixturePacks } from "./fixture";
-export { chunkDocument, looksLikeHeading, type ChunkedSection, type ChunkResult } from "./passages";
+export { chunkDocument, looksLikeHeading, normalizeExtractedText, type ChunkedSection, type ChunkResult } from "./passages";
 export {
   materializeExtraction,
   runExtraction,

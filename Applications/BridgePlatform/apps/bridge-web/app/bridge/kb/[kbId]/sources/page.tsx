@@ -90,6 +90,13 @@ export default async function SourcesPage({
                   <p className="mt-1 text-sm text-neutral-600">
                     {doc.fileName} · {doc.charCount.toLocaleString()} chars · uploaded{" "}
                     {doc.uploadedAt.slice(0, 10)}
+                    {" · "}
+                    <Link
+                      href={`/bridge/kb/${kbId}/sources/${source.sourceId}`}
+                      className="text-emerald-700 underline-offset-2 hover:underline"
+                    >
+                      read the document →
+                    </Link>
                   </p>
                 ) : (
                   <p className="mt-1 text-sm italic text-neutral-500">No document yet.</p>

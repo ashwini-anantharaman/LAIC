@@ -1,4 +1,4 @@
--- 0015: two-level versioning + KB derivation lineage (Knowledge Rework
+-- 0016: two-level versioning + KB derivation lineage (Knowledge Rework
 -- Stage H). Jsonb-primary like 0013/0014: the full record lives in `record`;
 -- scalar columns exist for identity/ordering only.
 --

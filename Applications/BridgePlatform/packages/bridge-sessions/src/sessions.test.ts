@@ -194,5 +194,81 @@ describe("SessionService", () => {
     // The source session is untouched by the fork.
     const sourceAgain = await service.view(record.sessionId);
     expect(sourceAgain.record.events).toHaveLength(source.record.events.length);
+
+    // A FRESH fork keeps the board but replays from the deal (seat swaps on
+    // completed boards).
+    const fresh = await service.fork(record.sessionId, allAi, "u", { fresh: true });
+    expect(fresh.events).toHaveLength(0);
+    expect(fresh.board.seed).toBe(record.board.seed);
+    const freshView = await service.view(fresh.sessionId);
+    expect(freshView.state.auction).toHaveLength(0);
+  });
+});
+
+describe("explicit-deal boards (library/import)", () => {
+  it("a session created with explicit hands plays THAT deal, not the seed deal", async () => {
+    const compiled = (await kbService.liveCompile(kbId))!;
+    const { seededDeal } = await import("@bridge/engine");
+    const hands = seededDeal(42); // a valid 52-card deal, but pinned explicitly
+    const record = await service.createSession({
+      kbId,
+      compiled,
+      seats: allAi,
+      seed: 7, // deliberately different from the hands' seed
+      hands,
+      boardName: "Library board #1",
+      createdBy: "u_rhea",
+    });
+    expect(record.board.name).toBe("Library board #1");
+
+    const view = await service.view(record.sessionId);
+    expect(view.state.hands.N).toEqual(hands.N);
+    expect(view.state.hands.S).toEqual(hands.S);
+
+    // Forks keep the explicit deal too.
+    const forked = await service.fork(record.sessionId, allAi, "u");
+    const forkView = await service.view(forked.sessionId);
+    expect(forkView.state.hands.E).toEqual(hands.E);
+    expect(forked.board.name).toBe("Library board #1");
+  });
+});
+
+describe("library store", () => {
+  it("round-trips entries and filters by kind", async () => {
+    const { InMemoryLibraryStore } = await import("./library");
+    const lib = new InMemoryLibraryStore();
+    await lib.putEntry({
+      entryId: "le_1",
+      kind: "board",
+      name: "Slam try",
+      tags: ["slam"],
+      dealer: "S",
+      vul: "ns",
+      origin: "recorded",
+      createdBy: "u_rhea",
+      createdAt: "2026-07-16T10:00:00.000Z",
+    });
+    await lib.putEntry({
+      entryId: "le_2",
+      kind: "table",
+      name: "Beginner lineup",
+      tags: [],
+      kbId: "kb_x",
+      seats: {
+        N: { label: "Beginner (auto)" },
+        E: { label: "Beginner (auto)" },
+        S: { label: "you", human: true },
+        W: { label: "Beginner (auto)" },
+      },
+      origin: "authored",
+      createdBy: "u_rhea",
+      createdAt: "2026-07-16T11:00:00.000Z",
+    });
+
+    expect((await lib.listEntries()).map((e) => e.entryId)).toEqual(["le_2", "le_1"]);
+    expect((await lib.listEntries("board")).map((e) => e.entryId)).toEqual(["le_1"]);
+    expect((await lib.getEntry("le_1"))?.name).toBe("Slam try");
+    await lib.deleteEntry("le_1");
+    expect(await lib.getEntry("le_1")).toBeNull();
   });
 });

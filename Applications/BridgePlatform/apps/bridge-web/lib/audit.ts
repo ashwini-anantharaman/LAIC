@@ -6,7 +6,7 @@ import { JsonFileAuditStore } from "@bridge/audit/fileStore";
 import { PgAuditStore } from "@bridge/pg-stores";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
 import { join } from "node:path";
-import { pgClient, storeBackend } from "./backend";
+import { dataDir, pgClient, storeBackend } from "./backend";
 
 const globalCache = globalThis as unknown as { __bridgeAuditStore?: AuditStore };
 
@@ -15,7 +15,7 @@ export function auditStore(): AuditStore {
     globalCache.__bridgeAuditStore =
       storeBackend() === "postgres"
         ? new PgAuditStore(pgClient())
-        : new JsonFileAuditStore(join(process.cwd(), ".data", "audit-log.json"));
+        : new JsonFileAuditStore(join(process.cwd(), dataDir(), "audit-log.json"));
   }
   return globalCache.__bridgeAuditStore;
 }

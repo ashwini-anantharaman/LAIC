@@ -118,8 +118,8 @@ export default async function VersionsPage({
               {numberOf(derivation.masterLatestVersionId) !== undefined && (
                 <> (v{numberOf(derivation.masterLatestVersionId)})</>
               )}{" "}
-              since this branch point. Linked items already reflect master edits;
-              forked items stay as you left them.
+              since this branch point. Linked capabilities already reflect master edits;
+              forked capabilities stay as you left them.
             </p>
           ) : (
             <p className="mt-1 text-neutral-500">Up to date with the master.</p>
@@ -131,14 +131,14 @@ export default async function VersionsPage({
       <section>
         <h2 className="text-lg font-medium">Publish a version</h2>
         <p className="mt-1 text-sm text-neutral-600">
-          Freezes the current draft as an immutable release. Any items with
+          Freezes the current draft as an immutable release. Any capabilities with
           uncommitted edits are committed first; the KB must compile.
         </p>
 
         <p className="mt-3 text-sm text-neutral-500">
           {dirty.length === 0
-            ? "No uncommitted item edits — the draft is fully committed."
-            : `${dirty.length} item${dirty.length === 1 ? "" : "s"} with uncommitted edits will be committed on publish.`}
+            ? "No uncommitted capability edits — the draft is fully committed."
+            : `${dirty.length} capabilit${dirty.length === 1 ? "y" : "ies"} with uncommitted edits will be committed on publish.`}
         </p>
 
         {kb.lastCompileError ? (
@@ -231,7 +231,7 @@ export default async function VersionsPage({
                           <ConfirmButton
                             action={deleteKbVersionAction}
                             hidden={{ kbId, versionId: v.versionId }}
-                            confirm={`Delete release v${v.versionNumber}? This permanently removes the release (item snapshots and compiles are kept).`}
+                            confirm={`Delete release v${v.versionNumber}? This permanently removes the release (capability snapshots and compiles are kept).`}
                             label="delete"
                             className="text-xs text-neutral-400 hover:text-[var(--madder)]"
                             title="Delete this release"
@@ -293,7 +293,7 @@ export default async function VersionsPage({
             </legend>
             <div className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded border border-neutral-200 p-2">
               {items.length === 0 ? (
-                <p className="text-sm text-neutral-400">This KB has no items yet.</p>
+                <p className="text-sm text-neutral-400">This KB has no capabilities yet.</p>
               ) : (
                 items.map((i) => (
                   <label key={i.itemId} className="flex items-center gap-2 text-sm">
