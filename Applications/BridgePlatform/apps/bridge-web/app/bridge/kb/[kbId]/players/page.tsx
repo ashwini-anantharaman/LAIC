@@ -22,7 +22,7 @@ export default async function KbPlayersPage({
     <div className="space-y-8">
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 p-4">
         <p className="text-sm text-neutral-600">
-          Suggest players from the ladder: a <strong>minimal incomplete</strong> drill player and
+          Suggest players from the knowledge sets: a <strong>minimal incomplete</strong> drill player and
           the lowest <strong>minimal complete</strong> player the packs support.
         </p>
         <form action={suggestPlayersAction}>

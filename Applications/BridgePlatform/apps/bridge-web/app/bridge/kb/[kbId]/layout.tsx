@@ -88,10 +88,10 @@ export default async function KbLayout({
         )}
 
         <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 rounded-lg border border-neutral-200 bg-[var(--card)] px-5 py-3">
-          {stat(items.length, "capabilities")}
+          {stat(items.length, "knowledge items")}
           {stat(byStatus("draft"), "draft")}
           {stat(byStatus("approved"), "approved")}
-          {stat(compiled?.packs.length ?? 0, "packs")}
+          {stat(compiled?.packs.length ?? 0, "knowledge sets")}
           {stat(
             players.length ? `${validPlayers}/${players.length}` : "0",
             "complete players",
@@ -102,7 +102,7 @@ export default async function KbLayout({
 
         <nav className="mt-6 flex flex-wrap gap-5 border-b border-[var(--line)]">
           <TabLink href={base} exact label="Overview" />
-          <TabLink href={`${base}/items`} label="Capabilities" />
+          <TabLink href={`${base}/items`} label="Master" />
           <TabLink href={`${base}/sets`} label="Knowledge sets" />
           <TabLink href={`${base}/sources`} label="Sources" />
           <TabLink href={`${base}/players`} label="Players" />

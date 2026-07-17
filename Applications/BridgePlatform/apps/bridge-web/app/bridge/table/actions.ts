@@ -32,7 +32,7 @@ export async function arenaPlayAction(formData: FormData): Promise<void> {
   const compiled = await kbService().liveCompile(kbId);
   if (!compiled) throw new Error("That knowledge base has no live compile yet");
   const pack = compiled.packs.find((p) => p.packId === packId);
-  if (!pack) throw new Error("Pick a ladder rung");
+  if (!pack) throw new Error("Pick a knowledge set");
 
   const { ensureHousePlayer } = await import("@/lib/arena");
   const house = await ensureHousePlayer(kbStore(), compiled, pack, context.nexusUserId);

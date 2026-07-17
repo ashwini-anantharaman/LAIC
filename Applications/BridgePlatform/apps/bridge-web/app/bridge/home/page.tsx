@@ -22,15 +22,15 @@ export default async function HomePage() {
       <div className="mt-6 space-y-4 text-sm leading-relaxed text-neutral-600">
         <p>
           Every rule here belongs to a <strong>knowledge base</strong> (SAYC,
-          2/1, …). Players are assembled from capability packs; every AI
-          decision at the table traces to the rule, the capability, and
-          the source passage that produced it — and editing a capability changes
-          how the AI plays, immediately.
+          2/1, …). Players are assembled from knowledge sets; every AI
+          decision at the table traces to the rule, the knowledge item, and
+          the source passage that produced it — and editing a knowledge item
+          changes how the AI plays, immediately.
         </p>
         <p>
-          Jump into <strong>Play</strong> — pick a strength and the house
+          Jump into <strong>Play</strong> — pick a knowledge set and the house
           players are provisioned for you. <strong>Players</strong> collects
-          everyone&apos;s configured players (one click per ladder rung to
+          everyone&apos;s configured players (one click per knowledge set to
           make your own); the <strong>Library</strong> keeps the deals,
           boards, lineups and plays worth returning to, and imports LIN/PBN.
           The <strong>Knowledge bases</strong> workspace remains where you

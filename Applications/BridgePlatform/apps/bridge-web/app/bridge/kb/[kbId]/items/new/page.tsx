@@ -9,7 +9,7 @@ export default async function NewItemPage({
   const { kbId } = await params;
   return (
     <div className="max-w-3xl">
-      <h2 className="mb-1 text-2xl font-medium">New capability</h2>
+      <h2 className="mb-1 text-2xl font-medium">New knowledge item</h2>
       <p className="mb-6 text-sm text-neutral-600">
         Hand-authored items cite the Claude source by default — attach real
         passages by editing after upload, or prefer extraction for anything

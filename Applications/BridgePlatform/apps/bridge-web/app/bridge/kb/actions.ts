@@ -88,16 +88,43 @@ export async function saveItemAction(formData: FormData): Promise<void> {
   const kbId = String(formData.get("kbId"));
   const itemId = String(formData.get("itemId"));
   const common = parseCommon(formData);
-  const saved = await kbService().saveItem(
-    kbId,
-    itemId,
-    {
-      ...common,
-      payload: parsePayload(formData, common.knowledgeType),
-      settings: parseSettings(formData),
-    },
-    context.nexusUserId,
-  );
+  const content = {
+    ...common,
+    payload: parsePayload(formData, common.knowledgeType),
+    settings: parseSettings(formData),
+  };
+
+  // "Save as a new knowledge item" branches: a fresh item with lineage — the
+  // original (a template) is never touched.
+  if (String(formData.get("saveAs") ?? "") === "new") {
+    const source = await kbStore().getItem(itemId);
+    let title = content.title;
+    if (source && title === source.title) {
+      const titles = new Set((await kbStore().listItemsForKb(kbId)).map((i) => i.title));
+      let candidate = `${title} (copy)`;
+      for (let n = 2; titles.has(candidate); n++) candidate = `${title} (copy ${n})`;
+      title = candidate;
+    }
+    const created = await kbService().createItem(kbId, {
+      ...content,
+      title,
+      status: "draft",
+      forkedFromItemId: itemId,
+      sourceReferences: source?.sourceReferences.length
+        ? source.sourceReferences
+        : [{ sourceId: "src_claude", anchor: "forked in the workspace" }],
+      createdBy: context.nexusUserId,
+    });
+    await audit(context, "kb.item.create", "kb_item", created.itemId, {
+      kbId,
+      forkedFrom: itemId,
+      savedAsNew: true,
+    });
+    revalidatePath(kbPath(kbId), "layout");
+    redirect(kbPath(kbId, `/items/${created.itemId}?saved=1`));
+  }
+
+  const saved = await kbService().saveItem(kbId, itemId, content, context.nexusUserId);
   await audit(context, "kb.item.edit", "kb_item", saved.itemId, {
     kbId,
     forkedFrom: saved.forkedFromItemId,

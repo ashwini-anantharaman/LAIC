@@ -71,7 +71,7 @@ export default async function SuggestionsPage({
         <form action={createSuggestionAction} className="mt-2 flex flex-wrap items-end gap-2">
           <input type="hidden" name="kbId" value={kbId} />
           <label className="min-w-64 flex-1 text-xs">
-            <span className="mb-0.5 block text-neutral-500">What should someone look at?</span>
+            <span className="mb-0.5 block text-neutral-500">Note</span>
             <input name="text" required className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm" />
           </label>
           <label className="text-xs">

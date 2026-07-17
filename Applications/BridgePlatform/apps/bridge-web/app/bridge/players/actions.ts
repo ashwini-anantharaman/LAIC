@@ -1,7 +1,7 @@
 "use server";
 
 // Players area actions (2026-07-16 fellows UI rework). Creation is
-// prototype-simple: pick a ladder rung, get a named, validated player owned
+// prototype-simple: pick a knowledge set, get a named, validated player owned
 // by you — refine it afterwards on the player page. "Try" seats you South
 // against three copies so a fellow can check behavior in one click.
 
@@ -28,7 +28,7 @@ export async function createRungPlayerAction(formData: FormData): Promise<void> 
   const compiled = await kbService().liveCompile(kbId);
   if (!compiled) throw new Error("This knowledge base has no live compile yet");
   const pack = compiled.packs.find((p) => p.packId === packId);
-  if (!pack) throw new Error("Pick a ladder rung");
+  if (!pack) throw new Error("Pick a knowledge set");
 
   const store = kbStore();
   const firstName = (stubDisplayName(context.nexusUserId) ?? context.nexusUserId).split(" ")[0];

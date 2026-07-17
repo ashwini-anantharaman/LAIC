@@ -621,14 +621,31 @@ export function ItemEditor({
         </div>
       </details>
 
-      <p className="flex items-center gap-3">
+      <p className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
+          name="saveAs"
+          value="existing"
           className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
         >
-          {item ? "Save (recompiles the KB)" : "Create capability"}
+          {item ? "Save (recompiles the KB)" : "Create knowledge item"}
         </button>
-        <span className="text-xs text-neutral-400">
+        {item && (
+          <>
+            <button
+              type="submit"
+              name="saveAs"
+              value="new"
+              className="rounded border border-neutral-300 px-4 py-1.5 text-sm hover:border-emerald-400"
+            >
+              Save as a new knowledge item
+            </button>
+            <span className="text-xs text-neutral-400">
+              — leaves &ldquo;{item.title}&rdquo; untouched
+            </span>
+          </>
+        )}
+        <span className="basis-full text-xs text-neutral-400">
           A broken save can&apos;t reach the table — the last good compile keeps serving.
         </span>
       </p>
