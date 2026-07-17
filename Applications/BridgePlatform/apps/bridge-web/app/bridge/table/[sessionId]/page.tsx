@@ -356,6 +356,15 @@ export default async function SessionPage({
         )}
         {!learnerMode && (
           <Link
+            href={`/bridge/table/${sessionId}/edit`}
+            className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
+            title="Change any cards, then deal the edited board to this table"
+          >
+            edit deal
+          </Link>
+        )}
+        {!learnerMode && (
+          <Link
             href="/bridge/table/choose"
             className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
           >

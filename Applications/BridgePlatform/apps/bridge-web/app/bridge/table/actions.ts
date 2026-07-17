@@ -4,8 +4,9 @@
 // single-writer controller as the AI; legality is enforced in the session
 // service. Flagging a decision creates a suggestion in the KB's queue.
 
-import type { Card, Seat, Suit } from "@bridge/events";
+import type { Card, Seat, Suit, Vul } from "@bridge/events";
 import { AwaitingHumanError, SessionService, type SeatConfig } from "@bridge/sessions";
+import { handFromSerialized } from "@/lib/dealText";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
@@ -93,6 +94,79 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
     redirect(`/bridge/table/${record.sessionId}`);
   }
   redirect("/bridge/table");
+}
+
+/**
+ * The mid-play deal editor's save: deal the edited board to the SAME table
+ * (identical seat lineup) and continue there. Fork semantics — the original
+ * board is untouched; a changed deal restarts the auction, since every call
+ * and card so far was made looking at the old hands.
+ */
+export async function redealEditedAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const sessionId = String(formData.get("sessionId"));
+  const failBack: (message: string) => never = (message) =>
+    redirect(`/bridge/table/${sessionId}/edit?error=${encodeURIComponent(message)}`);
+
+  const service = sessionService();
+  const record = await service.requireSession(sessionId);
+  const { validateDeal } = await import("@bridge/formats");
+  const hands = {} as Record<Seat, Card[]>;
+  for (const seat of SEATS) {
+    const parsed = handFromSerialized(String(formData.get(`hand:${seat}`) ?? ""));
+    if ("error" in parsed) failBack(`${seat}: ${parsed.error}`);
+    if (parsed.length !== 13) failBack(`${seat} has ${parsed.length} cards — every hand needs 13.`);
+    hands[seat] = parsed;
+  }
+  const invalid = validateDeal(hands);
+  if (invalid) failBack(invalid);
+
+  const dealer = (String(formData.get("dealer") ?? "N") || "N") as Seat;
+  const vul = (String(formData.get("vul") ?? "none") || "none") as Vul;
+  const boardName =
+    String(formData.get("name") ?? "").trim() || `${record.board.name} (edited)`;
+
+  const compiled = await service.compiledFor(record);
+  const next = await service.createSession({
+    kbId: record.kbId,
+    compiled,
+    seats: record.seats,
+    seed: record.board.seed,
+    hands,
+    dealer,
+    vul,
+    boardName,
+    createdBy: context.nexusUserId,
+  });
+
+  if (formData.get("saveToLibrary") === "on") {
+    const { newId } = await import("@bridge/kb");
+    try {
+      await libraryStore().putEntry({
+        entryId: newId("le"),
+        kind: "board",
+        name: boardName,
+        tags: [],
+        hands,
+        dealer,
+        vul,
+        auction: [],
+        play: [],
+        origin: "authored",
+        sourceSessionId: sessionId,
+        createdBy: context.nexusUserId,
+        createdAt: new Date().toISOString(),
+      });
+    } catch {
+      // Library backend not provisioned — the redeal itself still proceeds.
+    }
+  }
+
+  await audit(context, "session.fork", "kb_session", next.sessionId, {
+    kbId: record.kbId,
+    editedFrom: sessionId,
+  });
+  redirect(`/bridge/table/${next.sessionId}`);
 }
 
 export async function createSessionAction(formData: FormData): Promise<void> {

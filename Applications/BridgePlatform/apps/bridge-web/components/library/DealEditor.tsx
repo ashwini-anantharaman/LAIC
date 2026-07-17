@@ -7,10 +7,10 @@
 // or PBN. Posts `hand:{seat}` in the serialized ♠.♥.♦.♣ form; the server
 // action re-parses and re-validates.
 
-import type { Rank, Seat, Suit, Vul } from "@bridge/events";
+import type { Card, Rank, Seat, Suit, Vul } from "@bridge/events";
 import { rankLabel } from "@bridge/events";
 import { parseLinToContexts, parsePbn } from "@bridge/formats";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ranksFromText, suitTextsFromCards, SUIT_ORDER } from "@/lib/dealText";
 
 const SEATS: Seat[] = ["N", "E", "S", "W"];
@@ -22,16 +22,36 @@ const ALL_RANKS: Rank[] = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2];
 type HandTexts = Record<Suit, string>;
 const emptyHand = (): HandTexts => ({ S: "", H: "", D: "", C: "" });
 
-export function DealEditor() {
-  const [hands, setHands] = useState<Record<Seat, HandTexts>>({
-    N: emptyHand(),
-    E: emptyHand(),
-    S: emptyHand(),
-    W: emptyHand(),
-  });
-  const [name, setName] = useState("");
-  const [dealer, setDealer] = useState<Seat>("N");
-  const [vul, setVul] = useState<Vul>("none");
+export function DealEditor({
+  initialName = "",
+  initialDealer = "N",
+  initialVul = "none",
+  initialHands,
+  submitLabel = "Save board",
+  footer,
+}: Readonly<{
+  initialName?: string;
+  initialDealer?: Seat;
+  initialVul?: Vul;
+  /** Prefill (e.g. the live board when editing a deal mid-play). */
+  initialHands?: Record<Seat, Card[]>;
+  submitLabel?: string;
+  /** Extra form controls rendered just above the submit button. */
+  footer?: ReactNode;
+}>) {
+  const [hands, setHands] = useState<Record<Seat, HandTexts>>(() =>
+    initialHands
+      ? {
+          N: suitTextsFromCards(initialHands.N),
+          E: suitTextsFromCards(initialHands.E),
+          S: suitTextsFromCards(initialHands.S),
+          W: suitTextsFromCards(initialHands.W),
+        }
+      : { N: emptyHand(), E: emptyHand(), S: emptyHand(), W: emptyHand() },
+  );
+  const [name, setName] = useState(initialName);
+  const [dealer, setDealer] = useState<Seat>(initialDealer);
+  const [vul, setVul] = useState<Vul>(initialVul);
   const [paste, setPaste] = useState("");
   const [pasteNote, setPasteNote] = useState<string | null>(null);
 
@@ -270,13 +290,15 @@ export function DealEditor() {
         </ul>
       )}
 
+      {footer}
+
       <button
         type="submit"
         disabled={!check.complete}
         className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-40"
         title={check.complete ? undefined : "All 52 cards must be placed, 13 per hand"}
       >
-        Save board
+        {submitLabel}
       </button>
     </div>
   );
