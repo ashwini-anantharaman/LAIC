@@ -19,6 +19,7 @@ import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import {
   playToEndAction,
+  quickPlayAction,
   saveToLibraryAction,
   swapSeatAction,
   undoAction,
@@ -333,6 +334,25 @@ export default async function SessionPage({
             undo
           </button>
         </form>
+        {!learnerMode && (
+          <form action={quickPlayAction}>
+            <input type="hidden" name="kbId" value={record.kbId} />
+            <button
+              type="submit"
+              className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
+            >
+              new board
+            </button>
+          </form>
+        )}
+        {!learnerMode && (
+          <Link
+            href="/bridge/table/choose"
+            className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
+          >
+            choose a table
+          </Link>
+        )}
         {isFellow && (
           <Link
             href={learnerMode ? `/bridge/table/${sessionId}` : `/bridge/table/${sessionId}?mode=learner`}

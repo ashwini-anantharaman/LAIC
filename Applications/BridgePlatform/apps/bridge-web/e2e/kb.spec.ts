@@ -190,8 +190,9 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
   await page.getByRole("button", { name: "Create set" }).click();
   await expect(page.getByText(/Completeness · 17\/17/)).toBeVisible();
 
-  // The wizard.
-  await page.goto(`${kbUrl}/players`);
+  // The wizard now lives on the single Players page, scoped to this KB.
+  const kbId = kbUrl.split("/bridge/kb/")[1];
+  await page.goto(`/bridge/players?kb=${kbId}`);
   await page.getByRole("button", { name: "Suggest minimal players" }).click();
   await expect(page.getByText(/Minimal complete — Floor/)).toBeVisible();
   await expect(page.getByText(/Minimal incomplete/)).toBeVisible();
@@ -221,7 +222,7 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   await signInAs(context, "user_reviewer_rhea");
 
   // Deal a board via the custom-table setup: human South, Floor elsewhere.
-  await page.goto("/bridge/table");
+  await page.goto("/bridge/table/choose");
   await page.getByText("Set up a custom table").click();
   const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
   const dealForm = block.locator("form").first();
@@ -260,13 +261,24 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   await expect(page.getByText(/session bs_/)).toBeVisible();
 });
 
+test("Play lands straight on a board, no selection needed", async ({ page, context }) => {
+  await signInAs(context, "user_reviewer_rhea");
+  // Hitting Play deals (or resumes) a board immediately — a table URL, not a
+  // chooser.
+  await page.goto("/bridge/table");
+  await page.waitForURL(/\/bridge\/table\/bs_/, { timeout: 30_000 });
+  await expect(page.getByText(/Decisions \(\d+\)|Your call/).first()).toBeVisible({
+    timeout: 15_000,
+  });
+});
+
 test("constrained drill: an incomplete player never hits the engine floor", async ({
   page,
   context,
 }) => {
   await signInAs(context, "user_reviewer_rhea");
 
-  await page.goto("/bridge/table");
+  await page.goto("/bridge/table/choose");
   await page.getByText("Set up a custom table").click();
   const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
   const drillForm = block.locator("form").last();

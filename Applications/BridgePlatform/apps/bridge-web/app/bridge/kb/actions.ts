@@ -394,7 +394,9 @@ export async function suggestPlayersAction(formData: FormData): Promise<void> {
       suggested: suggestion.kind,
     });
   }
-  revalidatePath(kbPath(kbId, "/players"));
+  // Suggested players are system-owned, so land on Everyone to reveal them.
+  revalidatePath("/bridge/players");
+  redirect(`/bridge/players?kb=${kbId}&by=all`);
 }
 
 export async function savePlayerAction(formData: FormData): Promise<void> {

@@ -62,3 +62,11 @@ export async function ensureHousePlayer(
 export function arenaSets(compiled: CompiledKb): CompiledPack[] {
   return [...compiled.packs].sort((a, b) => a.name.localeCompare(b.name));
 }
+
+/** The default table's opponent: the most capable set (largest roster). */
+export function pickDefaultSet(compiled: CompiledKb): CompiledPack | null {
+  return compiled.packs.reduce<CompiledPack | null>(
+    (best, p) => (!best || p.itemIds.length > best.itemIds.length ? p : best),
+    null,
+  );
+}

@@ -105,7 +105,6 @@ export default async function KbLayout({
           <TabLink href={`${base}/items`} label="Master" />
           <TabLink href={`${base}/sets`} label="Knowledge sets" />
           <TabLink href={`${base}/sources`} label="Sources" />
-          <TabLink href={`${base}/players`} label="Players" />
           <TabLink href={`${base}/versions`} label="Versions" />
           <TabLink href={`${base}/suggestions`} label="Suggestions" />
           <TabLink href={`${base}/activity`} label="Activity" />

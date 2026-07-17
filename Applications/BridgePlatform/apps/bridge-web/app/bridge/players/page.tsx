@@ -6,6 +6,7 @@ import { ChipRow, UnderlineTabs } from "@/components/ChipTabs";
 import { ValidityBadge } from "@/components/kb/badges";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
+import { suggestPlayersAction } from "../kb/actions";
 import { createRungPlayerAction, tryPlayerAction } from "./actions";
 
 /** Players area (2026-07-16 rework): Configured (per-system, per-creator
@@ -31,13 +32,25 @@ export default async function PlayersPage({
   const activeKb =
     withPlayers.find(({ kb }) => kb.kbId === kbParam) ?? withPlayers[0];
 
-  const creators = activeKb
-    ? [...new Set(activeKb.players.map((p) => p.ownerId ?? p.ownerType))]
-    : [];
-  const creatorLabel = (id: string) => stubDisplayName(id) ?? (id === "system" ? "System" : id);
-  const activeBy = by && creators.includes(by) ? by : undefined;
+  const myId = context.nexusUserId;
+  const ownerOf = (p: KbPlayer) => p.ownerId ?? p.ownerType;
+  const creators = activeKb ? [...new Set(activeKb.players.map(ownerOf))] : [];
+  const others = creators.filter((c) => c !== myId);
+  const creatorLabel = (id: string) =>
+    id === myId ? "Mine" : (stubDisplayName(id) ?? (id === "system" ? "System" : id));
+  const myCount = activeKb ? activeKb.players.filter((p) => ownerOf(p) === myId).length : 0;
+
+  // Default to MY players; fall back to Everyone if I have none here. `by=all`
+  // is the explicit "Everyone" choice.
+  const defaultBy = myCount > 0 ? myId : undefined;
+  const activeBy =
+    by === "all"
+      ? undefined
+      : by && creators.includes(by)
+        ? by
+        : defaultBy;
   const visible = (activeKb?.players ?? []).filter(
-    (p) => !activeBy || (p.ownerId ?? p.ownerType) === activeBy,
+    (p) => !activeBy || ownerOf(p) === activeBy,
   );
 
   const compiled = activeKb ? await kbService().liveCompile(activeKb.kb.kbId) : null;
@@ -98,52 +111,80 @@ export default async function PlayersPage({
             />
           </div>
 
-          {/* Creator facet */}
-          {creators.length > 1 && (
+          {/* Creator facet — Mine first, then Everyone, then others */}
+          {activeKb.players.length > 0 && (
             <div className="mt-3">
               <ChipRow
                 tabs={[
                   {
-                    label: "Everyone",
-                    href: playersHref({ kb: activeKb.kb.kbId }),
-                    active: !activeBy,
+                    label: "Mine",
+                    href: playersHref({ kb: activeKb.kb.kbId, by: myId }),
+                    active: activeBy === myId,
+                    count: myCount,
                   },
-                  ...creators.map((c) => ({
+                  {
+                    label: "Everyone",
+                    href: playersHref({ kb: activeKb.kb.kbId, by: "all" }),
+                    active: !activeBy,
+                    count: activeKb.players.length,
+                  },
+                  ...others.map((c) => ({
                     label: creatorLabel(c),
                     href: playersHref({ kb: activeKb.kb.kbId, by: c }),
                     active: activeBy === c,
-                    count: activeKb.players.filter((p) => (p.ownerId ?? p.ownerType) === c)
-                      .length,
+                    count: activeKb.players.filter((p) => ownerOf(p) === c).length,
                   })),
                 ]}
               />
             </div>
           )}
 
-          {/* One-click creation from a knowledge set */}
-          {sets.length > 0 && (
-            <section className="mt-6 rounded-lg border border-neutral-200 bg-[var(--card)] p-4">
-              <p className="text-sm font-medium">New player, one click</p>
-              <p className="mt-0.5 text-xs text-neutral-500">
-                Choose the {activeKb.kb.systemLabel} knowledge set it plays from — name,
-                validation and report happen automatically. Refine it afterwards.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {sets.map((pack) => (
-                  <form key={pack.packId} action={createRungPlayerAction}>
-                    <input type="hidden" name="kbId" value={activeKb.kb.kbId} />
-                    <input type="hidden" name="packId" value={pack.packId} />
-                    <button
-                      type="submit"
-                      className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50"
-                    >
-                      {pack.name}
-                    </button>
-                  </form>
-                ))}
+          {/* Make a player: one click per set, the wizard, or by hand */}
+          <section className="mt-6 rounded-lg border border-neutral-200 bg-[var(--card)] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">New player</p>
+              <div className="flex flex-wrap gap-2">
+                <form action={suggestPlayersAction}>
+                  <input type="hidden" name="kbId" value={activeKb.kb.kbId} />
+                  <button
+                    type="submit"
+                    disabled={!compiled}
+                    className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50 disabled:opacity-40"
+                  >
+                    Suggest minimal players
+                  </button>
+                </form>
+                <Link
+                  href={`/bridge/kb/${activeKb.kb.kbId}/players/new`}
+                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50"
+                >
+                  Build by hand
+                </Link>
               </div>
-            </section>
-          )}
+            </div>
+            {sets.length > 0 && (
+              <>
+                <p className="mt-3 text-xs text-neutral-500">
+                  Or one click — choose the {activeKb.kb.systemLabel} knowledge set it plays
+                  from; name, validation and report happen automatically.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {sets.map((pack) => (
+                    <form key={pack.packId} action={createRungPlayerAction}>
+                      <input type="hidden" name="kbId" value={activeKb.kb.kbId} />
+                      <input type="hidden" name="packId" value={pack.packId} />
+                      <button
+                        type="submit"
+                        className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50"
+                      >
+                        {pack.name}
+                      </button>
+                    </form>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
 
           {/* The roster */}
           <ul className="mt-6 grid gap-3 sm:grid-cols-2">

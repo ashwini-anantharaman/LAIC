@@ -54,6 +54,47 @@ export async function arenaPlayAction(formData: FormData): Promise<void> {
   redirect(`/bridge/table/${record.sessionId}`);
 }
 
+/**
+ * "New board" (2026-07-17): deal a fresh default board on demand — the
+ * strongest set of the given KB (or the first that compiles), you South
+ * against house players. Always creates a new session, unlike the Play
+ * entry which resumes an unfinished board.
+ */
+export async function quickPlayAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  await ensureSeeds();
+  await assertAiAllowed(context);
+
+  const { pickDefaultSet, ensureHousePlayer } = await import("@/lib/arena");
+  const store = kbStore();
+  const preferredKbId = String(formData.get("kbId") ?? "").trim();
+  const kbs = await store.listKbs();
+  const ordered = preferredKbId
+    ? [...kbs].sort((a) => (a.kbId === preferredKbId ? -1 : 0))
+    : kbs;
+
+  for (const kb of ordered) {
+    const compiled = await kbService().liveCompile(kb.kbId);
+    if (!compiled) continue;
+    const pack = pickDefaultSet(compiled);
+    if (!pack) continue;
+    await assertKbAllowed(context, kb.kbId);
+    const house = await ensureHousePlayer(store, compiled, pack, context.nexusUserId);
+    const ai = SessionService.seatFromPlayer(house, compiled);
+    const seats = { N: ai, E: ai, S: ai, W: ai } as Record<Seat, SeatConfig>;
+    seats.S = { kind: "human", nexusUserId: context.nexusUserId };
+    const record = await sessionService().createSession({
+      kbId: kb.kbId,
+      compiled,
+      seats,
+      seed: (Date.now() % 100_000) + 1,
+      createdBy: context.nexusUserId,
+    });
+    redirect(`/bridge/table/${record.sessionId}`);
+  }
+  redirect("/bridge/table");
+}
+
 export async function createSessionAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   await ensureSeeds();
