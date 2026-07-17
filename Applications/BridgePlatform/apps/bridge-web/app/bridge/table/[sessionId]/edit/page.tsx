@@ -56,7 +56,11 @@ export default async function EditDealPage({
       <form action={redealEditedAction}>
         <input type="hidden" name="sessionId" value={sessionId} />
         <DealEditor
-          initialName={`${record.board.name} (edited)`}
+          initialName={
+            record.board.name.endsWith("(edited)")
+              ? record.board.name
+              : `${record.board.name} (edited)`
+          }
           initialDealer={record.board.dealer}
           initialVul={record.board.vul}
           initialHands={hands}

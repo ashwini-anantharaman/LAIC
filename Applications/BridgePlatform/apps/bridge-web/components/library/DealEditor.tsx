@@ -1,26 +1,40 @@
 "use client";
 
-// Deal editor (2026-07-17, prototype-inspired): type each hand suit by suit
-// with live validation — duplicate cards are flagged as you type, the
-// remaining-cards pool shrinks card by card, and the last hand is one click
-// ("take the rest"). A paste box prefills everything from a BBO LIN string
-// or PBN. Posts `hand:{seat}` in the serialized ♠.♥.♦.♣ form; the server
-// action re-parses and re-validates.
+// Deal editor (2026-07-17, ported from the bridgebot prototype's DealGrid):
+// four color-tinted seat tiles with live hand previews, and the 52-card grid
+// below — click a seat, then click cards to give them to it (click a seat's
+// own card to return it to the pool). Assignment is completely free; the
+// 13-per-hand check gates the submit. A paste box prefills everything from a
+// BBO LIN string or PBN. Posts `hand:{seat}` in the serialized ♠.♥.♦.♣ form;
+// the server action re-parses and re-validates.
 
 import type { Card, Rank, Seat, Suit, Vul } from "@bridge/events";
 import { rankLabel } from "@bridge/events";
 import { parseLinToContexts, parsePbn } from "@bridge/formats";
 import { useMemo, useState, type ReactNode } from "react";
-import { ranksFromText, suitTextsFromCards, SUIT_ORDER } from "@/lib/dealText";
+import { SUIT_ORDER } from "@/lib/dealText";
 
 const SEATS: Seat[] = ["N", "E", "S", "W"];
 const SEAT_NAME: Record<Seat, string> = { N: "North", E: "East", S: "South", W: "West" };
+const RANKS_DESC: Rank[] = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2];
 const GLYPH: Record<Suit, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const redSuit = (s: Suit) => s === "H" || s === "D";
-const ALL_RANKS: Rank[] = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2];
 
-type HandTexts = Record<Suit, string>;
-const emptyHand = (): HandTexts => ({ S: "", H: "", D: "", C: "" });
+const SEAT_TINT: Record<Seat, string> = {
+  N: "border-sky-400 bg-sky-100 text-sky-900",
+  E: "border-violet-400 bg-violet-100 text-violet-900",
+  S: "border-emerald-400 bg-emerald-100 text-emerald-900",
+  W: "border-amber-400 bg-amber-100 text-amber-900",
+};
+const SEAT_CHIP: Record<Seat, string> = {
+  N: "bg-sky-600",
+  E: "bg-violet-600",
+  S: "bg-emerald-600",
+  W: "bg-amber-500",
+};
+
+type Owner = Seat | "";
+const cid = (suit: Suit, rank: Rank) => `${suit}${rank}`;
 
 export function DealEditor({
   initialName = "",
@@ -39,77 +53,45 @@ export function DealEditor({
   /** Extra form controls rendered just above the submit button. */
   footer?: ReactNode;
 }>) {
-  const [hands, setHands] = useState<Record<Seat, HandTexts>>(() =>
-    initialHands
-      ? {
-          N: suitTextsFromCards(initialHands.N),
-          E: suitTextsFromCards(initialHands.E),
-          S: suitTextsFromCards(initialHands.S),
-          W: suitTextsFromCards(initialHands.W),
-        }
-      : { N: emptyHand(), E: emptyHand(), S: emptyHand(), W: emptyHand() },
-  );
+  const [owner, setOwner] = useState<Record<string, Owner>>(() => {
+    const m: Record<string, Owner> = {};
+    if (initialHands)
+      for (const seat of SEATS)
+        for (const card of initialHands[seat]) m[cid(card.suit, card.rank)] = seat;
+    return m;
+  });
+  const [active, setActive] = useState<Seat>("N");
   const [name, setName] = useState(initialName);
   const [dealer, setDealer] = useState<Seat>(initialDealer);
   const [vul, setVul] = useState<Vul>(initialVul);
   const [paste, setPaste] = useState("");
   const [pasteNote, setPasteNote] = useState<string | null>(null);
 
-  const setSuit = (seat: Seat, suit: Suit, text: string) =>
-    setHands((prev) => ({ ...prev, [seat]: { ...prev[seat], [suit]: text } }));
+  const counts = useMemo(() => {
+    const c: Record<Seat, number> = { N: 0, E: 0, S: 0, W: 0 };
+    for (const o of Object.values(owner)) if (o) c[o]++;
+    return c;
+  }, [owner]);
+  const poolCount = 52 - counts.N - counts.E - counts.S - counts.W;
+  const complete = SEATS.every((s) => counts[s] === 13);
 
-  // Live validation: parse every suit, find bad characters, in-hand and
-  // cross-hand duplicates, per-seat counts, and the unassigned pool.
-  const check = useMemo(() => {
-    const owner = new Map<string, Seat>(); // "S14" → first seat holding it
-    const problems: string[] = [];
-    const counts = { N: 0, E: 0, S: 0, W: 0 } as Record<Seat, number>;
-    for (const seat of SEATS) {
-      const seen = new Set<string>();
-      for (const suit of SUIT_ORDER) {
-        const ranks = ranksFromText(hands[seat][suit]);
-        if ("error" in ranks) {
-          problems.push(`${SEAT_NAME[seat]} ${GLYPH[suit]}: ${ranks.error}`);
-          continue;
-        }
-        for (const rank of ranks) {
-          const id = `${suit}${rank}`;
-          if (seen.has(id)) {
-            problems.push(`${SEAT_NAME[seat]} holds ${GLYPH[suit]}${rankLabel(rank)} twice`);
-            continue;
-          }
-          seen.add(id);
-          const holder = owner.get(id);
-          if (holder) {
-            problems.push(
-              `${GLYPH[suit]}${rankLabel(rank)} is in both ${SEAT_NAME[holder]} and ${SEAT_NAME[seat]}`,
-            );
-          } else {
-            owner.set(id, seat);
-          }
-          counts[seat]++;
-        }
-      }
-    }
-    const remaining: Record<Suit, Rank[]> = { S: [], H: [], D: [], C: [] };
-    for (const suit of SUIT_ORDER)
-      for (const rank of ALL_RANKS)
-        if (!owner.has(`${suit}${rank}`)) remaining[suit].push(rank);
-    const remainingCount = 52 - owner.size;
-    const complete =
-      problems.length === 0 && SEATS.every((s) => counts[s] === 13);
-    return { problems, counts, remaining, remainingCount, complete };
-  }, [hands]);
+  // Free assignment: give to the active seat; clicking the active seat's own
+  // card returns it to the pool; another seat's card moves to the active seat.
+  const toggle = (suit: Suit, rank: Rank) => {
+    const id = cid(suit, rank);
+    setOwner((o) => ({ ...o, [id]: o[id] === active ? "" : active }));
+  };
 
-  /** Give every unassigned card to one seat (finishing the last hand fast). */
-  const takeRest = (seat: Seat) =>
-    setHands((prev) => {
-      const next = { ...prev[seat] };
-      for (const suit of SUIT_ORDER) {
-        const extra = check.remaining[suit].map((r) => rankLabel(r)).join("");
-        if (extra) next[suit] = `${prev[seat][suit]}${extra}`;
-      }
-      return { ...prev, [seat]: next };
+  /** Give every pool card to the active seat (finishes the last hand fast). */
+  const takeRest = () =>
+    setOwner((o) => {
+      const next = { ...o };
+      for (const suit of SUIT_ORDER)
+        for (const rank of RANKS_DESC) {
+          const id = cid(suit, rank);
+          if (!next[id]) next[id] = active;
+        }
+      return next;
     });
 
   const loadPaste = () => {
@@ -121,12 +103,10 @@ export function DealEditor({
       return;
     }
     const ctx = result.contexts[0]!;
-    setHands({
-      N: suitTextsFromCards(ctx.hands.N),
-      E: suitTextsFromCards(ctx.hands.E),
-      S: suitTextsFromCards(ctx.hands.S),
-      W: suitTextsFromCards(ctx.hands.W),
-    });
+    const m: Record<string, Owner> = {};
+    for (const seat of SEATS)
+      for (const card of ctx.hands[seat]) m[cid(card.suit, card.rank)] = seat;
+    setOwner(m);
     setDealer(ctx.dealer);
     setVul(ctx.vul);
     if (ctx.name) setName(ctx.name);
@@ -137,10 +117,49 @@ export function DealEditor({
     );
   };
 
-  const serialized = (seat: Seat) => SUIT_ORDER.map((s) => hands[seat][s]).join(".");
+  const serialized = (seat: Seat) =>
+    SUIT_ORDER.map((suit) =>
+      RANKS_DESC.filter((rank) => owner[cid(suit, rank)] === seat)
+        .map((rank) => rankLabel(rank))
+        .join(""),
+    ).join(".");
+
+  /** Live hand preview inside a seat tile. */
+  const preview = (seat: Seat) => (
+    <button
+      key={seat}
+      type="button"
+      onClick={() => setActive(seat)}
+      className={`rounded-md border px-2 py-1.5 text-left ${
+        active === seat
+          ? SEAT_TINT[seat]
+          : "border-neutral-200 bg-white hover:border-neutral-400"
+      }`}
+      title={`Click cards below to give them to ${SEAT_NAME[seat]}`}
+    >
+      <div className="flex items-center justify-between text-[10px] font-bold uppercase">
+        {SEAT_NAME[seat]}
+        <span
+          className={`font-mono ${counts[seat] === 13 ? "text-emerald-600" : "text-rose-600"}`}
+        >
+          {counts[seat]}/13
+        </span>
+      </div>
+      {SUIT_ORDER.map((suit) => (
+        <div key={suit} className="flex gap-1 font-mono text-[10px] leading-4">
+          <span className={redSuit(suit) ? "text-[var(--madder)]" : ""}>{GLYPH[suit]}</span>
+          <span className="truncate">
+            {RANKS_DESC.filter((rank) => owner[cid(suit, rank)] === seat)
+              .map((rank) => rankLabel(rank))
+              .join(" ") || "—"}
+          </span>
+        </div>
+      ))}
+    </button>
+  );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Prefill from LIN/PBN */}
       <details className="rounded-lg border border-neutral-200">
         <summary className="cursor-pointer px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
@@ -211,92 +230,85 @@ export function DealEditor({
         </label>
       </div>
 
-      {/* The four hands */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {SEATS.map((seat) => (
-          <fieldset key={seat} className="rounded-lg border border-neutral-200 p-3">
-            <legend className="flex items-center gap-2 px-1 text-sm">
-              <span className="font-medium">{SEAT_NAME[seat]}</span>
-              <span
-                className={`text-xs tabular-nums ${
-                  check.counts[seat] === 13 ? "text-emerald-700" : "text-neutral-400"
-                }`}
-              >
-                {check.counts[seat]}/13
-              </span>
-              {check.counts[seat] < 13 && check.remainingCount > 0 && (
+      <p className="text-xs text-neutral-500">
+        Click a seat, then click cards to give them to it — click one of its cards again to
+        return it to the pool.
+      </p>
+
+      {/* Seat tiles with live previews */}
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">{SEATS.map(preview)}</div>
+
+      {/* The 52-card grid */}
+      <div className="space-y-1">
+        {SUIT_ORDER.map((suit) => (
+          <div key={suit} className="flex items-center gap-1">
+            <span
+              aria-hidden
+              className={`w-4 text-center text-sm ${redSuit(suit) ? "text-[var(--madder)]" : ""}`}
+            >
+              {GLYPH[suit]}
+            </span>
+            {RANKS_DESC.map((rank) => {
+              const own = owner[cid(suit, rank)] ?? "";
+              return (
                 <button
+                  key={rank}
                   type="button"
-                  onClick={() => takeRest(seat)}
-                  className="rounded border border-neutral-300 px-1.5 py-0.5 text-[11px] hover:border-emerald-400"
-                  title="Add every unassigned card to this hand"
+                  onClick={() => toggle(suit, rank)}
+                  aria-label={`${GLYPH[suit]}${rankLabel(rank)}`}
+                  title={
+                    own === active
+                      ? `held by ${SEAT_NAME[active]} — click to return to the pool`
+                      : `give to ${SEAT_NAME[active]}`
+                  }
+                  className={`relative h-8 min-w-6 flex-1 rounded border text-[12px] font-semibold transition-colors ${
+                    own
+                      ? SEAT_TINT[own]
+                      : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400"
+                  }`}
                 >
-                  take the rest
+                  {rankLabel(rank)}
+                  {own && (
+                    <span
+                      className={`absolute -right-0.5 -top-1 rounded-sm px-0.5 text-[8px] font-bold leading-3 text-white ${SEAT_CHIP[own]}`}
+                    >
+                      {own}
+                    </span>
+                  )}
                 </button>
-              )}
-            </legend>
-            <div className="space-y-1.5">
-              {SUIT_ORDER.map((suit) => (
-                <label key={suit} className="flex items-center gap-2">
-                  <span
-                    aria-hidden
-                    className={`w-4 text-center ${redSuit(suit) ? "text-[var(--madder)]" : ""}`}
-                  >
-                    {GLYPH[suit]}
-                  </span>
-                  <input
-                    aria-label={`${SEAT_NAME[seat]} ${GLYPH[suit]}`}
-                    value={hands[seat][suit]}
-                    onChange={(e) => setSuit(seat, suit, e.target.value)}
-                    placeholder="AKQJT98765432"
-                    spellCheck={false}
-                    className="w-full rounded border border-neutral-300 px-2 py-1 font-mono text-sm uppercase tracking-wide"
-                  />
-                </label>
-              ))}
-            </div>
-            <input type="hidden" name={`hand:${seat}`} value={serialized(seat)} />
-          </fieldset>
+              );
+            })}
+          </div>
         ))}
       </div>
 
-      {/* The pool */}
-      <div className="rounded-lg border border-neutral-200 bg-[var(--card)] px-4 py-2.5 text-sm">
-        <p className="mb-1 text-xs uppercase tracking-wide text-neutral-400">
-          Not dealt yet · {check.remainingCount}
-        </p>
-        {check.remainingCount === 0 ? (
-          <p className="text-emerald-700">Every card is placed.</p>
-        ) : (
-          SUIT_ORDER.map((suit) => (
-            <p key={suit} className="flex items-baseline gap-2 tabular-nums">
-              <span aria-hidden className={`w-4 text-center ${redSuit(suit) ? "text-[var(--madder)]" : ""}`}>
-                {GLYPH[suit]}
-              </span>
-              <span className="tracking-wider text-neutral-600">
-                {check.remaining[suit].map((r) => rankLabel(r)).join(" ") || "—"}
-              </span>
-            </p>
-          ))
+      <div className="flex items-center gap-3 text-sm">
+        <span className={poolCount === 0 ? "text-emerald-700" : "text-neutral-500"}>
+          {poolCount === 0 ? "Every card is placed." : `${poolCount} in the pool`}
+        </span>
+        {poolCount > 0 && (
+          <button
+            type="button"
+            onClick={takeRest}
+            className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:border-emerald-400"
+          >
+            give the rest to {SEAT_NAME[active]}
+          </button>
         )}
       </div>
 
-      {check.problems.length > 0 && (
-        <ul className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          {check.problems.slice(0, 4).map((p) => (
-            <li key={p}>{p}</li>
-          ))}
-          {check.problems.length > 4 && <li>…and {check.problems.length - 4} more</li>}
-        </ul>
-      )}
+      {/* The form contract: serialized hands travel as hidden inputs. */}
+      {SEATS.map((seat) => (
+        <input key={seat} type="hidden" name={`hand:${seat}`} value={serialized(seat)} />
+      ))}
 
       {footer}
 
       <button
         type="submit"
-        disabled={!check.complete}
+        disabled={!complete}
         className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-40"
-        title={check.complete ? undefined : "All 52 cards must be placed, 13 per hand"}
+        title={complete ? undefined : "All 52 cards must be placed, 13 per hand"}
       >
         {submitLabel}
       </button>
