@@ -1,261 +1,389 @@
-import { getAccessToken } from "./supabase";
-import type { DashboardPayload } from "../types/dashboard";
+import type { WizardSource, SourceCollection } from './types';
 
-/** In production set VITE_API_URL to your Render backend (no trailing slash). */
-const API_ROOT = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
-const BASE = `${API_ROOT}/api`;
+/* ────────────────────────────────────────────────────────────────
+ * Typed API layer for the Course Wizard workflow.
+ *
+ * - Reads the backend base URL from VITE_API_BASE_URL. When unset, calls
+ *   are made against a relative path (so a dev proxy can be used) and will
+ *   fail loudly if nothing is listening — this workflow NEVER falls back to
+ *   mock data.
+ * - JSON requests go through `apiFetch`, streaming (SSE) through `apiStream`.
+ * - All failures surface as a typed `ApiError`.
+ * ──────────────────────────────────────────────────────────────── */
 
-import { formatSourceDetail } from "./format";
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
-function parseApiError(body: unknown, statusText: string): string {
-  if (body && typeof body === "object") {
-    const o = body as Record<string, unknown>;
-    if (o.error !== undefined) return formatSourceDetail(o.error) || statusText;
-    if (typeof o.message === "string") return o.message;
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly details?: unknown;
+
+  constructor(status: number, code: string, message: string, details?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
   }
-  return statusText;
 }
 
-async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = await getAccessToken();
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(parseApiError(err, res.statusText));
+export function isApiError(e: unknown): e is ApiError {
+  return e instanceof ApiError;
+}
+
+/** Narrow a thrown value to a user-facing message. */
+export function errorMessage(e: unknown, fallback = 'Something went wrong'): string {
+  if (isApiError(e)) return e.message;
+  if (e instanceof Error) return e.message;
+  return fallback;
+}
+
+type Query = Record<string, string | number | boolean | undefined>;
+
+interface RequestOpts {
+  method?: string;
+  body?: unknown;
+  signal?: AbortSignal;
+  query?: Query;
+  headers?: Record<string, string>;
+}
+
+function buildUrl(path: string, query?: Query): string {
+  const base = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  if (!query) return base;
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined) params.append(k, String(v));
   }
-  return res.json() as Promise<T>;
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
 }
 
-export async function apiUpload(path: string, formData: FormData) {
-  const token = await getAccessToken();
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-function parsePdfResponse(res: Response): Promise<{ data: Uint8Array; name: string }> {
-  return res.arrayBuffer().then((buf) => {
-    const header = new TextDecoder().decode(buf.slice(0, 5));
-    if (!header.startsWith("%PDF")) {
-      throw new Error(
-        "The stored file is not a valid PDF. Ask your instructor to re-upload the original PDF."
-      );
+async function parseError(res: Response): Promise<ApiError> {
+  let code = `http_${res.status}`;
+  let message = res.statusText || `Request failed (${res.status})`;
+  let details: unknown;
+  try {
+    const data = await res.json();
+    details = data;
+    if (data && typeof data === 'object') {
+      if (typeof (data as any).code === 'string') code = (data as any).code;
+      if (typeof (data as any).message === 'string') message = (data as any).message;
+      else if (typeof (data as any).error === 'string') message = (data as any).error;
     }
-    const name = res.headers.get("X-Source-Name") ?? "Reference PDF";
-    return { data: new Uint8Array(buf), name };
-  });
-}
-
-async function fetchAuthedPdf(path: string): Promise<{ data: Uint8Array; name: string }> {
-  const token = await getAccessToken();
-  const res = await fetch(`${BASE}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(parseApiError(err, res.statusText));
+  } catch {
+    /* non-JSON error body — keep status text */
   }
-  return parsePdfResponse(res);
+  return new ApiError(res.status, code, message, details);
 }
 
-export const DataAPI = {
-  register: (body: { email: string; password: string; role: string; displayName?: string }) =>
-    api<{ ok: boolean }>("/auth/register", { method: "POST", body: JSON.stringify(body) }),
-  me: () => api<Record<string, unknown>>("/me"),
-  createCourse: (title?: string) =>
-    api<{ id: string; title: string; published: boolean }>("/course", {
-      method: "POST",
-      body: JSON.stringify(title ? { title } : {}),
-    }),
-  courseFull: (courseId: string) => api<Record<string, unknown>>(`/course/${courseId}/full`),
-  learnerOnboarding: (body: unknown) => api("/learner/onboarding", { method: "POST", body: JSON.stringify(body) }),
-  instructorOnboarding: (body: unknown) => api("/instructor/onboarding", { method: "POST", body: JSON.stringify(body) }),
-  publishCourse: (courseId: string, body: unknown) =>
-    api(`/course/${courseId}/publish`, { method: "POST", body: JSON.stringify(body) }),
-  saveModules: (courseId: string, body: unknown) =>
-    api(`/course/${courseId}/modules`, { method: "POST", body: JSON.stringify(body) }),
-  addBlock: (moduleId: string, body: unknown) =>
-    api(`/modules/${moduleId}/blocks`, { method: "POST", body: JSON.stringify(body) }),
-  deleteBlock: (blockId: string) => api(`/blocks/${blockId}`, { method: "DELETE" }),
-  dashboard: (courseId: string) => api<DashboardPayload>(`/dashboard/${courseId}`),
-  sources: (courseId: string) => api<unknown[]>(`/rag/course/${courseId}/sources`),
-  ragStatus: (courseId: string) =>
-    api<{ chunkCount: number; sourceCount: number; readyCount: number; indexingCount: number; errorCount: number }>(
-      `/rag/course/${courseId}/status`
-    ),
-  uploadSource: (courseId: string, file: File) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    return apiUpload(`/rag/course/${courseId}/sources/upload`, fd);
-  },
-  registerSource: (courseId: string, name: string, type: string) =>
-    api(`/rag/course/${courseId}/sources/register`, { method: "POST", body: JSON.stringify({ name, type }) }),
-  sourceUrl: (courseId: string, url: string, type: string) =>
-    api(`/rag/course/${courseId}/sources/url`, { method: "POST", body: JSON.stringify({ url, type }) }),
-  deleteSource: (sourceId: string) => api(`/rag/sources/${sourceId}`, { method: "DELETE" }),
-  sourceFileUrl: (sourceId: string) =>
-    api<{ url: string; name: string; type: string }>(`/rag/sources/${sourceId}/file-url`),
-  sourceFilePdf: (sourceId: string) => fetchAuthedPdf(`/rag/sources/${sourceId}/stream`),
-  sourceFileBlob: (sourceId: string) => fetchAuthedPdf(`/rag/sources/${sourceId}/stream`),
-  referencePdf: (courseId: string) =>
-    api<{ sourceId: string; url: string; name: string }>(`/rag/course/${courseId}/reference-pdf`),
-  referencePdfBlob: (courseId: string) => fetchAuthedPdf(`/rag/course/${courseId}/reference-pdf/stream`),
-  joinCourse: (code: string) =>
-    api<{ courseId: string; title: string; subject: string | null; instructorName: string }>(
-      "/join",
-      { method: "POST", body: JSON.stringify({ code }) }
-    ),
-  joinCode: (courseId: string, regenerate = false) =>
-    api<{ joinCode: string }>(`/course/${courseId}/join-code`, {
-      method: "POST",
-      body: JSON.stringify({ regenerate }),
-    }),
-  courseStudents: (courseId: string) =>
-    api<{ students: { userId: string; name: string; email: string; masteredCount: number; conceptCount: number }[] }>(
-      `/course/${courseId}/students`
-    ),
-  getStudio: (courseId: string) => api<import("../learning/types").StudioCourseData>(`/course/${courseId}/studio`),
-  saveStudio: (courseId: string, body: unknown) =>
-    api(`/course/${courseId}/studio`, { method: "PUT", body: JSON.stringify(body) }),
-  pasteSourceText: (courseId: string, text: string, name?: string) =>
-    api(`/rag/course/${courseId}/sources/text`, {
-      method: "POST",
-      body: JSON.stringify({ text, name }),
-    }),
-};
+/** JSON request helper. Throws ApiError on non-2xx / network failure. */
+export async function apiFetch<T>(path: string, opts: RequestOpts = {}): Promise<T> {
+  const { method = 'GET', body, signal, query, headers = {} } = opts;
 
-export const AgentAPI = {
-  queryRAG: (courseId: string, query: string) =>
-    api<{ answer: string; citations: string; ragChunks: number }>("/agents/rag/query", {
-      method: "POST",
-      body: JSON.stringify({ courseId, query }),
-    }),
-  draftCourse: (courseId: string, prompt: string) =>
-    api("/agents/course/draft", { method: "POST", body: JSON.stringify({ courseId, prompt }) }),
-  conceptContent: (courseId: string, conceptName: string, mode: string, subtitle?: string) =>
-    api("/agents/concept/content", {
-      method: "POST",
-      body: JSON.stringify({ courseId, conceptName, mode, subtitle }),
-    }),
-  formatStudyContent: (rawContent: string) =>
-    api<{ blocks: { title: string; text: string }[] }>("/agents/study/format", {
-      method: "POST",
-      body: JSON.stringify({ rawContent }),
-    }),
-  generateMCQ: (courseId: string, conceptName: string) =>
-    api<{ question: string; options: string[]; correct: number; hints: { level: string; text: string }[] }>(
-      "/agents/quiz/generate",
-      { method: "POST", body: JSON.stringify({ courseId, conceptName }) }
-    ),
-  generateAdaptiveMCQ: (body: {
-    courseId: string;
-    conceptName: string;
-    conceptId: string;
-    masteryLevel: string;
-    previousQuestions: string[];
-  }) =>
-    api<{
-      done: boolean;
-      reason?: string;
-      mcq?: { id: string; question: string; options: string[]; correct: number; hints: unknown };
-      mastery?: string;
-      bktScore?: number;
-    }>("/agents/quiz/adaptive/generate", { method: "POST", body: JSON.stringify(body) }),
-  generateTest: (courseId: string, conceptName: string) =>
-    api<{ title: string; passPct: number; questions: { id: string; question: string; options: string[]; correct: number }[] }>(
-      "/agents/test/generate",
-      { method: "POST", body: JSON.stringify({ courseId, conceptName }) }
-    ),
-  generateFlashcards: (courseId: string, conceptName: string) =>
-    api<{ title: string; cards: { front: string; back: string }[] }>(
-      "/agents/flashcards/generate",
-      { method: "POST", body: JSON.stringify({ courseId, conceptName }) }
-    ),
-  generateReflectionPrompt: (courseId: string, conceptName: string) =>
-    api<{ prompt: string; followUpQuestions: string[] }>(
-      "/agents/reflection/prompt",
-      { method: "POST", body: JSON.stringify({ courseId, conceptName }) }
-    ),
-  generateModuleLesson: (
-    courseId: string,
-    moduleName: string,
-    opts?: { chapter?: string; subtitle?: string; prereqs?: string[] }
-  ) =>
-    api<{
-      blueprint: { moduleSummary: string; learningObjectives: string[] };
-      blocks: { type: string; label: string; title: string; content: Record<string, unknown> }[];
-      meta?: { ragChunks: number; ragCitations?: string[]; warnings: string[] };
-    }>("/agents/module/generate-lesson", {
-      method: "POST",
-      body: JSON.stringify({ courseId, moduleName, ...opts }),
-    }),
-  evaluateQuiz: (body: unknown) => api("/agents/quiz/evaluate", { method: "POST", body: JSON.stringify(body) }),
-  evaluateReflection: (body: unknown) =>
-    api("/agents/reflection/evaluate", { method: "POST", body: JSON.stringify(body) }),
-  plannerNext: (body: unknown) => api("/agents/planner/next", { method: "POST", body: JSON.stringify(body) }),
-  assistantChat: (body: unknown) => api("/agents/assistant/chat", { method: "POST", body: JSON.stringify(body) }),
-  assistantGreeting: (conceptName: string, mode: string) =>
-    api<{ content: string }>(`/agents/assistant/greeting?conceptName=${encodeURIComponent(conceptName)}&mode=${mode}`),
-  generateAnimation: (body: unknown) =>
-    api("/agents/animation/generate", { method: "POST", body: JSON.stringify(body) }),
-  generateManimAnimation: (body: unknown) =>
-    api("/agents/animation/generate-manim", { method: "POST", body: JSON.stringify(body) }),
-  generateScene3D: (body: unknown) =>
-    api("/agents/animation/generate-3d", { method: "POST", body: JSON.stringify(body) }),
-  modeSwitch: (body: unknown) => api("/agents/mode-switch", { method: "POST", body: JSON.stringify(body) }),
-  generateStudioCourse: (courseId: string, policy: string, prompt?: string) =>
-    api<{ started: boolean; status: string; progress?: string }>("/agents/studio/generate-course", {
-      method: "POST",
-      body: JSON.stringify({ courseId, policy, prompt }),
-    }),
-  studioGenerateStatus: (courseId: string) =>
-    api<{
-      status: "idle" | "running" | "done" | "error";
-      progress?: string;
-      moduleIndex?: number;
-      moduleTotal?: number;
-      studio?: import("../learning/types").StudioCourseData;
-      error?: string;
-    }>(`/agents/studio/generate-status/${courseId}`),
-  studioAssist: (body: {
-    courseId: string;
-    policy: string;
-    fieldLabel: string;
-    currentValue: string;
-    instruction: string;
-  }) => api<{ text: string }>("/agents/studio/assist", { method: "POST", body: JSON.stringify(body) }),
-  studioGenerateToolItems: (body: {
-    courseId: string;
-    policy: string;
-    kind: string;
-    pageTitles: string[];
-    existing: unknown[];
-  }) => api<{ items: unknown[] }>("/agents/studio/generate-tool-items", { method: "POST", body: JSON.stringify(body) }),
-  studioSuggestions: (body: {
-    courseId: string;
-    policy: string;
-    pageTitle: string;
-    pageSummary?: string;
-  }) =>
-    api<{ videos: { title: string; why: string; source: string; duration?: string; youtubeUrl?: string; thumbnailUrl?: string }[]; images: { title: string; why: string; source: string; imageUrl?: string }[] }>(
-      "/agents/studio/suggestions",
-      { method: "POST", body: JSON.stringify(body) }
-    ),
-  uploadStudioImage: (courseId: string, file: File) => {
-    const fd = new FormData();
-    fd.append("courseId", courseId);
-    fd.append("file", file);
-    return apiUpload(`/agents/studio/upload-image`, fd) as Promise<{ url: string; storagePath: string }>;
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+  const init: RequestInit = { method, signal, headers: { ...headers } };
+
+  if (body !== undefined) {
+    if (isForm) {
+      init.body = body as FormData; // let the browser set the multipart boundary
+    } else {
+      (init.headers as Record<string, string>)['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(body);
+    }
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(buildUrl(path, query), init);
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    throw new ApiError(
+      0,
+      'network_error',
+      BASE_URL
+        ? `Cannot reach the API at ${BASE_URL}. Is the backend running?`
+        : 'Cannot reach the API. Set VITE_API_BASE_URL or start the backend.',
+      e,
+    );
+  }
+
+  if (!res.ok) throw await parseError(res);
+  if (res.status === 204) return undefined as T;
+
+  const text = await res.text();
+  if (!text) return undefined as T;
+
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    // Commonly happens when no backend is running and the dev server returns
+    // its SPA index.html for /api/* — surface a clear, actionable message.
+    throw new ApiError(
+      res.status,
+      'invalid_response',
+      BASE_URL
+        ? `Expected JSON from ${path} but the API returned a non-JSON response.`
+        : `No API is serving ${path}. Set VITE_API_BASE_URL to your backend (requests are currently falling through to the dev server).`,
+    );
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError(res.status, 'invalid_json', `The API returned malformed JSON from ${path}.`);
+  }
+}
+
+/* ─── Streaming (SSE) ──────────────────────────────────────────── */
+
+export interface StreamEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Consume a Server-Sent-Events response as a typed async iterator.
+ * Parses standard `data:` frames (separated by a blank line); a `[DONE]`
+ * sentinel ends the stream. Used by generate + edit-block in later steps.
+ */
+export async function* apiStream<E extends { type: string } = StreamEvent>(
+  path: string,
+  opts: RequestOpts = {},
+): AsyncGenerator<E, void, unknown> {
+  const { method = 'POST', body, signal, query, headers = {} } = opts;
+
+  let res: Response;
+  try {
+    res = await fetch(buildUrl(path, query), {
+      method,
+      signal,
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...headers },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    throw new ApiError(0, 'network_error', 'Cannot reach the API stream. Is the backend running?', e);
+  }
+
+  if (!res.ok) throw await parseError(res);
+  if (!res.body) throw new ApiError(0, 'no_stream_body', 'The server returned no stream body.');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let sep: number;
+      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+
+        const data = frame
+          .split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n');
+
+        if (!data) continue;
+        if (data === '[DONE]') return;
+        try {
+          yield JSON.parse(data) as E;
+        } catch {
+          /* ignore keep-alive / non-JSON frames */
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * STEP 1 — Sources
+ * ════════════════════════════════════════════════════════════════ */
+
+/** GET /api/sources — the author's reusable Source Library. */
+export function getSources(signal?: AbortSignal): Promise<WizardSource[]> {
+  return apiFetch<WizardSource[]>('/api/sources', { signal });
+}
+
+/** GET /api/collections — named groupings of sources. */
+export function getSourceCollections(signal?: AbortSignal): Promise<SourceCollection[]> {
+  return apiFetch<SourceCollection[]>('/api/collections', { signal });
+}
+
+/** GET /api/sources/:id — used to poll ingestion status while processing. */
+export function getSource(id: string, signal?: AbortSignal): Promise<WizardSource> {
+  return apiFetch<WizardSource>(`/api/sources/${encodeURIComponent(id)}`, { signal });
+}
+
+/** POST /api/sources (multipart) — upload a file and kick off ingestion. */
+export function uploadSource(
+  file: File,
+  opts: { collectionId?: string; signal?: AbortSignal } = {},
+): Promise<WizardSource> {
+  const form = new FormData();
+  form.append('file', file);
+  if (opts.collectionId) form.append('collectionId', opts.collectionId);
+  return apiFetch<WizardSource>('/api/sources', { method: 'POST', body: form, signal: opts.signal });
+}
+
+/** POST /api/sources — create a named (placeholder) source and kick off ingestion. */
+export function createNamedSource(name: string, signal?: AbortSignal): Promise<WizardSource> {
+  return apiFetch<WizardSource>('/api/sources', { method: 'POST', body: { name }, signal });
+}
+
+/** POST /api/sources/:id/reingest — retry a failed ingestion. */
+export function reingestSource(id: string, signal?: AbortSignal): Promise<WizardSource> {
+  return apiFetch<WizardSource>(`/api/sources/${encodeURIComponent(id)}/reingest`, {
+    method: 'POST',
+    signal,
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * Tutorial workflow — real LLM (server-side; key stays on backend)
+ * ════════════════════════════════════════════════════════════════ */
+
+export interface TutorialConfig {
+  obj?: string; topic?: string; aud?: string; lvl?: string;
+  secs?: number; prog?: string; dpth?: string; end?: string;
+  chks?: number; excpts?: number; wex?: boolean;
+}
+
+export interface TutorialExtract {
+  kind?: string;
+  text: string;
+  from?: string;
+}
+
+/** Any editor-renderable part produced by generation. */
+export interface GeneratedPart {
+  id: string;
+  type: 'rich-text' | 'concept-card' | 'question' | 'media';
+  label: string;
+  body?: string;
+  concept?: string;
+  plain?: string;
+  misc?: string;
+  prompt?: string;
+  options?: string[];
+  correct?: number;
+  exp?: string;
+  /** For a `media` placeholder — references author-supplied media by id. */
+  ref?: string;
+}
+
+export type TutorialGenEvent =
+  | { type: 'progress'; message: string }
+  | { type: 'part'; part: GeneratedPart }
+  | { type: 'done'; count?: number }
+  | { type: 'error'; code?: string; message: string };
+
+/**
+ * POST /api/tutorials/suggest-highlights — the model picks which sentence
+ * indices are most worth USING for the tutorial. Returns the indices.
+ */
+export function suggestTutorialHighlights(
+  sentences: string[],
+  instruction?: string,
+  signal?: AbortSignal,
+): Promise<number[]> {
+  return apiFetch<{ suggestions: number[] }>('/api/tutorials/suggest-highlights', {
+    method: 'POST',
+    body: { sentences, instruction },
+    signal,
+  }).then((r) => r.suggestions ?? []);
+}
+
+/** POST /api/tutorials/ingest-youtube — server fetches the video transcript. */
+export function ingestYoutube(
+  url: string,
+  signal?: AbortSignal,
+): Promise<{ title: string; sentences: string[] }> {
+  return apiFetch<{ title: string; sentences: string[] }>('/api/tutorials/ingest-youtube', {
+    method: 'POST',
+    body: { url },
+    signal,
+  });
+}
+
+/**
+ * POST /api/tutorials/edit-block — the model rewrites a single block per the
+ * author's instruction, returning the edited block of the SAME type/id.
+ */
+export function editTutorialBlock(
+  part: GeneratedPart,
+  instruction: string,
+  signal?: AbortSignal,
+): Promise<GeneratedPart> {
+  return apiFetch<{ part: GeneratedPart }>('/api/tutorials/edit-block', {
+    method: 'POST',
+    body: { part, instruction },
+    signal,
+  }).then((r) => r.part);
+}
+
+/**
+ * POST /api/tutorials/generate — streams the generated tutorial as typed
+ * SSE events (`progress` | `part` | `done` | `error`). `prompt` grounds
+ * generation when there is no marked-up source (the "no source" path).
+ */
+export function generateTutorial(
+  payload: {
+    title: string;
+    config: TutorialConfig;
+    extracts: TutorialExtract[];
+    prompt?: string;
+    /** Author-supplied media for the model to place inline (ref + caption only). */
+    media?: { ref: string; kind: 'image' | 'video'; caption?: string }[];
   },
-};
+  signal?: AbortSignal,
+): AsyncGenerator<TutorialGenEvent, void, unknown> {
+  return apiStream<TutorialGenEvent>('/api/tutorials/generate', {
+    method: 'POST',
+    body: payload,
+    signal,
+  });
+}
+
+/* ─── Flashcards ───────────────────────────────────────────────── */
+
+export interface FlashcardConfig {
+  mem?: string; aud?: string; lvl?: string;
+  cc?: string; pull?: string; dir?: string;
+  hooks?: boolean; nc?: number;
+}
+
+export interface GeneratedCard {
+  id: string;
+  front: string;
+  back: string;
+  hook?: string;
+}
+
+export type FlashcardGenEvent =
+  | { type: 'progress'; message: string }
+  | { type: 'card'; card: GeneratedCard }
+  | { type: 'done'; count?: number }
+  | { type: 'error'; code?: string; message: string };
+
+/**
+ * POST /api/flashcards/generate — streams a generated flashcard set as typed
+ * SSE events (`progress` | `card` | `done` | `error`).
+ */
+export function generateFlashcards(
+  payload: { title: string; config: FlashcardConfig; extracts: TutorialExtract[]; prompt?: string },
+  signal?: AbortSignal,
+): AsyncGenerator<FlashcardGenEvent, void, unknown> {
+  return apiStream<FlashcardGenEvent>('/api/flashcards/generate', {
+    method: 'POST',
+    body: payload,
+    signal,
+  });
+}

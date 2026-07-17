@@ -1,228 +1,149 @@
-import type { Screen } from "../types";
-import { useApp } from "../store/AppContext";
-import { Shell } from "../components/owlwise/primitives";
-import { StudyFetchShell } from "../components/studyfetch/StudyFetchSidebar";
-import { LandingScreen } from "../screens/LandingScreen";
-import { LoginScreen } from "../screens/LoginScreen";
-import { StudentOnboarding } from "../screens/StudentOnboarding";
-import { InstructorOnboarding } from "../screens/InstructorOnboarding";
-import { StudentHomeContent } from "../screens/StudentHomeScreen";
-import { StudentSetsScreen } from "../screens/StudentSetsScreen";
-import { StudentAssistantChatScreen } from "../screens/StudentAssistantChatScreen";
-import { StudentWorkspaceScreen } from "../screens/StudentWorkspaceScreen";
-import { StudentConceptScreen } from "../screens/StudentConceptScreen";
-import { StudentMasteryScreen } from "../screens/StudentMasteryScreen";
-import { StudentChallengeScreen } from "../screens/StudentChallengeScreen";
-import { StudentToolsScreen } from "../screens/StudentToolsScreen";
-import { StudentSettingsScreen } from "../screens/StudentSettingsScreen";
-import { ReflectionScreen } from "../screens/ReflectionScreen";
-import { InstructorClassroomsScreen } from "../screens/InstructorClassroomsScreen";
-import { InstructorCourseModulesScreen } from "../screens/InstructorCourseModulesScreen";
-import { InstructorStudioScreen } from "../screens/studio/InstructorStudioScreen";
-import { InstructorChallengeScreen } from "../screens/InstructorChallengeScreen";
-import { InstructorSettingsScreen } from "../screens/InstructorSettingsScreen";
-import { TeacherDashboardScreen } from "../screens/TeacherDashboardScreen";
-import { PreviewWorkspaceScreen } from "../screens/preview/PreviewWorkspaceScreen";
-import { PreviewConceptScreen } from "../screens/preview/PreviewConceptScreen";
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import type { Role, Program, LearningObject, ObjectType } from '../lib/types';
+import { USERS } from '../lib/data';
+import { supabaseEnabled, listObjects, saveObject } from '../lib/supabase';
+import { LoginPortal } from './components/LoginPortal';
+import { Layout } from './components/Layout';
 
-const STUDENT_SHELL_SCREENS: Screen[] = [
-  "student-courses",
-  "student-sets",
-  "student-workspace",
-  "student-assistant",
-  "student-mastery",
-  "student-challenge",
-  "student-tools",
-  "student-settings",
-  "student-reflection",
-  "student-concept",
-];
+export interface AppState {
+  role: Role;
+  program: Program;
+  currentScreen: string;
+  activeUserId: string;
+  isLoggedIn: boolean;
+  readerObjectId: string | null;
+  creatorObjectType: string;
+  createdObjects: LearningObject[];
+  navigate: (screen: string) => void;
+  login: (userId: string) => void;
+  logout: () => void;
+  setRole: (role: Role) => void;
+  setProgram: (program: Program) => void;
+  openReader: (objectId: string) => void;
+  closeReader: () => void;
+  setCreatorObjectType: (type: string) => void;
+  addObject: (partial: Partial<LearningObject> & { type: ObjectType; title: string }) => string;
+}
 
-const INSTRUCTOR_SHELL_SCREENS: Screen[] = [
-  "instructor-home",
-  "instructor-course",
-  "instructor-preview",
-  "instructor-dashboard",
-  "instructor-challenge",
-  "instructor-settings",
-];
+export const AppContext = createContext<AppState>({} as AppState);
+export const useApp = () => useContext(AppContext);
 
-const FULLSCREEN_INSTRUCTOR_PREVIEW: Screen[] = ["instructor-preview-concept"];
-const FULLSCREEN_INSTRUCTOR_STUDIO: Screen[] = ["instructor-create"];
+const DEFAULT_SCREEN: Record<Role, string> = {
+  'content-developer': 'cd-library',
+  'object-reviewer': 'or-reviews',
+  'course-reviewer': 'cr-reviews',
+  'administrator': 'admin-overview',
+  'coach': 'coach',
+  'student': 'student-dashboard',
+};
 
 export default function App() {
-  const {
-    screen,
-    setScreen,
-    setLoginIntent,
-    role,
-    loading,
-    logout,
-    learner,
-    instructor,
-    concepts,
-    courseTitle,
-    modules,
-    courseId,
-    toast,
-    showToast,
-  } = useApp();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [activeUserId, setActiveUserId] = useState('riya');
+  const [role, setRoleState] = useState<Role>('student');
+  const [program, setProgramState] = useState<Program>('bridge');
+  const [currentScreen, setCurrentScreen] = useState('student-dashboard');
+  const [readerObjectId, setReaderObjectId] = useState<string | null>(null);
+  const [creatorObjectType, setCreatorObjectTypeState] = useState<string>('lesson');
+  const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
 
-  const userName = role === "student" ? (learner.name || "Student") : (instructor.name || "Instructor");
-  const userInitials = userName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
-  const chapterLabel = modules[0]?.chapter || "General";
+  // Hydrate persisted objects from Supabase (if configured) on first load.
+  useEffect(() => {
+    if (!supabaseEnabled) return;
+    let cancelled = false;
+    listObjects()
+      .then(objs => { if (!cancelled) setCreatedObjects(objs); })
+      .catch(err => console.warn('[supabase] could not load objects:', err?.message || err));
+    return () => { cancelled = true; };
+  }, []);
 
-  const handleDocuments = () => {
-    if (role === "student") {
-      setScreen(courseId ? "student-workspace" : "student-sets");
-    } else {
-      setScreen(courseId ? "instructor-course" : "instructor-home");
+  const login = useCallback((userId: string) => {
+    const user = USERS.find(u => u.id === userId);
+    if (!user) return;
+    setActiveUserId(userId);
+    setRoleState(user.role);
+    setCurrentScreen(DEFAULT_SCREEN[user.role]);
+    setReaderObjectId(null);
+    setIsLoggedIn(true);
+  }, []);
+
+  const logout = useCallback(() => {
+    setIsLoggedIn(false);
+    setReaderObjectId(null);
+  }, []);
+
+  const navigate = useCallback((screen: string) => {
+    setCurrentScreen(screen);
+    setReaderObjectId(null);
+  }, []);
+
+  const setRole = useCallback((newRole: Role) => {
+    setRoleState(newRole);
+    setCurrentScreen(DEFAULT_SCREEN[newRole]);
+    setReaderObjectId(null);
+    const match = USERS.find(u => u.role === newRole);
+    if (match) setActiveUserId(match.id);
+  }, []);
+
+  const setProgram = useCallback((p: Program) => {
+    setProgramState(p);
+  }, []);
+
+  const openReader = useCallback((objectId: string) => {
+    setReaderObjectId(objectId);
+  }, []);
+
+  const closeReader = useCallback(() => {
+    setReaderObjectId(null);
+  }, []);
+
+  const setCreatorObjectType = useCallback((type: string) => {
+    setCreatorObjectTypeState(type);
+  }, []);
+
+  const addObject = useCallback((partial: Partial<LearningObject> & { type: ObjectType; title: string }) => {
+    const user = USERS.find(u => u.id === activeUserId);
+    const now = new Date().toISOString().slice(0, 10);
+    const id = partial.id || `obj-new-${Date.now()}`;
+    const obj: LearningObject = {
+      id,
+      type: partial.type,
+      title: partial.title || 'Untitled',
+      ownerId: activeUserId,
+      ownerName: user?.name || 'You',
+      status: partial.status || 'draft',
+      scope: partial.scope || 'bridge',
+      reuseCount: partial.reuseCount ?? 0,
+      description: partial.description || '',
+      estimatedTime: partial.estimatedTime || '10 min',
+      blocks: partial.blocks || [],
+      createdAt: partial.createdAt || now,
+      updatedAt: now,
+      tags: partial.tags || [],
+      sourceIds: partial.sourceIds || [],
+    };
+    setCreatedObjects(prev => [obj, ...prev.filter(o => o.id !== id)]);
+    if (supabaseEnabled) {
+      saveObject(obj).catch(err => console.warn('[supabase] could not save object:', err?.message || err));
     }
+    return id;
+  }, [activeUserId]);
+
+  const ctx: AppState = {
+    role, program, currentScreen, activeUserId, isLoggedIn,
+    readerObjectId, creatorObjectType, createdObjects,
+    navigate, login, logout,
+    setRole, setProgram, openReader, closeReader, setCreatorObjectType, addObject,
   };
 
-  const handleUpgrade = () => {
-    showToast("Premium plans coming soon — your classroom stays free.");
-  };
-
-  const handleInstructorViewSwitch = () => {
-    if (screen === "instructor-preview" || screen === "instructor-preview-concept") {
-      setScreen(courseId ? "instructor-course" : "instructor-home");
-      return;
-    }
-    if (!courseId) {
-      showToast("Open a classroom first to preview the student view.");
-      setScreen("instructor-home");
-      return;
-    }
-    setScreen("instructor-preview");
-  };
-
-  if (loading) {
-    return (
-      <Shell className="bg-[#f8fafc] flex items-center justify-center">
-        <p className="text-sm font-semibold text-gray-500">Loading Owlwise…</p>
-      </Shell>
-    );
-  }
-
-  if (screen === "landing") {
-    return <LandingScreen setScreen={setScreen} setLoginIntent={setLoginIntent} />;
-  }
-  if (screen === "login") return <LoginScreen />;
-  if (screen === "student-onboarding") return <StudentOnboarding />;
-  if (screen === "instructor-onboarding") return <InstructorOnboarding />;
-
-  if (role === "instructor" && FULLSCREEN_INSTRUCTOR_PREVIEW.includes(screen)) {
-    if (screen === "instructor-preview-concept") return <PreviewConceptScreen />;
-  }
-
-  if (role === "instructor" && FULLSCREEN_INSTRUCTOR_STUDIO.includes(screen)) {
-    if (screen === "instructor-create") return <InstructorStudioScreen />;
-  }
-
-  const studentBreadcrumbs = () => {
-    if (screen === "student-workspace") {
-      return [
-        { label: courseTitle, sub: "Classroom", onClick: () => setScreen("student-sets") },
-        { label: chapterLabel, sub: "Workspace" },
-      ];
-    }
-    if (screen === "student-concept") {
-      return [
-        { label: courseTitle, sub: "Classroom", onClick: () => setScreen("student-workspace") },
-        { label: "Lesson", sub: "In progress" },
-      ];
-    }
-    return undefined;
-  };
-
-  const instructorBreadcrumbs = () => {
-    if (
-      screen === "instructor-course" ||
-      screen === "instructor-preview" ||
-      screen === "instructor-preview-concept" ||
-      screen === "instructor-challenge"
-    ) {
-      return [
-        { label: courseTitle, sub: "Classroom", onClick: () => setScreen("instructor-home") },
-        {
-          label: screen === "instructor-challenge" ? "Invite Students" : chapterLabel,
-          sub: screen === "instructor-challenge" ? "Join code & link" : "Workspace",
-          onClick: screen === "instructor-challenge" ? () => setScreen("instructor-course") : undefined,
-        },
-      ];
-    }
-    return undefined;
-  };
-
-  const studentContent = (
-    <>
-      {screen === "student-courses" && <StudentHomeContent />}
-      {screen === "student-sets" && <StudentSetsScreen />}
-      {screen === "student-workspace" && <StudentWorkspaceScreen />}
-      {screen === "student-assistant" && <StudentAssistantChatScreen />}
-      {screen === "student-mastery" && <StudentMasteryScreen />}
-      {screen === "student-challenge" && <StudentChallengeScreen />}
-      {screen === "student-tools" && <StudentToolsScreen />}
-      {screen === "student-settings" && <StudentSettingsScreen />}
-      {screen === "student-reflection" && <ReflectionScreen />}
-      {screen === "student-concept" && <StudentConceptScreen />}
-    </>
-  );
-
-  const instructorContent = (
-    <>
-      {screen === "instructor-home" && <InstructorClassroomsScreen />}
-      {screen === "instructor-course" && <InstructorCourseModulesScreen />}
-      {screen === "instructor-preview" && <PreviewWorkspaceScreen />}
-      {screen === "instructor-dashboard" && <TeacherDashboardScreen />}
-      {screen === "instructor-challenge" && <InstructorChallengeScreen />}
-      {screen === "instructor-settings" && <InstructorSettingsScreen />}
-    </>
-  );
-
-  if (role === "student" && STUDENT_SHELL_SCREENS.includes(screen)) {
-    return (
-      <StudyFetchShell
-        role="student"
-        screen={screen}
-        setScreen={setScreen}
-        onLogout={() => logout().catch(console.error)}
-        userName={userName}
-        userInitials={userInitials}
-        courseTitle={courseTitle}
-        breadcrumbs={studentBreadcrumbs()}
-        toast={toast}
-        onDocuments={handleDocuments}
-        onUpgrade={handleUpgrade}
-        fullWidth={screen === "student-concept"}
+  return (
+    <AppContext.Provider value={ctx}>
+      <div
+        className="min-h-screen w-full"
+        style={{ background: 'linear-gradient(170deg, #A9BBCB 0%, #D4DDE6 40%, #F2F5F8 100%)' }}
       >
-        {studentContent}
-      </StudyFetchShell>
-    );
-  }
-
-  if (role === "instructor" && INSTRUCTOR_SHELL_SCREENS.includes(screen)) {
-    return (
-      <StudyFetchShell
-        role="instructor"
-        screen={screen}
-        setScreen={setScreen}
-        onLogout={() => logout().catch(console.error)}
-        userName={userName}
-        userInitials={userInitials}
-        courseTitle={courseTitle}
-        breadcrumbs={instructorBreadcrumbs()}
-        onSwitchView={handleInstructorViewSwitch}
-        studentPreviewActive={screen === "instructor-preview" || screen === "instructor-preview-concept"}
-        toast={toast}
-        onDocuments={handleDocuments}
-        onUpgrade={handleUpgrade}
-      >
-        {instructorContent}
-      </StudyFetchShell>
-    );
-  }
-
-  return null;
+        {!isLoggedIn ? <LoginPortal /> : <Layout />}
+      </div>
+    </AppContext.Provider>
+  );
 }
