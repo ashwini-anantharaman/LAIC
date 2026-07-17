@@ -2,12 +2,11 @@
 
 // Persistent accordion (2026-07-17 UX rework): real <details> sections with
 // visible chevrons, expand/collapse-all, and open state remembered per KB
-// across navigation (localStorage). The server always renders sections open;
-// an inline script placed AFTER the sections closes the stored-closed ones
-// while the HTML is still parsing, and the lazy state initializer agrees at
-// hydration — so there's no post-paint snap.
+// across navigation (localStorage). Server and first client render are both
+// all-open (no hydration mismatch); stored state is adopted in an effect right
+// after mount. Chevron rotation is pure CSS off the [open] attribute.
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 type AccordionCtx = {
   isOpen: (id: string) => boolean;
@@ -29,7 +28,14 @@ export function AccordionGroup({
   sectionIds,
   children,
 }: Readonly<{ storageKey: string; sectionIds: string[]; children: ReactNode }>) {
-  const [openMap, setOpenMap] = useState<Record<string, boolean>>(() => readStorage(storageKey));
+  // Start all-open so the client's first render matches the server (no
+  // hydration mismatch); adopt stored state right after mount. Stored-closed
+  // sections briefly show open, then collapse — a single frame, no flash of
+  // wrong-and-then-empty content.
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    setOpenMap(readStorage(storageKey));
+  }, [storageKey]);
 
   const write = (next: Record<string, boolean>) => {
     setOpenMap(next);
@@ -43,11 +49,6 @@ export function AccordionGroup({
   const toggle = (id: string) => write({ ...openMap, [id]: !isOpen(id) });
   const setAll = (open: boolean) =>
     write(Object.fromEntries(sectionIds.map((id) => [id, open])));
-
-  // Runs on parse (SSR only): close stored-closed sections before first paint.
-  const prePaint = `(function(){try{var m=JSON.parse(localStorage.getItem(${JSON.stringify(
-    storageKey,
-  )})||"{}");document.querySelectorAll("details[data-acc]").forEach(function(d){if(m[d.getAttribute("data-acc")]===false)d.removeAttribute("open")})}catch(e){}})()`;
 
   return (
     <Ctx.Provider value={{ isOpen, toggle }}>
@@ -68,7 +69,6 @@ export function AccordionGroup({
         </button>
       </div>
       <div className="space-y-3">{children}</div>
-      <script dangerouslySetInnerHTML={{ __html: prePaint }} />
     </Ctx.Provider>
   );
 }
@@ -84,7 +84,6 @@ export function AccordionSection({
     <details
       data-acc={id}
       open={open}
-      suppressHydrationWarning
       className="group rounded-lg border border-neutral-200 bg-[var(--card)]"
     >
       <summary
