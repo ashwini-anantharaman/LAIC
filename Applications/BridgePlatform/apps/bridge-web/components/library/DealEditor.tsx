@@ -41,18 +41,26 @@ export function DealEditor({
   initialDealer = "N",
   initialVul = "none",
   initialHands,
+  locked,
   submitLabel = "Save board",
   footer,
 }: Readonly<{
   initialName?: string;
   initialDealer?: Seat;
   initialVul?: Vul;
-  /** Prefill (e.g. the live board when editing a deal mid-play). */
+  /** Prefill — when `locked` is given, pass only the UNPLAYED cards here. */
   initialHands?: Record<Seat, Card[]>;
+  /** Already-played cards (mid-play editing): pinned to their seats, greyed. */
+  locked?: { seat: Seat; card: Card }[];
   submitLabel?: string;
   /** Extra form controls rendered just above the submit button. */
   footer?: ReactNode;
 }>) {
+  const lockedMap = useMemo(() => {
+    const m = new Map<string, Seat>();
+    for (const l of locked ?? []) m.set(cid(l.card.suit, l.card.rank), l.seat);
+    return m;
+  }, [locked]);
   const [owner, setOwner] = useState<Record<string, Owner>>(() => {
     const m: Record<string, Owner> = {};
     if (initialHands)
@@ -67,18 +75,22 @@ export function DealEditor({
   const [paste, setPaste] = useState("");
   const [pasteNote, setPasteNote] = useState<string | null>(null);
 
+  // Totals per seat = freely assigned + locked (played) cards.
   const counts = useMemo(() => {
     const c: Record<Seat, number> = { N: 0, E: 0, S: 0, W: 0 };
     for (const o of Object.values(owner)) if (o) c[o]++;
+    for (const seat of lockedMap.values()) c[seat]++;
     return c;
-  }, [owner]);
+  }, [owner, lockedMap]);
   const poolCount = 52 - counts.N - counts.E - counts.S - counts.W;
   const complete = SEATS.every((s) => counts[s] === 13);
 
   // Free assignment: give to the active seat; clicking the active seat's own
-  // card returns it to the pool; another seat's card moves to the active seat.
+  // card returns it to the pool; another seat's card moves to the active
+  // seat. Played cards never move.
   const toggle = (suit: Suit, rank: Rank) => {
     const id = cid(suit, rank);
+    if (lockedMap.has(id)) return;
     setOwner((o) => ({ ...o, [id]: o[id] === active ? "" : active }));
   };
 
@@ -89,7 +101,7 @@ export function DealEditor({
       for (const suit of SUIT_ORDER)
         for (const rank of RANKS_DESC) {
           const id = cid(suit, rank);
-          if (!next[id]) next[id] = active;
+          if (!next[id] && !lockedMap.has(id)) next[id] = active;
         }
       return next;
     });
@@ -117,9 +129,13 @@ export function DealEditor({
     );
   };
 
+  // Full hands travel to the server: assigned + locked cards at their seats.
   const serialized = (seat: Seat) =>
     SUIT_ORDER.map((suit) =>
-      RANKS_DESC.filter((rank) => owner[cid(suit, rank)] === seat)
+      RANKS_DESC.filter((rank) => {
+        const id = cid(suit, rank);
+        return owner[id] === seat || lockedMap.get(id) === seat;
+      })
         .map((rank) => rankLabel(rank))
         .join(""),
     ).join(".");
@@ -145,16 +161,29 @@ export function DealEditor({
           {counts[seat]}/13
         </span>
       </div>
-      {SUIT_ORDER.map((suit) => (
-        <div key={suit} className="flex gap-1 font-mono text-[10px] leading-4">
-          <span className={redSuit(suit) ? "text-[var(--madder)]" : ""}>{GLYPH[suit]}</span>
-          <span className="truncate">
-            {RANKS_DESC.filter((rank) => owner[cid(suit, rank)] === seat)
-              .map((rank) => rankLabel(rank))
-              .join(" ") || "—"}
-          </span>
-        </div>
-      ))}
+      {SUIT_ORDER.map((suit) => {
+        const cells = RANKS_DESC.flatMap((rank) => {
+          const id = cid(suit, rank);
+          if (owner[id] === seat) return [{ label: rankLabel(rank), played: false }];
+          if (lockedMap.get(id) === seat) return [{ label: rankLabel(rank), played: true }];
+          return [];
+        });
+        return (
+          <div key={suit} className="flex gap-1 font-mono text-[10px] leading-4">
+            <span className={redSuit(suit) ? "text-[var(--madder)]" : ""}>{GLYPH[suit]}</span>
+            <span className="truncate">
+              {cells.length
+                ? cells.map((c, i) => (
+                    <span key={i} className={c.played ? "text-neutral-400 line-through" : ""}>
+                      {c.label}
+                      {i < cells.length - 1 ? " " : ""}
+                    </span>
+                  ))
+                : "—"}
+            </span>
+          </div>
+        );
+      })}
     </button>
   );
 
@@ -249,28 +278,37 @@ export function DealEditor({
               {GLYPH[suit]}
             </span>
             {RANKS_DESC.map((rank) => {
-              const own = owner[cid(suit, rank)] ?? "";
+              const id = cid(suit, rank);
+              const lockSeat = lockedMap.get(id);
+              const own = lockSeat ?? owner[id] ?? "";
               return (
                 <button
                   key={rank}
                   type="button"
                   onClick={() => toggle(suit, rank)}
+                  disabled={!!lockSeat}
                   aria-label={`${GLYPH[suit]}${rankLabel(rank)}`}
                   title={
-                    own === active
-                      ? `held by ${SEAT_NAME[active]} — click to return to the pool`
-                      : `give to ${SEAT_NAME[active]}`
+                    lockSeat
+                      ? `played by ${SEAT_NAME[lockSeat]} — locked`
+                      : own === active
+                        ? `held by ${SEAT_NAME[active]} — click to return to the pool`
+                        : `give to ${SEAT_NAME[active]}`
                   }
                   className={`relative h-8 min-w-6 flex-1 rounded border text-[12px] font-semibold transition-colors ${
-                    own
-                      ? SEAT_TINT[own]
-                      : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400"
+                    lockSeat
+                      ? "border-neutral-200 bg-neutral-100 text-neutral-300 line-through"
+                      : own
+                        ? SEAT_TINT[own]
+                        : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400"
                   }`}
                 >
                   {rankLabel(rank)}
                   {own && (
                     <span
-                      className={`absolute -right-0.5 -top-1 rounded-sm px-0.5 text-[8px] font-bold leading-3 text-white ${SEAT_CHIP[own]}`}
+                      className={`absolute -right-0.5 -top-1 rounded-sm px-0.5 text-[8px] font-bold leading-3 text-white ${
+                        lockSeat ? "bg-neutral-400" : SEAT_CHIP[own]
+                      }`}
                     >
                       {own}
                     </span>

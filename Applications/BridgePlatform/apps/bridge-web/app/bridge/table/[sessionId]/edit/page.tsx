@@ -1,4 +1,3 @@
-import { seededDeal } from "@bridge/engine";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { DealEditor } from "@/components/library/DealEditor";
@@ -6,9 +5,10 @@ import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { redealEditedAction } from "../../actions";
 
-/** Edit the live board's deal mid-play: change any cards, then deal the
- *  edited board to the same table and continue. The original board keeps
- *  its history — every call so far was made looking at the old hands. */
+/** Edit the live board's deal mid-play: redistribute the unplayed cards
+ *  (played ones are locked to the seat that played them), then continue the
+ *  game on the edited deal — same seats, same auction and tricks so far.
+ *  The board you came from keeps its history. */
 export default async function EditDealPage({
   params,
   searchParams,
@@ -21,13 +21,16 @@ export default async function EditDealPage({
   const { sessionId } = await params;
   const { error } = await searchParams;
 
-  let record;
+  let view;
   try {
-    record = await sessionService().requireSession(sessionId);
+    view = await sessionService().view(sessionId);
   } catch {
     notFound();
   }
-  const hands = record.board.hands ?? seededDeal(record.board.seed);
+  const { record, state } = view;
+  // Remaining cards are freely editable; played cards are pinned where they
+  // were played (continuing the game depends on that).
+  const played = state.tricks.flatMap((t) => t.plays.map((p) => ({ seat: p.seat, card: p.card })));
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -42,8 +45,10 @@ export default async function EditDealPage({
         </p>
         <h1 className="mt-1 text-3xl font-medium">Edit the deal</h1>
         <p className="mt-2 max-w-xl text-sm text-neutral-600">
-          Adjust any cards, then deal the edited board to this table — same seats, fresh
-          auction. The board you came from is kept as it was.
+          Move any unplayed cards, then apply — the game continues right where it is, on the
+          edited deal, with the same seats. Greyed cards were already played and can&apos;t
+          move. Past calls and plays keep their original reasoning. The board you came from is
+          kept as it was.
         </p>
       </header>
 
@@ -63,13 +68,20 @@ export default async function EditDealPage({
           }
           initialDealer={record.board.dealer}
           initialVul={record.board.vul}
-          initialHands={hands}
-          submitLabel="Deal to this table"
+          initialHands={state.hands}
+          locked={played}
+          submitLabel="Apply and continue"
           footer={
-            <label className="flex items-center gap-2 text-sm text-neutral-600">
-              <input type="checkbox" name="saveToLibrary" />
-              also save the edited board to the library
-            </label>
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-2 text-sm text-neutral-600">
+                <input type="checkbox" name="restart" />
+                restart the board instead (fresh auction on the edited deal)
+              </label>
+              <label className="flex items-center gap-2 text-sm text-neutral-600">
+                <input type="checkbox" name="saveToLibrary" />
+                also save the edited board to the library
+              </label>
+            </div>
           }
         />
       </form>

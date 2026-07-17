@@ -97,10 +97,12 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
 }
 
 /**
- * The mid-play deal editor's save: deal the edited board to the SAME table
- * (identical seat lineup) and continue there. Fork semantics — the original
- * board is untouched; a changed deal restarts the auction, since every call
- * and card so far was made looking at the old hands.
+ * The mid-play deal editor's save: fork the session onto the edited deal
+ * with the SAME seats and the SAME event prefix — the game continues right
+ * where it was, on the new cards. Played cards must stay at the seat that
+ * played them (the editor locks them; re-checked here). The `restart`
+ * checkbox drops the prefix instead (fresh auction on the edited deal),
+ * which is also forced when the board is already complete.
  */
 export async function redealEditedAction(formData: FormData): Promise<void> {
   const context = await requireContext();
@@ -121,22 +123,32 @@ export async function redealEditedAction(formData: FormData): Promise<void> {
   const invalid = validateDeal(hands);
   if (invalid) failBack(invalid);
 
+  const fresh =
+    formData.get("restart") === "on" || record.status === "completed";
+  if (!fresh) {
+    // Continuing replays the recorded plays onto the edited deal — every
+    // played card must still sit where it was played, or the fold corrupts.
+    for (const event of record.events) {
+      if (event.category !== "play-event") continue;
+      const { seat, card } = event as { seat: Seat; card: Card };
+      if (!hands[seat].some((c) => c.suit === card.suit && c.rank === card.rank))
+        failBack(
+          `${seat} already played a card that moved seats — played cards are locked while continuing.`,
+        );
+    }
+  }
+
   const dealer = (String(formData.get("dealer") ?? "N") || "N") as Seat;
   const vul = (String(formData.get("vul") ?? "none") || "none") as Vul;
   const boardName =
     String(formData.get("name") ?? "").trim() || `${record.board.name} (edited)`;
 
-  const compiled = await service.compiledFor(record);
-  const next = await service.createSession({
-    kbId: record.kbId,
-    compiled,
-    seats: record.seats,
-    seed: record.board.seed,
+  const next = await service.fork(sessionId, record.seats, context.nexusUserId, {
+    fresh,
     hands,
-    dealer,
-    vul,
     boardName,
-    createdBy: context.nexusUserId,
+    // Dealer/vul only change on a restart — the kept auction depends on them.
+    ...(fresh ? { dealer, vul } : {}),
   });
 
   if (formData.get("saveToLibrary") === "on") {
