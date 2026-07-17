@@ -160,6 +160,9 @@ async function _grantLevel(
   if (!dbEnabled() || !user.email) return null;
   const role = await graph.getProgramRoleForEmail(pid, user.email).catch(() => null);
   const level = role ? ((role.perms as Row)?.[area] as string | undefined) : undefined;
+  // Platform areas (learning/bridge) are granted as a single "administrator"
+  // toggle in the role builder — full access to that platform.
+  if (level === "administrator") return "admin";
   return level === "view" || level === "comment" || level === "edit" ? level : null;
 }
 

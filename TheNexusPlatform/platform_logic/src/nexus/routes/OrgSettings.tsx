@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
+import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -35,10 +36,13 @@ import { EmptyState, PageHeader, Pill, Section, Spinner } from "@/nexus/ui/kit";
 import { Copy, Plus, Trash2 } from "lucide-react";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useSession } from "@/nexus/session";
+import { accentForMode } from "@/nexus/theme/accent";
 
 export function OrgSettings() {
   const { orgId = "" } = useParams();
   const { user } = useSession();
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === "dark";
   const [members, setMembers] = useState<OrgMember[] | null>(null);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [accent, setAccent] = useState("#4f46e5");
@@ -115,11 +119,27 @@ export function OrgSettings() {
               <input
                 id="accent"
                 type="color"
-                value={accent}
-                onChange={(e) => setAccent(e.target.value)}
+                value={accentForMode(accent, dark)}
+                onChange={(e) => setAccent(accentForMode(e.target.value, dark))}
                 className="size-9 rounded-md border border-border bg-transparent p-0.5"
               />
-              <Input value={accent} onChange={(e) => setAccent(e.target.value)} className="w-32 font-mono" />
+              <Input
+                value={accent}
+                onChange={(e) => setAccent(e.target.value)}
+                onBlur={(e) => setAccent(accentForMode(e.target.value, dark))}
+                className="w-32 font-mono"
+              />
+            </div>
+            <div className="flex items-center gap-3 pt-1 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="size-4 rounded-full border border-border" style={{ background: accentForMode(accent, false) }} />
+                Light
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="size-4 rounded-full border border-border" style={{ background: accentForMode(accent, true) }} />
+                Dark
+              </span>
+              <span>· auto-adjusts to each mode</span>
             </div>
           </div>
           <div className="space-y-1.5">

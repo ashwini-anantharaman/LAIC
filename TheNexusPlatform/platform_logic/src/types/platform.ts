@@ -49,6 +49,8 @@ export interface Program {
   course_count?: number;
   learner_count?: number;
   instructor_count?: number;
+  /** Per-program platform toggles; absent/true = enabled where the org allows it. */
+  platforms?: Record<string, boolean> | null;
 }
 
 export interface Integration {

@@ -263,7 +263,9 @@ export async function provisionOrganization(
 }
 
 // ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
-export type AccessLevel = "view" | "edit" | "comment";
+// Platform areas (learning, bridge) grant a single "administrator" level; the
+// other areas keep the graded view/edit/comment levels.
+export type AccessLevel = "view" | "edit" | "comment" | "administrator";
 export type RoleArea = "learning" | "bridge" | "appbuilder" | "community" | "teams" | "partners";
 export type RolePerms = Partial<Record<RoleArea, AccessLevel>>;
 

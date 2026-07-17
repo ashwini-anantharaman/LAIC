@@ -25,6 +25,7 @@ import {
   createApp,
   createGroup,
   createOffering,
+  getOrgCapabilities,
   listAffiliatedPrograms,
   listApps,
   listGroups,
@@ -35,6 +36,8 @@ import {
   listRegistrations,
   publishOffering,
   rejectRegistration,
+  updateProgramFeatures,
+  type OrgCapabilities,
 } from "@/services/api";
 import type {
   AffiliatedProgram,
@@ -48,7 +51,10 @@ import type {
   Registration,
 } from "@/types/platform";
 import { DEFAULT_PROGRAM_FEATURES } from "@/types/platform";
+import type { ProgramFeatureKey, ProgramFeatures } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Spinner, statusTone } from "@/nexus/ui/kit";
+import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
+import { useProgramAccess } from "@/nexus/access";
 
 /** Fetch the current program (no single-get endpoint; list + find). */
 function useProgram(): { program: Program | null; orgId: string; programId: string } {
@@ -75,46 +81,81 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+// The platforms a program can run. A card renders only when the org is
+// entitled to the platform (Nexus capability envelope) AND the program has the
+// feature enabled AND the viewer's role grants the area. `key` doubles as the
+// program-feature key and the role area; `cap` is the org-capability key.
+const PROGRAM_PLATFORMS: {
+  key: ProgramFeatureKey;
+  cap: string;
+  title: string;
+  hint: string;
+  icon: React.ReactNode;
+  path: string;
+}[] = [
+  { key: "learning", cap: "learningPlatform", title: "Learning Platform", hint: "Author lessons and courses for this program.", icon: <Rocket className="size-5" />, path: "learning" },
+  { key: "bridge", cap: "bridge", title: "Bridge Platform", hint: "Coach-driven app runtime for this program.", icon: <Waypoints className="size-5" />, path: "bridge" },
+  { key: "appbuilder", cap: "appShells", title: "App Shell", hint: "Configure an App Shell and fill it with content.", icon: <BookOpen className="size-5" />, path: "shells" },
+];
+
+// Confined areas that aren't platforms — their presence keeps a single-platform
+// member on the overview instead of launching them straight in.
+const NON_PLATFORM_AREAS = ["community", "teams", "partners"];
+
 export function ProgramOverview() {
   const { program, orgId, programId } = useProgram();
   const navigate = useNavigate();
+  const access = useProgramAccess(programId);
   const [offerings, setOfferings] = useState<Offering[]>([]);
+  const [caps, setCaps] = useState<OrgCapabilities | null>(null);
+  const [features, setFeatures] = useState<ProgramFeatures>(DEFAULT_PROGRAM_FEATURES);
+  const [busy, setBusy] = useState<ProgramFeatureKey | null>(null);
+
   useEffect(() => {
     if (programId) listOfferings(programId).then(setOfferings).catch(() => setOfferings([]));
   }, [programId]);
+  useEffect(() => {
+    if (orgId) getOrgCapabilities(orgId).then(setCaps).catch(() => setCaps(null));
+  }, [orgId]);
+  useEffect(() => {
+    setFeatures(program?.features ?? DEFAULT_PROGRAM_FEATURES);
+  }, [program]);
 
-  // Feature accessibility is set per-program by the org admin. Programs created
-  // before feature config existed default to all-on.
-  const features = program?.features ?? DEFAULT_PROGRAM_FEATURES;
-  const launchCards = [
-    features.learning && (
-      <LaunchCard
-        key="learning"
-        icon={<Rocket className="size-5" />}
-        title="Launch Learning Platform"
-        hint="Author lessons and courses for this program."
-        onClick={() => navigate(`/o/${orgId}/p/${programId}/learning`)}
-      />
-    ),
-    features.bridge && (
-      <LaunchCard
-        key="bridge"
-        icon={<Waypoints className="size-5" />}
-        title="Launch Bridge Platform"
-        hint="Open the Bridge Platform for this program."
-        onClick={() => navigate(`/o/${orgId}/p/${programId}/bridge`)}
-      />
-    ),
-    features.appbuilder && (
-      <LaunchCard
-        key="appbuilder"
-        icon={<BookOpen className="size-5" />}
-        title="Make an application"
-        hint="Configure an App Shell and fill it with content."
-        onClick={() => navigate(`/o/${orgId}/p/${programId}/shells`)}
-      />
-    ),
-  ].filter(Boolean);
+  const allowed = (cap: string) => (caps ? caps.features[cap] !== false : true);
+  const enabled = (key: ProgramFeatureKey) => features[key] !== false;
+  // A confined member only sees a platform their role grants; admins see all.
+  const granted = (area: string) => access.isAdmin || !!access.perms[area];
+
+  async function setFeature(key: ProgramFeatureKey, on: boolean) {
+    const prev = features;
+    setFeatures((f) => ({ ...f, [key]: on }));
+    setBusy(key);
+    try {
+      await updateProgramFeatures(programId, { ...prev, [key]: on });
+    } catch (e) {
+      setFeatures(prev);
+      toast.error(e instanceof Error ? e.message : "Couldn't update the program's features");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const active = PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && enabled(p.key) && granted(p.key));
+  // Only admins manage the envelope, so only they see the dashed "add" tiles.
+  const addable = access.isAdmin ? PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && !enabled(p.key)) : [];
+
+  // A real member whose entire access is a single platform is launched straight
+  // into it — there's nothing else for them here. Previews (Test as) are not
+  // redirected, so the admin doesn't get trapped in a full-screen surface.
+  const otherAreas = NON_PLATFORM_AREAS.some((a) => access.perms[a]);
+  const soleActiveKey = active.length === 1 ? active[0] : null;
+  useEffect(() => {
+    if (access.loading || access.isAdmin || access.impersonating) return;
+    if (!caps || !program) return; // wait until the platform set is settled
+    if (soleActiveKey && !otherAreas) {
+      navigate(`/o/${orgId}/p/${programId}/${soleActiveKey.path}`, { replace: true });
+    }
+  }, [access.loading, access.isAdmin, access.impersonating, caps, program, soleActiveKey, otherAreas, orgId, programId, navigate]);
 
   return (
     <div>
@@ -124,34 +165,83 @@ export function ProgramOverview() {
         <Stat label="Learners" value={program?.learner_count ?? 0} />
         <Stat label="Courses" value={program?.course_count ?? 0} />
       </div>
-      {launchCards.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2">{launchCards}</div>
-      ) : null}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {active.map((p) => (
+          <PlatformCard
+            key={p.key}
+            icon={p.icon}
+            title={p.title}
+            hint={p.hint}
+            busy={busy === p.key}
+            canRemove={access.isAdmin}
+            onOpen={() => navigate(`/o/${orgId}/p/${programId}/${p.path}`)}
+            onRemove={() => setFeature(p.key, false)}
+          />
+        ))}
+        {addable.map((p) => (
+          <AddPlatformCard key={p.key} title={p.title} busy={busy === p.key} onAdd={() => setFeature(p.key, true)} />
+        ))}
+      </div>
     </div>
   );
 }
 
-function LaunchCard({
+function PlatformCard({
   icon,
   title,
   hint,
-  onClick,
+  busy,
+  canRemove,
+  onOpen,
+  onRemove,
 }: {
   icon: React.ReactNode;
   title: string;
   hint: string;
-  onClick: () => void;
+  busy: boolean;
+  canRemove: boolean;
+  onOpen: () => void;
+  onRemove: () => void;
 }) {
+  return (
+    <div className="group relative flex items-center gap-4 glass-card p-5 hover:border-foreground/20 transition-colors">
+      {canRemove ? (
+        <ConfirmButton
+          title={`Remove ${title} from this program?`}
+          description="It disappears from the workspace. You can add it back anytime."
+          actionLabel="Remove"
+          onConfirm={onRemove}
+          buttonTitle={`Remove ${title}`}
+          className="absolute right-2 top-2 grid size-6 place-items-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-accent hover:text-foreground transition"
+        >
+          {busy ? <span className="text-[10px]">…</span> : <X className="size-3.5" />}
+        </ConfirmButton>
+      ) : null}
+      <button type="button" onClick={onOpen} className="flex flex-1 items-center gap-4 text-left">
+        <div className="grid size-11 place-items-center rounded-xl bg-primary/10 text-foreground">{icon}</div>
+        <div className="min-w-0">
+          <div className="font-medium text-foreground">{title}</div>
+          <div className="text-xs text-muted-foreground">{hint}</div>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+function AddPlatformCard({ title, busy, onAdd }: { title: string; busy: boolean; onAdd: () => void }) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="flex items-center gap-4 glass-card p-5 text-left hover:border-foreground/20 transition-colors"
+      onClick={onAdd}
+      disabled={busy}
+      className="flex items-center gap-4 rounded-[calc(var(--radius)+4px)] border border-dashed border-border p-5 text-left text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors disabled:opacity-50"
     >
-      <div className="grid size-11 place-items-center rounded-xl bg-primary/10 text-foreground">{icon}</div>
+      <div className="grid size-11 place-items-center rounded-xl border border-dashed border-border">
+        <Plus className="size-5" />
+      </div>
       <div className="min-w-0">
-        <div className="font-medium text-foreground">{title}</div>
-        <div className="text-xs text-muted-foreground">{hint}</div>
+        <div className="font-medium">Add {title}</div>
+        <div className="text-xs">Enable this platform for the program.</div>
       </div>
     </button>
   );

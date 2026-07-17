@@ -648,7 +648,9 @@ export async function updateOrgTheme(orgId: string, accentColor: string | null |
 export const DEFAULT_CAPABILITIES = {
   programTypes: { edu: true, game: true },
   offeringTypes: { course: true, challenge: true, app: true },
-  features: { appShells: true, integrations: true },
+  // Program platforms an org may use, plus other feature flags. Everything on
+  // by default; the Nexus operator narrows the envelope per org.
+  features: { learningPlatform: true, appShells: true, bridge: true, integrations: true },
 } as const;
 
 export async function getOrgCapabilities(orgId: string): Promise<Row> {

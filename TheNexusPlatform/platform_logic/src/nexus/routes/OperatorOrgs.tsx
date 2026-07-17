@@ -124,7 +124,12 @@ const GOVERNABLE_MODULES: { key: ModuleKey; label: string; hint: string }[] = [
 
 const PROGRAM_TYPE_LABELS: Record<string, string> = { edu: "Education programs", game: "Game programs" };
 const OFFERING_TYPE_LABELS: Record<string, string> = { course: "Courses", challenge: "Challenges", app: "Applications" };
-const FEATURE_LABELS: Record<string, string> = { appShells: "Build App Shells", integrations: "Integrations" };
+const FEATURE_LABELS: Record<string, string> = {
+  learningPlatform: "Learning Platform",
+  appShells: "App Shell",
+  bridge: "Bridge Platform",
+  integrations: "Integrations",
+};
 
 /** A row of capability toggles for one section (programTypes / offeringTypes / features). */
 function CapabilityRow({

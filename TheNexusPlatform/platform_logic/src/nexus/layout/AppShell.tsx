@@ -43,6 +43,7 @@ import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
 import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
+import { accentForMode } from "@/nexus/theme/accent";
 
 interface NavItem {
   to: string;
@@ -146,14 +147,17 @@ function readableOn(hex: string): string {
  * actions take the accent, and the sidebar becomes accent-colored glass with
  * a contrast-aware foreground. Operator pages stay neutral (no accent).
  */
-function accentVars(accent: string | null): React.CSSProperties | undefined {
-  if (!accent) return undefined;
+function accentVars(rawAccent: string | null, dark: boolean): React.CSSProperties | undefined {
+  if (!rawAccent) return undefined;
+  const accent = accentForMode(rawAccent, dark);
   const fg = readableOn(accent);
   const fgAlpha = fg === "#ffffff" ? "255, 255, 255" : "20, 22, 31";
   return {
     "--primary": accent,
     "--primary-foreground": fg,
-    "--sidebar": `color-mix(in srgb, ${accent} 86%, transparent)`,
+    // Liquid glass: the accent is a translucent tint over the page gradient
+    // (the .glass-sidebar blur does the rest), not an opaque paint fill.
+    "--sidebar": `color-mix(in srgb, ${accent} ${dark ? 46 : 66}%, transparent)`,
     "--sidebar-foreground": fg,
     "--sidebar-accent": `rgba(${fgAlpha}, 0.16)`,
     "--sidebar-accent-foreground": fg,
@@ -305,6 +309,8 @@ export function AppShell() {
   const params = useParams();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === "dark";
 
   const orgId = params.orgId ?? orgMemberships[0]?.org_id ?? programMemberships[0]?.org_id ?? "";
   const programId = params.programId;
@@ -431,9 +437,9 @@ export function AppShell() {
   return (
     <div
       className="flex h-screen text-foreground"
-      style={accentVars(orgBranding.accent)}
+      style={accentVars(orgBranding.accent, dark)}
     >
-      <aside className="flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground backdrop-blur-xl">
+      <aside className="glass-sidebar flex w-60 shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground">
         <div className="flex items-center gap-2.5 px-5 h-14 border-b border-sidebar-border">
           {orgBranding.logo ? (
             <img src={orgBranding.logo} alt="" className="size-7 rounded-md object-cover" />

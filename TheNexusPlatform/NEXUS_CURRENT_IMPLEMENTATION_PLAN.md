@@ -286,6 +286,22 @@ Glassmorphic restyle across the whole app, verified light + dark via CDP screens
 - Breadcrumbs humanized: org name › program name › page label (no raw UUIDs).
 - All card surfaces swept to `glass-card`; brand-chip contrast fixed on accent sidebars. Typecheck clean.
 
+### Platforms, roles & theming pass (July 2026) — ✅ done
+Verified locally (API + CDP, light + dark):
+- **Role builder — platform areas are Admin toggles.** Learning Platform and Bridge Platform (new area) grant a single `administrator` level via the on/off switch — no level select. App builder / Community / Teams / Partners keep view/edit/comment. `AccessLevel` gains `"administrator"`; `RoleArea` gains `"bridge"`; backend `_ACCESS_LEVEL` enum + `programRolePerms` accept both (area keys stay open, so no per-key validation change).
+- **Bridge Platform** added everywhere as a first-class platform alongside Learning Platform and App Shell. Its launch surface is an intentional placeholder (`BridgeLaunch.tsx` at `/o/:orgId/p/:programId/bridge`) — the platform itself isn't built.
+- **Nexus-level gating.** `DEFAULT_CAPABILITIES.features` now carries `learningPlatform`, `appShells`, `bridge` (all default on). The operator's Govern dialog toggles them per org (Platform features section). `getOrgCapabilities` is org-readable; `setOrgCapabilities` stays platform-admin only.
+- **Per-program platform enable/disable.** Program overview shows every platform the org is entitled to; each active one has a hover ✕ to remove and reappears as a dashed "+ Add" tile (admins only). Stored in `programs.metadata_json.platforms` via `PUT /api/programs/:id/platforms` (`setProgramPlatforms`, program-admin guarded, audited). `_programResponse` + `programRow` expose `platforms`.
+- **Role-confined platform cards.** A confined member (or a dev "Test as role" preview) only sees the platform cards their role grants — Learning Platform ↔ `learning`, App Shell ↔ `appbuilder`, Bridge Platform ↔ `bridge`. Program admins/owners see all three. Shared `useProgramAccess(programId)` hook (`nexus/access.ts`) centralizes the admin-vs-confined decision used by both the overview and the confined sidebar nav. A *real* member whose entire access is a single platform (no community/teams/partners) is auto-launched straight into it (`navigate … replace`); previews are never redirected, so the previewing admin isn't trapped in a full-screen surface.
+- **Accent color follows the theme.** One stored hue is re-lit per mode — a light shade in light mode, a darker shade in dark mode — via `nexus/theme/accent.ts` (`accentForMode`, HSL lightness bands). `AppShell.accentVars(accent, dark)` derives the active-mode variant; the Settings picker normalizes the pick to the current mode and previews both Light/Dark swatches.
+
+### Liquid-glass pass (July 2026) — ✅ done
+Pushed the glass language toward macOS/iOS Liquid Glass, verified light + dark via CDP:
+- **Accents constrained to complementary bands** (`accent.ts`): light mode = pastel (L 68–80, S 38–62), dark mode = the same hue deeper and richer (L 34–46, S 42–72). Hue stays fully free — wide color range, pinned lightness/saturation so every pick complements its theme.
+- **Sidebar is genuinely translucent glass** — new `.glass-sidebar` class (blur +6px over base, saturate 1.7); the org accent is a `color-mix` tint at 66% (light) / 46% (dark) over the page gradient instead of an opaque fill, so the backdrop glows through.
+- **Specular edges on all panels**: `--glass-shadow` now carries an inset top highlight (the "catches light" line), a hairline outer definition ring, and a soft ambient drop; `--glass-border` is a translucent white hairline per mode. Blur raised to 24px/26px with saturate 1.6; radius up to 0.95rem.
+- **Canvas re-lit**: light = very light baby blue (`#eef6fe`) with baby-blue + sea-green + periwinkle radials; dark keeps the deep blue-purple base with an added subtle teal glow so the two modes share the same gradient geometry.
+
 ---
 
 ## 5. Risks & watch items

@@ -24,6 +24,7 @@ export function ConfirmButton({
   onConfirm,
   children,
   buttonTitle,
+  className,
 }: {
   title: string;
   description: string;
@@ -31,11 +32,12 @@ export function ConfirmButton({
   onConfirm: () => void | Promise<void>;
   children: ReactNode;
   buttonTitle?: string;
+  className?: string;
 }) {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button size="sm" variant="ghost" title={buttonTitle}>
+        <Button size="sm" variant="ghost" title={buttonTitle} className={className}>
           {children}
         </Button>
       </AlertDialogTrigger>

@@ -48,9 +48,13 @@ import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useSession } from "@/nexus/session";
 
 // Role areas mirror the program's configurable features 1:1 (same keys).
-const AREAS: { key: RoleArea; label: string }[] = PROGRAM_FEATURES.map((f) => ({
+// Platform areas (learning, bridge) grant a single "administrator" level via
+// an on/off toggle; the graded areas keep view/edit/comment.
+const PLATFORM_AREAS = new Set<RoleArea>(["learning", "bridge"]);
+const AREAS: { key: RoleArea; label: string; platform?: boolean }[] = PROGRAM_FEATURES.map((f) => ({
   key: f.key as RoleArea,
   label: f.label,
+  platform: PLATFORM_AREAS.has(f.key as RoleArea),
 }));
 const LEVELS: AccessLevel[] = ["view", "edit", "comment"];
 const areaLabel = (k: string) => AREAS.find((a) => a.key === k)?.label ?? k;
@@ -479,9 +483,10 @@ function RoleBuilder({
   const availableAreas = AREAS.filter((a) => enabled[a.key as ProgramFeatureKey]);
 
   function toggle(area: RoleArea, on: boolean) {
+    const isPlatform = AREAS.find((a) => a.key === area)?.platform;
     setPerms((p) => {
       const next = { ...p };
-      if (on) next[area] = next[area] ?? "view";
+      if (on) next[area] = isPlatform ? "administrator" : next[area] ?? "view";
       else delete next[area];
       return next;
     });
@@ -537,18 +542,24 @@ function RoleBuilder({
                 <div key={a.key} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2">
                   <Switch checked={on} onCheckedChange={(v) => toggle(a.key, v)} />
                   <span className="flex-1 text-sm">{a.label}</span>
-                  <Select value={perms[a.key] ?? "view"} onValueChange={(v) => setLevel(a.key, v as AccessLevel)} disabled={!on}>
-                    <SelectTrigger className="w-28">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LEVELS.map((l) => (
-                        <SelectItem key={l} value={l}>
-                          {l}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {a.platform ? (
+                    <span className={`text-xs font-medium ${on ? "text-foreground" : "text-muted-foreground"}`}>
+                      Administrator
+                    </span>
+                  ) : (
+                    <Select value={perms[a.key] ?? "view"} onValueChange={(v) => setLevel(a.key, v as AccessLevel)} disabled={!on}>
+                      <SelectTrigger className="w-28">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LEVELS.map((l) => (
+                          <SelectItem key={l} value={l}>
+                            {l}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               );
             })}

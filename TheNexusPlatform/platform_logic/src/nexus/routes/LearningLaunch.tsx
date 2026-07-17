@@ -7,16 +7,19 @@
  * set on the "learning-platform" app and this page opens it with the token.
  */
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
-import { ChevronLeft, GraduationCap } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router";
+import { ChevronLeft, GraduationCap, LogOut } from "lucide-react";
 
 import { exchangeLaunchToken, launchLearningPlatform, type LpLaunch } from "@/services/api";
 import { Pill, Spinner } from "@/nexus/ui/kit";
+import { useSession } from "@/nexus/session";
 
 type Handshake = "pending" | "verified" | "failed";
 
 export function LearningLaunch() {
   const { orgId = "", programId = "" } = useParams();
+  const navigate = useNavigate();
+  const { logout } = useSession();
   const [launch, setLaunch] = useState<LpLaunch | null>(null);
   const [handshake, setHandshake] = useState<Handshake>("pending");
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +87,16 @@ export function LearningLaunch() {
         >
           <ChevronLeft className="size-3.5" /> Back to Nexus
         </Link>
+        <button
+          type="button"
+          onClick={() => {
+            logout();
+            navigate("/login");
+          }}
+          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        >
+          <LogOut className="size-3.5" /> Sign out
+        </button>
       </header>
 
       <main className="grid flex-1 place-items-center px-6">

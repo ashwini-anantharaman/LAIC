@@ -2,12 +2,12 @@
 
 :root {
   --font-size: 16px;
-  /* Soft baby-blue near-white canvas; panels are translucent glass over it. */
-  --background: #f2f6fc;
+  /* Very light baby-blue canvas; every panel is liquid glass over it. */
+  --background: #eaf4fe;
   --foreground: #131722;
-  --card: rgba(255, 255, 255, 0.66);
+  --card: rgba(255, 255, 255, 0.42);
   --card-foreground: #131722;
-  --popover: #ffffff;
+  --popover: rgba(255, 255, 255, 0.74);
   --popover-foreground: #131722;
   --primary: #1b2036;
   --primary-foreground: #ffffff;
@@ -21,7 +21,7 @@
   --destructive-foreground: #ffffff;
   --border: rgba(19, 23, 34, 0.1);
   --input: transparent;
-  --input-background: rgba(255, 255, 255, 0.72);
+  --input-background: rgba(255, 255, 255, 0.58);
   --switch-background: #c3cad9;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
@@ -31,8 +31,8 @@
   --chart-3: #9aa1b5;
   --chart-4: #c9cfdd;
   --chart-5: #e8ecf4;
-  --radius: 0.85rem;
-  --sidebar: rgba(255, 255, 255, 0.55);
+  --radius: 0.95rem;
+  --sidebar: rgba(255, 255, 255, 0.34);
   --sidebar-foreground: #131722;
   --sidebar-primary: #1b2036;
   --sidebar-primary-foreground: #ffffff;
@@ -40,23 +40,31 @@
   --sidebar-accent-foreground: #1b2036;
   --sidebar-border: rgba(19, 23, 34, 0.08);
   --sidebar-ring: rgba(27, 32, 54, 0.25);
-  /* glass helpers */
-  --glass-blur: 16px;
-  --glass-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.12);
+  /* Liquid glass: deep blur + saturation, a specular top edge (the inset
+     white line panels "catch light" with), and a hairline outer definition. */
+  --glass-blur: 24px;
+  --glass-border: rgba(255, 255, 255, 0.62);
+  --glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 0 0 1px rgba(30, 55, 90, 0.06),
+    0 2px 6px rgba(16, 24, 40, 0.04),
+    0 16px 40px -18px rgba(30, 55, 120, 0.18);
   --page-gradient:
-    radial-gradient(1100px 720px at 88% -12%, rgba(163, 196, 255, 0.4) 0%, transparent 55%),
-    radial-gradient(900px 680px at -12% 104%, rgba(196, 181, 253, 0.3) 0%, transparent 52%),
-    linear-gradient(180deg, #f2f6fc 0%, #f6f9fe 100%);
+    radial-gradient(1300px 820px at 86% -14%, rgba(132, 186, 255, 0.68) 0%, transparent 58%),
+    radial-gradient(1100px 760px at -14% 106%, rgba(120, 224, 202, 0.5) 0%, transparent 56%),
+    radial-gradient(900px 620px at 55% 118%, rgba(168, 198, 255, 0.42) 0%, transparent 56%),
+    radial-gradient(700px 500px at 30% -10%, rgba(196, 181, 253, 0.28) 0%, transparent 55%),
+    linear-gradient(180deg, #e7f2fe 0%, #f0f8ff 55%, #e9f5fb 100%);
 }
 
 
 .dark {
-  /* Deep blue-purple glass. */
+  /* Deep blue-purple liquid glass. */
   --background: #0d0f1f;
   --foreground: #e8eaf6;
-  --card: rgba(30, 30, 62, 0.5);
+  --card: rgba(34, 36, 76, 0.34);
   --card-foreground: #e8eaf6;
-  --popover: #171932;
+  --popover: rgba(26, 28, 58, 0.78);
   --popover-foreground: #e8eaf6;
   --primary: #a5b0ff;
   --primary-foreground: #12142a;
@@ -80,7 +88,7 @@
   --chart-3: #5c65a8;
   --chart-4: #3c4172;
   --chart-5: #232748;
-  --sidebar: rgba(20, 21, 44, 0.55);
+  --sidebar: rgba(22, 23, 50, 0.38);
   --sidebar-foreground: #e8eaf6;
   --sidebar-primary: #a5b0ff;
   --sidebar-primary-foreground: #12142a;
@@ -88,12 +96,19 @@
   --sidebar-accent-foreground: #e8eaf6;
   --sidebar-border: rgba(232, 234, 246, 0.1);
   --sidebar-ring: rgba(165, 176, 255, 0.35);
-  --glass-blur: 18px;
-  --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 32px -14px rgba(0, 0, 0, 0.5);
+  --glass-blur: 26px;
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 18px 48px -18px rgba(0, 0, 0, 0.55);
   --page-gradient:
-    radial-gradient(1100px 700px at 82% -12%, rgba(99, 91, 255, 0.26) 0%, transparent 55%),
-    radial-gradient(900px 640px at -8% 108%, rgba(168, 85, 247, 0.16) 0%, transparent 52%),
-    linear-gradient(180deg, #0d0f1f 0%, #12102b 100%);
+    radial-gradient(1300px 800px at 84% -14%, rgba(104, 96, 255, 0.44) 0%, transparent 58%),
+    radial-gradient(1100px 740px at -10% 108%, rgba(56, 190, 180, 0.24) 0%, transparent 54%),
+    radial-gradient(900px 620px at 55% 120%, rgba(168, 85, 247, 0.26) 0%, transparent 56%),
+    radial-gradient(700px 500px at 28% -10%, rgba(90, 140, 255, 0.2) 0%, transparent 55%),
+    linear-gradient(180deg, #0d0f1f 0%, #131331 55%, #101230 100%);
 }
 
 
@@ -202,22 +217,48 @@
   }
 }
 
-/* ── Glass surfaces ──────────────────────────────────────────────────────── */
+/* ── Liquid-glass surfaces ───────────────────────────────────────────────── */
 @layer components {
-  /* A frosted panel: the one card treatment used across the console. */
+  /* A frosted panel: the one card treatment used across the console.
+     Specular top edge + hairline definition live in --glass-shadow. */
   .glass-card {
     background: var(--card);
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-border);
     border-radius: calc(var(--radius) + 4px);
     box-shadow: var(--glass-shadow);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
-    backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.6);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.6);
   }
 
   /* Frosted bars (topbar, launch chrome). */
   .glass-bar {
-    background: color-mix(in srgb, var(--background) 55%, transparent);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
-    backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    background: color-mix(in srgb, var(--background) 32%, transparent);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.55);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.55);
   }
+
+  /* The sidebar as a translucent pane of the same glass — the page gradient
+     glows through it (accent-tinted per org via --sidebar in AppShell). */
+  .glass-sidebar {
+    background: var(--sidebar);
+    -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(1.7);
+    backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(1.7);
+    box-shadow: inset -1px 0 0 var(--sidebar-border);
+  }
+}
+
+/* Floating surfaces (dialogs, popovers, menus, selects) become the same
+   liquid glass. They already paint bg-popover/bg-background; this layers the
+   blur, specular edge, and hairline on top via their data-slot hooks. */
+[data-slot="dialog-content"],
+[data-slot="alert-dialog-content"],
+[data-slot="popover-content"],
+[data-slot="select-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"] {
+  background: var(--popover);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 4px)) saturate(1.6);
+  backdrop-filter: blur(calc(var(--glass-blur) + 4px)) saturate(1.6);
 }

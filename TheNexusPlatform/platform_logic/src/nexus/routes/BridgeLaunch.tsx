@@ -4,19 +4,23 @@
  * Platform seam: launching mints a single-use token via the Bridge app record
  * and exchanges it. The interior is a placeholder until a real Bridge Platform
  * ships; when one does, its launch_url is set on the "bridge-platform" app and
- * this page opens it with the token.
+ * this page opens it with the token. A Sign out lives here too — a member
+ * whose only access is this platform must not be trapped in it.
  */
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
-import { ChevronLeft, Waypoints } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router";
+import { ChevronLeft, LogOut, Waypoints } from "lucide-react";
 
 import { exchangeLaunchToken, launchBridgePlatform, type LpLaunch } from "@/services/api";
 import { Pill, Spinner } from "@/nexus/ui/kit";
+import { useSession } from "@/nexus/session";
 
 type Handshake = "pending" | "verified" | "failed";
 
 export function BridgeLaunch() {
   const { orgId = "", programId = "" } = useParams();
+  const navigate = useNavigate();
+  const { logout } = useSession();
   const [launch, setLaunch] = useState<LpLaunch | null>(null);
   const [handshake, setHandshake] = useState<Handshake>("pending");
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +56,7 @@ export function BridgeLaunch() {
     return () => {
       live = false;
     };
-  }, [programId]);
+  }, [orgId, programId]);
 
   return (
     <div className="flex h-screen flex-col text-foreground">
@@ -84,6 +88,16 @@ export function BridgeLaunch() {
         >
           <ChevronLeft className="size-3.5" /> Back to Nexus
         </Link>
+        <button
+          type="button"
+          onClick={() => {
+            logout();
+            navigate("/login");
+          }}
+          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        >
+          <LogOut className="size-3.5" /> Sign out
+        </button>
       </header>
 
       <main className="grid flex-1 place-items-center px-6">

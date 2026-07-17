@@ -566,7 +566,9 @@ offeringsRouter.post("/offerings/:offering_id/registrations/bulk-import", async 
 });
 
 // ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
-const _ACCESS_LEVEL = z.enum(["view", "edit", "comment"]);
+// Platform areas (learning, bridge) grant "administrator" as a single toggle;
+// the other areas keep the graded view/edit/comment levels.
+const _ACCESS_LEVEL = z.enum(["view", "edit", "comment", "administrator"]);
 const _programRolePerms = z.record(z.string(), _ACCESS_LEVEL);
 const programRoleCreateSchema = z.object({ name: z.string().min(1), perms: _programRolePerms.default({}) });
 const programRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _programRolePerms.optional() });

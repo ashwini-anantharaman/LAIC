@@ -123,6 +123,7 @@ function _programResponse(row: Row): Row {
     course_count: row.course_count ?? 0,
     learner_count: row.learner_count ?? 0,
     instructor_count: row.instructor_count ?? 0,
+    platforms: row.platforms ?? null,
   };
 }
 
