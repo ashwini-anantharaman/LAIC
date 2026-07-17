@@ -1,22 +1,25 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "resolveJsonModule": true,
     "jsx": "react-jsx",
+
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "skipLibCheck": true,
-    "types": ["vite/client"],
-    "noEmit": true,
+    "noImplicitReturns": true,
+    "exactOptionalPropertyTypes": false,
+
     "isolatedModules": true,
-    "paths": {
-      "@laic/app-shell": ["./packages/app-shell/src/index.ts"]
-    }
+    "moduleDetection": "force",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true
   },
-  "include": ["src", "packages/app-shell/src"]
+  "include": ["src"]
 }
