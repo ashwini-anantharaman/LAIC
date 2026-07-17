@@ -398,7 +398,7 @@ export default async function SessionPage({
             </div>
 
             {/* West · center · East */}
-            <div className="my-3 grid grid-cols-[minmax(2.5rem,auto)_1fr_minmax(2.5rem,auto)] items-center gap-2 sm:my-4 sm:gap-4">
+            <div className="my-3 grid grid-cols-[minmax(2rem,auto)_1fr_minmax(2rem,auto)] items-center gap-1.5 sm:my-4 sm:gap-4">
               <div className="flex w-fit flex-col items-center gap-1 justify-self-start">
                 <HandRow
                   hand={state.hands.W}
@@ -412,7 +412,7 @@ export default async function SessionPage({
               </div>
 
               {/* Center: auction, live trick, or the result */}
-              <div className="flex min-h-44 items-center justify-center self-stretch px-2 py-3 xl:min-h-56">
+              <div className="flex min-h-44 items-center justify-center self-stretch px-0.5 py-3 sm:px-2 xl:min-h-56">
                 {state.phase === "auction" ? (
                   <table className="w-full max-w-60 rounded-lg bg-white/95 py-1 text-center text-sm shadow-sm">
                     <thead>

@@ -104,9 +104,10 @@ export function HandRow({
   // ---- hidden hands: a horizontal fan of backs (BBO-style slivers) --------
   if (hidden) {
     const backs = Math.min(hand.length, 13);
-    // Side hands fan tighter so 13 backs stay compact next to the trick area.
+    // Side hands fan tighter so 13 backs stay compact next to the trick area
+    // (tighter still on phones, where the center band needs the width).
     const overlap = vertical
-      ? "[&>*:not(:first-child)]:-ml-[26px]"
+      ? "[&>*:not(:first-child)]:-ml-7 sm:[&>*:not(:first-child)]:-ml-[26px]"
       : "[&>*:not(:first-child)]:-ml-6";
     return (
       <div className="flex flex-col items-center gap-0.5">

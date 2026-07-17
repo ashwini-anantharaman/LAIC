@@ -51,7 +51,9 @@ export function ChipRow({ tabs }: Readonly<{ tabs: ChipTab[] }>) {
     <div className="flex flex-wrap gap-1.5">
       {tabs.map((tab) => (
         <Link
-          key={tab.href}
+          // Multi-select rows can point two chips at the same URL (deselecting
+          // the last filter = Everyone), so the label joins the key.
+          key={`${tab.label}:${tab.href}`}
           href={tab.href}
           aria-current={tab.active ? "page" : undefined}
           className={

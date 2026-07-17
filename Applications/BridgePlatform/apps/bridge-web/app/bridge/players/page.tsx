@@ -40,17 +40,24 @@ export default async function PlayersPage({
     id === myId ? "Mine" : (stubDisplayName(id) ?? (id === "system" ? "System" : id));
   const myCount = activeKb ? activeKb.players.filter((p) => ownerOf(p) === myId).length : 0;
 
-  // Default to MY players; fall back to Everyone if I have none here. `by=all`
-  // is the explicit "Everyone" choice.
-  const defaultBy = myCount > 0 ? myId : undefined;
-  const activeBy =
-    by === "all"
-      ? undefined
-      : by && creators.includes(by)
-        ? by
-        : defaultBy;
+  // Creator facet is a MULTI-select: `by` carries a comma-separated set of
+  // creator ids; an empty set (`by=all`) means Everyone. Default: just Mine
+  // (falling back to Everyone when I have no players here).
+  const requested = (by ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const chosen = requested.filter((id) => creators.includes(id));
+  const selected = requested.includes("all")
+    ? []
+    : chosen.length
+      ? chosen
+      : myCount > 0
+        ? [myId]
+        : [];
+  const selectedSet = new Set(selected);
   const visible = (activeKb?.players ?? []).filter(
-    (p) => !activeBy || ownerOf(p) === activeBy,
+    (p) => selectedSet.size === 0 || selectedSet.has(ownerOf(p)),
   );
 
   const compiled = activeKb ? await kbService().liveCompile(activeKb.kb.kbId) : null;
@@ -111,33 +118,47 @@ export default async function PlayersPage({
             />
           </div>
 
-          {/* Creator facet — Mine first, then Everyone, then others */}
-          {activeKb.players.length > 0 && (
-            <div className="mt-3">
-              <ChipRow
-                tabs={[
-                  {
-                    label: "Mine",
-                    href: playersHref({ kb: activeKb.kb.kbId, by: myId }),
-                    active: activeBy === myId,
-                    count: myCount,
-                  },
-                  {
-                    label: "Everyone",
-                    href: playersHref({ kb: activeKb.kb.kbId, by: "all" }),
-                    active: !activeBy,
-                    count: activeKb.players.length,
-                  },
-                  ...others.map((c) => ({
-                    label: creatorLabel(c),
-                    href: playersHref({ kb: activeKb.kb.kbId, by: c }),
-                    active: activeBy === c,
-                    count: activeKb.players.filter((p) => ownerOf(p) === c).length,
-                  })),
-                ]}
-              />
-            </div>
-          )}
+          {/* Creator facet — multi-select chips: tap to add/remove a creator;
+              Everyone clears the selection. */}
+          {activeKb.players.length > 0 &&
+            (() => {
+              const byHref = (ids: string[]) =>
+                playersHref({ kb: activeKb.kb.kbId, by: ids.length ? ids.join(",") : "all" });
+              const toggleHref = (id: string) =>
+                byHref(
+                  selectedSet.has(id) ? selected.filter((x) => x !== id) : [...selected, id],
+                );
+              return (
+                <div className="mt-3">
+                  <ChipRow
+                    tabs={[
+                      {
+                        label: "Everyone",
+                        href: byHref([]),
+                        active: selectedSet.size === 0,
+                        count: activeKb.players.length,
+                      },
+                      ...(myCount > 0
+                        ? [
+                            {
+                              label: "Mine",
+                              href: toggleHref(myId),
+                              active: selectedSet.has(myId),
+                              count: myCount,
+                            },
+                          ]
+                        : []),
+                      ...others.map((c) => ({
+                        label: creatorLabel(c),
+                        href: toggleHref(c),
+                        active: selectedSet.has(c),
+                        count: activeKb.players.filter((p) => ownerOf(p) === c).length,
+                      })),
+                    ]}
+                  />
+                </div>
+              );
+            })()}
 
           {/* Make a player: one click per set, the wizard, or by hand */}
           <section className="mt-6 rounded-lg border border-neutral-200 bg-[var(--card)] p-4">

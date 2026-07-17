@@ -270,7 +270,7 @@ export function DealEditor({
       {/* The 52-card grid */}
       <div className="space-y-1">
         {SUIT_ORDER.map((suit) => (
-          <div key={suit} className="flex items-center gap-1">
+          <div key={suit} className="flex items-center gap-0.5 sm:gap-1">
             <span
               aria-hidden
               className={`w-4 text-center text-sm ${redSuit(suit) ? "text-[var(--madder)]" : ""}`}
@@ -295,7 +295,7 @@ export function DealEditor({
                         ? `held by ${SEAT_NAME[active]} — click to return to the pool`
                         : `give to ${SEAT_NAME[active]}`
                   }
-                  className={`relative h-8 min-w-6 flex-1 rounded border text-[12px] font-semibold transition-colors ${
+                  className={`relative h-8 min-w-0 flex-1 rounded border text-[11px] font-semibold transition-colors sm:min-w-6 sm:text-[12px] ${
                     lockSeat
                       ? "border-neutral-200 bg-neutral-100 text-neutral-300 line-through"
                       : own
