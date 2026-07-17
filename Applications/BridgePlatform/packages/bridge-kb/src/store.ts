@@ -9,6 +9,7 @@ import type {
   KbExtractionJob,
   KbMembership,
   KbPack,
+  KbPackVersion,
   KbPlayer,
   KbSandbox,
   KbSource,
@@ -68,6 +69,13 @@ export interface KbStore {
   listPacksForKb(kbId: string): Promise<KbPack[]>;
   deletePack(packId: string): Promise<void>;
 
+  // pack versions (auto snapshots on every set save)
+  putPackVersion(v: KbPackVersion): Promise<void>;
+  getPackVersion(packId: string, versionNumber: number): Promise<KbPackVersion | null>;
+  /** Snapshots of a pack, newest first. */
+  listPackVersions(packId: string): Promise<KbPackVersion[]>;
+  deletePackVersionsForPack(packId: string): Promise<void>;
+
   // players & sandboxes
   putPlayer(player: KbPlayer): Promise<void>;
   getPlayer(playerId: string): Promise<KbPlayer | null>;
@@ -116,6 +124,7 @@ export interface KbStoreData {
   memberships: KbMembership[];
   edges: KbEdge[];
   packs: KbPack[];
+  packVersions: KbPackVersion[];
   players: KbPlayer[];
   sandboxes: KbSandbox[];
   suggestions: KbSuggestion[];
@@ -135,6 +144,7 @@ export function emptyKbStoreData(): KbStoreData {
     memberships: [],
     edges: [],
     packs: [],
+    packVersions: [],
     players: [],
     sandboxes: [],
     suggestions: [],
@@ -307,6 +317,31 @@ export class InMemoryKbStore implements KbStore {
   }
   async deletePack(packId: string) {
     this.data.packs = this.data.packs.filter((p) => p.packId !== packId);
+    this.persist();
+  }
+
+  // pack versions
+  async putPackVersion(v: KbPackVersion) {
+    this.upsert(
+      this.data.packVersions,
+      (x) => `${x.packId}@${x.versionNumber}`,
+      v,
+    );
+  }
+  async getPackVersion(packId: string, versionNumber: number) {
+    return (
+      this.data.packVersions.find(
+        (v) => v.packId === packId && v.versionNumber === versionNumber,
+      ) ?? null
+    );
+  }
+  async listPackVersions(packId: string) {
+    return this.data.packVersions
+      .filter((v) => v.packId === packId)
+      .sort((a, b) => b.versionNumber - a.versionNumber);
+  }
+  async deletePackVersionsForPack(packId: string) {
+    this.data.packVersions = this.data.packVersions.filter((v) => v.packId !== packId);
     this.persist();
   }
 

@@ -17,6 +17,8 @@ export type AuditAction =
   | "kb.item.edit"
   | "kb.edge.change"
   | "kb.pack.save"
+  | "kb.pack.version.restore"
+  | "kb.pack.delete"
   | "kb.extraction.run"
   | "kb.suggestion.change"
   | "kb.version.publish"

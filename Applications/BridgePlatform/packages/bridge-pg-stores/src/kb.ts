@@ -9,6 +9,7 @@ import type {
   KbExtractionJob,
   KbMembership,
   KbPack,
+  KbPackVersion,
   KbPlayer,
   KbSandbox,
   KbSource,
@@ -286,6 +287,52 @@ export class PgKbStore implements KbStore {
   }
   async deletePack(packId: string) {
     check(await this.db.from("bridge_kb_packs").delete().eq("pack_id", packId), "packs.delete");
+  }
+
+  // ---- pack versions (auto snapshots) -----------------------------------------
+
+  async putPackVersion(v: KbPackVersion) {
+    check(
+      await this.db.from("bridge_kb_pack_versions").upsert(
+        {
+          pack_id: v.packId,
+          version_number: v.versionNumber,
+          kb_id: v.kbId,
+          record: v,
+          saved_at: v.savedAt,
+        },
+        { onConflict: "pack_id,version_number" },
+      ),
+      "packVersions.put",
+    );
+  }
+  async getPackVersion(packId: string, versionNumber: number) {
+    const rows = check(
+      await this.db
+        .from("bridge_kb_pack_versions")
+        .select("record")
+        .eq("pack_id", packId)
+        .eq("version_number", versionNumber),
+      "packVersions.get",
+    );
+    return rows.length ? ((rows[0] as any).record as KbPackVersion) : null;
+  }
+  async listPackVersions(packId: string) {
+    const rows = check(
+      await this.db
+        .from("bridge_kb_pack_versions")
+        .select("record")
+        .eq("pack_id", packId)
+        .order("version_number", { ascending: false }),
+      "packVersions.list",
+    );
+    return records<KbPackVersion>(rows);
+  }
+  async deletePackVersionsForPack(packId: string) {
+    check(
+      await this.db.from("bridge_kb_pack_versions").delete().eq("pack_id", packId),
+      "packVersions.deleteForPack",
+    );
   }
 
   // ---- players & sandboxes -----------------------------------------------------
