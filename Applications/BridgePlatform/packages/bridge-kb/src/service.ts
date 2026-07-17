@@ -11,12 +11,16 @@ import type {
   KbEdge,
   KbPack,
   KbSuggestion,
+  KbVersion,
+  KbVersionItemRef,
   KnowledgeBase,
   KnowledgeItem,
+  KnowledgeItemVersion,
   LevelDef,
 } from "./model";
 import type { KbStore } from "./store";
 import { validatePlayerStatic } from "./validatePlayer";
+import { itemIsDirty, snapshotItem } from "./versioning";
 
 export interface KbServiceOptions {
   now?: () => string;
@@ -63,14 +67,42 @@ export class KbService {
   }
 
   /**
-   * Delete a KB and everything scoped to it (memberships, sole-membership
-   * items and their edges, packs, players, sandboxes, suggestions, jobs,
-   * compiles). Irreversible; sessions are the caller's to clean up (they
-   * live in the session store).
+   * Delete a KB and everything scoped to it (memberships, packs, players,
+   * sandboxes, suggestions, extraction jobs, compiles, published versions).
+   * Items are only hard-deleted when this was their last membership —
+   * otherwise they simply stop belonging here (they're still shared/forked
+   * elsewhere). Registered sources are never deleted (they're KB-agnostic).
+   * Refuses to delete a KB that other KBs were derived from — re-parent or
+   * delete the derivatives first, so the tree never has a dangling branch.
    */
   async deleteKb(kbId: string): Promise<void> {
-    await this.getKb(kbId); // throws if unknown
-    await this.store.deleteKbCascade(kbId);
+    const all = await this.store.listKbs();
+    const children = all.filter((k) => k.derivedFromKbId === kbId);
+    if (children.length)
+      throw new Error(
+        `Cannot delete: ${children.map((c) => c.name).join(", ")} ${children.length === 1 ? "was" : "were"} derived from this KB. Delete or branch ${children.length === 1 ? "it" : "them"} elsewhere first.`,
+      );
+
+    const memberships = await this.store.listMembershipsForKb(kbId);
+    for (const m of memberships) {
+      await this.store.removeMembership(m);
+      const stillMember = await this.store.listMembershipsForItem(m.itemId);
+      if (!stillMember.length) {
+        const edges = await this.store.listEdgesTouching([m.itemId]);
+        for (const edge of edges) await this.store.deleteEdge(edge.edgeId);
+        await this.store.deleteItemVersionsForItem(m.itemId);
+        await this.store.deleteItem(m.itemId);
+      }
+    }
+
+    for (const pack of await this.store.listPacksForKb(kbId)) await this.store.deletePack(pack.packId);
+    for (const player of await this.store.listPlayersForKb(kbId)) await this.store.deletePlayer(player.playerId);
+    for (const sandbox of await this.store.listSandboxesForKb(kbId)) await this.store.deleteSandbox(sandbox.sandboxId);
+    for (const suggestion of await this.store.listSuggestionsForKb(kbId)) await this.store.deleteSuggestion(suggestion.suggestionId);
+    for (const job of await this.store.listJobsForKb(kbId)) await this.store.deleteJob(job.jobId);
+    await this.store.deleteCompilesForKb(kbId);
+    await this.store.deleteKbVersionsForKb(kbId);
+    await this.store.deleteKb(kbId);
   }
 
   /** The compile sessions/players resolve against (last-good). */
@@ -137,6 +169,10 @@ export class KbService {
           itemId: newId("ki"),
           forkedFromItemId: itemId,
           version: 1,
+          // A fork is a new item lineage: its committed-version history starts
+          // fresh (version snapshots key on itemId).
+          committedVersion: undefined,
+          mainVersion: undefined,
           createdBy: editedBy,
           createdAt: this.now(),
           updatedAt: this.now(),
@@ -168,6 +204,386 @@ export class KbService {
     if (!item) throw new Error(`No item ${itemId}`);
     await this.store.addMembership({ kbId, itemId });
     await this.recompile(kbId);
+  }
+
+  // ---- item versions (immutable committed snapshots) -------------------------
+
+  /**
+   * Freeze the item head as the next immutable version, and make it the item's
+   * MAIN version. No-op-safe: if the head isn't dirty against the current main
+   * version, that version is returned unchanged (nothing new is minted). This
+   * is the "only create a version when something changed" guarantee at the
+   * item level.
+   */
+  async commitItemVersion(
+    itemId: string,
+    committedBy: string,
+    changeNote?: string,
+  ): Promise<KnowledgeItemVersion> {
+    const item = await this.store.getItem(itemId);
+    if (!item) throw new Error(`No item ${itemId}`);
+    const history = await this.store.listItemVersions(itemId); // newest first
+    const mainSnapshot =
+      item.mainVersion != null
+        ? (history.find((v) => v.versionNumber === item.mainVersion) ?? null)
+        : null;
+    if (!itemIsDirty(item, mainSnapshot)) return mainSnapshot!; // clean vs main
+    const versionNumber = (history[0]?.versionNumber ?? 0) + 1; // max + 1, contiguous
+    const snapshot = snapshotItem(item, versionNumber, committedBy, this.now(), changeNote);
+    await this.store.putItemVersion(snapshot);
+    await this.store.putItem({
+      ...item,
+      committedVersion: versionNumber,
+      mainVersion: versionNumber,
+      updatedAt: this.now(),
+    });
+    return snapshot;
+  }
+
+  async listItemVersions(itemId: string): Promise<KnowledgeItemVersion[]> {
+    return this.store.listItemVersions(itemId);
+  }
+
+  /**
+   * Designate a past committed version as the item's MAIN version: the head is
+   * set to that version's content and the main pointer moves to it — WITHOUT
+   * minting a new version (a pointer move, exactly like KB-level rollback). A
+   * later edit is what mints the next version. Goes through saveItem, so a
+   * shared item still forks on divergence (one KB never rewrites another); a
+   * fork starts a fresh lineage, so its main pointer resets.
+   */
+  async setItemMainVersion(
+    kbId: string,
+    itemId: string,
+    versionNumber: number,
+    editedBy: string,
+  ): Promise<KnowledgeItem> {
+    const version = await this.store.getItemVersion(itemId, versionNumber);
+    if (!version) throw new Error(`No version ${versionNumber} of item ${itemId}`);
+    const saved = await this.saveItem(
+      kbId,
+      itemId,
+      {
+        title: version.title,
+        humanReadableText: version.humanReadableText,
+        knowledgeType: version.knowledgeType,
+        phase: version.phase,
+        payload: version.payload,
+        settings: version.settings,
+        sourceReferences: version.sourceReferences,
+        supportedLevels: version.supportedLevels,
+        status: version.status,
+      },
+      editedBy,
+    );
+    // Not forked → the same lineage; point main at the chosen version (head now
+    // matches it, so it reads clean). Forked → fresh lineage, leave main unset.
+    if (saved.itemId === itemId) {
+      const updated = { ...saved, mainVersion: versionNumber, updatedAt: this.now() };
+      await this.store.putItem(updated);
+      return updated;
+    }
+    return saved;
+  }
+
+  /**
+   * Delete a committed item version snapshot. Refuses to delete the MAIN
+   * version (repoint main first) or one a published KB release still pins in
+   * its manifest (that would leave the lockfile dangling).
+   */
+  async deleteItemVersion(
+    kbId: string,
+    itemId: string,
+    versionNumber: number,
+  ): Promise<void> {
+    const item = await this.store.getItem(itemId);
+    if (!item) throw new Error(`No item ${itemId}`);
+    if (item.mainVersion === versionNumber)
+      throw new Error(
+        `v${versionNumber} is the main version — make another version main before deleting it.`,
+      );
+
+    // A release in any KB this item belongs to may pin this snapshot.
+    const memberships = await this.store.listMembershipsForItem(itemId);
+    for (const m of memberships) {
+      const releases = await this.store.listKbVersions(m.kbId);
+      const pinned = releases.find((r) =>
+        r.items.some((i) => i.itemId === itemId && i.versionNumber === versionNumber),
+      );
+      if (pinned)
+        throw new Error(
+          `v${versionNumber} is pinned by published release v${pinned.versionNumber} — it can't be deleted.`,
+        );
+    }
+    await this.store.deleteItemVersion(itemId, versionNumber);
+  }
+
+  // ---- KB versions (releases: the manifest over compiles) --------------------
+
+  /**
+   * Publish an immutable KB release. Commits every dirty member item first
+   * (so the manifest pins real snapshots), then requires a clean compile —
+   * a broken KB cannot be released. The version pins the compiled artifact
+   * plus each member's committed version number (a lockfile).
+   *
+   * Only mints a new version when something actually changed: if the current
+   * compile is identical to the most recent release's, no duplicate is created
+   * (`created: false`). Either way the (new or existing) release becomes the
+   * active/main version.
+   */
+  async publishKbVersion(
+    kbId: string,
+    input: { label?: string; notes?: string; publishedBy: string },
+  ): Promise<{ version: KbVersion; created: boolean }> {
+    const kb = await this.getKb(kbId);
+    const members = await this.store.listItemsForKb(kbId);
+
+    const items: KbVersionItemRef[] = [];
+    for (const member of members) {
+      const committed = await this.commitItemVersion(member.itemId, input.publishedBy);
+      items.push({ itemId: member.itemId, versionNumber: committed.versionNumber });
+    }
+
+    const result = await this.recompile(kbId);
+    if (result.error || !result.compiled)
+      throw new Error(
+        `Cannot publish ${kbId}: it does not compile — ${result.error ?? "no artifact"}`,
+      );
+
+    // Dedupe: nothing changed since the latest release → don't mint a copy.
+    const existing = await this.store.listKbVersions(kbId); // newest first
+    const latest = existing[0];
+    if (latest && latest.compileId === result.compiled.compileId) {
+      if (kb.activeVersionId !== latest.versionId) {
+        await this.store.putKb({ ...kb, activeVersionId: latest.versionId, updatedAt: this.now() });
+      }
+      return { version: latest, created: false };
+    }
+
+    const versionNumber = (kb.latestVersionNumber ?? 0) + 1;
+    const version: KbVersion = {
+      versionId: newId("kv"),
+      kbId,
+      versionNumber,
+      label: input.label,
+      notes: input.notes,
+      compileId: result.compiled.compileId,
+      items,
+      publishedBy: input.publishedBy,
+      publishedAt: this.now(),
+    };
+    await this.store.putKbVersion(version);
+    await this.store.putKb({
+      ...kb,
+      latestVersionNumber: versionNumber,
+      activeVersionId: version.versionId,
+      updatedAt: this.now(),
+    });
+    return { version, created: true };
+  }
+
+  /**
+   * Designate a published version as the active/main one (rollback or
+   * roll-forward) without re-publishing. The version must belong to this KB.
+   */
+  async setActiveVersion(kbId: string, versionId: string): Promise<void> {
+    const kb = await this.getKb(kbId);
+    const version = await this.store.getKbVersion(versionId);
+    if (!version || version.kbId !== kbId)
+      throw new Error(`Version ${versionId} does not belong to ${kbId}`);
+    await this.store.putKb({ ...kb, activeVersionId: versionId, updatedAt: this.now() });
+  }
+
+  /**
+   * Delete a published KB release. Refuses to delete the ACTIVE version (make
+   * another active first) or one a derived KB branched from (that would orphan
+   * the derivation's baseline).
+   */
+  async deleteKbVersion(kbId: string, versionId: string): Promise<void> {
+    const kb = await this.getKb(kbId);
+    const version = await this.store.getKbVersion(versionId);
+    if (!version || version.kbId !== kbId)
+      throw new Error(`Version ${versionId} does not belong to ${kbId}`);
+    if (kb.activeVersionId === versionId)
+      throw new Error(
+        `v${version.versionNumber} is the active version — make another version active before deleting it.`,
+      );
+
+    const allKbs = await this.store.listKbs();
+    const branchedChild = allKbs.find(
+      (k) => k.derivedFromKbId === kbId && k.derivedFromVersionId === versionId,
+    );
+    if (branchedChild)
+      throw new Error(
+        `"${branchedChild.name}" was derived from v${version.versionNumber} — it can't be deleted.`,
+      );
+
+    await this.store.deleteKbVersion(versionId);
+  }
+
+  async listKbVersions(kbId: string): Promise<KbVersion[]> {
+    return this.store.listKbVersions(kbId);
+  }
+
+  async getKbVersion(versionId: string): Promise<KbVersion | null> {
+    return this.store.getKbVersion(versionId);
+  }
+
+  /** The compile a consumer should resolve against for a pinned KB version. */
+  async compileForVersion(versionId: string) {
+    const version = await this.store.getKbVersion(versionId);
+    if (!version) throw new Error(`No KB version ${versionId}`);
+    const compiled = await this.store.getCompile(version.compileId);
+    if (!compiled) throw new Error(`Pinned compile ${version.compileId} is missing`);
+    return compiled;
+  }
+
+  // ---- derivation (master → limited; duplicate & build on top) ---------------
+
+  /**
+   * Create a new KB by branching from a master. `includeItemIds` selects the
+   * subset (default: all members). Mode `linked` shares master items (they stay
+   * in sync and fork on divergence); `copied` clones them independently up
+   * front. The child keeps the master's systemLabel (pairing compatibility) and
+   * records the parent link that makes the hierarchy a tree.
+   */
+  async deriveKb(
+    masterKbId: string,
+    input: {
+      name: string;
+      description?: string;
+      createdBy: string;
+      includeItemIds?: string[];
+      mode: "linked" | "copied";
+      includePacks?: boolean;
+      fromVersionId?: string;
+    },
+  ): Promise<KnowledgeBase> {
+    const master = await this.getKb(masterKbId);
+    const masterVersions = await this.store.listKbVersions(masterKbId);
+    const branchedFrom = input.fromVersionId ?? masterVersions[0]?.versionId;
+
+    const child: KnowledgeBase = {
+      kbId: newId("kb"),
+      name: input.name,
+      description: input.description,
+      systemLabel: master.systemLabel,
+      levels: master.levels,
+      status: "active",
+      derivedFromKbId: masterKbId,
+      derivedFromVersionId: branchedFrom,
+      createdBy: input.createdBy,
+      createdAt: this.now(),
+      updatedAt: this.now(),
+    };
+    await this.store.putKb(child);
+
+    const members = await this.store.listItemsForKb(masterKbId);
+    const wanted = input.includeItemIds
+      ? new Set(input.includeItemIds)
+      : new Set(members.map((i) => i.itemId));
+    const idMap = new Map<string, string>(); // master itemId → child itemId
+
+    for (const item of members) {
+      if (!wanted.has(item.itemId)) continue;
+      if (input.mode === "linked") {
+        await this.store.addMembership({ kbId: child.kbId, itemId: item.itemId });
+        idMap.set(item.itemId, item.itemId);
+      } else {
+        const copy: KnowledgeItem = {
+          ...item,
+          itemId: newId("ki"),
+          forkedFromItemId: item.itemId,
+          version: 1,
+          committedVersion: undefined,
+          createdBy: input.createdBy,
+          createdAt: this.now(),
+          updatedAt: this.now(),
+        };
+        await this.store.putItem(copy);
+        await this.store.addMembership({ kbId: child.kbId, itemId: copy.itemId });
+        idMap.set(item.itemId, copy.itemId);
+      }
+    }
+
+    // Copied items need their edges re-pointed; linked items already share the
+    // KB-agnostic edges (edges are keyed by itemId, not by KB).
+    if (input.mode === "copied") {
+      const edges = await this.store.listEdgesTouching([...idMap.keys()]);
+      for (const edge of edges) {
+        const from = idMap.get(edge.fromItemId);
+        if (!from) continue;
+        const to = edge.toItemId ? idMap.get(edge.toItemId) : undefined;
+        if (edge.toItemId && !to) continue; // target not in the subset
+        await this.store.putEdge({
+          ...edge,
+          edgeId: newId("ke"),
+          fromItemId: from,
+          toItemId: to,
+          createdAt: this.now(),
+        });
+      }
+    }
+
+    if (input.includePacks) {
+      const packs = await this.store.listPacksForKb(masterKbId);
+      const packIdMap = new Map(packs.map((p) => [p.packId, newId("pk")]));
+      for (const pack of packs) {
+        await this.store.putPack({
+          ...pack,
+          packId: packIdMap.get(pack.packId)!,
+          kbId: child.kbId,
+          extendsPackId: pack.extendsPackId ? packIdMap.get(pack.extendsPackId) : undefined,
+          itemIds: pack.itemIds
+            .map((id) => idMap.get(id))
+            .filter((x): x is string => Boolean(x)),
+          derivedEnvelope: undefined,
+          createdAt: this.now(),
+          updatedAt: this.now(),
+        });
+      }
+    }
+
+    await this.recompile(child.kbId);
+    return this.getKb(child.kbId);
+  }
+
+  /** Duplicate a KB wholesale (independent copy) to build on top of it. */
+  async duplicateKb(
+    kbId: string,
+    input: { name: string; description?: string; createdBy: string },
+  ): Promise<KnowledgeBase> {
+    return this.deriveKb(kbId, {
+      name: input.name,
+      description: input.description,
+      createdBy: input.createdBy,
+      mode: "copied",
+      includePacks: true,
+    });
+  }
+
+  /**
+   * Governance signal for a derived KB: whether the master has published a
+   * newer version than the one this KB branched from.
+   */
+  async derivationStatus(kbId: string): Promise<{
+    derived: boolean;
+    masterKbId?: string;
+    branchedFromVersionId?: string;
+    masterLatestVersionId?: string;
+    upgradeAvailable: boolean;
+  }> {
+    const kb = await this.getKb(kbId);
+    if (!kb.derivedFromKbId) return { derived: false, upgradeAvailable: false };
+    const masterVersions = await this.store.listKbVersions(kb.derivedFromKbId);
+    const latest = masterVersions[0];
+    return {
+      derived: true,
+      masterKbId: kb.derivedFromKbId,
+      branchedFromVersionId: kb.derivedFromVersionId,
+      masterLatestVersionId: latest?.versionId,
+      upgradeAvailable: Boolean(latest && latest.versionId !== kb.derivedFromVersionId),
+    };
   }
 
   // ---- edges -------------------------------------------------------------------

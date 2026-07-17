@@ -1,0 +1,4 @@
+# Self-rooted so this project is independent of TheNexusPlatform's parent
+# pnpm workspace (AGENTS.md: each top-level project is self-contained).
+packages:
+  - '.'

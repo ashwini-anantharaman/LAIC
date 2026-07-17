@@ -111,6 +111,7 @@ export default async function KbOverviewPage({
           </p>
           <form action={deleteKbAction} className="mt-3 flex flex-wrap items-end gap-2">
             <input type="hidden" name="kbId" value={kbId} />
+            <input type="hidden" name="from" value="overview" />
             <label className="text-sm">
               <span className="mb-1 block text-xs text-neutral-500">
                 Type <span className="font-mono font-medium">{kb?.name}</span> to confirm

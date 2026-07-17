@@ -40,6 +40,25 @@ export interface KnowledgeBase {
   latestCompileId?: string;
   /** Set when the latest save failed structural validation. */
   lastCompileError?: { message: string; at: string };
+  /**
+   * Highest published KB version number (contiguous 1,2,3…). Undefined until
+   * the first publish. The draft (working head) is always ahead of this.
+   */
+  latestVersionNumber?: number;
+  /**
+   * The published version currently designated "main" — the one consumers
+   * resolve against. Defaults to each newly published version, but can be
+   * pointed back at an earlier release (rollback) or forward again without
+   * re-publishing. Undefined until the first publish.
+   */
+  activeVersionId?: string;
+  /**
+   * Derivation lineage (master → limited). Set on a KB created by deriving
+   * from a master; the parent link is what makes the hierarchy a tree.
+   */
+  derivedFromKbId?: string;
+  /** The master KB version this KB branched from (upgrade-offer baseline). */
+  derivedFromVersionId?: string;
   status: "active" | "archived";
   createdBy: string;
   createdAt: string;
@@ -106,8 +125,22 @@ export interface KnowledgeItem {
   /** Advisory tags from extraction; ladder membership is authoritative. */
   supportedLevels: string[];
   status: ItemStatus;
-  /** Bumps on every content edit. */
+  /** Head revision — bumps on every content edit (provenance/trace lineage). */
   version: number;
+  /**
+   * Highest committed version number (1,2,3…), or undefined when never
+   * committed. Committed versions are immutable snapshots (KnowledgeItemVersion).
+   */
+  committedVersion?: number;
+  /**
+   * The committed version currently designated MAIN — the one the head
+   * reflects and the workspace serves. Defaults to each newly committed
+   * version, but can be pointed back at an earlier one ("make main") without
+   * minting a new version. The head is "dirty" whenever its content diverges
+   * from the snapshot at this number — see itemIsDirty(). Undefined until the
+   * first commit.
+   */
+  mainVersion?: number;
   /** Copy-on-diverge lineage (spec decision 2). */
   forkedFromItemId?: string;
   createdBy: string;
@@ -115,10 +148,73 @@ export interface KnowledgeItem {
   updatedAt: string;
 }
 
+/**
+ * An immutable, retained snapshot of a knowledge item at one committed version.
+ * This is the "version 1, version 2… of a knowledge item" the owner asked for:
+ * frozen content that never changes, viewable and restorable, and the building
+ * block a published KB version pins. Distinct from a FORK (new itemId, cross-KB
+ * divergence) — a version is the same item evolving over time.
+ */
+export interface KnowledgeItemVersion {
+  itemId: string;
+  /** Contiguous committed number (1,2,3…). */
+  versionNumber: number;
+  /** The head `version` (revision) this snapshot froze — for trace lineage. */
+  headVersion: number;
+  title: string;
+  humanReadableText: string;
+  knowledgeType: KnowledgeType;
+  phase: KnowledgePhase;
+  payload: ItemPayload;
+  settings: SettingSpec[];
+  sourceReferences: Citation[];
+  supportedLevels: string[];
+  status: ItemStatus;
+  /** Content hash — cheap dirty-detection against the head. */
+  contentHash: string;
+  changeNote?: string;
+  committedBy: string;
+  committedAt: string;
+}
+
 /** An item may appear in several KBs while identical (fork on divergence). */
 export interface KbMembership {
   kbId: string;
   itemId: string;
+}
+
+// ---------------------------------------------------------------------------
+// KB versions (releases): the manifest layer over compiles
+// ---------------------------------------------------------------------------
+
+/** One member's pinned committed version inside a KB release manifest. */
+export interface KbVersionItemRef {
+  itemId: string;
+  versionNumber: number;
+}
+
+/**
+ * A published, immutable KB release. This is the "version 1, version 2… of the
+ * knowledge base" — a named snapshot that PINS a specific committed version of
+ * every member item (a lockfile), alongside the compiled artifact that serves
+ * it. "KB v1 ≠ every item v1": the manifest mixes item versions freely.
+ * Consumers (players, coaches, sessions) bind to a KB version, not to the
+ * moving draft.
+ */
+export interface KbVersion {
+  versionId: string;
+  kbId: string;
+  /** Contiguous release number (1,2,3…). */
+  versionNumber: number;
+  /** Optional human label ("SAYC core", "adds Jacoby"…). */
+  label?: string;
+  notes?: string;
+  /** The compiled artifact this release serves (immutable, pinned). */
+  compileId: string;
+  /** Frozen manifest of member items at their committed versions. */
+  items: KbVersionItemRef[];
+  publishedBy: string;
+  publishedAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +293,19 @@ export interface KbPack {
 
 export type DecisionPolicyId = "first_match" | "weighted_random" | "level_capped";
 
+/**
+ * How a consumer tracks its KB (spec: two-level versioning propagation).
+ *  - pinned: frozen to one published KB version until explicitly upgraded
+ *            (the safe default — a KB edit never silently changes a deployed
+ *            player/coach mid-stream).
+ *  - track_latest: auto-adopts each newly published version.
+ *  - draft: resolves against the moving working head (authoring/test only).
+ */
+export type KbVersionBinding =
+  | { kind: "pinned"; versionId: string }
+  | { kind: "track_latest" }
+  | { kind: "draft" };
+
 export type PlayerValidationStatus = "draft" | "valid" | "invalid" | "published";
 
 export interface CapabilityResult {
@@ -232,6 +341,12 @@ export interface KbPlayer {
   enabledPackIds: string[];
   settingOverrides: Record<string, SettingValue>;
   decisionPolicyId: DecisionPolicyId;
+  /**
+   * KB version this player resolves against. Defaults to pinned-to-latest at
+   * save time (or draft when the KB has no published version yet). Optional so
+   * pre-versioning players keep working (treated as draft/live).
+   */
+  kbVersionBinding?: KbVersionBinding;
   /** Reserved: exactly one chain at launch (pack fallbacks → engine floor). */
   fallbackPolicyId: "standard";
   validationStatus: PlayerValidationStatus;

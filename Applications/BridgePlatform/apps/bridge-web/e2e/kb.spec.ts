@@ -57,20 +57,20 @@ test("hand-authors a fallback item and a 1NT agreement", async ({ page, context 
   await page.goto(`${kbUrl}/items`);
   await expect(page.getByText("Auction fallback: pass")).toBeVisible();
   await expect(page.getByText("1NT opening")).toBeVisible();
-  await expect(page.getByText(/live compile/)).toBeVisible();
+  await expect(page.getByText(/draft compile/)).toBeVisible();
 });
 
 test("edits the 1NT range — the KB recompiles to a new version", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
   await page.goto(`${kbUrl}/items`);
-  const before = await page.getByText(/live compile/).textContent();
+  const before = await page.getByText(/draft compile/).textContent();
 
   await page.getByText("1NT opening").click();
   await page.locator('input[name="rule0:hcpMin"]').fill("14");
   await page.getByRole("button", { name: /Save \(recompiles/ }).click();
   await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
 
-  const after = await page.getByText(/live compile/).textContent();
+  const after = await page.getByText(/draft compile/).textContent();
   expect(after).not.toBe(before);
 });
 
@@ -132,7 +132,7 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
 
   await expect(page.getByText(/latest edit doesn't compile/)).toBeVisible();
   await expect(page.getByText(/does_not_exist/)).toBeVisible();
-  await expect(page.getByText(/live compile/)).toBeVisible(); // last-good still live
+  await expect(page.getByText(/draft compile/)).toBeVisible(); // last-good still live
 
   // Repair via the typed fields — the banner clears and compiles resume.
   await page.locator('input[name="rule0:hcpMin"]').fill("15");

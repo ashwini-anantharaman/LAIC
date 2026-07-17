@@ -24,11 +24,12 @@ export default async function KbLayout({
   const kb = await store.getKb(kbId);
   if (!kb) notFound();
 
-  const [items, suggestions, players, compiled] = await Promise.all([
+  const [items, suggestions, players, compiled, derivation] = await Promise.all([
     store.listItemsForKb(kbId),
     store.listSuggestionsForKb(kbId),
     store.listPlayersForKb(kbId),
     kbService().liveCompile(kbId),
+    kbService().derivationStatus(kbId),
   ]);
 
   const byStatus = (s: string) => items.filter((i) => i.status === s).length;
@@ -50,19 +51,32 @@ export default async function KbLayout({
       <header className="mb-6">
         <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">
           Knowledge base · {kb.systemLabel}
+          {derivation.derived && <> · derived</>}
         </p>
         <div className="mt-1 flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="text-3xl font-medium">{kb.name}</h1>
           <p className="text-xs text-neutral-500">
+            {kb.latestVersionNumber ? (
+              <>
+                published <span className="font-medium">v{kb.latestVersionNumber}</span> ·{" "}
+              </>
+            ) : null}
             {compiled ? (
               <>
-                live compile <span className="font-medium">v{compiled.version}</span>
+                draft compile <span className="font-medium">v{compiled.version}</span>
               </>
             ) : (
               "no compile yet"
             )}
           </p>
         </div>
+
+        {derivation.derived && derivation.upgradeAvailable && (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-[color:var(--color-draft)]">
+            The master this KB was derived from has a newer published version —
+            see the <a href={`${base}/versions`} className="font-medium underline">Versions</a> tab.
+          </div>
+        )}
 
         {kb.lastCompileError && (
           <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-[color:var(--color-invalid)]">
@@ -92,6 +106,7 @@ export default async function KbLayout({
           <TabLink href={`${base}/ladder`} label="Ladder" />
           <TabLink href={`${base}/sources`} label="Sources" />
           <TabLink href={`${base}/players`} label="Players" />
+          <TabLink href={`${base}/versions`} label="Versions" />
           <TabLink href={`${base}/suggestions`} label="Suggestions" />
           <TabLink href={`${base}/activity`} label="Activity" />
         </nav>
