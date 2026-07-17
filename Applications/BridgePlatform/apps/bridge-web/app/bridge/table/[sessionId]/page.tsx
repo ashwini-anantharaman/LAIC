@@ -94,38 +94,39 @@ export default async function SessionPage({
         : "human"
       : config.label;
   };
+  // BBO-style name bar: full width of its hand, gold while the seat is on
+  // turn, with the seat letter in a petrol badge. Fellows get the swap/edit
+  // dropdown behind it; learners get the plain bar.
   const seatTag = (seat: Seat, align: "center" | "left" | "right" = "center") => {
     const acting = seat === actingSeat && state.phase !== "complete";
     const config = record.seats[seat];
     const tag = (
       <>
-        {acting && (
-          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-600" />
-        )}
-        <span className="font-semibold text-neutral-800">{seat}</span>
-        <span className="truncate">{seatLabel(seat)}</span>
+        <span className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded-[3px] bg-[#1f5058] text-[10px] font-bold text-white">
+          {seat}
+        </span>
+        <span className="truncate text-[13px] font-medium text-neutral-800">
+          {seatLabel(seat)}
+        </span>
       </>
     );
-    const justify =
-      align === "center" ? "justify-center" : align === "right" ? "justify-end" : "";
+    const barClass = `flex w-full items-center gap-1.5 rounded-[3px] px-1 py-0.5 shadow-sm ${
+      acting ? "bg-amber-300/95" : "bg-neutral-100/90"
+    }`;
     if (learnerMode) {
-      return (
-        <p className={`flex max-w-40 items-center gap-1.5 text-xs text-neutral-500 ${justify}`}>
-          {tag}
-        </p>
-      );
+      return <p className={barClass}>{tag}</p>;
     }
     const iAmHere = config.kind === "human" && config.nexusUserId === context.nexusUserId;
     const panelAlign =
       align === "center" ? "left-1/2 -translate-x-1/2" : align === "right" ? "right-0" : "left-0";
     return (
-      <details className={`relative flex ${justify}`}>
+      <details className="relative w-full">
         <summary
-          className={`flex max-w-40 cursor-pointer list-none items-center gap-1.5 rounded-full px-1.5 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 ${justify}`}
+          className={`${barClass} cursor-pointer list-none hover:brightness-95`}
           title="Seat options — swap or edit this player"
         >
           {tag}
-          <span aria-hidden className="text-[9px] text-neutral-400">
+          <span aria-hidden className="ml-auto text-[9px] text-neutral-500">
             ▾
           </span>
         </summary>
@@ -365,23 +366,23 @@ export default async function SessionPage({
 
       <div className={`grid gap-6 ${learnerMode ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"}`}>
         <div>
-          {/* The table */}
-          <div className="rounded-2xl border border-neutral-200 bg-[var(--card)] p-3 shadow-sm sm:p-6">
+          {/* The table — green felt, BBO-style */}
+          <div className="rounded-2xl border border-emerald-950/50 bg-[radial-gradient(120%_120%_at_50%_30%,#3e8266_0%,#2c614a_70%,#26543f_100%)] p-3 shadow-md sm:p-6">
             {/* North */}
-            <div className="flex flex-col items-center gap-1.5">
-              {seatTag("N")}
+            <div className="flex flex-col items-center gap-1">
               <HandRow
                 hand={state.hands.N}
                 hidden={!canSee("N")}
                 playable={legalNow && state.turn === "N" ? legalNow : null}
                 sessionId={sessionId}
+                size="lg"
               />
+              <div className="w-full">{seatTag("N")}</div>
             </div>
 
             {/* West · center · East */}
             <div className="my-3 grid grid-cols-[minmax(2.5rem,auto)_1fr_minmax(2.5rem,auto)] items-center gap-2 sm:my-4 sm:gap-4">
-              <div className="flex flex-col items-center gap-1.5 justify-self-start">
-                {seatTag("W", "left")}
+              <div className="flex w-fit flex-col items-center gap-1 justify-self-start">
                 <HandRow
                   hand={state.hands.W}
                   hidden={!canSee("W")}
@@ -390,16 +391,17 @@ export default async function SessionPage({
                   vertical
                   size="sm"
                 />
+                {seatTag("W", "left")}
               </div>
 
               {/* Center: auction, live trick, or the result */}
-              <div className="flex min-h-44 items-center justify-center self-stretch rounded-xl border border-dashed border-neutral-300/80 px-2 py-3">
+              <div className="flex min-h-44 items-center justify-center self-stretch px-2 py-3">
                 {state.phase === "auction" ? (
-                  <table className="w-full max-w-60 text-center text-sm">
+                  <table className="w-full max-w-60 rounded-lg bg-white/95 py-1 text-center text-sm shadow-sm">
                     <thead>
                       <tr className="text-[10px] uppercase tracking-wide text-neutral-400">
                         {["W", "N", "E", "S"].map((s) => (
-                          <th key={s} className="pb-1 font-normal">
+                          <th key={s} className="pb-1 pt-1.5 font-normal">
                             {s}
                           </th>
                         ))}
@@ -420,17 +422,20 @@ export default async function SessionPage({
                       ))}
                       {state.auction.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="pt-2 text-xs text-neutral-400">
+                          <td colSpan={4} className="pb-2 pt-1 text-xs text-neutral-400">
                             {seatLabel(record.board.dealer) === "you"
                               ? "you deal"
                               : `${seatLabel(record.board.dealer)} deals`}
                           </td>
                         </tr>
                       )}
+                      <tr>
+                        <td colSpan={4} className="pb-1" />
+                      </tr>
                     </tbody>
                   </table>
                 ) : state.phase === "complete" && score ? (
-                  <div className="text-center">
+                  <div className="rounded-lg bg-white/95 px-6 py-4 text-center shadow-sm">
                     <p className="font-serif text-xl">{resultLabel(score)}</p>
                     {score.contract && (
                       <p className="mt-1 text-sm text-neutral-500">
@@ -461,23 +466,22 @@ export default async function SessionPage({
                             <PlayingCard card={card} size="sm" />
                           ) : (
                             <span
-                              className={`block aspect-[5/7] w-8 rounded-md border border-dashed border-neutral-300 ${
-                                seat === state.turn ? "border-emerald-400" : ""
+                              className={`block aspect-[5/7] w-8 rounded-md border border-dashed ${
+                                seat === state.turn ? "border-amber-300" : "border-white/30"
                               }`}
                             />
                           )}
                         </div>
                       );
                     })}
-                    <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] uppercase tracking-wide text-neutral-300">
+                    <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] uppercase tracking-wide text-white/50">
                       trick {state.tricks.length}
                     </span>
                   </div>
                 )}
               </div>
 
-              <div className="flex flex-col items-center gap-1.5 justify-self-end">
-                {seatTag("E", "right")}
+              <div className="flex w-fit flex-col items-center gap-1 justify-self-end">
                 <HandRow
                   hand={state.hands.E}
                   hidden={!canSee("E")}
@@ -486,11 +490,12 @@ export default async function SessionPage({
                   vertical
                   size="sm"
                 />
+                {seatTag("E", "right")}
               </div>
             </div>
 
             {/* South */}
-            <div className="flex flex-col items-center gap-1.5">
+            <div className="flex flex-col items-center gap-1">
               <HandRow
                 hand={state.hands.S}
                 hidden={!canSee("S")}
@@ -498,7 +503,7 @@ export default async function SessionPage({
                 sessionId={sessionId}
                 size="lg"
               />
-              {seatTag("S")}
+              <div className="w-full">{seatTag("S")}</div>
             </div>
           </div>
 

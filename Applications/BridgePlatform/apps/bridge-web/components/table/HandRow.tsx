@@ -101,29 +101,21 @@ export function HandRow({
   size?: CardSize;
   vertical?: boolean;
 }>) {
-  // ---- hidden hands: a stack of backs + count -----------------------------
+  // ---- hidden hands: a horizontal fan of backs (BBO-style slivers) --------
   if (hidden) {
     const backs = Math.min(hand.length, 13);
-    if (vertical) {
-      return (
-        <div className="flex flex-col items-center">
-          <div className="flex flex-col [&>*:not(:first-child)]:-mt-8">
-            {Array.from({ length: backs }, (_, i) => (
-              <PlayingCard key={i} faceDown size="sm" />
-            ))}
-          </div>
-          <span className="mt-1 text-[10px] text-neutral-400">{hand.length}</span>
-        </div>
-      );
-    }
+    // Side hands fan tighter so 13 backs stay compact next to the trick area.
+    const overlap = vertical
+      ? "[&>*:not(:first-child)]:-ml-[26px]"
+      : "[&>*:not(:first-child)]:-ml-6";
     return (
-      <div className="flex items-center gap-2">
-        <div className="flex [&>*:not(:first-child)]:-ml-6">
+      <div className="flex flex-col items-center gap-0.5">
+        <div className={`flex ${overlap}`}>
           {Array.from({ length: backs }, (_, i) => (
             <PlayingCard key={i} faceDown size="sm" />
           ))}
         </div>
-        <span className="text-[10px] text-neutral-400">{hand.length}</span>
+        <span className="text-[10px] text-white/60">{hand.length}</span>
       </div>
     );
   }
@@ -150,7 +142,7 @@ export function HandRow({
         }
         return <PlayingCard key={id} card={card} size={size} muted={playable !== null} />;
       })}
-      {cards.length === 0 && <span className="text-xs text-neutral-300">—</span>}
+      {cards.length === 0 && <span className="text-xs text-white/50">—</span>}
     </div>
   );
 }

@@ -30,10 +30,12 @@ export function PlayingCard({
   muted?: boolean;
 }>) {
   if (faceDown || !card) {
+    // Petrol back (reads clearly against the green felt); the light inset ring
+    // keeps each card's edge visible under heavy overlap.
     return (
       <span
         aria-hidden
-        className={`block aspect-[5/7] rounded-md border border-emerald-950/60 bg-emerald-900 shadow-sm ring-1 ring-inset ring-emerald-700/60 ${FACE_SIZE[size]} bg-[repeating-linear-gradient(135deg,transparent,transparent_3px,rgba(255,255,255,0.06)_3px,rgba(255,255,255,0.06)_6px)]`}
+        className={`block aspect-[5/7] rounded-md border border-[#1f3a42] bg-[#3e6f7d] shadow-sm ring-1 ring-inset ring-white/25 ${FACE_SIZE[size]} bg-[repeating-linear-gradient(135deg,transparent,transparent_3px,rgba(255,255,255,0.07)_3px,rgba(255,255,255,0.07)_6px)]`}
       />
     );
   }
