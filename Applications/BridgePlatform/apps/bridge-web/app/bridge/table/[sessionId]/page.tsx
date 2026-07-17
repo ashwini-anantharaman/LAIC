@@ -108,6 +108,14 @@ export default async function SessionPage({
         <span className="truncate text-[13px] font-medium text-neutral-800">
           {seatLabel(seat)}
         </span>
+        {seat === dummy && state.phase === "play" && (
+          <span
+            className="flex-none text-[10px] uppercase tracking-wide text-neutral-500"
+            title="Dummy's cards are played by the declarer"
+          >
+            · dummy
+          </span>
+        )}
       </>
     );
     const barClass = `flex w-full items-center gap-1.5 rounded-[3px] px-1 py-0.5 shadow ${
