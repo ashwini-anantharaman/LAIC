@@ -29,8 +29,12 @@ export function LearningLaunch() {
         if (!live) return;
         setLaunch(l);
         if (l.launch_url) {
-          // A real LP exists — hand it the token and go.
-          window.location.href = `${l.launch_url}?launch_token=${encodeURIComponent(l.launch_token)}`;
+          // A real LP exists — hand it the token and go, with a return address
+          // so the platform can offer "Back to Nexus".
+          const returnUrl = `${window.location.origin}/o/${orgId}/p/${programId}`;
+          window.location.href =
+            `${l.launch_url}?launch_token=${encodeURIComponent(l.launch_token)}` +
+            `&return_url=${encodeURIComponent(returnUrl)}`;
           return;
         }
         // Placeholder interior: prove the handshake ourselves (the LP's side

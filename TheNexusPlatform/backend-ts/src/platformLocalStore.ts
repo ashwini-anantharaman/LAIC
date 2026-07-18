@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { HttpError } from "./httpError";
 import { StageNode } from "./permissions";
+import { normalizeProgramFeatures, type ProgramFeatures } from "./schemas";
 
 const _here = dirname(fileURLToPath(import.meta.url));
 const _ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -251,6 +252,7 @@ export interface CreateProgramOptions {
   icon?: string | null;
   instructorLabel?: string | null;
   learnerLabel?: string | null;
+  features?: Record<string, boolean> | null;
 }
 
 export function localCreateProgram(
@@ -268,11 +270,25 @@ export function localCreateProgram(
     icon: opts.icon ?? null,
     instructor_label: opts.instructorLabel ?? null,
     learner_label: opts.learnerLabel ?? null,
+    features: normalizeProgramFeatures(opts.features),
   };
   const programs = _read("programs");
   programs.push(row);
   _write("programs", programs);
   return row;
+}
+
+/** Replace a program's accessible-feature set (org-admin config). */
+export function localUpdateProgramFeatures(
+  programId: string,
+  features: ProgramFeatures,
+): Row | null {
+  const programs = _read("programs");
+  const row = programs.find((p) => p.id === programId);
+  if (!row) return null;
+  row.features = features;
+  _write("programs", programs);
+  return { ...row, ..._programCounts(programId) };
 }
 
 /** Best-effort course/learner/instructor counts for a program's workspace card. */
@@ -301,12 +317,13 @@ function _programCounts(programId: string): Row {
 export function localListPrograms(orgId: string): Row[] {
   return _read("programs")
     .filter((p) => p.org_id === orgId)
-    .map((p) => ({ ...p, ..._programCounts(p.id) }));
+    .map((p) => ({ ...p, features: normalizeProgramFeatures(p.features), ..._programCounts(p.id) }));
 }
 
 export function localGetProgram(programId: string): Row | null {
   for (const row of _read("programs")) {
-    if (row.id === programId) return { ...row, ..._programCounts(programId) };
+    if (row.id === programId)
+      return { ...row, features: normalizeProgramFeatures(row.features), ..._programCounts(programId) };
   }
   return null;
 }

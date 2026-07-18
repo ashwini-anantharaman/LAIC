@@ -34,7 +34,12 @@ export default async function PlayersPage({
   const creators = activeKb
     ? [...new Set(activeKb.players.map((p) => p.ownerId ?? p.ownerType))]
     : [];
-  const creatorLabel = (id: string) => stubDisplayName(id) ?? (id === "system" ? "System" : id);
+  // The current user's real name comes from the Nexus context; other creators
+  // resolve via the stub roster (dev) or fall back to their raw id for now.
+  const creatorLabel = (id: string) =>
+    (id === context.nexusUserId ? context.displayName : undefined) ??
+    stubDisplayName(id) ??
+    (id === "system" ? "System" : id);
   const activeBy = by && creators.includes(by) ? by : undefined;
   const visible = (activeKb?.players ?? []).filter(
     (p) => !activeBy || (p.ownerId ?? p.ownerType) === activeBy,

@@ -7,8 +7,11 @@ export default async function HomePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
 
+  // Real name from the Nexus context (http mode); stub roster in dev.
   const firstName = (
-    stubDisplayName(context.nexusUserId) ?? context.nexusUserId
+    context.displayName ??
+    stubDisplayName(context.nexusUserId) ??
+    context.nexusUserId
   ).split(" ")[0];
 
   return (

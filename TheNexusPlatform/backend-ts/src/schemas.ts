@@ -34,6 +34,51 @@ const isoDateTime = z.string();
 
 const jsonRecord = z.record(z.string(), z.any());
 
+// ── Per-program feature accessibility ───────────────────────────────────────
+// When an org admin creates a program they pick which feature-areas are
+// accessible inside it. These are the same areas custom roles grant access to
+// (Team & Roles) — a role can only grant an area the program has enabled.
+export const PROGRAM_FEATURE_KEYS = [
+  "learning",
+  "bridge",
+  "appbuilder",
+  "community",
+  "teams",
+  "partners",
+] as const;
+export type ProgramFeatureKey = (typeof PROGRAM_FEATURE_KEYS)[number];
+
+// New programs get everything on; the org admin then trims what they don't want.
+export const DEFAULT_PROGRAM_FEATURES: Record<ProgramFeatureKey, boolean> = {
+  learning: true,
+  bridge: true,
+  appbuilder: true,
+  community: true,
+  teams: true,
+  partners: true,
+};
+
+export const programFeatures = z
+  .object(
+    Object.fromEntries(PROGRAM_FEATURE_KEYS.map((k) => [k, z.boolean()])) as Record<
+      ProgramFeatureKey,
+      z.ZodBoolean
+    >,
+  )
+  .partial();
+export type ProgramFeatures = Record<ProgramFeatureKey, boolean>;
+
+/** Fill any unspecified feature with the default (all-on), dropping unknown keys. */
+export function normalizeProgramFeatures(input?: Record<string, unknown> | null): ProgramFeatures {
+  const out = { ...DEFAULT_PROGRAM_FEATURES };
+  for (const k of PROGRAM_FEATURE_KEYS) {
+    if (input && typeof input[k] === "boolean") out[k] = input[k] as boolean;
+  }
+  return out;
+}
+
+export const programFeaturesUpdate = z.object({ features: programFeatures });
+
 // ── Platform request schemas ────────────────────────────────────────────────
 
 export const programInput = z.object({
@@ -45,6 +90,8 @@ export const programInput = z.object({
   // (defaults are derived from category in roleLabel() when unset).
   instructor_label: z.string().nullish(),
   learner_label: z.string().nullish(),
+  // Which feature-areas are accessible inside this program (see PROGRAM_FEATURE_KEYS).
+  features: programFeatures.optional(),
   // Edu: which single stage level this program's admin group tree is rooted at.
   stage_type: stageType.nullish(),
   // Game: flat "class" names for this program (no multi-level hierarchy).

@@ -31,7 +31,9 @@ export async function createRungPlayerAction(formData: FormData): Promise<void> 
   if (!pack) throw new Error("Pick a ladder rung");
 
   const store = kbStore();
-  const firstName = (stubDisplayName(context.nexusUserId) ?? context.nexusUserId).split(" ")[0];
+  const firstName = (
+    context.displayName ?? stubDisplayName(context.nexusUserId) ?? context.nexusUserId
+  ).split(" ")[0];
   const base = `${pack.name} — ${firstName}`;
   const existing = await store.listPlayersForKb(kbId);
   let name = base;

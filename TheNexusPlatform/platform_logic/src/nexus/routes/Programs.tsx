@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ChevronRight, Copy, Plus, UserCog } from "lucide-react";
+import { ChevronRight, Copy, Plus, SlidersHorizontal, Trash2, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -20,21 +20,27 @@ import {
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
+import { Switch } from "@/app/components/ui/switch";
 import {
   assignProgramAdministrator,
   createProgram,
+  deleteProgram,
   listProgramAdministrators,
   listPrograms,
+  updateProgramFeatures,
   type ProgramAdministrator,
 } from "@/services/api";
-import type { Program, ProgramCategory } from "@/types/platform";
+import type { Program, ProgramCategory, ProgramFeatures } from "@/types/platform";
+import { DEFAULT_PROGRAM_FEATURES, PROGRAM_FEATURES } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Spinner } from "@/nexus/ui/kit";
+import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 
 export function Programs() {
   const { orgId = "" } = useParams();
   const [programs, setPrograms] = useState<Program[] | null>(null);
   const [open, setOpen] = useState(false);
   const [assigning, setAssigning] = useState<Program | null>(null);
+  const [editingFeatures, setEditingFeatures] = useState<Program | null>(null);
 
   async function load() {
     setPrograms(await listPrograms(orgId));
@@ -42,6 +48,16 @@ export function Programs() {
   useEffect(() => {
     void load();
   }, [orgId]);
+
+  async function remove(p: Program) {
+    try {
+      await deleteProgram(p.id);
+      toast.success(`Removed "${p.name}"`);
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove program");
+    }
+  }
 
   if (!programs) return <Spinner />;
 
@@ -62,13 +78,44 @@ export function Programs() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {programs.map((p) => (
-            <ProgramCard key={p.id} orgId={orgId} program={p} onAssign={() => setAssigning(p)} />
+            <ProgramCard
+              key={p.id}
+              orgId={orgId}
+              program={p}
+              onAssign={() => setAssigning(p)}
+              onEditFeatures={() => setEditingFeatures(p)}
+              onRemove={() => remove(p)}
+            />
           ))}
         </div>
       )}
 
       <NewProgramDialog orgId={orgId} open={open} onOpenChange={setOpen} onDone={load} />
       <AssignAdminDialog program={assigning} onClose={() => setAssigning(null)} />
+      <EditFeaturesDialog program={editingFeatures} onClose={() => setEditingFeatures(null)} onDone={load} />
+    </div>
+  );
+}
+
+/** Reusable on/off list of the program's feature-areas. */
+function FeatureToggles({
+  features,
+  onChange,
+}: {
+  features: ProgramFeatures;
+  onChange: (next: ProgramFeatures) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {PROGRAM_FEATURES.map((f) => (
+        <div key={f.key} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2">
+          <Switch
+            checked={features[f.key]}
+            onCheckedChange={(v) => onChange({ ...features, [f.key]: v })}
+          />
+          <span className="flex-1 text-sm">{f.label}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -77,10 +124,14 @@ function ProgramCard({
   orgId,
   program: p,
   onAssign,
+  onEditFeatures,
+  onRemove,
 }: {
   orgId: string;
   program: Program;
   onAssign: () => void;
+  onEditFeatures: () => void;
+  onRemove: () => void;
 }) {
   const [admins, setAdmins] = useState<ProgramAdministrator[]>([]);
 
@@ -99,28 +150,52 @@ function ProgramCard({
           <div className="font-medium text-foreground group-hover:underline truncate">{p.name}</div>
           <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{p.description}</div>
         </Link>
-        <Pill tone="neutral">{p.category}</Pill>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Pill tone="neutral">{p.category}</Pill>
+          <ConfirmButton
+            title={`Remove the "${p.name}" program?`}
+            description="This deletes the program and everything inside it — offerings, app shells, registrations, groups, and roles. This can't be undone."
+            actionLabel="Remove program"
+            onConfirm={onRemove}
+            buttonTitle="Remove program"
+          >
+            <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+          </ConfirmButton>
+        </div>
       </div>
-      <div className="mt-4 flex items-center justify-between">
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          onClick={onAssign}
-          title="Assign the program's administrator (delegation)"
-        >
-          <UserCog className="size-3.5" />
-          {admin ? (
-            <span>
-              {admin.display_name ?? admin.email}
-              {admin.status === "invited" ? " · invited" : ""}
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors min-w-0"
+            onClick={onAssign}
+            title="Assign the program's administrator (delegation)"
+          >
+            <UserCog className="size-3.5 shrink-0" />
+            <span className="truncate">
+              {admin ? (
+                <>
+                  {admin.display_name ?? admin.email}
+                  {admin.status === "invited" ? " · invited" : ""}
+                </>
+              ) : (
+                "Assign admin"
+              )}
             </span>
-          ) : (
-            "Assign admin"
-          )}
-        </button>
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            onClick={onEditFeatures}
+            title="Choose which features are accessible in this program"
+          >
+            <SlidersHorizontal className="size-3.5" />
+            Features
+          </button>
+        </div>
         <Link
           to={`/o/${orgId}/p/${p.id}`}
-          className="inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline"
+          className="inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline shrink-0"
         >
           Open <ChevronRight className="size-3.5" />
         </Link>
@@ -249,17 +324,24 @@ function NewProgramDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<ProgramCategory>("edu");
+  const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
   const [busy, setBusy] = useState(false);
 
   async function submit() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      await createProgram(orgId, { name: name.trim(), category, description: description.trim() || undefined });
+      await createProgram(orgId, {
+        name: name.trim(),
+        category,
+        description: description.trim() || undefined,
+        features,
+      });
       toast.success("Program created");
       onOpenChange(false);
       setName("");
       setDescription("");
+      setFeatures({ ...DEFAULT_PROGRAM_FEATURES });
       onDone();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create program");
@@ -295,6 +377,13 @@ function NewProgramDialog({
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1.5">
+            <Label>Features</Label>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Choose what's accessible in this program. Only enabled features can be granted to roles.
+            </p>
+            <FeatureToggles features={features} onChange={setFeatures} />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -302,6 +391,61 @@ function NewProgramDialog({
           </Button>
           <Button onClick={submit} disabled={busy || !name.trim()}>
             {busy ? "Creating…" : "Create program"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditFeaturesDialog({
+  program,
+  onClose,
+  onDone,
+}: {
+  program: Program | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (program) setFeatures({ ...DEFAULT_PROGRAM_FEATURES, ...(program.features ?? {}) });
+  }, [program]);
+
+  async function submit() {
+    if (!program) return;
+    setBusy(true);
+    try {
+      await updateProgramFeatures(program.id, features);
+      toast.success("Features updated");
+      onClose();
+      onDone();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update features");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!program} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Features · {program?.name}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground -mt-1">
+          Turn a feature off to hide it from this program's roles. Roles already granting it keep the
+          record, but the area stops being offered.
+        </p>
+        <FeatureToggles features={features} onChange={setFeatures} />
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? "Saving…" : "Save features"}
           </Button>
         </DialogFooter>
       </DialogContent>

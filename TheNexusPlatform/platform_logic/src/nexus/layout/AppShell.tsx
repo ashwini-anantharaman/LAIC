@@ -16,6 +16,8 @@ import {
   MessagesSquare,
   KeyRound,
   Handshake,
+  Rocket,
+  Waypoints,
   ScrollText,
   ChevronRight,
   ChevronLeft,
@@ -80,6 +82,8 @@ function programNav(orgId: string, programId: string): NavItem[] {
 function confinedProgramNav(orgId: string, programId: string, perms: Record<string, string>): NavItem[] {
   const base = `/o/${orgId}/p/${programId}`;
   const items: NavItem[] = [{ to: `${base}`, label: "Home", icon: LayoutDashboard, end: true }];
+  if (perms.learning) items.push({ to: `${base}/learning`, label: "Learning Platform", icon: Rocket });
+  if (perms.bridge) items.push({ to: `${base}/bridge`, label: "Bridge Platform", icon: Waypoints });
   if (perms.appbuilder) items.push({ to: `${base}/shells`, label: "App Shells", icon: AppWindow });
   if (perms.community) items.push({ to: `${base}/community`, label: "Community", icon: MessagesSquare });
   if (perms.teams) items.push({ to: `${base}/team`, label: "Team & Roles", icon: KeyRound });

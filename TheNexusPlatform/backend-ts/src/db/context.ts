@@ -1,45 +1,42 @@
 /**
  * Per-request org-context binding — Nexus v0.4 Wall 1/3.
  *
- * Tenant queries must run subject to RLS. We open a transaction, switch the
- * effective role to the non-superuser `nexus_app` (so RLS is enforced — a
- * superuser/owner would bypass it), and bind the caller's identity into the
- * `app.current_user_id` GUC that the RLS policies read. `SET LOCAL` scopes both
- * to the transaction, so nothing leaks between requests on a pooled connection.
+ * Phase 1 (org-space isolation): both helpers are now thin wrappers over the
+ * tenant door (`tenantDoor.ts`), which is the single place that (a) resolves
+ * which datastore an org lives in via the residency registry and (b) binds the
+ * RLS context (`nexus_app` role + `app.current_user_id` GUC). The org id is
+ * taken from the request context when the URL names one (`/orgs/:org_id/…`).
  *
- * This is the ONLY place tenant context is bound. Handlers never set it ad hoc.
+ * Keep using these wrappers in repos; new code that knows its org id should
+ * prefer calling `tenantTransaction`/`privilegedTransaction` directly with it.
  */
-import { sql } from "drizzle-orm";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { currentOrgId } from "./requestContext";
+import { privilegedTransaction, tenantTransaction, type Tx } from "./tenantDoor";
 
-import { getDb, schema } from "./client";
-
-/** The transaction handle passed to the callback (same query API as the db). */
-export type Tx = Parameters<Parameters<PostgresJsDatabase<typeof schema>["transaction"]>[0]>[0];
+export type { Tx };
 
 /**
- * Run `fn` as the current user, inside an RLS-enforced transaction.
- * Pass `null` for an unauthenticated caller (sees zero tenant rows).
+ * Run `fn` as the current user, inside an RLS-enforced transaction on the
+ * org's datastore. Pass `null` for an unauthenticated caller (sees zero rows).
  */
 export async function withUserContext<T>(
   userId: string | null,
   fn: (tx: Tx) => Promise<T>,
 ): Promise<T> {
-  const db = getDb();
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`select set_config('app.current_user_id', ${userId ?? ""}, true)`);
-    await tx.execute(sql`select set_config('role', 'nexus_app', true)`);
-    return fn(tx);
-  });
+  return tenantTransaction({ userId, orgId: currentOrgId() }, fn);
 }
 
 /**
  * Escape hatch for genuinely global/admin operations that must bypass RLS
- * (e.g. provisioning a brand-new org before any membership exists, Nexus-level
- * super-admin reads). Runs as the connecting (privileged) role — use sparingly
- * and always behind a server-side global-role check + audit.
+ * (e.g. provisioning a brand-new org before any membership exists, identity
+ * bootstrap at login). Runs as the connecting (privileged) role — use
+ * sparingly and always behind a server-side authorization check.
+ *
+ * Prefer `privilegedTransaction(reason, fn)` from tenantDoor for new code —
+ * it makes the justification explicit.
  */
 export async function asPrivileged<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-  const db = getDb();
-  return db.transaction(async (tx) => fn(tx));
+  return privilegedTransaction("legacy asPrivileged call (pre-Phase-1 site)", fn, {
+    orgId: currentOrgId(),
+  });
 }

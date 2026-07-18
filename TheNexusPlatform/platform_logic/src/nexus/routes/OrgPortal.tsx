@@ -45,7 +45,9 @@ export function OrgPortal() {
     setBusy(true);
     setError(null);
     try {
-      await login(em.trim(), pw);
+      // Org-scoped sign-in: this portal's slug binds the session to THIS org —
+      // no account here means no entry, and operators are refused outright.
+      await login(em.trim(), pw, slug);
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed");

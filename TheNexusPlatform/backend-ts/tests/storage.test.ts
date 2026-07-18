@@ -13,7 +13,8 @@ process.env.LOCAL_DATA_DIR = tempDir;
 process.env.STORAGE_DIR = join(tempDir, "storage");
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-delete process.env.DATABASE_URL; // FS storage + local mode; storage is orthogonal to the DB
+process.env.DATABASE_URL = ""; // FS storage + local mode ("" not delete — dotenv would repopulate)
+process.env.SUPABASE_DB_URL = "";
 delete process.env.S3_BUCKET; // force FS adapter
 
 const { getStorage, orgKey, _resetStorage } = await import("../src/storage");

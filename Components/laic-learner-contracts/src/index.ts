@@ -134,4 +134,6 @@ export type NexusBridgeContext = {
   roles: BridgeRole[];
   permissions: string[];
   accessLevel: BridgeAccessLevel;
+  /** The person's display name in this org (Nexus profile). Additive; UI-only. */
+  displayName?: string;
 };

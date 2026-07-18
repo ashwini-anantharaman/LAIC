@@ -31,6 +31,7 @@ import type {
   PlatformModule,
   Program,
   ProgramCategory,
+  ProgramFeatures,
   Registration,
   RegisteredApp,
   RegisteredAppWithKey,
@@ -48,6 +49,7 @@ export interface DraftProgramInput {
   icon?: string;
   instructor_label?: string;
   learner_label?: string;
+  features?: ProgramFeatures;
   stage_type?: StageKey;
   class_names?: string[];
 }
@@ -117,10 +119,15 @@ export async function signup(params: {
   return user;
 }
 
-export async function login(email: string, password: string): Promise<AuthUser> {
+/**
+ * Sign in. Pass `orgSlug` when logging in through an org portal — the backend
+ * then scopes the session to that org (403 if the person has no account there,
+ * and operators can never enter through an org's door).
+ */
+export async function login(email: string, password: string, orgSlug?: string): Promise<AuthUser> {
   const user = await request<AuthUser>("/api/platform/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(orgSlug ? { org_slug: orgSlug } : {}) }),
   });
   setToken(user.access_token);
   return user;
@@ -257,7 +264,7 @@ export async function provisionOrganization(
 
 // ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
 export type AccessLevel = "view" | "edit" | "comment";
-export type RoleArea = "learning" | "appbuilder" | "community" | "teams" | "partners";
+export type RoleArea = "learning" | "bridge" | "appbuilder" | "community" | "teams" | "partners";
 export type RolePerms = Partial<Record<RoleArea, AccessLevel>>;
 
 export interface ProgramRole {
@@ -444,6 +451,17 @@ export async function createProgram(orgId: string, program: DraftProgramInput): 
   return request<Program>(`/api/platform/orgs/${orgId}/programs`, {
     method: "POST",
     body: JSON.stringify(program),
+  });
+}
+
+/** Update which feature-areas are accessible inside a program (org-admin config). */
+export async function updateProgramFeatures(
+  programId: string,
+  features: ProgramFeatures,
+): Promise<Program> {
+  return request<Program>(`/api/platform/programs/${programId}/features`, {
+    method: "PATCH",
+    body: JSON.stringify({ features }),
   });
 }
 
@@ -791,6 +809,11 @@ export interface LpLaunch {
 /** Mint a verified launch context for the program's Learning Platform. */
 export async function launchLearningPlatform(programId: string): Promise<LpLaunch> {
   return request<LpLaunch>(`/api/programs/${programId}/learning-platform/launch`, { method: "POST" });
+}
+
+/** Mint a verified launch context for the program's Bridge Platform (same seam as the LP). */
+export async function launchBridgePlatform(programId: string): Promise<LpLaunch> {
+  return request<LpLaunch>(`/api/programs/${programId}/bridge-platform/launch`, { method: "POST" });
 }
 
 /** Prove the handshake: swap the single-use launch token for a session (what the LP itself does). */

@@ -38,11 +38,19 @@ import {
   orgThemeUpdateSchema,
   parseBody,
   programInput,
+  programFeaturesUpdate,
+  normalizeProgramFeatures,
   registerViaJoinCodeSchema,
   setEntitlementSchema,
   signupSchema,
   updateMemberSchema,
 } from "../schemas";
+import {
+  BRIDGE_ROLE_MAP,
+  LEARNING_ROLE_MAP,
+  platformAppSlug,
+  resolvePlatformAccess,
+} from "../platformAccess";
 
 type Row = Record<string, any>;
 
@@ -111,6 +119,7 @@ function _programResponse(row: Row): Row {
     icon: row.icon ?? null,
     instructor_label: row.instructor_label ?? null,
     learner_label: row.learner_label ?? null,
+    features: normalizeProgramFeatures(row.features as Record<string, unknown>),
     course_count: row.course_count ?? 0,
     learner_count: row.learner_count ?? 0,
     instructor_count: row.instructor_count ?? 0,
@@ -150,6 +159,10 @@ async function _membershipSummaries(user: PlatformUser): Promise<Row[]> {
       id: m.id,
       org_id: m.org_id,
       org_name: org ? org.name : "",
+      // The org-scoped person id (profiles.id) — the canonical identity WITHIN
+      // this org's space (Phase 2). Platform context endpoints (bridge/learning)
+      // key on this, never on the cross-cutting auth credential id.
+      profile_id: m.profile_id ?? null,
       role: m.role,
       stage_node_id: m.stage_node_id ?? null,
       stage_name: stageName,
@@ -183,6 +196,17 @@ function _hasOrgAccess(user: PlatformUser, orgId: string | null | undefined): bo
   if (!orgId) return false;
   if (user.role === "platform_admin") return true;
   return user.memberships.some((m) => m.org_id === orgId);
+}
+
+// Phase 1 people isolation: Nexus governs an org's BOUNDARY (record, status,
+// entitlements, capabilities), never the people inside it. Every endpoint that
+// returns or mutates people uses this guard — the platform operator is refused
+// outright instead of inheriting the _assertOrgAccess bypass.
+function _assertOrgPeopleAccess(user: PlatformUser, orgId: string, requireEdit = false): void {
+  if (user.role === "platform_admin") {
+    throw new HttpError(403, "Nexus operators cannot access an organization's members");
+  }
+  _assertOrgAccess(user, orgId, requireEdit);
 }
 
 function _authUserResponse(user: PlatformUser, accessToken: string): Row {
@@ -288,6 +312,29 @@ platformRouter.post("/auth/login", async (c) => {
   if (!email || !password) throw new HttpError(400, "email and password required");
   const session = await signInUser(email, password);
   const user = await loadPlatformUser(session.id, session.email);
+
+  // Phase 2 org-scoped identity: an org portal passes its slug, and the session
+  // is scoped to that one org — the person must have an identity THERE, and the
+  // platform operator can never sign in through an org's door (§3.5 hard wall).
+  const orgSlug = typeof body?.org_slug === "string" && body.org_slug.trim() ? body.org_slug.trim() : null;
+  if (orgSlug) {
+    const org = await db.getOrganizationBySlug(orgSlug);
+    if (!org) throw new HttpError(404, "Organization not found");
+    if (user.role === "platform_admin") {
+      throw new HttpError(403, "Nexus operators sign in at the operator gate, not an organization portal");
+    }
+    const orgMemberships = user.memberships.filter((m) => m.org_id === org.id);
+    if (orgMemberships.length === 0) {
+      throw new HttpError(403, "No account at this organization");
+    }
+    const scoped: PlatformUser = { ...user, memberships: orgMemberships };
+    return c.json({
+      ..._authUserResponse(scoped, session.access_token),
+      org_id: org.id,
+      org_slug: org.slug,
+    });
+  }
+
   return c.json(_authUserResponse(user, session.access_token));
 });
 
@@ -441,6 +488,72 @@ platformRouter.get("/auth/me", async (c) => {
   });
 });
 
+// ── Platform context endpoints (Phase 3 — the role→platform bridge) ─────────
+// External platforms call these with the caller's session token to learn "may
+// this person enter, and as what". The grant is derived from program membership
+// + custom-role area perms + the program's feature switches (resolvePlatformAccess);
+// the identity emitted is the ORG-SCOPED person id (Phase 2). 403 when the role
+// doesn't grant the area or the feature is off — that IS the access control.
+
+// Bridge Platform: emits the NexusBridgeContext shape from
+// Components/laic-learner-contracts (programId is that contract's fixed domain
+// literal; the real Nexus program uuid rides in nexus_program_id).
+platformRouter.get("/bridge/context", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  const mapped = BRIDGE_ROLE_MAP[access.level];
+  return c.json({
+    nexusUserId: access.profileId,
+    laicOrgId: access.orgId,
+    programId: "bridge_program",
+    appId: await platformAppSlug(access.programId, "bridge-platform", "bridge_ai_coach"),
+    roles: mapped.roles,
+    permissions: [`bridge:${access.level}`],
+    accessLevel: mapped.accessLevel,
+    displayName: await _platformDisplayName(access.profileId, user),
+    // Extensions beyond the contract (additive — Bridge's shape check ignores them).
+    nexus_program_id: access.programId,
+    program_name: access.programName,
+    role_name: access.roleName,
+  });
+});
+
+// The person's display name in THIS org (their org-scoped profile), falling
+// back to the session-level name/email so platforms never render a raw id.
+async function _platformDisplayName(profileId: string, user: PlatformUser): Promise<string> {
+  const profile = await db.getProfile(profileId).catch(() => null);
+  return (
+    (profile?.display_name as string) ||
+    (profile?.name as string) ||
+    user.display_name ||
+    user.email ||
+    profileId
+  );
+}
+
+// Learning Platform: parallel shape (no prior contract — this defines it).
+// Also honors the org-level learning module entitlement, like the launch seam.
+platformRouter.get("/learning/context", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", c.req.query("program_id") ?? null);
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  const mapped = LEARNING_ROLE_MAP[access.level];
+  return c.json({
+    nexusUserId: access.profileId,
+    laicOrgId: access.orgId,
+    programId: access.programId,
+    appId: await platformAppSlug(access.programId, "learning-platform", "learning_platform"),
+    roles: mapped.roles,
+    permissions: [`learning:${access.level}`],
+    accessLevel: mapped.accessLevel,
+    displayName: await _platformDisplayName(access.profileId, user),
+    program_name: access.programName,
+    role_name: access.roleName,
+  });
+});
+
 platformRouter.post("/orgs", async (c) => {
   const user = await getCurrentUser(c);
   const req = parseBody(createOrgSchema, await c.req.json());
@@ -536,6 +649,7 @@ platformRouter.post("/orgs/:org_id/programs", async (c) => {
     icon: req.icon ?? null,
     instructorLabel: req.instructor_label ?? null,
     learnerLabel: req.learner_label ?? null,
+    features: req.features ?? null,
   });
   // Give the new program its own group scope, mirroring org_setup behavior.
   if (req.category === "edu") {
@@ -578,6 +692,27 @@ platformRouter.delete("/programs/:program_id", async (c) => {
     metadata: { name: program.name },
   });
   return c.json({ ok: true });
+});
+
+// Org admin edits which feature-areas are accessible inside a program (§3.5).
+platformRouter.patch("/programs/:program_id/features", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _assertOrgAccess(user, program.org_id, true);
+  const req = parseBody(programFeaturesUpdate, await c.req.json());
+  const features = normalizeProgramFeatures(req.features);
+  const row = await db.updateProgramFeatures(programId, features);
+  if (!row) throw new HttpError(404, "Program not found");
+  await db.recordAuditEvent("program.features.updated", {
+    orgId: program.org_id,
+    actorUserId: user.id,
+    scopeType: "program",
+    scopeId: programId,
+    metadata: { features },
+  });
+  return c.json(_programResponse((await db.getProgram(programId)) ?? row));
 });
 
 platformRouter.patch("/orgs/:org_id/theme", async (c) => {
@@ -908,7 +1043,7 @@ function _memberResponse(row: Row, profile: Row, stageName: string | null): Row 
 platformRouter.get("/orgs/:org_id/members", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
-  _assertOrgAccess(user, orgId);
+  _assertOrgPeopleAccess(user, orgId);
   const rows = await db.listMembers(orgId);
   return c.json(
     rows.map((r) => {
@@ -922,8 +1057,8 @@ platformRouter.get("/orgs/:org_id/members", async (c) => {
 platformRouter.post("/orgs/:org_id/members", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
+  _assertOrgPeopleAccess(user, orgId, true); // authz before body validation
   const req = parseBody(addMemberSchema, await c.req.json());
-  _assertOrgAccess(user, orgId, true);
 
   const profile = await db.getProfileByEmail(req.email);
   if (!profile) throw new HttpError(404, "User with this email not found");
@@ -949,7 +1084,7 @@ platformRouter.patch("/members/:member_id", async (c) => {
 
   const row = await db.getMembership(memberId);
   if (!row) throw new HttpError(404, "Member not found");
-  _assertOrgAccess(user, row.org_id, true);
+  _assertOrgPeopleAccess(user, row.org_id, true);
 
   const updated = await db.updateMemberAccess(memberId, req.access);
   await db.recordAuditEvent("member.access_updated", {
@@ -972,9 +1107,9 @@ platformRouter.patch("/members/:member_id", async (c) => {
 
 // True administrators only (owner / administrator) — deliberately stricter
 // than isOfferingAdmin, which counts instructors for offering-management tasks.
-// Removing PEOPLE is an admin act; an instructor must never be able to do it.
+// Removing PEOPLE is an admin act; an instructor must never be able to do it,
+// and (Phase 1 people isolation) neither can the platform operator.
 function _canManageMembers(user: PlatformUser, orgId: string, programId: string | null): boolean {
-  if (user.role === "platform_admin") return true;
   return user.memberships.some(
     (m) =>
       m.org_id === orgId &&
@@ -998,7 +1133,7 @@ platformRouter.delete("/members/:member_id", async (c) => {
       throw new HttpError(403, "Program admin access required");
     }
   } else {
-    _assertOrgAccess(user, row.org_id, true);
+    _assertOrgPeopleAccess(user, row.org_id, true);
   }
   await db.deleteMembership(memberId);
   await db.recordAuditEvent("member.removed", {
@@ -1025,7 +1160,7 @@ platformRouter.delete("/invitations/:invitation_id", async (c) => {
       throw new HttpError(403, "Program admin access required");
     }
   } else {
-    _assertOrgAccess(user, inv.organization_id as string, true);
+    _assertOrgPeopleAccess(user, inv.organization_id as string, true);
   }
   const revoked = await graph.revokeInvitation(invId);
   if (!revoked) throw new HttpError(410, "This invitation is no longer pending");
@@ -1117,7 +1252,17 @@ platformRouter.get("/orgs/:org_id/audit", async (c) => {
 });
 
 // Platform operator: audit feed across every organization — boundary-level
-// actions only (provisioning, governance, entitlements), never an org's content.
+// actions only (provisioning, governance, capabilities), never an org's content
+// or people. Phase 2 (org-scoped identity) enforces the allowlist: org-internal
+// events (members, invitations, offerings, registrations, …) never surface here.
+const BOUNDARY_AUDIT_ACTIONS = new Set([
+  "organization.provisioned",
+  "organization.created",
+  "organization.setup_completed",
+  "organization.capabilities_updated",
+  "organization.entitlement_updated",
+]);
+
 platformRouter.get("/admin/audit", async (c) => {
   const user = await getCurrentUser(c);
   _requirePlatformAdmin(user);
@@ -1128,7 +1273,9 @@ platformRouter.get("/admin/audit", async (c) => {
     if (!Number.isInteger(limit)) throw new HttpError(422, [{ loc: ["query", "limit"], msg: "Input should be a valid integer", type: "int_parsing" }]);
     if (limit > 500) throw new HttpError(422, [{ loc: ["query", "limit"], msg: "Input should be less than or equal to 500", type: "less_than_equal" }]);
   }
-  const events = await db.listAllAuditEvents(limit);
+  const events = (await db.listAllAuditEvents(limit)).filter((e) =>
+    BOUNDARY_AUDIT_ACTIONS.has(e.action as string),
+  );
   const orgIds = new Set(events.map((e) => e.organization_id).filter(Boolean) as string[]);
   const orgNames = new Map<string, string>();
   for (const oid of orgIds) {
@@ -1564,7 +1711,7 @@ platformRouter.get("/groups/:id/members", async (c) => {
   _requireDb();
   const g = await graph.getGroup(c.req.param("id"));
   if (!g) throw new HttpError(404, "Group not found");
-  _assertOrgAccess(user, g.organization_id as string);
+  _assertOrgPeopleAccess(user, g.organization_id as string);
   return c.json(await graph.listGroupMembers(c.req.param("id")));
 });
 platformRouter.post("/groups/:id/members", async (c) => {
@@ -1572,7 +1719,7 @@ platformRouter.post("/groups/:id/members", async (c) => {
   _requireDb();
   const g = await graph.getGroup(c.req.param("id"));
   if (!g) throw new HttpError(404, "Group not found");
-  _assertOrgAccess(user, g.organization_id as string, true);
+  _assertOrgPeopleAccess(user, g.organization_id as string, true);
   const body = (await c.req.json()) as Row;
   return c.json(await graph.addGroupMember(c.req.param("id"), g.organization_id as string, { userId: body.user_id ?? null, role: body.role ?? null }));
 });
@@ -1581,7 +1728,7 @@ platformRouter.delete("/groups/:id/members/:member_id", async (c) => {
   _requireDb();
   const g = await graph.getGroup(c.req.param("id"));
   if (!g) throw new HttpError(404, "Group not found");
-  _assertOrgAccess(user, g.organization_id as string, true);
+  _assertOrgPeopleAccess(user, g.organization_id as string, true);
   await graph.removeGroupMember(c.req.param("member_id"));
   return c.json({ ok: true });
 });
@@ -1591,7 +1738,7 @@ platformRouter.post("/orgs/:org_id/invitations", async (c) => {
   const user = await getCurrentUser(c);
   _requireDb();
   const orgId = c.req.param("org_id");
-  _assertOrgAccess(user, orgId, true);
+  _assertOrgPeopleAccess(user, orgId, true);
   const body = (await c.req.json()) as Row;
   const { invitation, token } = await graph.createInvitation(orgId, user.id, {
     email: body.email ?? null, displayName: body.display_name ?? null, role: (body.role as string) ?? "learner",
@@ -1610,7 +1757,7 @@ platformRouter.get("/orgs/:org_id/invitations", async (c) => {
   const user = await getCurrentUser(c);
   _requireDb();
   const orgId = c.req.param("org_id");
-  _assertOrgAccess(user, orgId);
+  _assertOrgPeopleAccess(user, orgId);
   const rows = (await graph.listInvitations(orgId)).filter((i: Row) => i.status === "pending");
   return c.json(rows);
 });

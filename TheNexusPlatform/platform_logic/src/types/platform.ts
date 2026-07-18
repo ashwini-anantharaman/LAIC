@@ -3,6 +3,36 @@ export type StageKey = "international" | "national" | "state" | "chapter";
 export type JoinCodeKind = "student" | "teacher" | "administrator";
 export type Permission = "Can Edit" | "Can View" | "Per Level";
 export type ProgramCategory = "game" | "edu";
+
+// Per-program feature accessibility. An org admin picks which of these areas are
+// accessible inside a program at creation (editable later); role creation then
+// only offers the enabled areas. Keys match the role-permission areas (RoleArea).
+export type ProgramFeatureKey =
+  | "learning"
+  | "bridge"
+  | "appbuilder"
+  | "community"
+  | "teams"
+  | "partners";
+export type ProgramFeatures = Record<ProgramFeatureKey, boolean>;
+
+export const PROGRAM_FEATURES: { key: ProgramFeatureKey; label: string }[] = [
+  { key: "learning", label: "Learning Platform" },
+  { key: "bridge", label: "Bridge Platform" },
+  { key: "appbuilder", label: "App Builder" },
+  { key: "community", label: "Community" },
+  { key: "teams", label: "Teams" },
+  { key: "partners", label: "Partners" },
+];
+
+export const DEFAULT_PROGRAM_FEATURES: ProgramFeatures = {
+  learning: true,
+  bridge: true,
+  appbuilder: true,
+  community: true,
+  teams: true,
+  partners: true,
+};
 export type DeliveryMethod = "join_code" | "email_direct";
 export type IntegrationPermissionLevel = "can_edit" | "can_view" | "per_level";
 
@@ -15,6 +45,7 @@ export interface Program {
   icon?: string;
   instructor_label?: string;
   learner_label?: string;
+  features?: ProgramFeatures;
   course_count?: number;
   learner_count?: number;
   instructor_count?: number;

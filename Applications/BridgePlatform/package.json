@@ -4,6 +4,7 @@
   "private": true,
   "description": "Bridge Platform workstream workspace (LAIC / MindBrainAI Nexus). See laicdocs/Bridge_Workstream_Execution_Plan_v1.md.",
   "scripts": {
+    "dev": "pnpm --filter bridge-web dev",
     "build": "pnpm -r build",
     "test": "vitest run",
     "typecheck": "pnpm -r typecheck",

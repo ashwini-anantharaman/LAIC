@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BookOpen, Check, Plus, Rocket, X } from "lucide-react";
+import { BookOpen, Check, Plus, Rocket, Waypoints, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -47,6 +47,7 @@ import type {
   RegisteredApp,
   Registration,
 } from "@/types/platform";
+import { DEFAULT_PROGRAM_FEATURES } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Spinner, statusTone } from "@/nexus/ui/kit";
 
 /** Fetch the current program (no single-get endpoint; list + find). */
@@ -82,6 +83,39 @@ export function ProgramOverview() {
     if (programId) listOfferings(programId).then(setOfferings).catch(() => setOfferings([]));
   }, [programId]);
 
+  // Feature accessibility is set per-program by the org admin. Programs created
+  // before feature config existed default to all-on.
+  const features = program?.features ?? DEFAULT_PROGRAM_FEATURES;
+  const launchCards = [
+    features.learning && (
+      <LaunchCard
+        key="learning"
+        icon={<Rocket className="size-5" />}
+        title="Launch Learning Platform"
+        hint="Author lessons and courses for this program."
+        onClick={() => navigate(`/o/${orgId}/p/${programId}/learning`)}
+      />
+    ),
+    features.bridge && (
+      <LaunchCard
+        key="bridge"
+        icon={<Waypoints className="size-5" />}
+        title="Launch Bridge Platform"
+        hint="Open the Bridge Platform for this program."
+        onClick={() => navigate(`/o/${orgId}/p/${programId}/bridge`)}
+      />
+    ),
+    features.appbuilder && (
+      <LaunchCard
+        key="appbuilder"
+        icon={<BookOpen className="size-5" />}
+        title="Make an application"
+        hint="Configure an App Shell and fill it with content."
+        onClick={() => navigate(`/o/${orgId}/p/${programId}/shells`)}
+      />
+    ),
+  ].filter(Boolean);
+
   return (
     <div>
       <Head program={program} subtitle={program?.description ?? "Program workspace."} />
@@ -90,20 +124,9 @@ export function ProgramOverview() {
         <Stat label="Learners" value={program?.learner_count ?? 0} />
         <Stat label="Courses" value={program?.course_count ?? 0} />
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <LaunchCard
-          icon={<Rocket className="size-5" />}
-          title="Launch Learning Platform"
-          hint="Author lessons and courses for this program."
-          onClick={() => navigate(`/o/${orgId}/p/${programId}/learning`)}
-        />
-        <LaunchCard
-          icon={<BookOpen className="size-5" />}
-          title="Make an application"
-          hint="Configure an App Shell and fill it with content."
-          onClick={() => navigate(`/o/${orgId}/p/${programId}/shells`)}
-        />
-      </div>
+      {launchCards.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2">{launchCards}</div>
+      ) : null}
     </div>
   );
 }

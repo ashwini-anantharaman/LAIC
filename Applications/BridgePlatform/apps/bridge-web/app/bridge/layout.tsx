@@ -1,9 +1,11 @@
 import { roleLabel, stubDisplayName } from "@bridge/nexus-client";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { clearDevUser } from "@/app/actions";
 import { NavLink } from "@/components/NavLink";
 import { navForContext } from "@/lib/nav";
 import { getBridgeContext, nexusMode } from "@/lib/nexus";
+import { NEXUS_RETURN_COOKIE, safeReturnUrl } from "@/lib/nexusToken";
 
 /**
  * Bridge app shell: all bridge routes live under /bridge/* so the app slots
@@ -16,8 +18,16 @@ export default async function BridgeShellLayout({
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
 
+  // Real name from the Nexus context (http mode); stub roster in dev.
   const displayName =
-    stubDisplayName(context.nexusUserId) ?? context.nexusUserId;
+    context.displayName ??
+    stubDisplayName(context.nexusUserId) ??
+    context.nexusUserId;
+
+  // Where the Nexus console launched us from (set by /nexus/launch) — powers
+  // "Back to Nexus". Absent in stub/standalone runs, so the link hides itself.
+  const cookieStore = await cookies();
+  const nexusReturnUrl = safeReturnUrl(cookieStore.get(NEXUS_RETURN_COOKIE)?.value);
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
@@ -38,6 +48,14 @@ export default async function BridgeShellLayout({
           ))}
         </nav>
         <div className="space-y-1 border-t border-[var(--line)] p-4 text-sm">
+          {nexusReturnUrl && (
+            <a
+              href={nexusReturnUrl}
+              className="mb-2 inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
+            >
+              ← Back to Nexus
+            </a>
+          )}
           <p className="font-medium">{displayName}</p>
           <p className="text-xs text-neutral-500">
             {context.roles.map(roleLabel).join(", ")}

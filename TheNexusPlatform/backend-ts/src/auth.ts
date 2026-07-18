@@ -271,8 +271,12 @@ export async function exchangeLaunchToken(rawToken: string): Promise<Row> {
   const userId = consumed.user_id;
 
   if (await demoMode()) {
-    // Demo-mode access tokens are the user id itself (see localAuthSignIn).
-    return { access_token: userId };
+    // Demo-mode access tokens are the AUTH credential id (see localAuthSignIn),
+    // but the launch token stores the org-scoped profile id (person-FK rule) —
+    // resolve back to the credential. Legacy/local rows have profile id ==
+    // auth id, so the fallback keeps them working.
+    const profile = await platformDb.getProfile(userId);
+    return { access_token: (profile?.auth_user_id as string) ?? userId };
   }
 
   const profile = await platformDb.getProfile(userId);

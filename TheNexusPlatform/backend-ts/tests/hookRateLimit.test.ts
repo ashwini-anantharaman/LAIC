@@ -11,7 +11,8 @@ const tempDir = mkdtempSync(join(tmpdir(), "owlwise-ratelimit-"));
 process.env.LOCAL_DATA_DIR = tempDir;
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-delete process.env.DATABASE_URL; // force local mode — orthogonal to the limiter
+process.env.DATABASE_URL = ""; // force local mode ("" not delete — dotenv would repopulate)
+process.env.SUPABASE_DB_URL = "";
 process.env.HOOK_RATE_LIMIT_PER_MIN = "3";
 
 const { createApp } = await import("../src/app");

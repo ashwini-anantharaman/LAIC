@@ -6,7 +6,7 @@ import { getSettings } from "./config";
 import { HttpError } from "./httpError";
 import { verifyToken } from "./auth";
 import { dbEnabled } from "./db/client";
-import { runWithRequestUser } from "./db/requestContext";
+import { runWithRequestContext } from "./db/requestContext";
 import { gameRouter } from "./routes/game";
 import { hookRouter } from "./routes/hook";
 import { offeringsRouter } from "./routes/offerings";
@@ -24,6 +24,17 @@ async function _resolveUserId(c: Context): Promise<string | null> {
   } catch {
     return null; // app-key (hook) tokens, expired/invalid → no user context
   }
+}
+
+// Org id from the URL, for the tenant door's residency routing. Middleware runs
+// before route matching, so parse the one canonical pattern (`/orgs/:org_id`)
+// from the raw path. Routes that reach an org another way (e.g. via a program
+// lookup) run with orgId=null → shared pool, which is correct while every org
+// is `shared`; dedicated routing for those paths lands with the provisioning flow.
+const ORG_PATH_RE = /\/orgs\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i;
+function _resolveOrgId(c: Context): string | null {
+  const m = ORG_PATH_RE.exec(c.req.path);
+  return m ? m[1] : null;
 }
 
 /** Build the Hono app. Mirrors the FastAPI `app` in backend/app/main.py. */
@@ -57,11 +68,26 @@ export function createApp(): Hono {
     }),
   );
 
-  // Bind the request user into AsyncLocalStorage so the Postgres data path runs
-  // tenant queries under RLS (withUserContext). Only in DB mode — avoids an extra
-  // token verification per request when the legacy path is in use.
+  // Bind the request user + org into AsyncLocalStorage so the Postgres data path
+  // runs tenant queries under RLS on the org's datastore (the tenant door). Only
+  // in DB mode — avoids an extra token verification per request when the legacy
+  // path is in use.
   if (dbEnabled()) {
-    app.use("*", async (c, next) => runWithRequestUser(await _resolveUserId(c), () => next()));
+    app.use("*", async (c, next) =>
+      runWithRequestContext({ userId: await _resolveUserId(c), orgId: _resolveOrgId(c) }, () => next()),
+    );
+  }
+
+  // Phase 1 guardrail: without DATABASE_URL, a configured Supabase project makes
+  // the legacy supabase-js data path active — it connects with the service-role
+  // key, which BYPASSES Row Level Security entirely. Tolerated for the legacy
+  // deploy shape, but it must never be mistaken for an isolated configuration.
+  if (!dbEnabled() && settings.supabaseEnabled) {
+    console.warn(
+      "[nexus] WARNING: running on the legacy supabase-js data path (service-role key, " +
+        "RLS BYPASSED). Set DATABASE_URL to use the canonical Postgres path where " +
+        "row-level isolation is enforced.",
+    );
   }
 
   // More specific prefixes first; offerings mounts at the bare /api prefix.

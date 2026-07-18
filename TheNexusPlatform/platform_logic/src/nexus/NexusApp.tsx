@@ -32,6 +32,7 @@ import {
 import { ProgramTeam } from "@/nexus/routes/ProgramTeam";
 import { ShellEditor } from "@/nexus/routes/ShellEditor";
 import { LearningLaunch } from "@/nexus/routes/LearningLaunch";
+import { BridgeLaunch } from "@/nexus/routes/BridgeLaunch";
 import { Spinner } from "@/nexus/ui/kit";
 import { SessionProvider, useSession } from "@/nexus/session";
 
@@ -70,6 +71,14 @@ function Routed() {
         element={
           <RequireAuth>
             <LearningLaunch />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/o/:orgId/p/:programId/bridge"
+        element={
+          <RequireAuth>
+            <BridgeLaunch />
           </RequireAuth>
         }
       />

@@ -18,6 +18,7 @@ import {
   adminAddRegistrationSchema,
   appCreateSchema,
   appUpdateSchema,
+  normalizeProgramFeatures,
   normalizeSignupField,
   offeringCreateSchema,
   offeringUpdateSchema,
@@ -41,6 +42,24 @@ function _requireOrgMember(user: PlatformUser, orgId: string): void {
   if (!user.memberships.some((m) => m.org_id === orgId)) {
     throw new HttpError(403, "Not a member of this organization");
   }
+}
+
+// Phase 1 people isolation: endpoints that return or mutate PEOPLE (members,
+// invitations, registrations, role assignments) refuse the platform operator —
+// Nexus governs the org's boundary, never the people inside it. Content
+// endpoints (offerings, apps, roles-as-definitions) keep the standard guards.
+function _requireOrgPeopleMember(user: PlatformUser, orgId: string): void {
+  if (user.role === "platform_admin") {
+    throw new HttpError(403, "Nexus operators cannot access an organization's members");
+  }
+  _requireOrgMember(user, orgId);
+}
+
+function _requireOfferingPeopleAdmin(user: PlatformUser, orgId: string, programId: string | null): void {
+  if (user.role === "platform_admin") {
+    throw new HttpError(403, "Nexus operators cannot access an organization's members");
+  }
+  _requireOfferingAdmin(user, orgId, programId);
 }
 
 function _offeringResponse(row: Row): Row {
@@ -424,7 +443,7 @@ offeringsRouter.get("/offerings/:offering_id/registrations", async (c) => {
   const status = c.req.query("status") ?? null;
   const offering = await db.getOffering(offeringId);
   if (!offering) throw new HttpError(404, "Offering not found");
-  _requireOfferingAdmin(user, offering.organization_id, offering.program_id);
+  _requireOfferingPeopleAdmin(user, offering.organization_id, offering.program_id);
   return c.json((await db.listRegistrations(offeringId, status)).map(_registrationResponse));
 });
 
@@ -434,7 +453,7 @@ offeringsRouter.post("/offerings/:offering_id/registrations/admin-add", async (c
   const req = parseBody(adminAddRegistrationSchema, await c.req.json());
   const offering = await db.getOffering(offeringId);
   if (!offering) throw new HttpError(404, "Offering not found");
-  _requireOfferingAdmin(user, offering.organization_id, offering.program_id);
+  _requireOfferingPeopleAdmin(user, offering.organization_id, offering.program_id);
 
   // Org-scoped world: an admin-added person is identified by email until they
   // authenticate into this org (then their org profile links via registration).
@@ -476,7 +495,7 @@ offeringsRouter.post("/registrations/:registration_id/approve", async (c) => {
   const registrationId = c.req.param("registration_id");
   const reg = await db.getRegistration(registrationId);
   if (!reg) throw new HttpError(404, "Registration not found");
-  _requireOfferingAdmin(user, reg.organization_id, reg.program_id ?? null);
+  _requireOfferingPeopleAdmin(user, reg.organization_id, reg.program_id ?? null);
   const result = await db.approveRegistration(registrationId, user.id);
   await db.recordAuditEvent("registration.approved", {
     orgId: reg.organization_id,
@@ -495,7 +514,7 @@ offeringsRouter.post("/registrations/:registration_id/reject", async (c) => {
   const registrationId = c.req.param("registration_id");
   const reg = await db.getRegistration(registrationId);
   if (!reg) throw new HttpError(404, "Registration not found");
-  _requireOfferingAdmin(user, reg.organization_id, reg.program_id ?? null);
+  _requireOfferingPeopleAdmin(user, reg.organization_id, reg.program_id ?? null);
   const result = await db.rejectRegistration(registrationId, user.id);
   await db.recordAuditEvent("registration.rejected", {
     orgId: reg.organization_id,
@@ -516,7 +535,7 @@ offeringsRouter.post("/groups/:group_id/participants/coach-add", async (c) => {
   const groupId = c.req.param("group_id");
   const group = await graph.getGroup(groupId);
   if (!group) throw new HttpError(404, "Group not found");
-  _requireOfferingAdmin(user, group.organization_id as string, (group.program_id as string) ?? null);
+  _requireOfferingPeopleAdmin(user, group.organization_id as string, (group.program_id as string) ?? null);
   const req = (await c.req.json()) as Row;
   const row = await graph.coachAddParticipant(groupId, user.id, {
     email: req.email ?? null, name: req.name ?? null,
@@ -535,7 +554,7 @@ offeringsRouter.post("/offerings/:offering_id/registrations/bulk-import", async 
   const offeringId = c.req.param("offering_id");
   const offering = await db.getOffering(offeringId);
   if (!offering) throw new HttpError(404, "Offering not found");
-  _requireOfferingAdmin(user, offering.organization_id, offering.program_id);
+  _requireOfferingPeopleAdmin(user, offering.organization_id, offering.program_id);
   const req = (await c.req.json()) as { rows?: Array<{ email?: string; name?: string; age?: number; field_data?: Row }> };
   const rows = Array.isArray(req.rows) ? req.rows : [];
   const result = await graph.bulkImportRegistrations(offering.organization_id, offeringId, rows, user.id);
@@ -551,6 +570,18 @@ const _ACCESS_LEVEL = z.enum(["view", "edit", "comment"]);
 const _programRolePerms = z.record(z.string(), _ACCESS_LEVEL);
 const programRoleCreateSchema = z.object({ name: z.string().min(1), perms: _programRolePerms.default({}) });
 const programRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _programRolePerms.optional() });
+
+/**
+ * A role may only grant access to areas the program has enabled (the org admin's
+ * per-program feature config). Perms for disabled features are dropped, so a
+ * stale/forged client can never grant an area the program doesn't expose.
+ */
+function _permsWithinFeatures<V>(perms: Record<string, V>, programFeatures: unknown): Record<string, V> {
+  const enabled = normalizeProgramFeatures(programFeatures as Record<string, unknown>);
+  return Object.fromEntries(
+    Object.entries(perms).filter(([area]) => enabled[area as keyof typeof enabled]),
+  ) as Record<string, V>;
+}
 
 offeringsRouter.get("/programs/:program_id/roles", async (c) => {
   const user = await getCurrentUser(c);
@@ -572,7 +603,8 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   _requireOfferingAdmin(user, program.org_id, programId);
   // created_by is provenance only; skip it to avoid the demo-mode auth-id vs
   // profile-id mismatch (the FK targets profiles.id).
-  const row = await graph.createProgramRole(program.org_id, programId, req.name, req.perms);
+  const perms = _permsWithinFeatures(req.perms, program.features);
+  const row = await graph.createProgramRole(program.org_id, programId, req.name, perms);
   await db.recordAuditEvent("program.role.created", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
     metadata: { name: req.name },
@@ -588,7 +620,12 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
   const existing = await graph.getProgramRole(roleId);
   if (!existing) throw new HttpError(404, "Role not found");
   _requireOfferingAdmin(user, existing.organization_id as string, existing.program_id as string);
-  const row = await graph.updateProgramRole(roleId, { name: req.name, perms: req.perms });
+  let perms = req.perms;
+  if (perms !== undefined) {
+    const program = await db.getProgram(existing.program_id as string);
+    perms = _permsWithinFeatures(perms, program?.features);
+  }
+  const row = await graph.updateProgramRole(roleId, { name: req.name, perms });
   await db.recordAuditEvent("program.role.updated", {
     orgId: existing.organization_id as string, actorUserId: user.id, scopeType: "program",
     scopeId: existing.program_id as string, metadata: { name: req.name ?? existing.name },
@@ -621,7 +658,7 @@ offeringsRouter.get("/programs/:program_id/administrators", async (c) => {
   const programId = c.req.param("program_id");
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _requireOrgMember(user, program.org_id);
+  _requireOrgPeopleMember(user, program.org_id);
   const members = (await db.listMembers(program.org_id))
     .filter((m: Row) => m.program_id === programId && (m.role === "administrator" || m.role === "owner"))
     .map((m: Row) => {
@@ -647,7 +684,7 @@ offeringsRouter.post("/programs/:program_id/administrators", async (c) => {
   if (!program) throw new HttpError(404, "Program not found");
   // Org-altitude action: requires org-level access (owner/administrator),
   // NOT program-scoped access — this is how the org assigns a program's admin.
-  _requireOfferingAdmin(user, program.org_id, null);
+  _requireOfferingPeopleAdmin(user, program.org_id, null);
   const { invitation, token } = await graph.createInvitation(program.org_id, user.id, {
     email: req.email,
     displayName: req.display_name ?? null,
@@ -669,7 +706,7 @@ offeringsRouter.get("/programs/:program_id/members", async (c) => {
   const programId = c.req.param("program_id");
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _requireOrgMember(user, program.org_id);
+  _requireOrgPeopleMember(user, program.org_id);
   return c.json(await graph.listProgramMembers(program.org_id, programId));
 });
 
@@ -686,7 +723,7 @@ offeringsRouter.post("/programs/:program_id/members", async (c) => {
   const req = parseBody(inviteMemberSchema, await c.req.json());
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _requireOfferingAdmin(user, program.org_id, programId);
+  _requireOfferingPeopleAdmin(user, program.org_id, programId);
   const { invitation, token } = await graph.createInvitation(program.org_id, user.id, {
     email: req.email,
     displayName: req.display_name ?? null,
@@ -713,7 +750,7 @@ offeringsRouter.put("/programs/:program_id/members/role", async (c) => {
   const req = parseBody(setMemberRoleSchema, await c.req.json());
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _requireOfferingAdmin(user, program.org_id, programId);
+  _requireOfferingPeopleAdmin(user, program.org_id, programId);
   const row = await graph.setProgramRoleAssignment(program.org_id, programId, req.email, req.role_id);
   await db.recordAuditEvent("program.member.role_assigned", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
@@ -912,6 +949,9 @@ offeringsRouter.post("/programs/:program_id/learning-platform/launch", async (c)
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
   _requireOrgMember(user, program.org_id);
+  if (!normalizeProgramFeatures(program.features as Record<string, unknown>).learning) {
+    throw new HttpError(403, "The Learning Platform is not enabled for this program");
+  }
   if (!(await db.checkModuleAccess(program.org_id, "learning"))) {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
@@ -935,6 +975,60 @@ offeringsRouter.post("/programs/:program_id/learning-platform/launch", async (c)
   return c.json({
     app_slug: lp.app_slug,
     launch_url: lp.launch_url ?? null,
+    launch_token: rawToken,
+    expires_at: tokenRow.expires_at,
+    context: {
+      organization_id: program.org_id,
+      program_id: programId,
+      program_name: program.name,
+      role: membership?.role ?? user.role,
+    },
+  });
+});
+
+// ── Bridge Platform launch seam (placeholder interior) ─────────────────────
+// Same seam as the Learning Platform launch: find-or-create the program's Bridge
+// app record, mint a single-use launch token, hand back the verified context.
+// Gated by the program's `bridge` feature (org-admin config), not an org module.
+offeringsRouter.post("/programs/:program_id/bridge-platform/launch", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgMember(user, program.org_id);
+  if (!normalizeProgramFeatures(program.features as Record<string, unknown>).bridge) {
+    throw new HttpError(403, "The Bridge Platform is not enabled for this program");
+  }
+
+  // Find-or-create the program's Bridge app record. When BRIDGE_PLATFORM_URL
+  // is configured, its launch entry (`/nexus/launch`) becomes the app's
+  // launch_url — the console then hands off with a single-use launch token
+  // instead of showing the placeholder pane.
+  const bridgeBase = getSettings().bridgePlatformUrl;
+  const bridgeLaunchUrl = bridgeBase ? `${bridgeBase}/nexus/launch` : null;
+  const apps = await db.listRegisteredApps(programId);
+  let bridge = apps.find((a: Row) => a.app_slug?.startsWith("bridge-platform"));
+  if (!bridge) {
+    const [row] = await db.createRegisteredApp(program.org_id, programId, "Bridge Platform", {
+      appSlug: `bridge-platform-${programId.slice(0, 8)}`,
+      launchUrl: bridgeLaunchUrl,
+    });
+    bridge = row;
+    await db.recordAuditEvent("bridge_platform.provisioned", {
+      orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+      targetType: "registered_app", targetId: bridge.id,
+    });
+  } else if (!bridge.launch_url && bridgeLaunchUrl) {
+    // Backfill records provisioned before the env was configured.
+    bridge = await db.updateRegisteredApp(bridge.id as string, { launch_url: bridgeLaunchUrl });
+  }
+
+  const [tokenRow, rawToken] = await db.createLaunchToken(bridge.id, user.id);
+  const membership = user.memberships.find((m) => m.org_id === program.org_id) ?? null;
+  return c.json({
+    app_slug: bridge.app_slug,
+    launch_url: bridge.launch_url ?? null,
     launch_token: rawToken,
     expires_at: tokenRow.expires_at,
     context: {

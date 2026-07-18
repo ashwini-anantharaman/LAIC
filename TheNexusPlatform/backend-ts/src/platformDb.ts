@@ -6,6 +6,7 @@ import { HttpError } from "./httpError";
 import * as local from "./platformLocalStore";
 import { StageNode } from "./permissions";
 import { getSettings } from "./config";
+import type { ProgramFeatures } from "./schemas";
 import { requireClient } from "./supabaseClient";
 import { dbEnabled } from "./db/client";
 import * as pg from "./db/identityRepo";
@@ -356,6 +357,22 @@ export async function createProgram(
       })
       .select("*"),
     "Failed to create program",
+  );
+}
+
+export async function updateProgramFeatures(
+  programId: string,
+  features: ProgramFeatures,
+): Promise<Row | null> {
+  if (usePg()) return tpg.updateProgramFeatures(programId, features);
+  if (await useLocal()) return local.localUpdateProgramFeatures(programId, features);
+  const client = requireClient();
+  const existing = await getProgram(programId);
+  if (!existing) return null;
+  const meta = { ...((existing.metadata_json as Row) ?? {}), features };
+  return _mutateOne(
+    client.from("programs").update({ metadata_json: meta }).eq("id", programId).select("*"),
+    "Failed to update program features",
   );
 }
 

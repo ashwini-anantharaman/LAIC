@@ -32,7 +32,7 @@ export interface Session {
   orgMemberships: MembershipSummary[];
   /** Program-scoped memberships. */
   programMemberships: MembershipSummary[];
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, orgSlug?: string) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
   /** Dev impersonation (null when not testing a role). */
@@ -78,8 +78,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    await apiLogin(email, password);
+  const login = useCallback(async (email: string, password: string, orgSlug?: string) => {
+    await apiLogin(email, password, orgSlug);
     setUser(await getMe());
   }, []);
 

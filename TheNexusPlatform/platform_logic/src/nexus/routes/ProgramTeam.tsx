@@ -40,19 +40,18 @@ import {
   type RoleArea,
   type RolePerms,
 } from "@/services/api";
-import type { Invitation, Program } from "@/types/platform";
+import type { Invitation, Program, ProgramFeatureKey } from "@/types/platform";
+import { DEFAULT_PROGRAM_FEATURES, PROGRAM_FEATURES } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Section, Spinner } from "@/nexus/ui/kit";
 import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useSession } from "@/nexus/session";
 
-const AREAS: { key: RoleArea; label: string }[] = [
-  { key: "learning", label: "Learning Platform" },
-  { key: "appbuilder", label: "App builder" },
-  { key: "community", label: "Community" },
-  { key: "teams", label: "Teams" },
-  { key: "partners", label: "Partners" },
-];
+// Role areas mirror the program's configurable features 1:1 (same keys).
+const AREAS: { key: RoleArea; label: string }[] = PROGRAM_FEATURES.map((f) => ({
+  key: f.key as RoleArea,
+  label: f.label,
+}));
 const LEVELS: AccessLevel[] = ["view", "edit", "comment"];
 const areaLabel = (k: string) => AREAS.find((a) => a.key === k)?.label ?? k;
 
@@ -70,6 +69,9 @@ export function ProgramTeam() {
   useEffect(() => {
     listPrograms(orgId).then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null)).catch(() => {});
   }, [orgId, programId]);
+
+  // The program's accessible features gate which areas roles can grant/show.
+  const enabledFeatures = program?.features ?? DEFAULT_PROGRAM_FEATURES;
 
   const load = useCallback(() => {
     listProgramRoles(programId).then(setRoles).catch(() => setRoles([]));
@@ -154,7 +156,11 @@ export function ProgramTeam() {
         ) : (
           <div className="space-y-2">
             {roles.map((r) => {
-              const granted = Object.keys(r.perms);
+              // Only show areas that are still enabled for this program — a
+              // feature turned off after the fact stops appearing as granted.
+              const granted = Object.keys(r.perms).filter(
+                (a) => enabledFeatures[a as ProgramFeatureKey],
+              );
               const holders = (members ?? []).filter((m) => m.role_id === r.id).length;
               return (
                 <div key={r.id} className="flex items-center gap-3 glass-card px-4 py-3">
@@ -297,6 +303,7 @@ export function ProgramTeam() {
         <RoleBuilder
           programId={programId}
           role={editing === "new" ? null : editing}
+          features={program?.features}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -452,17 +459,24 @@ function InviteMemberDialog({
 function RoleBuilder({
   programId,
   role,
+  features,
   onClose,
   onSaved,
 }: {
   programId: string;
   role: ProgramRole | null;
+  features?: Record<ProgramFeatureKey, boolean>;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [name, setName] = useState(role?.name ?? "");
   const [perms, setPerms] = useState<RolePerms>(role?.perms ?? {});
   const [busy, setBusy] = useState(false);
+
+  // Only areas the program has enabled can be granted (defaults to all-on for
+  // programs created before feature config existed).
+  const enabled = features ?? DEFAULT_PROGRAM_FEATURES;
+  const availableAreas = AREAS.filter((a) => enabled[a.key as ProgramFeatureKey]);
 
   function toggle(area: RoleArea, on: boolean) {
     setPerms((p) => {
@@ -479,9 +493,14 @@ function RoleBuilder({
   async function save() {
     if (!name.trim()) return;
     setBusy(true);
+    // Never persist perms for a disabled area, even if carried over from an
+    // older role edit (the server enforces this too — belt and suspenders).
+    const cleanPerms = Object.fromEntries(
+      Object.entries(perms).filter(([area]) => enabled[area as ProgramFeatureKey]),
+    ) as RolePerms;
     try {
-      if (role) await updateProgramRole(role.id, { name: name.trim(), perms });
-      else await createProgramRole(programId, { name: name.trim(), perms });
+      if (role) await updateProgramRole(role.id, { name: name.trim(), perms: cleanPerms });
+      else await createProgramRole(programId, { name: name.trim(), perms: cleanPerms });
       toast.success(role ? "Role updated" : "Role created");
       onSaved();
     } catch (e) {
@@ -505,9 +524,14 @@ function RoleBuilder({
           <div className="space-y-2">
             <Label>Access</Label>
             <p className="text-xs text-muted-foreground -mt-1">
-              Grant an area, then pick a level. Ungranted areas are hidden from this role.
+              Grant an area, then pick a level. Only features enabled for this program are shown.
             </p>
-            {AREAS.map((a) => {
+            {availableAreas.length === 0 ? (
+              <p className="rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">
+                No features are enabled for this program yet. Enable some from Programs → Features.
+              </p>
+            ) : null}
+            {availableAreas.map((a) => {
               const on = a.key in perms;
               return (
                 <div key={a.key} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2">

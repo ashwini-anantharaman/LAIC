@@ -10,6 +10,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import * as localKeys from "../platformLocalStore";
+import { normalizeProgramFeatures, type ProgramFeatures } from "../schemas";
 import type { StageNode } from "../permissions";
 import { withUserContext, asPrivileged, type Tx } from "./context";
 import { currentUserId } from "./requestContext";
@@ -34,7 +35,9 @@ const slugify = (s: string): string =>
 // ── row mappers (camelCase Drizzle → snake_case Row) ────────────────────────
 const programRow = (p: typeof programs.$inferSelect): Row => ({
   id: p.id, org_id: p.orgId, name: p.name, category: p.category, description: p.description,
-  icon: p.icon, instructor_label: p.instructorLabel, learner_label: p.learnerLabel, created_at: p.createdAt,
+  icon: p.icon, instructor_label: p.instructorLabel, learner_label: p.learnerLabel,
+  features: normalizeProgramFeatures((p.metadataJson as Row)?.features as Row),
+  created_at: p.createdAt,
 });
 const stageRow = (s: typeof stageNodes.$inferSelect): Row => ({
   id: s.id, org_id: s.orgId, challenge_id: s.challengeId, parent_id: s.parentId, program_id: s.programId,
@@ -134,8 +137,20 @@ export async function createProgram(orgId: string, name: string, category: strin
       icon: (opts.icon as string) ?? null,
       instructorLabel: (opts.instructorLabel as string) ?? null,
       learnerLabel: (opts.learnerLabel as string) ?? null,
+      metadataJson: { features: normalizeProgramFeatures(opts.features as Row) },
     }).returning();
     return programRow(p);
+  });
+}
+
+/** Replace a program's accessible-feature set (org-admin config). */
+export async function updateProgramFeatures(programId: string, features: ProgramFeatures): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const existing = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
+    if (!existing.length) return null;
+    const meta = { ...(existing[0].metadataJson as Row), features };
+    const [p] = await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId)).returning();
+    return p ? programRow(p) : null;
   });
 }
 

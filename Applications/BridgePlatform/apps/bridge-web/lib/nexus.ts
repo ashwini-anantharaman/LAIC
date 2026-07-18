@@ -6,7 +6,10 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { createSupabaseServerClient } from "./supabase-server";
 
+import { NEXUS_TOKEN_COOKIE } from "./nexusToken";
+
 export const DEV_USER_COOKIE = "bridge_dev_user";
+export { NEXUS_TOKEN_COOKIE };
 
 export type NexusMode = "stub" | "http";
 
@@ -62,21 +65,38 @@ export const getBridgeContext = cache(
       }
     }
 
-    // http mode (Phase 10+): Supabase session JWT -> Nexus context endpoint.
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) return null;
-
+    // http mode: a Nexus session token → GET /api/platform/bridge/context.
+    // Preferred credential: the launch-handoff cookie (app/nexus/launch) —
+    // Nexus's own session token, working against its dev demo-auth today and
+    // carrying a Supabase JWT unchanged later. Fallback: a shared Supabase
+    // session, when that env is configured.
     const baseUrl = process.env.NEXUS_API_BASE_URL;
     if (!baseUrl) {
       throw new Error("NEXUS_CLIENT_MODE=http requires NEXUS_API_BASE_URL");
     }
-    return createNexusClient({
-      mode: "http",
-      baseUrl,
-      accessToken: session.access_token,
-    }).getBridgeContext();
+
+    const cookieStore = await cookies();
+    let accessToken = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value ?? null;
+    if (!accessToken && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      const supabase = await createSupabaseServerClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      accessToken = session?.access_token ?? null;
+    }
+    if (!accessToken) return null;
+
+    try {
+      return await createNexusClient({
+        mode: "http",
+        baseUrl,
+        accessToken,
+      }).getBridgeContext();
+    } catch (err) {
+      // Expired session or a role that doesn't grant Bridge (Nexus 403) —
+      // treat as signed out; the layout routes to /welcome.
+      console.error("getBridgeContext (http) failed:", err);
+      return null;
+    }
   },
 );

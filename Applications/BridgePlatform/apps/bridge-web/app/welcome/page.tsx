@@ -1,12 +1,19 @@
 import { roleLabel, STUB_USERS } from "@bridge/nexus-client";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { setDevUser } from "@/app/actions";
 import { LoginForm } from "@/components/LoginForm";
 import { getBridgeContext, nexusMode } from "@/lib/nexus";
+import { NEXUS_RETURN_COOKIE, safeReturnUrl } from "@/lib/nexusToken";
 
 export default async function WelcomePage() {
   const context = await getBridgeContext();
   if (context) redirect("/bridge/home");
+
+  // A person who arrived from Nexus but was refused (no bridge grant, expired
+  // session) lands here — give them the way back to the console.
+  const cookieStore = await cookies();
+  const nexusReturnUrl = safeReturnUrl(cookieStore.get(NEXUS_RETURN_COOKIE)?.value);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-8 p-8">
@@ -61,6 +68,17 @@ export default async function WelcomePage() {
         </section>
       ) : (
         <LoginForm />
+      )}
+
+      {nexusReturnUrl && (
+        <p className="text-center">
+          <a
+            href={nexusReturnUrl}
+            className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
+          >
+            ← Back to Nexus
+          </a>
+        </p>
       )}
     </main>
   );
