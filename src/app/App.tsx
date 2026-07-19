@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { Role, Program, LearningObject, ObjectType } from '../lib/types';
-import { USERS } from '../lib/data';
+import { USERS, OBJECTS } from '../lib/data';
 import { supabaseEnabled, listObjects, saveObject } from '../lib/supabase';
 import { LoginPortal } from './components/LoginPortal';
 import { Layout } from './components/Layout';
@@ -14,6 +14,8 @@ export interface AppState {
   readerObjectId: string | null;
   creatorObjectType: string;
   createdObjects: LearningObject[];
+  /** When set, ObjectCreator opens this library object for editing. */
+  editingObjectId: string | null;
   navigate: (screen: string) => void;
   login: (userId: string) => void;
   logout: () => void;
@@ -23,6 +25,8 @@ export interface AppState {
   closeReader: () => void;
   setCreatorObjectType: (type: string) => void;
   addObject: (partial: Partial<LearningObject> & { type: ObjectType; title: string }) => string;
+  openEditor: (objectId: string) => void;
+  clearEditingObject: () => void;
 }
 
 export const AppContext = createContext<AppState>({} as AppState);
@@ -46,6 +50,7 @@ export default function App() {
   const [readerObjectId, setReaderObjectId] = useState<string | null>(null);
   const [creatorObjectType, setCreatorObjectTypeState] = useState<string>('lesson');
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
+  const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
 
   // Hydrate persisted objects from Supabase (if configured) on first load.
   useEffect(() => {
@@ -75,6 +80,7 @@ export default function App() {
   const navigate = useCallback((screen: string) => {
     setCurrentScreen(screen);
     setReaderObjectId(null);
+    if (screen !== 'cd-creator') setEditingObjectId(null);
   }, []);
 
   const setRole = useCallback((newRole: Role) => {
@@ -105,35 +111,53 @@ export default function App() {
     const user = USERS.find(u => u.id === activeUserId);
     const now = new Date().toISOString().slice(0, 10);
     const id = partial.id || `obj-new-${Date.now()}`;
-    const obj: LearningObject = {
-      id,
-      type: partial.type,
-      title: partial.title || 'Untitled',
-      ownerId: activeUserId,
-      ownerName: user?.name || 'You',
-      status: partial.status || 'draft',
-      scope: partial.scope || 'bridge',
-      reuseCount: partial.reuseCount ?? 0,
-      description: partial.description || '',
-      estimatedTime: partial.estimatedTime || '10 min',
-      blocks: partial.blocks || [],
-      createdAt: partial.createdAt || now,
-      updatedAt: now,
-      tags: partial.tags || [],
-      sourceIds: partial.sourceIds || [],
-    };
-    setCreatedObjects(prev => [obj, ...prev.filter(o => o.id !== id)]);
-    if (supabaseEnabled) {
-      saveObject(obj).catch(err => console.warn('[supabase] could not save object:', err?.message || err));
-    }
+    setCreatedObjects(prev => {
+      const existing = prev.find(o => o.id === id);
+      const obj: LearningObject = {
+        id,
+        type: partial.type,
+        title: partial.title || 'Untitled',
+        ownerId: existing?.ownerId || activeUserId,
+        ownerName: existing?.ownerName || user?.name || 'You',
+        status: partial.status || 'draft',
+        scope: partial.scope || existing?.scope || 'bridge',
+        reuseCount: partial.reuseCount ?? existing?.reuseCount ?? 0,
+        description: partial.description || '',
+        estimatedTime: partial.estimatedTime || '10 min',
+        blocks: partial.blocks || [],
+        createdAt: existing?.createdAt || partial.createdAt || now,
+        updatedAt: now,
+        tags: partial.tags || [],
+        sourceIds: partial.sourceIds ?? existing?.sourceIds ?? [],
+        pipelineDraft: partial.pipelineDraft !== undefined ? partial.pipelineDraft : existing?.pipelineDraft,
+      };
+      if (supabaseEnabled) {
+        saveObject(obj).catch(err => console.warn('[supabase] could not save object:', err?.message || err));
+      }
+      return [obj, ...prev.filter(o => o.id !== id)];
+    });
     return id;
   }, [activeUserId]);
 
+  const openEditor = useCallback((objectId: string) => {
+    const fromCreated = createdObjects.find(o => o.id === objectId);
+    const obj = fromCreated || OBJECTS.find(o => o.id === objectId);
+    if (obj) setCreatorObjectTypeState(obj.type);
+    setEditingObjectId(objectId);
+    setReaderObjectId(null);
+    setCurrentScreen('cd-creator');
+  }, [createdObjects]);
+
+  const clearEditingObject = useCallback(() => {
+    setEditingObjectId(null);
+  }, []);
+
   const ctx: AppState = {
     role, program, currentScreen, activeUserId, isLoggedIn,
-    readerObjectId, creatorObjectType, createdObjects,
+    readerObjectId, creatorObjectType, createdObjects, editingObjectId,
     navigate, login, logout,
     setRole, setProgram, openReader, closeReader, setCreatorObjectType, addObject,
+    openEditor, clearEditingObject,
   };
 
   return (

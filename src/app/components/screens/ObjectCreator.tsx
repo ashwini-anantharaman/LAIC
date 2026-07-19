@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft, ChevronRight, Database, Highlighter, Layers, Settings2,
   Plus, X, Check, Sparkles, FileText, ChevronDown, Minus,
@@ -8,14 +8,24 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../../App';
-import { SOURCES } from '../../../lib/data';
+import { SOURCES, OBJECTS } from '../../../lib/data';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../lib/pdf';
 import {
-  suggestTutorialHighlights, generateTutorial, generateFlashcards, ingestYoutube, editTutorialBlock, errorMessage,
+  suggestTutorialHighlights, generateTutorial, generateFlashcards, generateQuiz, generateConceptCard, suggestConceptIntents,
+  generateStructuredObject, ingestYoutube, editTutorialBlock, errorMessage,
   type GeneratedPart, type TutorialGenEvent, type GeneratedCard, type FlashcardGenEvent,
+  type GeneratedQuizQuestion, type QuizGenEvent, type GeneratedConceptCard, type ConceptCardGenEvent,
+  type StructuredObjectKind, type StructuredGenEvent,
 } from '../../../lib/api';
 import { supabaseEnabled, uploadImage } from '../../../lib/supabase';
+import type {
+  Block, CreatorPipelineDraft, ObjectStatus,
+  SummaryContent, ReflectionContent, AssignmentContent, DrillContent,
+} from '../../../lib/types';
 import { FlashcardEditor } from './FlashcardStudy';
+import { QuizEditor } from './QuizEditor';
+import { ConceptCardEditor } from './ConceptCardEditor';
+import { SummaryEditor, ReflectionEditor, AssignmentEditor, DrillEditor } from './StructuredObjectEditors';
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 
@@ -38,6 +48,49 @@ function parseTimestamp(str: string): number | undefined {
   const parts = s.split(':').map(p => Number(p));
   if (parts.some(n => Number.isNaN(n))) return undefined;
   return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+function fmtTimestamp(sec?: number): string {
+  if (sec == null || !Number.isFinite(sec)) return '';
+  const s = Math.max(0, Math.floor(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+/** Convert saved library blocks back into editor parts. */
+function blocksToParts(blocks: Block[]): any[] {
+  return (blocks || []).map((b, i) => {
+    const id = b.id || `edit-${i}`;
+    if (b.type === 'concept-card') {
+      const c = b.content as { term?: string; definition?: string; example?: string };
+      return { id, type: 'concept-card', label: c.term || 'Concept', concept: c.term || '', plain: c.definition || '', misc: c.example || '' };
+    }
+    if (b.type === 'quiz' || b.type === 'question') {
+      const q = b.type === 'quiz'
+        ? (b.content as any)?.questions?.[0]
+        : b.content as any;
+      return {
+        id, type: 'question', label: 'Knowledge check',
+        prompt: q?.question || '', options: q?.options || ['', '', '', ''],
+        correct: q?.correct ?? 0, exp: q?.explanation || '',
+      };
+    }
+    if (b.type === 'image') {
+      const c = b.content as { url?: string; caption?: string };
+      return { id, type: 'image', label: 'Image', url: c.url || '', caption: c.caption || '' };
+    }
+    if (b.type === 'video-embed') {
+      const c = b.content as { url?: string; videoId?: string; start?: number; end?: number; caption?: string };
+      return {
+        id, type: 'video', label: 'YouTube video',
+        url: c.url || '', videoId: c.videoId || parseYtId(c.url || ''),
+        startText: fmtTimestamp(c.start), endText: fmtTimestamp(c.end), caption: c.caption || '',
+      };
+    }
+    const c = b.content as { text?: string };
+    return { id, type: 'rich-text', label: 'Section', body: c.text || '' };
+  });
 }
 
 const NOUNS: Record<string, string> = {
@@ -102,7 +155,7 @@ const CFG: Record<string, GDef[]> = {
   ],
   quiz: [
     { title: 'Intent', note: 'What should this quiz verify, and for whom?', fields: [
-      { id: 'verify', label: 'What it should verify', type: 'area' },
+      { id: 'verify', label: 'Intent — what it should verify', type: 'area' },
       { id: 'purpose', label: 'Purpose', type: 'pick', options: ['Formative check', 'Readiness gate', 'Diagnostic'], default: 'Formative check' },
       { id: 'concepts', label: 'Concepts to assess', type: 'text' },
       { id: 'lvl', label: 'Level', type: 'pick', options: LVL, default: 'Basic' },
@@ -112,6 +165,9 @@ const CFG: Record<string, GDef[]> = {
       { id: 'cog', label: 'Cognitive levels', type: 'multi', options: ['Recall', 'Understand', 'Apply', 'Analyze'], default: ['Recall', 'Understand'] },
       { id: 'diff', label: 'Difficulty mix', type: 'pick', options: ['Mostly easy', 'Balanced', 'Mostly hard', 'Ramped easy→hard'], default: 'Balanced' },
       { id: 'wrong', label: 'Wrong answers', type: 'pick', options: ['Plausible common errors', 'Straightforward'], default: 'Plausible common errors' },
+    ]},
+    { title: 'Adaptivity', note: 'Should later questions get harder or easier based on how the learner answers?', fields: [
+      { id: 'adaptive', label: 'Should the quiz questions be adaptive?', type: 'pick', options: ['Yes', 'No'], default: 'No' },
     ]},
     { title: 'Scoring & feedback', fields: [
       { id: 'nq', label: 'Number of questions', type: 'num', min: 3, max: 20, default: 8 },
@@ -127,8 +183,8 @@ const CFG: Record<string, GDef[]> = {
       { id: 'lvl', label: 'Level', type: 'pick', options: LVL, default: 'Basic' },
     ]},
     { title: 'Card design', fields: [
-      { id: 'cc', label: 'Card content', type: 'pick', options: ['Key terms → definitions', 'Concept → example', 'Question → answer', 'Image → label'], default: 'Key terms → definitions' },
-      { id: 'pull', label: 'Pull cards from', type: 'pick', options: ['Glossary / key terms in source', 'Concepts I focus on', 'Mixed'], default: 'Glossary / key terms in source' },
+      { id: 'cc', label: 'Card content', type: 'multi', options: ['Key terms → definitions', 'Concept → example', 'Question → answer', 'Image → label'], default: ['Key terms → definitions'] },
+      { id: 'pull', label: 'Pull cards from', type: 'multi', options: ['Glossary / key terms in source', 'Concepts I focus on', 'Examples & worked cases', 'Misconceptions to correct', 'Questions in the source'], default: ['Glossary / key terms in source'] },
       { id: 'dir', label: 'Review direction', type: 'pick', options: ['Front→back', 'Back→front', 'Both'], default: 'Front→back' },
       { id: 'hooks', label: 'Add memory hooks', type: 'bool', default: false },
     ]},
@@ -137,15 +193,15 @@ const CFG: Record<string, GDef[]> = {
     ]},
   ],
   'concept-card': [
-    { title: 'Intent', fields: [
-      { id: 'concept', label: 'The concept', type: 'text' },
+    { title: 'Intent', note: 'The concept is resolved against your source — not a generic dictionary sense.', fields: [
+      { id: 'concept', label: 'Intent — the concept', type: 'text', hint: 'Type a concept, or pick a suggestion from your markup' },
       { id: 'aud', label: 'Audience', type: 'pick', options: AUD, default: 'High school' },
       { id: 'lvl', label: 'Level', type: 'pick', options: LVL, default: 'Basic' },
       { id: 'voi', label: 'Voice', type: 'pick', options: VOI, default: 'Plain & friendly' },
     ]},
-    { title: 'How to represent it', note: 'A concept lands when learners see it more than one way.', fields: [
-      { id: 'incl', label: 'Include', type: 'multi', options: ['Formal definition', 'Everyday analogy', 'Worked example', 'Visual suggestion', 'Common misconception'], default: ['Everyday analogy', 'Common misconception'] },
-      { id: 'analogy', label: 'Analogy should relate to…', type: 'text', hint: 'optional — e.g. sports, cooking, everyday life' },
+    { title: 'How to represent it', note: 'Only selected views are generated and shown. Definition is always included.', fields: [
+      { id: 'incl', label: 'Include', type: 'multi', options: ['Formal definition', 'Everyday analogy', 'Worked example', 'Visual suggestion', 'Common misconception'], default: ['Formal definition', 'Everyday analogy', 'Common misconception'] },
+      { id: 'analogy', label: 'Analogy should relate to…', type: 'text', hint: 'optional — e.g. sports, cooking (analogy view only)' },
       { id: 'len', label: 'Length per view', type: 'pick', options: ['Tight', 'Standard', 'Expanded'], default: 'Standard' },
     ]},
   ],
@@ -286,7 +342,9 @@ function Field({ f, val, set }: { f: FDef; val: any; set: (v: any) => void }) {
     </div>
   );
   if (f.type === 'multi') {
-    const arr: string[] = Array.isArray(v) ? v : (f.default || []);
+    const arr: string[] = Array.isArray(v)
+      ? v
+      : (typeof v === 'string' && v ? [v] : (f.default || []));
     return (
       <div className="flex flex-wrap gap-1.5">
         {f.options!.map(o => {
@@ -352,8 +410,22 @@ const SOURCE_MODES = [
   { id: 'prompt', label: 'No source — prompt', icon: <MessageSquare size={15} /> },
 ];
 
-/* Shared "source is ready" summary card (pdf / text / youtube). */
-function SourceReadyCard({ doc, onReplace }: { doc: ParsedDoc; onReplace: () => void }) {
+/* Shared "source is ready" summary card (pdf file pending parse / parsed doc). */
+function SourceReadyCard({
+  doc,
+  file,
+  onReplace,
+}: {
+  doc?: ParsedDoc | null;
+  file?: File | null;
+  onReplace: () => void;
+}) {
+  const name = doc?.fileName || file?.name || 'Source';
+  const sub = doc
+    ? `${doc.sentences.length} sentence${doc.sentences.length !== 1 ? 's' : ''} ready to mark up`
+    : file
+      ? `${(file.size / 1024).toFixed(0)} KB · text extracted in Mark up`
+      : '';
   return (
     <div className="rounded-2xl border p-4" style={{ background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.08)' }}>
       <div className="flex items-start gap-3">
@@ -361,10 +433,8 @@ function SourceReadyCard({ doc, onReplace }: { doc: ParsedDoc; onReplace: () => 
           <FileText size={18} />
         </div>
         <div className="flex-1 min-w-0">
-          <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }} className="truncate">{doc.fileName}</p>
-          <p style={{ fontSize: 12, color: '#6B7280', fontFamily: 'monospace' }}>
-            {doc.sentences.length} sentence{doc.sentences.length !== 1 ? 's' : ''} ready to mark up
-          </p>
+          <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }} className="truncate">{name}</p>
+          <p style={{ fontSize: 12, color: '#6B7280', fontFamily: 'monospace' }}>{sub}</p>
         </div>
         <button type="button" onClick={onReplace}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border shrink-0"
@@ -372,7 +442,7 @@ function SourceReadyCard({ doc, onReplace }: { doc: ParsedDoc; onReplace: () => 
           <RefreshCw size={12} />Replace
         </button>
       </div>
-      {doc.sentences.length === 0 && (
+      {doc && doc.sentences.length === 0 && (
         <div className="flex items-start gap-2 mt-3 rounded-xl p-2.5" style={{ background: '#FEF3C7', border: '1px solid #FCD34D' }}>
           <AlertTriangle size={14} style={{ color: '#92400E', marginTop: 1 }} />
           <p style={{ fontSize: 12, color: '#92400E' }}>No usable text was found. Try another source so you can highlight sentences.</p>
@@ -394,11 +464,11 @@ function ErrorNote({ text }: { text: string }) {
 /* Tutorial Step 1 — choose a source: PDF, pasted text, YouTube, or a prompt. */
 function TutorialSource(props: any) {
   const {
-    mode, setMode, doc, onReplace,
-    parsing, parseError, onFile,
+    mode, setMode, doc, pdfFile, onReplace,
+    onFile,
     pasteText, setPasteText, onLoadText,
     ytUrl, setYtUrl, ytLoading, ytError, onFetchYoutube,
-    promptText, setPromptText, showMedia,
+    promptText, setPromptText, showMedia, imagesOnly,
     media, addImage, addVideo, updateMedia, removeMedia, pickImageAsset,
   } = props;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -406,10 +476,10 @@ function TutorialSource(props: any) {
   const pick = (files: FileList | null) => { const f = files?.[0]; if (f) onFile(f); };
 
   const INTRO: Record<string, string> = {
-    pdf: 'Upload the PDF this tutorial is built from. It is read right here in your browser — nothing leaves your device.',
-    text: 'Paste the text this tutorial is built from — notes, an article, a transcript. You will mark up its sentences next.',
+    pdf: 'Attach the PDF this object is built from. We only store the file here — text is extracted in Mark up.',
+    text: 'Paste the text this object is built from — notes, an article, a transcript. You will mark up its sentences next.',
     youtube: 'Paste a YouTube link and we will pull its transcript to build from. The video needs captions available.',
-    prompt: 'No source? Just describe what the tutorial should teach. Generation will build from your prompt — you can skip Mark up and Extract.',
+    prompt: 'No source? Just describe what the object should teach. Generation will build from your prompt — you can skip Mark up and Extract.',
   };
 
   return (
@@ -432,29 +502,22 @@ function TutorialSource(props: any) {
         <p style={{ fontSize: 13, color: '#4C1D95', lineHeight: 1.6 }}>{INTRO[mode]}</p>
       </div>
 
-      {/* ── PDF ── */}
+      {/* ── PDF — attach only; parse happens in Mark up ── */}
       {mode === 'pdf' && (
         <>
           <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => pick(e.target.files)} />
-          {!doc ? (
+          {!pdfFile && !doc ? (
             <button type="button" onClick={() => inputRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files); }}
-              disabled={parsing}
               className="w-full flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-all"
-              style={{ padding: '40px 20px', borderColor: dragOver ? '#7C3AED' : 'rgba(0,0,0,0.14)', background: dragOver ? 'rgba(124,58,237,0.05)' : 'rgba(255,255,255,0.7)', cursor: parsing ? 'default' : 'pointer' }}>
-              {parsing ? (
-                <><Loader2 size={26} className="animate-spin" style={{ color: '#7C3AED' }} />
-                  <p style={{ fontSize: 13.5, fontWeight: 600, color: '#0B1220' }}>Reading your PDF…</p></>
-              ) : (
-                <><div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white" style={{ background: '#7C3AED' }}><Upload size={22} /></div>
-                  <p style={{ fontSize: 14, fontWeight: 650, color: '#0B1220' }}>Drop a PDF here or click to upload</p>
-                  <p style={{ fontSize: 12, color: '#9AA3AF' }}>PDF only · stays on this device</p></>
-              )}
+              style={{ padding: '40px 20px', borderColor: dragOver ? '#7C3AED' : 'rgba(0,0,0,0.14)', background: dragOver ? 'rgba(124,58,237,0.05)' : 'rgba(255,255,255,0.7)', cursor: 'pointer' }}>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white" style={{ background: '#7C3AED' }}><Upload size={22} /></div>
+              <p style={{ fontSize: 14, fontWeight: 650, color: '#0B1220' }}>Drop a PDF here or click to attach</p>
+              <p style={{ fontSize: 12, color: '#9AA3AF' }}>PDF only · stays on this device · parsed in Mark up</p>
             </button>
-          ) : <SourceReadyCard doc={doc} onReplace={onReplace} />}
-          {parseError && <ErrorNote text={parseError} />}
+          ) : <SourceReadyCard doc={doc} file={pdfFile} onReplace={onReplace} />}
         </>
       )}
 
@@ -515,12 +578,17 @@ function TutorialSource(props: any) {
         </>
       )}
 
-      {/* ── Media to include (images + cropped YouTube clips) ── */}
+      {/* ── Media to include (images + optional YouTube clips) ── */}
       {showMedia && (
       <div className="mt-6 pt-5" style={{ borderTop: '1px solid rgba(0,0,0,0.08)' }}>
-        <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0B1220', marginBottom: 2 }}>Media to include <span style={{ fontWeight: 500, color: '#9AA3AF' }}>· optional</span></p>
+        <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0B1220', marginBottom: 2 }}>
+          {imagesOnly ? 'Images for Image → label' : 'Media to include'}{' '}
+          <span style={{ fontWeight: 500, color: '#9AA3AF' }}>· optional</span>
+        </p>
         <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 12, lineHeight: 1.5 }}>
-          Add images and YouTube clips here. They preview instantly and are showcased — with captions — in the generated tutorial.
+          {imagesOnly
+            ? 'Upload pictures here. With Image → label in Define, each upload becomes a card: image on one side, and a Claude vision description (tied to your PDF + Define) on the other.'
+            : 'Add images and YouTube clips here. They preview instantly and are showcased — with captions — in the generated tutorial.'}
         </p>
 
         <div className="flex items-center gap-2 mb-3">
@@ -528,17 +596,23 @@ function TutorialSource(props: any) {
             style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
             <ImageIcon size={13} />Add image
           </button>
-          <button type="button" onClick={addVideo} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
-            style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
-            <Youtube size={13} style={{ color: '#EF4444' }} />Add YouTube video
-          </button>
+          {!imagesOnly && (
+            <button type="button" onClick={addVideo} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
+              style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
+              <Youtube size={13} style={{ color: '#EF4444' }} />Add YouTube video
+            </button>
+          )}
         </div>
 
         {(!media || media.length === 0) ? (
           <div className="rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-1 py-7"
             style={{ borderColor: 'rgba(0,0,0,0.1)', color: '#9AA3AF' }}>
             <Layers size={18} />
-            <p style={{ fontSize: 12 }}>No media yet — images and video clips you add appear in the tutorial.</p>
+            <p style={{ fontSize: 12 }}>
+              {imagesOnly
+                ? 'No images yet — upload ones you want on Image → label cards.'
+                : 'No media yet — images and video clips you add appear in the tutorial.'}
+            </p>
           </div>
         ) : (
           media.map((m: any) => (
@@ -552,7 +626,7 @@ function TutorialSource(props: any) {
               </div>
               <div className="p-4">
                 {m.kind === 'image'
-                  ? <ImagePartEditor part={m} onChange={(patch: any) => updateMedia(m.id, patch)} onPickImage={(f: File) => pickImageAsset(m.id, f)} />
+                  ? <ImagePartEditor part={m} onChange={(patch: any) => updateMedia(m.id, patch)} onPickImage={(f: File) => pickImageAsset(m.id, f)} captionHint={imagesOnly ? 'Optional caption hint for vision (description is written from the image + your material)' : undefined} />
                   : <VideoPartEditor part={m} onChange={(patch: any) => updateMedia(m.id, patch)} />}
               </div>
             </div>
@@ -641,11 +715,29 @@ function S1({ selected, setSelected, roles, setRoles, urlRefs, setUrlRefs }: any
   );
 }
 
-function S2({ highlights, setHighlights, activeTag, setActiveTag, aiSuggestions, setAiSuggestions, docParas, docTitle, pages, query, setQuery, onSuggest, suggesting, suggestError }: any) {
+function S2({ highlights, setHighlights, activeTag, setActiveTag, aiSuggestions, setAiSuggestions, docParas, docTitle, pages, query, setQuery, onSuggest, suggesting, suggestError, parsing, parseProgress, parseError }: any) {
   const [aiThinking, setAiThinking] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
   const paras: string[] = docParas;
   const busy = onSuggest ? suggesting : aiThinking;
+
+  if (parsing) {
+    return (
+      <div className="p-5 max-w-2xl flex flex-col items-center justify-center text-center" style={{ minHeight: 320 }}>
+        <Loader2 size={28} className="animate-spin mb-3" style={{ color: '#7C3AED' }} />
+        <p style={{ fontSize: 15, fontWeight: 650, color: '#0B1220' }}>Extracting text for Mark up…</p>
+        <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 6 }}>{parseProgress || 'Reading your PDF in the browser'}</p>
+      </div>
+    );
+  }
+  if (parseError) {
+    return (
+      <div className="p-5 max-w-2xl">
+        <ErrorNote text={parseError} />
+        <p style={{ fontSize: 13, color: '#6B7280', marginTop: 12 }}>Go back to Sources and attach a different PDF, or use Paste text.</p>
+      </div>
+    );
+  }
 
   const toggle = (idx: number) => {
     const exists = highlights.find((h: any) => h.idx === idx);
@@ -924,7 +1016,10 @@ function S3({ extracts, setExtracts, markHighlights, docTitle, typeNoun }: any) 
   );
 }
 
-function S4({ typeId, title, setTitle, scope, setScope, fv, setF, srcCount, extCount, hlCount }: any) {
+function S4({
+  typeId, title, setTitle, scope, setScope, fv, setF, srcCount, extCount, hlCount,
+  intentSuggestions, suggestingIntents, suggestIntentError, onSuggestIntents,
+}: any) {
   const groups = CFG[typeId] || [];
   const blueprint = (() => {
     const chips: string[] = [];
@@ -936,6 +1031,56 @@ function S4({ typeId, title, setTitle, scope, setScope, fv, setF, srcCount, extC
     }));
     return `Drawing on ${srcCount} source${srcCount !== 1 ? 's' : ''}${extCount > 0 ? ` · ${extCount} extract${extCount !== 1 ? 's' : ''}` : ''}${chips.length > 0 ? ' · ' + chips.slice(0, 3).join(' · ') : ''}. Everything editable after generating.`;
   })();
+
+  const renderConceptIntent = (f: FDef) => {
+    const val = fv[f.id] || '';
+    const chips: string[] = Array.isArray(intentSuggestions) ? intentSuggestions : [];
+    return (
+      <div>
+        <input type="text" value={val} onChange={e => setF(f.id, e.target.value)} placeholder={f.hint || 'Type a concept, or pick a suggestion below'}
+          className="w-full rounded-xl px-3 py-2"
+          style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)', outline: 'none' }} />
+        <div className="flex items-center gap-2 mt-2 mb-1.5">
+          <button type="button" onClick={() => onSuggestIntents?.()} disabled={suggestingIntents || !onSuggestIntents}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all"
+            style={{
+              fontSize: 12, fontWeight: 600,
+              background: suggestingIntents ? 'rgba(254,243,199,0.7)' : 'rgba(254,243,199,0.45)',
+              color: '#92400E', borderColor: 'rgba(245,158,11,0.35)',
+              opacity: !onSuggestIntents ? 0.5 : 1,
+            }}>
+            {suggestingIntents ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            {suggestingIntents ? 'Reading your markup…' : chips.length ? 'Refresh from markup' : 'Suggest from markup'}
+          </button>
+          <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>or type your own</span>
+        </div>
+        {suggestIntentError && (
+          <p className="flex items-start gap-1.5 mb-1.5" style={{ fontSize: 12, color: '#B91C1C' }}>
+            <AlertTriangle size={12} style={{ marginTop: 2 }} />{suggestIntentError}
+          </p>
+        )}
+        {chips.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {chips.map((c) => {
+              const on = val === c;
+              return (
+                <button key={c} type="button" onClick={() => setF(f.id, c)}
+                  className="px-3 py-1.5 rounded-full border transition-all text-left"
+                  style={{
+                    fontSize: 12.5, fontWeight: on ? 650 : 500,
+                    background: on ? '#0B0F1A' : 'rgba(255,255,255,0.9)',
+                    color: on ? '#fff' : '#374151',
+                    borderColor: on ? '#0B0F1A' : 'rgba(0,0,0,0.1)',
+                  }}>
+                  {c}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="p-5 max-w-2xl">
@@ -968,7 +1113,11 @@ function S4({ typeId, title, setTitle, scope, setScope, fv, setF, srcCount, extC
                 <p style={{ fontSize: 12.5, fontWeight: 500, color: '#374151' }}>{f.label}</p>
                 {f.type === 'bool' && <Field f={f} val={fv[f.id]} set={v => setF(f.id, v)} />}
               </div>
-              {f.type !== 'bool' && <Field f={f} val={fv[f.id]} set={v => setF(f.id, v)} />}
+              {f.type !== 'bool' && (
+                typeId === 'concept-card' && f.id === 'concept'
+                  ? renderConceptIntent(f)
+                  : <Field f={f} val={fv[f.id]} set={v => setF(f.id, v)} />
+              )}
             </div>
           ))}
         </div>
@@ -991,7 +1140,7 @@ const DRAFT_PARTS = [
   { id: 'p4', type: 'rich-text', label: 'Summary', body: 'In this lesson you learned that Bridge uses HCP to evaluate hand strength. The four honors — Ace, King, Queen, Jack — account for all 40 HCP in the deck.' },
 ];
 
-function ImagePartEditor({ part, onChange, onPickImage }: any) {
+function ImagePartEditor({ part, onChange, onPickImage, captionHint }: any) {
   const fileRef = useRef<HTMLInputElement>(null);
   const isUploaded = typeof part.url === 'string' && part.url.startsWith('data:');
   return (
@@ -1023,7 +1172,8 @@ function ImagePartEditor({ part, onChange, onPickImage }: any) {
           ? <button onClick={() => onChange({ url: '', fileName: undefined })} className="px-2.5 py-2 rounded-xl border text-xs shrink-0" style={{ color: '#6B7280', borderColor: 'rgba(0,0,0,0.1)' }}>Remove</button>
           : <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-white text-xs shrink-0" style={{ background: '#0B0F1A' }}><Upload size={12} />Upload</button>}
       </div>
-      <input value={part.caption} onChange={e => onChange({ caption: e.target.value })} placeholder="Caption (shown under the image on the tutorial)"
+      <input value={part.caption} onChange={e => onChange({ caption: e.target.value })}
+        placeholder={captionHint || 'Caption (shown under the image on the tutorial)'}
         className="w-full rounded-xl px-3 py-2" style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.8)', outline: 'none' }} />
     </div>
   );
@@ -1203,7 +1353,7 @@ function EditPanel({ part, onChange, onClose }: any) {
   );
 }
 
-function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCount, hlCount, onBack, onDone }: any) {
+function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCount, hlCount, initialId, initialStatus, pipelineDraft, onBack, onDone }: any) {
   const { addObject } = useApp();
   const [parts, setParts] = useState(
     Array.isArray(generatedParts) && generatedParts.length ? generatedParts : DRAFT_PARTS,
@@ -1220,7 +1370,15 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   const [docTitle, setDocTitle] = useState<string>(displayTitle);
   const [objective, setObjective] = useState<string>(briefObjective);
   const [savedNote, setSavedNote] = useState(false);
-  const savedId = useRef<string | null>(null);
+  const [objectStatus, setObjectStatus] = useState<ObjectStatus>(initialStatus || 'draft');
+  const savedId = useRef<string | null>(initialId || null);
+
+  useEffect(() => {
+    if (Array.isArray(generatedParts) && generatedParts.length) setParts(generatedParts);
+  }, [generatedParts]);
+  useEffect(() => { if (title) setDocTitle(title); }, [title]);
+  useEffect(() => { if (initialId) savedId.current = initialId; }, [initialId]);
+  useEffect(() => { if (initialStatus) setObjectStatus(initialStatus); }, [initialStatus]);
 
   const updatePart = (id: string, patch: Record<string, any>) =>
     setParts((prev: any[]) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -1267,19 +1425,22 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
     reader.readAsDataURL(file);
   };
 
-  const save = (status: 'draft' | 'in-review') => {
+  const save = (status: ObjectStatus) => {
+    const keepStatus = objectStatus === 'in-review' && status === 'draft' ? 'in-review' : status;
     const id = addObject({
       id: savedId.current || undefined,
       type: typeId,
       title: (docTitle || displayTitle).trim(),
-      status,
+      status: keepStatus,
       description: objective.trim(),
       estimatedTime: `${Math.max(5, parts.length * 3)} min`,
       blocks: buildBlocks() as any,
       tags: briefChips,
       sourceIds: [],
+      pipelineDraft: pipelineDraft || undefined,
     });
     savedId.current = id;
+    setObjectStatus(keepStatus);
     return id;
   };
 
@@ -1312,7 +1473,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
     <div className="flex flex-col h-full min-h-0">
       <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(12px)' }}>
         <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
-          <ArrowLeft size={14} />Back to Create
+          <ArrowLeft size={14} />Back to pipeline
         </button>
         {[fmtType(typeId), '✦ generated draft', scope].map((chip, i) => (
           <span key={i} className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: i === 1 ? '#FEF3C7' : '#F3F4F6', color: i === 1 ? '#92400E' : '#374151' }}>{chip}</span>
@@ -1440,7 +1601,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
 /* ─── generating view (streamed LLM parts) ───────────────────────── */
 
 function GeneratingView({ progress, parts, onCancel, noun = 'tutorial' }: { progress: string; parts: { id: string; type: string; label: string }[]; onCancel: () => void; noun?: string }) {
-  const unit = noun === 'flashcards' ? 'CARD' : 'PART';
+  const unit = noun === 'flashcards' ? 'CARD' : noun === 'quiz' ? 'QUESTION' : noun === 'concept card' ? 'CARD' : 'PART';
   return (
     <div className="flex flex-col items-center justify-center p-10 text-center min-h-[60vh]">
       <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4" style={{ background: 'rgba(124,58,237,0.1)' }}>
@@ -1476,16 +1637,25 @@ function GeneratingView({ progress, parts, onCancel, noun = 'tutorial' }: { prog
 /* ─── main component ──────────────────────────────────────────── */
 
 export function ObjectCreator() {
-  const { navigate, creatorObjectType } = useApp();
+  const { navigate, creatorObjectType, editingObjectId, clearEditingObject, createdObjects } = useApp();
   const typeId = creatorObjectType || 'lesson';
   const isTutorial = typeId === 'tutorial';
   const isFlashcard = typeId === 'flashcard-set';
-  // Types that use the real Sources → Mark up → Extract → Generate pipeline.
-  const usesPipeline = isTutorial || isFlashcard;
+  const isQuiz = typeId === 'quiz';
+  const isConceptCard = typeId === 'concept-card';
+  const isSummary = typeId === 'summary';
+  const isReflection = typeId === 'reflection';
+  const isAssignment = typeId === 'assignment';
+  const isDrill = typeId === 'drill';
+  const isStructured = isSummary || isReflection || isAssignment || isDrill;
+  // Types that use the real Sources → Mark up → Extract → Define → Generate pipeline.
+  const usesPipeline = isTutorial || isFlashcard || isQuiz || isConceptCard || isStructured;
 
   const [step, setStep] = useState(1);
   const [reached, setReached] = useState(1);
   const [showEditor, setShowEditor] = useState(false);
+  const [editObjectId, setEditObjectId] = useState<string | null>(null);
+  const [editObjectStatus, setEditObjectStatus] = useState<ObjectStatus | undefined>(undefined);
 
   const [sel, setSel] = useState<string[]>(SOURCES.filter(s => s.primary).map(s => s.id));
   const [roles, setRoles] = useState<Record<string, string>>(Object.fromEntries(SOURCES.map(s => [s.id, s.primary ? 'Primary' : 'Supporting'])));
@@ -1501,10 +1671,13 @@ export function ObjectCreator() {
   const setF = (id: string, v: any) => setFvState(p => ({ ...p, [id]: v }));
 
   // Tutorial Step 1 — source can be a PDF, pasted text, a YouTube link, or a prompt.
+  // PDF: attach File in Sources; parse into `doc` only when entering Mark up.
   const [srcMode, setSrcMode] = useState<'pdf' | 'text' | 'youtube' | 'prompt'>('pdf');
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [doc, setDoc] = useState<ParsedDoc | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [parseProgress, setParseProgress] = useState<string | null>(null);
   const [pasteText, setPasteText] = useState('');
   const [ytUrl, setYtUrl] = useState('');
   const [ytLoading, setYtLoading] = useState(false);
@@ -1562,46 +1735,82 @@ export function ObjectCreator() {
   // Switching source type clears the committed source + any markup built on it.
   const changeMode = (m: 'pdf' | 'text' | 'youtube' | 'prompt') => {
     setSrcMode(m);
-    setDoc(null); setParseError(null); setYtError(null);
+    setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setParseProgress(null);
     setHighlights([]); setAiSuggestions([]); setExtracts([]);
   };
   const replaceSource = () => {
-    setDoc(null); setParseError(null); setYtError(null);
+    setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setParseProgress(null);
     setHighlights([]); setAiSuggestions([]); setExtracts([]);
   };
 
   // Tutorial: real LLM — suggest highlights + streamed generation.
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [intentSuggestions, setIntentSuggestions] = useState<string[]>([]);
+  const [suggestingIntents, setSuggestingIntents] = useState(false);
+  const [suggestIntentError, setSuggestIntentError] = useState<string | null>(null);
+  const intentSuggestAbort = useRef<AbortController | null>(null);
+  const intentAutoTried = useRef(false);
   const [generating, setGenerating] = useState(false);
   const [genProgress, setGenProgress] = useState('');
   const [genParts, setGenParts] = useState<GeneratedPart[]>([]);
   const [genCards, setGenCards] = useState<GeneratedCard[]>([]);
+  const [genQuestions, setGenQuestions] = useState<GeneratedQuizQuestion[]>([]);
+  const [genConceptCard, setGenConceptCard] = useState<GeneratedConceptCard | null>(null);
+  const [genStructured, setGenStructured] = useState<SummaryContent | ReflectionContent | AssignmentContent | DrillContent | null>(null);
+  const [quizMeta, setQuizMeta] = useState<{ passMark?: number; showExplanations?: string; adaptive?: boolean }>({});
   const [genError, setGenError] = useState<string | null>(null);
   const genAbort = useRef<AbortController | null>(null);
 
-  const handleFile = async (file: File) => {
+  /** Step 1: attach only — do not parse yet. */
+  const handleFile = (file: File) => {
     if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
       setParseError('That file is not a PDF. Please upload a PDF.');
       return;
     }
+    setPdfFile(file);
+    setDoc(null);
+    setParseError(null);
+    setParseProgress(null);
+    setHighlights([]);
+    setAiSuggestions([]);
+    setExtracts([]);
+    if (!title) setTitle(file.name.replace(/\.pdf$/i, ''));
+  };
+
+  /** Step 2 (Mark up): extract sentences from the attached PDF. */
+  const parseAttachedPdf = async (file: File) => {
     setParsing(true);
     setParseError(null);
+    setParseProgress('Opening PDF…');
     try {
-      const parsed = await parsePdf(file);
+      const parsed = await parsePdf(file, ({ page, total }) => {
+        setParseProgress(`Page ${page} of ${total}…`);
+      });
+      if (!parsed.sentences.length) {
+        setParseError('No readable text found in that PDF (it may be scanned images only). Try Paste text, or a text-based PDF.');
+        setDoc(null);
+        return;
+      }
       setDoc(parsed);
-      // A new document invalidates prior markup/extracts.
-      setHighlights([]);
-      setAiSuggestions([]);
-      setExtracts([]);
-      if (!title) setTitle(file.name.replace(/\.pdf$/i, ''));
     } catch (e) {
       setParseError(e instanceof Error ? `Could not read that PDF: ${e.message}` : 'Could not read that PDF.');
       setDoc(null);
     } finally {
       setParsing(false);
+      setParseProgress(null);
     }
   };
+
+  // Parse PDF when the author reaches Mark up (not in Sources).
+  useEffect(() => {
+    if (step !== 2 || !usesPipeline) return;
+    if (srcMode !== 'pdf') return;
+    if (doc || parsing) return;
+    if (!pdfFile) return;
+    void parseAttachedPdf(pdfFile);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, srcMode, pdfFile]);
 
   const handleLoadText = () => {
     if (!pasteText.trim()) return;
@@ -1629,9 +1838,130 @@ export function ObjectCreator() {
   // Document the Mark up / Extract steps operate on.
   const docParas: string[] = usesPipeline ? (doc ? doc.sentences.map(s => s.text) : []) : DOC_PARAS;
   const docPages: number[] | undefined = usesPipeline && doc ? doc.sentences.map(s => s.page) : undefined;
-  const docTitle = usesPipeline ? (doc?.fileName ?? (srcMode === 'prompt' ? 'Prompt only' : 'Your source')) : 'How to Play Bridge';
+  const docTitle = usesPipeline
+    ? (doc?.fileName ?? pdfFile?.name ?? (srcMode === 'prompt' ? 'Prompt only' : 'Your source'))
+    : 'How to Play Bridge';
 
   const goTo = (n: number) => { if (n >= 1 && n <= 4 && n <= reached) setStep(n); };
+
+  // Open a library object for editing (works for draft and in-review).
+  // Restores the full Sources → Mark up → Extract → Define pipeline when
+  // a pipelineDraft was saved; always unlocks the step rail so the author
+  // can revise the process, not only the generated draft.
+  useEffect(() => {
+    if (!editingObjectId) return;
+    const obj = createdObjects.find(o => o.id === editingObjectId) || OBJECTS.find(o => o.id === editingObjectId);
+    if (!obj) return;
+    setTitle(obj.title);
+    setEditObjectId(obj.id);
+    setEditObjectStatus(obj.status);
+
+    const d = obj.pipelineDraft;
+    if (d) {
+      if (d.srcMode) setSrcMode(d.srcMode);
+      if (d.promptText != null) setPromptText(d.promptText);
+      if (d.pasteText != null) setPasteText(d.pasteText);
+      if (d.ytUrl != null) setYtUrl(d.ytUrl);
+      if (d.doc) setDoc(d.doc as ParsedDoc);
+      if (d.highlights) setHighlights(d.highlights);
+      if (d.extracts) setExtracts(d.extracts);
+      if (d.fv) setFvState(d.fv);
+      if (d.scope) setScope(d.scope);
+      if (d.media) setMedia(d.media);
+      if (d.sel) setSel(d.sel);
+      if (d.roles) setRoles(d.roles);
+      if (d.urlRefs) setUrlRefs(d.urlRefs);
+    } else if (obj.description) {
+      setFvState((p) => ({ ...p, obj: obj.description }));
+    }
+
+    setReached(4);
+    setStep(4);
+
+    if (obj.type === 'tutorial') {
+      setGenParts(blocksToParts(obj.blocks) as any);
+      setShowEditor(true);
+    } else if (obj.type === 'flashcard-set') {
+      const cards = (obj.blocks || [])
+        .filter(b => b.type === 'flashcard-set')
+        .flatMap(b => ((b.content as any)?.cards || []).map((c: any, i: number) => ({
+          id: `c-${i}`, front: c.front, back: c.back, hook: c.hook, hint: c.hint, imageUrl: c.imageUrl,
+        })));
+      setGenCards(cards);
+      setShowEditor(true);
+    } else if (obj.type === 'quiz') {
+      const quizBlock = (obj.blocks || []).find(b => b.type === 'quiz');
+      const c = (quizBlock?.content || {}) as any;
+      const qs = (c.questions || []).map((q: any, i: number) => ({
+        id: `q-${i}`,
+        question: q.question,
+        type: q.type || 'multiple-choice',
+        options: q.options || [],
+        correct: q.correct,
+        correctIndices: q.correctIndices,
+        sampleAnswer: q.sampleAnswer,
+        explanation: q.explanation || '',
+        hint: q.hint || '',
+        cognitiveLevel: q.cognitiveLevel,
+        difficulty: q.difficulty,
+      }));
+      setGenQuestions(qs);
+      setQuizMeta({ passMark: c.passMark, showExplanations: c.showExplanations, adaptive: !!c.adaptive });
+      setShowEditor(true);
+    } else if (obj.type === 'concept-card') {
+      const ccBlock = (obj.blocks || []).find(b => b.type === 'concept-card');
+      const c = (ccBlock?.content || {}) as any;
+      if (c.term || c.definition) {
+        setGenConceptCard({
+          id: ccBlock?.id || 'cc-edit',
+          term: c.term || '',
+          definition: c.definition || '',
+          example: c.example,
+          analogy: c.analogy,
+          visualSuggestion: c.visualSuggestion,
+          misconception: c.misconception,
+          voice: c.voice,
+          length: c.length,
+          includedViews: c.includedViews,
+          citations: c.citations,
+        });
+      }
+      setShowEditor(true);
+    } else if (obj.type === 'summary' || obj.type === 'reflection' || obj.type === 'assignment' || obj.type === 'drill') {
+      const blk = (obj.blocks || []).find(b => b.type === obj.type);
+      if (blk?.content) setGenStructured(blk.content as any);
+      setShowEditor(true);
+    } else {
+      setGenParts(blocksToParts(obj.blocks) as any);
+      setShowEditor(true);
+    }
+    clearEditingObject();
+  }, [editingObjectId]);
+
+  const snapshotPipeline = (): CreatorPipelineDraft => ({
+    srcMode,
+    promptText,
+    pasteText,
+    ytUrl,
+    doc: doc ? { fileName: doc.fileName, pageCount: doc.pageCount, sentences: doc.sentences } : null,
+    highlights,
+    extracts,
+    fv,
+    scope,
+    media,
+    sel,
+    roles,
+    urlRefs,
+    reached: Math.max(reached, 4),
+    step,
+  });
+
+  /** Leave the draft editor and reopen the full create pipeline (same object). */
+  const backToPipeline = () => {
+    setShowEditor(false);
+    setReached(4);
+    setStep(4);
+  };
 
   // Tutorial "AI suggest": ask the backend LLM which sentences to USE.
   const handleSuggest = async (instruction: string) => {
@@ -1648,6 +1978,75 @@ export function ObjectCreator() {
       setSuggesting(false);
     }
   };
+
+  /** Marked-up units for concept cards: extracts first, else Use/Support highlights. */
+  const conceptMarkupUnits = () => {
+    if (extracts.length) {
+      return extracts
+        .filter((e: any) => String(e.text || '').trim())
+        .map((e: any) => ({ kind: e.kind || 'Extract', text: e.text, from: e.from }));
+    }
+    return (highlights || [])
+      .filter((h: any) => (h.tag === 'Use' || h.tag === 'Support') && String(h.text || '').trim())
+      .map((h: any) => ({
+        kind: h.tag === 'Use' ? 'Key point' : 'Fact',
+        text: h.comment ? `${h.text} — ${h.comment}` : h.text,
+        from: h.page ? `p.${h.page}` : undefined,
+        page: h.page,
+      }));
+  };
+
+  /** Concept-card Define: Intent chips from marked-up units only (validated server-side). */
+  const handleSuggestIntents = async () => {
+    if (!isConceptCard) return;
+    intentSuggestAbort.current?.abort();
+    const ctrl = new AbortController();
+    intentSuggestAbort.current = ctrl;
+    setSuggestIntentError(null);
+    setSuggestingIntents(true);
+    try {
+      const markup = conceptMarkupUnits();
+      if (markup.length === 0) {
+        throw new Error('Mark up Use/Support sentences and pull them into Extract — Intent suggestions come from your markup.');
+      }
+      const suggestions = await suggestConceptIntents({
+        title,
+        extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
+        markupUnits: markup,
+        limit: 8,
+      }, ctrl.signal);
+      setIntentSuggestions(suggestions);
+      // Only auto-fill if the author hasn't typed/picked an Intent yet.
+      if (suggestions.length && !String(fv.concept || '').trim()) {
+        setF('concept', suggestions[0]);
+      }
+      if (suggestions.length === 0) setSuggestIntentError('No concepts found in your marked-up units.');
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      setSuggestIntentError(errorMessage(e, 'Could not suggest intents.'));
+    } finally {
+      if (intentSuggestAbort.current === ctrl) intentSuggestAbort.current = null;
+      setSuggestingIntents(false);
+    }
+  };
+
+  // Reset Intent suggestions when markup changes.
+  useEffect(() => {
+    if (!isConceptCard) return;
+    intentAutoTried.current = false;
+    setIntentSuggestions([]);
+    setSuggestIntentError(null);
+  }, [isConceptCard, extracts.length, highlights.length]);
+
+  // Auto-load Intent suggestions when the author reaches Define for a concept card.
+  useEffect(() => {
+    if (!isConceptCard || step !== 4) return;
+    if (intentAutoTried.current || suggestingIntents) return;
+    if (conceptMarkupUnits().length === 0) return;
+    intentAutoTried.current = true;
+    void handleSuggestIntents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConceptCard, step, extracts.length, highlights.length]);
 
   // Tutorial generation: stream real parts from the backend LLM.
   const runGenerate = async () => {
@@ -1694,6 +2093,34 @@ export function ObjectCreator() {
   const cancelGenerate = () => { genAbort.current?.abort(); setGenerating(false); };
 
   // Flashcards: stream a generated set from the backend LLM.
+  /** Resolve imageRef → author upload URL. Vision already wrote the description side. */
+  const attachUploadedImages = (cards: GeneratedCard[]): GeneratedCard[] => {
+    const byId = new Map<string, string>(
+      media.filter((m: any) => m.kind === 'image' && m.url).map((m: any) => [m.id, m.url as string]),
+    );
+    const used = new Set<string>();
+    const out: GeneratedCard[] = [];
+
+    for (const card of cards) {
+      const next: GeneratedCard = { ...card };
+      const ref = next.imageRef;
+      delete next.imageRef;
+      delete (next as { imageUrl?: string }).imageUrl;
+
+      if (ref) {
+        const url = byId.get(ref);
+        if (!url || used.has(ref)) continue;
+        next.imageUrl = url;
+        used.add(ref);
+        out.push(next);
+        continue;
+      }
+
+      if (!/^what is shown\??$/i.test(next.front.trim())) out.push(next);
+    }
+    return out;
+  };
+
   const runGenerateFlashcards = async () => {
     const ctrl = new AbortController();
     genAbort.current = ctrl;
@@ -1702,12 +2129,27 @@ export function ObjectCreator() {
     setGenProgress('Starting…');
     setGenerating(true);
     try {
+      const cc = Array.isArray(fv.cc) ? fv.cc : (fv.cc ? [fv.cc] : ['Key terms → definitions']);
+      const wantsImages = cc.some((s: string) => /image\s*[→\-]\s*label/i.test(String(s)));
+      const textStyles = cc.filter((s: string) => !/image\s*[→\-]\s*label/i.test(String(s)));
+      const uploadedImages = media
+        .filter((m: any) => m.kind === 'image' && m.url)
+        .map((m: any) => ({
+          id: m.id as string,
+          caption: (m.caption as string) || undefined,
+          url: m.url as string,
+        }));
+
+      if (wantsImages && uploadedImages.length === 0 && textStyles.length === 0) {
+        throw new Error('Image → label needs images you upload in Sources. Add at least one image, or pick another Card content style.');
+      }
+
       const config = {
         mem: fv.mem || title,
         aud: fv.aud ?? 'High school',
         lvl: fv.lvl ?? 'Basic',
-        cc: fv.cc ?? 'Key terms → definitions',
-        pull: fv.pull ?? 'Glossary / key terms in source',
+        cc,
+        pull: Array.isArray(fv.pull) ? fv.pull : (fv.pull ? [fv.pull] : ['Glossary / key terms in source']),
         dir: fv.dir ?? 'Front→back',
         hooks: fv.hooks ?? false,
         nc: typeof fv.nc === 'number' ? fv.nc : 12,
@@ -1717,15 +2159,203 @@ export function ObjectCreator() {
         config,
         extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
         prompt: srcMode === 'prompt' ? promptText : undefined,
+        images: uploadedImages,
       };
       const collected: GeneratedCard[] = [];
       for await (const ev of generateFlashcards(payload, ctrl.signal) as AsyncGenerator<FlashcardGenEvent>) {
         if (ev.type === 'progress') setGenProgress(ev.message);
-        else if (ev.type === 'card') { collected.push(ev.card); setGenCards([...collected]); }
+        else if (ev.type === 'card') {
+          collected.push({ ...ev.card });
+          setGenCards(attachUploadedImages(collected));
+        }
         else if (ev.type === 'error') throw new Error(ev.message);
         else if (ev.type === 'done') break;
       }
-      if (collected.length === 0) throw new Error('No cards were generated.');
+      const finalCards = attachUploadedImages(collected);
+      if (finalCards.length === 0) throw new Error('No cards were generated.');
+      setGenCards(finalCards);
+      setGenerating(false);
+      setShowEditor(true);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') { setGenerating(false); return; }
+      setGenError(errorMessage(e, 'Generation failed.'));
+      setGenerating(false);
+    } finally {
+      genAbort.current = null;
+    }
+  };
+
+  const runGenerateQuiz = async () => {
+    const ctrl = new AbortController();
+    genAbort.current = ctrl;
+    setGenError(null);
+    setGenQuestions([]);
+    setQuizMeta({});
+    setGenProgress('Starting…');
+    setGenerating(true);
+    try {
+      const config = {
+        verify: fv.verify || title,
+        purpose: fv.purpose ?? 'Formative check',
+        concepts: fv.concepts || '',
+        lvl: fv.lvl ?? 'Basic',
+        qtypes: Array.isArray(fv.qtypes) ? fv.qtypes : (fv.qtypes ? [fv.qtypes] : ['Multiple choice', 'True/false']),
+        cog: Array.isArray(fv.cog) ? fv.cog : (fv.cog ? [fv.cog] : ['Recall', 'Understand']),
+        diff: fv.diff ?? 'Balanced',
+        wrong: fv.wrong ?? 'Plausible common errors',
+        adaptive: fv.adaptive ?? 'No',
+        nq: typeof fv.nq === 'number' ? fv.nq : 8,
+        pass: fv.pass ?? '70%',
+        show: fv.show ?? 'After attempt',
+        perq: fv.perq !== false,
+      };
+      const payload = {
+        title,
+        config,
+        extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
+        prompt: srcMode === 'prompt' ? promptText : undefined,
+      };
+      const collected: GeneratedQuizQuestion[] = [];
+      for await (const ev of generateQuiz(payload, ctrl.signal) as AsyncGenerator<QuizGenEvent>) {
+        if (ev.type === 'progress') setGenProgress(ev.message);
+        else if (ev.type === 'question') {
+          collected.push(ev.question);
+          setGenQuestions([...collected]);
+        }
+        else if (ev.type === 'error') throw new Error(ev.message);
+        else if (ev.type === 'done') {
+          setQuizMeta({
+            passMark: ev.passMark,
+            showExplanations: ev.showExplanations,
+            adaptive: !!ev.adaptive,
+          });
+          break;
+        }
+      }
+      if (collected.length === 0) throw new Error('No questions were generated.');
+      setGenerating(false);
+      setShowEditor(true);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') { setGenerating(false); return; }
+      setGenError(errorMessage(e, 'Generation failed.'));
+      setGenerating(false);
+    } finally {
+      genAbort.current = null;
+    }
+  };
+
+  const runGenerateConceptCard = async () => {
+    const ctrl = new AbortController();
+    genAbort.current = ctrl;
+    setGenError(null);
+    setGenConceptCard(null);
+    setGenProgress('Starting…');
+    setGenerating(true);
+    try {
+      const markup = conceptMarkupUnits();
+      if (markup.length === 0) {
+        throw new Error('Mark up Use/Support sentences and pull them into Extract before generating.');
+      }
+      const intent = String(fv.concept || '').trim();
+      if (!intent) {
+        throw new Error('Add an Intent — type a concept or pick one of the markup suggestions.');
+      }
+      const config = {
+        concept: intent,
+        aud: fv.aud ?? 'High school',
+        lvl: fv.lvl ?? 'Basic',
+        voi: fv.voi ?? 'Plain & friendly',
+        incl: Array.isArray(fv.incl) ? fv.incl : (fv.incl ? [fv.incl] : ['Formal definition', 'Everyday analogy', 'Common misconception']),
+        analogy: fv.analogy || '',
+        len: fv.len ?? 'Standard',
+      };
+      const payload = {
+        title,
+        config,
+        extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
+        markupUnits: markup,
+        prompt: srcMode === 'prompt' ? promptText : undefined,
+      };
+      let card: GeneratedConceptCard | null = null;
+      for await (const ev of generateConceptCard(payload, ctrl.signal) as AsyncGenerator<ConceptCardGenEvent>) {
+        if (ev.type === 'progress') setGenProgress(ev.message);
+        else if (ev.type === 'card') {
+          card = ev.card;
+          setGenConceptCard(ev.card);
+        }
+        else if (ev.type === 'error') throw new Error(ev.message);
+        else if (ev.type === 'done') break;
+      }
+      if (!card?.term || !card?.definition) throw new Error('No concept card was generated.');
+      setGenerating(false);
+      setShowEditor(true);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') { setGenerating(false); return; }
+      setGenError(errorMessage(e, 'Generation failed.'));
+      setGenerating(false);
+    } finally {
+      genAbort.current = null;
+    }
+  };
+
+  const structuredConfig = (): Record<string, unknown> => {
+    if (isSummary) {
+      return {
+        what: fv.what || title, aud: fv.aud ?? 'High school',
+        shape: fv.shape ?? 'Key points', len: fv.len ?? 'Medium',
+        nkp: typeof fv.nkp === 'number' ? fv.nkp : 5,
+      };
+    }
+    if (isReflection) {
+      return {
+        goal: fv.goal ?? 'Apply to real life', aud: fv.aud ?? 'High school',
+        voi: fv.voi ?? 'Encouraging', style: fv.style ?? 'Open-ended',
+        who: fv.who ?? 'Private to learner',
+        np: typeof fv.np === 'number' ? fv.np : 2,
+        starters: fv.starters === true,
+      };
+    }
+    if (isAssignment) {
+      return {
+        obj: fv.obj || title, aud: fv.aud ?? 'High school', lvl: fv.lvl ?? 'Intermediate',
+        tt: fv.tt ?? 'Short essay', del: fv.del ?? 'Written text', el: fv.el ?? '~300 words',
+        cite: fv.cite !== false,
+        req: typeof fv.req === 'number' ? fv.req : 3,
+        rubric: typeof fv.rubric === 'number' ? fv.rubric : 3,
+      };
+    }
+    // drill
+    return {
+      skill: fv.skill || title, lvl: fv.lvl ?? 'Basic',
+      fmt: fv.fmt ?? 'Recall', diff: fv.diff ?? 'Easy → hard',
+      fb: fv.fb ?? 'Immediate', timed: !!fv.timed, rep: !!fv.rep,
+      ni: typeof fv.ni === 'number' ? fv.ni : 15,
+    };
+  };
+
+  const runGenerateStructured = async () => {
+    const kind = typeId as StructuredObjectKind;
+    const ctrl = new AbortController();
+    genAbort.current = ctrl;
+    setGenError(null);
+    setGenStructured(null);
+    setGenProgress('Starting…');
+    setGenerating(true);
+    try {
+      const payload = {
+        title,
+        config: structuredConfig(),
+        extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
+        prompt: srcMode === 'prompt' ? promptText : undefined,
+      };
+      let content: any = null;
+      for await (const ev of generateStructuredObject(kind, payload, ctrl.signal) as AsyncGenerator<StructuredGenEvent<any>>) {
+        if (ev.type === 'progress') setGenProgress(ev.message);
+        else if (ev.type === 'result') { content = ev.content; setGenStructured(ev.content); }
+        else if (ev.type === 'error') throw new Error(ev.message);
+        else if (ev.type === 'done') break;
+      }
+      if (!content) throw new Error(`No ${kind} was generated.`);
       setGenerating(false);
       setShowEditor(true);
     } catch (e) {
@@ -1741,6 +2371,9 @@ export function ObjectCreator() {
     if (step >= 4) {
       if (isTutorial) { runGenerate(); return; }
       if (isFlashcard) { runGenerateFlashcards(); return; }
+      if (isQuiz) { runGenerateQuiz(); return; }
+      if (isConceptCard) { runGenerateConceptCard(); return; }
+      if (isStructured) { runGenerateStructured(); return; }
       setShowEditor(true);
       return;
     }
@@ -1756,42 +2389,118 @@ export function ObjectCreator() {
   };
 
   if (showEditor) {
+    const draft = snapshotPipeline();
     if (isFlashcard) return (
       <FlashcardEditor typeId={typeId} title={title} scope={scope} fv={fv} cards={genCards}
-        onBack={() => setShowEditor(false)} onDone={() => navigate('cd-library')} />
+        initialId={editObjectId || undefined}
+        initialStatus={editObjectStatus}
+        pipelineDraft={draft}
+        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+    );
+    if (isQuiz) return (
+      <QuizEditor typeId={typeId} title={title} scope={scope} fv={fv} questions={genQuestions}
+        passMark={quizMeta.passMark}
+        showExplanations={quizMeta.showExplanations}
+        adaptive={quizMeta.adaptive}
+        initialId={editObjectId || undefined}
+        initialStatus={editObjectStatus}
+        pipelineDraft={draft}
+        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+    );
+    if (isConceptCard) return (
+      <ConceptCardEditor typeId={typeId} title={title} scope={scope} fv={fv} card={genConceptCard}
+        initialId={editObjectId || undefined}
+        initialStatus={editObjectStatus}
+        pipelineDraft={draft}
+        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+    );
+    if (isSummary) return (
+      <SummaryEditor typeId={typeId} title={title} scope={scope} fv={fv} content={genStructured as SummaryContent | null}
+        initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
+        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+    );
+    if (isReflection) return (
+      <ReflectionEditor typeId={typeId} title={title} scope={scope} fv={fv} content={genStructured as ReflectionContent | null}
+        initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
+        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+    );
+    if (isAssignment) return (
+      <AssignmentEditor typeId={typeId} title={title} scope={scope} fv={fv} content={genStructured as AssignmentContent | null}
+        initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
+        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+    );
+    if (isDrill) return (
+      <DrillEditor typeId={typeId} title={title} scope={scope} fv={fv} content={genStructured as DrillContent | null}
+        initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
+        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
     );
     return (
       <ObjEditor typeId={typeId} title={title} scope={scope} fv={fv}
-        generatedParts={isTutorial ? assembleParts() : undefined}
-        srcCount={usesPipeline ? (doc ? 1 : 0) : sel.length} extCount={extracts.length} hlCount={highlights.length}
-        onBack={() => setShowEditor(false)} onDone={() => navigate('cd-library')} />
+        generatedParts={isTutorial ? assembleParts() : (editObjectId ? genParts : undefined)}
+        initialId={editObjectId || undefined}
+        initialStatus={editObjectStatus}
+        pipelineDraft={draft}
+        srcCount={usesPipeline ? ((doc || pdfFile) ? 1 : 0) : sel.length} extCount={extracts.length} hlCount={highlights.length}
+        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
     );
   }
+
+  const structuredNoun = isSummary ? 'summary' : isReflection ? 'reflection' : isAssignment ? 'assignment' : isDrill ? 'drill' : 'tutorial';
+  const hasDraft = genParts.length > 0 || genCards.length > 0 || genQuestions.length > 0 || !!genConceptCard || !!genStructured;
 
   if (usesPipeline && generating) return (
     <GeneratingView
       progress={genProgress}
-      noun={isFlashcard ? 'flashcards' : 'tutorial'}
-      parts={isFlashcard ? genCards.map(c => ({ id: c.id, type: 'card', label: c.front })) : genParts}
+      noun={isFlashcard ? 'flashcards' : isQuiz ? 'quiz' : isConceptCard ? 'concept card' : isStructured ? structuredNoun : 'tutorial'}
+      parts={isFlashcard
+        ? genCards.map(c => ({ id: c.id, type: 'card', label: c.front }))
+        : isQuiz
+          ? genQuestions.map(q => ({ id: q.id, type: 'question', label: q.question }))
+          : isConceptCard && genConceptCard
+            ? [{ id: genConceptCard.id, type: 'concept-card', label: genConceptCard.term || 'Concept card' }]
+            : isStructured && genStructured
+              ? [{ id: 'structured', type: typeId, label: (genStructured as any).topic || (genStructured as any).skill || (genStructured as any).objective || (genStructured as any).goal || fmtType(typeId) }]
+              : genParts}
       onCancel={cancelGenerate} />
   );
 
+  const sourceReady = srcMode === 'prompt'
+    ? promptText.trim().length > 0
+    : srcMode === 'pdf'
+      ? !!(pdfFile || (doc && doc.sentences.length > 0))
+      : srcMode === 'text'
+        ? !!(pasteText.trim() || (doc && doc.sentences.length > 0))
+        : !!(doc && doc.sentences.length > 0); // youtube — transcript already fetched
+
   const canNext = step === 1
-    ? (usesPipeline
-      ? (srcMode === 'prompt' ? promptText.trim().length > 0 : !!doc && doc.sentences.length > 0)
-      : sel.length > 0)
-    : true;
+    ? (usesPipeline ? sourceReady : sel.length > 0)
+    : step === 2
+      ? (usesPipeline ? (!parsing && !!doc && doc.sentences.length > 0) : true)
+      : true;
 
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
       <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={() => navigate('cd-create')} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
-          <ArrowLeft size={14} />Back to Create
+        <button onClick={() => navigate(editObjectId ? 'cd-library' : 'cd-create')} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
+          <ArrowLeft size={14} />{editObjectId ? 'Back to library' : 'Back to Create'}
         </button>
         <ChevronRight size={13} style={{ color: '#C4CBD4' }} />
-        <span className="px-3 py-1 rounded-full text-sm font-semibold text-white" style={{ background: '#0B0F1A' }}>New {fmtType(typeId)}</span>
-        <span style={{ fontSize: 12, color: '#9AA3AF', marginLeft: 2 }}>every object starts from its sources</span>
+        <span className="px-3 py-1 rounded-full text-sm font-semibold text-white" style={{ background: '#0B0F1A' }}>
+          {editObjectId ? `Edit ${fmtType(typeId)}` : `New ${fmtType(typeId)}`}
+        </span>
+        <span style={{ fontSize: 12, color: '#9AA3AF', marginLeft: 2 }}>
+          {editObjectId ? 'revise sources, markup, extracts, or define — then regenerate' : 'every object starts from its sources'}
+        </span>
+        {editObjectId && hasDraft && (
+          <button
+            onClick={() => setShowEditor(true)}
+            className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold"
+            style={{ background: 'rgba(5,150,105,0.12)', color: '#059669' }}
+          >
+            Open draft editor →
+          </button>
+        )}
       </div>
 
       {/* Step rail */}
@@ -1819,16 +2528,25 @@ export function ObjectCreator() {
           <motion.div key={step} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
             {step === 1 && (usesPipeline
               ? <TutorialSource
-                  mode={srcMode} setMode={changeMode} doc={doc} onReplace={replaceSource}
-                  parsing={parsing} parseError={parseError} onFile={handleFile}
+                  mode={srcMode} setMode={changeMode} doc={doc} pdfFile={pdfFile} onReplace={replaceSource}
+                  onFile={handleFile}
                   pasteText={pasteText} setPasteText={setPasteText} onLoadText={handleLoadText}
                   ytUrl={ytUrl} setYtUrl={setYtUrl} ytLoading={ytLoading} ytError={ytError} onFetchYoutube={handleFetchYoutube}
-                  promptText={promptText} setPromptText={setPromptText} showMedia={isTutorial}
+                  promptText={promptText} setPromptText={setPromptText}
+                  showMedia={isTutorial || isFlashcard} imagesOnly={isFlashcard}
                   media={media} addImage={addImageAsset} addVideo={addVideoAsset} updateMedia={updateMedia} removeMedia={removeMedia} pickImageAsset={pickImageAsset} />
               : <S1 selected={sel} setSelected={setSel} roles={roles} setRoles={setRoles} urlRefs={urlRefs} setUrlRefs={setUrlRefs} />)}
-            {step === 2 && <S2 highlights={highlights} setHighlights={setHighlights} activeTag={activeTag} setActiveTag={setActiveTag} aiSuggestions={aiSuggestions} setAiSuggestions={setAiSuggestions} docParas={docParas} docTitle={docTitle} pages={docPages} query={query} setQuery={setQuery} onSuggest={usesPipeline ? handleSuggest : undefined} suggesting={suggesting} suggestError={suggestError} />}
+            {step === 2 && <S2 highlights={highlights} setHighlights={setHighlights} activeTag={activeTag} setActiveTag={setActiveTag} aiSuggestions={aiSuggestions} setAiSuggestions={setAiSuggestions} docParas={docParas} docTitle={docTitle || pdfFile?.name || 'Your source'} pages={docPages} query={query} setQuery={setQuery} onSuggest={usesPipeline ? handleSuggest : undefined} suggesting={suggesting} suggestError={suggestError} parsing={parsing} parseProgress={parseProgress} parseError={parseError} />}
             {step === 3 && <S3 extracts={extracts} setExtracts={setExtracts} markHighlights={highlights} docTitle={docTitle} typeNoun={NOUNS[typeId] || typeId} />}
-            {step === 4 && <S4 typeId={typeId} title={title} setTitle={setTitle} scope={scope} setScope={setScope} fv={fv} setF={setF} srcCount={usesPipeline ? (doc ? 1 : 0) : sel.length} extCount={extracts.length} hlCount={highlights.length} />}
+            {step === 4 && (
+              <S4 typeId={typeId} title={title} setTitle={setTitle} scope={scope} setScope={setScope} fv={fv} setF={setF}
+                srcCount={usesPipeline ? ((doc || pdfFile) ? 1 : 0) : sel.length} extCount={extracts.length} hlCount={highlights.length}
+                intentSuggestions={isConceptCard ? intentSuggestions : undefined}
+                suggestingIntents={isConceptCard ? suggestingIntents : undefined}
+                suggestIntentError={isConceptCard ? suggestIntentError : undefined}
+                onSuggestIntents={isConceptCard ? handleSuggestIntents : undefined}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -1844,7 +2562,7 @@ export function ObjectCreator() {
 
       {/* Bottom bar */}
       <div className="sticky bottom-0 flex items-center justify-between px-5 py-3 border-t border-white/40" style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={() => step > 1 ? setStep(step - 1) : navigate('cd-create')}
+        <button onClick={() => step > 1 ? setStep(step - 1) : navigate(editObjectId ? 'cd-library' : 'cd-create')}
           className="flex items-center gap-1.5 px-4 py-2 rounded-full border"
           style={{ fontSize: 13, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
           <ArrowLeft size={13} />{step === 1 ? 'Cancel' : 'Back'}
@@ -1853,6 +2571,7 @@ export function ObjectCreator() {
           Step {step} of 4 · {STEP_META[step - 1].label}
           {(STEP_META[step - 1] as any).skip && ' · you can skip'}
           {step === 1 && usesPipeline && !canNext && (srcMode === 'prompt' ? ' · describe what to generate to continue' : ' · add a source to continue')}
+          {step === 2 && usesPipeline && parsing && ' · extracting text…'}
         </span>
         <div className="flex items-center gap-2">
           {(STEP_META[step - 1] as any).skip && (
@@ -1861,10 +2580,18 @@ export function ObjectCreator() {
               Skip
             </button>
           )}
+          {editObjectId && hasDraft && (
+            <button onClick={() => setShowEditor(true)} className="px-3 py-2 rounded-full border"
+              style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
+              Keep current draft →
+            </button>
+          )}
           <button onClick={advance} disabled={!canNext}
             className="flex items-center gap-1.5 px-5 py-2 rounded-full transition-all"
             style={{ fontSize: 13, fontWeight: 600, background: canNext ? (step === 4 ? '#059669' : '#0B0F1A') : '#E5E7EB', color: canNext ? '#fff' : '#9AA3AF' }}>
-            {step === 4 ? <><Sparkles size={13} />✦ Generate {NOUNS[typeId] || typeId}</> : 'Next →'}
+            {step === 4
+              ? <><Sparkles size={13} />✦ {editObjectId ? 'Regenerate' : 'Generate'} {NOUNS[typeId] || typeId}</>
+              : 'Next →'}
           </button>
         </div>
       </div>

@@ -329,6 +329,31 @@ export function editTutorialBlock(
   }).then((r) => r.part);
 }
 
+/** POST /api/ai/edit-item — rewrite one quiz question or flashcard. */
+export function editQuizQuestion(
+  item: GeneratedQuizQuestion | Record<string, unknown>,
+  instruction: string,
+  signal?: AbortSignal,
+): Promise<GeneratedQuizQuestion> {
+  return apiFetch<{ item: GeneratedQuizQuestion }>('/api/ai/edit-item', {
+    method: 'POST',
+    body: { kind: 'quiz-question', item, instruction },
+    signal,
+  }).then((r) => r.item);
+}
+
+export function editFlashcard(
+  item: { front: string; back: string; hook?: string; hint?: string; imageUrl?: string },
+  instruction: string,
+  signal?: AbortSignal,
+): Promise<{ front: string; back: string; hook?: string; hint?: string; imageUrl?: string }> {
+  return apiFetch<{ item: { front: string; back: string; hook?: string; hint?: string; imageUrl?: string } }>('/api/ai/edit-item', {
+    method: 'POST',
+    body: { kind: 'flashcard', item, instruction },
+    signal,
+  }).then((r) => r.item);
+}
+
 /**
  * POST /api/tutorials/generate — streams the generated tutorial as typed
  * SSE events (`progress` | `part` | `done` | `error`). `prompt` grounds
@@ -352,6 +377,205 @@ export function generateTutorial(
   });
 }
 
+/* ─── Concept cards ────────────────────────────────────────────── */
+
+export interface ConceptCardConfig {
+  concept?: string;
+  aud?: string;
+  lvl?: string;
+  voi?: string;
+  incl?: string | string[];
+  analogy?: string;
+  len?: string;
+}
+
+export interface ConceptCardSourceUnit {
+  text: string;
+  from?: string;
+  page?: number;
+  kind?: string;
+}
+
+export interface GeneratedConceptCard {
+  id: string;
+  term: string;
+  definition: string;
+  example?: string;
+  analogy?: string;
+  visualSuggestion?: string;
+  misconception?: string;
+  voice?: string;
+  length?: string;
+  includedViews?: Array<'definition' | 'analogy' | 'example' | 'visual' | 'misconception'>;
+  citations?: Partial<Record<'definition' | 'analogy' | 'example' | 'visual' | 'misconception', string>>;
+}
+
+export type ConceptCardGenEvent =
+  | { type: 'progress'; message: string }
+  | { type: 'card'; card: GeneratedConceptCard }
+  | { type: 'done' }
+  | { type: 'error'; code?: string; message: string };
+
+/** POST /api/concept-cards/suggest-intents — Intent chips from marked-up units. */
+export function suggestConceptIntents(
+  payload: {
+    title?: string;
+    extracts?: TutorialExtract[];
+    /** Use/Support highlights when extracts are empty. */
+    markupUnits?: ConceptCardSourceUnit[];
+    sourceUnits?: ConceptCardSourceUnit[];
+    limit?: number;
+  },
+  signal?: AbortSignal,
+): Promise<string[]> {
+  return apiFetch<{ suggestions: string[] }>('/api/concept-cards/suggest-intents', {
+    method: 'POST',
+    body: payload,
+    signal,
+  }).then((r) => r.suggestions || []);
+}
+
+/** POST /api/concept-cards/generate — Intent retrieval + grounded views (SSE). */
+export function generateConceptCard(
+  payload: {
+    title: string;
+    config: ConceptCardConfig;
+    extracts: TutorialExtract[];
+    /** Use/Support highlights when extracts are empty. */
+    markupUnits?: ConceptCardSourceUnit[];
+    /** Full source — only used if nothing was marked up. */
+    sourceUnits?: ConceptCardSourceUnit[];
+    prompt?: string;
+  },
+  signal?: AbortSignal,
+): AsyncGenerator<ConceptCardGenEvent, void, unknown> {
+  return apiStream<ConceptCardGenEvent>('/api/concept-cards/generate', {
+    method: 'POST',
+    body: payload,
+    signal,
+  });
+}
+
+export function editConceptCard(
+  item: Omit<GeneratedConceptCard, 'id'> & { id?: string },
+  instruction: string,
+  signal?: AbortSignal,
+): Promise<GeneratedConceptCard> {
+  return apiFetch<{ item: GeneratedConceptCard }>('/api/ai/edit-item', {
+    method: 'POST',
+    body: { kind: 'concept-card', item, instruction },
+    signal,
+  }).then((r) => r.item);
+}
+
+/* ─── Summary / Reflection / Assignment / Drill ─────────────────── */
+
+export type StructuredObjectKind = 'summary' | 'reflection' | 'assignment' | 'drill';
+
+export type StructuredGenEvent<T> =
+  | { type: 'progress'; message: string }
+  | { type: 'result'; content: T }
+  | { type: 'done' }
+  | { type: 'error'; code?: string; message: string };
+
+function structuredGeneratePath(kind: StructuredObjectKind): string {
+  return ({
+    summary: '/api/summaries/generate',
+    reflection: '/api/reflections/generate',
+    assignment: '/api/assignments/generate',
+    drill: '/api/drills/generate',
+  })[kind];
+}
+
+export function generateStructuredObject<T = Record<string, unknown>>(
+  kind: StructuredObjectKind,
+  payload: {
+    title: string;
+    config: Record<string, unknown>;
+    extracts: TutorialExtract[];
+    prompt?: string;
+  },
+  signal?: AbortSignal,
+): AsyncGenerator<StructuredGenEvent<T>, void, unknown> {
+  return apiStream<StructuredGenEvent<T>>(structuredGeneratePath(kind), {
+    method: 'POST',
+    body: payload,
+    signal,
+  });
+}
+
+export function editStructuredObject<T = Record<string, unknown>>(
+  kind: StructuredObjectKind,
+  item: T,
+  instruction: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  return apiFetch<{ item: T }>('/api/ai/edit-item', {
+    method: 'POST',
+    body: { kind, item, instruction },
+    signal,
+  }).then((r) => r.item);
+}
+
+/* ─── Quizzes ──────────────────────────────────────────────────── */
+
+export interface QuizConfig {
+  verify?: string;
+  purpose?: string;
+  concepts?: string;
+  lvl?: string;
+  qtypes?: string | string[];
+  cog?: string | string[];
+  diff?: string;
+  wrong?: string;
+  /** Yes / No from Define — adaptive difficulty while the learner takes the quiz. */
+  adaptive?: string | boolean;
+  nq?: number;
+  pass?: string;
+  show?: string;
+  perq?: boolean;
+}
+
+export interface GeneratedQuizQuestion {
+  id: string;
+  question: string;
+  type: 'multiple-choice' | 'true-false' | 'multi-select' | 'short-answer' | 'scenario';
+  options?: string[];
+  correct?: number;
+  correctIndices?: number[];
+  sampleAnswer?: string;
+  explanation?: string;
+  hint?: string;
+  cognitiveLevel?: string;
+  difficulty?: string;
+}
+
+export type QuizGenEvent =
+  | { type: 'progress'; message: string }
+  | { type: 'question'; question: GeneratedQuizQuestion }
+  | { type: 'done'; count?: number; passMark?: number; showExplanations?: string; adaptive?: boolean }
+  | { type: 'error'; code?: string; message: string };
+
+/**
+ * POST /api/quizzes/generate — streams quiz questions as SSE events.
+ * Generation is driven by Define (intent, purpose, concepts, level, qtypes, etc.).
+ */
+export function generateQuiz(
+  payload: {
+    title: string;
+    config: QuizConfig;
+    extracts: TutorialExtract[];
+    prompt?: string;
+  },
+  signal?: AbortSignal,
+): AsyncGenerator<QuizGenEvent, void, unknown> {
+  return apiStream<QuizGenEvent>('/api/quizzes/generate', {
+    method: 'POST',
+    body: payload,
+    signal,
+  });
+}
+
 /* ─── Flashcards ───────────────────────────────────────────────── */
 
 export interface FlashcardConfig {
@@ -365,6 +589,11 @@ export interface GeneratedCard {
   front: string;
   back: string;
   hook?: string;
+  hint?: string;
+  /** Set by the model for Image → label — client resolves to a content-dev upload. */
+  imageRef?: string;
+  /** Author-uploaded image only (never AI-generated). */
+  imageUrl?: string;
 }
 
 export type FlashcardGenEvent =
@@ -376,9 +605,17 @@ export type FlashcardGenEvent =
 /**
  * POST /api/flashcards/generate — streams a generated flashcard set as typed
  * SSE events (`progress` | `card` | `done` | `error`).
+ * For Image → label, pass uploaded images with `url` so the server can run vision
+ * and write the description side; the client attaches the same url by imageRef.
  */
 export function generateFlashcards(
-  payload: { title: string; config: FlashcardConfig; extracts: TutorialExtract[]; prompt?: string },
+  payload: {
+    title: string;
+    config: FlashcardConfig;
+    extracts: TutorialExtract[];
+    prompt?: string;
+    images?: { id: string; caption?: string; url: string }[];
+  },
   signal?: AbortSignal,
 ): AsyncGenerator<FlashcardGenEvent, void, unknown> {
   return apiStream<FlashcardGenEvent>('/api/flashcards/generate', {
@@ -386,4 +623,26 @@ export function generateFlashcards(
     body: payload,
     signal,
   });
+}
+
+/* ─── Ask AI (scoped to one learning object) ───────────────────── */
+
+/**
+ * POST /api/ask — answer a learner question using ONLY the provided
+ * learning-object context text (never general knowledge outside it).
+ */
+export function askAboutObject(
+  payload: {
+    title: string;
+    context: string;
+    message: string;
+    history?: { role: 'user' | 'assistant'; content: string }[];
+  },
+  signal?: AbortSignal,
+): Promise<string> {
+  return apiFetch<{ reply: string }>('/api/ask', {
+    method: 'POST',
+    body: payload,
+    signal,
+  }).then((r) => r.reply);
 }

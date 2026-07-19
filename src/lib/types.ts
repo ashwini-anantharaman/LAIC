@@ -42,26 +42,74 @@ export interface User {
 export interface RichTextContent {
   text: string;
 }
+export type ConceptCardViewKey =
+  | 'definition'
+  | 'analogy'
+  | 'example'
+  | 'visual'
+  | 'misconception';
+
 export interface ConceptCardContent {
   term: string;
+  /** Formal / plain definition. */
   definition: string;
+  /** Worked example or concrete case. */
   example?: string;
+  /** Everyday analogy. */
+  analogy?: string;
+  /** Suggestion for a diagram / visual. */
+  visualSuggestion?: string;
+  /** Common misconception to correct. */
+  misconception?: string;
+  voice?: string;
+  length?: string;
+  /** Views selected in Define (controls tabs — not content emptiness). */
+  includedViews?: ConceptCardViewKey[];
+  /** Per-view citation back to the source chunk. */
+  citations?: Partial<Record<ConceptCardViewKey, string>>;
 }
+export type QuestionType =
+  | 'multiple-choice'
+  | 'true-false'
+  | 'multi-select'
+  | 'short-answer'
+  | 'scenario';
+
 export interface QuestionContent {
   question: string;
-  type: 'multiple-choice';
-  options: string[];
-  correct: number;
-  explanation: string;
+  type: QuestionType | 'multiple-choice';
+  options?: string[];
+  /** Single correct option index (MC / T-F / scenario). */
+  correct?: number;
+  /** All correct option indices (multi-select). */
+  correctIndices?: number[];
+  /** Acceptable answer guidance for short-answer. */
+  sampleAnswer?: string;
+  explanation?: string;
+  /** Optional learner hint (shown on request). */
+  hint?: string;
+  cognitiveLevel?: string;
+  difficulty?: string;
 }
 export interface QuizContent {
   questions: QuestionContent[];
+  /** Pass threshold 0–100 from Define. */
+  passMark?: number;
+  /** When to reveal explanations: Immediately | After attempt | After completion | Never */
+  showExplanations?: string;
+  purpose?: string;
+  /** When true, next question difficulty adapts to the previous answer. */
+  adaptive?: boolean;
 }
 export interface FlashcardItem {
   front: string;
   back: string;
   /** Optional mnemonic / memory hook shown under the answer. */
   hook?: string;
+  /** Optional learner hint shown on the prompt side. */
+  hint?: string;
+  /** Data URL or https URL for Image → label cards (shown on the front). */
+  imageUrl?: string;
 }
 export interface FlashcardSetContent {
   cards: FlashcardItem[];
@@ -112,6 +160,71 @@ export interface VideoEmbedContent {
   caption?: string;
 }
 
+export interface SummaryContent {
+  shape: string;
+  length?: string;
+  audience?: string;
+  /** What was summarised (intent). */
+  topic?: string;
+  tldr?: string;
+  keyPoints?: string[];
+  body?: string;
+}
+
+export interface ReflectionPrompt {
+  id: string;
+  prompt: string;
+  starters?: string[];
+}
+
+export interface ReflectionContent {
+  goal: string;
+  style: string;
+  visibility: string;
+  voice?: string;
+  audience?: string;
+  prompts: ReflectionPrompt[];
+}
+
+export interface RubricCriterion {
+  criterion: string;
+  description?: string;
+  levels?: string[];
+}
+
+export interface AssignmentContent {
+  objective: string;
+  taskType: string;
+  deliverable: string;
+  expectedLength?: string;
+  requireCitations?: boolean;
+  prompt: string;
+  requirements: string[];
+  rubric: RubricCriterion[];
+  audience?: string;
+  level?: string;
+}
+
+export interface DrillItem {
+  id: string;
+  prompt: string;
+  answer: string;
+  choices?: string[];
+  hint?: string;
+  difficulty?: 'easy' | 'medium' | 'hard';
+}
+
+export interface DrillContent {
+  skill: string;
+  format: string;
+  difficultyCurve: string;
+  feedback: string;
+  timed?: boolean;
+  repeatUntilMastery?: boolean;
+  level?: string;
+  items: DrillItem[];
+}
+
 export type BlockContent =
   | RichTextContent
   | ConceptCardContent
@@ -122,7 +235,11 @@ export type BlockContent =
   | BiddingSequenceContent
   | SourceExcerptContent
   | ImageContent
-  | VideoEmbedContent;
+  | VideoEmbedContent
+  | SummaryContent
+  | ReflectionContent
+  | AssignmentContent
+  | DrillContent;
 
 export interface Block {
   id: string;
@@ -136,11 +253,35 @@ export interface Block {
     | 'reflection'
     | 'summary'
     | 'scenario'
+    | 'assignment'
+    | 'drill'
     | 'image'
     | 'video-embed'
     | 'bridge-play'
     | 'bidding-sequence';
   content: BlockContent;
+}
+
+/**
+ * Snapshot of the Sources → Mark up → Extract → Define wizard so an editor
+ * can reopen the full process (not only the generated draft).
+ */
+export interface CreatorPipelineDraft {
+  srcMode?: 'pdf' | 'text' | 'youtube' | 'prompt';
+  promptText?: string;
+  pasteText?: string;
+  ytUrl?: string;
+  doc?: { fileName: string; pageCount: number; sentences: { text: string; page: number }[] } | null;
+  highlights?: any[];
+  extracts?: any[];
+  fv?: Record<string, any>;
+  scope?: string;
+  media?: any[];
+  sel?: string[];
+  roles?: Record<string, string>;
+  urlRefs?: string[];
+  reached?: number;
+  step?: number;
 }
 
 export interface LearningObject {
@@ -159,6 +300,8 @@ export interface LearningObject {
   updatedAt: string;
   tags: string[];
   sourceIds: string[];
+  /** Optional wizard state for reopening the full create/edit pipeline. */
+  pipelineDraft?: CreatorPipelineDraft;
 }
 
 export interface CourseLesson {

@@ -38,7 +38,7 @@ const TYPE_GROUPS: { type: ObjectType | 'course'; label: string }[] = [
 export function ObjectLibrary() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<ObjectStatus | 'all'>('all');
-  const { openReader, createdObjects } = useApp();
+  const { openReader, openEditor, createdObjects } = useApp();
 
   const allObjects = [...createdObjects, ...OBJECTS];
 
@@ -130,9 +130,18 @@ export function ObjectLibrary() {
                       <button
                         onClick={() => openReader(item.id)}
                         className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
-                        title="Preview"
+                        title="Student preview"
                       >
                         <Eye size={13} />
+                      </button>
+                    )}
+                    {!item.isCourse && ('type' in item) && (item.type === 'tutorial' || item.type === 'flashcard-set' || createdObjects.some(o => o.id === item.id)) && (
+                      <button
+                        onClick={() => openEditor(item.id)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
+                        title="Edit (available even in review)"
+                      >
+                        <PenLine size={13} />
                       </button>
                     )}
                     <button className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]" title="New draft">
