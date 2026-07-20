@@ -37,6 +37,7 @@ import {
   type PartSnapshot,
   type TutorialEditorPart,
 } from '../../../lib/assistant';
+import { buildGlossary, type GlossaryEntry } from '../../../lib/glossary';
 import { FlashcardEditor } from './FlashcardStudy';
 import { QuizEditor } from './QuizEditor';
 import { ConceptCardEditor } from './ConceptCardEditor';
@@ -1734,10 +1735,11 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   const [parts, setParts] = useState(
     Array.isArray(generatedParts) && generatedParts.length ? generatedParts : DRAFT_PARTS,
   );
-  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const [mode, setMode] = useState<'edit' | 'preview' | 'glossary'>('edit');
   const [editId, setEditId] = useState<string | null>(null);
   const [aiId, setAiId] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
   const displayTitle = title || `${fmtType(typeId)} on Bidding Basics`;
   const briefObjective = (fv?.obj as string)?.trim() || 'After this tutorial, the learner can apply the key ideas from the source.';
   const briefChips: string[] = typeId === 'tutorial'
@@ -1756,12 +1758,18 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   const partsRef = useRef(parts);
   const titleRef = useRef(docTitle);
   const objectiveRef = useRef(objective);
+  /** Parent passes a new assembleParts() array every render — seed once so Accept/edits stick. */
+  const seededFromGen = useRef(false);
   partsRef.current = parts;
   titleRef.current = docTitle;
   objectiveRef.current = objective;
 
   useEffect(() => {
-    if (Array.isArray(generatedParts) && generatedParts.length) setParts(generatedParts);
+    if (seededFromGen.current) return;
+    if (Array.isArray(generatedParts) && generatedParts.length) {
+      setParts(generatedParts);
+      seededFromGen.current = true;
+    }
   }, [generatedParts]);
   useEffect(() => { if (title) setDocTitle(title); }, [title]);
   useEffect(() => { if (initialId) savedId.current = initialId; }, [initialId]);
@@ -1773,6 +1781,15 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   };
 
   const selectBlock = (blockId: string) => setSelection({ kind: 'block', blockId });
+
+  const focusPartInEditor = (partId: string) => {
+    setMode('edit');
+    setEditId(partId);
+    selectBlock(partId);
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-part-id="${CSS.escape(partId)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  };
 
   /** Field typing — no undo step per keystroke. */
   const updatePart = (id: string, patch: Record<string, any>) => {
@@ -1791,6 +1808,13 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
     setParts(result.parts);
     if (result.meta?.title != null) setDocTitle(result.meta.title);
     if (result.meta?.objective != null) setObjective(result.meta.objective);
+    const focusId = result.affectedIds[result.affectedIds.length - 1];
+    if (focusId) {
+      // Defer so the new/updated part is in the DOM before scroll.
+      setTimeout(() => focusPartInEditor(focusId), 40);
+    } else {
+      setMode('edit');
+    }
   };
 
   const undo = () => {
@@ -1952,6 +1976,21 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
 
   const previewBlocks = buildBlocks();
   const selectedBlockId = selection.kind === 'block' || selection.kind === 'block_range' ? selection.blockId : null;
+  const glossaryEntries = buildGlossary({
+    knowledgeBase: pipelineDraft?.knowledgeBase,
+    parts: parts as TutorialEditorPart[],
+    highlights: pipelineDraft?.highlights || [],
+  });
+
+  const jumpToGlossaryPassage = (entry: GlossaryEntry) => {
+    setActiveGlossaryId(entry.id);
+    if (entry.blockId && parts.some((p: any) => p.id === entry.blockId)) {
+      focusPartInEditor(entry.blockId);
+      return;
+    }
+    // Stay on glossary and surface the source excerpt when no block match.
+    setMode('glossary');
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0 relative">
@@ -1972,6 +2011,14 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
               style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}
             >
               <Pencil size={12} />Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('glossary'); setEditId(null); setAiId(null); }}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'glossary' ? '#0B0F1A' : 'transparent', color: mode === 'glossary' ? '#fff' : '#6B7280' }}
+            >
+              <BookOpen size={12} />Glossary
             </button>
             <button
               type="button"
@@ -1999,6 +2046,60 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
               hintsEnabled={hintSettings.enabled}
             />
           </>
+        ) : mode === 'glossary' ? (
+          <>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>Glossary</h1>
+            <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 16 }}>
+              Words from the passage. Click any word to jump back to where it appears.
+            </p>
+            {glossaryEntries.length === 0 ? (
+              <div className="rounded-2xl border p-6 text-center" style={{ borderColor: 'rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.7)' }}>
+                <BookOpen size={22} style={{ color: '#9AA3AF', margin: '0 auto 8px' }} />
+                <p style={{ fontSize: 13.5, color: '#6B7280' }}>
+                  No vocabulary words yet. Mark source sentences in Mark up / Extract, or add concept cards in Edit.
+                </p>
+              </div>
+            ) : (
+              <div
+                className="rounded-2xl border overflow-hidden"
+                style={{ borderColor: 'rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.9)' }}
+              >
+                {glossaryEntries.map((entry, i) => {
+                  const active = activeGlossaryId === entry.id;
+                  const blurb = entry.definition.length > 110
+                    ? `${entry.definition.slice(0, 110).trim()}…`
+                    : entry.definition;
+                  return (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      onClick={() => jumpToGlossaryPassage(entry)}
+                      className="w-full text-left px-4 py-3 transition-colors"
+                      style={{
+                        background: active ? 'rgba(11,15,26,0.05)' : 'transparent',
+                        borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.06)',
+                      }}
+                    >
+                      <div className="flex items-baseline gap-3">
+                        <span style={{
+                          fontSize: 14.5, fontWeight: 700, color: '#0B1220',
+                          minWidth: 120, flexShrink: 0,
+                        }}>
+                          {entry.term}
+                        </span>
+                        <span style={{ fontSize: 13, color: '#4B5563', lineHeight: 1.45, flex: 1 }}>
+                          {blurb}
+                        </span>
+                        {entry.page != null && (
+                          <span style={{ fontSize: 11, color: '#9AA3AF', flexShrink: 0 }}>p. {entry.page}</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
         ) : (
           <>
             <input value={docTitle} onChange={e => setDocTitle(e.target.value)} className="w-full mb-4 bg-transparent border-b border-transparent focus:border-gray-200 outline-none transition-all"
@@ -2022,6 +2123,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
             {parts.map((p, i) => (
               <div
                 key={p.id}
+                data-part-id={p.id}
                 className="mb-3 rounded-2xl border overflow-hidden"
                 onClick={() => selectBlock(p.id)}
                 style={{
@@ -2125,13 +2227,13 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
         <button
           type="button"
           onClick={() => {
-            if (mode === 'preview') setMode('edit');
-            else { setMode('preview'); setEditId(null); setAiId(null); }
+            if (mode === 'edit') { setMode('preview'); setEditId(null); setAiId(null); }
+            else setMode('edit');
           }}
           className="flex items-center gap-1.5 px-4 py-2 rounded-full border"
           style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}
         >
-          {mode === 'preview' ? <><Pencil size={13} />Back to edit</> : <><Eye size={13} />Student preview</>}
+          {mode === 'edit' ? <><Eye size={13} />Student preview</> : <><Pencil size={13} />Back to edit</>}
         </button>
         <span style={{ fontSize: 11.5, color: savedNote ? '#059669' : '#9AA3AF' }}>
           {savedNote ? '✓ Saved to Object Library' : `${parts.length} parts · save to add it to the Object Library`}
@@ -2153,9 +2255,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
         selection={selection}
         parts={parts as TutorialEditorPart[]}
         onFocusBlock={(blockId) => {
-          selectBlock(blockId);
-          setMode('edit');
-          setEditId(blockId);
+          focusPartInEditor(blockId);
         }}
         onAcceptActions={applyEditActions}
         canUndo={undoStack.length > 0}

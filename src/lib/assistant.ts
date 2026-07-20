@@ -220,6 +220,55 @@ function contentToPart(
 export interface ApplyResult {
   parts: TutorialEditorPart[];
   meta?: { title?: string; objective?: string; fv?: Record<string, unknown> };
+  /** Block ids created or updated — host should focus/scroll these after Accept. */
+  affectedIds: string[];
+}
+
+/** Map assistant content keys (term/text/question…) onto editor part fields. */
+function normalizeEditorPatch(patch: Record<string, unknown>): Record<string, unknown> {
+  const src = { ...patch };
+  if (src.content && typeof src.content === 'object' && !Array.isArray(src.content)) {
+    const nested = normalizeEditorPatch(src.content as Record<string, unknown>);
+    delete src.content;
+    return normalizeEditorPatch({ ...nested, ...src });
+  }
+  const out: Record<string, unknown> = { ...src };
+  if ('text' in out && !('body' in out)) {
+    out.body = out.text;
+    delete out.text;
+  }
+  if ('term' in out && !('concept' in out)) {
+    out.concept = out.term;
+    delete out.term;
+  }
+  if ('definition' in out && !('plain' in out)) {
+    out.plain = out.definition;
+    delete out.definition;
+  }
+  if ('example' in out && !('misc' in out)) {
+    out.misc = out.example;
+    delete out.example;
+  }
+  if ('question' in out && !('prompt' in out)) {
+    out.prompt = out.question;
+    delete out.question;
+  }
+  if ('explanation' in out && !('exp' in out)) {
+    out.exp = out.explanation;
+    delete out.explanation;
+  }
+  return out;
+}
+
+function editorRangeField(field?: string): string {
+  const f = field || 'body';
+  if (f === 'text') return 'body';
+  if (f === 'question') return 'prompt';
+  if (f === 'term') return 'concept';
+  if (f === 'definition') return 'plain';
+  if (f === 'example') return 'misc';
+  if (f === 'explanation') return 'exp';
+  return f;
 }
 
 /** Apply one or more edit actions to tutorial editor parts. Pure. */
@@ -230,6 +279,10 @@ export function applyEditActionsToParts(
 ): ApplyResult {
   let next = cloneParts(parts);
   let nextMeta = { ...meta };
+  const affectedIds: string[] = [];
+  const touch = (id: string) => {
+    if (id && !affectedIds.includes(id)) affectedIds.push(id);
+  };
 
   const applyOne = (action: EditAction) => {
     switch (action.type) {
@@ -237,11 +290,13 @@ export function applyEditActionsToParts(
         for (const a of action.actions) applyOne(a);
         break;
       case 'update_block': {
-        next = next.map((p) => (p.id === action.blockId ? { ...p, ...action.patch } : p));
+        const patch = normalizeEditorPatch(action.patch || {});
+        next = next.map((p) => (p.id === action.blockId ? { ...p, ...patch } : p));
+        touch(action.blockId);
         break;
       }
       case 'update_block_range': {
-        const field = action.field || 'body';
+        const field = editorRangeField(action.field);
         next = next.map((p) => {
           if (p.id !== action.blockId) return p;
           const cur = String((p as any)[field] ?? p.body ?? '');
@@ -250,6 +305,7 @@ export function applyEditActionsToParts(
           const replaced = cur.slice(0, start) + action.replacement + cur.slice(end);
           return { ...p, [field]: replaced };
         });
+        touch(action.blockId);
         break;
       }
       case 'add_block': {
@@ -257,6 +313,7 @@ export function applyEditActionsToParts(
         const part = contentToPart(action.blockType, action.content || {}, id, action.label);
         const idx = Math.max(0, Math.min(action.atIndex, next.length));
         next = [...next.slice(0, idx), part, ...next.slice(idx)];
+        touch(id);
         break;
       }
       case 'delete_block':
@@ -284,6 +341,8 @@ export function applyEditActionsToParts(
           label: p.label ? `${p.label} (cont.)` : 'Continued',
         };
         next = [...next.slice(0, i), a, b, ...next.slice(i + 1)];
+        touch(a.id);
+        touch(b.id);
         break;
       }
       case 'merge_blocks': {
@@ -301,6 +360,7 @@ export function applyEditActionsToParts(
         const without = next.filter((p) => p.id !== idA && p.id !== idB);
         const insertAt = Math.min(ia, ib);
         next = [...without.slice(0, insertAt), merged, ...without.slice(insertAt)];
+        touch(merged.id);
         break;
       }
       case 'convert_block': {
@@ -308,6 +368,7 @@ export function applyEditActionsToParts(
           if (p.id !== action.blockId) return p;
           return contentToPart(action.toType, action.content || {}, p.id, p.label);
         });
+        touch(action.blockId);
         break;
       }
       case 'update_metadata': {
@@ -334,7 +395,7 @@ export function applyEditActionsToParts(
   };
 
   for (const a of actions) applyOne(a);
-  return { parts: next, meta: nextMeta };
+  return { parts: next, meta: nextMeta, affectedIds };
 }
 
 /** Best-effort inverse for undo (tutorial parts). */

@@ -10,6 +10,7 @@ import type {
 } from '../../../lib/types';
 import { renumberBlockQuestionLabels } from '../../../lib/tutorialOrder.js';
 import { hintsForQuestion, parsePassMark, resolveHintSettings } from '../../../lib/questionHints.js';
+import { buildGlossary, type GlossaryEntry } from '../../../lib/glossary';
 import { FlashcardStudy, type StudyCard } from './FlashcardStudy';
 import { AskAIChat } from './AskAIChat';
 import { SummaryView, ReflectionView, AssignmentView, DrillView } from './StructuredObjectEditors';
@@ -1088,11 +1089,12 @@ function AssessedBlocks({
           <BlockRenderer block={block} objectId={objectId} quizProps={quizProps} />
         );
         if (!animate) {
-          return <div key={block.id}>{inner}</div>;
+          return <div key={block.id} data-block-id={block.id}>{inner}</div>;
         }
         return (
           <motion.div
             key={block.id}
+            data-block-id={block.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.12 + i * 0.06 }}
@@ -1152,10 +1154,13 @@ export function LearnerReader({ objectId }: { objectId: string }) {
   const { closeReader, createdObjects } = useApp();
   const obj = createdObjects.find(o => o.id === objectId) || OBJECTS.find(o => o.id === objectId);
   const [showAsk, setShowAsk] = useState(false);
+  const [showGlossary, setShowGlossary] = useState(false);
+  const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
 
   if (!obj) return null;
 
-  const fv = (obj as any).pipelineDraft?.fv || {};
+  const draft = (obj as any).pipelineDraft;
+  const fv = draft?.fv || {};
   const hintOpts = resolveHintSettings(fv);
   const passMark = parsePassMark(
     fv.pass
@@ -1164,6 +1169,30 @@ export function LearnerReader({ objectId }: { objectId: string }) {
   );
   const numbered = renumberBlockQuestionLabels(obj.blocks) as Block[];
   const useCumulative = obj.type === 'tutorial' && countQuizQuestionsInBlocks(numbered) > 0;
+  const glossaryEntries = buildGlossary({
+    knowledgeBase: draft?.knowledgeBase,
+    blocks: numbered,
+    highlights: draft?.highlights || [],
+  });
+
+  const jumpToGlossaryPassage = (entry: GlossaryEntry) => {
+    setActiveGlossaryId(entry.id);
+    setShowGlossary(false);
+    if (!entry.blockId) return;
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-block-id="${CSS.escape(entry.blockId!)}"]`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (el instanceof HTMLElement) {
+        el.style.outline = '2px solid #0B0F1A';
+        el.style.outlineOffset = '4px';
+        el.style.borderRadius = '12px';
+        window.setTimeout(() => {
+          el.style.outline = '';
+          el.style.outlineOffset = '';
+        }, 1600);
+      }
+    });
+  };
 
   return (
     <motion.div
@@ -1189,8 +1218,24 @@ export function LearnerReader({ objectId }: { objectId: string }) {
           <p style={{ fontSize: 14, fontWeight: 600, color: '#0B1220' }} className="truncate">{obj.title}</p>
           <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>{obj.estimatedTime} · {obj.type}</p>
         </div>
+        {glossaryEntries.length > 0 && (
+          <button
+            onClick={() => { setShowGlossary((v) => !v); setShowAsk(false); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
+            style={{
+              background: showGlossary ? '#0B0F1A' : 'rgba(255,255,255,0.85)',
+              border: '1px solid rgba(255,255,255,0.9)',
+              fontSize: 12, fontWeight: 600,
+              color: showGlossary ? '#fff' : '#374151',
+              boxShadow: '0 2px 8px -4px rgba(30,50,80,0.2)',
+            }}
+          >
+            <BookOpen size={13} />
+            Glossary
+          </button>
+        )}
         <button
-          onClick={() => setShowAsk(v => !v)}
+          onClick={() => { setShowAsk((v) => !v); setShowGlossary(false); }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
           style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.9)', fontSize: 12, fontWeight: 600, color: '#059669', boxShadow: '0 2px 8px -4px rgba(30,50,80,0.2)' }}
         >
@@ -1201,42 +1246,83 @@ export function LearnerReader({ objectId }: { objectId: string }) {
 
       {/* Content */}
       <div className="px-5 py-6 max-w-xl mx-auto space-y-5">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
-          <div className="flex items-center gap-2 mb-1">
-            <BookOpen size={13} style={{ color: '#9AA3AF' }} />
-            <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 500 }}>
-              {obj.type === 'tutorial' ? 'Tutorial'
-                : obj.type === 'flashcard-set' ? 'Flashcard set'
-                  : obj.type === 'quiz' ? 'Quiz'
-                    : obj.type === 'concept-card' ? 'Concept card'
-                      : obj.type === 'summary' ? 'Summary'
-                        : obj.type === 'reflection' ? 'Reflection'
-                          : obj.type === 'assignment' ? 'Assignment'
-                            : obj.type === 'drill' ? 'Drill'
-                              : 'Lesson'}
-            </span>
+        {showGlossary ? (
+          <div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>Glossary</h2>
+            <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 14 }}>
+              Words from the passage. Tap one to jump back to where it appears.
+            </p>
+            <div
+              className="rounded-2xl border overflow-hidden"
+              style={{ borderColor: 'rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.95)' }}
+            >
+              {glossaryEntries.map((entry, i) => {
+                const active = activeGlossaryId === entry.id;
+                const blurb = entry.definition.length > 100
+                  ? `${entry.definition.slice(0, 100).trim()}…`
+                  : entry.definition;
+                return (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => jumpToGlossaryPassage(entry)}
+                    className="w-full text-left px-4 py-3"
+                    style={{
+                      background: active ? 'rgba(11,15,26,0.05)' : 'transparent',
+                      borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.06)',
+                    }}
+                  >
+                    <div className="flex items-baseline gap-3">
+                      <span style={{ fontSize: 14.5, fontWeight: 700, color: '#0B1220', minWidth: 110, flexShrink: 0 }}>
+                        {entry.term}
+                      </span>
+                      <span style={{ fontSize: 13, color: '#4B5563', lineHeight: 1.45 }}>{blurb}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <h1 style={{ fontSize: 24, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.4px', lineHeight: 1.15, marginBottom: 6 }}>
-            {obj.title}
-          </h1>
-          <p style={{ fontSize: 13.5, color: '#6B7280', lineHeight: 1.6 }}>{obj.description}</p>
-        </motion.div>
-
-        {obj.blocks.length > 0 ? (
-          <AssessedBlocks
-            blocks={numbered}
-            objectId={obj.id}
-            cumulative={useCumulative}
-            passMark={passMark}
-            maxHints={hintOpts.count}
-            hintsEnabled={hintOpts.enabled}
-            animate
-          />
         ) : (
-          <div className="flex flex-col items-center py-12 text-center">
-            <Layers size={32} className="text-[#C4CBD4] mb-3" />
-            <p style={{ fontSize: 14, color: '#9AA3AF' }}>Content blocks coming soon.</p>
-          </div>
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
+              <div className="flex items-center gap-2 mb-1">
+                <BookOpen size={13} style={{ color: '#9AA3AF' }} />
+                <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 500 }}>
+                  {obj.type === 'tutorial' ? 'Tutorial'
+                    : obj.type === 'flashcard-set' ? 'Flashcard set'
+                      : obj.type === 'quiz' ? 'Quiz'
+                        : obj.type === 'concept-card' ? 'Concept card'
+                          : obj.type === 'summary' ? 'Summary'
+                            : obj.type === 'reflection' ? 'Reflection'
+                              : obj.type === 'assignment' ? 'Assignment'
+                                : obj.type === 'drill' ? 'Drill'
+                                  : 'Lesson'}
+                </span>
+              </div>
+              <h1 style={{ fontSize: 24, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.4px', lineHeight: 1.15, marginBottom: 6 }}>
+                {obj.title}
+              </h1>
+              <p style={{ fontSize: 13.5, color: '#6B7280', lineHeight: 1.6 }}>{obj.description}</p>
+            </motion.div>
+
+            {obj.blocks.length > 0 ? (
+              <AssessedBlocks
+                blocks={numbered}
+                objectId={obj.id}
+                cumulative={useCumulative}
+                passMark={passMark}
+                maxHints={hintOpts.count}
+                hintsEnabled={hintOpts.enabled}
+                animate
+              />
+            ) : (
+              <div className="flex flex-col items-center py-12 text-center">
+                <Layers size={32} className="text-[#C4CBD4] mb-3" />
+                <p style={{ fontSize: 14, color: '#9AA3AF' }}>Content blocks coming soon.</p>
+              </div>
+            )}
+          </>
         )}
 
         <div className="h-8" />
