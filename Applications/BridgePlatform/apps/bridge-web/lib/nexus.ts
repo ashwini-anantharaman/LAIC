@@ -77,7 +77,14 @@ export const getBridgeContext = cache(
 
     const cookieStore = await cookies();
     let accessToken = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value ?? null;
-    if (!accessToken && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    // Optional fallback: a shared Supabase auth session. Only consulted when
+    // BOTH env vars exist — the launch-token cookie is the primary (and, with
+    // the in-app login removed, usually the only) credential.
+    if (
+      !accessToken &&
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    ) {
       const supabase = await createSupabaseServerClient();
       const {
         data: { session },
