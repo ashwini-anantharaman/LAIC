@@ -448,16 +448,16 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
       className="group overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm"
     >
       {/* Collapsed, a rule reads as its sentence. */}
-      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-3 hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
         <svg
           viewBox="0 0 12 12"
           aria-hidden
-          className="h-2.5 w-2.5 flex-none text-neutral-400 transition-transform group-open:rotate-90"
+          className="mt-1.5 h-2.5 w-2.5 flex-none text-neutral-400 transition-transform group-open:rotate-90"
         >
           <path d="M3 1l6 5-6 5z" fill="currentColor" />
         </svg>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">
+          <p className="text-sm font-medium">
             {d.label || <span className="font-normal text-neutral-400">New rule — give it a label below</span>}
             {d.remove && (
               <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-red-700">
@@ -465,7 +465,8 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
               </span>
             )}
           </p>
-          <p className={`mt-0.5 truncate text-[13px] ${d.remove ? "text-neutral-300 line-through" : "text-neutral-500"}`}>
+          {/* The sentence never truncates — it's the whole point. */}
+          <p className={`mt-0.5 text-[13px] leading-relaxed ${d.remove ? "text-neutral-300 line-through" : "text-neutral-500"}`}>
             {ruleSentence(d)}
           </p>
         </div>
