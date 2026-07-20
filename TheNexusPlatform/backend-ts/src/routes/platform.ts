@@ -695,13 +695,26 @@ platformRouter.delete("/programs/:program_id", async (c) => {
   return c.json({ ok: true });
 });
 
-// Org admin edits which feature-areas are accessible inside a program (§3.5).
+// Which feature-areas are accessible inside a program (§3.5). Editable from
+// two altitudes: org admins (configure any program) and the program's own
+// administrator — running the program end to end includes its platforms.
+function _assertProgramConfigAccess(user: PlatformUser, orgId: string, programId: string): void {
+  if (user.role === "platform_admin") return;
+  const ok = user.memberships.some(
+    (m) =>
+      m.org_id === orgId &&
+      (m.role === "owner" || m.role === "administrator" || m.access === "edit") &&
+      (!m.program_id || m.program_id === programId),
+  );
+  if (!ok) throw new HttpError(403, "Edit access required");
+}
+
 platformRouter.patch("/programs/:program_id/features", async (c) => {
   const user = await getCurrentUser(c);
   const programId = c.req.param("program_id");
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _assertOrgAccess(user, program.org_id, true);
+  _assertProgramConfigAccess(user, program.org_id, programId);
   const req = parseBody(programFeaturesUpdate, await c.req.json());
   const features = normalizeProgramFeatures(req.features);
   const row = await db.updateProgramFeatures(programId, features);
