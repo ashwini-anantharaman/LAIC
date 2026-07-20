@@ -357,6 +357,19 @@ export const programRoleAssignments = pgTable("program_role_assignments", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Pre-built platform-role assignments (e.g. Bridge coach/learner), managed
+ * from the platform's own UI but stored centrally here. Email-keyed. */
+export const platformRoleAssignments = pgTable("platform_role_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  platform: text("platform").notNull(),
+  email: text("email").notNull(),
+  role: text("role").notNull(),
+  assignedByUserId: uuid("assigned_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const groupMemberships = pgTable("group_memberships", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull(),

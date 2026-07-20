@@ -46,6 +46,7 @@ import {
   updateMemberSchema,
 } from "../schemas";
 import {
+  BRIDGE_PREBUILT_ROLES,
   BRIDGE_ROLE_MAP,
   LEARNING_ROLE_MAP,
   platformAppSlug,
@@ -519,6 +520,68 @@ platformRouter.get("/bridge/context", async (c) => {
     program_name: access.programName,
     role_name: access.roleName,
   });
+});
+
+// ── Bridge People & Roles (administered from Bridge's own UI) ───────────────
+// Bridge's admin surface manages who holds which PRE-BUILT Bridge role, but
+// the data lives here: Nexus stays the single access authority, so org-portal
+// logins and test-as resolve the same answer the Bridge UI configured.
+const _BRIDGE_ROLE_BODY = z.object({
+  program_id: z.string().uuid(),
+  email: z.string().email(),
+  role: z.enum(BRIDGE_PREBUILT_ROLES).nullable(),
+});
+
+async function _requireBridgeAdmin(user: PlatformUser, programId: string) {
+  const access = await resolvePlatformAccess(user, "bridge", programId);
+  if (access.level !== "admin") throw new HttpError(403, "Bridge admin access required");
+  return access;
+}
+
+platformRouter.get("/bridge/people", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.query("program_id");
+  if (!programId) throw new HttpError(400, "program_id required");
+  const access = await _requireBridgeAdmin(user, programId);
+  const members = await graph.listProgramMembers(access.orgId, programId);
+  const assignments = await graph.listPlatformRoleAssignments(programId, "bridge");
+  const byEmail = new Map(assignments.map((a: Row) => [String(a.email).toLowerCase(), a.role]));
+  return c.json(
+    members.map((m: Row) => {
+      const email = ((m.email as string) ?? "").toLowerCase();
+      const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
+      return {
+        email: m.email ?? null,
+        display_name: m.display_name ?? null,
+        status: m.status ?? "active",
+        // Admin standing comes from Nexus membership and is not reassignable here.
+        bridge_role: isAdmin ? "bridge_program_admin" : byEmail.get(email) ?? null,
+        is_admin: isAdmin,
+      };
+    }),
+  );
+});
+
+platformRouter.put("/bridge/people/role", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(_BRIDGE_ROLE_BODY, await c.req.json());
+  const access = await _requireBridgeAdmin(user, req.program_id);
+  const members = await graph.listProgramMembers(access.orgId, req.program_id);
+  const target = members.find((m: Row) => ((m.email as string) ?? "").toLowerCase() === req.email.toLowerCase());
+  if (!target) throw new HttpError(404, "That person is not in this program");
+  if (target.membership_role === "administrator" || target.membership_role === "owner") {
+    throw new HttpError(409, "Program administrators already hold the Bridge Program Admin role via Nexus");
+  }
+  const row = await graph.setPlatformRoleAssignment(
+    access.orgId, req.program_id, "bridge", req.email, req.role, access.profileId,
+  );
+  await db.recordAuditEvent("bridge.role.assigned", {
+    orgId: access.orgId, actorUserId: user.id, scopeType: "program", scopeId: req.program_id,
+    metadata: { email: req.email, role: req.role },
+  });
+  return c.json(row ?? { email: req.email.toLowerCase(), role: null });
 });
 
 // The person's display name in THIS org (their org-scoped profile), falling

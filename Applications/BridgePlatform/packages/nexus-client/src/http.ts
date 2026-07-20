@@ -15,13 +15,17 @@ export class HttpNexusClient implements NexusClient {
     private readonly options: {
       baseUrl: string;
       accessToken: string;
+      /** Scope the context to one Nexus program (the launch origin). */
+      programId?: string;
       fetchImpl?: typeof fetch;
     },
   ) {}
 
   async getBridgeContext(): Promise<NexusBridgeContext> {
-    const { baseUrl, accessToken, fetchImpl = fetch } = this.options;
-    const url = `${baseUrl.replace(/\/$/, "")}/api/platform/bridge/context`;
+    const { baseUrl, accessToken, programId, fetchImpl = fetch } = this.options;
+    const url =
+      `${baseUrl.replace(/\/$/, "")}/api/platform/bridge/context` +
+      (programId ? `?program_id=${encodeURIComponent(programId)}` : "");
 
     let response: Response;
     try {

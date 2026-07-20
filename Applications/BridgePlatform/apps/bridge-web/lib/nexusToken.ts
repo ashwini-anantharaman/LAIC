@@ -23,3 +23,16 @@ export function safeReturnUrl(raw: string | null | undefined): string | null {
     return null;
   }
 }
+
+/**
+ * The Nexus program this session was launched from — scopes /bridge/context
+ * (and People & Roles) to that program instead of "any program that grants
+ * bridge", which matters for people in several programs.
+ */
+export const NEXUS_PROGRAM_COOKIE = "bridge_nexus_program";
+
+/** Validate a program id candidate: uuid only, else null. */
+export function safeProgramId(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw) ? raw : null;
+}

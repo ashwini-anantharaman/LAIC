@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { createSupabaseServerClient } from "./supabase-server";
 
-import { NEXUS_TOKEN_COOKIE } from "./nexusToken";
+import { NEXUS_PROGRAM_COOKIE, NEXUS_TOKEN_COOKIE } from "./nexusToken";
 
 export const DEV_USER_COOKIE = "bridge_dev_user";
 export { NEXUS_TOKEN_COOKIE };
@@ -86,11 +86,15 @@ export const getBridgeContext = cache(
     }
     if (!accessToken) return null;
 
+    // Scope to the program the console launched from (multi-program people).
+    const programId = cookieStore.get(NEXUS_PROGRAM_COOKIE)?.value;
+
     try {
       return await createNexusClient({
         mode: "http",
         baseUrl,
         accessToken,
+        ...(programId ? { programId } : {}),
       }).getBridgeContext();
     } catch (err) {
       // Expired session or a role that doesn't grant Bridge (Nexus 403) —

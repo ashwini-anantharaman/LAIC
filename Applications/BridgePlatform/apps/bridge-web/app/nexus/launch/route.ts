@@ -14,7 +14,7 @@
  */
 import { NextResponse } from "next/server";
 
-import { NEXUS_RETURN_COOKIE, NEXUS_TOKEN_COOKIE, safeReturnUrl } from "../../../lib/nexusToken";
+import { NEXUS_PROGRAM_COOKIE, NEXUS_RETURN_COOKIE, NEXUS_TOKEN_COOKIE, safeProgramId, safeReturnUrl } from "../../../lib/nexusToken";
 
 export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
@@ -58,5 +58,8 @@ export async function GET(request: Request): Promise<NextResponse> {
   // The console's return address, when Nexus sent one — powers "Back to Nexus".
   const returnUrl = safeReturnUrl(url.searchParams.get("return_url"));
   if (returnUrl) response.cookies.set(NEXUS_RETURN_COOKIE, returnUrl, cookieOpts);
+  // The launching program scopes /bridge/context for multi-program people.
+  const programId = safeProgramId(url.searchParams.get("program_id"));
+  if (programId) response.cookies.set(NEXUS_PROGRAM_COOKIE, programId, cookieOpts);
   return response;
 }

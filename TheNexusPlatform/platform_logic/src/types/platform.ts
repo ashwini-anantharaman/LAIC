@@ -25,21 +25,6 @@ export const PROGRAM_FEATURES: { key: ProgramFeatureKey; label: string }[] = [
   { key: "partners", label: "Partners" },
 ];
 
-/**
- * Pre-built Bridge Platform roles (§21 contract). The role builder's Bridge
- * area picks one of these — each maps to a view Bridge has already built.
- */
-export const BRIDGE_ROLES: { key: string; label: string; hint: string }[] = [
-  { key: "bridge_program_admin", label: "Program Admin", hint: "Runs the Bridge program end to end." },
-  { key: "bridge_org_admin", label: "Organization Admin", hint: "Administers Bridge for the whole organization." },
-  { key: "bridge_club_admin", label: "Club Admin", hint: "Runs a club: rosters, sessions, events." },
-  { key: "bridge_coach", label: "Coach", hint: "Teaches: tables, players, knowledge tools." },
-  { key: "bridge_reviewer", label: "Reviewer", hint: "Reviews and comments on knowledge content." },
-  { key: "bridge_fellow", label: "Fellow", hint: "Contributes content alongside coaches." },
-  { key: "bridge_learner", label: "Learner", hint: "Plays and practices." },
-  { key: "bridge_guest", label: "Guest", hint: "Looks around; nothing is saved." },
-];
-
 export const DEFAULT_PROGRAM_FEATURES: ProgramFeatures = {
   learning: true,
   bridge: true,

@@ -189,6 +189,17 @@ async function _grantLevel(
   // Plain member: the custom role's area grant (Team & Roles). Role
   // assignments live in the DB layer only (501-free: absent in demo mode).
   if (!dbEnabled() || !user.email) return null;
+
+  // Most specific first: a person-level platform-role assignment (made from
+  // the platform's own People & Roles UI, stored centrally here).
+  if (area === "bridge") {
+    const assigned = await graph.getPlatformRoleForEmail(pid, "bridge", user.email).catch(() => null);
+    if (assigned && (BRIDGE_PREBUILT_ROLES as readonly string[]).includes(assigned)) {
+      const r = assigned as BridgePrebuiltRole;
+      return { level: BRIDGE_ROLE_LEVEL[r], platformRole: r };
+    }
+  }
+
   const role = await graph.getProgramRoleForEmail(pid, user.email).catch(() => null);
   const level = role ? ((role.perms as Row)?.[area] as string | undefined) : undefined;
   // An exact pre-built platform role from the picker (bridge area).

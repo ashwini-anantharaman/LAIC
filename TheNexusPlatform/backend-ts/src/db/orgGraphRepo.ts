@@ -17,7 +17,7 @@ import { scoped } from "./tenantRepo";
 import {
   organizations, offerings, organizationRelationships, programOrganizationAffiliations,
   programAffiliations, groups, groupMemberships, invitations, registrations, participants, profiles, programs,
-  programRoles, programRoleAssignments, entitlements, orgMemberships, registeredApps, appConfigVersions,
+  programRoles, programRoleAssignments, platformRoleAssignments, entitlements, orgMemberships, registeredApps, appConfigVersions,
 } from "./schema";
 
 type Row = Record<string, unknown>;
@@ -188,6 +188,64 @@ export async function getProgramRoleForEmail(programId: string, email: string): 
     if (!r.length) return null;
     return { role_id: r[0].a.roleId, role_name: r[0].roleName ?? null, perms: r[0].rolePerms ?? {} };
   });
+}
+
+// ── Platform role assignments (Bridge People & Roles etc.) ──────────────────
+// The platform's own UI assigns people to its PRE-BUILT roles; storage stays
+// central so login/test-as at the org portal resolves the same answer.
+export async function setPlatformRoleAssignment(
+  orgId: string,
+  programId: string,
+  platform: string,
+  email: string,
+  role: string | null,
+  assignedByUserId: string | null = null,
+): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const key = email.trim().toLowerCase();
+    await tx
+      .delete(platformRoleAssignments)
+      .where(and(
+        eq(platformRoleAssignments.programId, programId),
+        eq(platformRoleAssignments.platform, platform),
+        eq(platformRoleAssignments.email, key),
+      ));
+    if (!role) return null;
+    const [a] = await tx
+      .insert(platformRoleAssignments)
+      .values({ organizationId: orgId, programId, platform, email: key, role, assignedByUserId })
+      .returning();
+    return { id: a.id, program_id: a.programId, platform: a.platform, email: a.email, role: a.role };
+  });
+}
+
+export async function getPlatformRoleForEmail(
+  programId: string,
+  platform: string,
+  email: string,
+): Promise<string | null> {
+  return scoped(async (tx) => {
+    const r = await tx
+      .select({ role: platformRoleAssignments.role })
+      .from(platformRoleAssignments)
+      .where(and(
+        eq(platformRoleAssignments.programId, programId),
+        eq(platformRoleAssignments.platform, platform),
+        eq(platformRoleAssignments.email, email.trim().toLowerCase()),
+      ))
+      .limit(1);
+    return r.length ? r[0].role : null;
+  });
+}
+
+export async function listPlatformRoleAssignments(programId: string, platform: string): Promise<Row[]> {
+  return scoped(async (tx) =>
+    (await tx
+      .select()
+      .from(platformRoleAssignments)
+      .where(and(eq(platformRoleAssignments.programId, programId), eq(platformRoleAssignments.platform, platform))))
+      .map((a) => ({ email: a.email, role: a.role, created_at: a.createdAt })),
+  );
 }
 
 // ── Organization relationships ──────────────────────────────────────────────

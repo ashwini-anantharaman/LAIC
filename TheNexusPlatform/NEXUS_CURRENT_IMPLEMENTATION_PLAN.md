@@ -349,3 +349,22 @@ The prototype is saturated with AI-generated explainer text that must not carry 
 1. Phase 0 environment (Docker PG + migrations + seeds + both servers running).
 2. Phase 1 route/IA skeleton in `platform_logic` with the three session modes.
 3. Phase 2 wiring, starting with dashboard + programs + offerings + registrations.
+
+### Bridge role administration (July 2026) — ✅ done
+Division of labor per the product decision: **Nexus grants entry, Bridge
+administers its own roles, storage stays central.**
+- Nexus Team & Roles: the Bridge area is back to a single **Administrator**
+  toggle — holders (and org/program admins) enter Bridge as `bridge_program_admin`.
+- Bridge → **People & Roles** (`/bridge/people`, admin-gated nav): assigns any
+  program member one of Bridge's pre-built roles (Coach, Reviewer, Fellow,
+  Learner, Guest, Club/Org Admin). Admin standing is shown read-only ("via
+  Nexus admin").
+- Storage: `platform_role_assignments` (migration 0023 — org-RLS'd with the
+  strict people wall) via `GET /api/platform/bridge/people` +
+  `PUT /api/platform/bridge/people/role`, both authorized by
+  `resolvePlatformAccess` = admin. Assignments resolve in `/bridge/context`
+  (most-specific-first: admin membership → person assignment → custom-role
+  area grant), so org-portal logins and test-as launch straight into the
+  assigned role.
+- Launch handoff now carries `program_id` (cookie in bridge-web), scoping the
+  context to the program the console launched from.
