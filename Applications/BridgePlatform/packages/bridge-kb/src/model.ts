@@ -441,6 +441,13 @@ export interface KbSource {
   sourceType: "official_system_document" | "book" | "article" | "expert" | "model";
   rightsStatus: "licensed" | "public" | "owned" | "fair_use_excerpt";
   locator?: string;
+  /**
+   * The KB this source was registered from. The registry itself stays global
+   * (one rights record per document), but a source only SURFACES in its own
+   * KB. Absent on platform-global sources (src_claude) and on legacy rows —
+   * those surface wherever a KB's items or extraction runs reference them.
+   */
+  kbId?: string;
   registeredBy: string;
   createdAt: string;
 }

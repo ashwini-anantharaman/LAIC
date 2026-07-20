@@ -286,6 +286,7 @@ export async function registerSourceAction(formData: FormData): Promise<void> {
     sourceType: String(formData.get("sourceType")) as KbSource["sourceType"],
     rightsStatus: String(formData.get("rightsStatus")) as KbSource["rightsStatus"],
     locator: String(formData.get("locator") ?? "").trim() || undefined,
+    kbId,
     registeredBy: context.nexusUserId,
     createdAt: new Date().toISOString(),
   };

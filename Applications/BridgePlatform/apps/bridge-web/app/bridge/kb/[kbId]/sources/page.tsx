@@ -5,6 +5,7 @@ import { PdfUploadForm } from "@/components/kb/PdfUploadForm";
 import { pendingSections } from "@/lib/documents";
 import { extractionAvailable } from "@/lib/extraction";
 import { kbStore } from "@/lib/kb";
+import { scopeSources } from "@/lib/sources";
 import { registerSourceAction, uploadExtractedTextAction } from "../../actions";
 
 /** Sources tab (spec §6): register → upload → extract, with job reports and
@@ -27,11 +28,13 @@ export default async function SourcesPage({
   const { extracted, remaining: remainingParam, uploadError, uploaded, sections, extract } =
     await searchParams;
   const store = kbStore();
-  const [sources, jobs, items] = await Promise.all([
+  const [allSources, jobs, items] = await Promise.all([
     store.listSources(),
     store.listJobsForKb(kbId),
     store.listItemsForKb(kbId),
   ]);
+  // The registry is global; this KB only sees sources it registered or references.
+  const sources = scopeSources(allSources, kbId, items, jobs);
   const documents = new Map(
     await Promise.all(
       sources.map(async (s) => [s.sourceId, await store.getDocument(s.sourceId)] as const),
