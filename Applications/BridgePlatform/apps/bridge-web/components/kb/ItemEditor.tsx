@@ -1,8 +1,12 @@
+"use client";
+
 // The typed item editor (spec §6): purpose-built controls per knowledgeType,
 // generated payload underneath, raw JSON behind an "advanced" disclosure.
 // Reverse-mapping: conditions the typed subset can express prefill the
 // fields; anything deeper prefills the per-rule JSON box instead — nothing
-// is ever silently dropped.
+// is ever silently dropped. Only the payload section for the SELECTED type
+// renders (the server reads just that section on save — fields typed into a
+// non-matching section would be silently ignored, so we don't show them).
 
 import type {
   AuctionRuleSpec,
@@ -12,6 +16,7 @@ import type {
   KnowledgeType,
   NumParam,
 } from "@bridge/kb";
+import { useState } from "react";
 import { TYPE_LABEL } from "./badges";
 
 const showNum = (p: NumParam | undefined): string =>
@@ -265,7 +270,9 @@ export function ItemEditor({
 }>) {
   const payload: ItemPayload = item?.payload ?? { kind: "auction_rules", rules: [] };
   const auctionSpecs = payload.kind === "auction_rules" ? payload.rules : [];
-  const knowledgeType: KnowledgeType = item?.knowledgeType ?? "agreement";
+  const [knowledgeType, setKnowledgeType] = useState<KnowledgeType>(
+    item?.knowledgeType ?? "agreement",
+  );
   const needsRules = ["bidding_rule", "convention", "agreement", "exception"].includes(knowledgeType);
 
   return (
@@ -290,7 +297,12 @@ export function ItemEditor({
         </label>
         <label className="text-sm">
           <span className={label}>Type</span>
-          <select name="knowledgeType" defaultValue={knowledgeType} className={input}>
+          <select
+            name="knowledgeType"
+            value={knowledgeType}
+            onChange={(e) => setKnowledgeType(e.target.value as KnowledgeType)}
+            className={input}
+          >
             {Object.entries(TYPE_LABEL).map(([value, l]) => (
               <option key={value} value={value}>
                 {l}
@@ -334,11 +346,11 @@ export function ItemEditor({
         </div>
       )}
 
-      {/* Per-type payload controls. Always rendered (the type select is
-          client-side; the server form must carry every field), collapsed
-          unless the current type uses them — parsePayload reads only the
-          section matching the saved knowledgeType. */}
-      <details open={knowledgeType === "fallback_rule"}>
+      {/* Per-type payload controls: only the section for the SELECTED type
+          renders — the server reads just that section on save, so showing the
+          others would invite edits that get silently ignored. */}
+      {knowledgeType === "fallback_rule" && (
+      <details open>
         <summary className="text-xs text-neutral-500">Fallback behavior (fallback_rule items)</summary>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           <label className="text-sm">
@@ -371,8 +383,10 @@ export function ItemEditor({
           </label>
         </div>
       </details>
+      )}
 
-      <details open={knowledgeType === "signal_agreement"}>
+      {knowledgeType === "signal_agreement" && (
+      <details open>
         <summary className="text-xs text-neutral-500">Signals (signal_agreement items)</summary>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           {(
@@ -399,8 +413,10 @@ export function ItemEditor({
           ))}
         </div>
       </details>
+      )}
 
-      <details open={knowledgeType === "lead_agreement"}>
+      {knowledgeType === "lead_agreement" && (
+      <details open>
         <summary className="text-xs text-neutral-500">Lead rules (lead_agreement items)</summary>
         <div className="mt-2 space-y-2">
           <input
@@ -446,8 +462,10 @@ export function ItemEditor({
           ))}
         </div>
       </details>
+      )}
 
-      <details open={knowledgeType === "declarer_technique" || knowledgeType === "defensive_technique"}>
+      {(knowledgeType === "declarer_technique" || knowledgeType === "defensive_technique") && (
+      <details open>
         <summary className="text-xs text-neutral-500">Play rules (technique items)</summary>
         <div className="mt-2 space-y-2">
           <input
@@ -522,6 +540,14 @@ export function ItemEditor({
           ))}
         </div>
       </details>
+      )}
+
+      {(knowledgeType === "concept" || knowledgeType === "judgment_guideline") && (
+        <p className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
+          Teaching content — this type carries no rules. The plain-words text above is the
+          whole item; nothing here plays at the table.
+        </p>
+      )}
 
       {/* Inline settings the item exposes */}
       <div className="space-y-2">

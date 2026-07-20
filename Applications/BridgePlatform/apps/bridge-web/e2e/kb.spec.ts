@@ -158,7 +158,6 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
     .getByLabel("What a player reads (the agreement, in plain words)")
     .fill("With no lead agreement, lead low from your longest suit.");
   await page.getByLabel("Type").selectOption("fallback_rule");
-  await page.getByText("Fallback behavior (fallback_rule items)").click();
   await page.locator('select[name="fb:phase"]').selectOption("opening_lead");
   await page.getByRole("button", { name: "Create knowledge item" }).click();
 
@@ -168,7 +167,6 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
     .getByLabel("What a player reads (the agreement, in plain words)")
     .fill("With no technique that applies, play your lowest legal card.");
   await page.getByLabel("Type").selectOption("fallback_rule");
-  await page.getByText("Fallback behavior (fallback_rule items)").click();
   await page.locator('select[name="fb:phase"]').selectOption("card_play");
   await page.getByRole("button", { name: "Create knowledge item" }).click();
 
