@@ -645,12 +645,21 @@ function TutorialSource(props: any) {
     ytUrl, setYtUrl, ytLoading, ytError, onFetchYoutube,
     webUrl, setWebUrl, webLoading, webError, onFetchWeb,
     promptText, setPromptText, showMedia, imagesOnly,
-    media, addImage, addVideo, updateMedia, removeMedia, pickImageAsset,
+    media, addImage, addImagesFromFiles, addVideo, updateMedia, removeMedia, pickImageAsset,
     showManualWrite,
   } = props;
   const inputRef = useRef<HTMLInputElement>(null);
+  const bulkImageRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [imgDragOver, setImgDragOver] = useState(false);
   const pick = (files: FileList | null) => { const f = files?.[0]; if (f) onFile(f); };
+  const takeImageFiles = (list: FileList | File[] | null) => {
+    if (!list || !addImagesFromFiles) return;
+    const files = Array.from(list).filter(
+      (f) => f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp|heic|heif)$/i.test(f.name),
+    );
+    if (files.length) addImagesFromFiles(files);
+  };
   const modes = SOURCE_MODES.filter((m) => m.id !== 'manual' || showManualWrite);
 
   const INTRO: Record<string, string> = {
@@ -802,14 +811,34 @@ function TutorialSource(props: any) {
         </p>
         <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 12, lineHeight: 1.5 }}>
           {imagesOnly
-            ? 'Upload pictures here. With Image → label in Define, each upload becomes a card: image on one side, and a Claude vision description (tied to your PDF + Define) on the other.'
-            : 'Add images and YouTube clips here. They preview instantly and are showcased — with captions — in the generated tutorial.'}
+            ? 'Upload one or many pictures. With Image → label in Define, each upload becomes a card: image on one side, and a Claude vision description (tied to your PDF + Define) on the other.'
+            : 'Upload several images at once, or add YouTube clips. They preview here and appear — with captions — in the generated tutorial.'}
         </p>
 
-        <div className="flex items-center gap-2 mb-3">
+        <input
+          ref={bulkImageRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            takeImageFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <button
+            type="button"
+            onClick={() => bulkImageRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
+            style={{ fontSize: 12, fontWeight: 600, color: '#fff', borderColor: '#0B0F1A', background: '#0B0F1A' }}
+          >
+            <Upload size={13} />Upload images
+          </button>
           <button type="button" onClick={addImage} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
             style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
-            <ImageIcon size={13} />Add image
+            <ImageIcon size={13} />Blank slot / URL
           </button>
           {!imagesOnly && (
             <button type="button" onClick={addVideo} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
@@ -817,25 +846,49 @@ function TutorialSource(props: any) {
               <Youtube size={13} style={{ color: '#EF4444' }} />Add YouTube video
             </button>
           )}
+          {media?.filter((m: any) => m.kind === 'image').length > 0 && (
+            <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+              {media.filter((m: any) => m.kind === 'image').length} image{media.filter((m: any) => m.kind === 'image').length !== 1 ? 's' : ''}
+              {media.some((m: any) => m.uploading) ? ' · uploading…' : ''}
+            </span>
+          )}
         </div>
 
-        {(!media || media.length === 0) ? (
-          <div className="rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-1 py-7"
-            style={{ borderColor: 'rgba(0,0,0,0.1)', color: '#9AA3AF' }}>
-            <Layers size={18} />
-            <p style={{ fontSize: 12 }}>
-              {imagesOnly
-                ? 'No images yet — upload ones you want on Image → label cards.'
-                : 'No media yet — images and video clips you add appear in the tutorial.'}
-            </p>
-          </div>
-        ) : (
+        <button
+          type="button"
+          onClick={() => bulkImageRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setImgDragOver(true); }}
+          onDragLeave={() => setImgDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setImgDragOver(false);
+            takeImageFiles(e.dataTransfer.files);
+          }}
+          className="w-full rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-1 py-6 mb-3 transition-all"
+          style={{
+            borderColor: imgDragOver ? '#7C3AED' : 'rgba(0,0,0,0.12)',
+            background: imgDragOver ? 'rgba(124,58,237,0.05)' : 'rgba(255,255,255,0.55)',
+            color: '#6B7280',
+            cursor: 'pointer',
+          }}
+        >
+          <ImageIcon size={18} style={{ color: imgDragOver ? '#7C3AED' : '#9AA3AF' }} />
+          <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151' }}>
+            Drop images here or click to choose several
+          </p>
+          <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>PNG, JPG, GIF, WebP · multi-select supported</p>
+        </button>
+
+        {(!media || media.length === 0) ? null : (
           media.map((m: any) => (
             <div key={m.id} className="mb-3 rounded-2xl border overflow-hidden" style={{ background: 'rgba(255,255,255,0.9)', borderColor: 'rgba(0,0,0,0.08)' }}>
               <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: 'rgba(0,0,0,0.06)', background: 'rgba(255,255,255,0.5)' }}>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   {m.kind === 'image' ? <ImageIcon size={13} style={{ color: '#6B7280' }} /> : <Youtube size={13} style={{ color: '#EF4444' }} />}
-                  <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: '#F3F4F6', color: '#374151' }}>{m.kind === 'image' ? 'Image' : 'YouTube clip'}</span>
+                  <span className="px-2 py-0.5 rounded text-xs font-medium shrink-0" style={{ background: '#F3F4F6', color: '#374151' }}>{m.kind === 'image' ? 'Image' : 'YouTube clip'}</span>
+                  {m.fileName && (
+                    <span className="truncate" style={{ fontSize: 11.5, color: '#9AA3AF' }}>{m.fileName}</span>
+                  )}
                 </div>
                 <button type="button" onClick={() => removeMedia(m.id)} title="Remove"><Trash2 size={13} style={{ color: '#EF4444' }} /></button>
               </div>
@@ -2404,6 +2457,23 @@ export function ObjectCreator() {
     reader.onload = () => updateMedia(id, { url: String(reader.result), fileName: file.name, uploading: false });
     reader.readAsDataURL(file);
   };
+  /** Bulk-add image files from the Sources multi-select / drop zone. */
+  const addImagesFromFiles = (files: File[]) => {
+    if (!files.length) return;
+    const stamp = Date.now();
+    const entries = files.map((file, i) => ({
+      id: `m-img-${stamp}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+      kind: 'image' as const,
+      url: '',
+      caption: '',
+      fileName: file.name,
+      uploading: true,
+    }));
+    setMedia((p) => [...p, ...entries]);
+    entries.forEach((entry, i) => {
+      void pickImageAsset(entry.id, files[i]);
+    });
+  };
   const mediaToPart = (m: any) =>
     m.kind === 'image'
       ? { id: m.id, type: 'image', label: 'Image', url: m.url, caption: m.caption }
@@ -3397,7 +3467,8 @@ export function ObjectCreator() {
                   promptText={promptText} setPromptText={setPromptText}
                   showMedia={isTutorial || isFlashcard} imagesOnly={isFlashcard}
                   showManualWrite={isTutorial}
-                  media={media} addImage={addImageAsset} addVideo={addVideoAsset} updateMedia={updateMedia} removeMedia={removeMedia} pickImageAsset={pickImageAsset} />
+                  media={media} addImage={addImageAsset} addImagesFromFiles={addImagesFromFiles}
+                  addVideo={addVideoAsset} updateMedia={updateMedia} removeMedia={removeMedia} pickImageAsset={pickImageAsset} />
               : <S1 selected={sel} setSelected={setSel} roles={roles} setRoles={setRoles} urlRefs={urlRefs} setUrlRefs={setUrlRefs} />)}
             {step === 2 && (
               <S2
