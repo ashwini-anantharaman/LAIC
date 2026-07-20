@@ -396,6 +396,27 @@ export interface Block {
   content: BlockContent;
 }
 
+/** Document-level markup review item (not per-sentence popups). */
+export type MarkupFlagKind = 'core' | 'confusion' | 'diagram' | 'out_of_scope';
+export type MarkupFlagStatus = 'pending' | 'accepted' | 'rejected' | 'adjusted';
+
+export interface MarkupFlag {
+  id: string;
+  kind: MarkupFlagKind;
+  /** Short label for the review list. */
+  title: string;
+  rationale?: string;
+  /** Inclusive sentence indices in the parsed document. */
+  startIdx: number;
+  endIdx: number;
+  page?: number;
+  excerpt: string;
+  suggestedTag: 'Use' | 'Support' | 'Ignore' | 'Note';
+  status: MarkupFlagStatus;
+  /** Author override when adjusting before accept. */
+  adjustedText?: string;
+}
+
 /**
  * Snapshot of the Sources → Mark up → Extract → Define wizard so an editor
  * can reopen the full process (not only the generated draft).
@@ -407,6 +428,8 @@ export interface CreatorPipelineDraft {
   ytUrl?: string;
   doc?: { fileName: string; pageCount: number; sentences: { text: string; page: number }[] } | null;
   highlights?: any[];
+  /** AI document-level markup flags for Accept / Reject / Adjust review. */
+  markupFlags?: MarkupFlag[];
   extracts?: any[];
   knowledgeBase?: ClusteredKnowledgeBase;
   templateId?: string;

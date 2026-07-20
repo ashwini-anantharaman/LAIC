@@ -7,6 +7,7 @@ import type {
   AssistantTurnRequest,
   AssistantMessage,
   ProposedEdit,
+  MarkupFlag,
 } from './types';
 
 /* ────────────────────────────────────────────────────────────────
@@ -319,6 +320,27 @@ export function suggestTutorialHighlights(
     body: { sentences, instruction },
     signal,
   }).then((r) => r.suggestions ?? []);
+}
+
+/**
+ * POST /api/tutorials/suggest-markup-flags — one document scan → compact
+ * review list (core / confusion / diagram / out-of-scope) for Accept/Reject/Adjust.
+ */
+export function suggestTutorialMarkupFlags(
+  sentences: { text: string; page?: number }[],
+  opts?: { instruction?: string; objective?: string; title?: string },
+  signal?: AbortSignal,
+): Promise<{ flags: MarkupFlag[]; summary: string }> {
+  return apiFetch<{ flags: MarkupFlag[]; summary: string }>('/api/tutorials/suggest-markup-flags', {
+    method: 'POST',
+    body: {
+      sentences,
+      instruction: opts?.instruction,
+      objective: opts?.objective,
+      title: opts?.title,
+    },
+    signal,
+  }).then((r) => ({ flags: r.flags ?? [], summary: r.summary || '' }));
 }
 
 /** POST /api/tutorials/ingest-youtube — server fetches the video transcript. */

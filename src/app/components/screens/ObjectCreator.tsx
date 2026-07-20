@@ -11,7 +11,7 @@ import { useApp } from '../../App';
 import { SOURCES, OBJECTS } from '../../../lib/data';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../lib/pdf';
 import {
-  suggestTutorialHighlights, generateTutorial, generateFlashcards, generateQuiz, generateConceptCard, suggestConceptIntents,
+  suggestTutorialHighlights, suggestTutorialMarkupFlags, generateTutorial, generateFlashcards, generateQuiz, generateConceptCard, suggestConceptIntents,
   generateStructuredObject, ingestYoutube, editTutorialBlock, errorMessage,
   type GeneratedPart, type TutorialGenEvent, type GeneratedCard, type FlashcardGenEvent,
   type GeneratedQuizQuestion, type QuizGenEvent, type GeneratedConceptCard, type ConceptCardGenEvent,
@@ -20,9 +20,10 @@ import {
 import { supabaseEnabled, uploadImage } from '../../../lib/supabase';
 import type {
   Block, CreatorPipelineDraft, ObjectStatus, ClusteredKnowledgeBase, ContentUnit,
-  TutorialSectionPlan, TutorialTemplate, ObjectSelection, EditAction,
+  TutorialSectionPlan, TutorialTemplate, ObjectSelection, EditAction, MarkupFlag,
   SummaryContent, ReflectionContent, AssignmentContent, DrillContent,
 } from '../../../lib/types';
+import { MarkupFlagReview, highlightsFromFlag } from './MarkupFlagReview';
 import { getTutorialTemplate, DEFAULT_TUTORIAL_TEMPLATE_ID } from '../../../lib/tutorialTemplates';
 import { orderTutorialParts } from '../../../lib/tutorialOrder.js';
 import {
@@ -900,11 +901,23 @@ function S1({ selected, setSelected, roles, setRoles, urlRefs, setUrlRefs }: any
   );
 }
 
-function S2({ highlights, setHighlights, activeTag, setActiveTag, aiSuggestions, setAiSuggestions, docParas, docTitle, pages, query, setQuery, onSuggest, suggesting, suggestError, parsing, parseProgress, parseError }: any) {
+function S2({
+  highlights, setHighlights, activeTag, setActiveTag, aiSuggestions, setAiSuggestions,
+  docParas, docTitle, pages, query, setQuery, onSuggest, suggesting, suggestError,
+  parsing, parseProgress, parseError,
+  markupFlags, setMarkupFlags, flagSummary, onScanFlags, scanningFlags, flagError, pageCount,
+}: any) {
   const [aiThinking, setAiThinking] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
+  const [showSentenceSuggest, setShowSentenceSuggest] = useState(false);
   const paras: string[] = docParas;
   const busy = onSuggest ? suggesting : aiThinking;
+  const flagBusy = !!scanningFlags;
+  const flaggedIdx = new Set<number>();
+  for (const f of (markupFlags || []) as MarkupFlag[]) {
+    if (f.status === 'rejected') continue;
+    for (let i = f.startIdx; i <= f.endIdx; i += 1) flaggedIdx.add(i);
+  }
 
   if (parsing) {
     return (
@@ -992,11 +1005,92 @@ function S2({ highlights, setHighlights, activeTag, setActiveTag, aiSuggestions,
       <div className="flex-1 min-w-0">
         <div className="rounded-2xl p-4 mb-4" style={{ background: '#FEF3C7', border: '1px solid #FCD34D' }}>
           <p style={{ fontSize: 12.5, color: '#92400E', lineHeight: 1.6 }}>
-            Read the source and <strong>highlight what matters</strong> — mark passages to use, support, ignore, or note.
-            <strong> Search to highlight every match at once</strong> or let <strong>AI suggest highlights</strong>.
-            Your highlights become the <strong>commented-sources artifact</strong>. Optional — you can skip.
+            Prefer <strong>Scan document</strong> — AI reads the whole source once and returns a short review list
+            (core concepts, confusion spots, diagrams, out-of-scope). Accept, reject, or adjust each item instead of hundreds of sentence clicks.
+            You can still highlight manually or use sentence suggestions. Optional — you can skip.
           </p>
         </div>
+
+        {/* Document-level flag scan — always available */}
+        {onScanFlags && paras.length > 0 && (
+          <div className="mb-4 p-3 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.75)', borderColor: 'rgba(0,0,0,0.08)' }}>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                value={aiQuery}
+                onChange={(e) => setAiQuery(e.target.value)}
+                placeholder="Optional focus for the scan (e.g. scoring rules, bidding)…"
+                className="flex-1 min-w-[200px] rounded-xl px-3 py-2"
+                style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.9)', outline: 'none' }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !flagBusy) onScanFlags(aiQuery); }}
+              />
+              <button
+                type="button"
+                onClick={() => onScanFlags(aiQuery)}
+                disabled={flagBusy}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white"
+                style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 650, opacity: flagBusy ? 0.7 : 1 }}
+              >
+                {flagBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                {flagBusy ? 'Scanning document…' : 'Scan document for review items'}
+              </button>
+            </div>
+            <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>
+              {typeof pageCount === 'number' && pageCount >= 10
+                ? `Longer source (${pageCount} pages) — scan is recommended so you review ~20 decisions, not every sentence.`
+                : 'Works on short and long sources. Returns a compact list to accept, reject, or adjust.'}
+            </p>
+            {flagError && (
+              <div className="flex items-start gap-1.5 mt-2" style={{ fontSize: 11.5, color: '#B91C1C' }}>
+                <AlertTriangle size={12} style={{ marginTop: 1 }} />{flagError}
+              </div>
+            )}
+          </div>
+        )}
+
+        {Array.isArray(markupFlags) && markupFlags.length > 0 && (
+          <MarkupFlagReview
+            flags={markupFlags}
+            summary={flagSummary}
+            onChange={setMarkupFlags}
+            onAccept={(flag: MarkupFlag) => {
+              const additions = highlightsFromFlag(flag, paras, pages)
+                .filter((h) => !highlights.find((x: any) => x.idx === h.idx));
+              if (additions.length) setHighlights((p: any[]) => [...p, ...additions]);
+              setMarkupFlags((prev: MarkupFlag[]) =>
+                prev.map((f) => (f.id === flag.id ? { ...f, status: 'accepted' as const } : f)));
+            }}
+            onReject={(id: string) => {
+              setMarkupFlags((prev: MarkupFlag[]) =>
+                prev.map((f) => (f.id === id ? { ...f, status: 'rejected' as const } : f)));
+            }}
+            onAcceptAllPending={() => {
+              const pending = (markupFlags as MarkupFlag[]).filter((f) => f.status === 'pending' || f.status === 'adjusted');
+              const additions: any[] = [];
+              const used = new Set(highlights.map((h: any) => h.idx));
+              for (const flag of pending) {
+                for (const h of highlightsFromFlag(flag, paras, pages)) {
+                  if (used.has(h.idx)) continue;
+                  used.add(h.idx);
+                  additions.push(h);
+                }
+              }
+              if (additions.length) setHighlights((p: any[]) => [...p, ...additions]);
+              setMarkupFlags((prev: MarkupFlag[]) =>
+                prev.map((f) =>
+                  (f.status === 'pending' || f.status === 'adjusted')
+                    ? { ...f, status: 'accepted' as const }
+                    : f));
+            }}
+            onRejectAllPending={() => {
+              setMarkupFlags((prev: MarkupFlag[]) =>
+                prev.map((f) =>
+                  (f.status === 'pending' || f.status === 'adjusted')
+                    ? { ...f, status: 'rejected' as const }
+                    : f));
+            }}
+            onClear={() => setMarkupFlags([])}
+          />
+        )}
 
         {/* Tag selector */}
         <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -1028,27 +1122,40 @@ function S2({ highlights, setHighlights, activeTag, setActiveTag, aiSuggestions,
           </div>
         </div>
 
-        {/* Find + AI */}
+        {/* Find */}
         <div className="flex gap-2 mb-3">
           <input value={query || ''} onChange={e => setQuery(e.target.value)} placeholder="Find in document…" className="flex-1 rounded-xl px-3 py-2"
             style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.8)', outline: 'none' }}
             onKeyDown={e => { if (e.key === 'Enter') highlightAll(); }} />
           <button onClick={highlightAll} className="px-3 py-2 rounded-xl text-white text-xs font-semibold" style={{ background: '#0B0F1A' }}>Highlight all</button>
         </div>
-        <div className="flex flex-col gap-2 mb-4 p-3 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.6)', borderColor: 'rgba(0,0,0,0.08)' }}>
-          <div className="flex gap-2">
-            <input value={aiQuery} onChange={e => setAiQuery(e.target.value)} placeholder="What should AI look for? (optional)"
-              className="flex-1 bg-transparent outline-none" style={{ fontSize: 12.5 }}
-              onKeyDown={e => { if (e.key === 'Enter' && !busy) suggest(); }} />
-            <button onClick={suggest} disabled={busy}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white"
-              style={{ background: '#0B0F1A', fontSize: 12, fontWeight: 600, opacity: busy ? 0.7 : 1 }}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}{busy ? 'Thinking…' : '✦ Suggest'}
-            </button>
-          </div>
-          {suggestError && (
-            <div className="flex items-start gap-1.5" style={{ fontSize: 11.5, color: '#B91C1C' }}>
-              <AlertTriangle size={12} style={{ marginTop: 1 }} />{suggestError}
+
+        {/* Legacy per-sentence suggest (secondary) */}
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => setShowSentenceSuggest((v) => !v)}
+            style={{ fontSize: 11.5, fontWeight: 600, color: '#6B7280' }}
+          >
+            {showSentenceSuggest ? '▾' : '▸'} Sentence-level suggest (optional)
+          </button>
+          {showSentenceSuggest && (
+            <div className="flex flex-col gap-2 mt-2 p-3 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.6)', borderColor: 'rgba(0,0,0,0.08)' }}>
+              <div className="flex gap-2">
+                <input value={aiQuery} onChange={e => setAiQuery(e.target.value)} placeholder="What should AI look for? (optional)"
+                  className="flex-1 bg-transparent outline-none" style={{ fontSize: 12.5 }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !busy) suggest(); }} />
+                <button onClick={suggest} disabled={busy}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white"
+                  style={{ background: '#0B0F1A', fontSize: 12, fontWeight: 600, opacity: busy ? 0.7 : 1 }}>
+                  {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}{busy ? 'Thinking…' : '✦ Suggest sentences'}
+                </button>
+              </div>
+              {suggestError && (
+                <div className="flex items-start gap-1.5" style={{ fontSize: 11.5, color: '#B91C1C' }}>
+                  <AlertTriangle size={12} style={{ marginTop: 1 }} />{suggestError}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1056,7 +1163,7 @@ function S2({ highlights, setHighlights, activeTag, setActiveTag, aiSuggestions,
         {aiSuggestions.length > 0 && (
           <div className="flex items-center gap-3 mb-3 px-4 py-2 rounded-2xl" style={{ background: '#FEF3C7', border: '1px solid #FCD34D' }}>
             <Sparkles size={13} style={{ color: '#D97706' }} />
-            <span style={{ fontSize: 12, color: '#92400E', flex: 1 }}>AI suggested {aiSuggestions.length} highlights (dashed) — review, then</span>
+            <span style={{ fontSize: 12, color: '#92400E', flex: 1 }}>AI suggested {aiSuggestions.length} sentence highlights (dashed) — review, then</span>
             <button onClick={acceptAll} className="px-3 py-1 rounded-full text-white text-xs font-semibold" style={{ background: '#D97706' }}>Accept all</button>
             <button onClick={() => setAiSuggestions([])} style={{ fontSize: 12, color: '#92400E' }}>Dismiss</button>
           </div>
@@ -1076,6 +1183,7 @@ function S2({ highlights, setHighlights, activeTag, setActiveTag, aiSuggestions,
           {paras.map((para, idx) => {
             const hl = highlights.find((h: any) => h.idx === idx);
             const isAi = aiSuggestions.includes(idx);
+            const isFlagged = flaggedIdx.has(idx);
             const isMatch = q.length > 0 && para.toLowerCase().includes(q);
             const c = hl ? TAG[hl.tag] : null;
             return (
@@ -1083,8 +1191,8 @@ function S2({ highlights, setHighlights, activeTag, setActiveTag, aiSuggestions,
                 className="mb-1.5 rounded px-1 py-0.5 cursor-pointer transition-all"
                 style={{
                   fontSize: 13.5, lineHeight: 1.7, fontFamily: 'Georgia, serif', color: '#1F2937',
-                  background: hl ? c!.bg : isAi ? 'rgba(254,243,199,0.5)' : isMatch ? 'rgba(14,165,233,0.12)' : 'transparent',
-                  borderBottom: isAi && !hl ? '2px dashed #F59E0B' : 'none',
+                  background: hl ? c!.bg : isAi ? 'rgba(254,243,199,0.5)' : isFlagged ? 'rgba(37,99,235,0.07)' : isMatch ? 'rgba(14,165,233,0.12)' : 'transparent',
+                  borderBottom: (isAi || isFlagged) && !hl ? `2px dashed ${isAi ? '#F59E0B' : '#2563EB'}` : 'none',
                   textDecoration: hl?.tag === 'Ignore' ? 'line-through' : 'none',
                 }}>{para}</p>
             );
@@ -2201,15 +2309,25 @@ export function ObjectCreator() {
     setSrcMode(m);
     setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setParseProgress(null);
     setHighlights([]); setAiSuggestions([]); setExtracts([]);
+    setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
+    autoFlagScannedFor.current = null;
     setKnowledgeBase(null); setShapeIntent('');
   };
   const replaceSource = () => {
     setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setParseProgress(null);
     setHighlights([]); setAiSuggestions([]); setExtracts([]);
+    setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
+    autoFlagScannedFor.current = null;
     setKnowledgeBase(null); setShapeIntent('');
   };
 
   // Tutorial: real LLM — suggest highlights + streamed generation.
+  const [markupFlags, setMarkupFlags] = useState<MarkupFlag[]>([]);
+  const [flagSummary, setFlagSummary] = useState('');
+  const [scanningFlags, setScanningFlags] = useState(false);
+  const [flagError, setFlagError] = useState<string | null>(null);
+  const flagScanAbort = useRef<AbortController | null>(null);
+  const autoFlagScannedFor = useRef<string | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const [intentSuggestions, setIntentSuggestions] = useState<string[]>([]);
@@ -2241,6 +2359,8 @@ export function ObjectCreator() {
     setHighlights([]);
     setAiSuggestions([]);
     setExtracts([]);
+    setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
+    autoFlagScannedFor.current = null;
     setKnowledgeBase(null);
     if (!title) setTitle(file.name.replace(/\.pdf$/i, ''));
   };
@@ -2282,6 +2402,8 @@ export function ObjectCreator() {
   const handleLoadText = () => {
     if (!pasteText.trim()) return;
     setHighlights([]); setAiSuggestions([]); setExtracts([]);
+    setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
+    autoFlagScannedFor.current = null;
     setKnowledgeBase(null);
     if (!title) setTitle('Pasted source');
     setDoc(docFromText(pasteText, 'Pasted source'));
@@ -2294,6 +2416,8 @@ export function ObjectCreator() {
     try {
       const out = await ingestYoutube(ytUrl.trim());
       setHighlights([]); setAiSuggestions([]); setExtracts([]);
+      setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
+      autoFlagScannedFor.current = null;
       setKnowledgeBase(null);
       if (!title && out.title) setTitle(out.title);
       setDoc({ fileName: out.title || 'YouTube transcript', pageCount: 1, sentences: (out.sentences || []).map((t) => ({ text: t, page: 1 })) });
@@ -2333,6 +2457,10 @@ export function ObjectCreator() {
       if (d.ytUrl != null) setYtUrl(d.ytUrl);
       if (d.doc) setDoc(d.doc as ParsedDoc);
       if (d.highlights) setHighlights(d.highlights);
+      if (Array.isArray(d.markupFlags)) {
+        setMarkupFlags(d.markupFlags as MarkupFlag[]);
+        autoFlagScannedFor.current = d.doc?.fileName || 'restored';
+      }
       if (d.extracts) setExtracts(d.extracts);
       if (d.knowledgeBase) setKnowledgeBase(d.knowledgeBase);
       if (d.shapeIntent != null) setShapeIntent(d.shapeIntent);
@@ -2423,6 +2551,7 @@ export function ObjectCreator() {
     ytUrl,
     doc: doc ? { fileName: doc.fileName, pageCount: doc.pageCount, sentences: doc.sentences } : null,
     highlights,
+    markupFlags: markupFlags.length ? markupFlags : undefined,
     extracts,
     knowledgeBase: knowledgeBase || undefined,
     templateId: fv.templateId,
@@ -2459,6 +2588,56 @@ export function ObjectCreator() {
       setSuggesting(false);
     }
   };
+
+  /** Document-level markup flags: one scan → compact Accept/Reject/Adjust list. */
+  const handleScanFlags = async (instruction?: string) => {
+    if (!doc?.sentences?.length) {
+      setFlagError('Parse or load a source first.');
+      return;
+    }
+    flagScanAbort.current?.abort();
+    const ctrl = new AbortController();
+    flagScanAbort.current = ctrl;
+    setFlagError(null);
+    setScanningFlags(true);
+    try {
+      const result = await suggestTutorialMarkupFlags(
+        doc.sentences.map((s) => ({ text: s.text, page: s.page })),
+        {
+          instruction: instruction || undefined,
+          objective: String(fv.obj || '').trim() || undefined,
+          title: doc.fileName || title || undefined,
+        },
+        ctrl.signal,
+      );
+      setMarkupFlags(result.flags);
+      setFlagSummary(result.summary);
+      autoFlagScannedFor.current = doc.fileName || 'doc';
+      if (!result.flags.length) setFlagError('No review items found — try a focus note, or mark up manually.');
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      setFlagError(errorMessage(e, 'Document scan failed.'));
+    } finally {
+      setScanningFlags(false);
+      flagScanAbort.current = null;
+    }
+  };
+
+  // Longer PDFs: auto-scan once when Mark up opens after parse (always optional to re-run).
+  useEffect(() => {
+    if (step !== 2 || !usesPipeline || !doc?.sentences?.length || parsing || scanningFlags) return;
+    const key = doc.fileName || 'doc';
+    if (autoFlagScannedFor.current === key) return;
+    if (markupFlags.length > 0) {
+      autoFlagScannedFor.current = key;
+      return;
+    }
+    const longDoc = (doc.pageCount || 0) >= 10 || doc.sentences.length >= 80;
+    if (!longDoc) return;
+    autoFlagScannedFor.current = key;
+    void handleScanFlags();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, doc, parsing]);
 
   /** Marked-up units for concept cards: extracts first, else Use/Support highlights. */
   const conceptMarkupUnits = () => {
@@ -3063,7 +3242,23 @@ export function ObjectCreator() {
                   showManualWrite={isTutorial}
                   media={media} addImage={addImageAsset} addVideo={addVideoAsset} updateMedia={updateMedia} removeMedia={removeMedia} pickImageAsset={pickImageAsset} />
               : <S1 selected={sel} setSelected={setSel} roles={roles} setRoles={setRoles} urlRefs={urlRefs} setUrlRefs={setUrlRefs} />)}
-            {step === 2 && <S2 highlights={highlights} setHighlights={setHighlights} activeTag={activeTag} setActiveTag={setActiveTag} aiSuggestions={aiSuggestions} setAiSuggestions={setAiSuggestions} docParas={docParas} docTitle={docTitle || pdfFile?.name || 'Your source'} pages={docPages} query={query} setQuery={setQuery} onSuggest={usesPipeline ? handleSuggest : undefined} suggesting={suggesting} suggestError={suggestError} parsing={parsing} parseProgress={parseProgress} parseError={parseError} />}
+            {step === 2 && (
+              <S2
+                highlights={highlights} setHighlights={setHighlights}
+                activeTag={activeTag} setActiveTag={setActiveTag}
+                aiSuggestions={aiSuggestions} setAiSuggestions={setAiSuggestions}
+                docParas={docParas} docTitle={docTitle || pdfFile?.name || 'Your source'}
+                pages={docPages} pageCount={doc?.pageCount}
+                query={query} setQuery={setQuery}
+                onSuggest={usesPipeline ? handleSuggest : undefined}
+                suggesting={suggesting} suggestError={suggestError}
+                parsing={parsing} parseProgress={parseProgress} parseError={parseError}
+                markupFlags={markupFlags} setMarkupFlags={setMarkupFlags}
+                flagSummary={flagSummary}
+                onScanFlags={usesPipeline ? handleScanFlags : undefined}
+                scanningFlags={scanningFlags} flagError={flagError}
+              />
+            )}
             {step === 3 && (isTutorial
               ? (
                 <TutorialExtractPanel

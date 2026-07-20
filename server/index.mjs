@@ -342,6 +342,195 @@ async function suggestHighlights(sentences, instruction) {
   return valid;
 }
 
+/* ─── Tutorial: document-level markup flags (review list, not per-sentence) ── */
+
+const FLAG_KINDS = new Set(['core', 'confusion', 'diagram', 'out_of_scope']);
+const FLAG_KIND_TO_TAG = {
+  core: 'Use',
+  confusion: 'Note',
+  diagram: 'Support',
+  out_of_scope: 'Ignore',
+};
+
+function buildFlagCorpus(items, offset = 0) {
+  return items.map((it, j) => {
+    const i = offset + j;
+    const text = String(it?.text || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+    return `[${i}|p${it?.page || 1}] ${text}`;
+  }).join('\n');
+}
+
+function normalizeMarkupFlags(parsed, items) {
+  const arr = Array.isArray(parsed)
+    ? parsed
+    : (parsed && Array.isArray(parsed.flags) ? parsed.flags : []);
+  const n = items.length;
+  const out = [];
+  const seen = new Set();
+  for (const raw of arr) {
+    if (!raw || typeof raw !== 'object') continue;
+    let kind = String(raw.kind || '').toLowerCase().replace(/-/g, '_');
+    if (kind === 'out-of-scope' || kind === 'outofscope') kind = 'out_of_scope';
+    if (!FLAG_KINDS.has(kind)) continue;
+    let startIdx = Number(raw.startIdx ?? raw.start ?? raw.from);
+    let endIdx = Number(raw.endIdx ?? raw.end ?? raw.to ?? startIdx);
+    if (!Number.isInteger(startIdx) || startIdx < 0 || startIdx >= n) continue;
+    if (!Number.isInteger(endIdx) || endIdx < startIdx) endIdx = startIdx;
+    if (endIdx >= n) endIdx = n - 1;
+    // Cap span length so one flag does not swallow the whole doc
+    if (endIdx - startIdx > 8) endIdx = startIdx + 8;
+    const key = `${kind}:${startIdx}-${endIdx}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const excerpt = items
+      .slice(startIdx, endIdx + 1)
+      .map((it) => String(it?.text || '').trim())
+      .filter(Boolean)
+      .join(' ');
+    if (!excerpt) continue;
+    const title = String(raw.title || raw.label || '').trim()
+      || excerpt.slice(0, 72) + (excerpt.length > 72 ? '…' : '');
+    const suggestedTag = FLAG_KIND_TO_TAG[kind] || 'Use';
+    out.push({
+      id: `flag-${Date.now().toString(36)}-${out.length}`,
+      kind,
+      title,
+      rationale: String(raw.rationale || raw.why || '').trim() || undefined,
+      startIdx,
+      endIdx,
+      page: items[startIdx]?.page || 1,
+      excerpt: excerpt.slice(0, 600),
+      suggestedTag,
+      status: 'pending',
+    });
+  }
+  return out;
+}
+
+function quotaSelectFlags(flags) {
+  const quotas = { core: 12, confusion: 4, diagram: 6, out_of_scope: 3 };
+  const buckets = { core: [], confusion: [], diagram: [], out_of_scope: [] };
+  for (const f of flags) {
+    if (buckets[f.kind]) buckets[f.kind].push(f);
+  }
+  const selected = [];
+  for (const kind of Object.keys(quotas)) {
+    selected.push(...buckets[kind].slice(0, quotas[kind]));
+  }
+  // If under target, fill from leftovers by document order
+  if (selected.length < 18) {
+    const used = new Set(selected.map((f) => f.id));
+    const rest = flags.filter((f) => !used.has(f.id)).sort((a, b) => a.startIdx - b.startIdx);
+    for (const f of rest) {
+      if (selected.length >= 28) break;
+      selected.push(f);
+    }
+  }
+  selected.sort((a, b) => a.startIdx - b.startIdx);
+  return selected.slice(0, 30);
+}
+
+function summarizeFlags(flags) {
+  const counts = { core: 0, confusion: 0, diagram: 0, out_of_scope: 0 };
+  for (const f of flags) if (counts[f.kind] != null) counts[f.kind] += 1;
+  const parts = [];
+  if (counts.core) parts.push(`${counts.core} passage${counts.core === 1 ? '' : 's'} carry core concepts`);
+  if (counts.confusion) parts.push(`${counts.confusion} look like places students commonly confuse things`);
+  if (counts.diagram) parts.push(`${counts.diagram} mention diagrams or visuals worth pulling in`);
+  if (counts.out_of_scope) parts.push(`${counts.out_of_scope} section${counts.out_of_scope === 1 ? '' : 's'} seem out of scope`);
+  if (!parts.length) return 'No review items found — try a clearer learning focus, or mark up manually.';
+  return parts.join('. ') + '.';
+}
+
+async function suggestMarkupFlagsPass(corpus, { instruction, objective, title, scopeNote }) {
+  const system = [
+    'You help a course author mark up a source for a tutorial.',
+    'Read the numbered sentences once and return a SMALL set of decision items — not one flag per sentence.',
+    'Each item is a short passage span (startIdx–endIdx inclusive) with a kind:',
+    '  core — load-bearing concepts / definitions / rules the tutorial must teach',
+    '  confusion — places learners commonly mix up or misread',
+    '  diagram — text that points to a figure, table, diagram, or visual worth importing',
+    '  out_of_scope — material that seems peripheral given the learning outcome',
+    'Respond ONLY with a JSON array of objects:',
+    '{"kind":"core"|"confusion"|"diagram"|"out_of_scope","title":string,"rationale":string,"startIdx":number,"endIdx":number}',
+    'Aim for roughly 15–28 items total across kinds for a full document (fewer for a short excerpt). Prefer multi-sentence spans when a idea spans adjacent lines. Do not flag filler.',
+  ].join('\n');
+  const user = [
+    title ? `Document: ${title}` : '',
+    objective ? `Learning outcome / focus: ${objective}` : '',
+    instruction ? `Author note: ${instruction}` : '',
+    scopeNote || '',
+    '',
+    'Sentences (format [index|page] text):',
+    corpus,
+    '',
+    'Return the JSON array of flag objects now.',
+  ].filter(Boolean).join('\n');
+  const raw = await callAnthropic({ system, user, maxTokens: 4096 });
+  return extractJson(raw);
+}
+
+/**
+ * One-pass (or batched) document scan → compact review list for the author.
+ * @param {{ text: string, page?: number }[]} items
+ */
+async function suggestMarkupFlags(items, opts = {}) {
+  const list = Array.isArray(items) ? items.filter((it) => it && String(it.text || '').trim()) : [];
+  if (!list.length) throw new LlmError(400, 'no_sentences', 'No sentences to analyze.');
+
+  const n = list.length;
+  let collected = [];
+
+  if (n <= 160) {
+    const parsed = await suggestMarkupFlagsPass(buildFlagCorpus(list), {
+      instruction: opts.instruction,
+      objective: opts.objective,
+      title: opts.title,
+      scopeNote: 'This is the full document excerpt available for markup.',
+    });
+    collected = normalizeMarkupFlags(parsed, list);
+  } else {
+    // Longer docs: scan in page-ish batches, then quota-select a short review list
+    const batches = [];
+    let start = 0;
+    while (start < n) {
+      const startPage = list[start].page || 1;
+      let end = start + 1;
+      while (
+        end < n
+        && (end - start) < 55
+        && (list[end].page || 1) <= startPage + 4
+      ) {
+        end += 1;
+      }
+      if (end === start) end = Math.min(n, start + 45);
+      batches.push([start, end]);
+      start = end;
+    }
+    // Cap API fan-out
+    const maxBatches = 6;
+    const step = batches.length > maxBatches ? Math.ceil(batches.length / maxBatches) : 1;
+    const chosen = [];
+    for (let i = 0; i < batches.length; i += step) chosen.push(batches[i]);
+
+    for (const [a, b] of chosen) {
+      const slice = list.slice(a, b);
+      const parsed = await suggestMarkupFlagsPass(buildFlagCorpus(slice, a), {
+        instruction: opts.instruction,
+        objective: opts.objective,
+        title: opts.title,
+        scopeNote: `This is a chunk of the document (sentences ${a}–${b - 1} of ${n}). Flag only items in this chunk.`,
+      });
+      collected.push(...normalizeMarkupFlags(parsed, list));
+    }
+  }
+
+  const flags = quotaSelectFlags(collected);
+  // Re-id after select for stability
+  const stamped = flags.map((f, i) => ({ ...f, id: `flag-${Date.now().toString(36)}-${i}` }));
+  return { flags: stamped, summary: summarizeFlags(stamped) };
+}
+
 /* ─── Tutorial: structured extract (classify / dedupe / cluster) ─── */
 
 const UNIT_KINDS = ['Definition', 'Key point', 'Example', 'Quote', 'Fact', 'Procedure'];
@@ -2032,6 +2221,32 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  /* ---- Tutorial: document-level markup flags (review list) ---- */
+  if (method === 'POST' && path === '/api/tutorials/suggest-markup-flags') {
+    const body = await readJson(req);
+    let items = [];
+    if (Array.isArray(body.sentences)) {
+      items = body.sentences.map((s) => {
+        if (s && typeof s === 'object') {
+          return { text: String(s.text || ''), page: Number(s.page) || 1 };
+        }
+        return { text: String(s || ''), page: 1 };
+      }).filter((it) => it.text.trim());
+    }
+    if (items.length === 0) return send(res, 400, { code: 'no_sentences', message: 'No sentences to analyze.' });
+    try {
+      const result = await suggestMarkupFlags(items, {
+        instruction: body.instruction,
+        objective: body.objective,
+        title: body.title,
+      });
+      return send(res, 200, result);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
   /* ---- Tutorial: edit a single block (real LLM) ---- */
   if (method === 'POST' && path === '/api/tutorials/edit-block') {
     const body = await readJson(req);
@@ -2601,7 +2816,7 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`\nLAIC dev backend → http://localhost:${PORT}`);
   console.log(`LLM: ${ANTHROPIC_API_KEY ? `enabled (model ${LLM_MODEL})` : 'DISABLED — set ANTHROPIC_API_KEY in .env'}`);
-  console.log('Tutorial: POST /api/tutorials/suggest-highlights · POST /api/tutorials/extract-knowledge · POST /api/tutorials/generate (SSE)');
+  console.log('Tutorial: POST /api/tutorials/suggest-highlights · POST /api/tutorials/suggest-markup-flags · POST /api/tutorials/extract-knowledge · POST /api/tutorials/generate (SSE)');
   console.log('Ask AI: POST /api/ask');
   console.log('Assistant: POST /api/assistant/turn (SSE)');
   console.log('Sources stub: GET/POST /api/sources · GET /api/collections\n');
