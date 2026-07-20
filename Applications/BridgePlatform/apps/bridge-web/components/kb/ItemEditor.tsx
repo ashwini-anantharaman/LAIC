@@ -620,10 +620,16 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
             <option value="no">unbalanced</option>
           </select>
         </label>
-        {([0, 1] as const).map((i) => (
+        {/* Two slots so one rule can require both suits at once ("4+ ♥ and
+            4+ ♠"); the second appears only once the first is in use. */}
+        {([0, 1] as const).map((i) => {
+          if (i === 1 && !d.suits[0].suit && !d.suits[1].suit) return null;
+          return (
           <div key={i} className="grid grid-cols-[1.4fr_1fr_1fr] gap-1 sm:col-span-2">
             <label>
-              <span className={label}>Holding in suit…</span>
+              <span className={label}>
+                {i === 0 ? "Holding in suit…" : "…and also in suit (both must hold)"}
+              </span>
               <select
                 name={`${p}:suit${i}`}
                 value={d.suits[i].suit}
@@ -665,7 +671,8 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
               <div className="col-span-2" />
             )}
           </div>
-        ))}
+          );
+        })}
       </Band>
 
       <Band tag="Then" hint="the call to make (skipped if illegal in the live auction)" rail="border-l-neutral-500">
