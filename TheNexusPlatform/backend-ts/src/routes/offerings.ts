@@ -775,7 +775,21 @@ offeringsRouter.get("/programs/:program_id/my-role", async (c) => {
   if (!program) throw new HttpError(404, "Program not found");
   _requireOrgMember(user, program.org_id);
   if (!user.email) return c.json(null);
-  return c.json(await graph.getProgramRoleForEmail(programId, user.email));
+  // A person's effective grants = their custom program role (Team & Roles)
+  // merged with platform-role assignments made inside the platforms (e.g.
+  // Bridge People & Roles). The merge is what makes a Bridge-assigned learner
+  // see (and auto-launch into) the Bridge card even with "No role" here.
+  const role = await graph.getProgramRoleForEmail(programId, user.email);
+  const bridgeRole = await graph.getPlatformRoleForEmail(programId, "bridge", user.email).catch(() => null);
+  if (!role && !bridgeRole) return c.json(null);
+  const perms = { ...((role?.perms as Record<string, unknown>) ?? {}) };
+  if (bridgeRole) perms.bridge = bridgeRole;
+  return c.json({
+    role_id: role?.role_id ?? null,
+    role_name: role?.role_name ?? null,
+    perms,
+    bridge_role: bridgeRole,
+  });
 });
 
 // ── App Shell config + versions (Phase 4) ───────────────────────────────────

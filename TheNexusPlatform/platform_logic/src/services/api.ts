@@ -702,6 +702,8 @@ export interface ProgramMember {
   status: "active" | "invited";
   role_id: string | null;
   role_name: string | null;
+  /** Pre-built platform role assigned inside Bridge (read-only here). */
+  bridge_role?: string | null;
 }
 
 /** Remove a member (org- or program-scoped membership). */

@@ -151,7 +151,21 @@ export async function listProgramMembers(orgId: string, programId: string): Prom
     // Members win over their own leftover pending invite (dev auto-activation
     // doesn't consume the invitation row).
     const seen = new Set(members.map((m) => (m.email as string | null)?.toLowerCase()).filter(Boolean));
-    return [...members, ...invites.filter((i) => !seen.has((i.email ?? "").toLowerCase()))];
+    const rows = [...members, ...invites.filter((i) => !seen.has((i.email ?? "").toLowerCase()))];
+
+    // Attach platform-role assignments (made inside the platforms' own UIs)
+    // so the console can show them — read-only there by design.
+    const bridgeRoles = new Map(
+      (await tx
+        .select({ email: platformRoleAssignments.email, role: platformRoleAssignments.role })
+        .from(platformRoleAssignments)
+        .where(and(eq(platformRoleAssignments.programId, programId), eq(platformRoleAssignments.platform, "bridge"))))
+        .map((a) => [a.email.toLowerCase(), a.role]),
+    );
+    return rows.map((r) => ({
+      ...r,
+      bridge_role: bridgeRoles.get(((r.email as string | null) ?? "").toLowerCase()) ?? null,
+    }));
   });
 }
 

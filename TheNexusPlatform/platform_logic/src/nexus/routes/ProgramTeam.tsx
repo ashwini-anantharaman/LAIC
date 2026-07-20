@@ -59,6 +59,9 @@ const AREAS: { key: RoleArea; label: string; platform?: boolean }[] =
   }));
 const LEVELS: AccessLevel[] = ["view", "edit", "comment"];
 const areaLabel = (k: string) => AREAS.find((a) => a.key === k)?.label ?? k;
+// "bridge_club_admin" → "Club Admin" (display only; assigned inside Bridge).
+const bridgeRoleLabel = (r: string) =>
+  r.replace(/^bridge_/, "").split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
 
 export function ProgramTeam() {
   const { orgId = "", programId = "" } = useParams();
@@ -246,22 +249,32 @@ export function ProgramTeam() {
                         {isAdmin ? (
                           <Pill tone="accent">Program Administrator</Pill>
                         ) : (
-                          <Select
-                            value={m.role_id ?? "none"}
-                            onValueChange={(v) => assignRole(m, v === "none" ? null : v)}
-                          >
-                            <SelectTrigger className="h-8 w-44">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No role</SelectItem>
-                              {(roles ?? []).map((r) => (
-                                <SelectItem key={r.id} value={r.id}>
-                                  {r.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex flex-col gap-1">
+                            <Select
+                              value={m.role_id ?? "none"}
+                              onValueChange={(v) => assignRole(m, v === "none" ? null : v)}
+                            >
+                              <SelectTrigger className="h-8 w-44">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No role</SelectItem>
+                                {(roles ?? []).map((r) => (
+                                  <SelectItem key={r.id} value={r.id}>
+                                    {r.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {m.bridge_role ? (
+                              <span
+                                className="text-[11px] text-muted-foreground"
+                                title="Assigned inside the Bridge Platform (People & Roles) — managed there, not here."
+                              >
+                                Bridge Platform · {bridgeRoleLabel(m.bridge_role)}
+                              </span>
+                            ) : null}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell>
