@@ -134,7 +134,7 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
   await page.getByRole("button", { name: /Save \(recompiles/ }).click();
 
   await expect(page.getByText(/latest edit doesn't compile/)).toBeVisible();
-  await expect(page.getByText(/does_not_exist/)).toBeVisible();
+  await expect(page.getByText(/references unknown setting "does_not_exist"/)).toBeVisible();
   await expect(page.getByText(/draft compile/)).toBeVisible(); // last-good still live
 
   // Repair via the typed fields — the banner clears and compiles resume.
