@@ -302,8 +302,48 @@ export async function uploadDocumentAction(formData: FormData): Promise<void> {
   );
 }
 
-/** Batch size per click: keeps each run well inside serverless time limits;
- *  completed sections are skipped, so clicking through is resumable. */
+/**
+ * Upload a document whose text was already extracted in the browser (the
+ * whole-PDF flow: pdf.js runs client-side, so a 48 MB PDF never hits the
+ * ~4.5 MB serverless body limit — only its ~sub-MB text does). Same
+ * downstream path as uploadDocumentAction; redirects with extract=auto so
+ * the Sources tab starts draining sections on its own.
+ */
+export async function uploadExtractedTextAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const sourceId = String(formData.get("sourceId"));
+  const fileName = String(formData.get("fileName") ?? "").trim() || "document.txt";
+  const mediaType = String(formData.get("mediaType") ?? "text/plain");
+  const text = String(formData.get("text") ?? "");
+  const fail = (message: string): never =>
+    redirect(kbPath(kbId, `/sources?uploadError=${encodeURIComponent(message)}`));
+
+  if (!text.trim())
+    fail("No text came out of that file — a scanned/image-only PDF has no text layer to read.");
+  if (text.length > 8_000_000)
+    fail("That document's text is over ~8 MB — split it into chapters and upload those.");
+
+  const { uploadDocument } = await import("@/lib/documents");
+  const { passageCount, sectionCount } = await uploadDocument(
+    sourceId,
+    fileName,
+    mediaType,
+    text,
+  );
+  await audit(context, "knowledge.source.upload", "kb_source", sourceId, {
+    kbId,
+    passageCount,
+    clientExtracted: true,
+  });
+  revalidatePath(kbPath(kbId, "/sources"));
+  redirect(
+    kbPath(kbId, `/sources?uploaded=${passageCount}&sections=${sectionCount}&extract=auto`),
+  );
+}
+
+/** Batch size per click/tick: keeps each run well inside serverless time
+ *  limits; completed sections are skipped, so extraction is resumable. */
 const EXTRACTION_BATCH = 3;
 
 export async function runExtractionAction(formData: FormData): Promise<void> {

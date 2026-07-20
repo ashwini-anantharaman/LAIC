@@ -1,14 +1,11 @@
 import { chunkDocument, type KbSourcePassage } from "@bridge/kb";
 import Link from "next/link";
-import { UploadForm } from "@/components/kb/UploadForm";
+import { AutoExtract } from "@/components/kb/AutoExtract";
+import { PdfUploadForm } from "@/components/kb/PdfUploadForm";
 import { pendingSections } from "@/lib/documents";
 import { extractionAvailable } from "@/lib/extraction";
 import { kbStore } from "@/lib/kb";
-import {
-  registerSourceAction,
-  runExtractionAction,
-  uploadDocumentAction,
-} from "../../actions";
+import { registerSourceAction, uploadExtractedTextAction } from "../../actions";
 
 /** Sources tab (spec §6): register → upload → extract, with job reports and
  *  the failed-section list fellows hand-author from. */
@@ -23,10 +20,11 @@ export default async function SourcesPage({
     uploadError?: string;
     uploaded?: string;
     sections?: string;
+    extract?: string;
   }>;
 }>) {
   const { kbId } = await params;
-  const { extracted, remaining: remainingParam, uploadError, uploaded, sections } =
+  const { extracted, remaining: remainingParam, uploadError, uploaded, sections, extract } =
     await searchParams;
   const store = kbStore();
   const [sources, jobs, items] = await Promise.all([
@@ -235,39 +233,27 @@ export default async function SourcesPage({
                 ) : (
                   <p className="mt-1 text-sm italic text-neutral-500">No document yet.</p>
                 )}
-                <div className="mt-3 flex flex-wrap items-center gap-4">
-                  <UploadForm
+                <div className="mt-3 space-y-3">
+                  <PdfUploadForm
                     kbId={kbId}
                     sourceId={source.sourceId}
                     replace={Boolean(doc)}
-                    action={uploadDocumentAction}
+                    action={uploadExtractedTextAction}
                   />
-                  {doc &&
-                    llmReady &&
-                    (() => {
-                      const p = pending.get(source.sourceId);
-                      const left = p?.remaining.length ?? 0;
-                      return left > 0 ? (
-                        <form action={runExtractionAction}>
-                          <input type="hidden" name="kbId" value={kbId} />
-                          <input type="hidden" name="sourceId" value={source.sourceId} />
-                          <button
-                            type="submit"
-                            className="rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800"
-                          >
-                            Extract next {Math.min(3, left)} section{Math.min(3, left) > 1 ? "s" : ""} ({left} of {p!.total} remaining)
-                          </button>
-                          <p className="mt-1 text-[11px] text-neutral-400">
-                            Each batch takes a minute or two. Completed sections are skipped, so
-                            keep clicking until none remain.
-                          </p>
-                        </form>
-                      ) : (
-                        <p className="text-sm text-[color:var(--color-approved)]">
-                          ✓ all {p?.total ?? 0} sections extracted
-                        </p>
-                      );
-                    })()}
+                  {doc && llmReady && (
+                    <AutoExtract
+                      kbId={kbId}
+                      sourceId={source.sourceId}
+                      total={pending.get(source.sourceId)?.total ?? 0}
+                      remaining={pending.get(source.sourceId)?.remaining.length ?? 0}
+                      autostart={extract === "auto"}
+                    />
+                  )}
+                  {doc && !llmReady && (
+                    <p className="text-sm text-[color:var(--color-draft)]">
+                      Extraction needs ANTHROPIC_API_KEY on the server.
+                    </p>
+                  )}
                 </div>
               </div>
             );
