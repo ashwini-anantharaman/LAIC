@@ -39,6 +39,7 @@ export type AuditAction =
   | "profile.create"
   | "profile.update"
   | "profile.customize"
+  | "profile.delete"
   | "scope.update"
   | "scope.customize"
   | "org.profile.update"

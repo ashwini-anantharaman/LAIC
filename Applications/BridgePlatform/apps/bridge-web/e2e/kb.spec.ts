@@ -387,3 +387,21 @@ test("fix at the table: undo pauses, overlay edits the item, session re-pins", a
   await page.getByRole("button", { name: "step ▸" }).click();
   await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
 });
+
+test("delete a player from the roster", async ({ page, context }) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto("/bridge/players");
+
+  // Take the first matching card and remember WHICH player it is (its edit
+  // href), since other tests mint similarly named players.
+  const card = page.locator("li").filter({ hasText: "Minimal complete — Floor" }).first();
+  await expect(card).toBeVisible();
+  const editHref = await card.getByRole("link", { name: "Edit" }).getAttribute("href");
+
+  page.once("dialog", (d) => void d.accept());
+  await card.getByRole("button", { name: "Delete" }).click();
+
+  await page.waitForURL(/deleted=1/);
+  await expect(page.getByText("Player deleted.")).toBeVisible();
+  await expect(page.locator(`a[href="${editHref}"]`)).toHaveCount(0);
+});

@@ -1,8 +1,10 @@
 import { acblConventionCard, CATEGORY_BY_ID } from "@bridge/kb";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { deletePlayerAction } from "@/app/bridge/players/actions";
 import { AcblCardView } from "@/components/kb/AcblCardView";
 import { ValidityBadge } from "@/components/kb/badges";
+import { ConfirmButton } from "@/components/kb/ConfirmButton";
 import { PlayerEditor } from "@/components/kb/PlayerEditor";
 import { kbService, kbStore } from "@/lib/kb";
 import { savePlayerAction, simulatePlayerAction } from "../../../actions";
@@ -187,6 +189,23 @@ export default async function PlayerPage({
         </section>
 
         <AcblCardView card={card} kbId={kbId} />
+
+        <section className="rounded-lg border border-red-200 p-4">
+          <h3 className="text-sm font-medium text-red-800">Danger zone</h3>
+          <p className="mt-1 text-xs text-neutral-500">
+            Boards already dealt with this player keep playing — sessions carry their own
+            snapshot. Deleting can&apos;t be undone.
+          </p>
+          <div className="mt-2">
+            <ConfirmButton
+              action={deletePlayerAction}
+              hidden={{ playerId, returnTo: "/bridge/players" }}
+              confirm={`Delete "${player.name}"? This can't be undone.`}
+              label="Delete this player"
+              className="rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+            />
+          </div>
+        </section>
       </aside>
     </div>
   );
