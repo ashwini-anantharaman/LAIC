@@ -257,8 +257,14 @@ export default async function ItemPage({
         </section>
 
         <section className="rounded-lg border border-neutral-200 p-4">
-          <h3 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
+          <h3 className="mb-2 flex items-baseline text-sm font-medium uppercase tracking-wide text-neutral-500">
             Versions
+            <Link
+              href="/bridge/guide#versions"
+              className="ml-auto text-[11px] font-normal normal-case tracking-normal text-neutral-400 underline-offset-2 hover:text-emerald-700 hover:underline"
+            >
+              how versions work →
+            </Link>
           </h3>
           <p className="text-sm text-neutral-600">
             {dirty

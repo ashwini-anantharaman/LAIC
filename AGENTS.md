@@ -93,11 +93,17 @@ landed 2026-07-14:
   weighted_random (session-seeded) / level_capped; pack fallback ITEMS act
   before the engine floor, which is honestly labeled and never counts as an
   agreement.
-- **Players are assembled**: packs pick items (ladder with extends chains),
-  settings tune within; the wizard suggests minimal-incomplete and
-  minimal-complete players; static capability checklist (17 categories)
-  gates `valid`; self-play simulation reports floor/fallback usage.
-  Sandboxes v2: coach exposes packs + setting keys, enforced server-side.
+- **Players are assembled**: KNOWLEDGE SETS (packs) pick items — the ladder
+  was retired 2026-07-17 (sets are flat; `extendsPackId` lives on as an
+  optional "Includes"; ordinals/levels are legacy). Settings tune within;
+  the 17-category checklist gates `valid` (shown complete/incomplete).
+- **Versioning is four-layered** — item head revisions, committed item
+  versions, KB releases, auto-snapshotted set versions (every set save,
+  deduped, restorable; migration 0017). Invariants/code map/traps:
+  `Applications/BridgePlatform/docs/versioning.md` — read before touching
+  @bridge/kb's service or stores. Releases do NOT yet gate live tables
+  (sessions pin the draft liveCompile). Fellow-facing docs live in-app at
+  /bridge/guide.
 - **Constrained drills** (spec §5): the closed loop — a deal is safe for an
   incomplete player only if full simulation with the actual configs ends
   with zero engine-floor events (findSafeSeed).
@@ -115,14 +121,17 @@ landed 2026-07-14:
   KEPT: identity (org profiles §3.4–3.5, user profiles, affiliations),
   audit log, taxonomy. Progress/evaluator re-emission for Coaching is
   deliberately deferred; laic-learner-contracts is untouched.
-- **Operations**: migrations 0013 (wipe + bridge_kb_* tables) and 0014
-  (bridge_kb_sessions) exist but are NOT yet applied to the shared Supabase
-  project (needs the SQL-editor browser session); prod Vercel still serves
-  the pre-rework build until migrate+redeploy happen together. Dev default
-  remains STORE_BACKEND=file.
-- **Owner acceptance still open**: the live SAYC-document extraction run
-  (needs the owner's licensed SAYC PDF + an API key) — the pipeline and
-  workspace are ready for it.
+- **Operations (2026-07-20)**: migrations 0013–0017 are ALL applied to the
+  shared Supabase project. Production runs on the TheNexusDevTeam Vercel —
+  https://bridge-platform-theta.vercel.app (STORE_BACKEND=postgres; deploy
+  `vercel --prod` from the repo root; run new SQL in the Supabase dashboard
+  BEFORE deploying). Dev default remains STORE_BACKEND=file; Playwright is
+  isolated on :3105 (.data-e2e/.next-e2e). The old personal Vercel
+  (bridge-platform-gules) is deprecated.
+- **The live SAYC extraction ran** (2026-07-16): prod carries 119 items
+  from the ACBL booklet, a complete flagship player (17/17, zero floors),
+  and Floor/Full-booklet sets. Extraction failures surface as the
+  Sources-tab "Sections that need a person" write-up queue.
 
 Historical phase notes (pre-rework, for archaeology only):
 
