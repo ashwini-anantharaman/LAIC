@@ -33,6 +33,18 @@ describe("chunkDocument", () => {
     expect(a.sections[1]!.passageOrdinals).toEqual([3, 4]);
   });
 
+  it("scopes passage ids by source — same document, two sources, disjoint ids", () => {
+    const a = chunkDocument(SAMPLE_DOC, { scope: "src_a" });
+    const b = chunkDocument(SAMPLE_DOC, { scope: "src_b" });
+    const idsA = new Set(a.passages.map((p) => p.passageId));
+    for (const p of b.passages) expect(idsA.has(p.passageId)).toBe(false);
+    // Stable per scope: re-uploading unchanged text keeps citations intact.
+    expect(chunkDocument(SAMPLE_DOC, { scope: "src_a" })).toEqual(a);
+    // Sections (anchors + ordinals) are scope-independent — resolvers that
+    // re-chunk without a scope still line up with uploaded passages.
+    expect(a.sections).toEqual(chunkDocument(SAMPLE_DOC).sections);
+  });
+
   it("recognizes heading styles", () => {
     expect(looksLikeHeading("NOTRUMP OPENINGS")).toBe(true);
     expect(looksLikeHeading("## Responses")).toBe(true);

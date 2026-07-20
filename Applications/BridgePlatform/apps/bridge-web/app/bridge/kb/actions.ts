@@ -356,12 +356,15 @@ export async function uploadExtractedTextAction(formData: FormData): Promise<voi
     fail("That document's text is over ~8 MB — split it into chapters and upload those.");
 
   const { uploadDocument } = await import("@/lib/documents");
-  const { passageCount, sectionCount } = await uploadDocument(
-    sourceId,
-    fileName,
-    mediaType,
-    text,
-  );
+  let result: { passageCount: number; sectionCount: number };
+  try {
+    result = await uploadDocument(sourceId, fileName, mediaType, text);
+  } catch (e) {
+    // Surface storage failures as the banner, not an opaque RSC error.
+    const detail = e instanceof Error ? e.message : "unknown storage error";
+    return fail(`The document could not be stored: ${detail}`);
+  }
+  const { passageCount, sectionCount } = result;
   await audit(context, "knowledge.source.upload", "kb_source", sourceId, {
     kbId,
     passageCount,

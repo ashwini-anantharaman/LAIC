@@ -38,7 +38,9 @@ export async function uploadDocument(
   };
   await store.putDocument(document);
 
-  const { passages, sections } = chunkDocument(text);
+  // Scope passage ids by source: the same document under two sources must
+  // not collide on the global passage_id primary key.
+  const { passages, sections } = chunkDocument(text, { scope: sourceId });
   const full: KbSourcePassage[] = passages.map((p) => ({ ...p, sourceId }));
   await store.replacePassages(sourceId, full);
   return { document, passageCount: full.length, sectionCount: sections.length };
