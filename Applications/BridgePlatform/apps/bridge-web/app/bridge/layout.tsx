@@ -2,7 +2,7 @@ import { roleLabel, stubDisplayName } from "@bridge/nexus-client";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { NEXUS_RETURN_COOKIE, safeReturnUrl } from "@/lib/nexusToken";
-import { clearDevUser } from "@/app/actions";
+import { clearDevUser, signOutNexus } from "@/app/actions";
 import { NavLink } from "@/components/NavLink";
 import { navForContext } from "@/lib/nav";
 import { getBridgeContext, nexusMode } from "@/lib/nexus";
@@ -47,17 +47,43 @@ export default async function BridgeShellLayout({
             <NavLink key={item.href} href={item.href} label={item.label} />
           ))}
         </nav>
-        {/* Identity/role details are desktop chrome — on a phone every pixel
-            above the felt counts. Personas still switch via /welcome. */}
-        <div className="hidden space-y-1 border-t border-[var(--line)] p-4 text-sm md:block">
+        {/* Exit controls must exist on every screen size — nobody gets
+            trapped in the platform. Identity details stay desktop-only. */}
+        <div className="flex items-center gap-2 border-t border-[var(--line)] px-4 py-2 md:hidden">
           {nexusReturnUrl && (
-            <a
-              href={nexusReturnUrl}
-              className="mb-2 inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
-            >
+            <a href={nexusReturnUrl} className="text-xs font-medium text-neutral-600 underline-offset-2 hover:underline">
               &larr; Back to Nexus
             </a>
           )}
+          {nexusMode() === "http" && (
+            <form action={signOutNexus}>
+              <button type="submit" className="text-xs font-medium text-neutral-600 underline-offset-2 hover:underline">
+                Sign out
+              </button>
+            </form>
+          )}
+        </div>
+        <div className="hidden space-y-1 border-t border-[var(--line)] p-4 text-sm md:block">
+          <div className="mb-2 flex items-center gap-2">
+            {nexusReturnUrl && (
+              <a
+                href={nexusReturnUrl}
+                className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
+              >
+                &larr; Back to Nexus
+              </a>
+            )}
+            {nexusMode() === "http" && (
+              <form action={signOutNexus}>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
+                >
+                  Sign out
+                </button>
+              </form>
+            )}
+          </div>
           <p className="font-medium">{displayName}</p>
           <p className="text-xs text-neutral-500">
             {context.roles.map(roleLabel).join(", ")}
