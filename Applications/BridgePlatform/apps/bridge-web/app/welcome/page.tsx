@@ -2,7 +2,6 @@ import { roleLabel, STUB_USERS } from "@bridge/nexus-client";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { setDevUser } from "@/app/actions";
-import { LoginForm } from "@/components/LoginForm";
 import { getBridgeContext, nexusMode } from "@/lib/nexus";
 import { NEXUS_RETURN_COOKIE, safeReturnUrl } from "@/lib/nexusToken";
 
@@ -67,7 +66,15 @@ export default async function WelcomePage() {
           </p>
         </section>
       ) : (
-        <LoginForm />
+        <section className="space-y-2 text-center">
+          <h2 className="text-xs font-medium uppercase tracking-[0.2em] text-neutral-500">
+            Sign in through Nexus
+          </h2>
+          <p className="mx-auto max-w-sm text-sm text-neutral-600">
+            The Bridge Platform opens from your organization&apos;s Nexus portal — launch it
+            from your program&apos;s workspace and you&apos;ll arrive here signed in.
+          </p>
+        </section>
       )}
 
       {nexusReturnUrl && (
