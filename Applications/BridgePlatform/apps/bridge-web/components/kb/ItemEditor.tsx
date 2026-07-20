@@ -17,7 +17,7 @@ import type {
   KnowledgeType,
   NumParam,
 } from "@bridge/kb";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { TYPE_LABEL } from "./badges";
 
 const showNum = (p: NumParam | undefined): string =>
@@ -68,29 +68,303 @@ const input =
   "w-full rounded border border-neutral-300 px-2 py-1 text-sm disabled:bg-neutral-50";
 const label = "mb-0.5 block text-[11px] text-neutral-500";
 
-/** One call-pattern row (kind + level range + strains) inside the WHEN band. */
+// ---------------------------------------------------------------------------
+// Rule cards (2026-07-20 UX pass). Every input is controlled by a draft
+// object so the card can narrate itself: a live plain-English sentence in the
+// header ("When partner opened 1NT and I hold 8+ HCP, then bid 2♣"), fields
+// that appear only when the chosen kind/action uses them, and collapsible
+// cards so a many-rule item scans as a list of sentences. Field NAMES are the
+// stable form contract with lib/itemForm.ts — do not rename them.
+// ---------------------------------------------------------------------------
+
+const SUIT_GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
+const redGlyph = (s: string) => s === "H" || s === "D";
+
+function Glyph({ s }: Readonly<{ s: string }>) {
+  return <span className={redGlyph(s) ? "text-[var(--madder)]" : ""}>{SUIT_GLYPH[s] ?? s}</span>;
+}
+
+interface PatternDraft {
+  kind: string;
+  levelMin: string;
+  levelMax: string;
+  strains: string;
+}
+interface SuitDraft {
+  suit: string;
+  min: string;
+  max: string;
+}
+interface RuleDraft {
+  label: string;
+  key: string;
+  priority: string;
+  role: string;
+  contested: string;
+  roundMin: string;
+  roundMax: string;
+  opening: PatternDraft;
+  partnerLast: PatternDraft;
+  rhoLast: PatternDraft;
+  hcpMin: string;
+  hcpMax: string;
+  tpMin: string;
+  balanced: string;
+  suits: [SuitDraft, SuitDraft];
+  actionType: string;
+  actionLevel: string;
+  actionStrain: string;
+  actionAmong: string;
+  remove: boolean;
+}
+
+const patternDraft = (p?: CallPattern): PatternDraft => ({
+  kind: p?.kind ?? "unset",
+  levelMin: p?.levelMin?.toString() ?? "",
+  levelMax: p?.levelMax?.toString() ?? "",
+  strains: p?.strains?.join(",") ?? "",
+});
+
+function draftFrom(rule: AuctionRuleSpec | null, index: number): RuleDraft {
+  const c = rule ? decompose(rule.conditions) : { suits: [] as TypedConditions["suits"] };
+  const a = rule?.action;
+  return {
+    label: rule?.label ?? "",
+    key: rule?.key ?? `r${index}`,
+    priority: String(rule?.priority ?? 10),
+    role: rule?.context.role ?? "opening",
+    contested: rule?.context.contested === true ? "yes" : rule?.context.contested === false ? "no" : "",
+    roundMin: rule?.context.roundMin?.toString() ?? "",
+    roundMax: rule?.context.roundMax?.toString() ?? "",
+    opening: patternDraft(rule?.context.opening),
+    partnerLast: patternDraft(rule?.context.partnerLast),
+    rhoLast: patternDraft(rule?.context.rhoLast),
+    hcpMin: showNum(c.hcpMin),
+    hcpMax: showNum(c.hcpMax),
+    tpMin: showNum(c.tpMin),
+    balanced: c.balanced === true ? "yes" : c.balanced === false ? "no" : "",
+    suits: [
+      { suit: c.suits[0]?.suit ?? "", min: showNum(c.suits[0]?.min), max: showNum(c.suits[0]?.max) },
+      { suit: c.suits[1]?.suit ?? "", min: showNum(c.suits[1]?.min), max: showNum(c.suits[1]?.max) },
+    ],
+    actionType: a?.type ?? "bid",
+    actionLevel:
+      a && "level" in a && a.level !== undefined
+        ? String(a.level)
+        : a?.type === "raise_partner"
+          ? String(a.toLevel)
+          : "",
+    actionStrain: a?.type === "bid" ? a.strain : "N",
+    actionAmong: a?.type === "bid_longest" ? a.among.join(",") : "",
+    remove: false,
+  };
+}
+
+/** "$nt_range.low" shows as-is; it reads better than hiding the dial. */
+const numText = (v: string) => v.trim();
+
+// ---- the live sentence -----------------------------------------------------
+
+function strainList(text: string): ReactNode {
+  const parts = text
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  if (!parts.length) return null;
+  return parts.map((s, i) => (
+    <span key={i}>
+      {i > 0 && "/"}
+      {s === "N" ? "NT" : <Glyph s={s} />}
+    </span>
+  ));
+}
+
+function callDesc(p: PatternDraft): ReactNode | null {
+  if (!p.kind || p.kind === "unset") return null;
+  if (p.kind === "pass") return "a pass";
+  if (p.kind === "double") return "a double";
+  if (p.kind === "redouble") return "a redouble";
+  if (p.kind === "none") return "no call yet";
+  const strains = strainList(p.strains);
+  const min = p.levelMin.trim();
+  const max = p.levelMax.trim();
+  // The crisp special case: exactly one level and strains → "1NT".
+  if (min && min === max && strains)
+    return (
+      <>
+        {min}
+        {strains}
+      </>
+    );
+  return (
+    <>
+      a bid
+      {min && max && min !== max && ` at the ${min}–${max} level`}
+      {min && !max && ` at the ${min} level or higher`}
+      {!min && max && ` up to the ${max} level`}
+      {min && min === max && ` at the ${min} level`}
+      {strains && <> in {strains}</>}
+    </>
+  );
+}
+
+function suitName(s: string): ReactNode | null {
+  if (!s) return null;
+  if (s === "partner_last_bid_suit") return "partner's suit";
+  if (s === "own_longest_suit") return "my longest suit";
+  if (s === "rho_bid_suit") return "RHO's suit";
+  return <Glyph s={s} />;
+}
+
+const joinNodes = (parts: ReactNode[], sep = ", "): ReactNode =>
+  parts.map((part, i) => (
+    <span key={i}>
+      {i > 0 && sep}
+      {part}
+    </span>
+  ));
+
+function ruleSentence(d: RuleDraft): ReactNode {
+  const when: ReactNode[] = [];
+  const roleText: Record<string, string | null> = {
+    opening: "nobody has bid yet",
+    opener: "I opened and it's my rebid",
+    responder: "partner opened",
+    overcaller: "the opponents opened",
+    advancer: "partner acted over their opening",
+    any: null,
+  };
+  if (roleText[d.role]) when.push(roleText[d.role]);
+  const opening = callDesc(d.opening);
+  if (opening) when.push(<>our opening was {opening}</>);
+  const partner = callDesc(d.partnerLast);
+  if (partner) when.push(<>partner's last call was {partner}</>);
+  const rho = callDesc(d.rhoLast);
+  if (rho) when.push(<>RHO's last call was {rho}</>);
+  if (d.contested === "yes") when.push("the auction is contested");
+  if (d.contested === "no") when.push("the opponents are silent");
+  if (d.roundMin || d.roundMax)
+    when.push(
+      d.roundMin && d.roundMax
+        ? `in rounds ${d.roundMin}–${d.roundMax}`
+        : d.roundMin
+          ? `from round ${d.roundMin}`
+          : `up to round ${d.roundMax}`,
+    );
+
+  const hand: ReactNode[] = [];
+  const lo = numText(d.hcpMin);
+  const hi = numText(d.hcpMax);
+  if (lo && hi) hand.push(`${lo}–${hi} HCP`);
+  else if (lo) hand.push(`${lo}+ HCP`);
+  else if (hi) hand.push(`at most ${hi} HCP`);
+  if (numText(d.tpMin)) hand.push(`${numText(d.tpMin)}+ total points`);
+  if (d.balanced === "yes") hand.push("a balanced hand");
+  if (d.balanced === "no") hand.push("an unbalanced hand");
+  for (const su of d.suits) {
+    const name = suitName(su.suit);
+    if (!name) continue;
+    const mn = numText(su.min);
+    const mx = numText(su.max);
+    if (mn && mx) hand.push(<>{mn}–{mx} cards in {name}</>);
+    else if (mn) hand.push(<>{mn}+ cards in {name}</>);
+    else if (mx) hand.push(<>at most {mx} cards in {name}</>);
+    else hand.push(<>some length in {name}</>);
+  }
+
+  return (
+    <>
+      <b>When</b> {when.length ? joinNodes(when) : "it's my turn (no constraints)"}
+      {hand.length > 0 && (
+        <>
+          , <b>and I hold</b> {joinNodes(hand)}
+        </>
+      )}
+      , <b>then</b> {actionText(d)}.
+    </>
+  );
+}
+
+function actionText(d: RuleDraft): ReactNode {
+  const lvl = d.actionLevel.trim();
+  switch (d.actionType) {
+    case "pass":
+      return "pass";
+    case "double":
+      return "double";
+    case "redouble":
+      return "redouble";
+    case "raise_partner":
+      return <>raise partner to the {lvl || "2"} level</>;
+    case "bid_longest":
+      return (
+        <>
+          bid my longest of {strainList(d.actionAmong || "S,H")}
+          {lvl && ` at the ${lvl} level`}
+        </>
+      );
+    default:
+      return (
+        <>
+          bid {lvl || "?"}
+          {d.actionStrain === "N" ? "NT" : <Glyph s={d.actionStrain} />}
+        </>
+      );
+  }
+}
+
+/** The short chip in the card header — the call this rule makes. */
+function actionChip(d: RuleDraft): ReactNode {
+  switch (d.actionType) {
+    case "pass":
+      return "Pass";
+    case "double":
+      return "Dbl";
+    case "redouble":
+      return "Rdbl";
+    case "raise_partner":
+      return `raise → ${d.actionLevel.trim() || "2"}`;
+    case "bid_longest":
+      return <>longest {strainList(d.actionAmong || "S,H")}</>;
+    default:
+      return (
+        <>
+          {d.actionLevel.trim() || "?"}
+          {d.actionStrain === "N" ? "NT" : <Glyph s={d.actionStrain} />}
+        </>
+      );
+  }
+}
+
+// ---- form pieces ------------------------------------------------------------
+
+/** One call-pattern row: level/strain refinements appear only for bids. */
 function PatternRow({
   p,
   field,
   title,
-  hint,
-  pattern,
+  value,
+  onChange,
 }: Readonly<{
   p: string;
   field: "opening" | "partnerLast" | "rhoLast";
   title: string;
-  hint: string;
-  pattern?: CallPattern;
+  value: PatternDraft;
+  onChange: (patch: Partial<PatternDraft>) => void;
 }>) {
+  const isBid = value.kind === "bid" || value.kind === "any_bid";
   return (
     <div className="grid grid-cols-[1.4fr_repeat(3,1fr)] gap-1 sm:col-span-2">
       <label>
-        <span className={label} title={hint}>
-          {title}
-        </span>
-        <select name={`${p}:${field}:kind`} defaultValue={pattern?.kind ?? "unset"} className={input}>
-          <option value="unset">any / not set</option>
-          <option value="bid">a bid</option>
+        <span className={label}>{title}</span>
+        <select
+          name={`${p}:${field}:kind`}
+          value={value.kind}
+          onChange={(e) => onChange({ kind: e.target.value })}
+          className={input}
+        >
+          <option value="unset">anything / not set</option>
+          <option value="bid">a bid…</option>
           <option value="any_bid">any suit/NT bid</option>
           <option value="pass">a pass</option>
           <option value="double">a double</option>
@@ -98,36 +372,54 @@ function PatternRow({
           <option value="none">no call yet</option>
         </select>
       </label>
-      <label>
-        <span className={label}>level ≥</span>
-        <input name={`${p}:${field}:levelMin`} defaultValue={pattern?.levelMin ?? ""} className={input} />
-      </label>
-      <label>
-        <span className={label}>level ≤</span>
-        <input name={`${p}:${field}:levelMax`} defaultValue={pattern?.levelMax ?? ""} className={input} />
-      </label>
-      <label>
-        <span className={label}>strains</span>
-        <input
-          name={`${p}:${field}:strains`}
-          defaultValue={pattern?.strains?.join(",") ?? ""}
-          placeholder="N or S,H"
-          className={input}
-        />
-      </label>
+      {isBid ? (
+        <>
+          <label>
+            <span className={label}>level ≥</span>
+            <input
+              name={`${p}:${field}:levelMin`}
+              value={value.levelMin}
+              onChange={(e) => onChange({ levelMin: e.target.value })}
+              className={input}
+            />
+          </label>
+          <label>
+            <span className={label}>level ≤</span>
+            <input
+              name={`${p}:${field}:levelMax`}
+              value={value.levelMax}
+              onChange={(e) => onChange({ levelMax: e.target.value })}
+              className={input}
+            />
+          </label>
+          <label>
+            <span className={label}>strains</span>
+            <input
+              name={`${p}:${field}:strains`}
+              value={value.strains}
+              onChange={(e) => onChange({ strains: e.target.value })}
+              placeholder="N or S,H"
+              className={input}
+            />
+          </label>
+        </>
+      ) : (
+        <div className="col-span-3" />
+      )}
     </div>
   );
 }
 
-/** A labeled band of the rule card: WHEN / AND / THEN. */
+/** A labeled band of the rule card: WHEN / AND MY HAND / THEN. */
 function Band({
   tag,
   hint,
+  rail,
   children,
-}: Readonly<{ tag: string; hint: string; children: React.ReactNode }>) {
+}: Readonly<{ tag: string; hint: string; rail: string; children: ReactNode }>) {
   return (
-    <div className="border-t border-neutral-200 px-3 py-2.5 first:border-t-0">
-      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+    <div className={`border-t border-neutral-100 py-2.5 pl-3 pr-3 ${rail} border-l-[3px]`}>
+      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-700">
         {tag} <span className="font-normal normal-case tracking-normal text-neutral-400">— {hint}</span>
       </p>
       <div className="grid gap-2 sm:grid-cols-4">{children}</div>
@@ -137,45 +429,106 @@ function Band({
 
 function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index: number }>) {
   const p = `rule${index}`;
+  const [d, setD] = useState<RuleDraft>(() => draftFrom(rule, index));
+  const set = (patch: Partial<RuleDraft>) => setD((prev) => ({ ...prev, ...patch }));
+  const setSuit = (i: 0 | 1, patch: Partial<SuitDraft>) =>
+    setD((prev) => {
+      const suits: [SuitDraft, SuitDraft] = [prev.suits[0], prev.suits[1]];
+      suits[i] = { ...suits[i], ...patch };
+      return { ...prev, suits };
+    });
   const c = rule ? decompose(rule.conditions) : { suits: [] as TypedConditions["suits"] };
-  const action = rule?.action;
+  const showLevel = ["bid", "raise_partner", "bid_longest"].includes(d.actionType);
+
   return (
-    <fieldset className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-      {/* Identity row */}
-      <div className="flex flex-wrap items-end gap-2 border-b border-neutral-200 bg-neutral-50/70 px-3 py-2">
-        <span className="mb-1 rounded bg-emerald-700 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-          Rule
+    <details
+      // First rule (and any new card) starts open; the rest collapse to their
+      // sentences so a many-rule item scans as prose.
+      open={!rule || index === 0}
+      className="group overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm"
+    >
+      {/* Collapsed, a rule reads as its sentence. */}
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+        <svg
+          viewBox="0 0 12 12"
+          aria-hidden
+          className="h-2.5 w-2.5 flex-none text-neutral-400 transition-transform group-open:rotate-90"
+        >
+          <path d="M3 1l6 5-6 5z" fill="currentColor" />
+        </svg>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">
+            {d.label || <span className="font-normal text-neutral-400">New rule — give it a label below</span>}
+            {d.remove && (
+              <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-red-700">
+                will be removed on save
+              </span>
+            )}
+          </p>
+          <p className={`mt-0.5 truncate text-[13px] ${d.remove ? "text-neutral-300 line-through" : "text-neutral-500"}`}>
+            {ruleSentence(d)}
+          </p>
+        </div>
+        <span className="flex-none rounded-md border border-neutral-300 bg-neutral-50 px-2 py-1 font-mono text-xs font-semibold">
+          {actionChip(d)}
         </span>
+      </summary>
+
+      {/* Identity */}
+      <div className="flex flex-wrap items-end gap-2 border-t border-neutral-200 bg-neutral-50/70 px-3 py-2">
         <label className="min-w-40 flex-1">
           <span className={label}>Label — what the trace shows</span>
           <input
             name={`${p}:label`}
-            defaultValue={rule?.label ?? ""}
+            value={d.label}
+            onChange={(e) => set({ label: e.target.value })}
             placeholder={rule ? "" : "e.g. Open 1NT — blank rules are not saved"}
             className={input}
           />
         </label>
         <label className="w-28">
           <span className={label}>Key (stable id)</span>
-          <input name={`${p}:key`} defaultValue={rule?.key ?? `r${index}`} className={input} />
+          <input
+            name={`${p}:key`}
+            value={d.key}
+            onChange={(e) => set({ key: e.target.value })}
+            className={input}
+          />
         </label>
         <label className="w-20">
           <span className={label} title="Tie-break within the type's band — lower fires first">
             Priority
           </span>
-          <input name={`${p}:priority`} type="number" defaultValue={rule?.priority ?? 10} className={input} />
+          <input
+            name={`${p}:priority`}
+            type="number"
+            value={d.priority}
+            onChange={(e) => set({ priority: e.target.value })}
+            className={input}
+          />
         </label>
         {rule && (
           <label className="mb-1.5 flex items-center gap-1 text-xs text-red-700">
-            <input type="checkbox" name={`${p}:remove`} /> remove
+            <input
+              type="checkbox"
+              name={`${p}:remove`}
+              checked={d.remove}
+              onChange={(e) => set({ remove: e.target.checked })}
+            />{" "}
+            remove
           </label>
         )}
       </div>
 
-      <Band tag="When" hint="where in the auction this rule can fire">
+      <Band tag="When" hint="where in the auction this rule can fire" rail="border-l-emerald-600">
         <label>
           <span className={label}>My role</span>
-          <select name={`${p}:role`} defaultValue={rule?.context.role ?? "opening"} className={input}>
+          <select
+            name={`${p}:role`}
+            value={d.role}
+            onChange={(e) => set({ role: e.target.value })}
+            className={input}
+          >
             <option value="opening">opening — nobody has bid yet</option>
             <option value="opener">opener — rebidding my opening</option>
             <option value="responder">responder — partner opened</option>
@@ -188,9 +541,8 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
           <span className={label}>Contested?</span>
           <select
             name={`${p}:contested`}
-            defaultValue={
-              rule?.context.contested === true ? "yes" : rule?.context.contested === false ? "no" : ""
-            }
+            value={d.contested}
+            onChange={(e) => set({ contested: e.target.value })}
             className={input}
           >
             <option value="">either</option>
@@ -201,55 +553,65 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
         <div className="grid grid-cols-2 gap-1">
           <label>
             <span className={label}>round ≥</span>
-            <input name={`${p}:roundMin`} defaultValue={rule?.context.roundMin ?? ""} className={input} />
+            <input
+              name={`${p}:roundMin`}
+              value={d.roundMin}
+              onChange={(e) => set({ roundMin: e.target.value })}
+              className={input}
+            />
           </label>
           <label>
             <span className={label}>round ≤</span>
-            <input name={`${p}:roundMax`} defaultValue={rule?.context.roundMax ?? ""} className={input} />
+            <input
+              name={`${p}:roundMax`}
+              value={d.roundMax}
+              onChange={(e) => set({ roundMax: e.target.value })}
+              className={input}
+            />
           </label>
         </div>
         <div className="hidden sm:block" />
-        <PatternRow
-          p={p}
-          field="opening"
-          title="Our opening was…"
-          hint="Match the partnership's opening call (for responses and rebids)"
-          pattern={rule?.context.opening}
-        />
-        <PatternRow
-          p={p}
-          field="partnerLast"
-          title="Partner's last call was…"
-          hint="Match partner's most recent call (e.g. 1NT for Stayman)"
-          pattern={rule?.context.partnerLast}
-        />
-        <PatternRow
-          p={p}
-          field="rhoLast"
-          title="Right-hand opponent's last…"
-          hint="Match the right-hand opponent's most recent call"
-          pattern={rule?.context.rhoLast}
-        />
+        <PatternRow p={p} field="opening" title="Our opening was…" value={d.opening} onChange={(patch) => set({ opening: { ...d.opening, ...patch } })} />
+        <PatternRow p={p} field="partnerLast" title="Partner's last call was…" value={d.partnerLast} onChange={(patch) => set({ partnerLast: { ...d.partnerLast, ...patch } })} />
+        <PatternRow p={p} field="rhoLast" title="RHO's last call was…" value={d.rhoLast} onChange={(patch) => set({ rhoLast: { ...d.rhoLast, ...patch } })} />
       </Band>
 
-      <Band tag="And my hand" hint="all filled-in checks must hold; blank = no constraint">
+      <Band tag="And my hand" hint="all filled-in checks must hold; blank = no constraint" rail="border-l-amber-600">
         <label>
           <span className={label}>HCP min</span>
-          <input name={`${p}:hcpMin`} defaultValue={showNum(c.hcpMin)} placeholder="15 or $nt_range.low" className={input} />
+          <input
+            name={`${p}:hcpMin`}
+            value={d.hcpMin}
+            onChange={(e) => set({ hcpMin: e.target.value })}
+            placeholder="15 or $nt_range.low"
+            className={input}
+          />
         </label>
         <label>
           <span className={label}>HCP max</span>
-          <input name={`${p}:hcpMax`} defaultValue={showNum(c.hcpMax)} placeholder="17 or $nt_range.high" className={input} />
+          <input
+            name={`${p}:hcpMax`}
+            value={d.hcpMax}
+            onChange={(e) => set({ hcpMax: e.target.value })}
+            placeholder="17 or $nt_range.high"
+            className={input}
+          />
         </label>
         <label>
           <span className={label}>Points min (HCP+length)</span>
-          <input name={`${p}:tpMin`} defaultValue={showNum(c.tpMin)} className={input} />
+          <input
+            name={`${p}:tpMin`}
+            value={d.tpMin}
+            onChange={(e) => set({ tpMin: e.target.value })}
+            className={input}
+          />
         </label>
         <label>
           <span className={label}>Shape</span>
           <select
             name={`${p}:balanced`}
-            defaultValue={c.balanced === true ? "yes" : c.balanced === false ? "no" : ""}
+            value={d.balanced}
+            onChange={(e) => set({ balanced: e.target.value })}
             className={input}
           >
             <option value="">any shape</option>
@@ -257,11 +619,16 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
             <option value="no">unbalanced</option>
           </select>
         </label>
-        {[0, 1].map((i) => (
+        {([0, 1] as const).map((i) => (
           <div key={i} className="grid grid-cols-[1.4fr_1fr_1fr] gap-1 sm:col-span-2">
             <label>
               <span className={label}>Holding in suit…</span>
-              <select name={`${p}:suit${i}`} defaultValue={c.suits[i]?.suit ?? ""} className={input}>
+              <select
+                name={`${p}:suit${i}`}
+                value={d.suits[i].suit}
+                onChange={(e) => setSuit(i, { suit: e.target.value })}
+                className={input}
+              >
                 <option value="">—</option>
                 <option value="S">♠ spades</option>
                 <option value="H">♥ hearts</option>
@@ -272,22 +639,43 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
                 <option value="rho_bid_suit">RHO&apos;s bid suit</option>
               </select>
             </label>
-            <label>
-              <span className={label}>at least</span>
-              <input name={`${p}:suit${i}Min`} defaultValue={showNum(c.suits[i]?.min)} className={input} />
-            </label>
-            <label>
-              <span className={label}>at most</span>
-              <input name={`${p}:suit${i}Max`} defaultValue={showNum(c.suits[i]?.max)} className={input} />
-            </label>
+            {d.suits[i].suit ? (
+              <>
+                <label>
+                  <span className={label}>at least</span>
+                  <input
+                    name={`${p}:suit${i}Min`}
+                    value={d.suits[i].min}
+                    onChange={(e) => setSuit(i, { min: e.target.value })}
+                    className={input}
+                  />
+                </label>
+                <label>
+                  <span className={label}>at most</span>
+                  <input
+                    name={`${p}:suit${i}Max`}
+                    value={d.suits[i].max}
+                    onChange={(e) => setSuit(i, { max: e.target.value })}
+                    className={input}
+                  />
+                </label>
+              </>
+            ) : (
+              <div className="col-span-2" />
+            )}
           </div>
         ))}
       </Band>
 
-      <Band tag="Then" hint="the call to make (skipped if illegal in the live auction)">
+      <Band tag="Then" hint="the call to make (skipped if illegal in the live auction)" rail="border-l-neutral-500">
         <label>
           <span className={label}>Action</span>
-          <select name={`${p}:actionType`} defaultValue={action?.type ?? "bid"} className={input}>
+          <select
+            name={`${p}:actionType`}
+            value={d.actionType}
+            onChange={(e) => set({ actionType: e.target.value })}
+            className={input}
+          >
             <option value="bid">bid exactly (level + strain)</option>
             <option value="pass">pass</option>
             <option value="double">double</option>
@@ -296,47 +684,56 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
             <option value="bid_longest">bid my longest among…</option>
           </select>
         </label>
-        <label>
-          <span className={label}>Level</span>
-          <input
-            name={`${p}:actionLevel`}
-            type="number"
-            defaultValue={
-              action && "level" in action && action.level !== undefined
-                ? action.level
-                : action?.type === "raise_partner"
-                  ? action.toLevel
-                  : ""
-            }
-            className={input}
-          />
-        </label>
-        <label>
-          <span className={label}>Strain</span>
-          <select
-            name={`${p}:actionStrain`}
-            defaultValue={action?.type === "bid" ? action.strain : "N"}
-            className={input}
-          >
-            <option value="C">♣</option>
-            <option value="D">♦</option>
-            <option value="H">♥</option>
-            <option value="S">♠</option>
-            <option value="N">NT</option>
-          </select>
-        </label>
-        <label>
-          <span className={label}>Among (bid my longest)</span>
-          <input
-            name={`${p}:actionAmong`}
-            defaultValue={action?.type === "bid_longest" ? action.among.join(",") : ""}
-            placeholder="S,H"
-            className={input}
-          />
-        </label>
+        {showLevel && (
+          <label>
+            <span className={label}>
+              {d.actionType === "raise_partner"
+                ? "To level"
+                : d.actionType === "bid_longest"
+                  ? "At level (optional)"
+                  : "Level"}
+            </span>
+            <input
+              name={`${p}:actionLevel`}
+              type="number"
+              value={d.actionLevel}
+              onChange={(e) => set({ actionLevel: e.target.value })}
+              className={input}
+            />
+          </label>
+        )}
+        {d.actionType === "bid" && (
+          <label>
+            <span className={label}>Strain</span>
+            <select
+              name={`${p}:actionStrain`}
+              value={d.actionStrain}
+              onChange={(e) => set({ actionStrain: e.target.value })}
+              className={input}
+            >
+              <option value="C">♣ clubs</option>
+              <option value="D">♦ diamonds</option>
+              <option value="H">♥ hearts</option>
+              <option value="S">♠ spades</option>
+              <option value="N">NT</option>
+            </select>
+          </label>
+        )}
+        {d.actionType === "bid_longest" && (
+          <label>
+            <span className={label}>Among suits</span>
+            <input
+              name={`${p}:actionAmong`}
+              value={d.actionAmong}
+              onChange={(e) => set({ actionAmong: e.target.value })}
+              placeholder="S,H"
+              className={input}
+            />
+          </label>
+        )}
       </Band>
 
-      <details className="border-t border-neutral-200 px-3 py-2" open={Boolean(c.overflow)}>
+      <details className="border-t border-neutral-100 px-3 py-2" open={Boolean(c.overflow)}>
         <summary className="cursor-pointer text-xs text-neutral-500">
           Extra conditions (JSON){c.overflow ? " — this rule uses conditions beyond the typed fields" : ""}
         </summary>
@@ -347,7 +744,7 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
           className="mt-1 w-full rounded border border-neutral-300 p-2 font-mono text-xs"
         />
       </details>
-    </fieldset>
+    </details>
   );
 }
 
