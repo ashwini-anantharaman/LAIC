@@ -111,3 +111,41 @@ Supabase-backed / production deployment.
 - Reseed: `BASE_URL=https://nexus-backend-teal.vercel.app npx tsx scripts/seedDemoData.ts` (operator first via
   `DATABASE_URL=<neon> npx tsx scripts/seedPlatformAdmin.ts`).
 - Known gap: logo uploads on the live site don't persist (filesystem storage adapter; set S3_BUCKET for real storage).
+
+## Production on Supabase (step 3 — July 2026)
+
+The three apps are live and share ONE Supabase Postgres:
+- Console (frontend): https://platformlogic.vercel.app  (project `platform_logic`)
+- Nexus backend:      https://nexus-backend-teal.vercel.app  (project `nexus-backend`)
+- Bridge Platform:    https://bridge-platform-three.vercel.app  (project `bridge-platform`,
+  root dir `Applications/BridgePlatform/apps/bridge-web`)
+- Database: Supabase project `cegdgojouixxcqerylzd` (region us-west-2). Nexus tables + the
+  bridge/learning platform schema packs coexist with Bridge's own `bridge_*` tables.
+
+### Key facts / gotchas
+- **DB connection**: use the SESSION-mode pooler on :5432 —
+  `postgresql://postgres.cegdgojouixxcqerylzd:PW@aws-1-us-west-2.pooler.supabase.com:5432/postgres`.
+  The direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from many networks; the
+  pooler tenant user is `postgres.<ref>` (not `postgres`). SET ROLE/SET LOCAL (tenant door,
+  RLS) need session mode, so :5432 not the :6543 transaction pooler.
+- **One-time grant** so the connecting role can enter RLS context: `grant nexus_app to postgres;`
+- **nexus-backend env**: DATABASE_URL = the pooler URL; BRIDGE_PLATFORM_URL =
+  https://bridge-platform-three.vercel.app (turns the launch placeholder into the real handoff).
+  Only the Postgres URL is set — NOT Supabase auth keys — so demo-token auth + quick-logins stay on.
+- **bridge-platform env**: NEXUS_CLIENT_MODE=http, NEXUS_API_BASE_URL=<backend>,
+  STORE_BACKEND=postgres, NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (the sb_secret_ key).
+- **Vercel deploys must be git-less.** Commits are authored by an email not on the Vercel team,
+  so a normal `vercel deploy` from the repo is BLOCKED ("Git author … must have access"). Deploy
+  from a copy with no `.git` (rsync excluding .git/node_modules/.next, add .vercel/project.json).
+  nexus-backend also needs `npm run build:vercel` run first (bundles api/index.mjs; no buildCommand
+  in vercel.json).
+- **Backup before migrating**: `pg_dump` (libpq 17+, `/opt/homebrew/opt/libpq/bin/pg_dump`) →
+  backups/supabase-pre-nexus-<date>.sql. Restorable full copy; kept OUTSIDE the git repo along
+  with backups/supabase.env (the creds).
+- **Seed**: `DATABASE_URL=<pooler> npx tsx scripts/seedPlatformAdmin.ts` then
+  `BASE_URL=https://nexus-backend-teal.vercel.app npx tsx scripts/seedDemoData.ts`.
+
+### Deferred (as agreed)
+- bridge-web connects with the Supabase service key (bypasses RLS) — the `bridge_service`
+  role + per-request `app.platform_org_scope` wiring is still pending (org isolation for Bridge
+  content is app-layer for now; Nexus's own org RLS via 0021 is fully active).
