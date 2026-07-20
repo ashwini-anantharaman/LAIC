@@ -53,8 +53,47 @@ export default async function PlayerPage({
           <ValidityBadge status={player.validationStatus} />
         </div>
         {player.description && (
-          <p className="mb-4 text-sm text-neutral-600">{player.description}</p>
+          <p className="mb-2 text-sm text-neutral-600">{player.description}</p>
         )}
+
+        {/* What this player knows, at a glance — before any editing. */}
+        <div className="mb-5 flex flex-wrap items-center gap-1.5 text-sm">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-neutral-400">
+            Plays from
+          </span>
+          {player.enabledPackIds.length === 0 ? (
+            <span className="text-neutral-500">no knowledge sets — enable one below</span>
+          ) : (
+            player.enabledPackIds.map((id) => {
+              const set = packs.find((p) => p.packId === id);
+              const effective = compiled.packs.find((p) => p.packId === id);
+              return (
+                <Link
+                  key={id}
+                  href={`${base}/sets/${id}`}
+                  title={
+                    effective
+                      ? `${effective.itemIds.length} knowledge items at the table — open the set`
+                      : "open the set"
+                  }
+                  className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 font-medium text-emerald-900 hover:border-emerald-500"
+                >
+                  {set?.name ?? id}
+                  {effective && (
+                    <span className="ml-1.5 font-normal text-emerald-700/70">
+                      {effective.itemIds.length}
+                    </span>
+                  )}
+                </Link>
+              );
+            })
+          )}
+          <span className="ml-1 text-xs text-neutral-400">
+            · {player.decisionPolicyId.replace(/_/g, " ")} ·{" "}
+            {Object.keys(player.settingOverrides).length} setting override
+            {Object.keys(player.settingOverrides).length === 1 ? "" : "s"}
+          </span>
+        </div>
 
         <PlayerEditor
           kbId={kbId}
