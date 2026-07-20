@@ -401,6 +401,44 @@ export class KbService {
     return { deleted, blocked, setsTouched };
   }
 
+  /**
+   * Delete a registered source and everything under it: document, passages,
+   * and extraction jobs (across every KB). Refuses while any item still cites
+   * it — provenance must never dangle silently; delete or re-cite the items
+   * first (the bulk delete on Master / the source review page makes that a
+   * one-screen sweep). src_claude, the platform-global source, is permanent.
+   */
+  async deleteSource(sourceId: string): Promise<void> {
+    if (sourceId === "src_claude")
+      throw new Error("The Claude source is platform-global and can't be deleted.");
+    const source = await this.store.getSource(sourceId);
+    if (!source) throw new Error(`No source ${sourceId}`);
+
+    const citing = new Map<string, number>(); // kb name -> count
+    const kbs = await this.store.listKbs();
+    for (const kb of kbs) {
+      const n = (await this.store.listItemsForKb(kb.kbId)).filter((i) =>
+        i.sourceReferences.some((r) => r.sourceId === sourceId),
+      ).length;
+      if (n > 0) citing.set(kb.name, n);
+    }
+    if (citing.size) {
+      const detail = [...citing.entries()].map(([name, n]) => `${n} in "${name}"`).join(", ");
+      throw new Error(
+        `Items still cite this source (${detail}). Delete those items first, or leave the source as their provenance.`,
+      );
+    }
+
+    for (const kb of kbs) {
+      const jobs = await this.store.listJobsForKb(kb.kbId);
+      for (const job of jobs)
+        if (job.sourceId === sourceId) await this.store.deleteJob(job.jobId);
+    }
+    await this.store.replacePassages(sourceId, []);
+    await this.store.deleteDocument(sourceId);
+    await this.store.deleteSource(sourceId);
+  }
+
   // ---- KB versions (releases: the manifest over compiles) --------------------
 
   /**

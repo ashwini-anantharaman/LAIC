@@ -112,3 +112,63 @@ describe("bulk item delete", () => {
     expect(result.blocked[0]?.reason).toBe("not in this knowledge base");
   });
 });
+
+describe("source delete", () => {
+  const bookSource = {
+    sourceId: "src_book",
+    title: "Test booklet",
+    sourceType: "book" as const,
+    rightsStatus: "owned" as const,
+    registeredBy: "u",
+    createdAt: "2026-07-20T00:00:00.000Z",
+  };
+
+  it("refuses while items cite it, naming the KBs; deletable after the items go", async () => {
+    const kb = await svc.createKb({ name: "SAYC", systemLabel: "SAYC", createdBy: "u" });
+    await store.putSource(bookSource);
+    const item = await svc.createItem(kb.kbId, {
+      ...fallbackItem("Pass"),
+      sourceReferences: [{ sourceId: "src_book", anchor: "p1" }],
+    });
+
+    await expect(svc.deleteSource("src_book")).rejects.toThrow(/1 in "SAYC"/);
+
+    await svc.deleteItems(kb.kbId, [item.itemId], "u");
+    await svc.deleteSource("src_book");
+    expect(await store.getSource("src_book")).toBeNull();
+  });
+
+  it("cascades document, passages, and jobs; src_claude is permanent", async () => {
+    const kb = await svc.createKb({ name: "SAYC", systemLabel: "SAYC", createdBy: "u" });
+    await store.putSource(bookSource);
+    await store.putDocument({
+      sourceId: "src_book",
+      fileName: "b.txt",
+      mediaType: "text/plain",
+      charCount: 4,
+      uploadedAt: "2026-07-20T00:00:00.000Z",
+      text: "text",
+    });
+    await store.replacePassages("src_book", [
+      { passageId: "pp_x", sourceId: "src_book", ordinal: 0, anchor: "a", text: "text" },
+    ]);
+    await store.putJob({
+      jobId: "job_1",
+      kbId: kb.kbId,
+      sourceId: "src_book",
+      status: "completed",
+      passageOrdinals: [0],
+      createdItemIds: [],
+      failures: [],
+      requestedBy: "u",
+      createdAt: "2026-07-20T00:00:00.000Z",
+    });
+
+    await svc.deleteSource("src_book");
+    expect(await store.getDocument("src_book")).toBeNull();
+    expect(await store.listPassages("src_book")).toEqual([]);
+    expect(await store.listJobsForKb(kb.kbId)).toEqual([]);
+
+    await expect(svc.deleteSource("src_claude")).rejects.toThrow(/platform-global/);
+  });
+});

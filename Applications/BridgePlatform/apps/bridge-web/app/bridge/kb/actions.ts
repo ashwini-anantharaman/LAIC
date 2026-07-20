@@ -295,6 +295,21 @@ export async function registerSourceAction(formData: FormData): Promise<void> {
   revalidatePath(kbPath(kbId, "/sources"));
 }
 
+export async function deleteSourceAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const sourceId = String(formData.get("sourceId"));
+  try {
+    await kbService().deleteSource(sourceId); // refuses while items cite it
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not delete this source.";
+    redirect(kbPath(kbId, `/sources?uploadError=${encodeURIComponent(message)}`));
+  }
+  await audit(context, "knowledge.source.delete", "kb_source", sourceId, { kbId });
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, "/sources?sourceDeleted=1"));
+}
+
 export async function uploadDocumentAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));

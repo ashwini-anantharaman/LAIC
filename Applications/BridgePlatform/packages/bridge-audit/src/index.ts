@@ -33,6 +33,7 @@ export type AuditAction =
   | "knowledge.item.status"
   | "knowledge.source.register"
   | "knowledge.source.upload"
+  | "knowledge.source.delete"
   | "knowledge.ingestion.run"
   | "knowledge.gap.resolve"
   | "profile.create"

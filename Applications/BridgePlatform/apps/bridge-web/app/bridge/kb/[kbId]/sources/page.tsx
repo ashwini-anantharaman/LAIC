@@ -4,9 +4,14 @@ import { AutoExtract } from "@/components/kb/AutoExtract";
 import { PdfUploadForm } from "@/components/kb/PdfUploadForm";
 import { pendingSections } from "@/lib/documents";
 import { extractionAvailable } from "@/lib/extraction";
+import { ConfirmButton } from "@/components/kb/ConfirmButton";
 import { kbStore } from "@/lib/kb";
 import { scopeSources } from "@/lib/sources";
-import { registerSourceAction, uploadExtractedTextAction } from "../../actions";
+import {
+  deleteSourceAction,
+  registerSourceAction,
+  uploadExtractedTextAction,
+} from "../../actions";
 
 /** Sources tab (spec §6): register → upload → extract, with job reports and
  *  the failed-section list fellows hand-author from. */
@@ -22,11 +27,19 @@ export default async function SourcesPage({
     uploaded?: string;
     sections?: string;
     extract?: string;
+    sourceDeleted?: string;
   }>;
 }>) {
   const { kbId } = await params;
-  const { extracted, remaining: remainingParam, uploadError, uploaded, sections, extract } =
-    await searchParams;
+  const {
+    extracted,
+    remaining: remainingParam,
+    uploadError,
+    uploaded,
+    sections,
+    extract,
+    sourceDeleted,
+  } = await searchParams;
   const store = kbStore();
   const [allSources, jobs, items] = await Promise.all([
     store.listSources(),
@@ -110,6 +123,11 @@ export default async function SourcesPage({
       {uploadError && (
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--color-invalid)]">
           {uploadError}
+        </p>
+      )}
+      {sourceDeleted && (
+        <p className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Source deleted, along with its document, passages, and extraction history.
         </p>
       )}
       {uploaded && (
@@ -222,6 +240,15 @@ export default async function SourcesPage({
                   </span>
                   <span className="text-[10px] uppercase tracking-wide text-neutral-400">
                     {source.rightsStatus.replaceAll("_", " ")}
+                  </span>
+                  <span className="ml-auto">
+                    <ConfirmButton
+                      action={deleteSourceAction}
+                      hidden={{ kbId, sourceId: source.sourceId }}
+                      confirm={`Delete "${source.title}"? Its document, passages, and extraction history go with it. Knowledge items are kept — but if any still cite it, the delete is refused.`}
+                      label="Delete source"
+                      className="text-xs text-red-700 underline-offset-2 hover:underline"
+                    />
                   </span>
                 </div>
                 {doc ? (
