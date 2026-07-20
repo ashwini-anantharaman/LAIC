@@ -13,6 +13,7 @@ export function AutoAdvance({
   active,
   seq,
   beatMs = 750,
+  initialPaused = false,
 }: Readonly<{
   sessionId: string;
   /** Server truth: an AI seat is to act and the board isn't complete. */
@@ -20,9 +21,12 @@ export function AutoAdvance({
   /** Event count — changes after every step so the effect re-arms. */
   seq: number;
   beatMs?: number;
+  /** Start paused (after an undo or mid-play fix the AI must not instantly
+   *  replay the decision being inspected). Remount via `key` to re-apply. */
+  initialPaused?: boolean;
 }>) {
   const router = useRouter();
-  const [paused, setPaused] = useState(false);
+  const [paused, setPaused] = useState(initialPaused);
   const inFlight = useRef(false);
 
   const advance = async () => {

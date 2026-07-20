@@ -9,6 +9,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+type UploadResult =
+  | { ok: true; passageCount: number; sectionCount: number }
+  | { ok: false; error: string };
+
 export function PdfUploadForm({
   kbId,
   sourceId,
@@ -18,7 +22,7 @@ export function PdfUploadForm({
   kbId: string;
   sourceId: string;
   replace: boolean;
-  action: (formData: FormData) => Promise<void>;
+  action: (formData: FormData) => Promise<UploadResult>;
 }>) {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -64,7 +68,16 @@ export function PdfUploadForm({
       fd.set("fileName", file.name);
       fd.set("mediaType", mediaType);
       fd.set("text", text);
-      await action(fd); // server action redirects to ?uploaded=…&extract=auto
+      const result = await action(fd);
+      if (!result.ok) {
+        setStatus(result.error);
+        setBusy(false);
+        return;
+      }
+      // Navigate client-side; extraction auto-starts on arrival.
+      router.push(
+        `/bridge/kb/${kbId}/sources?uploaded=${result.passageCount}&sections=${result.sectionCount}&extract=auto`,
+      );
       router.refresh();
     } catch (e) {
       setStatus(`Couldn't read that file: ${e instanceof Error ? e.message : "unknown error"}`);

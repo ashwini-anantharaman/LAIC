@@ -175,6 +175,28 @@ export async function saveItemAction(formData: FormData): Promise<void> {
     version: saved.version,
   });
   revalidatePath(kbPath(kbId), "layout");
+
+  // Fix-at-the-table flow: saving from the session overlay re-pins the
+  // session to the fresh compile (sessions never float on their own) and
+  // returns to the board instead of the item page.
+  const repinSessionId = String(formData.get("repinSessionId") ?? "");
+  const returnToRaw = String(formData.get("returnTo") ?? "");
+  if (returnToRaw.startsWith("/bridge/")) {
+    let flag = "fixed=1";
+    if (repinSessionId) {
+      const kb = await kbService().getKb(kbId);
+      if (kb.lastCompileError) {
+        flag = `fixError=${encodeURIComponent(kb.lastCompileError.message)}`;
+      } else {
+        const { sessionService } = await import("@/lib/sessions");
+        const compiled = await kbService().liveCompile(kbId);
+        if (compiled) await sessionService().repinCompile(repinSessionId, compiled);
+      }
+      revalidatePath(`/bridge/table/${repinSessionId}`);
+    }
+    redirect(`${returnToRaw}${returnToRaw.includes("?") ? "&" : "?"}${flag}`);
+  }
+
   redirect(kbPath(kbId, `/items/${saved.itemId}?saved=1`));
 }
 
@@ -355,29 +377,44 @@ export async function uploadDocumentAction(formData: FormData): Promise<void> {
  * downstream path as uploadDocumentAction; redirects with extract=auto so
  * the Sources tab starts draining sections on its own.
  */
-export async function uploadExtractedTextAction(formData: FormData): Promise<void> {
+export type UploadTextResult =
+  | { ok: true; passageCount: number; sectionCount: number }
+  | { ok: false; error: string };
+
+/**
+ * Called PROGRAMMATICALLY from the upload form (not as a form action), so it
+ * must RETURN a result instead of redirect(): a redirect() here surfaces as a
+ * caught "NEXT_REDIRECT" error in the client's try/catch. The client
+ * navigates on success.
+ */
+export async function uploadExtractedTextAction(
+  formData: FormData,
+): Promise<UploadTextResult> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));
   const sourceId = String(formData.get("sourceId"));
   const fileName = String(formData.get("fileName") ?? "").trim() || "document.txt";
   const mediaType = String(formData.get("mediaType") ?? "text/plain");
   const text = String(formData.get("text") ?? "");
-  const fail = (message: string): never =>
-    redirect(kbPath(kbId, `/sources?uploadError=${encodeURIComponent(message)}`));
 
   if (!text.trim())
-    fail("No text came out of that file — a scanned/image-only PDF has no text layer to read.");
+    return {
+      ok: false,
+      error: "No text came out of that file — a scanned/image-only PDF has no text layer to read.",
+    };
   if (text.length > 8_000_000)
-    fail("That document's text is over ~8 MB — split it into chapters and upload those.");
+    return {
+      ok: false,
+      error: "That document's text is over ~8 MB — split it into chapters and upload those.",
+    };
 
   const { uploadDocument } = await import("@/lib/documents");
   let result: { passageCount: number; sectionCount: number };
   try {
     result = await uploadDocument(sourceId, fileName, mediaType, text);
   } catch (e) {
-    // Surface storage failures as the banner, not an opaque RSC error.
     const detail = e instanceof Error ? e.message : "unknown storage error";
-    return fail(`The document could not be stored: ${detail}`);
+    return { ok: false, error: `The document could not be stored: ${detail}` };
   }
   const { passageCount, sectionCount } = result;
   await audit(context, "knowledge.source.upload", "kb_source", sourceId, {
@@ -386,9 +423,7 @@ export async function uploadExtractedTextAction(formData: FormData): Promise<voi
     clientExtracted: true,
   });
   revalidatePath(kbPath(kbId, "/sources"));
-  redirect(
-    kbPath(kbId, `/sources?uploaded=${passageCount}&sections=${sectionCount}&extract=auto`),
-  );
+  return { ok: true, passageCount, sectionCount };
 }
 
 /** Batch size per click/tick: keeps each run well inside serverless time

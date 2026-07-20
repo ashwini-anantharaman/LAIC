@@ -341,3 +341,49 @@ test("bulk delete from the Master tab (sets updated, banner reports)", async ({
   // The original survives untouched.
   await expect(page.getByText("1NT opening", { exact: true })).toBeVisible();
 });
+
+test("fix at the table: undo pauses, overlay edits the item, session re-pins", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  // Same lineup as the pinning test: human South, Floor AIs elsewhere.
+  await page.goto("/bridge/table/choose");
+  await page.getByText("Set up a custom table").click();
+  const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
+  const dealForm = block.locator("form").first();
+  await dealForm.locator('select[name="humanSeat"]').selectOption("S");
+  await dealForm.locator('input[name="seed"]').fill("11");
+  for (const seat of ["N", "E", "W"]) {
+    await dealForm
+      .locator(`select[name="player:${seat}"]`)
+      .selectOption({ label: "Minimal complete — Floor" });
+  }
+  await dealForm.getByRole("button", { name: "Deal a board" }).click();
+  await page.waitForURL(/\/bridge\/table\/bs_/);
+  await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
+
+  // Undo the last AI decision — the table comes back PAUSED.
+  await page.getByRole("button", { name: "undo" }).click();
+  await page.waitForURL(/paused=/);
+  await expect(page.getByText(/Decisions \(1\)/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();
+
+  // Open the trace, jump into the overlay editor for the matched item.
+  const decision = page.locator("details").filter({ hasText: "#0" }).last();
+  await decision.locator("summary").click();
+  await decision.getByRole("link", { name: "fix at the table →" }).click();
+  await page.waitForURL(/fix=ki_/);
+  await expect(page.getByText("Fixing at the table")).toBeVisible();
+
+  // Save without changes — still re-pins and returns to the paused board.
+  await page.getByRole("button", { name: "Save (recompiles the KB)" }).click();
+  await page.waitForURL(/fixed=1/);
+  await expect(page.getByText(/this table now plays from the updated rules/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();
+
+  // Step forward one decision — play continues under the (re)pinned compile.
+  await page.getByRole("button", { name: "step ▸" }).click();
+  await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
+});

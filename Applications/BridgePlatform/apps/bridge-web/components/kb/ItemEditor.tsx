@@ -762,6 +762,7 @@ export function ItemEditor({
   action,
   initialTitle,
   citation,
+  hiddenFields,
 }: Readonly<{
   kbId: string;
   item: KnowledgeItem | null;
@@ -769,6 +770,8 @@ export function ItemEditor({
   /** Prefill for the write-up-from-a-passage flow (failed extraction). */
   initialTitle?: string;
   citation?: { sourceId: string; passageId: string; anchor: string };
+  /** Extra hidden inputs (fix-at-the-table passes returnTo + repinSessionId). */
+  hiddenFields?: Record<string, string>;
 }>) {
   const payload: ItemPayload = item?.payload ?? { kind: "auction_rules", rules: [] };
   const auctionSpecs = payload.kind === "auction_rules" ? payload.rules : [];
@@ -783,6 +786,10 @@ export function ItemEditor({
     <form action={action} className="space-y-4">
       <input type="hidden" name="kbId" value={kbId} />
       {item && <input type="hidden" name="itemId" value={item.itemId} />}
+      {hiddenFields &&
+        Object.entries(hiddenFields).map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
       {citation && (
         <>
           <input type="hidden" name="cite:sourceId" value={citation.sourceId} />

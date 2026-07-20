@@ -16,7 +16,14 @@ export function DecisionEntry({
   event,
   sessionId,
   kbId,
-}: Readonly<{ event: LogicEvent; sessionId: string; kbId: string }>) {
+  fixBase,
+}: Readonly<{
+  event: LogicEvent;
+  sessionId: string;
+  kbId: string;
+  /** Session URL — when set, decisions offer "fix at the table" (overlay). */
+  fixBase?: string;
+}>) {
   const chosen =
     event.category === "bid-logic-event"
       ? callLabel(event.chosen)
@@ -59,6 +66,18 @@ export function DecisionEntry({
                 >
                   open the knowledge item →
                 </Link>
+                {fixBase && (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <Link
+                      href={`${fixBase}?paused=${event.seq}&fix=${itemId}`}
+                      className="font-medium text-emerald-800 underline-offset-2 hover:underline"
+                    >
+                      fix at the table →
+                    </Link>
+                  </>
+                )}
               </>
             )}
           </p>

@@ -268,6 +268,11 @@ export async function undoAction(formData: FormData): Promise<void> {
   await sessionService().undo(sessionId);
   await audit(context, "session.undo", "kb_session", sessionId);
   revalidatePath(`/bridge/table/${sessionId}`);
+  // Come back PAUSED: the point of undo is to inspect (and often fix) the
+  // decision — auto-play would instantly redo it. Step ▸ resumes one beat
+  // at a time. The token is unique per undo so AutoAdvance remounts paused
+  // even when the previous pause was already resumed.
+  redirect(`/bridge/table/${sessionId}?paused=${Date.now()}`);
 }
 
 /**

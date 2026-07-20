@@ -9,6 +9,8 @@ import { legalCalls, legalPlays, resultLabel, scoreBoard } from "@bridge/engine"
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { saveItemAction } from "@/app/bridge/kb/actions";
+import { ItemEditor } from "@/components/kb/ItemEditor";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { BiddingBox } from "@/components/table/BiddingBox";
 import { DecisionEntry } from "@/components/table/DecisionEntry";
@@ -33,12 +35,22 @@ export default async function SessionPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ mode?: string; hands?: string; saved?: string; error?: string }>;
+  searchParams: Promise<{
+    mode?: string;
+    hands?: string;
+    saved?: string;
+    error?: string;
+    paused?: string;
+    fix?: string;
+    fixed?: string;
+    fixError?: string;
+  }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { mode, hands: handsParam, saved, error } = await searchParams;
+  const { mode, hands: handsParam, saved, error, paused, fix, fixed, fixError } =
+    await searchParams;
 
   let view;
   try {
@@ -72,6 +84,12 @@ export default async function SessionPage({
   const callsNow = state.phase === "auction" && myTurn ? legalCalls(state.auction, state.turn) : null;
 
   const score = scoreBoard(state);
+
+  // Fix-at-the-table overlay: ?fix=<itemId> opens the real item editor over
+  // the board; saving re-pins this session to the fresh compile and returns
+  // here paused, so the corrected rule can be stepped through immediately.
+  const fixItem = fix && !learnerMode ? await kbStore().getItem(fix) : null;
+  const overlayReturn = `/bridge/table/${sessionId}?paused=${Date.now()}`;
   const logicEvents = record.events.filter(isLogicEvent);
   const aiToAct = !actingIsHuman && state.phase !== "complete";
 
@@ -279,10 +297,28 @@ export default async function SessionPage({
           </Link>
         </p>
       )}
+      {fixed && (
+        <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Knowledge item saved — this table now plays from the updated rules. Auto-play is
+          paused; use step ▸ to watch the fix take effect.
+        </p>
+      )}
+      {fixError && (
+        <p className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          Saved, but the knowledge base no longer compiles ({fixError}) — this table keeps
+          playing from the last good rules until the item is fixed.
+        </p>
+      )}
 
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
-        <AutoAdvance sessionId={sessionId} active={aiToAct} seq={record.events.length} />
+        <AutoAdvance
+          key={paused ?? "run"}
+          sessionId={sessionId}
+          active={aiToAct}
+          seq={record.events.length}
+          initialPaused={Boolean(paused)}
+        />
         {!learnerMode && (
           <Link
             href={toggleHref({ hands: showAll ? "mine" : "all" })}
@@ -569,6 +605,7 @@ export default async function SessionPage({
                   event={event}
                   sessionId={sessionId}
                   kbId={record.kbId}
+                  fixBase={`/bridge/table/${sessionId}`}
                 />
               ))}
               {logicEvents.length === 0 && (
@@ -580,6 +617,44 @@ export default async function SessionPage({
           </aside>
         )}
       </div>
+
+      {/* Fix-at-the-table: the real item editor in a drawer over the board.
+          Save re-pins this session to the fresh compile and returns paused. */}
+      {fixItem && (
+        <div className="fixed inset-0 z-50">
+          <Link
+            href={overlayReturn}
+            aria-label="Close the editor"
+            className="absolute inset-0 bg-black/50"
+          />
+          <div className="absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto bg-[var(--background,#fff)] p-6 shadow-2xl">
+            <div className="mb-4 flex items-baseline justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-neutral-400">
+                  Fixing at the table
+                </p>
+                <h2 className="font-serif text-xl font-medium">{fixItem.title}</h2>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Saving updates this table immediately — decisions already made keep their
+                  original trace; the next step plays from the corrected rules.
+                </p>
+              </div>
+              <Link
+                href={overlayReturn}
+                className="rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
+              >
+                ✕ back to the board
+              </Link>
+            </div>
+            <ItemEditor
+              kbId={record.kbId}
+              item={fixItem}
+              action={saveItemAction}
+              hiddenFields={{ returnTo: overlayReturn, repinSessionId: sessionId }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

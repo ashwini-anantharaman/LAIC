@@ -216,6 +216,21 @@ export class SessionService {
     return record;
   }
 
+  /**
+   * Re-pin a session to a newer compile — the one deliberate, user-driven
+   * exception to "sessions never float": a fellow spots a bad decision at
+   * the table, fixes the knowledge item, and continues the SAME board under
+   * the corrected rules. Past events keep their recorded traces; only future
+   * decisions consult the new compile.
+   */
+  async repinCompile(sessionId: string, compiled: CompiledKb): Promise<void> {
+    const record = await this.requireSession(sessionId);
+    if (record.compileRef.compileId === compiled.compileId) return;
+    record.compileRef = { compileId: compiled.compileId, version: compiled.version };
+    record.updatedAt = this.now();
+    await this.store.putSession(record);
+  }
+
   /** The pinned compile — sessions never float to newer versions. */
   async compiledFor(record: SessionRecord): Promise<CompiledKb> {
     const compiled = await this.kb.getCompile(record.compileRef.compileId);
