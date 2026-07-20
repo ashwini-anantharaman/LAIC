@@ -553,12 +553,19 @@ platformRouter.get("/bridge/people", async (c) => {
   return c.json(
     members.map((m: Row) => {
       const email = ((m.email as string) ?? "").toLowerCase();
-      const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
+      // Admin standing = Nexus membership owner/administrator OR a custom
+      // program role that grants the Bridge area "administrator". Either way
+      // it's Nexus territory — read-only in Bridge, not reassignable here.
+      const isAdmin =
+        m.membership_role === "administrator" ||
+        m.membership_role === "owner" ||
+        (m.role_perms as Row | undefined)?.bridge === "administrator";
       return {
         email: m.email ?? null,
         display_name: m.display_name ?? null,
         status: m.status ?? "active",
-        // Admin standing comes from Nexus membership and is not reassignable here.
+        membership_id: m.membership_id ?? null,
+        invitation_id: m.invitation_id ?? null,
         bridge_role: isAdmin ? "bridge_program_admin" : byEmail.get(email) ?? null,
         is_admin: isAdmin,
       };
@@ -585,6 +592,34 @@ platformRouter.put("/bridge/people/role", async (c) => {
     metadata: { email: req.email, role: req.role },
   });
   return c.json(row ?? { email: req.email.toLowerCase(), role: null });
+});
+
+// Remove a person from the program (Bridge admin action — parity with the
+// console's trash-can). Refuses to remove admins. Clears their Bridge role too.
+platformRouter.delete("/bridge/people", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.query("program_id");
+  const email = c.req.query("email");
+  if (!programId || !email) throw new HttpError(400, "program_id and email required");
+  const access = await _requireBridgeAdmin(user, programId);
+  const members = await graph.listProgramMembers(access.orgId, programId);
+  const target = members.find((m: Row) => ((m.email as string) ?? "").toLowerCase() === email.toLowerCase());
+  if (!target) throw new HttpError(404, "That person is not in this program");
+  const targetIsAdmin =
+    target.membership_role === "administrator" ||
+    target.membership_role === "owner" ||
+    (target.role_perms as Row | undefined)?.bridge === "administrator";
+  if (targetIsAdmin) throw new HttpError(409, "Admins are managed from the Nexus console, not removed here");
+  // Clear any Bridge role, then remove the membership or revoke the invite.
+  await graph.setPlatformRoleAssignment(access.orgId, programId, "bridge", email, null);
+  if (target.membership_id) await db.deleteMembership(target.membership_id as string);
+  else if (target.invitation_id) await graph.revokeInvitation(target.invitation_id as string);
+  await db.recordAuditEvent("bridge.person.removed", {
+    orgId: access.orgId, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { email },
+  });
+  return c.json({ ok: true });
 });
 
 // The person's display name in THIS org (their org-scoped profile), falling

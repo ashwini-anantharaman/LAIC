@@ -14,6 +14,8 @@ export interface BridgePerson {
   status: string;
   bridge_role: string | null;
   is_admin: boolean;
+  membership_id: string | null;
+  invitation_id: string | null;
 }
 
 /** The real Nexus program uuid rides the context as an additive extension. */
@@ -85,4 +87,16 @@ export async function inviteBridgePerson(
   const inv = (await res.json()) as BridgeInviteResult;
   if (opts.role) await setBridgeRole(programId, opts.email, opts.role);
   return inv;
+}
+
+/** Remove a person from the program (Bridge admin action). */
+export async function removeBridgePerson(programId: string, email: string): Promise<void> {
+  const res = await nexusFetch(
+    `/api/platform/bridge/people?program_id=${encodeURIComponent(programId)}&email=${encodeURIComponent(email)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(err?.detail ?? `Nexus removal failed: ${res.status}`);
+  }
 }

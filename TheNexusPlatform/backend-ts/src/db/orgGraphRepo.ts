@@ -126,6 +126,7 @@ export async function listProgramMembers(orgId: string, programId: string): Prom
         status: "active",
         role_id: asg?.role_id ?? null,
         role_name: asg?.role_name ?? null,
+        role_perms: asg?.role_perms ?? {},
       };
     });
 
@@ -145,6 +146,7 @@ export async function listProgramMembers(orgId: string, programId: string): Prom
         status: "invited",
         role_id: asg?.role_id ?? null,
         role_name: asg?.role_name ?? null,
+        role_perms: asg?.role_perms ?? {},
       };
     });
 

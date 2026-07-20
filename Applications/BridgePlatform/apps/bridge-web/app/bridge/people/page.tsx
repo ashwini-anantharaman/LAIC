@@ -8,7 +8,7 @@
 import { hasAnyRole } from "@bridge/nexus-client";
 import type { BridgeRole } from "@laic/learner-contracts";
 import { redirect } from "next/navigation";
-import { inviteBridgePersonAction, setBridgeRoleAction } from "./actions";
+import { inviteBridgePersonAction, removeBridgePersonAction, setBridgeRoleAction } from "./actions";
 import { getBridgeContext, nexusMode } from "@/lib/nexus";
 import { listBridgePeople, nexusProgramId } from "@/lib/nexusPeople";
 
@@ -141,6 +141,7 @@ export default async function PeoplePage({
               <th className="px-4 py-2.5 font-medium">Person</th>
               <th className="px-4 py-2.5 font-medium">Status</th>
               <th className="px-4 py-2.5 font-medium">Bridge role</th>
+              <th className="px-4 py-2.5 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -183,11 +184,26 @@ export default async function PeoplePage({
                     </form>
                   )}
                 </td>
+                <td className="px-4 py-2.5 text-right">
+                  {p.is_admin ? null : (
+                    <form action={removeBridgePersonAction}>
+                      <input type="hidden" name="email" value={p.email ?? ""} />
+                      <button
+                        type="submit"
+                        title="Remove from program"
+                        aria-label="Remove from program"
+                        className="inline-grid size-7 place-items-center rounded-md text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                      >
+                        &#x1F5D1;
+                      </button>
+                    </form>
+                  )}
+                </td>
               </tr>
             ))}
             {people.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-sm text-neutral-500">
+                <td colSpan={4} className="px-4 py-6 text-center text-sm text-neutral-500">
                   No people in this program yet — invite them from the Nexus console.
                 </td>
               </tr>
