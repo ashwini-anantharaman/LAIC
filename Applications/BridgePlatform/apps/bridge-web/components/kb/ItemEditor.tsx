@@ -10,6 +10,7 @@
 
 import type {
   AuctionRuleSpec,
+  CallPattern,
   HandCondition,
   ItemPayload,
   KnowledgeItem,
@@ -67,39 +68,124 @@ const input =
   "w-full rounded border border-neutral-300 px-2 py-1 text-sm disabled:bg-neutral-50";
 const label = "mb-0.5 block text-[11px] text-neutral-500";
 
+/** One call-pattern row (kind + level range + strains) inside the WHEN band. */
+function PatternRow({
+  p,
+  field,
+  title,
+  hint,
+  pattern,
+}: Readonly<{
+  p: string;
+  field: "opening" | "partnerLast" | "rhoLast";
+  title: string;
+  hint: string;
+  pattern?: CallPattern;
+}>) {
+  return (
+    <div className="grid grid-cols-[1.4fr_repeat(3,1fr)] gap-1 sm:col-span-2">
+      <label>
+        <span className={label} title={hint}>
+          {title}
+        </span>
+        <select name={`${p}:${field}:kind`} defaultValue={pattern?.kind ?? "unset"} className={input}>
+          <option value="unset">any / not set</option>
+          <option value="bid">a bid</option>
+          <option value="any_bid">any suit/NT bid</option>
+          <option value="pass">a pass</option>
+          <option value="double">a double</option>
+          <option value="redouble">a redouble</option>
+          <option value="none">no call yet</option>
+        </select>
+      </label>
+      <label>
+        <span className={label}>level ≥</span>
+        <input name={`${p}:${field}:levelMin`} defaultValue={pattern?.levelMin ?? ""} className={input} />
+      </label>
+      <label>
+        <span className={label}>level ≤</span>
+        <input name={`${p}:${field}:levelMax`} defaultValue={pattern?.levelMax ?? ""} className={input} />
+      </label>
+      <label>
+        <span className={label}>strains</span>
+        <input
+          name={`${p}:${field}:strains`}
+          defaultValue={pattern?.strains?.join(",") ?? ""}
+          placeholder="N or S,H"
+          className={input}
+        />
+      </label>
+    </div>
+  );
+}
+
+/** A labeled band of the rule card: WHEN / AND / THEN. */
+function Band({
+  tag,
+  hint,
+  children,
+}: Readonly<{ tag: string; hint: string; children: React.ReactNode }>) {
+  return (
+    <div className="border-t border-neutral-200 px-3 py-2.5 first:border-t-0">
+      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+        {tag} <span className="font-normal normal-case tracking-normal text-neutral-400">— {hint}</span>
+      </p>
+      <div className="grid gap-2 sm:grid-cols-4">{children}</div>
+    </div>
+  );
+}
+
 function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index: number }>) {
   const p = `rule${index}`;
   const c = rule ? decompose(rule.conditions) : { suits: [] as TypedConditions["suits"] };
   const action = rule?.action;
   return (
-    <fieldset className="rounded-md border border-neutral-200 p-3">
-      <legend className="px-1 text-xs text-neutral-500">
-        {rule ? `Rule — ${rule.label}` : "New rule (leave label empty to skip)"}
-      </legend>
-      <div className="grid gap-2 sm:grid-cols-4">
-        <label className="sm:col-span-2">
-          <span className={label}>Label</span>
-          <input name={`${p}:label`} defaultValue={rule?.label ?? ""} className={input} />
+    <fieldset className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+      {/* Identity row */}
+      <div className="flex flex-wrap items-end gap-2 border-b border-neutral-200 bg-neutral-50/70 px-3 py-2">
+        <span className="mb-1 rounded bg-emerald-700 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+          Rule
+        </span>
+        <label className="min-w-40 flex-1">
+          <span className={label}>Label — what the trace shows</span>
+          <input
+            name={`${p}:label`}
+            defaultValue={rule?.label ?? ""}
+            placeholder={rule ? "" : "e.g. Open 1NT — blank rules are not saved"}
+            className={input}
+          />
         </label>
-        <label>
-          <span className={label}>Key</span>
+        <label className="w-28">
+          <span className={label}>Key (stable id)</span>
           <input name={`${p}:key`} defaultValue={rule?.key ?? `r${index}`} className={input} />
         </label>
-        <label>
-          <span className={label}>Priority</span>
+        <label className="w-20">
+          <span className={label} title="Tie-break within the type's band — lower fires first">
+            Priority
+          </span>
           <input name={`${p}:priority`} type="number" defaultValue={rule?.priority ?? 10} className={input} />
         </label>
+        {rule && (
+          <label className="mb-1.5 flex items-center gap-1 text-xs text-red-700">
+            <input type="checkbox" name={`${p}:remove`} /> remove
+          </label>
+        )}
+      </div>
 
+      <Band tag="When" hint="where in the auction this rule can fire">
         <label>
-          <span className={label}>Role</span>
+          <span className={label}>My role</span>
           <select name={`${p}:role`} defaultValue={rule?.context.role ?? "opening"} className={input}>
-            {["opening", "opener", "responder", "overcaller", "advancer", "any"].map((r) => (
-              <option key={r}>{r}</option>
-            ))}
+            <option value="opening">opening — nobody has bid yet</option>
+            <option value="opener">opener — rebidding my opening</option>
+            <option value="responder">responder — partner opened</option>
+            <option value="overcaller">overcaller — they opened</option>
+            <option value="advancer">advancer — partner overcalled</option>
+            <option value="any">any</option>
           </select>
         </label>
         <label>
-          <span className={label}>Contested</span>
+          <span className={label}>Contested?</span>
           <select
             name={`${p}:contested`}
             defaultValue={
@@ -112,39 +198,41 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
             <option value="yes">contested only</option>
           </select>
         </label>
-        <label>
-          <span className={label}>Opening pattern (kind)</span>
-          <select
-            name={`${p}:opening:kind`}
-            defaultValue={rule?.context.opening?.kind ?? "unset"}
-            className={input}
-          >
-            <option value="unset">any / not set</option>
-            {["bid", "any_bid", "pass", "none"].map((k) => (
-              <option key={k}>{k}</option>
-            ))}
-          </select>
-        </label>
-        <div className="grid grid-cols-3 gap-1">
+        <div className="grid grid-cols-2 gap-1">
           <label>
-            <span className={label}>lvl≥</span>
-            <input name={`${p}:opening:levelMin`} defaultValue={rule?.context.opening?.levelMin ?? ""} className={input} />
+            <span className={label}>round ≥</span>
+            <input name={`${p}:roundMin`} defaultValue={rule?.context.roundMin ?? ""} className={input} />
           </label>
           <label>
-            <span className={label}>lvl≤</span>
-            <input name={`${p}:opening:levelMax`} defaultValue={rule?.context.opening?.levelMax ?? ""} className={input} />
-          </label>
-          <label>
-            <span className={label}>strains</span>
-            <input
-              name={`${p}:opening:strains`}
-              defaultValue={rule?.context.opening?.strains?.join(",") ?? ""}
-              placeholder="N or S,H"
-              className={input}
-            />
+            <span className={label}>round ≤</span>
+            <input name={`${p}:roundMax`} defaultValue={rule?.context.roundMax ?? ""} className={input} />
           </label>
         </div>
+        <div className="hidden sm:block" />
+        <PatternRow
+          p={p}
+          field="opening"
+          title="Our opening was…"
+          hint="Match the partnership's opening call (for responses and rebids)"
+          pattern={rule?.context.opening}
+        />
+        <PatternRow
+          p={p}
+          field="partnerLast"
+          title="Partner's last call was…"
+          hint="Match partner's most recent call (e.g. 1NT for Stayman)"
+          pattern={rule?.context.partnerLast}
+        />
+        <PatternRow
+          p={p}
+          field="rhoLast"
+          title="Right-hand opponent's last…"
+          hint="Match the right-hand opponent's most recent call"
+          pattern={rule?.context.rhoLast}
+        />
+      </Band>
 
+      <Band tag="And my hand" hint="all filled-in checks must hold; blank = no constraint">
         <label>
           <span className={label}>HCP min</span>
           <input name={`${p}:hcpMin`} defaultValue={showNum(c.hcpMin)} placeholder="15 or $nt_range.low" className={input} />
@@ -158,7 +246,7 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
           <input name={`${p}:tpMin`} defaultValue={showNum(c.tpMin)} className={input} />
         </label>
         <label>
-          <span className={label}>Balanced</span>
+          <span className={label}>Shape</span>
           <select
             name={`${p}:balanced`}
             defaultValue={c.balanced === true ? "yes" : c.balanced === false ? "no" : ""}
@@ -169,35 +257,43 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
             <option value="no">unbalanced</option>
           </select>
         </label>
-
         {[0, 1].map((i) => (
-          <div key={i} className="grid grid-cols-3 gap-1">
+          <div key={i} className="grid grid-cols-[1.4fr_1fr_1fr] gap-1 sm:col-span-2">
             <label>
-              <span className={label}>suit {i + 1}</span>
+              <span className={label}>Holding in suit…</span>
               <select name={`${p}:suit${i}`} defaultValue={c.suits[i]?.suit ?? ""} className={input}>
                 <option value="">—</option>
-                {["S", "H", "D", "C", "partner_last_bid_suit", "own_longest_suit", "rho_bid_suit"].map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
+                <option value="S">♠ spades</option>
+                <option value="H">♥ hearts</option>
+                <option value="D">♦ diamonds</option>
+                <option value="C">♣ clubs</option>
+                <option value="partner_last_bid_suit">partner&apos;s last bid suit</option>
+                <option value="own_longest_suit">my longest suit</option>
+                <option value="rho_bid_suit">RHO&apos;s bid suit</option>
               </select>
             </label>
             <label>
-              <span className={label}>len≥</span>
+              <span className={label}>at least</span>
               <input name={`${p}:suit${i}Min`} defaultValue={showNum(c.suits[i]?.min)} className={input} />
             </label>
             <label>
-              <span className={label}>len≤</span>
+              <span className={label}>at most</span>
               <input name={`${p}:suit${i}Max`} defaultValue={showNum(c.suits[i]?.max)} className={input} />
             </label>
           </div>
         ))}
+      </Band>
 
+      <Band tag="Then" hint="the call to make (skipped if illegal in the live auction)">
         <label>
           <span className={label}>Action</span>
           <select name={`${p}:actionType`} defaultValue={action?.type ?? "bid"} className={input}>
-            {["bid", "pass", "double", "redouble", "raise_partner", "bid_longest"].map((t) => (
-              <option key={t}>{t}</option>
-            ))}
+            <option value="bid">bid exactly (level + strain)</option>
+            <option value="pass">pass</option>
+            <option value="double">double</option>
+            <option value="redouble">redouble</option>
+            <option value="raise_partner">raise partner&apos;s suit</option>
+            <option value="bid_longest">bid my longest among…</option>
           </select>
         </label>
         <label>
@@ -222,13 +318,15 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
             defaultValue={action?.type === "bid" ? action.strain : "N"}
             className={input}
           >
-            {["C", "D", "H", "S", "N"].map((s) => (
-              <option key={s}>{s}</option>
-            ))}
+            <option value="C">♣</option>
+            <option value="D">♦</option>
+            <option value="H">♥</option>
+            <option value="S">♠</option>
+            <option value="N">NT</option>
           </select>
         </label>
         <label>
-          <span className={label}>Among (bid_longest)</span>
+          <span className={label}>Among (bid my longest)</span>
           <input
             name={`${p}:actionAmong`}
             defaultValue={action?.type === "bid_longest" ? action.among.join(",") : ""}
@@ -236,10 +334,10 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
             className={input}
           />
         </label>
-      </div>
+      </Band>
 
-      <details className="mt-2" open={Boolean(c.overflow)}>
-        <summary className="text-xs text-neutral-500">
+      <details className="border-t border-neutral-200 px-3 py-2" open={Boolean(c.overflow)}>
+        <summary className="cursor-pointer text-xs text-neutral-500">
           Extra conditions (JSON){c.overflow ? " — this rule uses conditions beyond the typed fields" : ""}
         </summary>
         <textarea
@@ -249,12 +347,6 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
           className="mt-1 w-full rounded border border-neutral-300 p-2 font-mono text-xs"
         />
       </details>
-
-      {rule && (
-        <label className="mt-2 block text-xs text-neutral-500">
-          <input type="checkbox" name={`${p}:remove`} className="mr-1" /> remove this rule
-        </label>
-      )}
     </fieldset>
   );
 }
@@ -273,6 +365,8 @@ export function ItemEditor({
   const [knowledgeType, setKnowledgeType] = useState<KnowledgeType>(
     item?.knowledgeType ?? "agreement",
   );
+  // New items start with one blank rule card; more arrive via "Add a rule".
+  const [extraRules, setExtraRules] = useState(item ? 0 : 1);
   const needsRules = ["bidding_rule", "convention", "agreement", "exception"].includes(knowledgeType);
 
   return (
@@ -338,11 +432,25 @@ export function ItemEditor({
 
       {needsRules && (
         <div className="space-y-3">
-          <input type="hidden" name="ruleCount" value={auctionSpecs.length + 1} />
+          <p className="text-xs text-neutral-500">
+            Each rule is one sentence: <b>when</b> the auction looks like this, <b>and</b> my
+            hand looks like that, <b>then</b> make this call. Blank parts don&apos;t constrain
+            anything.
+          </p>
+          <input type="hidden" name="ruleCount" value={auctionSpecs.length + extraRules} />
           {auctionSpecs.map((rule, i) => (
             <RuleRow key={rule.key} rule={rule} index={i} />
           ))}
-          <RuleRow rule={null} index={auctionSpecs.length} />
+          {Array.from({ length: extraRules }, (_, j) => (
+            <RuleRow key={`new${j}`} rule={null} index={auctionSpecs.length + j} />
+          ))}
+          <button
+            type="button"
+            onClick={() => setExtraRules((n) => n + 1)}
+            className="rounded border border-dashed border-neutral-300 px-3 py-1.5 text-sm text-neutral-600 hover:border-emerald-500 hover:text-emerald-800"
+          >
+            + Add a rule
+          </button>
         </div>
       )}
 
