@@ -35,9 +35,38 @@ export interface ResolvedPlatformAccess {
   programId: string;
   programName: string;
   level: AreaGrantLevel;
+  /** Exact pre-built platform role when the grant named one (picker). */
+  platformRole: string | null;
   /** The custom role's name when the grant came from one (null for admins). */
   roleName: string | null;
 }
+
+// ── Pre-built Bridge roles (§21 contract vocabulary) ────────────────────────
+// A Nexus role may grant the bridge area one of these EXACT platform roles
+// (the role builder's picker) instead of a graded level. Each maps onto a
+// grant level for the permission strings Bridge derives from accessLevel.
+export const BRIDGE_PREBUILT_ROLES = [
+  "bridge_program_admin",
+  "bridge_org_admin",
+  "bridge_club_admin",
+  "bridge_coach",
+  "bridge_reviewer",
+  "bridge_fellow",
+  "bridge_learner",
+  "bridge_guest",
+] as const;
+export type BridgePrebuiltRole = (typeof BRIDGE_PREBUILT_ROLES)[number];
+
+const BRIDGE_ROLE_LEVEL: Record<BridgePrebuiltRole, AreaGrantLevel> = {
+  bridge_program_admin: "admin",
+  bridge_org_admin: "admin",
+  bridge_club_admin: "admin",
+  bridge_coach: "edit",
+  bridge_fellow: "edit",
+  bridge_reviewer: "comment",
+  bridge_learner: "view",
+  bridge_guest: "view",
+};
 
 // ── Area → platform-role mapping (the one translation table) ────────────────
 
@@ -121,8 +150,9 @@ export async function resolvePlatformAccess(
       orgId: program.org_id as string,
       programId: pid,
       programName: (program.name as string) ?? "",
-      level,
-      roleName: level === "admin" ? null : await _roleName(user, pid),
+      level: level.level,
+      platformRole: level.platformRole ?? null,
+      roleName: level.level === "admin" && !level.platformRole ? null : await _roleName(user, pid),
     };
   }
 
@@ -137,12 +167,13 @@ function _orgMembership(user: PlatformUser, orgId: string) {
   return user.memberships.find((m) => m.org_id === orgId) ?? null;
 }
 
-/** The caller's grant level in one program: admin membership, else custom role. */
+/** The caller's grant in one program: admin membership, else custom role. A
+ * custom role may name an exact pre-built platform role (platformRole). */
 async function _grantLevel(
   user: PlatformUser,
   program: Row,
   area: ProgramFeatureKey,
-): Promise<AreaGrantLevel | null> {
+): Promise<{ level: AreaGrantLevel; platformRole?: BridgePrebuiltRole } | null> {
   const orgId = program.org_id as string;
   const pid = program.id as string;
   // Org owner/administrator (org-level, program_id null) or this program's
@@ -153,17 +184,21 @@ async function _grantLevel(
       ["owner", "administrator"].includes(m.role) &&
       (!m.program_id || m.program_id === pid),
   );
-  if (isAdmin) return "admin";
+  if (isAdmin) return { level: "admin" };
 
   // Plain member: the custom role's area grant (Team & Roles). Role
   // assignments live in the DB layer only (501-free: absent in demo mode).
   if (!dbEnabled() || !user.email) return null;
   const role = await graph.getProgramRoleForEmail(pid, user.email).catch(() => null);
   const level = role ? ((role.perms as Row)?.[area] as string | undefined) : undefined;
-  // Platform areas (learning/bridge) are granted as a single "administrator"
-  // toggle in the role builder — full access to that platform.
-  if (level === "administrator") return "admin";
-  return level === "view" || level === "comment" || level === "edit" ? level : null;
+  // An exact pre-built platform role from the picker (bridge area).
+  if (level && (BRIDGE_PREBUILT_ROLES as readonly string[]).includes(level)) {
+    const r = level as BridgePrebuiltRole;
+    return { level: BRIDGE_ROLE_LEVEL[r], platformRole: r };
+  }
+  // Platform areas granted as a single "administrator" toggle — full access.
+  if (level === "administrator") return { level: "admin" };
+  return level === "view" || level === "comment" || level === "edit" ? { level } : null;
 }
 
 async function _roleName(user: PlatformUser, programId: string): Promise<string | null> {

@@ -508,7 +508,9 @@ platformRouter.get("/bridge/context", async (c) => {
     laicOrgId: access.orgId,
     programId: "bridge_program",
     appId: await platformAppSlug(access.programId, "bridge-platform", "bridge_ai_coach"),
-    roles: mapped.roles,
+    // A pre-built role picked in the Nexus role builder is authoritative;
+    // graded grants fall back to the level→role map.
+    roles: access.platformRole ? [access.platformRole] : mapped.roles,
     permissions: [`bridge:${access.level}`],
     accessLevel: mapped.accessLevel,
     displayName: await _platformDisplayName(access.profileId, user),

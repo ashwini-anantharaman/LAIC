@@ -263,11 +263,13 @@ export async function provisionOrganization(
 }
 
 // ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
-// Platform areas (learning, bridge) grant a single "administrator" level; the
-// other areas keep the graded view/edit/comment levels.
+// Learning grants a single "administrator" level; bridge grants one of the
+// pre-built Bridge roles (bridge_*); other areas keep view/edit/comment.
 export type AccessLevel = "view" | "edit" | "comment" | "administrator";
 export type RoleArea = "learning" | "bridge" | "appbuilder" | "community" | "teams" | "partners";
-export type RolePerms = Partial<Record<RoleArea, AccessLevel>>;
+/** A grant value: a graded level, or an exact pre-built platform role key. */
+export type PermValue = AccessLevel | (string & {});
+export type RolePerms = Partial<Record<RoleArea, PermValue>>;
 
 export interface ProgramRole {
   id: string;

@@ -41,23 +41,26 @@ import {
   type RolePerms,
 } from "@/services/api";
 import type { Invitation, Program, ProgramFeatureKey } from "@/types/platform";
-import { DEFAULT_PROGRAM_FEATURES, PROGRAM_FEATURES } from "@/types/platform";
+import { BRIDGE_ROLES, DEFAULT_PROGRAM_FEATURES, PROGRAM_FEATURES } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Section, Spinner } from "@/nexus/ui/kit";
 import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useSession } from "@/nexus/session";
 
 // Role areas mirror the program's configurable features 1:1 (same keys).
-// Platform areas (learning, bridge) grant a single "administrator" level via
-// an on/off toggle; the graded areas keep view/edit/comment.
-const PLATFORM_AREAS = new Set<RoleArea>(["learning", "bridge"]);
-const AREAS: { key: RoleArea; label: string; platform?: boolean }[] = PROGRAM_FEATURES.map((f) => ({
-  key: f.key as RoleArea,
-  label: f.label,
-  platform: PLATFORM_AREAS.has(f.key as RoleArea),
-}));
+// Learning grants a single "administrator" toggle; Bridge picks one of the
+// pre-built Bridge roles; the graded areas keep view/edit/comment.
+const AREAS: { key: RoleArea; label: string; platform?: boolean; picker?: boolean }[] =
+  PROGRAM_FEATURES.map((f) => ({
+    key: f.key as RoleArea,
+    label: f.label,
+    platform: f.key === "learning" || f.key === "bridge",
+    picker: f.key === "bridge",
+  }));
 const LEVELS: AccessLevel[] = ["view", "edit", "comment"];
 const areaLabel = (k: string) => AREAS.find((a) => a.key === k)?.label ?? k;
+// Grant value → human label ("bridge_coach" → "Coach"; levels pass through).
+const permLabel = (v: string) => BRIDGE_ROLES.find((r) => r.key === v)?.label.toLowerCase() ?? v;
 
 export function ProgramTeam() {
   const { orgId = "", programId = "" } = useParams();
@@ -178,7 +181,7 @@ export function ProgramTeam() {
                     {granted.length ? (
                       granted.map((a) => (
                         <Pill key={a} tone="neutral">
-                          {areaLabel(a)} · {r.perms[a as RoleArea]}
+                          {areaLabel(a)} · {permLabel(String(r.perms[a as RoleArea]))}
                         </Pill>
                       ))
                     ) : (
@@ -474,7 +477,12 @@ function RoleBuilder({
   onSaved: () => void;
 }) {
   const [name, setName] = useState(role?.name ?? "");
-  const [perms, setPerms] = useState<RolePerms>(role?.perms ?? {});
+  const [perms, setPerms] = useState<RolePerms>(() => {
+    const initial = { ...(role?.perms ?? {}) };
+    // Legacy bridge grants stored "administrator" before the picker existed.
+    if (initial.bridge === "administrator") initial.bridge = "bridge_program_admin";
+    return initial;
+  });
   const [busy, setBusy] = useState(false);
 
   // Only areas the program has enabled can be granted (defaults to all-on for
@@ -483,10 +491,10 @@ function RoleBuilder({
   const availableAreas = AREAS.filter((a) => enabled[a.key as ProgramFeatureKey]);
 
   function toggle(area: RoleArea, on: boolean) {
-    const isPlatform = AREAS.find((a) => a.key === area)?.platform;
+    const spec = AREAS.find((a) => a.key === area);
     setPerms((p) => {
       const next = { ...p };
-      if (on) next[area] = isPlatform ? "administrator" : next[area] ?? "view";
+      if (on) next[area] = spec?.picker ? "bridge_learner" : spec?.platform ? "administrator" : next[area] ?? "view";
       else delete next[area];
       return next;
     });
@@ -542,7 +550,27 @@ function RoleBuilder({
                 <div key={a.key} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2">
                   <Switch checked={on} onCheckedChange={(v) => toggle(a.key, v)} />
                   <span className="flex-1 text-sm">{a.label}</span>
-                  {a.platform ? (
+                  {a.picker ? (
+                    <Select
+                      value={String(perms[a.key] ?? "bridge_learner")}
+                      onValueChange={(v) => setLevel(a.key, v as AccessLevel)}
+                      disabled={!on}
+                    >
+                      <SelectTrigger className="w-44">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {BRIDGE_ROLES.map((r) => (
+                          <SelectItem key={r.key} value={r.key}>
+                            <span className="flex flex-col items-start">
+                              <span>{r.label}</span>
+                              <span className="text-[11px] text-muted-foreground">{r.hint}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : a.platform ? (
                     <span className={`text-xs font-medium ${on ? "text-foreground" : "text-muted-foreground"}`}>
                       Administrator
                     </span>

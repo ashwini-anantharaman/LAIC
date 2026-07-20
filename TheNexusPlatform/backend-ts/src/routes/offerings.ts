@@ -14,6 +14,7 @@ import * as db from "../platformDb";
 import { dbEnabled } from "../db/client";
 import * as graph from "../db/orgGraphRepo";
 import { isOfferingAdmin } from "../permissions";
+import { BRIDGE_PREBUILT_ROLES } from "../platformAccess";
 import {
   adminAddRegistrationSchema,
   appCreateSchema,
@@ -566,10 +567,12 @@ offeringsRouter.post("/offerings/:offering_id/registrations/bulk-import", async 
 });
 
 // ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
-// Platform areas (learning, bridge) grant "administrator" as a single toggle;
-// the other areas keep the graded view/edit/comment levels.
+// Platform areas: learning grants "administrator" as a single toggle; bridge
+// grants one of the pre-built Bridge roles (the picker). Other areas keep the
+// graded view/edit/comment levels.
 const _ACCESS_LEVEL = z.enum(["view", "edit", "comment", "administrator"]);
-const _programRolePerms = z.record(z.string(), _ACCESS_LEVEL);
+const _BRIDGE_ROLE = z.enum(BRIDGE_PREBUILT_ROLES);
+const _programRolePerms = z.record(z.string(), z.union([_ACCESS_LEVEL, _BRIDGE_ROLE]));
 const programRoleCreateSchema = z.object({ name: z.string().min(1), perms: _programRolePerms.default({}) });
 const programRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _programRolePerms.optional() });
 
