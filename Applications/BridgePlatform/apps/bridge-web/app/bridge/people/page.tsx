@@ -8,7 +8,7 @@
 import { hasAnyRole, roleLabel } from "@bridge/nexus-client";
 import type { BridgeRole } from "@laic/learner-contracts";
 import { redirect } from "next/navigation";
-import { setBridgeRoleAction } from "./actions";
+import { inviteBridgePersonAction, setBridgeRoleAction } from "./actions";
 import { getBridgeContext, nexusMode } from "@/lib/nexus";
 import { listBridgePeople, nexusProgramId } from "@/lib/nexusPeople";
 
@@ -17,6 +17,8 @@ const MANAGER_ROLES: readonly BridgeRole[] = [
   "bridge_org_admin",
   "bridge_club_admin",
 ];
+
+const INVITER_ROLES: readonly BridgeRole[] = ["bridge_program_admin", "bridge_org_admin"];
 
 const ASSIGNABLE_ROLES: readonly BridgeRole[] = [
   "bridge_org_admin",
@@ -28,10 +30,16 @@ const ASSIGNABLE_ROLES: readonly BridgeRole[] = [
   "bridge_guest",
 ];
 
-export default async function PeoplePage() {
+export default async function PeoplePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ invited?: string; who?: string }>;
+}) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   if (!hasAnyRole(context, MANAGER_ROLES)) redirect("/bridge/home");
+  const canInvite = hasAnyRole(context, INVITER_ROLES);
+  const { invited, who } = await searchParams;
 
   const programId = nexusProgramId(context);
 
@@ -60,6 +68,72 @@ export default async function PeoplePage() {
           person signs in with the same access from their organization&apos;s portal.
         </p>
       </header>
+
+      {invited ? (
+        <section className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-medium text-emerald-900">
+            {who ?? "They"} — invited. Share this activation link:
+          </p>
+          <code className="block break-all rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs text-neutral-700">
+            {invited}
+          </code>
+          <p className="text-xs text-emerald-800">
+            They set their password there, then sign in from the organization&apos;s
+            portal — their Bridge role is already waiting.
+          </p>
+        </section>
+      ) : null}
+
+      {canInvite ? (
+        <section className="rounded-lg border border-neutral-200 p-4">
+          <h2 className="mb-2 font-medium">Invite a person</h2>
+          <p className="mb-3 text-xs text-neutral-500">
+            Creates a normal Nexus program invitation — they activate at the org
+            portal. Pick a Bridge role now and it&apos;s applied the moment they join.
+          </p>
+          <form action={inviteBridgePersonAction} className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">
+              Name
+              <input
+                name="displayName"
+                placeholder="Jordan Lee"
+                className="rounded-md border border-neutral-200 px-2 py-1.5 text-sm text-neutral-900"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">
+              Email
+              <input
+                name="email"
+                type="email"
+                required
+                placeholder="jordan@example.org"
+                className="rounded-md border border-neutral-200 px-2 py-1.5 text-sm text-neutral-900"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">
+              Bridge role
+              <select
+                name="role"
+                defaultValue="bridge_learner"
+                className="rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm"
+              >
+                <option value="none">None yet</option>
+                {ASSIGNABLE_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {roleLabel(r)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:border-emerald-400 hover:text-neutral-900"
+            >
+              Invite
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       <section className="overflow-hidden rounded-lg border border-neutral-200">
         <table className="w-full text-sm">

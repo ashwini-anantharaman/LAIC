@@ -58,3 +58,31 @@ export async function setBridgeRole(
     throw new Error(err?.detail ?? `Nexus role update failed: ${res.status}`);
   }
 }
+
+export interface BridgeInviteResult {
+  token: string;
+  redeem_url: string;
+}
+
+/**
+ * Invite a person into the program (a normal Nexus invitation — they activate
+ * at the org portal) and optionally pre-assign their Bridge role, which is
+ * email-keyed and therefore waits for them. Authorized by the caller's own
+ * Nexus session (program-admin level).
+ */
+export async function inviteBridgePerson(
+  programId: string,
+  opts: { email: string; displayName?: string; role?: string | null },
+): Promise<BridgeInviteResult> {
+  const res = await nexusFetch(`/api/programs/${encodeURIComponent(programId)}/members`, {
+    method: "POST",
+    body: JSON.stringify({ email: opts.email, display_name: opts.displayName || undefined }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(err?.detail ?? `Nexus invitation failed: ${res.status}`);
+  }
+  const inv = (await res.json()) as BridgeInviteResult;
+  if (opts.role) await setBridgeRole(programId, opts.email, opts.role);
+  return inv;
+}
