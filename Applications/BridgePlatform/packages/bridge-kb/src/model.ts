@@ -416,6 +416,25 @@ export interface KbSandbox {
 // Suggestions (spec decision 22)
 // ---------------------------------------------------------------------------
 
+/**
+ * Board context frozen AT FLAG TIME. Deliberately denormalized (plain
+ * strings, render-ready): the session it came from may be undone past this
+ * decision, re-pinned, or continued — the flag must keep showing the exact
+ * position the fellow saw.
+ */
+export interface SuggestionBoard {
+  name: string;
+  dealer: string;
+  vul: string;
+  /** seat -> "♠KQ4 ♥A87 ♦T92 ♣QJ53" (the initial deal). */
+  hands: Record<string, string>;
+  /** Auction up to (not including) the flagged decision. */
+  calls: { seat: string; label: string }[];
+  /** Cards played up to (not including) the flagged decision. */
+  plays: { seat: string; label: string }[];
+  flagged: { seat: string; label: string; reason: string };
+}
+
 export interface KbSuggestion {
   suggestionId: string;
   kbId: string;
@@ -423,6 +442,8 @@ export interface KbSuggestion {
   /** Set when flagged from the table: the session + decision it concerns. */
   sessionId?: string;
   decisionSeq?: number;
+  /** Frozen position at flag time (see SuggestionBoard). */
+  board?: SuggestionBoard;
   text: string;
   status: "open" | "resolved";
   createdBy: string;

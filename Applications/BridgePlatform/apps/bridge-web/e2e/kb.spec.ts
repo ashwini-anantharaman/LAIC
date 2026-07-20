@@ -256,7 +256,10 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
 
   await page.goto(`${kbUrl}/suggestions`);
   await expect(page.getByText("Passing here looks wrong to me.")).toBeVisible();
-  await expect(page.getByText(/session bs_/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "open the session →" })).toBeVisible();
+  // The flagged position travels with the flag: deal, auction, decision.
+  await expect(page.getByText(/dealer N/)).toBeVisible();
+  await expect(page.getByText(/Flagged: N chose/)).toBeVisible();
 });
 
 test("Play lands straight on a board, no selection needed", async ({ page, context }) => {

@@ -21,6 +21,51 @@ export default async function SuggestionsPage({
   const row = (s: (typeof suggestions)[number]) => (
     <li key={s.suggestionId} className="rounded-lg border border-neutral-200 bg-[var(--card)] px-4 py-3">
       <p className="text-sm">{s.text}</p>
+      {s.board && (
+        <details className="mt-2 rounded border border-neutral-200 bg-neutral-50/50 px-3 py-2" open={s.status === "open"}>
+          <summary className="cursor-pointer text-xs text-neutral-600">
+            <span className="font-medium">{s.board.name}</span> · dealer {s.board.dealer} · vul{" "}
+            {s.board.vul} — flagged: <span className="font-medium">{s.board.flagged.seat}</span>{" "}
+            <span className="font-mono">{s.board.flagged.label}</span>
+          </summary>
+          <div className="mt-2 grid grid-cols-3 gap-1 text-center font-mono text-[11px] leading-relaxed">
+            <span />
+            <span className="whitespace-nowrap"><b className="font-sans text-neutral-400">N </b>{s.board.hands.N}</span>
+            <span />
+            <span className="whitespace-nowrap text-left"><b className="font-sans text-neutral-400">W </b>{s.board.hands.W}</span>
+            <span />
+            <span className="whitespace-nowrap text-right"><b className="font-sans text-neutral-400">E </b>{s.board.hands.E}</span>
+            <span />
+            <span className="whitespace-nowrap"><b className="font-sans text-neutral-400">S </b>{s.board.hands.S}</span>
+            <span />
+          </div>
+          {s.board.calls.length > 0 && (
+            <p className="mt-2 text-xs text-neutral-600">
+              <span className="text-neutral-400">Auction: </span>
+              {s.board.calls.map((c, i) => (
+                <span key={i} className="mr-1.5 whitespace-nowrap font-mono">
+                  <span className="text-neutral-400">{c.seat}</span> {c.label}
+                </span>
+              ))}
+            </p>
+          )}
+          {s.board.plays.length > 0 && (
+            <p className="mt-1 text-xs text-neutral-600">
+              <span className="text-neutral-400">Play: </span>
+              {s.board.plays.map((c, i) => (
+                <span key={i} className="mr-1.5 whitespace-nowrap font-mono">
+                  <span className="text-neutral-400">{c.seat}</span> {c.label}
+                </span>
+              ))}
+            </p>
+          )}
+          <p className="mt-1 text-xs text-red-700">
+            Flagged: {s.board.flagged.seat} chose{" "}
+            <span className="font-mono font-medium">{s.board.flagged.label}</span>
+            {s.board.flagged.reason && <> — {s.board.flagged.reason}</>}
+          </p>
+        </details>
+      )}
       <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-neutral-500">
         <span>{s.createdBy}</span>
         <span>{s.createdAt.slice(0, 16).replace("T", " ")}</span>
@@ -31,7 +76,9 @@ export default async function SuggestionsPage({
         )}
         {s.sessionId && (
           <span>
-            session {s.sessionId}
+            <Link href={`/bridge/table/${s.sessionId}`} className="text-emerald-800 hover:underline">
+              open the session →
+            </Link>
             {s.decisionSeq !== undefined && <> · decision #{s.decisionSeq}</>}
           </span>
         )}
