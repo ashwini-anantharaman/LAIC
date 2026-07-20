@@ -70,16 +70,30 @@ export async function createItemAction(formData: FormData): Promise<void> {
   await ensureSeeds();
   const kbId = String(formData.get("kbId"));
   const common = parseCommon(formData);
+  // The write-up-from-a-passage flow carries a real citation; hand-authored
+  // items without one cite the Claude source until a fellow attaches passages.
+  const citeSourceId = String(formData.get("cite:sourceId") ?? "").trim();
+  const citePassageId = String(formData.get("cite:passageId") ?? "").trim();
+  const sourceReferences = citeSourceId
+    ? [
+        {
+          sourceId: citeSourceId,
+          ...(citePassageId && { passageId: citePassageId }),
+          anchor: String(formData.get("cite:anchor") ?? "").trim() || common.title,
+        },
+      ]
+    : [{ sourceId: "src_claude", anchor: "fellow-authored in the workspace" }];
   const item = await kbService().createItem(kbId, {
     ...common,
     payload: parsePayload(formData, common.knowledgeType),
     settings: parseSettings(formData),
-    sourceReferences: [
-      { sourceId: "src_claude", anchor: "fellow-authored in the workspace" },
-    ],
+    sourceReferences,
     createdBy: context.nexusUserId,
   });
-  await audit(context, "kb.item.create", "kb_item", item.itemId, { kbId });
+  await audit(context, "kb.item.create", "kb_item", item.itemId, {
+    kbId,
+    citedSource: citeSourceId || undefined,
+  });
   redirect(kbPath(kbId, `/items/${item.itemId}`));
 }
 

@@ -753,10 +753,15 @@ export function ItemEditor({
   kbId,
   item,
   action,
+  initialTitle,
+  citation,
 }: Readonly<{
   kbId: string;
   item: KnowledgeItem | null;
   action: (formData: FormData) => Promise<void>;
+  /** Prefill for the write-up-from-a-passage flow (failed extraction). */
+  initialTitle?: string;
+  citation?: { sourceId: string; passageId: string; anchor: string };
 }>) {
   const payload: ItemPayload = item?.payload ?? { kind: "auction_rules", rules: [] };
   const auctionSpecs = payload.kind === "auction_rules" ? payload.rules : [];
@@ -771,11 +776,18 @@ export function ItemEditor({
     <form action={action} className="space-y-4">
       <input type="hidden" name="kbId" value={kbId} />
       {item && <input type="hidden" name="itemId" value={item.itemId} />}
+      {citation && (
+        <>
+          <input type="hidden" name="cite:sourceId" value={citation.sourceId} />
+          <input type="hidden" name="cite:passageId" value={citation.passageId} />
+          <input type="hidden" name="cite:anchor" value={citation.anchor} />
+        </>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm sm:col-span-2">
           <span className={label}>Title</span>
-          <input name="title" required defaultValue={item?.title ?? ""} className={input} />
+          <input name="title" required defaultValue={item?.title ?? initialTitle ?? ""} className={input} />
         </label>
         <label className="text-sm sm:col-span-2">
           <span className={label}>What a player reads (the agreement, in plain words)</span>
