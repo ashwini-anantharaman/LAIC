@@ -31,7 +31,14 @@ export function getDb(): PostgresJsDatabase<typeof schema> {
   if (_db) return _db;
   const url = databaseUrl();
   if (!url) throw new Error("DATABASE_URL is not configured");
-  _sql = postgres(url, { max: 10 });
+  // Serverless behind a transaction pooler (Supabase :6543) must keep one
+  // connection per instance and disable prepared statements — pgbouncer's
+  // transaction mode doesn't carry prepared-statement state across pooled
+  // connections. Local/direct Postgres keeps the larger prepared-statement
+  // pool. Set DB_POOL_MAX=1 and DB_PREPARE=false on the serverless deploy.
+  const max = Number(process.env.DB_POOL_MAX ?? 10);
+  const prepare = process.env.DB_PREPARE !== "false";
+  _sql = postgres(url, { max, prepare });
   _db = drizzle(_sql, { schema });
   return _db;
 }
