@@ -5,7 +5,7 @@
  * from Nexus already holding bridge_program_admin; everyone else is assigned
  * one of the pre-built roles below.
  */
-import { hasAnyRole, roleLabel } from "@bridge/nexus-client";
+import { hasAnyRole } from "@bridge/nexus-client";
 import type { BridgeRole } from "@laic/learner-contracts";
 import { redirect } from "next/navigation";
 import { inviteBridgePersonAction, setBridgeRoleAction } from "./actions";
@@ -20,14 +20,13 @@ const MANAGER_ROLES: readonly BridgeRole[] = [
 
 const INVITER_ROLES: readonly BridgeRole[] = ["bridge_program_admin", "bridge_org_admin"];
 
-const ASSIGNABLE_ROLES: readonly BridgeRole[] = [
-  "bridge_org_admin",
-  "bridge_club_admin",
-  "bridge_coach",
-  "bridge_reviewer",
-  "bridge_fellow",
-  "bridge_learner",
-  "bridge_guest",
+// The simplified assignable set. Admin is NOT here — it comes from Nexus
+// membership and is shown read-only. "Reviewer & Fellow" is one choice
+// (stored as bridge_reviewer); the various admin roles collapse to "Admin".
+const ASSIGNABLE_ROLES: { key: string; label: string }[] = [
+  { key: "bridge_coach", label: "Coach" },
+  { key: "bridge_reviewer", label: "Reviewer & Fellow" },
+  { key: "bridge_learner", label: "Learner" },
 ];
 
 export default async function PeoplePage({
@@ -119,8 +118,8 @@ export default async function PeoplePage({
               >
                 <option value="none">None yet</option>
                 {ASSIGNABLE_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {roleLabel(r)}
+                  <option key={r.key} value={r.key}>
+                    {r.label}
                   </option>
                 ))}
               </select>
@@ -154,22 +153,24 @@ export default async function PeoplePage({
                 <td className="px-4 py-2.5 text-neutral-600">{p.status}</td>
                 <td className="px-4 py-2.5">
                   {p.is_admin ? (
+                    // Admin comes from Nexus membership (§3.5) — read-only here,
+                    // and never editable (including your own row).
                     <span className="text-neutral-700">
-                      {roleLabel("bridge_program_admin")}{" "}
-                      <span className="text-xs text-neutral-400">(via Nexus admin)</span>
+                      Admin
+                      <span className="block text-xs text-neutral-400">Program-level access</span>
                     </span>
                   ) : (
                     <form action={setBridgeRoleAction} className="flex items-center gap-2">
                       <input type="hidden" name="email" value={p.email ?? ""} />
                       <select
                         name="role"
-                        defaultValue={p.bridge_role ?? "none"}
+                        defaultValue={ASSIGNABLE_ROLES.some((r) => r.key === p.bridge_role) ? (p.bridge_role as string) : "none"}
                         className="rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm"
                       >
-                        <option value="none">No Bridge role</option>
+                        <option value="none">No role</option>
                         {ASSIGNABLE_ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {roleLabel(r)}
+                          <option key={r.key} value={r.key}>
+                            {r.label}
                           </option>
                         ))}
                       </select>

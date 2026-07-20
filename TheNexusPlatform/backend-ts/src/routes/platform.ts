@@ -46,7 +46,6 @@ import {
   updateMemberSchema,
 } from "../schemas";
 import {
-  BRIDGE_PREBUILT_ROLES,
   BRIDGE_ROLE_MAP,
   LEARNING_ROLE_MAP,
   platformAppSlug,
@@ -526,10 +525,14 @@ platformRouter.get("/bridge/context", async (c) => {
 // Bridge's admin surface manages who holds which PRE-BUILT Bridge role, but
 // the data lives here: Nexus stays the single access authority, so org-portal
 // logins and test-as resolve the same answer the Bridge UI configured.
+// Assignable from Bridge's People & Roles: the simplified non-admin set.
+// Admin is never assigned here — it comes from Nexus membership (§3.5).
+// "Reviewer & Fellow" is one choice, stored as bridge_reviewer.
+const _BRIDGE_ASSIGNABLE = ["bridge_coach", "bridge_reviewer", "bridge_learner"] as const;
 const _BRIDGE_ROLE_BODY = z.object({
   program_id: z.string().uuid(),
   email: z.string().email(),
-  role: z.enum(BRIDGE_PREBUILT_ROLES).nullable(),
+  role: z.enum(_BRIDGE_ASSIGNABLE).nullable(),
 });
 
 async function _requireBridgeAdmin(user: PlatformUser, programId: string) {
