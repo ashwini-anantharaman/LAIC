@@ -1,4 +1,13 @@
-import type { WizardSource, SourceCollection } from './types';
+import type {
+  WizardSource,
+  SourceCollection,
+  ClusteredKnowledgeBase,
+  TutorialTemplate,
+  TutorialSectionPlan,
+  AssistantTurnRequest,
+  AssistantMessage,
+  ProposedEdit,
+} from './types';
 
 /* ────────────────────────────────────────────────────────────────
  * Typed API layer for the Course Wizard workflow.
@@ -254,6 +263,15 @@ export interface TutorialConfig {
   obj?: string; topic?: string; aud?: string; lvl?: string;
   secs?: number; prog?: string; dpth?: string; end?: string;
   chks?: number; excpts?: number; wex?: boolean;
+  templateId?: string;
+  /** Pass mark across all checks combined, e.g. "70%". */
+  pass?: string;
+  /** Whether progressive hints are generated / offered. */
+  hintsOn?: boolean;
+  /** Number of progressive hints per question. */
+  hintN?: number;
+  /** Allow AI to add helpful extras beyond the marked-up source. */
+  aiExtra?: boolean;
 }
 
 export interface TutorialExtract {
@@ -268,6 +286,8 @@ export interface GeneratedPart {
   type: 'rich-text' | 'concept-card' | 'question' | 'media';
   label: string;
   body?: string;
+  heading?: string;
+  subheads?: string[];
   concept?: string;
   plain?: string;
   misc?: string;
@@ -355,18 +375,40 @@ export function editFlashcard(
 }
 
 /**
+ * POST /api/tutorials/extract-knowledge — classify, dedupe, and cluster
+ * markup into a knowledge base for template-shaped generation.
+ */
+export async function buildTutorialKnowledgeBase(payload: {
+  highlights?: { text: string; tag: string; from?: string; page?: number }[];
+  extracts?: TutorialExtract[];
+  shapeIntent?: string;
+  objective?: string;
+  topic?: string;
+  refineWithLlm?: boolean;
+}): Promise<{ knowledgeBase: ClusteredKnowledgeBase }> {
+  return apiFetch('/api/tutorials/extract-knowledge', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+/**
  * POST /api/tutorials/generate — streams the generated tutorial as typed
- * SSE events (`progress` | `part` | `done` | `error`). `prompt` grounds
- * generation when there is no marked-up source (the "no source" path).
+ * SSE events (`progress` | `part` | `done` | `error`). Prefer template +
+ * sectionPlans + knowledgeBase; flat extracts remain a legacy fallback.
  */
 export function generateTutorial(
   payload: {
     title: string;
     config: TutorialConfig;
-    extracts: TutorialExtract[];
+    extracts?: TutorialExtract[];
     prompt?: string;
     /** Author-supplied media for the model to place inline (ref + caption only). */
     media?: { ref: string; kind: 'image' | 'video'; caption?: string }[];
+    template?: TutorialTemplate | null;
+    knowledgeBase?: ClusteredKnowledgeBase | null;
+    sectionPlans?: TutorialSectionPlan[];
+    shapeIntent?: string;
   },
   signal?: AbortSignal,
 ): AsyncGenerator<TutorialGenEvent, void, unknown> {
@@ -546,6 +588,7 @@ export interface GeneratedQuizQuestion {
   sampleAnswer?: string;
   explanation?: string;
   hint?: string;
+  hints?: string[];
   cognitiveLevel?: string;
   difficulty?: string;
 }
@@ -645,4 +688,29 @@ export function askAboutObject(
     body: payload,
     signal,
   }).then((r) => r.reply);
+}
+
+/* ─── Course-dev Object Assistant ──────────────────────────────── */
+
+export type AssistantTurnEvent =
+  | { type: 'status'; message: string }
+  | { type: 'token'; text: string }
+  | { type: 'message'; message: AssistantMessage }
+  | { type: 'proposal'; proposal: ProposedEdit }
+  | { type: 'error'; code?: string; message: string }
+  | { type: 'done' };
+
+/**
+ * POST /api/assistant/turn — SSE: status | token | message | proposal | error | done.
+ * Grounded in AssistantContext; edits arrive only as proposals (never auto-applied).
+ */
+export function streamAssistantTurn(
+  payload: AssistantTurnRequest,
+  signal?: AbortSignal,
+): AsyncGenerator<AssistantTurnEvent, void, unknown> {
+  return apiStream<AssistantTurnEvent>('/api/assistant/turn', {
+    method: 'POST',
+    body: payload,
+    signal,
+  });
 }

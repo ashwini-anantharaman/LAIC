@@ -16,6 +16,8 @@ import { execFile } from 'node:child_process';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { orderTutorialParts } from '../src/lib/tutorialOrder.js';
+import { attachHintsToQuestionParts, ensureFourHints, resolveHintSettings } from '../src/lib/questionHints.js';
 
 const PYTHON = process.env.PYTHON || 'python3';
 
@@ -118,16 +120,122 @@ async function callAnthropic({ system, user, maxTokens = 4096 }) {
   return out;
 }
 
-/** Pull the first JSON value (array or object) out of a possibly fenced string. */
+/** Pull the first JSON value (array or object) out of a possibly fenced string.
+ *  Also recovers truncated LLM arrays by extracting complete top-level objects. */
 function extractJson(str) {
-  let s = str.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-  const firstArr = s.indexOf('['); const firstObj = s.indexOf('{');
+  let s = String(str || '').trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  // Drop leading prose before the first JSON bracket.
+  const firstArr = s.indexOf('[');
+  const firstObj = s.indexOf('{');
+  if (firstArr === -1 && firstObj === -1) {
+    throw new LlmError(502, 'llm_parse', 'Could not find JSON in the LLM response.');
+  }
   const start = firstArr === -1 ? firstObj : firstObj === -1 ? firstArr : Math.min(firstArr, firstObj);
-  const openChar = s[start];
-  const closeChar = openChar === '[' ? ']' : '}';
-  const end = s.lastIndexOf(closeChar);
-  if (start === -1 || end === -1 || end < start) throw new LlmError(502, 'llm_parse', 'Could not find JSON in the LLM response.');
-  return JSON.parse(s.slice(start, end + 1));
+  s = s.slice(start);
+
+  try {
+    return JSON.parse(s);
+  } catch {
+    /* fall through — try repairs */
+  }
+
+  // Trailing commas before } or ]
+  const noTrailingCommas = s.replace(/,\s*([}\]])/g, '$1');
+  try {
+    return JSON.parse(noTrailingCommas);
+  } catch {
+    /* continue */
+  }
+
+  // Truncated array: harvest every complete top-level {...} object.
+  if (s[0] === '[') {
+    const objs = extractCompleteObjects(s);
+    if (objs.length) return objs;
+  }
+
+  // Truncated single object — rarely useful, but try closing braces.
+  if (s[0] === '{') {
+    const closed = closeTruncatedJson(s);
+    try {
+      return JSON.parse(closed);
+    } catch {
+      /* continue */
+    }
+  }
+
+  throw new LlmError(
+    502,
+    'llm_parse',
+    'The model returned incomplete or invalid JSON (often from a long tutorial hitting the length limit). Try fewer sections/checks, or generate again.',
+  );
+}
+
+/** Walk text and return every complete top-level `{...}` object that parses. */
+function extractCompleteObjects(text) {
+  const out = [];
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    while (i < n && text[i] !== '{') i += 1;
+    if (i >= n) break;
+    const start = i;
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (; i < n; i += 1) {
+      const ch = text[i];
+      if (inStr) {
+        if (esc) { esc = false; continue; }
+        if (ch === '\\') { esc = true; continue; }
+        if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') { inStr = true; continue; }
+      if (ch === '{') depth += 1;
+      else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          const slice = text.slice(start, i + 1);
+          try {
+            out.push(JSON.parse(slice));
+          } catch {
+            try {
+              out.push(JSON.parse(slice.replace(/,\s*([}\]])/g, '$1')));
+            } catch { /* skip broken object */ }
+          }
+          i += 1;
+          break;
+        }
+      }
+    }
+    if (depth !== 0) break; // truncated mid-object — stop
+  }
+  return out;
+}
+
+function closeTruncatedJson(s) {
+  let inStr = false;
+  let esc = false;
+  const stack = [];
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') stack.push(ch === '{' ? '}' : ']');
+    else if (ch === '}' || ch === ']') stack.pop();
+  }
+  let out = s;
+  if (inStr) out += '"';
+  while (stack.length) out += stack.pop();
+  return out.replace(/,\s*([}\]])/g, '$1');
 }
 
 /* ─── Tutorial: YouTube transcript (via yt-dlp) ───────────────────── */
@@ -234,9 +342,242 @@ async function suggestHighlights(sentences, instruction) {
   return valid;
 }
 
+/* ─── Tutorial: structured extract (classify / dedupe / cluster) ─── */
+
+const UNIT_KINDS = ['Definition', 'Key point', 'Example', 'Quote', 'Fact', 'Procedure'];
+
+function classifyUnitKind(text) {
+  const t = String(text || '');
+  if (/^\s*["“'‘]/.test(t) || /\b(said|wrote|according to)\b/i.test(t)) return 'Quote';
+  // Examples before definitions — "for example … means" is still an example.
+  if (/\b(for example|e\.g\.|such as|worked example|suppose|imagine)\b/i.test(t)) return 'Example';
+  if (/\b(is defined as|means|refers to|is called|definition of|known as)\b/i.test(t)
+    || /^['"]?\w[\w\s-]{0,40}['"]?\s+is\s+/i.test(t)) return 'Definition';
+  if (/\b(first|then|next|finally|step\s*\d|one at a time|distribute|procedure|how to)\b/i.test(t)
+    || /\d+\.\s+\w/.test(t)) return 'Procedure';
+  if (/\b(\d+|always|never|must|points?|score|equals?|ace|king|queen)\b/i.test(t)
+    && t.split(/\s+/).length < 40) return 'Fact';
+  return 'Key point';
+}
+
+function normalizeTextKey(text) {
+  return String(text || '').toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '').trim();
+}
+
+function jaccard(a, b) {
+  const A = new Set(normalizeTextKey(a).split(' ').filter((w) => w.length > 2));
+  const B = new Set(normalizeTextKey(b).split(' ').filter((w) => w.length > 2));
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const w of A) if (B.has(w)) inter += 1;
+  return inter / (A.size + B.size - inter);
+}
+
+function dedupePassages(passages) {
+  const out = [];
+  for (const p of passages) {
+    const text = String(p.text || '').trim();
+    if (text.length < 8) continue;
+    const hit = out.find((o) => jaccard(o.text, text) >= 0.72 || normalizeTextKey(o.text) === normalizeTextKey(text));
+    if (hit) {
+      if (text.length > hit.text.length) hit.text = text;
+      hit.sourceHighlightIds = [...(hit.sourceHighlightIds || []), ...(p.sourceHighlightIds || [])];
+      continue;
+    }
+    out.push({ ...p, text });
+  }
+  return out;
+}
+
+function clusterNameFromText(text) {
+  const t = String(text || '');
+  const lower = t.toLowerCase();
+  if (/\b(deal|dealer|distribut|hand of 13|shuffle)\b/.test(lower)) return 'Dealing';
+  if (/\b(bid|auction|contract|notrump|no-trump|opening)\b/.test(lower)) return 'Bidding';
+  if (/\b(trick|lead|follow suit|trump|declarer|dummy|play)\b/.test(lower)) return 'Play of the hand';
+  if (/\b(score|scoring|points|vulnerable|overtrick|undertrick)\b/.test(lower)) return 'Scoring';
+  if (/\b(hcp|high-card|ace|king|queen|jack|honor)\b/.test(lower)) return 'Hand evaluation';
+  if (/\b(suit|spade|heart|diamond|club|rank)\b/.test(lower)) return 'Cards & suits';
+  // First meaningful noun-ish phrase
+  const m = t.match(/\b([A-Z][a-z]+(?:\s+[a-z]+){0,2})\b/);
+  if (m) return m[1];
+  const words = t.split(/\s+/).slice(0, 4).join(' ');
+  return words.length > 28 ? `${words.slice(0, 28)}…` : (words || 'Topic');
+}
+
+function buildClusteredKnowledgeBase({ highlights, extracts, shapeIntent, objective, topic }) {
+  const raw = [];
+  if (Array.isArray(highlights) && highlights.length) {
+    for (const h of highlights) {
+      if (h.tag !== 'Use' && h.tag !== 'Support') continue;
+      const text = h.comment ? `${h.text} — ${h.comment}` : h.text;
+      raw.push({
+        text,
+        from: h.page != null ? `p.${h.page}` : undefined,
+        fromHl: true,
+        sourceHighlightIds: [h.idx].filter((n) => n != null),
+      });
+    }
+  } else if (Array.isArray(extracts)) {
+    for (const e of extracts) {
+      raw.push({
+        text: e.text,
+        from: e.from,
+        fromHl: !!e.fromHl,
+        kind: e.kind,
+        sourceHighlightIds: e.sourceHighlightIds,
+      });
+    }
+  }
+
+  const rawHighlightCount = raw.length;
+  let merged = dedupePassages(raw);
+
+  // Shape intent: prefer defs/examples or keep short
+  const intent = String(shapeIntent || '').toLowerCase();
+  if (intent.includes('definition') || intent.includes('example')) {
+    merged = merged.filter((p) => {
+      const k = p.kind || classifyUnitKind(p.text);
+      if (intent.includes('definition') && intent.includes('example')) {
+        return k === 'Definition' || k === 'Example' || k === 'Key point' || k === 'Fact';
+      }
+      if (intent.includes('definition')) return k === 'Definition' || k === 'Key point';
+      if (intent.includes('example')) return k === 'Example' || k === 'Procedure' || k === 'Key point';
+      return true;
+    });
+  }
+  if (/\bshort\b/.test(intent)) {
+    merged = merged.map((p) => ({
+      ...p,
+      text: p.text.split(/(?<=[.!?])\s+/).slice(0, 2).join(' '),
+    }));
+  }
+
+  const units = merged.map((p, i) => ({
+    id: p.id || `u${i + 1}`,
+    kind: UNIT_KINDS.includes(p.kind) ? p.kind : classifyUnitKind(p.text),
+    text: p.text,
+    from: p.from,
+    fromHl: !!p.fromHl,
+    sourceHighlightIds: p.sourceHighlightIds || [],
+  }));
+
+  // Cluster by name heuristic
+  const byName = new Map();
+  for (const u of units) {
+    const name = clusterNameFromText(u.text);
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push(u);
+  }
+  // Merge tiny clusters into nearest larger by shared tokens
+  let clusters = [...byName.entries()].map(([name, list], i) => ({
+    id: `c${i + 1}`,
+    name,
+    unitIds: list.map((u) => u.id),
+  }));
+  if (clusters.length > 8) {
+    clusters = clusters
+      .sort((a, b) => b.unitIds.length - a.unitIds.length)
+      .slice(0, 8);
+  }
+  // Assign clusterId on units
+  const idToCluster = new Map();
+  for (const c of clusters) for (const uid of c.unitIds) idToCluster.set(uid, c.id);
+  // Remap units that fell out of trimmed clusters into largest
+  const fallback = clusters[0]?.id;
+  for (const u of units) {
+    u.clusterId = idToCluster.get(u.id) || fallback;
+    if (!idToCluster.has(u.id) && fallback) {
+      clusters[0].unitIds.push(u.id);
+    }
+  }
+
+  const gaps = [];
+  const blob = units.map((u) => u.text.toLowerCase()).join(' ');
+  const obj = `${objective || ''} ${topic || ''}`.toLowerCase();
+  const checkGap = (needle, label) => {
+    if (obj.includes(needle) && !blob.includes(needle)) {
+      gaps.push({
+        id: `gap-${needle}`,
+        message: `Your objective/topic mentions ${label}, but no marked-up material covers ${label}.`,
+        severity: 'warn',
+      });
+    }
+  };
+  checkGap('scor', 'scoring');
+  checkGap('bid', 'bidding');
+  checkGap('deal', 'dealing');
+  if (obj.trim() && units.length === 0) {
+    gaps.push({
+      id: 'gap-empty',
+      message: 'No content units yet — pull and cluster markup before generating.',
+      severity: 'error',
+    });
+  }
+
+  return {
+    units,
+    clusters,
+    rawHighlightCount,
+    mergedUnitCount: units.length,
+    shapeIntent: shapeIntent || undefined,
+    gaps,
+  };
+}
+
+async function refineClustersWithLlm(kb, { objective, topic, shapeIntent }) {
+  if (!ANTHROPIC_API_KEY || !kb.units.length) return kb;
+  const sample = kb.units.slice(0, 40).map((u, i) => `(${i}) [${u.kind}] ${u.text.slice(0, 220)}`).join('\n');
+  const system = [
+    'You organize tutorial source units into concept clusters.',
+    'Return ONLY JSON: {"clusters":[{"name":string,"unitIndices":number[]}]}',
+    'Every unit index 0..n-1 must appear in exactly one cluster. Prefer 3–6 clusters with clear topic names.',
+  ].join(' ');
+  const user = [
+    `Objective: ${objective || '(none)'}`,
+    `Topic: ${topic || '(none)'}`,
+    shapeIntent ? `Shape intent: ${shapeIntent}` : '',
+    '',
+    'Units:',
+    sample,
+    '',
+    'Return cluster JSON now.',
+  ].filter(Boolean).join('\n');
+  try {
+    const raw = await callAnthropic({ system, user, maxTokens: 2048 });
+    const parsed = extractJson(raw);
+    const arr = Array.isArray(parsed?.clusters) ? parsed.clusters : [];
+    if (!arr.length) return kb;
+    const clusters = [];
+    const claimed = new Set();
+    arr.forEach((c, i) => {
+      const idxs = (c.unitIndices || []).map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < kb.units.length);
+      const unitIds = [];
+      for (const n of idxs) {
+        if (claimed.has(n)) continue;
+        claimed.add(n);
+        unitIds.push(kb.units[n].id);
+      }
+      if (unitIds.length) clusters.push({ id: `c${i + 1}`, name: String(c.name || `Topic ${i + 1}`).slice(0, 48), unitIds });
+    });
+    // Orphans → Misc
+    const orphanIds = kb.units.filter((_, i) => !claimed.has(i)).map((u) => u.id);
+    if (orphanIds.length) clusters.push({ id: `c${clusters.length + 1}`, name: 'Other', unitIds: orphanIds });
+    if (!clusters.length) return kb;
+    const units = kb.units.map((u) => {
+      const cl = clusters.find((c) => c.unitIds.includes(u.id));
+      return { ...u, clusterId: cl?.id };
+    });
+    return { ...kb, units, clusters };
+  } catch {
+    return kb;
+  }
+}
+
 /* ─── Tutorial: generate ──────────────────────────────────────────── */
 
-function buildGeneratePrompt({ title, config, extracts, prompt, media }) {
+function buildGeneratePrompt(body) {
+  const { title, config, extracts, prompt, media, template, knowledgeBase, sectionPlans } = body || {};
   const c = config || {};
   const num = (v, d) => (typeof v === 'number' ? v : d);
   const secs = num(c.secs, 3);
@@ -244,61 +585,155 @@ function buildGeneratePrompt({ title, config, extracts, prompt, media }) {
   const excpts = num(c.excpts, 1);
   const wex = c.wex !== false;
   const end = c.end || 'Recap only';
-  const hasExtracts = Array.isArray(extracts) && extracts.length > 0;
   const authorPrompt = prompt || (config && config.prompt) || '';
+  const mediaList = Array.isArray(media) ? media.filter((m) => m && m.ref) : [];
+
+  // Template + cluster path (preferred)
+  if (template && Array.isArray(sectionPlans) && sectionPlans.length && knowledgeBase?.units?.length) {
+    const unitsById = new Map((knowledgeBase.units || []).map((u) => [u.id, u]));
+    const clusterLines = sectionPlans.map((sp) => {
+      const cluster = (knowledgeBase.clusters || []).find((x) => x.id === sp.clusterId);
+      const units = (cluster?.unitIds || [])
+        .map((id) => unitsById.get(id))
+        .filter(Boolean)
+        .map((u, i) => `    (${i + 1}) [${u.kind}] ${u.text}${u.from ? ` — ${u.from}` : ''}`)
+        .join('\n');
+      const recipe = (sp.recipe || template.sectionBlockRecipe || [])
+        .map((r, i) => `${i + 1}. ${r.type}${r.preferKinds ? ` (prefer: ${r.preferKinds.join(', ')})` : ''}`)
+        .join('; ');
+      const mediaPl = (sp.mediaPlacements || [])
+        .map((m) => `slot ${m.slotId} → ref ${m.mediaRef}`)
+        .join(', ') || '(none)';
+      return [
+        `### Section ${sp.index + 1}: ${sp.title}`,
+        sp.subheads?.length ? `Subheads: ${sp.subheads.join(' · ')}` : '',
+        `Recipe: ${recipe}`,
+        `Media slots: ${mediaPl}`,
+        'SOURCE UNITS FOR THIS SECTION ONLY (do not use other sections\' units):',
+        units || '    (empty cluster — say so in a short note; do NOT invent facts)',
+      ].filter(Boolean).join('\n');
+    }).join('\n\n');
+
+    const allowExtra = c.aiExtra === true;
+    const groundingStrict = [
+      'CRITICAL: Each section must be built ONLY from that section\'s listed source units. Do not use general encyclopedia knowledge.',
+      'If a cluster is thin, write a short grounded note — do not invent facts outside those units.',
+    ].join(' ');
+    const groundingExtra = [
+      'PRIMARY SOURCE: Prefer each section\'s listed source units as the backbone of the teaching.',
+      'AI EXTRAS ALLOWED: You MAY add brief bridging explanations, standard prerequisites, or clarifying background you judge a learner needs for the objective — even if not explicitly in the units.',
+      'Keep extras clearly helpful and on-topic; do not contradict the source units; do not turn the tutorial into a generic encyclopedia article.',
+      'When you add material not in the units, keep it short and label the part with a normal pedagogical label (e.g. Explanation) — do not claim it is a source excerpt.',
+    ].join(' ');
+
+    const system = [
+      'You generate a tutorial as STRUCTURED JSON from a FIXED pedagogical template and CLUSTERED source units.',
+      allowExtra ? groundingExtra : groundingStrict,
+      'Output ONLY a JSON array of part objects. No markdown fences.',
+      'Part shapes:',
+      '  {"type":"rich-text","label":string,"heading":string|null,"subheads":string[]|null,"body":string}',
+      '  {"type":"question","label":string,"prompt":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings]}',
+      '  {"type":"media","ref":string}',
+      'For each section: emit a rich-text with heading set to the section title (and subheads if given), then follow the recipe order.',
+      'knowledge-check / try-it → question parts. worked-example / explanation / instruction / principle / misconception / correction / scenario-advance / source-excerpt → rich-text with an appropriate label.',
+      'Number question labels sequentially across the whole tutorial: "Question 1", "Question 2", …',
+      'CHECK PLACEMENT (critical): When assessment is after_each_section or checkpoints, finish ALL teaching parts for a section, then emit that section\'s question(s) IMMEDIATELY before starting the next section heading. Never dump all questions at the end. Never put Section 2\'s teaching before Section 1\'s check. Each question must test ONLY the section it follows.',
+      'HINTS: Follow the author\'s hint settings below. If hints are ON, every question must include exactly that many progressive strings in "hints". Hint 1 lightly points; later hints get more specific; at least one must tell the learner which section/passage to re-read (use that section\'s title). Never reveal the correct option letter/text. If hints are OFF, set "hints" to [].',
+      'Place media parts only where section media slots specify. Keep bodies 2–5 short sentences.',
+    ].join('\n');
+
+    const assess = template.assessmentPlacement || 'after_each_section';
+    const hintOpts = resolveHintSettings(c);
+    const user = [
+      `Tutorial title: ${title || '(untitled)'}`,
+      `Template: ${template.name || template.id} (${template.id})`,
+      `Section connection: ${template.sectionConnection || 'sequential'}`,
+      `Assessment placement: ${assess}`,
+      `Learning objective: ${c.obj || '(none)'}`,
+      `Overall topic: ${c.topic || title || '(none)'}`,
+      `Audience: ${c.aud || 'High school'} · Level: ${c.lvl || 'Basic'} · Depth: ${c.dpth || 'Standard'}`,
+      `Checks per section knob: ${chks} (honor template assessment placement; if after_each_section / checkpoints, emit ~${Math.max(chks, 1)} check(s) per section from THAT section's units)`,
+      `Pass mark (all checks combined): ${c.pass || '70%'}`,
+      `Progressive hints: ${hintOpts.enabled ? `ON — exactly ${hintOpts.count} per question` : 'OFF — set hints to []'}`,
+      `AI extras beyond source: ${allowExtra ? 'ON — may add helpful bridging/background not in the units' : 'OFF — stay strictly within marked-up units'}`,
+      `End with: ${end}`,
+      authorPrompt ? `Author note:\n${authorPrompt}` : '',
+      '',
+      'SECTION PLANS (one cluster each):',
+      clusterLines,
+      '',
+      mediaList.length ? `Available media refs: ${mediaList.map((m) => `${m.ref}(${m.kind})`).join(', ')}` : 'No media attached.',
+      '',
+      'Produce IN ORDER: (1) Introduction rich-text with heading "Introduction", (2) for EACH section: teaching parts then that section\'s check(s), (3) closing per End with.',
+      assess === 'end_only' ? 'Put knowledge-check questions ONLY after all sections (end quiz), not mid-section.' : '',
+      assess === 'none' ? 'Do not emit knowledge-check questions.' : '',
+      (assess === 'after_each_section' || assess === 'checkpoints_after_each')
+        ? `Pattern per section: [heading rich-text] → [teaching…] → [${Math.max(chks, 1)} question(s)] → next section.`
+        : '',
+      'Return the JSON array now.',
+    ].filter(Boolean).join('\n');
+
+    return { system, user, secs: sectionPlans.length };
+  }
+
+  // Legacy flat-extract fallback
+  const hasExtracts = Array.isArray(extracts) && extracts.length > 0;
   const extractLines = hasExtracts
     ? extracts.map((e, i) => `(${i + 1}) [${e.kind || 'Key point'}] ${e.text}${e.from ? ` — ${e.from}` : ''}`).join('\n')
-    : '(no content units — generate from the author\'s prompt/topic below)';
+    : '(no content units — refuse to invent; ask author to mark up source)';
 
-  const groundingRule = hasExtracts
-    ? "Ground the content in the provided content units (the author's marked-up source). Prefer them; only add general connective explanation where needed."
-    : "There are no marked-up source units. Generate from the author's prompt/topic below using your own knowledge, staying accurate and on-topic.";
-
-  const mediaList = Array.isArray(media) ? media.filter((m) => m && m.ref) : [];
-  const hasMedia = mediaList.length > 0;
+  const allowExtraLegacy = c.aiExtra === true;
+  const groundingRule = !hasExtracts
+    ? 'GROUNDING: No units provided. Return a single rich-text part explaining that markup/extracts are required — do not write a fake tutorial.'
+    : allowExtraLegacy
+      ? 'GROUNDING: Prefer the content units as the backbone. AI EXTRAS ALLOWED: you may add brief bridging explanations or standard background you judge learners need, without contradicting the units.'
+      : 'GROUNDING (required): Every section MUST be drawn from the content units. Do NOT invent unsupported facts.';
 
   const system = [
     'You are an instructional designer generating a tutorial as STRUCTURED JSON.',
     groundingRule,
     'Output ONLY a JSON array of "part" objects. No prose, no markdown fences.',
+    'Keep rich-text bodies concise (2–5 short sentences).',
     'Allowed part shapes:',
-    '  {"type":"rich-text","label":string,"body":string}',
-    '  {"type":"concept-card","label":string,"concept":string,"plain":string,"misc":string}',
-    '  {"type":"question","label":string,"prompt":string,"options":[four strings],"correct":integer 0-3,"exp":string}',
-    hasMedia ? '  {"type":"media","ref":string}   // place an author-supplied image or video clip' : '',
-    hasMedia
-      ? 'You are given author-supplied media (images and video clips). Place EACH media item with a {"type":"media","ref":"..."} part at the single most pedagogically relevant spot — right after the text it illustrates. Use each ref exactly once. Do NOT dump all media at the end, and do NOT invent refs.'
-      : '',
+    '  {"type":"rich-text","label":string,"heading":string|null,"subheads":string[]|null,"body":string}',
+    '  {"type":"question","label":string,"prompt":string,"options":[four strings],"correct":integer 0-3,"exp":string,"hints":[four strings]}',
+    mediaList.length ? '  {"type":"media","ref":string}' : '',
+    'Number questions sequentially: Question 1, Question 2, …',
+    'Follow author hint settings in the user message for how many progressive hints to include (or none).',
   ].filter(Boolean).join('\n');
 
+  const hintOptsLegacy = resolveHintSettings(c);
   const user = [
     `Tutorial title: ${title || '(untitled)'}`,
     `Learning objective: ${c.obj || '(none given)'}`,
     `Overall topic: ${c.topic || title || '(none given)'}`,
-    `Audience: ${c.aud || 'High school'} (match tone and reading level to this)`,
-    `Level: ${c.lvl || 'Basic'} (match reading level)`,
+    `Audience: ${c.aud || 'High school'}`,
+    `Level: ${c.lvl || 'Basic'}`,
     `Progression: ${c.prog || 'Linear build-up'}`,
     `Depth per section: ${c.dpth || 'Standard'}`,
+    `Pass mark (all checks combined): ${c.pass || '70%'}`,
+    `Progressive hints: ${hintOptsLegacy.enabled ? `ON — exactly ${hintOptsLegacy.count} per question` : 'OFF — set hints to []'}`,
+    `AI extras beyond source: ${allowExtraLegacy ? 'ON' : 'OFF'}`,
     authorPrompt ? `\nAuthor's prompt / description:\n${authorPrompt}` : '',
     '',
     'Content units to build from:',
     extractLines,
-    hasMedia ? '\nAuthor-supplied media to place (use each ref exactly once, next to the most relevant text):' : '',
-    hasMedia ? mediaList.map((m) => `  ref="${m.ref}" · ${m.kind === 'video' ? 'YouTube clip' : 'image'}${m.caption ? ` · caption: "${m.caption}"` : ''}`).join('\n') : '',
+    mediaList.length ? `\nMedia: ${mediaList.map((m) => m.ref).join(', ')}` : '',
     '',
     'Produce, IN ORDER:',
-    '1. One "rich-text" Introduction that states what the learner will be able to do.',
-    `2. Exactly ${secs} sections. For EACH section: one "rich-text" explanation (label "Section N: <short title>")${wex ? ', then one "rich-text" worked example (label "Worked example")' : ''}${chks > 0 ? `, then ${chks} "question" knowledge-check(s) grounded in that section` : ''}.`,
-    excpts > 0 && hasExtracts ? `3. ${excpts} "rich-text" part(s) labeled "Source excerpt" quoting the most relevant content unit(s) verbatim.` : '3. (no source excerpts)',
-    end === 'End quiz' ? '4. End with 2-3 "question" parts as an end quiz.'
-      : end === 'End assignment' ? '4. End with one "rich-text" assignment.'
-      : end === 'Recap only' ? '4. End with one "rich-text" Recap.'
+    '1. Introduction rich-text with heading "Introduction".',
+    `2. Exactly ${secs} sections. For EACH section in order: rich-text with heading "Section N: <title>" and optional subheads${wex ? ', then a worked-example rich-text' : ''}${chks > 0 ? `, then IMMEDIATELY ${chks} question(s) testing THAT section only — before the next section heading` : ''}.`,
+    excpts > 0 && hasExtracts ? `3. ${excpts} source-excerpt rich-text part(s) (inside their section, before that section's questions).` : '3. (no source excerpts)',
+    end === 'End quiz' ? '4. End with 2-3 questions (only if not already placing checks after each section).'
+      : end === 'End assignment' ? '4. End with one assignment rich-text.'
+      : end === 'Recap only' ? '4. End with Recap rich-text (heading Recap).'
       : '4. (no closing part)',
+    chks > 0 ? 'Do NOT gather all questions at the end; each check must follow the section it tests.' : '',
     '',
     'Return the JSON array now.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
-  return { system, user };
+  return { system, user, secs };
 }
 
 const ALLOWED_TYPES = new Set(['rich-text', 'concept-card', 'question']);
@@ -306,7 +741,6 @@ const ALLOWED_TYPES = new Set(['rich-text', 'concept-card', 'question']);
 function normalizePart(raw, idx) {
   if (!raw || typeof raw !== 'object') return null;
   const id = `g${Date.now()}_${idx}`;
-  // Media placement placeholder — resolved to real media on the client by ref.
   if (raw.type === 'media') {
     return typeof raw.ref === 'string' && raw.ref ? { id, type: 'media', ref: raw.ref, label: 'Media' } : null;
   }
@@ -314,17 +748,39 @@ function normalizePart(raw, idx) {
   const label = typeof raw.label === 'string' ? raw.label : '';
   if (raw.type === 'rich-text') {
     if (typeof raw.body !== 'string' || !raw.body.trim()) return null;
-    return { id, type: 'rich-text', label, body: raw.body };
+    const heading = typeof raw.heading === 'string' && raw.heading.trim() ? raw.heading.trim() : undefined;
+    const subheads = Array.isArray(raw.subheads)
+      ? raw.subheads.map((s) => String(s || '').trim()).filter(Boolean)
+      : undefined;
+    return {
+      id, type: 'rich-text', label: label || heading || 'Section', body: raw.body,
+      heading, subheads: subheads?.length ? subheads : undefined,
+    };
   }
   if (raw.type === 'concept-card') {
     return { id, type: 'concept-card', label, concept: String(raw.concept || ''), plain: String(raw.plain || ''), misc: String(raw.misc || '') };
   }
-  // question
   const options = Array.isArray(raw.options) ? raw.options.slice(0, 4).map(String) : [];
   while (options.length < 4) options.push(`Option ${options.length + 1}`);
   let correct = Number(raw.correct);
   if (!Number.isInteger(correct) || correct < 0 || correct > 3) correct = 0;
-  return { id, type: 'question', label, prompt: String(raw.prompt || ''), options, correct, exp: String(raw.exp || '') };
+  const hints = Array.isArray(raw.hints)
+    ? raw.hints.map((h) => String(h || '').trim()).filter(Boolean)
+    : (typeof raw.hint === 'string' && raw.hint.trim() ? [raw.hint.trim()] : []);
+  return {
+    id, type: 'question', label, prompt: String(raw.prompt || ''), options, correct,
+    exp: String(raw.exp || ''),
+    hints,
+  };
+}
+
+function renumberQuestionLabels(parts) {
+  let n = 0;
+  return parts.map((p) => {
+    if (p.type !== 'question') return p;
+    n += 1;
+    return { ...p, label: `Question ${n}` };
+  });
 }
 
 /* ─── Tutorial: edit a single block ───────────────────────────────── */
@@ -332,7 +788,7 @@ function normalizePart(raw, idx) {
 function shapeFor(type) {
   if (type === 'rich-text') return '{"type":"rich-text","label":string,"body":string}';
   if (type === 'concept-card') return '{"type":"concept-card","label":string,"concept":string,"plain":string,"misc":string}';
-  return '{"type":"question","label":string,"prompt":string,"options":[four strings],"correct":integer 0-3,"exp":string}';
+  return '{"type":"question","label":string,"prompt":string,"options":[four strings],"correct":integer 0-3,"exp":string,"hints":[four strings]}';
 }
 
 function buildEditPrompt(part, instruction) {
@@ -587,7 +1043,7 @@ function buildQuizPrompt({ title, config, extracts, prompt }) {
     grounding,
     'Output ONLY a JSON array of question objects. No prose, no markdown fences.',
     'Question shape:',
-    '{"question":string,"type":"multiple-choice"|"true-false"|"multi-select"|"short-answer"|"scenario","options":string[]|null,"correct":number|null,"correctIndices":number[]|null,"sampleAnswer":string|null,"explanation":string|null,"cognitiveLevel":string,"difficulty":"easy"|"medium"|"hard"}',
+    '{"question":string,"type":"multiple-choice"|"true-false"|"multi-select"|"short-answer"|"scenario","options":string[]|null,"correct":number|null,"correctIndices":number[]|null,"sampleAnswer":string|null,"explanation":string|null,"hints":[four progressive hint strings],"cognitiveLevel":string,"difficulty":"easy"|"medium"|"hard"}',
     'Rules:',
     '- multiple-choice / scenario: 4 options, correct = 0-based index of the right option.',
     '- true-false: options MUST be ["True","False"], correct = 0 or 1.',
@@ -597,6 +1053,7 @@ function buildQuizPrompt({ title, config, extracts, prompt }) {
     writeExplanations
       ? '- Write a clear per-question explanation for every item (why the right answer is right; briefly why common wrong answers fail).'
       : '- Set explanation to null/empty on every item — per-question explanations are OFF.',
+    '- Every question MUST include exactly 4 progressive "hints". Hint 1 is gentle; later hints are more specific. Include at least one hint that tells the learner which part of the source/passage to re-read. Never reveal the correct option text or index.',
     adaptiveRules,
     'Mix question types, cognitive levels, and difficulty according to Define. Wrong-answer style must match the Define setting.',
   ].join('\n');
@@ -687,6 +1144,10 @@ function normalizeQuizQuestion(raw, idx, { writeExplanations } = {}) {
     out.explanation = '';
   }
   if (typeof raw.hint === 'string' && raw.hint.trim()) out.hint = raw.hint.trim();
+  out.hints = ensureFourHints(raw.hints, {
+    explanation: out.explanation,
+    singleHint: out.hint,
+  });
 
   return out;
 }
@@ -1451,9 +1912,9 @@ function buildItemEditPrompt(kind, item, instruction) {
   const system = [
     'You are editing ONE quiz question for a course author.',
     'Return ONLY a JSON object — no prose, no markdown fences.',
-    'Shape: {"question":string,"type":"multiple-choice"|"true-false"|"multi-select"|"short-answer"|"scenario","options":string[]|null,"correct":number|null,"correctIndices":number[]|null,"sampleAnswer":string|null,"explanation":string|null,"hint":string|null,"cognitiveLevel":string|null,"difficulty":"easy"|"medium"|"hard"|null}',
+    'Shape: {"question":string,"type":"multiple-choice"|"true-false"|"multi-select"|"short-answer"|"scenario","options":string[]|null,"correct":number|null,"correctIndices":number[]|null,"sampleAnswer":string|null,"explanation":string|null,"hint":string|null,"hints":[four progressive hint strings]|null,"cognitiveLevel":string|null,"difficulty":"easy"|"medium"|"hard"|null}',
     'Keep type unless the instruction asks to change it. Preserve accuracy.',
-    'hint = optional short learner cue (not the answer).',
+    'hints = exactly 4 progressive learner cues unlocked after wrong attempts; at least one should point back to the relevant passage/section. Never reveal the correct option.',
   ].join('\n');
   const user = [
     'Current question (JSON):',
@@ -1839,27 +2300,253 @@ const server = createServer(async (req, res) => {
     return sseDone(res);
   }
 
+  /* ---- Tutorial: build clustered knowledge base from markup ---- */
+  if (method === 'POST' && path === '/api/tutorials/extract-knowledge') {
+    const body = await readJson(req);
+    try {
+      let kb = buildClusteredKnowledgeBase({
+        highlights: body?.highlights,
+        extracts: body?.extracts,
+        shapeIntent: body?.shapeIntent,
+        objective: body?.objective,
+        topic: body?.topic,
+      });
+      if (body?.refineWithLlm !== false && kb.units.length) {
+        kb = await refineClustersWithLlm(kb, {
+          objective: body?.objective,
+          topic: body?.topic,
+          shapeIntent: body?.shapeIntent,
+        });
+      }
+      if (!kb.units.length) {
+        return send(res, 422, {
+          code: 'no_units',
+          message: 'No content units could be built from your markup. Tag Use/Support sentences and try again.',
+        });
+      }
+      return send(res, 200, { knowledgeBase: kb });
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
   /* ---- Tutorial: generate (real LLM, streamed as SSE) ---- */
   if (method === 'POST' && path === '/api/tutorials/generate') {
     const body = await readJson(req);
     sseStart(res);
     try {
-      sseSend(res, { type: 'progress', message: 'Reading your extracts and settings…' });
-      const { system, user } = buildGeneratePrompt(body);
-      sseSend(res, { type: 'progress', message: 'Drafting the tutorial with the model…' });
-      const raw = await callAnthropic({ system, user, maxTokens: 8192 });
+      const hasPlans = Array.isArray(body?.sectionPlans) && body.sectionPlans.length > 0;
+      sseSend(res, {
+        type: 'progress',
+        message: hasPlans
+          ? 'Mapping template sections to source clusters…'
+          : 'Reading your extracts and settings…',
+      });
+      const { system, user, secs } = buildGeneratePrompt(body);
+      const sectionCount = secs || (typeof body?.config?.secs === 'number' ? body.config.secs : 3);
+      const maxTokens = sectionCount >= 6 ? 16384 : sectionCount >= 4 ? 12288 : 8192;
+      sseSend(res, { type: 'progress', message: 'Drafting the tutorial from your template and clusters…' });
+      const raw = await callAnthropic({ system, user, maxTokens });
       const parsed = extractJson(raw);
-      const arr = Array.isArray(parsed) ? parsed : [];
-      const parts = arr.map((p, i) => normalizePart(p, i)).filter(Boolean);
+      const arr = Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? [parsed] : []);
+      let parts = arr.map((p, i) => normalizePart(p, i)).filter(Boolean);
+      const assess = body?.template?.assessmentPlacement || 'after_each_section';
+      const chks = typeof body?.config?.chks === 'number' ? body.config.chks : 1;
+      parts = orderTutorialParts(parts, { assessmentPlacement: assess, checksPerSection: chks });
+      const hintOpts = resolveHintSettings(body?.config || {});
+      parts = attachHintsToQuestionParts(parts, hintOpts);
+      parts = renumberQuestionLabels(parts);
       if (parts.length === 0) throw new LlmError(502, 'llm_no_parts', 'The model did not return any usable parts. Try again.');
       sseSend(res, { type: 'progress', message: `Assembling ${parts.length} parts…` });
       for (const part of parts) {
         sseSend(res, { type: 'part', part });
-        await sleep(120); // paced so the UI reveals parts progressively
+        await sleep(80);
       }
       sseSend(res, { type: 'done', count: parts.length });
     } catch (e) {
       sseSend(res, { type: 'error', code: e.code || 'error', message: e.message || 'Generation failed.' });
+    }
+    return sseDone(res);
+  }
+
+  /* ---- Course-dev Object Assistant (SSE) ---- */
+  if (method === 'POST' && path === '/api/assistant/turn') {
+    const body = await readJson(req);
+    const message = String(body?.message || '').trim();
+    const context = body?.context;
+    const selection = body?.selection || context?.selection || { kind: 'none' };
+    const history = Array.isArray(body?.history) ? body.history.slice(-10) : [];
+    const quickAction = body?.quickAction || null;
+
+    sseStart(res);
+    try {
+      if (!message) throw new LlmError(400, 'no_message', 'Ask a question or describe an edit.');
+      if (!context || !context.objectId) {
+        throw new LlmError(400, 'no_context', 'No object context — open a learning object in the editor.');
+      }
+
+      sseSend(res, { type: 'status', message: 'Reading this object’s context…' });
+
+      const blocks = Array.isArray(context.blocks) ? context.blocks : [];
+      const blockLines = blocks.map((b, i) => {
+        const c = b.content && typeof b.content === 'object' ? JSON.stringify(b.content).slice(0, 900) : '';
+        return `[${b.id}] #${i + 1} type=${b.type}${b.label ? ` label="${b.label}"` : ''}\n${c}`;
+      }).join('\n\n');
+
+      const prov = context.provenance || {};
+      const units = (prov.knowledgeBase?.units || []).slice(0, 40).map((u) =>
+        `- (${u.id}) [${u.kind}] ${String(u.text || '').slice(0, 220)}${u.from ? ` — ${u.from}` : ''}`,
+      ).join('\n');
+      const clusters = (prov.knowledgeBase?.clusters || []).map((c) =>
+        `- ${c.id}: ${c.name} → ${(c.unitIds || []).join(', ')}`,
+      ).join('\n');
+
+      const selLine = selection?.kind === 'block'
+        ? `Selected block: ${selection.blockId}`
+        : selection?.kind === 'block_range'
+          ? `Selected range in ${selection.blockId}: "${String(selection.selectedText || '').slice(0, 280)}"`
+          : selection?.kind === 'multi_block'
+            ? `Selected blocks: ${(selection.blockIds || []).join(', ')}`
+            : 'Selection: whole object (none specific)';
+
+      const meta = context.metadata || {};
+      const system = [
+        'You are the LAIC course-developer Object Assistant — a co-author for ONE open learning object.',
+        'CRITICAL RULES:',
+        '- Use ONLY the provided object context (blocks, metadata, extracts/clusters). Never invent source citations.',
+        '- Never claim you already edited the object. Edits must be proposals the developer accepts.',
+        '- If the request is outside this object, refuse and explain.',
+        '- If ambiguous, ask ONE concise clarifying question (mode=clarify) and omit proposal.',
+        '- Cite block ids like [blk-…] when referencing content.',
+        '- Prefer scoping edits to the current selection.',
+        '',
+        'Return ONLY JSON (no markdown fences):',
+        '{',
+        '  "mode": "answer" | "clarify" | "proposal",',
+        '  "message": string,',
+        '  "citations": [{"kind":"block"|"extract"|"cluster","id":string,"label":string}],',
+        '  "proposal": null | {',
+        '    "title": string,',
+        '    "diffs": [{',
+        '      "kind": "text"|"structural"|"metadata",',
+        '      "summary": string,',
+        '      "beforeText": string|null,',
+        '      "afterText": string|null,',
+        '      "blockId": string|null,',
+        '      "action": EditAction',
+        '    }]',
+        '  }',
+        '}',
+        'EditAction types: update_block {type,blockId,patch,reason}, update_block_range {type,blockId,start,end,replacement,field?,reason},',
+        'add_block {type,atIndex,blockType,content,label?,reason}, delete_block {type,blockId,reason},',
+        'reorder_blocks {type,order,reason}, convert_block {type,blockId,toType,content,reason},',
+        'update_metadata {type,patch,reason}, batch {type,actions,reason}.',
+        'For tutorial rich-text patches use fields: body, heading, label, subheads.',
+        'For questions: prompt, options (4 strings), correct (0-3), exp, label.',
+        'For add_block question content: {question,options,correct,explanation}. For rich-text: {text,heading}.',
+      ].join('\n');
+
+      const historyLines = history
+        .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && h.content)
+        .map((h) => `${h.role}: ${h.content}`)
+        .join('\n');
+
+      const user = [
+        `Object: ${context.title || '(untitled)'} (${context.objectType}) id=${context.objectId} status=${context.status || 'draft'}`,
+        `Objective: ${meta.objective || '(none)'}`,
+        `Audience: ${meta.audience || '—'} · Level: ${meta.level || '—'} · Voice: ${meta.voice || '—'} · Topic: ${meta.topic || '—'}`,
+        `Template: ${meta.templateId || '—'}`,
+        selLine,
+        quickAction ? `Quick action: ${quickAction}` : '',
+        '',
+        `Provenance: sources≈${prov.sourceCount || 0}, highlights=${prov.highlightCount || 0}, extracts=${prov.extractCount || 0}, mode=${prov.srcMode || '—'}`,
+        clusters ? `Clusters:\n${clusters}` : '',
+        units ? `Source units:\n${units}` : '(no extract units)',
+        '',
+        'BLOCKS:',
+        blockLines || '(no blocks)',
+        '',
+        historyLines ? `Recent conversation:\n${historyLines}\n` : '',
+        `Developer message: ${message}`,
+        '',
+        'Respond with the JSON object now.',
+      ].filter(Boolean).join('\n');
+
+      sseSend(res, { type: 'status', message: 'Thinking…' });
+      const raw = await callAnthropic({ system, user, maxTokens: 4096 });
+      let parsed;
+      try {
+        parsed = extractJson(raw);
+      } catch {
+        parsed = null;
+      }
+
+      const msgId = `am-${Date.now()}`;
+      let mode = parsed?.mode;
+      let text = typeof parsed?.message === 'string' ? parsed.message.trim() : '';
+      if (!text) {
+        // Model returned prose — use as answer, no proposal
+        text = String(raw || '').replace(/^```[\s\S]*?```$/m, '').trim().slice(0, 4000)
+          || 'I could not form a grounded reply from this object’s context. Try a more specific question.';
+        mode = 'answer';
+      }
+      if (!['answer', 'clarify', 'proposal'].includes(mode)) mode = parsed?.proposal ? 'proposal' : 'answer';
+
+      // Stream tokens for UX
+      const chunkSize = 24;
+      for (let i = 0; i < text.length; i += chunkSize) {
+        sseSend(res, { type: 'token', text: text.slice(i, i + chunkSize) });
+        await sleep(12);
+      }
+
+      const citations = Array.isArray(parsed?.citations)
+        ? parsed.citations
+          .filter((c) => c && c.id && ['block', 'extract', 'cluster', 'highlight'].includes(c.kind))
+          .map((c) => ({ kind: c.kind, id: String(c.id), label: c.label ? String(c.label) : undefined }))
+        : [];
+
+      const messageObj = {
+        id: msgId,
+        role: 'assistant',
+        content: text,
+        at: Date.now(),
+        citations,
+        proposalIds: [],
+      };
+
+      let proposal = null;
+      if (mode === 'proposal' && parsed?.proposal && Array.isArray(parsed.proposal.diffs) && parsed.proposal.diffs.length) {
+        const propId = `prop-${Date.now()}`;
+        const diffs = parsed.proposal.diffs
+          .filter((d) => d && d.action && d.action.type)
+          .map((d, i) => ({
+            id: `diff-${Date.now()}-${i}`,
+            kind: ['text', 'structural', 'metadata', 'batch_item'].includes(d.kind) ? d.kind : 'text',
+            summary: String(d.summary || 'Proposed change'),
+            beforeText: d.beforeText != null ? String(d.beforeText) : undefined,
+            afterText: d.afterText != null ? String(d.afterText) : undefined,
+            blockId: d.blockId != null ? String(d.blockId) : (d.action?.blockId || undefined),
+            action: d.action,
+          }));
+        if (diffs.length) {
+          proposal = {
+            id: propId,
+            messageId: msgId,
+            status: 'pending',
+            title: String(parsed.proposal.title || 'Proposed edits'),
+            diffs,
+            createdAt: Date.now(),
+          };
+          messageObj.proposalIds = [propId];
+        }
+      }
+
+      sseSend(res, { type: 'message', message: messageObj });
+      if (proposal) sseSend(res, { type: 'proposal', proposal });
+      sseSend(res, { type: 'done' });
+    } catch (e) {
+      sseSend(res, { type: 'error', code: e.code || 'error', message: e.message || 'Assistant failed.' });
     }
     return sseDone(res);
   }
@@ -1914,7 +2601,8 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`\nLAIC dev backend → http://localhost:${PORT}`);
   console.log(`LLM: ${ANTHROPIC_API_KEY ? `enabled (model ${LLM_MODEL})` : 'DISABLED — set ANTHROPIC_API_KEY in .env'}`);
-  console.log('Tutorial: POST /api/tutorials/suggest-highlights · POST /api/tutorials/generate (SSE)');
+  console.log('Tutorial: POST /api/tutorials/suggest-highlights · POST /api/tutorials/extract-knowledge · POST /api/tutorials/generate (SSE)');
   console.log('Ask AI: POST /api/ask');
+  console.log('Assistant: POST /api/assistant/turn (SSE)');
   console.log('Sources stub: GET/POST /api/sources · GET /api/collections\n');
 });

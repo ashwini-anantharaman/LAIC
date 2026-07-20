@@ -8,9 +8,22 @@ import type {
   ImageContent, VideoEmbedContent, ConceptCardContent, SummaryContent, ReflectionContent,
   AssignmentContent, DrillContent,
 } from '../../../lib/types';
+import { renumberBlockQuestionLabels } from '../../../lib/tutorialOrder.js';
+import { hintsForQuestion, parsePassMark, resolveHintSettings } from '../../../lib/questionHints.js';
 import { FlashcardStudy, type StudyCard } from './FlashcardStudy';
 import { AskAIChat } from './AskAIChat';
 import { SummaryView, ReflectionView, AssignmentView, DrillView } from './StructuredObjectEditors';
+
+export type QuizResolveStatus = 'correct' | 'revealed';
+
+function countQuizQuestionsInBlocks(blocks: Block[]): number {
+  let n = 0;
+  for (const b of blocks) {
+    if (b.type === 'quiz') n += ((b.content as QuizContent)?.questions || []).length;
+    else if (b.type === 'question') n += 1;
+  }
+  return n;
+}
 
 function parseYtId(url: string): string {
   if (!url) return '';
@@ -197,13 +210,27 @@ function VideoEmbed({ content }: { content: VideoEmbedContent }) {
   );
 }
 
-function RichText({ text }: { text: string }) {
+function RichText({ text, heading, subheads }: { text: string; heading?: string; subheads?: string[] }) {
   const html = text
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/^## (.+)$/gm, '<h3 style="font-size:17px;font-weight:700;color:#0B1220;margin:20px 0 8px;letter-spacing:-0.3px">$1</h3>')
     .replace(/\n\n/g, '<br/><br/>');
-  return <div style={{ fontSize: 14.5, lineHeight: 1.72, color: '#374151' }} dangerouslySetInnerHTML={{ __html: html }} />;
+  return (
+    <div>
+      {heading && (
+        <h2 style={{ fontSize: 19, fontWeight: 700, color: '#0B1220', margin: '0 0 8px', letterSpacing: '-0.35px' }}>
+          {heading}
+        </h2>
+      )}
+      {subheads && subheads.length > 0 && (
+        <ul style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 13.5, color: '#6B7280', lineHeight: 1.5 }}>
+          {subheads.map((s) => <li key={s}>{s}</li>)}
+        </ul>
+      )}
+      <div style={{ fontSize: 14.5, lineHeight: 1.72, color: '#374151' }} dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
+  );
 }
 
 function ViewBlock({ label, children, tone = 'green' }: { label: string; children: React.ReactNode; tone?: 'green' | 'blue' | 'amber' | 'rose' }) {
@@ -359,28 +386,73 @@ function hasAnswer(a: unknown) {
   return a !== undefined;
 }
 
-export function QuizBlock({ content }: { content: QuizContent }) {
+export function QuizBlock({
+  content,
+  deferPassScore = false,
+  maxHints: maxHintsProp,
+  hintsEnabled: hintsEnabledProp,
+  onResolvedChange,
+  resultKeyPrefix = '',
+}: {
+  content: QuizContent;
+  /** When true, hide local pass banner — parent scores all tutorial checks together. */
+  deferPassScore?: boolean;
+  maxHints?: number;
+  hintsEnabled?: boolean;
+  onResolvedChange?: (info: {
+    keyPrefix: string;
+    byIndex: Record<number, QuizResolveStatus>;
+    correct: number;
+    total: number;
+    allDone: boolean;
+  }) => void;
+  resultKeyPrefix?: string;
+}) {
   const questions = content.questions || [];
   const adaptive = !!content.adaptive;
   const passMark = typeof content.passMark === 'number' ? content.passMark : 70;
   const showMode = content.showExplanations || 'After attempt';
+  const hintsEnabled = hintsEnabledProp !== false;
+  const maxHints = !hintsEnabled
+    ? 0
+    : typeof maxHintsProp === 'number'
+      ? Math.max(0, maxHintsProp)
+      : Math.max(0, ...questions.map((q) => (Array.isArray(q.hints) ? q.hints.length : 0)), 4);
 
   const [answers, setAnswers] = useState<Record<number, number | number[] | string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [path, setPath] = useState<number[]>(() => (adaptive && questions.length ? [pickAdaptiveStart(questions)] : []));
-  const [locked, setLocked] = useState(false); // current adaptive item checked
-  const [hintOpen, setHintOpen] = useState<Record<number, boolean>>({});
+  /** How many progressive hints are visible for each question. */
+  const [hintsShown, setHintsShown] = useState<Record<number, number>>({});
+  /** Question locked after a correct answer (or final reveal). */
+  const [resolved, setResolved] = useState<Record<number, QuizResolveStatus>>({});
+  const [flashWrong, setFlashWrong] = useState<Record<number, boolean>>({});
+  const [wrongTries, setWrongTries] = useState<Record<number, number>>({});
 
   const currentQi = adaptive ? path[path.length - 1] : -1;
 
-  const scoredPath = (adaptive ? path : questions.map((_, i) => i))
-    .filter((qi) => hasAnswer(answers[qi]));
-  const correctCount = scoredPath.filter((qi) => isQuestionCorrect(questions[qi], answers[qi])).length;
-  const attempted = scoredPath.length;
-  const pct = attempted ? Math.round((correctCount / attempted) * 100) : 0;
+  const resolvedCount = Object.keys(resolved).length;
+  const correctCount = Object.values(resolved).filter((v) => v === 'correct').length;
+  const attempted = submitted ? (adaptive ? path.length : questions.length) : Math.max(resolvedCount, Object.keys(answers).filter((k) => hasAnswer(answers[Number(k)])).length);
+  const scoreBase = submitted ? (adaptive ? path.length : questions.length) : Math.max(resolvedCount, 1);
+  const pct = submitted && scoreBase
+    ? Math.round((correctCount / scoreBase) * 100)
+    : resolvedCount
+      ? Math.round((correctCount / resolvedCount) * 100)
+      : 0;
   const passed = pct >= passMark;
+  const allDone = questions.length > 0 && questions.every((_, qi) => !!resolved[qi]);
 
-  const answeredCount = questions.filter((_, qi) => hasAnswer(answers[qi])).length;
+  useEffect(() => {
+    onResolvedChange?.({
+      keyPrefix: resultKeyPrefix,
+      byIndex: resolved,
+      correct: correctCount,
+      total: questions.length,
+      allDone,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolved, resultKeyPrefix, questions.length]);
 
   const toggleMulti = (qi: number, oi: number) => {
     setAnswers((prev) => {
@@ -388,10 +460,61 @@ export function QuizBlock({ content }: { content: QuizContent }) {
       const next = cur.includes(oi) ? cur.filter((x) => x !== oi) : [...cur, oi];
       return { ...prev, [qi]: next };
     });
+    setFlashWrong((p) => ({ ...p, [qi]: false }));
   };
 
-  const renderQuestion = (q: QuizContent['questions'][0], qi: number, opts: { reveal: boolean; showExp: boolean; disabled: boolean; label: string }) => {
+  const checkAnswer = (qi: number) => {
+    const q = questions[qi];
+    if (!q || resolved[qi] || !hasAnswer(answers[qi])) return;
+    if (isQuestionCorrect(q, answers[qi])) {
+      setResolved((p) => ({ ...p, [qi]: 'correct' }));
+      setFlashWrong((p) => ({ ...p, [qi]: false }));
+      return;
+    }
+    setWrongTries((p) => ({ ...p, [qi]: (p[qi] || 0) + 1 }));
+    if (maxHints > 0) {
+      const nextShown = Math.min(maxHints, (hintsShown[qi] || 0) + 1);
+      setHintsShown((p) => ({ ...p, [qi]: nextShown }));
+    }
+    setFlashWrong((p) => ({ ...p, [qi]: true }));
+    // Clear choice so they can retry with the new hint
+    setAnswers((prev) => {
+      const n = { ...prev };
+      delete n[qi];
+      return n;
+    });
+  };
+
+  const revealAndLock = (qi: number) => {
+    if (maxHints > 0) setHintsShown((p) => ({ ...p, [qi]: maxHints }));
+    setResolved((p) => ({ ...p, [qi]: 'revealed' }));
+    setFlashWrong((p) => ({ ...p, [qi]: false }));
+    const q = questions[qi];
+    if (!q) return;
+    if (q.type === 'multi-select') setAnswers((p) => ({ ...p, [qi]: [...(q.correctIndices || [])] }));
+    else if (q.type !== 'short-answer') setAnswers((p) => ({ ...p, [qi]: q.correct ?? 0 }));
+    else if (q.sampleAnswer) setAnswers((p) => ({ ...p, [qi]: q.sampleAnswer || '' }));
+  };
+
+  const renderQuestion = (q: QuizContent['questions'][0], qi: number, opts: {
+    reveal: boolean;
+    showExp: boolean;
+    disabled: boolean;
+    label: string;
+    showCheck?: boolean;
+  }) => {
     const options = q.options || [];
+    const hints = maxHints > 0
+      ? hintsForQuestion(q, { count: maxHints, enabled: true }).slice(0, maxHints)
+      : [];
+    const shown = hintsShown[qi] || 0;
+    const status = resolved[qi];
+    const done = !!status;
+    const reveal = opts.reveal || status === 'revealed' || status === 'correct';
+    const canShowAnswer = maxHints > 0
+      ? shown >= maxHints
+      : (wrongTries[qi] || 0) >= 1;
+
     return (
       <div key={qi} className="rounded-[22px] p-5" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
         <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -405,14 +528,20 @@ export function QuizBlock({ content }: { content: QuizContent }) {
           {adaptive && q.difficulty && (
             <span className="px-2 py-0.5 rounded-full" style={{ fontSize: 10.5, fontWeight: 600, background: 'rgba(217,119,6,0.1)', color: '#D97706' }}>{q.difficulty}</span>
           )}
+          {status === 'correct' && (
+            <span className="px-2 py-0.5 rounded-full" style={{ fontSize: 10.5, fontWeight: 600, background: 'rgba(5,150,105,0.12)', color: '#059669' }}>Correct</span>
+          )}
         </div>
         <p style={{ fontSize: 14.5, fontWeight: 600, color: '#0B1220', marginBottom: 14, lineHeight: 1.4 }}>{q.question}</p>
 
         {q.type === 'short-answer' ? (
           <input
             value={typeof answers[qi] === 'string' ? String(answers[qi]) : ''}
-            disabled={opts.disabled}
-            onChange={(e) => setAnswers((prev) => ({ ...prev, [qi]: e.target.value }))}
+            disabled={opts.disabled || done}
+            onChange={(e) => {
+              setAnswers((prev) => ({ ...prev, [qi]: e.target.value }));
+              setFlashWrong((p) => ({ ...p, [qi]: false }));
+            }}
             placeholder="Type your answer…"
             className="w-full rounded-xl px-4 py-2.5"
             style={{ fontSize: 13.5, border: '1px solid rgba(0,0,0,0.1)', outline: 'none', background: 'rgba(0,0,0,0.03)' }}
@@ -425,13 +554,19 @@ export function QuizBlock({ content }: { content: QuizContent }) {
                 ? Array.isArray(answers[qi]) && (answers[qi] as number[]).includes(oi)
                 : answers[qi] === oi;
               const isRight = multi ? (q.correctIndices || []).includes(oi) : oi === q.correct;
-              const correct = opts.reveal && isRight;
-              const wrong = opts.reveal && chosen && !isRight;
+              const correct = reveal && isRight;
+              const wrong = reveal && chosen && !isRight;
               return (
                 <button
                   key={oi}
-                  disabled={opts.disabled}
-                  onClick={() => multi ? toggleMulti(qi, oi) : setAnswers((prev) => ({ ...prev, [qi]: oi }))}
+                  disabled={opts.disabled || done}
+                  onClick={() => {
+                    if (multi) toggleMulti(qi, oi);
+                    else {
+                      setAnswers((prev) => ({ ...prev, [qi]: oi }));
+                      setFlashWrong((p) => ({ ...p, [qi]: false }));
+                    }
+                  }}
                   className="w-full text-left px-4 py-2.5 rounded-xl transition-all"
                   style={{
                     fontSize: 13.5,
@@ -448,20 +583,57 @@ export function QuizBlock({ content }: { content: QuizContent }) {
           </div>
         )}
 
-        {q.hint && !opts.reveal && (
-          <div className="mt-3">
-            {!hintOpen[qi] ? (
-              <button type="button" onClick={() => setHintOpen((p) => ({ ...p, [qi]: true }))}
-                className="px-3 py-1.5 rounded-full border text-xs font-semibold"
-                style={{ borderColor: 'rgba(37,99,235,0.25)', color: '#2563EB', background: 'rgba(37,99,235,0.06)' }}>
-                Show hint
+        {flashWrong[qi] && !done && (
+          <p style={{ fontSize: 12.5, color: '#DC2626', marginTop: 10, fontWeight: 600 }}>
+            Not quite{maxHints > 0 && shown ? ` — hint ${shown} of ${maxHints}` : ''}. Try again.
+          </p>
+        )}
+
+        {shown > 0 && hints.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {hints.slice(0, shown).map((h, hi) => (
+              <div
+                key={hi}
+                className="rounded-xl px-3 py-2.5"
+                style={{
+                  background: hi === shown - 1 ? 'rgba(37,99,235,0.08)' : 'rgba(0,0,0,0.03)',
+                  border: hi === shown - 1 ? '1px solid rgba(37,99,235,0.2)' : '1px solid transparent',
+                }}
+              >
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: '#2563EB', marginBottom: 2 }}>
+                  Hint {hi + 1} of {maxHints}
+                </p>
+                <p style={{ fontSize: 12.5, color: '#1E3A8A', lineHeight: 1.45 }}>{h}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {opts.showCheck && !done && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={!hasAnswer(answers[qi])}
+              onClick={() => checkAnswer(qi)}
+              className="px-4 py-2 rounded-full text-white text-xs font-semibold"
+              style={{ background: '#0B0F1A', opacity: hasAnswer(answers[qi]) ? 1 : 0.45 }}
+            >
+              Check answer
+            </button>
+            {canShowAnswer && (
+              <button
+                type="button"
+                onClick={() => revealAndLock(qi)}
+                className="px-4 py-2 rounded-full text-xs font-semibold border"
+                style={{ borderColor: 'rgba(0,0,0,0.12)', color: '#6B7280' }}
+              >
+                Show answer
               </button>
-            ) : (
-              <p style={{ fontSize: 12.5, color: '#2563EB', lineHeight: 1.45 }}>Hint: {q.hint}</p>
             )}
           </div>
         )}
-        {opts.reveal && q.type === 'short-answer' && q.sampleAnswer && (
+
+        {reveal && q.type === 'short-answer' && q.sampleAnswer && (
           <p style={{ fontSize: 12.5, color: '#059669', marginTop: 10 }}>Sample answer: {q.sampleAnswer}</p>
         )}
         {opts.showExp && q.explanation && (
@@ -471,7 +643,7 @@ export function QuizBlock({ content }: { content: QuizContent }) {
     );
   };
 
-  const scoreBanner = submitted && (
+  const scoreBanner = !deferPassScore && submitted && (
     <div className="rounded-[22px] p-5 text-center" style={{
       background: passed ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.06)',
       border: `1.5px solid ${passed ? 'rgba(5,150,105,0.25)' : 'rgba(239,68,68,0.2)'}`,
@@ -488,12 +660,12 @@ export function QuizBlock({ content }: { content: QuizContent }) {
   if (adaptive) {
     const q = questions[currentQi];
     const answered = hasAnswer(answers[currentQi]);
-    const reveal = locked || submitted;
-    const showExp = shouldShowExplanation(showMode, { submitted: locked || submitted, answered }) && !!q?.explanation;
+    const done = !!resolved[currentQi];
+    const showExp = shouldShowExplanation(showMode, { submitted: done || submitted, answered: done || answered }) && !!q?.explanation;
 
     const advance = () => {
       if (currentQi == null || currentQi < 0 || !q) return;
-      const ok = isQuestionCorrect(q, answers[currentQi]);
+      const ok = resolved[currentQi] === 'correct';
       const used = new Set(path);
       const next = pickAdaptiveNext(questions, used, ok, diffRank(q.difficulty));
       if (next == null) {
@@ -501,7 +673,6 @@ export function QuizBlock({ content }: { content: QuizContent }) {
         return;
       }
       setPath((p) => [...p, next]);
-      setLocked(false);
     };
 
     return (
@@ -513,21 +684,13 @@ export function QuizBlock({ content }: { content: QuizContent }) {
         {!submitted && q && (
           <>
             {renderQuestion(q, currentQi, {
-              reveal,
+              reveal: done,
               showExp: !!showExp,
-              disabled: locked || submitted,
-              label: `Question ${path.length}`,
+              disabled: done || submitted,
+              label: q.label || `Question ${path.length}`,
+              showCheck: true,
             })}
-            {!locked && answered && (
-              <button
-                onClick={() => setLocked(true)}
-                className="w-full py-3 rounded-full text-white"
-                style={{ background: '#0B0F1A', fontSize: 14, fontWeight: 600 }}
-              >
-                Check answer
-              </button>
-            )}
-            {locked && (
+            {done && (
               <button
                 onClick={advance}
                 className="w-full py-3 rounded-full text-white"
@@ -545,28 +708,36 @@ export function QuizBlock({ content }: { content: QuizContent }) {
 
   return (
     <div className="space-y-5">
-      <p style={{ fontSize: 12.5, color: '#6B7280' }}>
-        {content.purpose ? `${content.purpose} · ` : ''}Pass mark {passMark}%
-      </p>
+      {!deferPassScore && (
+        <p style={{ fontSize: 12.5, color: '#6B7280' }}>
+          {content.purpose ? `${content.purpose} · ` : ''}Pass mark {passMark}%
+          {!submitted && maxHints > 0 ? ` · Wrong answers unlock up to ${maxHints} hint${maxHints === 1 ? '' : 's'}` : ''}
+          {!submitted && maxHints <= 0 ? ' · Check each answer' : ''}
+        </p>
+      )}
       {questions.map((q, qi) => {
-        const answered = hasAnswer(answers[qi]);
-        const showExp = shouldShowExplanation(showMode, { submitted, answered }) && !!q.explanation;
-        const revealAnswers = submitted || (showMode === 'Immediately' && answered);
-        return renderQuestion(q, qi, {
-          reveal: revealAnswers,
-          showExp: !!showExp,
-          disabled: submitted,
-          label: `Question ${qi + 1}`,
-        });
+        const done = !!resolved[qi];
+        const showExp = shouldShowExplanation(showMode, { submitted: submitted || done, answered: done }) && !!q.explanation;
+        return (
+          <div key={qi}>
+            {renderQuestion(q, qi, {
+              reveal: submitted || done,
+              showExp: !!showExp,
+              disabled: submitted || done,
+              label: q.label || `Question ${qi + 1}`,
+              showCheck: !submitted,
+            })}
+          </div>
+        );
       })}
 
-      {!submitted && answeredCount > 0 && (
+      {!deferPassScore && !submitted && allDone && (
         <button
           onClick={() => setSubmitted(true)}
           className="w-full py-3 rounded-full text-white"
           style={{ background: '#0B0F1A', fontSize: 14, fontWeight: 600 }}
         >
-          Submit answers
+          See results
         </button>
       )}
 
@@ -721,14 +892,38 @@ function BiddingSequence({ content }: { content: BiddingSequenceContent }) {
   );
 }
 
-function BlockRenderer({ block, objectId }: { block: Block; objectId: string }) {
+function BlockRenderer({
+  block,
+  objectId,
+  quizProps,
+}: {
+  block: Block;
+  objectId: string;
+  quizProps?: {
+    deferPassScore?: boolean;
+    maxHints?: number;
+    hintsEnabled?: boolean;
+    onResolvedChange?: Parameters<typeof QuizBlock>[0]['onResolvedChange'];
+  };
+}) {
   switch (block.type) {
-    case 'rich-text':
-      return <RichText text={(block.content as { text: string }).text} />;
+    case 'rich-text': {
+      const c = block.content as { text?: string; heading?: string; subheads?: string[] };
+      return <RichText text={c.text || ''} heading={c.heading} subheads={c.subheads} />;
+    }
     case 'concept-card':
       return <ConceptCardView content={block.content as ConceptCardContent} />;
     case 'quiz':
-      return <QuizBlock content={block.content as QuizContent} />;
+      return (
+        <QuizBlock
+          content={block.content as QuizContent}
+          deferPassScore={quizProps?.deferPassScore}
+          maxHints={quizProps?.maxHints}
+          hintsEnabled={quizProps?.hintsEnabled}
+          onResolvedChange={quizProps?.onResolvedChange}
+          resultKeyPrefix={block.id}
+        />
+      );
     case 'flashcard-set':
       return <FlashcardSet content={block.content as FlashcardSetContent} objectId={objectId} />;
     case 'bridge-play':
@@ -741,7 +936,16 @@ function BlockRenderer({ block, objectId }: { block: Block; objectId: string }) 
       return <VideoEmbed content={block.content as VideoEmbedContent} />;
     case 'question': {
       const c = block.content as Parameters<typeof QuizBlock>[0]['content']['questions'][0];
-      return <QuizBlock content={{ questions: [c] }} />;
+      return (
+        <QuizBlock
+          content={{ questions: [c], passMark: (block.content as any)?.passMark }}
+          deferPassScore={quizProps?.deferPassScore}
+          maxHints={quizProps?.maxHints}
+          hintsEnabled={quizProps?.hintsEnabled}
+          onResolvedChange={quizProps?.onResolvedChange}
+          resultKeyPrefix={block.id}
+        />
+      );
     }
     case 'summary':
       return <SummaryView content={block.content as SummaryContent} />;
@@ -756,12 +960,210 @@ function BlockRenderer({ block, objectId }: { block: Block; objectId: string }) 
   }
 }
 
+function CumulativePassBanner({
+  total,
+  correct,
+  resolved,
+  passMark,
+  showFinal,
+}: {
+  total: number;
+  correct: number;
+  resolved: number;
+  passMark: number;
+  showFinal: boolean;
+}) {
+  if (total <= 0) return null;
+  const pct = total ? Math.round((correct / total) * 100) : 0;
+  const needCorrect = Math.ceil((passMark / 100) * total);
+  const passed = pct >= passMark;
+
+  if (!showFinal) {
+    return (
+      <div
+        className="rounded-[18px] px-4 py-3 sticky bottom-3 z-[5]"
+        style={{
+          background: 'rgba(255,255,255,0.92)',
+          border: '1px solid rgba(0,0,0,0.08)',
+          boxShadow: '0 8px 24px -12px rgba(30,50,80,0.35)',
+          backdropFilter: 'blur(10px)',
+        }}
+      >
+        <p style={{ fontSize: 13, fontWeight: 650, color: '#0B1220' }}>
+          Checks {resolved}/{total} complete · {correct} correct
+        </p>
+        <p style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+          Need {needCorrect}/{total} correct ({passMark}%) across all MCQs to pass
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[22px] p-5 text-center" style={{
+      background: passed ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.06)',
+      border: `1.5px solid ${passed ? 'rgba(5,150,105,0.25)' : 'rgba(239,68,68,0.2)'}`,
+    }}>
+      <p style={{ fontSize: 18, fontWeight: 750, color: '#0B1220', marginBottom: 4 }}>
+        {pct}% · {correct}/{total} correct
+      </p>
+      <p style={{ fontSize: 13.5, fontWeight: 600, color: passed ? '#059669' : '#DC2626' }}>
+        {passed
+          ? `Passed — ${passMark}% across all checks`
+          : `Not yet — need ${passMark}% (${needCorrect}/${total} correct) across all checks`}
+      </p>
+    </div>
+  );
+}
+
+/** Renders blocks; when cumulative, scores every quiz check together against passMark. */
+function AssessedBlocks({
+  blocks,
+  objectId,
+  cumulative = false,
+  passMark = 70,
+  maxHints = 4,
+  hintsEnabled = true,
+  animate = false,
+}: {
+  blocks: Block[];
+  objectId: string;
+  cumulative?: boolean;
+  passMark?: number;
+  maxHints?: number;
+  hintsEnabled?: boolean;
+  animate?: boolean;
+}) {
+  const total = countQuizQuestionsInBlocks(blocks);
+  const [byBlock, setByBlock] = useState<Record<string, Record<number, QuizResolveStatus>>>({});
+  const [showFinal, setShowFinal] = useState(false);
+
+  const onResolvedChange = (info: {
+    keyPrefix: string;
+    byIndex: Record<number, QuizResolveStatus>;
+    correct: number;
+    total: number;
+    allDone: boolean;
+  }) => {
+    setByBlock((prev) => {
+      const prevMap = prev[info.keyPrefix] || {};
+      const same =
+        Object.keys(prevMap).length === Object.keys(info.byIndex).length
+        && Object.keys(info.byIndex).every((k) => prevMap[Number(k)] === info.byIndex[Number(k)]);
+      if (same) return prev;
+      return { ...prev, [info.keyPrefix]: { ...info.byIndex } };
+    });
+  };
+
+  let correct = 0;
+  let resolved = 0;
+  for (const map of Object.values(byBlock)) {
+    for (const s of Object.values(map)) {
+      resolved += 1;
+      if (s === 'correct') correct += 1;
+    }
+  }
+  const allDone = cumulative && total > 0 && resolved >= total;
+
+  useEffect(() => {
+    if (allDone) setShowFinal(true);
+  }, [allDone]);
+
+  const quizProps = cumulative
+    ? {
+        deferPassScore: true,
+        maxHints: hintsEnabled ? maxHints : 0,
+        hintsEnabled,
+        onResolvedChange,
+      }
+    : {
+        maxHints: hintsEnabled ? maxHints : undefined,
+        hintsEnabled,
+      };
+
+  return (
+    <>
+      {blocks.map((block, i) => {
+        const inner = (
+          <BlockRenderer block={block} objectId={objectId} quizProps={quizProps} />
+        );
+        if (!animate) {
+          return <div key={block.id}>{inner}</div>;
+        }
+        return (
+          <motion.div
+            key={block.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.12 + i * 0.06 }}
+          >
+            {inner}
+          </motion.div>
+        );
+      })}
+      {cumulative && total > 0 && (
+        <CumulativePassBanner
+          total={total}
+          correct={correct}
+          resolved={resolved}
+          passMark={passMark}
+          showFinal={showFinal}
+        />
+      )}
+    </>
+  );
+}
+
+/** Course-dev student preview of live draft blocks (no save required). */
+export function LearningBlocksPreview({
+  blocks,
+  objectId = 'preview',
+  cumulativePassMark,
+  maxHints = 4,
+  hintsEnabled = true,
+}: {
+  blocks: Block[];
+  objectId?: string;
+  /** When set, score all MCQs in these blocks against this pass mark together. */
+  cumulativePassMark?: number;
+  maxHints?: number;
+  hintsEnabled?: boolean;
+}) {
+  if (!blocks.length) {
+    return <p style={{ fontSize: 13.5, color: '#9AA3AF' }}>Nothing to preview yet — add or generate parts first.</p>;
+  }
+  const numbered = renumberBlockQuestionLabels(blocks) as Block[];
+  const cumulative = typeof cumulativePassMark === 'number' && countQuizQuestionsInBlocks(numbered) > 0;
+  return (
+    <div className="space-y-5">
+      <AssessedBlocks
+        blocks={numbered}
+        objectId={objectId}
+        cumulative={cumulative}
+        passMark={cumulativePassMark ?? 70}
+        maxHints={maxHints}
+        hintsEnabled={hintsEnabled}
+      />
+    </div>
+  );
+}
+
 export function LearnerReader({ objectId }: { objectId: string }) {
   const { closeReader, createdObjects } = useApp();
   const obj = createdObjects.find(o => o.id === objectId) || OBJECTS.find(o => o.id === objectId);
   const [showAsk, setShowAsk] = useState(false);
 
   if (!obj) return null;
+
+  const fv = (obj as any).pipelineDraft?.fv || {};
+  const hintOpts = resolveHintSettings(fv);
+  const passMark = parsePassMark(
+    fv.pass
+      ?? (obj.blocks.find((b) => b.type === 'quiz')?.content as QuizContent | undefined)?.passMark,
+    70,
+  );
+  const numbered = renumberBlockQuestionLabels(obj.blocks) as Block[];
+  const useCumulative = obj.type === 'tutorial' && countQuizQuestionsInBlocks(numbered) > 0;
 
   return (
     <motion.div
@@ -821,16 +1223,15 @@ export function LearnerReader({ objectId }: { objectId: string }) {
         </motion.div>
 
         {obj.blocks.length > 0 ? (
-          obj.blocks.map((block, i) => (
-            <motion.div
-              key={block.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.12 + i * 0.06 }}
-            >
-              <BlockRenderer block={block} objectId={obj.id} />
-            </motion.div>
-          ))
+          <AssessedBlocks
+            blocks={numbered}
+            objectId={obj.id}
+            cumulative={useCumulative}
+            passMark={passMark}
+            maxHints={hintOpts.count}
+            hintsEnabled={hintOpts.enabled}
+            animate
+          />
         ) : (
           <div className="flex flex-col items-center py-12 text-center">
             <Layers size={32} className="text-[#C4CBD4] mb-3" />

@@ -6,6 +6,7 @@ import { useApp } from '../../App';
 import type { CreatorPipelineDraft, QuestionContent, QuizContent, QuestionType } from '../../../lib/types';
 import type { GeneratedQuizQuestion } from '../../../lib/api';
 import { editQuizQuestion, errorMessage } from '../../../lib/api';
+import { ensureFourHints } from '../../../lib/questionHints.js';
 import { QuizBlock } from './LearnerReader';
 
 function toQuestionContent(q: GeneratedQuizQuestion | QuestionContent, i = 0): QuestionContent & { _id: string } {
@@ -19,6 +20,7 @@ function toQuestionContent(q: GeneratedQuizQuestion | QuestionContent, i = 0): Q
     sampleAnswer: q.sampleAnswer,
     explanation: q.explanation || '',
     hint: q.hint || '',
+    hints: ensureFourHints((q as any).hints, { explanation: q.explanation, singleHint: q.hint }),
     cognitiveLevel: q.cognitiveLevel,
     difficulty: q.difficulty,
   };
@@ -56,6 +58,7 @@ function AskAiQuestion({ q, onApply, onClose }: { q: QDraft; onApply: (patch: Pa
         sampleAnswer: edited.sampleAnswer,
         explanation: edited.explanation || '',
         hint: edited.hint || '',
+        hints: ensureFourHints((edited as any).hints, { explanation: edited.explanation, singleHint: edited.hint }),
         cognitiveLevel: edited.cognitiveLevel,
         difficulty: edited.difficulty,
       });
@@ -158,10 +161,23 @@ function ManualQuestionEdit({ q, onChange }: { q: QDraft; onChange: (patch: Part
         </div>
       )}
       <div>
-        <label style={lbl}>Hint (optional — learner can reveal)</label>
-        <input value={q.hint || ''} onChange={(e) => onChange({ hint: e.target.value })}
-          placeholder="A short cue without giving away the answer"
-          className="w-full rounded-xl px-3 py-2" style={field} />
+        <label style={lbl}>Progressive hints (revealed after wrong answers)</label>
+        <div className="space-y-1.5">
+          {ensureFourHints(q.hints, { explanation: q.explanation, singleHint: q.hint }).map((h, hi) => (
+            <input
+              key={hi}
+              value={h}
+              onChange={(e) => {
+                const next = ensureFourHints(q.hints, { explanation: q.explanation, singleHint: q.hint });
+                next[hi] = e.target.value;
+                onChange({ hints: next, hint: next[0] });
+              }}
+              placeholder={`Hint ${hi + 1}`}
+              className="w-full rounded-xl px-3 py-1.5"
+              style={field}
+            />
+          ))}
+        </div>
       </div>
       <div>
         <label style={lbl}>Explanation</label>
@@ -225,6 +241,7 @@ export function QuizEditor({
       correct: 0,
       explanation: '',
       hint: '',
+      hints: ensureFourHints([]),
     };
     setLocalQs((p) => [...p, q]);
     setEditId(id);
@@ -244,6 +261,7 @@ export function QuizEditor({
     questions: localQs.map(({ _id, ...rest }) => ({
       ...rest,
       hint: rest.hint?.trim() || undefined,
+      hints: ensureFourHints(rest.hints, { explanation: rest.explanation, singleHint: rest.hint }),
       explanation: rest.explanation || '',
     })),
     passMark: meta.passMark,

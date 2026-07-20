@@ -4,7 +4,7 @@ import {
   Plus, X, Check, Sparkles, FileText, ChevronDown, Minus,
   ToggleLeft, ToggleRight, Trash2, Save, Send, BookOpen,
   Upload, Loader2, AlertTriangle, RefreshCw,
-  Youtube, ClipboardPaste, MessageSquare, Image as ImageIcon
+  Youtube, ClipboardPaste, MessageSquare, Image as ImageIcon, PenLine, Eye, Pencil,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../../App';
@@ -19,13 +19,31 @@ import {
 } from '../../../lib/api';
 import { supabaseEnabled, uploadImage } from '../../../lib/supabase';
 import type {
-  Block, CreatorPipelineDraft, ObjectStatus,
+  Block, CreatorPipelineDraft, ObjectStatus, ClusteredKnowledgeBase, ContentUnit,
+  TutorialSectionPlan, TutorialTemplate, ObjectSelection, EditAction,
   SummaryContent, ReflectionContent, AssignmentContent, DrillContent,
 } from '../../../lib/types';
+import { getTutorialTemplate, DEFAULT_TUTORIAL_TEMPLATE_ID } from '../../../lib/tutorialTemplates';
+import { orderTutorialParts } from '../../../lib/tutorialOrder.js';
+import {
+  ensureFourHints, ensureHints, attachHintsToQuestionParts,
+  parsePassMark, resolveHintSettings,
+} from '../../../lib/questionHints.js';
+import {
+  applyEditActionsToParts,
+  buildAssistantContext,
+  snapshotParts,
+  type PartSnapshot,
+  type TutorialEditorPart,
+} from '../../../lib/assistant';
 import { FlashcardEditor } from './FlashcardStudy';
 import { QuizEditor } from './QuizEditor';
 import { ConceptCardEditor } from './ConceptCardEditor';
 import { SummaryEditor, ReflectionEditor, AssignmentEditor, DrillEditor } from './StructuredObjectEditors';
+import { TutorialExtractPanel } from './TutorialExtractPanel';
+import { TutorialTemplatePicker } from './TutorialTemplatePicker';
+import { LearningBlocksPreview } from './LearnerReader';
+import { AssistantPanel, AssistantOpenButton } from './AssistantPanel';
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 
@@ -71,9 +89,10 @@ function blocksToParts(blocks: Block[]): any[] {
         ? (b.content as any)?.questions?.[0]
         : b.content as any;
       return {
-        id, type: 'question', label: 'Knowledge check',
+        id, type: 'question', label: q?.label || 'Knowledge check',
         prompt: q?.question || '', options: q?.options || ['', '', '', ''],
         correct: q?.correct ?? 0, exp: q?.explanation || '',
+        hints: Array.isArray(q?.hints) ? q.hints : undefined,
       };
     }
     if (b.type === 'image') {
@@ -88,9 +107,148 @@ function blocksToParts(blocks: Block[]): any[] {
         startText: fmtTimestamp(c.start), endText: fmtTimestamp(c.end), caption: c.caption || '',
       };
     }
-    const c = b.content as { text?: string };
-    return { id, type: 'rich-text', label: 'Section', body: c.text || '' };
+    const c = b.content as { text?: string; heading?: string; subheads?: string[] };
+    return {
+      id, type: 'rich-text',
+      label: c.heading || 'Section',
+      body: c.text || '',
+      heading: c.heading,
+      subheads: c.subheads,
+    };
   });
+}
+
+/** Sequential Question 1…N for tutorial checks. */
+function renumberQuestionParts(parts: any[]): any[] {
+  let n = 0;
+  return parts.map((p) => {
+    if (p.type !== 'question') return p;
+    n += 1;
+    return { ...p, label: `Question ${n}` };
+  });
+}
+
+/** One cluster → one section plan using the template recipe + media slots. */
+function buildTutorialSectionPlans(
+  template: TutorialTemplate,
+  kb: ClusteredKnowledgeBase,
+  secs: number,
+  mediaItems: { id: string; kind: string }[],
+): TutorialSectionPlan[] {
+  const clusters = kb.clusters.slice(0, Math.max(1, secs));
+  const unused = [...mediaItems];
+  return clusters.map((cluster, index) => {
+    const mediaPlacements: { slotId: string; mediaRef: string }[] = [];
+    for (const slot of template.mediaSlots || []) {
+      const idx = unused.findIndex((m) => slot.kind === 'either' || m.kind === slot.kind);
+      if (idx < 0) continue;
+      mediaPlacements.push({ slotId: slot.id, mediaRef: unused[idx].id });
+      unused.splice(idx, 1);
+    }
+    return {
+      index,
+      title: cluster.name || `Section ${index + 1}`,
+      clusterId: cluster.id,
+      recipe: template.sectionBlockRecipe,
+      mediaPlacements,
+    };
+  });
+}
+
+const RECIPE_PART_LABELS: Record<string, string> = {
+  'section-heading': 'Section',
+  explanation: 'Explanation',
+  'worked-example': 'Worked example',
+  'source-excerpt': 'Source excerpt',
+  instruction: 'Instruction',
+  'try-it': 'Try it',
+  principle: 'Principle',
+  misconception: 'Misconception',
+  correction: 'Correction',
+  'scenario-advance': 'Scenario',
+  'knowledge-check': 'Knowledge check',
+  media: 'Media',
+};
+
+/** Empty editable skeleton from a pedagogical template (no-source / write-myself path). */
+function scaffoldTutorialFromTemplate(
+  template: TutorialTemplate,
+  secs: number,
+  end?: string,
+): any[] {
+  const parts: any[] = [];
+  let n = 0;
+  const rid = () => `manual-${Date.now()}-${++n}`;
+  const sectionCount = Math.max(1, secs || template.knobDefaults.secs || 3);
+  const endWith = end || template.knobDefaults.end || 'Recap only';
+
+  parts.push({
+    id: rid(),
+    type: 'rich-text',
+    label: 'Introduction',
+    heading: 'Introduction',
+    body: '',
+  });
+
+  for (let s = 0; s < sectionCount; s += 1) {
+    const sectionTitle = `Section ${s + 1}`;
+    let headingEmitted = false;
+    for (const item of template.sectionBlockRecipe) {
+      if (item.type === 'media') continue;
+      if (item.type === 'section-heading') {
+        parts.push({
+          id: rid(),
+          type: 'rich-text',
+          label: sectionTitle,
+          heading: sectionTitle,
+          body: '',
+        });
+        headingEmitted = true;
+        continue;
+      }
+      if (item.type === 'knowledge-check' || item.type === 'try-it') {
+        parts.push({
+          id: rid(),
+          type: 'question',
+          label: 'Question',
+          prompt: '',
+          options: ['', '', '', ''],
+          correct: 0,
+          exp: '',
+          hints: ensureFourHints([], { sectionTitle }),
+        });
+        continue;
+      }
+      const label = RECIPE_PART_LABELS[item.type] || item.type;
+      const part: any = { id: rid(), type: 'rich-text', label, body: '' };
+      if (!headingEmitted) {
+        part.heading = sectionTitle;
+        headingEmitted = true;
+      }
+      parts.push(part);
+    }
+  }
+
+  if (endWith === 'Recap only') {
+    parts.push({ id: rid(), type: 'rich-text', label: 'Recap', heading: 'Recap', body: '' });
+  } else if (endWith === 'End quiz') {
+    for (let i = 0; i < 2; i += 1) {
+      parts.push({
+        id: rid(),
+        type: 'question',
+        label: 'Question',
+        prompt: '',
+        options: ['', '', '', ''],
+        correct: 0,
+        exp: '',
+        hints: ensureFourHints([]),
+      });
+    }
+  } else if (endWith === 'End assignment') {
+    parts.push({ id: rid(), type: 'rich-text', label: 'Assignment', heading: 'Assignment', body: '' });
+  }
+
+  return renumberQuestionParts(parts);
 }
 
 const NOUNS: Record<string, string> = {
@@ -151,6 +309,19 @@ const CFG: Record<string, GDef[]> = {
       { id: 'chks', label: 'Checks per section', type: 'num', min: 0, max: 3, default: 1 },
       { id: 'excpts', label: 'Source excerpts (total)', type: 'num', min: 0, max: 3, default: 1 },
       { id: 'wex', label: 'Include a worked example', type: 'bool', default: true },
+    ]},
+    { title: 'Checks & scoring', note: 'Pass mark is scored across every multiple-choice check in the tutorial combined — not per question.', fields: [
+      { id: 'pass', label: 'Pass mark (all checks combined)', type: 'sel', options: ['50%', '60%', '70%', '80%', '90%'], default: '70%' },
+      { id: 'hintsOn', label: 'Offer progressive hints after wrong answers', type: 'bool', default: true },
+      { id: 'hintN', label: 'Hints per question', type: 'num', min: 1, max: 4, default: 4 },
+    ]},
+    { title: 'AI generation', note: 'Controls how tightly the draft sticks to your marked-up source.', fields: [
+      {
+        id: 'aiExtra',
+        label: 'Allow AI to add extra information it thinks should be included',
+        type: 'bool',
+        default: false,
+      },
     ]},
   ],
   quiz: [
@@ -407,8 +578,9 @@ const SOURCE_MODES = [
   { id: 'pdf', label: 'Upload PDF', icon: <Upload size={15} /> },
   { id: 'text', label: 'Paste text', icon: <ClipboardPaste size={15} /> },
   { id: 'youtube', label: 'YouTube link', icon: <Youtube size={15} /> },
-  { id: 'prompt', label: 'No source — prompt', icon: <MessageSquare size={15} /> },
-];
+  { id: 'prompt', label: 'No source — AI prompt', icon: <MessageSquare size={15} /> },
+  { id: 'manual', label: 'Write myself', icon: <PenLine size={15} /> },
+] as const;
 
 /* Shared "source is ready" summary card (pdf file pending parse / parsed doc). */
 function SourceReadyCard({
@@ -470,23 +642,26 @@ function TutorialSource(props: any) {
     ytUrl, setYtUrl, ytLoading, ytError, onFetchYoutube,
     promptText, setPromptText, showMedia, imagesOnly,
     media, addImage, addVideo, updateMedia, removeMedia, pickImageAsset,
+    showManualWrite,
   } = props;
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const pick = (files: FileList | null) => { const f = files?.[0]; if (f) onFile(f); };
+  const modes = SOURCE_MODES.filter((m) => m.id !== 'manual' || showManualWrite);
 
   const INTRO: Record<string, string> = {
     pdf: 'Attach the PDF this object is built from. We only store the file here — text is extracted in Mark up.',
     text: 'Paste the text this object is built from — notes, an article, a transcript. You will mark up its sentences next.',
     youtube: 'Paste a YouTube link and we will pull its transcript to build from. The video needs captions available.',
-    prompt: 'No source? Just describe what the object should teach. Generation will build from your prompt — you can skip Mark up and Extract.',
+    prompt: 'No source? Describe what the object should teach. AI generation builds from your prompt — you skip Mark up and Extract.',
+    manual: 'No source? Pick a pedagogical template next, then write every section yourself. Nothing is generated — you fill the skeleton.',
   };
 
   return (
     <div className="p-5 max-w-2xl">
       {/* mode picker */}
       <div className="flex flex-wrap gap-2 mb-4">
-        {SOURCE_MODES.map((m) => {
+        {modes.map((m) => {
           const on = mode === m.id;
           return (
             <button key={m.id} onClick={() => setMode(m.id)}
@@ -565,7 +740,7 @@ function TutorialSource(props: any) {
         </>
       )}
 
-      {/* ── Prompt only ── */}
+      {/* ── Prompt only (AI) ── */}
       {mode === 'prompt' && (
         <>
           <textarea value={promptText} onChange={(e) => setPromptText(e.target.value)} rows={7}
@@ -573,9 +748,19 @@ function TutorialSource(props: any) {
             className="w-full rounded-2xl px-3 py-2.5 resize-y"
             style={{ fontSize: 13, lineHeight: 1.6, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }} />
           <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>
-            With no source, there is nothing to mark up — you'll go straight to Define, and generation builds from this prompt.
+            With no source, there is nothing to mark up — you'll go straight to Define, and AI generation builds from this prompt.
           </p>
         </>
+      )}
+
+      {/* ── Write myself (manual template scaffold) ── */}
+      {mode === 'manual' && (
+        <div className="rounded-2xl p-4 border" style={{ background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.08)' }}>
+          <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220', marginBottom: 6 }}>Hand-write from a template</p>
+          <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
+            Next you’ll pick a pedagogical template and section count in Define. We open a blank tutorial shaped like that template — headings, explanations, examples, and checks — for you to fill in. No AI draft.
+          </p>
+        </div>
       )}
 
       {/* ── Media to include (images + optional YouTube clips) ── */}
@@ -1019,6 +1204,7 @@ function S3({ extracts, setExtracts, markHighlights, docTitle, typeNoun }: any) 
 function S4({
   typeId, title, setTitle, scope, setScope, fv, setF, srcCount, extCount, hlCount,
   intentSuggestions, suggestingIntents, suggestIntentError, onSuggestIntents,
+  onPickTutorialTemplate, clusterCount, writeMyself,
 }: any) {
   const groups = CFG[typeId] || [];
   const blueprint = (() => {
@@ -1029,7 +1215,12 @@ function S4({
         if (v > 0) chips.push(`${v} ${f.label.toLowerCase()}`);
       }
     }));
-    return `Drawing on ${srcCount} source${srcCount !== 1 ? 's' : ''}${extCount > 0 ? ` · ${extCount} extract${extCount !== 1 ? 's' : ''}` : ''}${chips.length > 0 ? ' · ' + chips.slice(0, 3).join(' · ') : ''}. Everything editable after generating.`;
+    const tpl = typeId === 'tutorial' && fv.templateId ? getTutorialTemplate(fv.templateId).name : null;
+    if (writeMyself) {
+      return `${tpl || 'Template'} · blank skeleton with your section count and recipe blocks. You write every part — nothing is AI-generated.`;
+    }
+    const clusterBit = typeId === 'tutorial' && clusterCount > 0 ? ` · ${clusterCount} cluster${clusterCount !== 1 ? 's' : ''}` : '';
+    return `${tpl ? `${tpl} · ` : ''}Drawing on ${srcCount} source${srcCount !== 1 ? 's' : ''}${extCount > 0 ? ` · ${extCount} extract${extCount !== 1 ? 's' : ''}` : ''}${clusterBit}${chips.length > 0 ? ' · ' + chips.slice(0, 3).join(' · ') : ''}. Everything editable after generating.`;
   })();
 
   const renderConceptIntent = (f: FDef) => {
@@ -1107,24 +1298,35 @@ function S4({
         <div key={gi} className="mb-4 p-4 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.7)', borderColor: 'rgba(0,0,0,0.08)' }}>
           {g.title && <p style={{ fontSize: 13, fontWeight: 700, color: '#0B1220', marginBottom: g.note ? 2 : 10 }}>{g.title}</p>}
           {g.note && <p style={{ fontSize: 12, color: '#9AA3AF', marginBottom: 10 }}>{g.note}</p>}
-          {g.fields.map((f: FDef) => (
-            <div key={f.id} className="mb-4">
-              <div className="flex items-center justify-between mb-1.5">
-                <p style={{ fontSize: 12.5, fontWeight: 500, color: '#374151' }}>{f.label}</p>
-                {f.type === 'bool' && <Field f={f} val={fv[f.id]} set={v => setF(f.id, v)} />}
+          {typeId === 'tutorial' && g.title === 'Structure' && onPickTutorialTemplate && (
+            <TutorialTemplatePicker
+              value={fv.templateId || DEFAULT_TUTORIAL_TEMPLATE_ID}
+              onChange={onPickTutorialTemplate}
+            />
+          )}
+          {g.fields.map((f: FDef) => {
+            if (typeId === 'tutorial' && f.id === 'hintN' && fv.hintsOn === false) return null;
+            return (
+              <div key={f.id} className="mb-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p style={{ fontSize: 12.5, fontWeight: 500, color: '#374151' }}>{f.label}</p>
+                  {f.type === 'bool' && <Field f={f} val={fv[f.id]} set={v => setF(f.id, v)} />}
+                </div>
+                {f.type !== 'bool' && (
+                  typeId === 'concept-card' && f.id === 'concept'
+                    ? renderConceptIntent(f)
+                    : <Field f={f} val={fv[f.id]} set={v => setF(f.id, v)} />
+                )}
               </div>
-              {f.type !== 'bool' && (
-                typeId === 'concept-card' && f.id === 'concept'
-                  ? renderConceptIntent(f)
-                  : <Field f={f} val={fv[f.id]} set={v => setF(f.id, v)} />
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       ))}
 
       <div className="p-4 rounded-2xl" style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.2)' }}>
-        <p style={{ fontSize: 12, fontWeight: 700, color: '#059669', marginBottom: 4 }}>What will be generated</p>
+        <p style={{ fontSize: 12, fontWeight: 700, color: '#059669', marginBottom: 4 }}>
+          {writeMyself ? 'What you will write' : 'What will be generated'}
+        </p>
         <p style={{ fontSize: 12.5, color: '#065F46' }}>{blueprint}</p>
       </div>
     </div>
@@ -1287,11 +1489,28 @@ function EditPanel({ part, onChange, onClose }: any) {
       </div>
 
       {part.type === 'rich-text' && (
-        <div>
-          <label style={lbl}>Body</label>
-          <textarea value={part.body || ''} onChange={e => onChange({ body: e.target.value })} rows={5}
-            className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
-        </div>
+        <>
+          <div>
+            <label style={lbl}>Heading</label>
+            <input value={part.heading || ''} onChange={e => onChange({ heading: e.target.value })}
+              placeholder="Section title…" className="w-full rounded-xl px-3 py-2" style={field} />
+          </div>
+          <div>
+            <label style={lbl}>Subheads (comma-separated)</label>
+            <input
+              value={Array.isArray(part.subheads) ? part.subheads.join(', ') : ''}
+              onChange={e => onChange({
+                subheads: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean),
+              })}
+              placeholder="optional subheads…"
+              className="w-full rounded-xl px-3 py-2" style={field} />
+          </div>
+          <div>
+            <label style={lbl}>Body</label>
+            <textarea value={part.body || ''} onChange={e => onChange({ body: e.target.value })} rows={5}
+              className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
+          </div>
+        </>
       )}
 
       {part.type === 'concept-card' && (
@@ -1345,6 +1564,27 @@ function EditPanel({ part, onChange, onClose }: any) {
             <textarea value={part.exp || ''} onChange={e => onChange({ exp: e.target.value })} rows={2}
               className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
           </div>
+          {Array.isArray(part.hints) && part.hints.length > 0 && (
+            <div>
+              <label style={lbl}>Progressive hints (shown after wrong answers)</label>
+              <div className="space-y-1.5">
+                {part.hints.map((h: string, hi: number) => (
+                  <input
+                    key={hi}
+                    value={h}
+                    onChange={(e) => {
+                      const next = [...part.hints];
+                      next[hi] = e.target.value;
+                      onChange({ hints: next });
+                    }}
+                    placeholder={`Hint ${hi + 1}`}
+                    className="w-full rounded-xl px-3 py-1.5"
+                    style={field}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -1358,6 +1598,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   const [parts, setParts] = useState(
     Array.isArray(generatedParts) && generatedParts.length ? generatedParts : DRAFT_PARTS,
   );
+  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [editId, setEditId] = useState<string | null>(null);
   const [aiId, setAiId] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -1372,6 +1613,16 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   const [savedNote, setSavedNote] = useState(false);
   const [objectStatus, setObjectStatus] = useState<ObjectStatus>(initialStatus || 'draft');
   const savedId = useRef<string | null>(initialId || null);
+  const [selection, setSelection] = useState<ObjectSelection>({ kind: 'none' });
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [undoStack, setUndoStack] = useState<PartSnapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<PartSnapshot[]>([]);
+  const partsRef = useRef(parts);
+  const titleRef = useRef(docTitle);
+  const objectiveRef = useRef(objective);
+  partsRef.current = parts;
+  titleRef.current = docTitle;
+  objectiveRef.current = objective;
 
   useEffect(() => {
     if (Array.isArray(generatedParts) && generatedParts.length) setParts(generatedParts);
@@ -1380,10 +1631,58 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   useEffect(() => { if (initialId) savedId.current = initialId; }, [initialId]);
   useEffect(() => { if (initialStatus) setObjectStatus(initialStatus); }, [initialStatus]);
 
-  const updatePart = (id: string, patch: Record<string, any>) =>
+  const pushUndo = () => {
+    setUndoStack((s) => [...s.slice(-39), snapshotParts(partsRef.current as TutorialEditorPart[], titleRef.current, objectiveRef.current)]);
+    setRedoStack([]);
+  };
+
+  const selectBlock = (blockId: string) => setSelection({ kind: 'block', blockId });
+
+  /** Field typing — no undo step per keystroke. */
+  const updatePart = (id: string, patch: Record<string, any>) => {
     setParts((prev: any[]) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    selectBlock(id);
+  };
+
+  /** Assistant Accept + structural manual ops share this path (with undo). */
+  const applyEditActions = (actions: EditAction[], _label: string) => {
+    pushUndo();
+    const result = applyEditActionsToParts(partsRef.current as TutorialEditorPart[], actions, {
+      title: titleRef.current,
+      objective: objectiveRef.current,
+      fv,
+    });
+    setParts(result.parts);
+    if (result.meta?.title != null) setDocTitle(result.meta.title);
+    if (result.meta?.objective != null) setObjective(result.meta.objective);
+  };
+
+  const undo = () => {
+    setUndoStack((stack) => {
+      if (!stack.length) return stack;
+      const prev = stack[stack.length - 1];
+      setRedoStack((r) => [...r, snapshotParts(partsRef.current as TutorialEditorPart[], titleRef.current, objectiveRef.current)]);
+      setParts(prev.parts);
+      setDocTitle(prev.title);
+      setObjective(prev.objective);
+      return stack.slice(0, -1);
+    });
+  };
+
+  const redo = () => {
+    setRedoStack((stack) => {
+      if (!stack.length) return stack;
+      const next = stack[stack.length - 1];
+      setUndoStack((u) => [...u, snapshotParts(partsRef.current as TutorialEditorPart[], titleRef.current, objectiveRef.current)]);
+      setParts(next.parts);
+      setDocTitle(next.title);
+      setObjective(next.objective);
+      return stack.slice(0, -1);
+    });
+  };
 
   const addBlock = (type: 'rich-text' | 'concept-card' | 'question') => {
+    pushUndo();
     const id = `new-${Date.now()}`;
     const base =
       type === 'rich-text' ? { id, type, label: 'New section', body: '' }
@@ -1392,20 +1691,66 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
     setParts((prev: any[]) => [...prev, base]);
     setAiId(null);
     setEditId(id);
+    setMode('edit');
+    selectBlock(id);
   };
 
-  const buildBlocks = () =>
+  const assistantContext = buildAssistantContext({
+    objectId: savedId.current || `draft-${typeId}`,
+    objectType: typeId,
+    title: docTitle || displayTitle,
+    status: objectStatus,
+    scope,
+    objective,
+    fv,
+    parts: parts as TutorialEditorPart[],
+    pipelineDraft: pipelineDraft || null,
+    selection,
+  });
+
+  const hintSettings = resolveHintSettings(fv || {});
+  const tutorialPassMark = parsePassMark(fv?.pass, 70);
+
+  const buildBlocks = (): Block[] =>
     parts.map((p: any, i: number) => {
-      const id = `blk-${Date.now()}-${i}`;
+      const id = `blk-preview-${i}-${p.id || i}`;
       if (p.type === 'concept-card')
         return { id, type: 'concept-card', content: { term: p.concept || p.label || '', definition: p.plain || '', example: p.misc || '' } };
       if (p.type === 'question')
-        return { id, type: 'quiz', content: { questions: [{ question: p.prompt || '', type: 'multiple-choice', options: p.options || [], correct: p.correct ?? 0, explanation: p.exp || '' }] } };
+        return {
+          id,
+          type: 'quiz',
+          content: {
+            passMark: tutorialPassMark,
+            questions: [{
+              question: p.prompt || '',
+              type: 'multiple-choice',
+              options: p.options || [],
+              correct: p.correct ?? 0,
+              explanation: p.exp || '',
+              label: p.label || undefined,
+              hints: ensureHints(p.hints, {
+                explanation: p.exp,
+                singleHint: p.hint,
+                enabled: hintSettings.enabled,
+                count: hintSettings.count,
+              }),
+            }],
+          },
+        };
       if (p.type === 'image')
         return { id, type: 'image', content: { url: p.url || '', caption: p.caption || '', alt: p.caption || '' } };
       if (p.type === 'video')
         return { id, type: 'video-embed', content: { provider: 'youtube', url: p.url || '', videoId: p.videoId || parseYtId(p.url || ''), start: parseTimestamp(p.startText || ''), end: parseTimestamp(p.endText || ''), caption: p.caption || '' } };
-      return { id, type: 'rich-text', content: { text: p.body || p.plain || p.label || '' } };
+      return {
+        id,
+        type: 'rich-text',
+        content: {
+          text: p.body || p.plain || p.label || '',
+          heading: p.heading || undefined,
+          subheads: Array.isArray(p.subheads) && p.subheads.length ? p.subheads : undefined,
+        },
+      };
     });
 
   const onPickImage = async (id: string, file?: File) => {
@@ -1469,118 +1814,188 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
     </div>
   );
 
+  const previewBlocks = buildBlocks();
+  const selectedBlockId = selection.kind === 'block' || selection.kind === 'block_range' ? selection.blockId : null;
+
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0 relative">
       <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium shrink-0" style={{ color: '#6B7280' }}>
           <ArrowLeft size={14} />Back to pipeline
         </button>
-        {[fmtType(typeId), '✦ generated draft', scope].map((chip, i) => (
-          <span key={i} className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: i === 1 ? '#FEF3C7' : '#F3F4F6', color: i === 1 ? '#92400E' : '#374151' }}>{chip}</span>
+        {[fmtType(typeId), scope].map((chip, i) => (
+          <span key={i} className="px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0" style={{ background: '#F3F4F6', color: '#374151' }}>{chip}</span>
         ))}
-      </div>
-      <div className="flex-1 overflow-y-auto p-5 max-w-2xl">
-        <input value={docTitle} onChange={e => setDocTitle(e.target.value)} className="w-full mb-4 bg-transparent border-b border-transparent focus:border-gray-200 outline-none transition-all"
-          style={{ fontSize: 22, fontWeight: 700, color: '#0B1220' }} />
-        <div className="mb-4 p-4 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.7)', borderColor: 'rgba(0,0,0,0.08)' }}>
-          <p style={{ fontSize: 11.5, fontWeight: 700, color: '#6B7280', marginBottom: 6 }}>what this was generated to do</p>
-          <textarea value={objective} onChange={e => setObjective(e.target.value)}
-            rows={2} className="w-full rounded-xl px-3 py-2 resize-none mb-3"
-            style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.8)', outline: 'none' }} />
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {briefChips.map(c => (
-              <span key={c} className="px-2 py-0.5 rounded text-xs" style={{ background: '#F3F4F6', color: '#374151' }}>{c}</span>
-            ))}
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <AssistantOpenButton onClick={() => setAssistantOpen(true)} />
+          <div className="flex rounded-full border p-0.5" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
+            <button
+              type="button"
+              onClick={() => setMode('edit')}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}
+            >
+              <Pencil size={12} />Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('preview'); setEditId(null); setAiId(null); }}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}
+            >
+              <Eye size={12} />Student preview
+            </button>
           </div>
-          <p style={{ fontSize: 11, color: '#9AA3AF' }}>Built from {srcCount} source{srcCount !== 1 ? 's' : ''} · {hlCount} marked up · {extCount} extract{extCount !== 1 ? 's' : ''}</p>
         </div>
-        <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 10 }}>{parts.length} parts generated to match that brief. Edit any field by hand, use the per-part <strong>AI</strong> menu, or <strong>Edit with AI</strong> to change everything at once.</p>
-
-        {parts.map((p, i) => (
-          <div key={p.id} className="mb-3 rounded-2xl border overflow-hidden" style={{ background: 'rgba(255,255,255,0.88)', borderColor: 'rgba(0,0,0,0.08)' }}>
-            <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: 'rgba(0,0,0,0.06)', background: 'rgba(255,255,255,0.5)' }}>
-              <div className="flex items-center gap-2">
-                {p.type === 'image' ? <ImageIcon size={13} style={{ color: '#6B7280' }} /> : p.type === 'video' ? <Youtube size={13} style={{ color: '#EF4444' }} /> : <BookOpen size={13} style={{ color: '#6B7280' }} />}
-                <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: '#F3F4F6', color: '#374151' }}>{p.type}</span>
-                {p.type === 'image' || p.type === 'video'
-                  ? <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#EFF6FF', color: '#2563EB' }}>added by you</span>
-                  : <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#FEF3C7', color: '#92400E' }}>✦ AI-drafted</span>}
+      </div>
+      <div className="flex-1 overflow-y-auto p-5 max-w-2xl w-full mx-auto">
+        {mode === 'preview' ? (
+          <>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>{docTitle || displayTitle}</h1>
+            <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 16 }}>
+              Student preview · how learners will see this tutorial · {parts.length} part{parts.length !== 1 ? 's' : ''}
+            </p>
+            <LearningBlocksPreview
+              blocks={previewBlocks}
+              objectId={savedId.current || 'tutorial-preview'}
+              cumulativePassMark={tutorialPassMark}
+              maxHints={hintSettings.count}
+              hintsEnabled={hintSettings.enabled}
+            />
+          </>
+        ) : (
+          <>
+            <input value={docTitle} onChange={e => setDocTitle(e.target.value)} className="w-full mb-4 bg-transparent border-b border-transparent focus:border-gray-200 outline-none transition-all"
+              style={{ fontSize: 22, fontWeight: 700, color: '#0B1220' }} />
+            <div className="mb-4 p-4 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.7)', borderColor: 'rgba(0,0,0,0.08)' }}>
+              <p style={{ fontSize: 11.5, fontWeight: 700, color: '#6B7280', marginBottom: 6 }}>what this was generated to do</p>
+              <textarea value={objective} onChange={e => setObjective(e.target.value)}
+                rows={2} className="w-full rounded-xl px-3 py-2 resize-none mb-3"
+                style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.8)', outline: 'none' }} />
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {briefChips.map(c => (
+                  <span key={c} className="px-2 py-0.5 rounded text-xs" style={{ background: '#F3F4F6', color: '#374151' }}>{c}</span>
+                ))}
               </div>
-              <div className="flex items-center gap-1">
-                {p.type !== 'image' && p.type !== 'video' && (
-                  <>
-                    <button onClick={() => setAiId(aiId === p.id ? null : p.id)} className="flex items-center gap-1 px-2 py-1 rounded text-xs" style={{ color: '#D97706', background: aiId === p.id ? '#FEF3C7' : 'transparent' }}><Sparkles size={11} />Ask AI</button>
-                    <button onClick={() => setEditId(editId === p.id ? null : p.id)} className="flex items-center gap-1 px-2 py-1 rounded text-xs" style={{ color: '#2563EB', background: editId === p.id ? '#EFF6FF' : 'transparent' }}>✎ Edit</button>
-                  </>
-                )}
-                <button onClick={() => { if (i > 0) { const c = [...parts]; [c[i-1], c[i]] = [c[i], c[i-1]]; setParts(c); } }} disabled={i === 0} className="px-1 text-sm" style={{ color: i === 0 ? '#E5E7EB' : '#6B7280' }}>↑</button>
-                <button onClick={() => { if (i < parts.length-1) { const c = [...parts]; [c[i], c[i+1]] = [c[i+1], c[i]]; setParts(c); } }} disabled={i === parts.length-1} className="px-1 text-sm" style={{ color: i === parts.length-1 ? '#E5E7EB' : '#6B7280' }}>↓</button>
-                <button onClick={() => setParts(prev => prev.filter(x => x.id !== p.id))}><Trash2 size={12} style={{ color: '#EF4444' }} /></button>
-              </div>
+              <p style={{ fontSize: 11, color: '#9AA3AF' }}>Built from {srcCount} source{srcCount !== 1 ? 's' : ''} · {hlCount} marked up · {extCount} extract{extCount !== 1 ? 's' : ''}</p>
             </div>
-            <div className="p-4">
-              {p.type === 'image' ? (
-                <ImagePartEditor part={p} onChange={patch => updatePart(p.id, patch)} onPickImage={file => onPickImage(p.id, file)} />
-              ) : p.type === 'video' ? (
-                <VideoPartEditor part={p} onChange={patch => updatePart(p.id, patch)} />
-              ) : editId === p.id ? (
-                <EditPanel part={p} onChange={patch => updatePart(p.id, patch)} onClose={() => setEditId(null)} />
-              ) : aiId === p.id ? (
-                <AskAiPanel part={p} onApply={patch => updatePart(p.id, patch)} onClose={() => setAiId(null)} />
-              ) : (
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: '#0B1220', marginBottom: 4 }}>{p.label}</p>
-                  {p.type === 'rich-text' && <p style={{ fontSize: 13.5, color: '#374151', lineHeight: 1.65, fontFamily: 'Georgia, serif' }}>{'body' in p ? p.body : ''}</p>}
-                  {p.type === 'concept-card' && (
+            <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 10 }}>
+              {parts.length} parts. Click a block to focus the assistant. Edits from the assistant require Accept. Use <strong>Student preview</strong> anytime.
+            </p>
+
+            {parts.map((p, i) => (
+              <div
+                key={p.id}
+                className="mb-3 rounded-2xl border overflow-hidden"
+                onClick={() => selectBlock(p.id)}
+                style={{
+                  background: 'rgba(255,255,255,0.88)',
+                  borderColor: selectedBlockId === p.id ? '#0B0F1A' : 'rgba(0,0,0,0.08)',
+                  boxShadow: selectedBlockId === p.id ? '0 0 0 1px #0B0F1A' : undefined,
+                }}
+              >
+                <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: 'rgba(0,0,0,0.06)', background: 'rgba(255,255,255,0.5)' }}>
+                  <div className="flex items-center gap-2">
+                    {p.type === 'image' ? <ImageIcon size={13} style={{ color: '#6B7280' }} /> : p.type === 'video' ? <Youtube size={13} style={{ color: '#EF4444' }} /> : <BookOpen size={13} style={{ color: '#6B7280' }} />}
+                    <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: '#F3F4F6', color: '#374151' }}>{p.type}</span>
+                    {p.type === 'image' || p.type === 'video'
+                      ? <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#EFF6FF', color: '#2563EB' }}>added by you</span>
+                      : <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#FEF3C7', color: '#92400E' }}>✦ AI-drafted</span>}
+                  </div>
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    {p.type !== 'image' && p.type !== 'video' && (
+                      <>
+                        <button onClick={() => { selectBlock(p.id); setAssistantOpen(true); setAiId(null); }} className="flex items-center gap-1 px-2 py-1 rounded text-xs" style={{ color: '#D97706', background: 'transparent' }}><Sparkles size={11} />Ask AI</button>
+                        <button onClick={() => { selectBlock(p.id); setEditId(editId === p.id ? null : p.id); }} className="flex items-center gap-1 px-2 py-1 rounded text-xs" style={{ color: '#2563EB', background: editId === p.id ? '#EFF6FF' : 'transparent' }}>✎ Edit</button>
+                      </>
+                    )}
+                    <button onClick={() => { if (i > 0) { pushUndo(); const c = [...parts]; [c[i-1], c[i]] = [c[i], c[i-1]]; setParts(c); } }} disabled={i === 0} className="px-1 text-sm" style={{ color: i === 0 ? '#E5E7EB' : '#6B7280' }}>↑</button>
+                    <button onClick={() => { if (i < parts.length-1) { pushUndo(); const c = [...parts]; [c[i], c[i+1]] = [c[i+1], c[i]]; setParts(c); } }} disabled={i === parts.length-1} className="px-1 text-sm" style={{ color: i === parts.length-1 ? '#E5E7EB' : '#6B7280' }}>↓</button>
+                    <button onClick={() => { pushUndo(); setParts(prev => prev.filter(x => x.id !== p.id)); }}><Trash2 size={12} style={{ color: '#EF4444' }} /></button>
+                  </div>
+                </div>
+                <div className="p-4">
+                  {p.type === 'image' ? (
+                    <ImagePartEditor part={p} onChange={patch => updatePart(p.id, patch)} onPickImage={file => onPickImage(p.id, file)} />
+                  ) : p.type === 'video' ? (
+                    <VideoPartEditor part={p} onChange={patch => updatePart(p.id, patch)} />
+                  ) : editId === p.id ? (
+                    <EditPanel part={p} onChange={patch => updatePart(p.id, patch)} onClose={() => setEditId(null)} />
+                  ) : (
                     <div>
-                      <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0B1220', marginBottom: 3 }}>{'concept' in p ? p.concept : ''}</p>
-                      <p style={{ fontSize: 13, color: '#374151', marginBottom: 3 }}>{'plain' in p ? p.plain : ''}</p>
-                      <p style={{ fontSize: 12, color: '#DC2626' }}>Misconception: {'misc' in p ? p.misc : ''}</p>
-                    </div>
-                  )}
-                  {p.type === 'question' && (
-                    <div>
-                      <p style={{ fontSize: 13.5, color: '#0B1220', marginBottom: 6 }}>{'prompt' in p ? p.prompt : ''}</p>
-                      {'options' in p && p.options.map((o: string, oi: number) => {
-                        const isCorrect = oi === ('correct' in p ? p.correct : -1);
-                        return (
-                          <p key={oi} className="mb-1 flex items-center gap-2" style={{ fontSize: 13 }}>
-                            <span className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0"
-                              style={{ borderColor: isCorrect ? '#059669' : '#D1D5DB', background: isCorrect ? 'rgba(5,150,105,0.1)' : 'transparent' }}>
-                              {isCorrect && <Check size={11} style={{ color: '#059669' }} />}
-                            </span>
-                            <span style={{ color: isCorrect ? '#059669' : '#374151' }}>{o}</span>
-                          </p>
-                        );
-                      })}
+                      <p style={{ fontSize: 13, fontWeight: 600, color: '#0B1220', marginBottom: 4 }}>{p.label}</p>
+                      {p.type === 'rich-text' && (
+                        <div>
+                          {p.heading && (
+                            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220', marginBottom: 6, letterSpacing: '-0.3px' }}>{p.heading}</h3>
+                          )}
+                          {Array.isArray(p.subheads) && p.subheads.length > 0 && (
+                            <ul style={{ margin: '0 0 8px', paddingLeft: 18, fontSize: 12.5, color: '#6B7280' }}>
+                              {p.subheads.map((s: string) => <li key={s}>{s}</li>)}
+                            </ul>
+                          )}
+                          <p style={{ fontSize: 13.5, color: '#374151', lineHeight: 1.65, fontFamily: 'Georgia, serif' }}>{'body' in p ? p.body : ''}</p>
+                        </div>
+                      )}
+                      {p.type === 'concept-card' && (
+                        <div>
+                          <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0B1220', marginBottom: 3 }}>{'concept' in p ? p.concept : ''}</p>
+                          <p style={{ fontSize: 13, color: '#374151', marginBottom: 3 }}>{'plain' in p ? p.plain : ''}</p>
+                          <p style={{ fontSize: 12, color: '#DC2626' }}>Misconception: {'misc' in p ? p.misc : ''}</p>
+                        </div>
+                      )}
+                      {p.type === 'question' && (
+                        <div>
+                          <p style={{ fontSize: 13.5, color: '#0B1220', marginBottom: 6 }}>{'prompt' in p ? p.prompt : ''}</p>
+                          {'options' in p && p.options.map((o: string, oi: number) => {
+                            const isCorrect = oi === ('correct' in p ? p.correct : -1);
+                            return (
+                              <p key={oi} className="mb-1 flex items-center gap-2" style={{ fontSize: 13 }}>
+                                <span className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0"
+                                  style={{ borderColor: isCorrect ? '#059669' : '#D1D5DB', background: isCorrect ? 'rgba(5,150,105,0.1)' : 'transparent' }}>
+                                  {isCorrect && <Check size={11} style={{ color: '#059669' }} />}
+                                </span>
+                                <span style={{ color: isCorrect ? '#059669' : '#374151' }}>{o}</span>
+                              </p>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
-        ))}
+              </div>
+            ))}
 
-        {/* Add a new block */}
-        <div className="rounded-2xl border-2 border-dashed p-3 flex items-center gap-2 flex-wrap" style={{ borderColor: 'rgba(0,0,0,0.12)' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>Add block:</span>
-          <button onClick={() => addBlock('rich-text')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
-            style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
-            <Plus size={12} />Text
-          </button>
-          <button onClick={() => addBlock('concept-card')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
-            style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
-            <Plus size={12} />Concept card
-          </button>
-          <button onClick={() => addBlock('question')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
-            style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
-            <Plus size={12} />Question
-          </button>
-        </div>
+            <div className="rounded-2xl border-2 border-dashed p-3 flex items-center gap-2 flex-wrap" style={{ borderColor: 'rgba(0,0,0,0.12)' }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>Add block:</span>
+              <button onClick={() => addBlock('rich-text')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
+                style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
+                <Plus size={12} />Text
+              </button>
+              <button onClick={() => addBlock('concept-card')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
+                style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
+                <Plus size={12} />Concept card
+              </button>
+              <button onClick={() => addBlock('question')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
+                style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
+                <Plus size={12} />Question
+              </button>
+            </div>
+          </>
+        )}
       </div>
       <div className="sticky bottom-0 flex items-center justify-between px-5 py-3 border-t border-white/40" style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
-        <button className="flex items-center gap-1.5 px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
-          <Sparkles size={13} style={{ color: '#D97706' }} />✦ Edit with AI
+        <button
+          type="button"
+          onClick={() => {
+            if (mode === 'preview') setMode('edit');
+            else { setMode('preview'); setEditId(null); setAiId(null); }
+          }}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-full border"
+          style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}
+        >
+          {mode === 'preview' ? <><Pencil size={13} />Back to edit</> : <><Eye size={13} />Student preview</>}
         </button>
         <span style={{ fontSize: 11.5, color: savedNote ? '#059669' : '#9AA3AF' }}>
           {savedNote ? '✓ Saved to Object Library' : `${parts.length} parts · save to add it to the Object Library`}
@@ -1594,6 +2009,24 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
           </button>
         </div>
       </div>
+
+      <AssistantPanel
+        open={assistantOpen}
+        onOpenChange={setAssistantOpen}
+        context={assistantContext}
+        selection={selection}
+        parts={parts as TutorialEditorPart[]}
+        onFocusBlock={(blockId) => {
+          selectBlock(blockId);
+          setMode('edit');
+          setEditId(blockId);
+        }}
+        onAcceptActions={applyEditActions}
+        canUndo={undoStack.length > 0}
+        canRedo={redoStack.length > 0}
+        onUndo={undo}
+        onRedo={redo}
+      />
     </div>
   );
 }
@@ -1665,14 +2098,39 @@ export function ObjectCreator() {
   const [aiSuggestions, setAiSuggestions] = useState<number[]>([]);
   const [query, setQuery] = useState('');
   const [extracts, setExtracts] = useState<any[]>([]);
+  const [knowledgeBase, setKnowledgeBase] = useState<ClusteredKnowledgeBase | null>(null);
+  const [shapeIntent, setShapeIntent] = useState('');
   const [title, setTitle] = useState('');
   const [scope, setScope] = useState('program');
-  const [fv, setFvState] = useState<Record<string, any>>({});
+  const [fv, setFvState] = useState<Record<string, any>>(() => (
+    typeId === 'tutorial'
+      ? { templateId: DEFAULT_TUTORIAL_TEMPLATE_ID, ...getTutorialTemplate(DEFAULT_TUTORIAL_TEMPLATE_ID).knobDefaults }
+      : {}
+  ));
   const setF = (id: string, v: any) => setFvState(p => ({ ...p, [id]: v }));
+
+  const pickTutorialTemplate = (t: TutorialTemplate) => {
+    setFvState((p) => ({
+      ...p,
+      templateId: t.id,
+      ...t.knobDefaults,
+    }));
+  };
+
+  const syncExtractsFromUnits = (units: ContentUnit[]) => {
+    setExtracts(units.map((u) => ({
+      id: u.id,
+      kind: u.kind,
+      from: u.from || '',
+      fromHl: !!u.fromHl,
+      text: u.text,
+      clusterId: u.clusterId,
+    })));
+  };
 
   // Tutorial Step 1 — source can be a PDF, pasted text, a YouTube link, or a prompt.
   // PDF: attach File in Sources; parse into `doc` only when entering Mark up.
-  const [srcMode, setSrcMode] = useState<'pdf' | 'text' | 'youtube' | 'prompt'>('pdf');
+  const [srcMode, setSrcMode] = useState<'pdf' | 'text' | 'youtube' | 'prompt' | 'manual'>('pdf');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [doc, setDoc] = useState<ParsedDoc | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -1729,18 +2187,26 @@ export function ObjectCreator() {
       out.push(p);
     }
     for (const m of media) if (!used.has(m.id)) out.push(mediaToPart(m));
-    return out;
+    const template = getTutorialTemplate(fv.templateId || DEFAULT_TUTORIAL_TEMPLATE_ID);
+    const ordered = orderTutorialParts(out, {
+      assessmentPlacement: template?.assessmentPlacement || 'after_each_section',
+      checksPerSection: typeof fv.chks === 'number' ? fv.chks : 1,
+    });
+    const hintOpts = resolveHintSettings(fv);
+    return renumberQuestionParts(attachHintsToQuestionParts(ordered, hintOpts));
   };
 
   // Switching source type clears the committed source + any markup built on it.
-  const changeMode = (m: 'pdf' | 'text' | 'youtube' | 'prompt') => {
+  const changeMode = (m: 'pdf' | 'text' | 'youtube' | 'prompt' | 'manual') => {
     setSrcMode(m);
     setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setParseProgress(null);
     setHighlights([]); setAiSuggestions([]); setExtracts([]);
+    setKnowledgeBase(null); setShapeIntent('');
   };
   const replaceSource = () => {
     setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setParseProgress(null);
     setHighlights([]); setAiSuggestions([]); setExtracts([]);
+    setKnowledgeBase(null); setShapeIntent('');
   };
 
   // Tutorial: real LLM — suggest highlights + streamed generation.
@@ -1775,6 +2241,7 @@ export function ObjectCreator() {
     setHighlights([]);
     setAiSuggestions([]);
     setExtracts([]);
+    setKnowledgeBase(null);
     if (!title) setTitle(file.name.replace(/\.pdf$/i, ''));
   };
 
@@ -1815,6 +2282,7 @@ export function ObjectCreator() {
   const handleLoadText = () => {
     if (!pasteText.trim()) return;
     setHighlights([]); setAiSuggestions([]); setExtracts([]);
+    setKnowledgeBase(null);
     if (!title) setTitle('Pasted source');
     setDoc(docFromText(pasteText, 'Pasted source'));
   };
@@ -1826,6 +2294,7 @@ export function ObjectCreator() {
     try {
       const out = await ingestYoutube(ytUrl.trim());
       setHighlights([]); setAiSuggestions([]); setExtracts([]);
+      setKnowledgeBase(null);
       if (!title && out.title) setTitle(out.title);
       setDoc({ fileName: out.title || 'YouTube transcript', pageCount: 1, sentences: (out.sentences || []).map((t) => ({ text: t, page: 1 })) });
     } catch (e) {
@@ -1839,7 +2308,7 @@ export function ObjectCreator() {
   const docParas: string[] = usesPipeline ? (doc ? doc.sentences.map(s => s.text) : []) : DOC_PARAS;
   const docPages: number[] | undefined = usesPipeline && doc ? doc.sentences.map(s => s.page) : undefined;
   const docTitle = usesPipeline
-    ? (doc?.fileName ?? pdfFile?.name ?? (srcMode === 'prompt' ? 'Prompt only' : 'Your source'))
+    ? (doc?.fileName ?? pdfFile?.name ?? (srcMode === 'manual' ? 'Written by hand' : srcMode === 'prompt' ? 'Prompt only' : 'Your source'))
     : 'How to Play Bridge';
 
   const goTo = (n: number) => { if (n >= 1 && n <= 4 && n <= reached) setStep(n); };
@@ -1865,7 +2334,16 @@ export function ObjectCreator() {
       if (d.doc) setDoc(d.doc as ParsedDoc);
       if (d.highlights) setHighlights(d.highlights);
       if (d.extracts) setExtracts(d.extracts);
-      if (d.fv) setFvState(d.fv);
+      if (d.knowledgeBase) setKnowledgeBase(d.knowledgeBase);
+      if (d.shapeIntent != null) setShapeIntent(d.shapeIntent);
+      if (d.fv) {
+        setFvState({
+          ...d.fv,
+          templateId: d.fv.templateId || d.templateId || DEFAULT_TUTORIAL_TEMPLATE_ID,
+        });
+      } else if (d.templateId) {
+        setFvState((p) => ({ ...p, templateId: d.templateId }));
+      }
       if (d.scope) setScope(d.scope);
       if (d.media) setMedia(d.media);
       if (d.sel) setSel(d.sel);
@@ -1946,6 +2424,9 @@ export function ObjectCreator() {
     doc: doc ? { fileName: doc.fileName, pageCount: doc.pageCount, sentences: doc.sentences } : null,
     highlights,
     extracts,
+    knowledgeBase: knowledgeBase || undefined,
+    templateId: fv.templateId,
+    shapeIntent: shapeIntent || undefined,
     fv,
     scope,
     media,
@@ -2050,6 +2531,14 @@ export function ObjectCreator() {
 
   // Tutorial generation: stream real parts from the backend LLM.
   const runGenerate = async () => {
+    const templateId = fv.templateId || DEFAULT_TUTORIAL_TEMPLATE_ID;
+    const template = getTutorialTemplate(templateId);
+    const needsClusters = srcMode !== 'prompt' && srcMode !== 'manual';
+    if (needsClusters && (!knowledgeBase || knowledgeBase.clusters.length === 0)) {
+      setGenError('Build clusters in Extract first (Pull & cluster), then pick a template in Define.');
+      return;
+    }
+
     const ctrl = new AbortController();
     genAbort.current = ctrl;
     setGenError(null);
@@ -2057,28 +2546,54 @@ export function ObjectCreator() {
     setGenProgress('Starting…');
     setGenerating(true);
     try {
+      const secs = typeof fv.secs === 'number' ? fv.secs : (template.knobDefaults.secs ?? 3);
+      const hintOpts = resolveHintSettings(fv);
       const config = {
         obj: fv.obj, topic: fv.topic || title, aud: fv.aud, lvl: fv.lvl,
-        secs: fv.secs, prog: fv.prog, dpth: fv.dpth, end: fv.end,
+        secs, prog: fv.prog, dpth: fv.dpth, end: fv.end,
         chks: fv.chks, excpts: fv.excpts, wex: fv.wex,
+        pass: fv.pass || '70%',
+        hintsOn: hintOpts.enabled,
+        hintN: hintOpts.count,
+        aiExtra: fv.aiExtra === true,
+        templateId: template.id,
       };
+      const mediaPayload = media.map((m: any) => ({ ref: m.id, kind: m.kind as 'image' | 'video', caption: m.caption }));
+      const sectionPlans = knowledgeBase?.clusters?.length
+        ? buildTutorialSectionPlans(
+          template,
+          knowledgeBase,
+          secs,
+          media.map((m: any) => ({ id: m.id as string, kind: m.kind as string })),
+        )
+        : [];
       const payload = {
         title,
         config,
         extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
         prompt: srcMode === 'prompt' ? promptText : undefined,
-        // Only ref + kind + caption go to the model (never the image bytes) so
-        // it can decide where each image / clip belongs in the flow.
-        media: media.map((m: any) => ({ ref: m.id, kind: m.kind, caption: m.caption })),
+        media: mediaPayload,
+        template: sectionPlans.length ? template : null,
+        knowledgeBase: sectionPlans.length ? knowledgeBase : null,
+        sectionPlans: sectionPlans.length ? sectionPlans : undefined,
+        shapeIntent: shapeIntent || undefined,
       };
       const collected: GeneratedPart[] = [];
       for await (const ev of generateTutorial(payload, ctrl.signal) as AsyncGenerator<TutorialGenEvent>) {
         if (ev.type === 'progress') setGenProgress(ev.message);
-        else if (ev.type === 'part') { collected.push(ev.part); setGenParts([...collected]); }
+        else if (ev.type === 'part') { collected.push(ev.part); setGenParts(renumberQuestionParts([...collected])); }
         else if (ev.type === 'error') throw new Error(ev.message);
         else if (ev.type === 'done') break;
       }
       if (collected.length === 0) throw new Error('No parts were generated.');
+      const ordered = orderTutorialParts(collected, {
+        assessmentPlacement: template.assessmentPlacement || 'after_each_section',
+        checksPerSection: typeof config.chks === 'number' ? config.chks : 1,
+      });
+      setGenParts(renumberQuestionParts(attachHintsToQuestionParts(ordered, {
+        enabled: config.hintsOn,
+        count: config.hintN,
+      })));
       setGenerating(false);
       setShowEditor(true);
     } catch (e) {
@@ -2367,8 +2882,17 @@ export function ObjectCreator() {
     }
   };
 
+  const openManualTutorialEditor = () => {
+    const template = getTutorialTemplate(fv.templateId || DEFAULT_TUTORIAL_TEMPLATE_ID);
+    const secs = typeof fv.secs === 'number' ? fv.secs : (template.knobDefaults.secs ?? 3);
+    setGenError(null);
+    setGenParts(scaffoldTutorialFromTemplate(template, secs, fv.end));
+    setShowEditor(true);
+  };
+
   const advance = () => {
     if (step >= 4) {
+      if (isTutorial && srcMode === 'manual') { openManualTutorialEditor(); return; }
       if (isTutorial) { runGenerate(); return; }
       if (isFlashcard) { runGenerateFlashcards(); return; }
       if (isQuiz) { runGenerateQuiz(); return; }
@@ -2378,7 +2902,7 @@ export function ObjectCreator() {
       return;
     }
     // "No source" pipelines have nothing to mark up/extract → jump to Define.
-    if (usesPipeline && srcMode === 'prompt' && step === 1) {
+    if (usesPipeline && (srcMode === 'prompt' || srcMode === 'manual') && step === 1) {
       setStep(4);
       if (4 > reached) setReached(4);
       return;
@@ -2464,13 +2988,15 @@ export function ObjectCreator() {
       onCancel={cancelGenerate} />
   );
 
-  const sourceReady = srcMode === 'prompt'
-    ? promptText.trim().length > 0
-    : srcMode === 'pdf'
-      ? !!(pdfFile || (doc && doc.sentences.length > 0))
-      : srcMode === 'text'
-        ? !!(pasteText.trim() || (doc && doc.sentences.length > 0))
-        : !!(doc && doc.sentences.length > 0); // youtube — transcript already fetched
+  const sourceReady = srcMode === 'manual'
+    ? true
+    : srcMode === 'prompt'
+      ? promptText.trim().length > 0
+      : srcMode === 'pdf'
+        ? !!(pdfFile || (doc && doc.sentences.length > 0))
+        : srcMode === 'text'
+          ? !!(pasteText.trim() || (doc && doc.sentences.length > 0))
+          : !!(doc && doc.sentences.length > 0); // youtube — transcript already fetched
 
   const canNext = step === 1
     ? (usesPipeline ? sourceReady : sel.length > 0)
@@ -2534,13 +3060,31 @@ export function ObjectCreator() {
                   ytUrl={ytUrl} setYtUrl={setYtUrl} ytLoading={ytLoading} ytError={ytError} onFetchYoutube={handleFetchYoutube}
                   promptText={promptText} setPromptText={setPromptText}
                   showMedia={isTutorial || isFlashcard} imagesOnly={isFlashcard}
+                  showManualWrite={isTutorial}
                   media={media} addImage={addImageAsset} addVideo={addVideoAsset} updateMedia={updateMedia} removeMedia={removeMedia} pickImageAsset={pickImageAsset} />
               : <S1 selected={sel} setSelected={setSel} roles={roles} setRoles={setRoles} urlRefs={urlRefs} setUrlRefs={setUrlRefs} />)}
             {step === 2 && <S2 highlights={highlights} setHighlights={setHighlights} activeTag={activeTag} setActiveTag={setActiveTag} aiSuggestions={aiSuggestions} setAiSuggestions={setAiSuggestions} docParas={docParas} docTitle={docTitle || pdfFile?.name || 'Your source'} pages={docPages} query={query} setQuery={setQuery} onSuggest={usesPipeline ? handleSuggest : undefined} suggesting={suggesting} suggestError={suggestError} parsing={parsing} parseProgress={parseProgress} parseError={parseError} />}
-            {step === 3 && <S3 extracts={extracts} setExtracts={setExtracts} markHighlights={highlights} docTitle={docTitle} typeNoun={NOUNS[typeId] || typeId} />}
+            {step === 3 && (isTutorial
+              ? (
+                <TutorialExtractPanel
+                  markHighlights={highlights}
+                  docTitle={docTitle}
+                  knowledgeBase={knowledgeBase}
+                  setKnowledgeBase={setKnowledgeBase}
+                  shapeIntent={shapeIntent}
+                  setShapeIntent={setShapeIntent}
+                  objective={fv.obj}
+                  topic={fv.topic || title}
+                  syncExtracts={syncExtractsFromUnits}
+                />
+              )
+              : <S3 extracts={extracts} setExtracts={setExtracts} markHighlights={highlights} docTitle={docTitle} typeNoun={NOUNS[typeId] || typeId} />)}
             {step === 4 && (
               <S4 typeId={typeId} title={title} setTitle={setTitle} scope={scope} setScope={setScope} fv={fv} setF={setF}
                 srcCount={usesPipeline ? ((doc || pdfFile) ? 1 : 0) : sel.length} extCount={extracts.length} hlCount={highlights.length}
+                clusterCount={isTutorial ? (knowledgeBase?.clusters?.length || 0) : 0}
+                onPickTutorialTemplate={isTutorial ? pickTutorialTemplate : undefined}
+                writeMyself={isTutorial && srcMode === 'manual'}
                 intentSuggestions={isConceptCard ? intentSuggestions : undefined}
                 suggestingIntents={isConceptCard ? suggestingIntents : undefined}
                 suggestIntentError={isConceptCard ? suggestIntentError : undefined}
@@ -2590,7 +3134,9 @@ export function ObjectCreator() {
             className="flex items-center gap-1.5 px-5 py-2 rounded-full transition-all"
             style={{ fontSize: 13, fontWeight: 600, background: canNext ? (step === 4 ? '#059669' : '#0B0F1A') : '#E5E7EB', color: canNext ? '#fff' : '#9AA3AF' }}>
             {step === 4
-              ? <><Sparkles size={13} />✦ {editObjectId ? 'Regenerate' : 'Generate'} {NOUNS[typeId] || typeId}</>
+              ? (isTutorial && srcMode === 'manual'
+                ? <><PenLine size={13} />{editObjectId ? 'Rebuild blank from template' : 'Start writing'} →</>
+                : <><Sparkles size={13} />✦ {editObjectId ? 'Regenerate' : 'Generate'} {NOUNS[typeId] || typeId}</>)
               : 'Next →'}
           </button>
         </div>
