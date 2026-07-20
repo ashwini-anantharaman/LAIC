@@ -422,10 +422,12 @@ export interface MarkupFlag {
  * can reopen the full process (not only the generated draft).
  */
 export interface CreatorPipelineDraft {
-  srcMode?: 'pdf' | 'text' | 'youtube' | 'prompt' | 'manual';
+  srcMode?: 'pdf' | 'text' | 'youtube' | 'web' | 'prompt' | 'manual';
   promptText?: string;
   pasteText?: string;
   ytUrl?: string;
+  /** Website URL used when srcMode is 'web'. */
+  webUrl?: string;
   doc?: { fileName: string; pageCount: number; sentences: { text: string; page: number }[] } | null;
   highlights?: any[];
   /** AI document-level markup flags for Accept / Reject / Adjust review. */

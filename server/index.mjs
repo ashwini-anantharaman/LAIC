@@ -328,6 +328,181 @@ async function fetchYoutubeTranscript(url) {
   }
 }
 
+/* ─── Tutorial: website page → sentences ──────────────────────────── */
+
+const WEB_MAX_BYTES = 2_000_000;
+const WEB_TIMEOUT_MS = 20_000;
+const WEB_MAX_REDIRECTS = 3;
+
+function isPrivateHostname(hostname) {
+  const h = String(hostname || '').toLowerCase();
+  if (!h || h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local')) return true;
+  // Block obvious IP literals (IPv4 + common private ranges; also block all raw IPs for safety)
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) {
+    const parts = h.split('.').map(Number);
+    const [a, b] = parts;
+    if (a === 10 || a === 127 || a === 0) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 169 && b === 254) return true;
+    return true; // disallow any bare IPv4 as fetch target
+  }
+  if (h.includes(':')) return true; // IPv6 literals
+  return false;
+}
+
+function assertPublicHttpUrl(raw) {
+  let u;
+  try {
+    u = new URL(String(raw || '').trim());
+  } catch {
+    throw new LlmError(400, 'bad_url', 'Enter a valid website URL (https://…).');
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+    throw new LlmError(400, 'bad_url', 'Only http:// and https:// website links are supported.');
+  }
+  if (isPrivateHostname(u.hostname)) {
+    throw new LlmError(400, 'private_url', 'That link points to a private or local address and cannot be fetched.');
+  }
+  return u;
+}
+
+function decodeHtmlEntities(s) {
+  return String(s || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => {
+      const code = Number(n);
+      return Number.isFinite(code) ? String.fromCharCode(code) : '';
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => {
+      const code = parseInt(h, 16);
+      return Number.isFinite(code) ? String.fromCharCode(code) : '';
+    });
+}
+
+/** Lightweight HTML → plain text (no extra deps). Prefer article/main when present. */
+function htmlToPlainText(html) {
+  let h = String(html || '');
+  // Drop non-content blocks early
+  h = h
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+
+  let chunk = h;
+  const article = h.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+  const main = h.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+  if (article?.[1] && article[1].replace(/<[^>]+>/g, ' ').trim().length > 200) chunk = article[1];
+  else if (main?.[1] && main[1].replace(/<[^>]+>/g, ' ').trim().length > 200) chunk = main[1];
+  else {
+    const body = h.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+    if (body?.[1]) chunk = body[1];
+  }
+
+  chunk = chunk
+    .replace(/<(nav|footer|aside|header|form|iframe)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<\/(p|div|h[1-6]|li|tr|br|blockquote|section)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ');
+
+  return decodeHtmlEntities(chunk)
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+function extractHtmlTitle(html, fallbackHost) {
+  const m = String(html || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (m?.[1]) {
+    const t = decodeHtmlEntities(m[1].replace(/\s+/g, ' ').trim());
+    if (t) return t.slice(0, 200);
+  }
+  const og = String(html || '').match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
+    || String(html || '').match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i);
+  if (og?.[1]) return decodeHtmlEntities(og[1]).trim().slice(0, 200);
+  return fallbackHost || 'Web page';
+}
+
+async function fetchWebsitePage(rawUrl) {
+  let url = assertPublicHttpUrl(rawUrl);
+  let html = '';
+  let finalUrl = url;
+
+  for (let hop = 0; hop <= WEB_MAX_REDIRECTS; hop += 1) {
+    assertPublicHttpUrl(finalUrl.toString());
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), WEB_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(finalUrl.toString(), {
+        method: 'GET',
+        redirect: 'manual',
+        signal: ctrl.signal,
+        headers: {
+          'User-Agent': 'LAIC-SourceBot/1.0 (+course authoring; educational)',
+          Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+        },
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if (e?.name === 'AbortError') {
+        throw new LlmError(504, 'timeout', 'Timed out fetching that page. Try again, or paste the article text instead.');
+      }
+      throw new LlmError(502, 'fetch_failed', `Could not reach that website: ${e.message || 'network error'}`);
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const loc = res.headers.get('location');
+      if (!loc) throw new LlmError(502, 'bad_redirect', 'The site redirected without a destination.');
+      finalUrl = new URL(loc, finalUrl);
+      continue;
+    }
+
+    if (!res.ok) {
+      throw new LlmError(502, 'http_error', `The website returned HTTP ${res.status}.`);
+    }
+
+    const ctype = String(res.headers.get('content-type') || '').toLowerCase();
+    if (ctype && !ctype.includes('text/html') && !ctype.includes('application/xhtml') && !ctype.includes('text/plain')) {
+      throw new LlmError(422, 'not_html', 'That link is not a web page we can read as text (need HTML). Try pasting the article instead.');
+    }
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > WEB_MAX_BYTES) {
+      throw new LlmError(413, 'too_large', 'That page is too large to ingest. Try a shorter article URL, or paste the text.');
+    }
+    html = buf.toString('utf8');
+    break;
+  }
+
+  if (!html) throw new LlmError(502, 'empty_page', 'No page content was returned.');
+
+  const title = extractHtmlTitle(html, finalUrl.hostname);
+  const text = htmlToPlainText(html);
+  if (!text || text.replace(/\s+/g, ' ').trim().length < 80) {
+    throw new LlmError(422, 'no_text', 'Could not extract enough readable text from that page (it may be paywalled or heavily scripted). Try Paste text instead.');
+  }
+
+  // Cap very long pages so Mark up stays usable
+  const capped = text.length > 120_000 ? text.slice(0, 120_000) : text;
+  const sentences = toSentences(capped);
+  if (!sentences.length) {
+    throw new LlmError(422, 'no_sentences', 'Extracted text but could not split it into sentences. Try Paste text.');
+  }
+  return { title, sentences, url: finalUrl.toString() };
+}
+
 /* ─── Tutorial: suggest highlights ────────────────────────────────── */
 
 async function suggestHighlights(sentences, instruction) {
@@ -2207,6 +2382,19 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  /* ---- Tutorial: website page → sentences ---- */
+  if (method === 'POST' && path === '/api/tutorials/ingest-web') {
+    const body = await readJson(req);
+    if (!body.url) return send(res, 400, { code: 'no_url', message: 'Provide a website URL.' });
+    try {
+      const out = await fetchWebsitePage(body.url);
+      return send(res, 200, out);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
   /* ---- Tutorial: suggest highlights (real LLM) ---- */
   if (method === 'POST' && path === '/api/tutorials/suggest-highlights') {
     const body = await readJson(req);
@@ -2816,7 +3004,7 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`\nLAIC dev backend → http://localhost:${PORT}`);
   console.log(`LLM: ${ANTHROPIC_API_KEY ? `enabled (model ${LLM_MODEL})` : 'DISABLED — set ANTHROPIC_API_KEY in .env'}`);
-  console.log('Tutorial: POST /api/tutorials/suggest-highlights · POST /api/tutorials/suggest-markup-flags · POST /api/tutorials/extract-knowledge · POST /api/tutorials/generate (SSE)');
+  console.log('Tutorial: POST /api/tutorials/ingest-web · POST /api/tutorials/ingest-youtube · POST /api/tutorials/suggest-highlights · POST /api/tutorials/suggest-markup-flags · POST /api/tutorials/extract-knowledge · POST /api/tutorials/generate (SSE)');
   console.log('Ask AI: POST /api/ask');
   console.log('Assistant: POST /api/assistant/turn (SSE)');
   console.log('Sources stub: GET/POST /api/sources · GET /api/collections\n');

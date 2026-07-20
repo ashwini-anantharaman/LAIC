@@ -355,6 +355,18 @@ export function ingestYoutube(
   });
 }
 
+/** POST /api/tutorials/ingest-web — server fetches a public web page as sentences. */
+export function ingestWeb(
+  url: string,
+  signal?: AbortSignal,
+): Promise<{ title: string; sentences: string[]; url?: string }> {
+  return apiFetch<{ title: string; sentences: string[]; url?: string }>('/api/tutorials/ingest-web', {
+    method: 'POST',
+    body: { url },
+    signal,
+  });
+}
+
 /**
  * POST /api/tutorials/edit-block — the model rewrites a single block per the
  * author's instruction, returning the edited block of the SAME type/id.

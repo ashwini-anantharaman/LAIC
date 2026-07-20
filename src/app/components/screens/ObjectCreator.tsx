@@ -4,7 +4,7 @@ import {
   Plus, X, Check, Sparkles, FileText, ChevronDown, Minus,
   ToggleLeft, ToggleRight, Trash2, Save, Send, BookOpen,
   Upload, Loader2, AlertTriangle, RefreshCw,
-  Youtube, ClipboardPaste, MessageSquare, Image as ImageIcon, PenLine, Eye, Pencil,
+  Youtube, ClipboardPaste, MessageSquare, Image as ImageIcon, PenLine, Eye, Pencil, Link2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../../App';
@@ -12,7 +12,7 @@ import { SOURCES, OBJECTS } from '../../../lib/data';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../lib/pdf';
 import {
   suggestTutorialHighlights, suggestTutorialMarkupFlags, generateTutorial, generateFlashcards, generateQuiz, generateConceptCard, suggestConceptIntents,
-  generateStructuredObject, ingestYoutube, editTutorialBlock, errorMessage,
+  generateStructuredObject, ingestYoutube, ingestWeb, editTutorialBlock, errorMessage,
   type GeneratedPart, type TutorialGenEvent, type GeneratedCard, type FlashcardGenEvent,
   type GeneratedQuizQuestion, type QuizGenEvent, type GeneratedConceptCard, type ConceptCardGenEvent,
   type StructuredObjectKind, type StructuredGenEvent,
@@ -578,6 +578,7 @@ function Field({ f, val, set }: { f: FDef; val: any; set: (v: any) => void }) {
 const SOURCE_MODES = [
   { id: 'pdf', label: 'Upload PDF', icon: <Upload size={15} /> },
   { id: 'text', label: 'Paste text', icon: <ClipboardPaste size={15} /> },
+  { id: 'web', label: 'Website link', icon: <Link2 size={15} /> },
   { id: 'youtube', label: 'YouTube link', icon: <Youtube size={15} /> },
   { id: 'prompt', label: 'No source — AI prompt', icon: <MessageSquare size={15} /> },
   { id: 'manual', label: 'Write myself', icon: <PenLine size={15} /> },
@@ -641,6 +642,7 @@ function TutorialSource(props: any) {
     onFile,
     pasteText, setPasteText, onLoadText,
     ytUrl, setYtUrl, ytLoading, ytError, onFetchYoutube,
+    webUrl, setWebUrl, webLoading, webError, onFetchWeb,
     promptText, setPromptText, showMedia, imagesOnly,
     media, addImage, addVideo, updateMedia, removeMedia, pickImageAsset,
     showManualWrite,
@@ -653,6 +655,7 @@ function TutorialSource(props: any) {
   const INTRO: Record<string, string> = {
     pdf: 'Attach the PDF this object is built from. We only store the file here — text is extracted in Mark up.',
     text: 'Paste the text this object is built from — notes, an article, a transcript. You will mark up its sentences next.',
+    web: 'Paste a public website link. We fetch the page, extract readable text, and open it for Mark up — same as a pasted article.',
     youtube: 'Paste a YouTube link and we will pull its transcript to build from. The video needs captions available.',
     prompt: 'No source? Describe what the object should teach. AI generation builds from your prompt — you skip Mark up and Extract.',
     manual: 'No source? Pick a pedagogical template next, then write every section yourself. Nothing is generated — you fill the skeleton.',
@@ -714,6 +717,31 @@ function TutorialSource(props: any) {
                   Use this text →
                 </button>
               </div>
+            </>
+          ) : <SourceReadyCard doc={doc} onReplace={onReplace} />}
+        </>
+      )}
+
+      {/* ── Website ── */}
+      {mode === 'web' && (
+        <>
+          {!doc ? (
+            <>
+              <div className="flex gap-2">
+                <input value={webUrl || ''} onChange={(e) => setWebUrl(e.target.value)} placeholder="https://example.com/article…"
+                  className="flex-1 rounded-xl px-3 py-2.5"
+                  style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && webUrl?.trim() && !webLoading) onFetchWeb(); }} />
+                <button type="button" onClick={onFetchWeb} disabled={!webUrl?.trim() || webLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white shrink-0"
+                  style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600, opacity: (!webUrl?.trim() || webLoading) ? 0.7 : 1 }}>
+                  {webLoading ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={14} />}{webLoading ? 'Fetching…' : 'Fetch page'}
+                </button>
+              </div>
+              <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>
+                Public pages only · paywalled or heavily scripted sites may need Paste text instead.
+              </p>
+              {webError && <ErrorNote text={webError} />}
             </>
           ) : <SourceReadyCard doc={doc} onReplace={onReplace} />}
         </>
@@ -2238,7 +2266,7 @@ export function ObjectCreator() {
 
   // Tutorial Step 1 — source can be a PDF, pasted text, a YouTube link, or a prompt.
   // PDF: attach File in Sources; parse into `doc` only when entering Mark up.
-  const [srcMode, setSrcMode] = useState<'pdf' | 'text' | 'youtube' | 'prompt' | 'manual'>('pdf');
+  const [srcMode, setSrcMode] = useState<'pdf' | 'text' | 'youtube' | 'web' | 'prompt' | 'manual'>('pdf');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [doc, setDoc] = useState<ParsedDoc | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -2248,6 +2276,9 @@ export function ObjectCreator() {
   const [ytUrl, setYtUrl] = useState('');
   const [ytLoading, setYtLoading] = useState(false);
   const [ytError, setYtError] = useState<string | null>(null);
+  const [webUrl, setWebUrl] = useState('');
+  const [webLoading, setWebLoading] = useState(false);
+  const [webError, setWebError] = useState<string | null>(null);
   const [promptText, setPromptText] = useState('');
 
   // Media attachments added in the Sources step — images + cropped YouTube clips.
@@ -2305,16 +2336,16 @@ export function ObjectCreator() {
   };
 
   // Switching source type clears the committed source + any markup built on it.
-  const changeMode = (m: 'pdf' | 'text' | 'youtube' | 'prompt' | 'manual') => {
+  const changeMode = (m: 'pdf' | 'text' | 'youtube' | 'web' | 'prompt' | 'manual') => {
     setSrcMode(m);
-    setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setParseProgress(null);
+    setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setWebError(null); setParseProgress(null);
     setHighlights([]); setAiSuggestions([]); setExtracts([]);
     setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
     autoFlagScannedFor.current = null;
     setKnowledgeBase(null); setShapeIntent('');
   };
   const replaceSource = () => {
-    setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setParseProgress(null);
+    setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setWebError(null); setParseProgress(null);
     setHighlights([]); setAiSuggestions([]); setExtracts([]);
     setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
     autoFlagScannedFor.current = null;
@@ -2428,6 +2459,29 @@ export function ObjectCreator() {
     }
   };
 
+  const handleFetchWeb = async () => {
+    if (!webUrl.trim()) return;
+    setWebError(null);
+    setWebLoading(true);
+    try {
+      const out = await ingestWeb(webUrl.trim());
+      setHighlights([]); setAiSuggestions([]); setExtracts([]);
+      setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
+      autoFlagScannedFor.current = null;
+      setKnowledgeBase(null);
+      if (!title && out.title) setTitle(out.title);
+      setDoc({
+        fileName: out.title || 'Web page',
+        pageCount: 1,
+        sentences: (out.sentences || []).map((t) => ({ text: t, page: 1 })),
+      });
+    } catch (e) {
+      setWebError(errorMessage(e, 'Could not fetch that website.'));
+    } finally {
+      setWebLoading(false);
+    }
+  };
+
   // Document the Mark up / Extract steps operate on.
   const docParas: string[] = usesPipeline ? (doc ? doc.sentences.map(s => s.text) : []) : DOC_PARAS;
   const docPages: number[] | undefined = usesPipeline && doc ? doc.sentences.map(s => s.page) : undefined;
@@ -2455,6 +2509,7 @@ export function ObjectCreator() {
       if (d.promptText != null) setPromptText(d.promptText);
       if (d.pasteText != null) setPasteText(d.pasteText);
       if (d.ytUrl != null) setYtUrl(d.ytUrl);
+      if (d.webUrl != null) setWebUrl(d.webUrl);
       if (d.doc) setDoc(d.doc as ParsedDoc);
       if (d.highlights) setHighlights(d.highlights);
       if (Array.isArray(d.markupFlags)) {
@@ -2549,6 +2604,7 @@ export function ObjectCreator() {
     promptText,
     pasteText,
     ytUrl,
+    webUrl,
     doc: doc ? { fileName: doc.fileName, pageCount: doc.pageCount, sentences: doc.sentences } : null,
     highlights,
     markupFlags: markupFlags.length ? markupFlags : undefined,
@@ -3175,7 +3231,7 @@ export function ObjectCreator() {
         ? !!(pdfFile || (doc && doc.sentences.length > 0))
         : srcMode === 'text'
           ? !!(pasteText.trim() || (doc && doc.sentences.length > 0))
-          : !!(doc && doc.sentences.length > 0); // youtube — transcript already fetched
+          : !!(doc && doc.sentences.length > 0); // youtube / web — already fetched
 
   const canNext = step === 1
     ? (usesPipeline ? sourceReady : sel.length > 0)
@@ -3237,6 +3293,7 @@ export function ObjectCreator() {
                   onFile={handleFile}
                   pasteText={pasteText} setPasteText={setPasteText} onLoadText={handleLoadText}
                   ytUrl={ytUrl} setYtUrl={setYtUrl} ytLoading={ytLoading} ytError={ytError} onFetchYoutube={handleFetchYoutube}
+                  webUrl={webUrl} setWebUrl={setWebUrl} webLoading={webLoading} webError={webError} onFetchWeb={handleFetchWeb}
                   promptText={promptText} setPromptText={setPromptText}
                   showMedia={isTutorial || isFlashcard} imagesOnly={isFlashcard}
                   showManualWrite={isTutorial}
