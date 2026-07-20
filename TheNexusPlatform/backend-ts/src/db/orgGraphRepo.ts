@@ -583,7 +583,7 @@ export async function acceptInvitation(
     // Prefer the name the invitee confirms at accept time; fall back to what the
     // inviter typed when creating the invitation, so a name is never dropped.
     const resolvedDisplayName = displayName ?? inv.displayName ?? null;
-    const profileId = await ensureOrgProfile(tx, authUserId, inv.organizationId, { email: inv.email, role: profileRole, displayName: resolvedDisplayName });
+    const profileId = await ensureOrgProfile(tx, authUserId, inv.organizationId, { email: inv.email, role: profileRole, displayName: resolvedDisplayName, allowSecondOrg: true });
     // instructor/admin roles → membership; learner/participant → offering participant.
     if (adminish || staff) {
       const mrole = adminish ? (inv.role === "owner" ? "owner" : "administrator") : "instructor";

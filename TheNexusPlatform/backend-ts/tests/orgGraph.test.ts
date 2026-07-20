@@ -92,12 +92,15 @@ describe.skipIf(!RUN)("Slice 11 — org graph endpoints", () => {
   });
 
   it("invitations: create link → accept creates membership", async () => {
-    const inv = await req("POST", `/api/platform/orgs/${A.orgId}/invitations`, { email: "coach@x.test", role: "instructor", program_id: programId }, A.token);
+    // The accepter must be the invited email — an email-addressed invitation
+    // may only be redeemed by its addressee (the absorption guard 409s others).
+    const coachEmail = `coach_${Date.now()}@x.test`;
+    const inv = await req("POST", `/api/platform/orgs/${A.orgId}/invitations`, { email: coachEmail, role: "instructor", program_id: programId }, A.token);
     expect(inv.status).toBe(200);
     expect(inv.body.token).toBeTruthy();
-    // A new person signs up (student type, no org) then accepts the invite.
-    const su = await req("POST", "/api/platform/auth/signup", { signup_type: "student", email: `coach_${Date.now()}@x.test`, password: "password123" });
-    emails.push(`coach_${Date.now()}@x.test`);
+    // The invited person signs up (student type, no org) then accepts.
+    const su = await req("POST", "/api/platform/auth/signup", { signup_type: "student", email: coachEmail, password: "password123" });
+    emails.push(coachEmail);
     const acc = await req("POST", `/api/platform/invitations/${inv.body.token}/accept`, { display_name: "Coach Z" }, su.body.access_token);
     expect(acc.status).toBe(200);
     const me = await req("GET", "/api/platform/auth/me", undefined, su.body.access_token);

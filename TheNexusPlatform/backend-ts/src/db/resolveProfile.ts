@@ -51,7 +51,13 @@ export async function ensureOrgProfile(
   tx: Tx,
   authUserId: string,
   orgId: string,
-  opts: { email?: string | null; role?: string; displayName?: string | null } = {},
+  opts: {
+    email?: string | null;
+    role?: string;
+    displayName?: string | null;
+    /** Explicit, consented entry (accepting an invitation) may join a second org. */
+    allowSecondOrg?: boolean;
+  } = {},
 ): Promise<string> {
   const existing = await tx
     .select({ id: profiles.id })
@@ -60,7 +66,10 @@ export async function ensureOrgProfile(
     .limit(1);
   if (existing.length) return existing[0].id;
 
-  // One credential, one org (Phase 2): block entry into a second organization.
+  // One credential, one org (Phase 2): block *implicit* entry into a second
+  // organization (signups, join codes, dev drift). An explicit invitation
+  // acceptance is exempt — an org admin knowingly invited this credential.
+  if (!opts.allowSecondOrg) {
   const elsewhere = await tx
     .select({ id: profiles.id })
     .from(profiles)
@@ -77,6 +86,7 @@ export async function ensureOrgProfile(
       409,
       "This account already belongs to another organization. Each organization uses its own account — use a different email address here.",
     );
+  }
   }
 
   const [created] = await tx
