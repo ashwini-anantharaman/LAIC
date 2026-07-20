@@ -9,6 +9,9 @@ export function NavLink({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
+      // Play resolves to a live board (and can deal one) on GET — prefetch
+      // would fire that side effect on hover. Cheap nav, so skip prefetch.
+      prefetch={false}
       aria-current={active ? "page" : undefined}
       className={
         active

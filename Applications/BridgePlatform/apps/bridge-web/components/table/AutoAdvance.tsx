@@ -25,33 +25,52 @@ export function AutoAdvance({
   const [paused, setPaused] = useState(false);
   const inFlight = useRef(false);
 
+  const advance = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
+      await fetch(`/api/bridge/sessions/${sessionId}/step`, { method: "POST" });
+    } finally {
+      inFlight.current = false;
+      router.refresh();
+    }
+  };
+
   useEffect(() => {
     if (!active || paused || inFlight.current) return;
-    const t = setTimeout(async () => {
-      inFlight.current = true;
-      try {
-        await fetch(`/api/bridge/sessions/${sessionId}/step`, { method: "POST" });
-      } finally {
-        inFlight.current = false;
-        router.refresh();
-      }
-    }, beatMs);
+    const t = setTimeout(advance, beatMs);
     return () => clearTimeout(t);
+    // advance is stable in effect terms: it closes over refs + router only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, paused, seq, sessionId, beatMs, router]);
 
   if (!active) return null;
   return (
-    <button
-      type="button"
-      onClick={() => setPaused((p) => !p)}
-      className={
-        paused
-          ? "rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
-          : "rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs text-emerald-800"
-      }
-      title={paused ? "Resume automatic play" : "Pause automatic play"}
-    >
-      {paused ? "▶ resume" : "❚❚ auto-playing"}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => setPaused((p) => !p)}
+        className={
+          paused
+            ? "rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
+            : "rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs text-emerald-800"
+        }
+        title={paused ? "Resume automatic play" : "Pause automatic play"}
+      >
+        {paused ? "▶ resume" : "❚❚ auto-playing"}
+      </button>
+      {/* Manual control: pauses auto-play, then one AI decision per click. */}
+      <button
+        type="button"
+        onClick={() => {
+          setPaused(true);
+          void advance();
+        }}
+        className="rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
+        title="Pause and advance one decision"
+      >
+        step ▸
+      </button>
+    </>
   );
 }

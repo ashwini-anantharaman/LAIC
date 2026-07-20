@@ -4,8 +4,9 @@
 // single-writer controller as the AI; legality is enforced in the session
 // service. Flagging a decision creates a suggestion in the KB's queue.
 
-import type { Card, Seat, Suit } from "@bridge/events";
+import type { Card, Seat, Suit, Vul } from "@bridge/events";
 import { AwaitingHumanError, SessionService, type SeatConfig } from "@bridge/sessions";
+import { handFromSerialized } from "@/lib/dealText";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
@@ -32,7 +33,7 @@ export async function arenaPlayAction(formData: FormData): Promise<void> {
   const compiled = await kbService().liveCompile(kbId);
   if (!compiled) throw new Error("That knowledge base has no live compile yet");
   const pack = compiled.packs.find((p) => p.packId === packId);
-  if (!pack) throw new Error("Pick a ladder rung");
+  if (!pack) throw new Error("Pick a knowledge set");
 
   const { ensureHousePlayer } = await import("@/lib/arena");
   const house = await ensureHousePlayer(kbStore(), compiled, pack, context.nexusUserId);
@@ -52,6 +53,132 @@ export async function arenaPlayAction(formData: FormData): Promise<void> {
     arena: pack.packId,
   });
   redirect(`/bridge/table/${record.sessionId}`);
+}
+
+/**
+ * "New board" (2026-07-17): deal a fresh default board on demand — the
+ * strongest set of the given KB (or the first that compiles), you South
+ * against house players. Always creates a new session, unlike the Play
+ * entry which resumes an unfinished board.
+ */
+export async function quickPlayAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  await ensureSeeds();
+  await assertAiAllowed(context);
+
+  const { pickDefaultSet, ensureHousePlayer } = await import("@/lib/arena");
+  const store = kbStore();
+  const preferredKbId = String(formData.get("kbId") ?? "").trim();
+  const kbs = await store.listKbs();
+  const ordered = preferredKbId
+    ? [...kbs].sort((a) => (a.kbId === preferredKbId ? -1 : 0))
+    : kbs;
+
+  for (const kb of ordered) {
+    const compiled = await kbService().liveCompile(kb.kbId);
+    if (!compiled) continue;
+    const pack = pickDefaultSet(compiled);
+    if (!pack) continue;
+    await assertKbAllowed(context, kb.kbId);
+    const house = await ensureHousePlayer(store, compiled, pack, context.nexusUserId);
+    const ai = SessionService.seatFromPlayer(house, compiled);
+    const seats = { N: ai, E: ai, S: ai, W: ai } as Record<Seat, SeatConfig>;
+    seats.S = { kind: "human", nexusUserId: context.nexusUserId };
+    const record = await sessionService().createSession({
+      kbId: kb.kbId,
+      compiled,
+      seats,
+      seed: (Date.now() % 100_000) + 1,
+      createdBy: context.nexusUserId,
+    });
+    redirect(`/bridge/table/${record.sessionId}`);
+  }
+  redirect("/bridge/table");
+}
+
+/**
+ * The mid-play deal editor's save: fork the session onto the edited deal
+ * with the SAME seats and the SAME event prefix — the game continues right
+ * where it was, on the new cards. Played cards must stay at the seat that
+ * played them (the editor locks them; re-checked here). The `restart`
+ * checkbox drops the prefix instead (fresh auction on the edited deal),
+ * which is also forced when the board is already complete.
+ */
+export async function redealEditedAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const sessionId = String(formData.get("sessionId"));
+  const failBack: (message: string) => never = (message) =>
+    redirect(`/bridge/table/${sessionId}/edit?error=${encodeURIComponent(message)}`);
+
+  const service = sessionService();
+  const record = await service.requireSession(sessionId);
+  const { validateDeal } = await import("@bridge/formats");
+  const hands = {} as Record<Seat, Card[]>;
+  for (const seat of SEATS) {
+    const parsed = handFromSerialized(String(formData.get(`hand:${seat}`) ?? ""));
+    if ("error" in parsed) failBack(`${seat}: ${parsed.error}`);
+    if (parsed.length !== 13) failBack(`${seat} has ${parsed.length} cards — every hand needs 13.`);
+    hands[seat] = parsed;
+  }
+  const invalid = validateDeal(hands);
+  if (invalid) failBack(invalid);
+
+  const fresh =
+    formData.get("restart") === "on" || record.status === "completed";
+  if (!fresh) {
+    // Continuing replays the recorded plays onto the edited deal — every
+    // played card must still sit where it was played, or the fold corrupts.
+    for (const event of record.events) {
+      if (event.category !== "play-event") continue;
+      const { seat, card } = event as { seat: Seat; card: Card };
+      if (!hands[seat].some((c) => c.suit === card.suit && c.rank === card.rank))
+        failBack(
+          `${seat} already played a card that moved seats — played cards are locked while continuing.`,
+        );
+    }
+  }
+
+  const dealer = (String(formData.get("dealer") ?? "N") || "N") as Seat;
+  const vul = (String(formData.get("vul") ?? "none") || "none") as Vul;
+  const boardName =
+    String(formData.get("name") ?? "").trim() || `${record.board.name} (edited)`;
+
+  const next = await service.fork(sessionId, record.seats, context.nexusUserId, {
+    fresh,
+    hands,
+    boardName,
+    // Dealer/vul only change on a restart — the kept auction depends on them.
+    ...(fresh ? { dealer, vul } : {}),
+  });
+
+  if (formData.get("saveToLibrary") === "on") {
+    const { newId } = await import("@bridge/kb");
+    try {
+      await libraryStore().putEntry({
+        entryId: newId("le"),
+        kind: "board",
+        name: boardName,
+        tags: [],
+        hands,
+        dealer,
+        vul,
+        auction: [],
+        play: [],
+        origin: "authored",
+        sourceSessionId: sessionId,
+        createdBy: context.nexusUserId,
+        createdAt: new Date().toISOString(),
+      });
+    } catch {
+      // Library backend not provisioned — the redeal itself still proceeds.
+    }
+  }
+
+  await audit(context, "session.fork", "kb_session", next.sessionId, {
+    kbId: record.kbId,
+    editedFrom: sessionId,
+  });
+  redirect(`/bridge/table/${next.sessionId}`);
 }
 
 export async function createSessionAction(formData: FormData): Promise<void> {

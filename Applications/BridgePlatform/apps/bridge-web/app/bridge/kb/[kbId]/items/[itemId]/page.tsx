@@ -77,11 +77,22 @@ export default async function ItemPage({
       <div>
         <p className="mb-2 text-xs text-neutral-400">
           <Link href={`${base}/items`} className="hover:underline">
-            Capabilities
+            Master
           </Link>{" "}
           / {item.itemId} · rev {item.version}
           {item.mainVersion ? <> · main v{item.mainVersion}</> : <> · uncommitted</>}
-          {item.forkedFromItemId && <> · forked from {item.forkedFromItemId}</>}
+          {item.forkedFromItemId && (
+            <>
+              {" "}
+              ·{" "}
+              <Link
+                href={`${base}/items/${item.forkedFromItemId}`}
+                className="hover:underline"
+              >
+                forked from {titleOf.get(item.forkedFromItemId) ?? item.forkedFromItemId}
+              </Link>
+            </>
+          )}
           {memberships.length > 1 && <> · shared with {memberships.length - 1} other KB(s)</>}
         </p>
         {saved && (

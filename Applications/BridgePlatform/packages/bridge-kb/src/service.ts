@@ -10,6 +10,9 @@ import { newId } from "./ids";
 import type {
   KbEdge,
   KbPack,
+  KbPackVersion,
+  KbPlayer,
+  KbSandbox,
   KbSuggestion,
   KbVersion,
   KbVersionItemRef,
@@ -20,7 +23,7 @@ import type {
 } from "./model";
 import type { KbStore } from "./store";
 import { validatePlayerStatic } from "./validatePlayer";
-import { itemIsDirty, snapshotItem } from "./versioning";
+import { itemIsDirty, packIsDirty, snapshotItem, snapshotPack } from "./versioning";
 
 export interface KbServiceOptions {
   now?: () => string;
@@ -95,7 +98,10 @@ export class KbService {
       }
     }
 
-    for (const pack of await this.store.listPacksForKb(kbId)) await this.store.deletePack(pack.packId);
+    for (const pack of await this.store.listPacksForKb(kbId)) {
+      await this.store.deletePackVersionsForPack(pack.packId);
+      await this.store.deletePack(pack.packId);
+    }
     for (const player of await this.store.listPlayersForKb(kbId)) await this.store.deletePlayer(player.playerId);
     for (const sandbox of await this.store.listSandboxesForKb(kbId)) await this.store.deleteSandbox(sandbox.sandboxId);
     for (const suggestion of await this.store.listSuggestionsForKb(kbId)) await this.store.deleteSuggestion(suggestion.suggestionId);
@@ -186,11 +192,14 @@ export class KbService {
       // Packs in this KB tracking the old item follow the fork.
       for (const pack of await this.store.listPacksForKb(kbId)) {
         if (pack.itemIds.includes(itemId)) {
-          await this.store.putPack({
-            ...pack,
-            itemIds: pack.itemIds.map((id) => (id === itemId ? target.itemId : id)),
-            updatedAt: this.now(),
-          });
+          await this.writePackWithSnapshot(
+            {
+              ...pack,
+              itemIds: pack.itemIds.map((id) => (id === itemId ? target.itemId : id)),
+              updatedAt: this.now(),
+            },
+            editedBy,
+          );
         }
       }
     }
@@ -529,18 +538,21 @@ export class KbService {
       const packs = await this.store.listPacksForKb(masterKbId);
       const packIdMap = new Map(packs.map((p) => [p.packId, newId("pk")]));
       for (const pack of packs) {
-        await this.store.putPack({
-          ...pack,
-          packId: packIdMap.get(pack.packId)!,
-          kbId: child.kbId,
-          extendsPackId: pack.extendsPackId ? packIdMap.get(pack.extendsPackId) : undefined,
-          itemIds: pack.itemIds
-            .map((id) => idMap.get(id))
-            .filter((x): x is string => Boolean(x)),
-          derivedEnvelope: undefined,
-          createdAt: this.now(),
-          updatedAt: this.now(),
-        });
+        await this.writePackWithSnapshot(
+          {
+            ...pack,
+            packId: packIdMap.get(pack.packId)!,
+            kbId: child.kbId,
+            extendsPackId: pack.extendsPackId ? packIdMap.get(pack.extendsPackId) : undefined,
+            itemIds: pack.itemIds
+              .map((id) => idMap.get(id))
+              .filter((x): x is string => Boolean(x)),
+            derivedEnvelope: undefined,
+            createdAt: this.now(),
+            updatedAt: this.now(),
+          },
+          input.createdBy,
+        );
       }
     }
 
@@ -603,21 +615,198 @@ export class KbService {
     await this.recompile(kbId);
   }
 
-  // ---- packs --------------------------------------------------------------------
+  // ---- packs (knowledge sets: auto-versioned on every save) -------------------
+
+  /**
+   * putPack + auto-snapshot (deduped against the latest snapshot). Every
+   * fellow-authored pack write goes through here so history never has gaps.
+   * The compiler's envelope rewrites (deriveEnvelopes) deliberately bypass it.
+   */
+  private async writePackWithSnapshot(pack: KbPack, actor: string): Promise<void> {
+    await this.store.putPack(pack);
+    const latest = (await this.store.listPackVersions(pack.packId))[0] ?? null;
+    if (packIsDirty(pack, latest)) {
+      await this.store.putPackVersion(
+        snapshotPack(pack, (latest?.versionNumber ?? 0) + 1, actor, this.now()),
+      );
+    }
+  }
+
+  /** True when `startPackId`'s Includes chain reaches `targetPackId`. */
+  private async includesChainReaches(
+    startPackId: string,
+    targetPackId: string,
+  ): Promise<boolean> {
+    const seen = new Set<string>();
+    let cursor: string | undefined = startPackId;
+    while (cursor && !seen.has(cursor)) {
+      if (cursor === targetPackId) return true;
+      seen.add(cursor);
+      cursor = (await this.store.getPack(cursor))?.extendsPackId;
+    }
+    return false;
+  }
 
   async savePack(
-    pack: Omit<KbPack, "packId" | "createdAt" | "updatedAt"> & { packId?: string },
+    pack: Omit<KbPack, "packId" | "ordinal" | "createdAt" | "updatedAt"> & {
+      packId?: string;
+      ordinal?: number;
+    },
   ): Promise<KbPack> {
     const existing = pack.packId ? await this.store.getPack(pack.packId) : null;
     const full: KbPack = {
       ...pack,
       packId: pack.packId ?? newId("pk"),
+      ordinal: pack.ordinal ?? existing?.ordinal ?? 0,
+      itemIds: [...pack.itemIds].sort(),
       createdAt: existing?.createdAt ?? this.now(),
       updatedAt: this.now(),
     };
-    await this.store.putPack(full);
+    if (full.extendsPackId) {
+      if (full.extendsPackId === full.packId)
+        throw new Error("A set cannot include itself.");
+      const target = await this.store.getPack(full.extendsPackId);
+      if (!target || target.kbId !== full.kbId)
+        throw new Error("The included set no longer exists.");
+      if (await this.includesChainReaches(full.extendsPackId, full.packId))
+        throw new Error(`Including "${target.name}" would create a loop.`);
+    }
+    await this.writePackWithSnapshot(full, full.createdBy);
     await this.recompile(full.kbId);
     return full;
+  }
+
+  async listPackVersions(packId: string): Promise<KbPackVersion[]> {
+    return this.store.listPackVersions(packId);
+  }
+
+  /**
+   * Restore a set to a past snapshot: overlay the snapshot's content onto the
+   * head and save. Sanitizes first — item ids no longer in the KB are dropped
+   * (and reported), a dangling or now-cyclic Includes is cleared (and
+   * reported). The save mints the next snapshot; restoring the latest state
+   * dedupes to a no-op.
+   */
+  async restorePackVersion(
+    kbId: string,
+    packId: string,
+    versionNumber: number,
+    restoredBy: string,
+  ): Promise<{ pack: KbPack; droppedItemIds: string[]; droppedInclude?: string }> {
+    const pack = await this.store.getPack(packId);
+    if (!pack || pack.kbId !== kbId) throw new Error(`No set ${packId} in ${kbId}`);
+    const snapshot = await this.store.getPackVersion(packId, versionNumber);
+    if (!snapshot) throw new Error(`No version ${versionNumber} of set ${packId}`);
+
+    const memberIds = new Set(
+      (await this.store.listMembershipsForKb(kbId)).map((m) => m.itemId),
+    );
+    const droppedItemIds = snapshot.itemIds.filter((id) => !memberIds.has(id));
+
+    let includeId = snapshot.extendsPackId;
+    let droppedInclude: string | undefined;
+    if (includeId) {
+      const target = includeId === packId ? null : await this.store.getPack(includeId);
+      const cyclic = target ? await this.includesChainReaches(includeId, packId) : true;
+      if (!target || target.kbId !== kbId || cyclic) {
+        droppedInclude = includeId;
+        includeId = undefined;
+      }
+    }
+
+    const restored = await this.savePack({
+      ...pack,
+      name: snapshot.name,
+      description: snapshot.description,
+      extendsPackId: includeId,
+      itemIds: snapshot.itemIds.filter((id) => memberIds.has(id)),
+      intendedComplete: snapshot.intendedComplete,
+      envelopeOverrides: snapshot.envelopeOverrides,
+      createdBy: restoredBy,
+    });
+    return { pack: restored, droppedItemIds, droppedInclude };
+  }
+
+  /**
+   * Everything that references a set: players carrying it (directly, or via a
+   * set that includes it — tagged `via`), sets whose Includes chain reaches
+   * it, and sandboxes listing it. Powers both the delete guard and the set
+   * detail page's "players using this set".
+   */
+  async packReferences(
+    kbId: string,
+    packId: string,
+  ): Promise<{
+    players: { player: KbPlayer; via?: KbPack }[];
+    extendedBy: KbPack[];
+    sandboxes: KbSandbox[];
+  }> {
+    const packs = await this.store.listPacksForKb(kbId);
+    const byId = new Map(packs.map((p) => [p.packId, p]));
+    const reachesTarget = (start: string): boolean => {
+      const seen = new Set<string>();
+      let cursor: string | undefined = start;
+      while (cursor && !seen.has(cursor)) {
+        if (cursor === packId) return true;
+        seen.add(cursor);
+        cursor = byId.get(cursor)?.extendsPackId;
+      }
+      return false;
+    };
+    const extendedBy = packs.filter((p) => p.packId !== packId && reachesTarget(p.packId));
+    const descendantIds = new Set(extendedBy.map((p) => p.packId));
+
+    const players: { player: KbPlayer; via?: KbPack }[] = [];
+    for (const player of await this.store.listPlayersForKb(kbId)) {
+      if (player.enabledPackIds.includes(packId)) {
+        players.push({ player });
+      } else {
+        const viaId = player.enabledPackIds.find((id) => descendantIds.has(id));
+        if (viaId) players.push({ player, via: byId.get(viaId) });
+      }
+    }
+
+    const sandboxes = (await this.store.listSandboxesForKb(kbId)).filter(
+      (s) => s.basePackIds.includes(packId) || s.exposedPackIds.includes(packId),
+    );
+    return { players, extendedBy, sandboxes };
+  }
+
+  /**
+   * Delete a set. Refuses while anything references it — players (house
+   * players from the Arena are ordinary players too), sets that include it,
+   * or sandboxes — naming the blockers so the fellow knows what to repoint.
+   */
+  async deletePack(kbId: string, packId: string): Promise<void> {
+    const pack = await this.store.getPack(packId);
+    if (!pack || pack.kbId !== kbId) throw new Error(`No set ${packId} in ${kbId}`);
+    const refs = await this.packReferences(kbId, packId);
+    const blockers: string[] = [];
+    if (refs.players.length)
+      blockers.push(
+        `player${refs.players.length === 1 ? "" : "s"} ${refs.players
+          .map((p) => `"${p.player.name}"`)
+          .join(", ")} carr${refs.players.length === 1 ? "ies" : "y"} it`,
+      );
+    if (refs.extendedBy.length)
+      blockers.push(
+        `set${refs.extendedBy.length === 1 ? "" : "s"} ${refs.extendedBy
+          .map((p) => `"${p.name}"`)
+          .join(", ")} include${refs.extendedBy.length === 1 ? "s" : ""} it`,
+      );
+    if (refs.sandboxes.length)
+      blockers.push(
+        `sandbox${refs.sandboxes.length === 1 ? "" : "es"} ${refs.sandboxes
+          .map((s) => `"${s.name}"`)
+          .join(", ")} expose${refs.sandboxes.length === 1 ? "s" : ""} it`,
+      );
+    if (blockers.length)
+      throw new Error(
+        `Cannot delete "${pack.name}": ${blockers.join("; ")}. Repoint or delete them first.`,
+      );
+    await this.store.deletePackVersionsForPack(packId);
+    await this.store.deletePack(packId);
+    await this.recompile(kbId);
   }
 
   // ---- suggestions ----------------------------------------------------------------

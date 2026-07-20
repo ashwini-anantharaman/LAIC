@@ -6,6 +6,7 @@ import { ChipRow, UnderlineTabs } from "@/components/ChipTabs";
 import { ValidityBadge } from "@/components/kb/badges";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
+import { suggestPlayersAction } from "../kb/actions";
 import { createRungPlayerAction, tryPlayerAction } from "./actions";
 
 /** Players area (2026-07-16 rework): Configured (per-system, per-creator
@@ -31,23 +32,39 @@ export default async function PlayersPage({
   const activeKb =
     withPlayers.find(({ kb }) => kb.kbId === kbParam) ?? withPlayers[0];
 
-  const creators = activeKb
-    ? [...new Set(activeKb.players.map((p) => p.ownerId ?? p.ownerType))]
-    : [];
-  // The current user's real name comes from the Nexus context; other creators
-  // resolve via the stub roster (dev) or fall back to their raw id for now.
+  const myId = context.nexusUserId;
+  const ownerOf = (p: KbPlayer) => p.ownerId ?? p.ownerType;
+  const creators = activeKb ? [...new Set(activeKb.players.map(ownerOf))] : [];
+  const others = creators.filter((c) => c !== myId);
+  // Own rows read "Mine"; other creators resolve via the stub roster (dev) or
+  // fall back to their raw id until a shared people directory exists.
   const creatorLabel = (id: string) =>
-    (id === context.nexusUserId ? context.displayName : undefined) ??
-    stubDisplayName(id) ??
-    (id === "system" ? "System" : id);
-  const activeBy = by && creators.includes(by) ? by : undefined;
+    id === myId ? "Mine" : (stubDisplayName(id) ?? (id === "system" ? "System" : id));
+  const myCount = activeKb ? activeKb.players.filter((p) => ownerOf(p) === myId).length : 0;
+
+  // Creator facet is a MULTI-select: `by` carries a comma-separated set of
+  // creator ids; an empty set (`by=all`) means Everyone. Default: just Mine
+  // (falling back to Everyone when I have no players here).
+  const requested = (by ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const chosen = requested.filter((id) => creators.includes(id));
+  const selected = requested.includes("all")
+    ? []
+    : chosen.length
+      ? chosen
+      : myCount > 0
+        ? [myId]
+        : [];
+  const selectedSet = new Set(selected);
   const visible = (activeKb?.players ?? []).filter(
-    (p) => !activeBy || (p.ownerId ?? p.ownerType) === activeBy,
+    (p) => selectedSet.size === 0 || selectedSet.has(ownerOf(p)),
   );
 
   const compiled = activeKb ? await kbService().liveCompile(activeKb.kb.kbId) : null;
   const packById = new Map((compiled?.packs ?? []).map((p) => [p.packId, p]));
-  const rungs = [...(compiled?.packs ?? [])].sort((a, b) => a.ordinal - b.ordinal);
+  const sets = [...(compiled?.packs ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 
   const playersHref = (params: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
@@ -59,8 +76,8 @@ export default async function PlayersPage({
   return (
     <div className="mx-auto max-w-4xl">
       <header className="mb-6">
-        <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">Players</p>
-        <h1 className="mt-1 text-3xl font-medium">Who sits at the table</h1>
+        <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">Bridge</p>
+        <h1 className="mt-1 text-3xl font-medium">Players</h1>
       </header>
 
       <UnderlineTabs
@@ -103,55 +120,94 @@ export default async function PlayersPage({
             />
           </div>
 
-          {/* Creator facet */}
-          {creators.length > 1 && (
-            <div className="mt-3">
-              <ChipRow
-                tabs={[
-                  {
-                    label: "Everyone",
-                    href: playersHref({ kb: activeKb.kb.kbId }),
-                    active: !activeBy,
-                  },
-                  ...creators.map((c) => ({
-                    label: creatorLabel(c),
-                    href: playersHref({ kb: activeKb.kb.kbId, by: c }),
-                    active: activeBy === c,
-                    count: activeKb.players.filter((p) => (p.ownerId ?? p.ownerType) === c)
-                      .length,
-                  })),
-                ]}
-              />
-            </div>
-          )}
+          {/* Creator facet — multi-select chips: tap to add/remove a creator;
+              Everyone clears the selection. */}
+          {activeKb.players.length > 0 &&
+            (() => {
+              const byHref = (ids: string[]) =>
+                playersHref({ kb: activeKb.kb.kbId, by: ids.length ? ids.join(",") : "all" });
+              const toggleHref = (id: string) =>
+                byHref(
+                  selectedSet.has(id) ? selected.filter((x) => x !== id) : [...selected, id],
+                );
+              return (
+                <div className="mt-3">
+                  <ChipRow
+                    tabs={[
+                      {
+                        label: "Everyone",
+                        href: byHref([]),
+                        active: selectedSet.size === 0,
+                        count: activeKb.players.length,
+                      },
+                      ...(myCount > 0
+                        ? [
+                            {
+                              label: "Mine",
+                              href: toggleHref(myId),
+                              active: selectedSet.has(myId),
+                              count: myCount,
+                            },
+                          ]
+                        : []),
+                      ...others.map((c) => ({
+                        label: creatorLabel(c),
+                        href: toggleHref(c),
+                        active: selectedSet.has(c),
+                        count: activeKb.players.filter((p) => ownerOf(p) === c).length,
+                      })),
+                    ]}
+                  />
+                </div>
+              );
+            })()}
 
-          {/* One-click creation from the ladder */}
-          {rungs.length > 0 && (
-            <section className="mt-6 rounded-lg border border-neutral-200 bg-[var(--card)] p-4">
-              <p className="text-sm font-medium">New player, one click</p>
-              <p className="mt-0.5 text-xs text-neutral-500">
-                Pick how much of the {activeKb.kb.systemLabel} ladder it knows — name, validation
-                and report happen automatically. Refine it afterwards.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {rungs.map((pack) => (
-                  <form key={pack.packId} action={createRungPlayerAction}>
-                    <input type="hidden" name="kbId" value={activeKb.kb.kbId} />
-                    <input type="hidden" name="packId" value={pack.packId} />
-                    <button
-                      type="submit"
-                      className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50"
-                    >
-                      <span className="mr-1.5 text-[10px] uppercase tracking-wide text-neutral-400">
-                        L{pack.ordinal}
-                      </span>
-                      {pack.name}
-                    </button>
-                  </form>
-                ))}
+          {/* Make a player: one click per set, the wizard, or by hand */}
+          <section className="mt-6 rounded-lg border border-neutral-200 bg-[var(--card)] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">New player</p>
+              <div className="flex flex-wrap gap-2">
+                <form action={suggestPlayersAction}>
+                  <input type="hidden" name="kbId" value={activeKb.kb.kbId} />
+                  <button
+                    type="submit"
+                    disabled={!compiled}
+                    className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50 disabled:opacity-40"
+                  >
+                    Suggest minimal players
+                  </button>
+                </form>
+                <Link
+                  href={`/bridge/kb/${activeKb.kb.kbId}/players/new`}
+                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50"
+                >
+                  Build by hand
+                </Link>
               </div>
-            </section>
-          )}
+            </div>
+            {sets.length > 0 && (
+              <>
+                <p className="mt-3 text-xs text-neutral-500">
+                  Or one click — choose the {activeKb.kb.systemLabel} knowledge set it plays
+                  from; name, validation and report happen automatically.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {sets.map((pack) => (
+                    <form key={pack.packId} action={createRungPlayerAction}>
+                      <input type="hidden" name="kbId" value={activeKb.kb.kbId} />
+                      <input type="hidden" name="packId" value={pack.packId} />
+                      <button
+                        type="submit"
+                        className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50"
+                      >
+                        {pack.name}
+                      </button>
+                    </form>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
 
           {/* The roster */}
           <ul className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -183,7 +239,7 @@ export default async function PlayersPage({
                       type="submit"
                       className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
                     >
-                      Try at the table
+                      Play
                     </button>
                   </form>
                   <form action={tryPlayerAction}>
@@ -207,7 +263,7 @@ export default async function PlayersPage({
             ))}
             {visible.length === 0 && (
               <li className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 sm:col-span-2">
-                No players here yet — create one from the ladder above.
+                No players here yet — create one from a knowledge set above.
               </li>
             )}
           </ul>

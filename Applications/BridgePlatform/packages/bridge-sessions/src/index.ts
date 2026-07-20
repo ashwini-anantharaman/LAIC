@@ -378,7 +378,19 @@ export class SessionService {
     sessionId: string,
     seats: Record<Seat, SeatConfig>,
     createdBy: string,
-    options: { fresh?: boolean } = {},
+    options: {
+      fresh?: boolean;
+      /**
+       * Deal override (the mid-play deal editor). With a kept prefix, every
+       * already-played card must sit at the seat that played it — the caller
+       * guarantees this; the fold replays the same events onto the edited
+       * deal and past decisions keep their original reasoning.
+       */
+      hands?: Record<Seat, Card[]>;
+      dealer?: Seat;
+      vul?: Vul;
+      boardName?: string;
+    } = {},
   ): Promise<SessionRecord> {
     const source = await this.requireSession(sessionId);
     const compiled = await this.compiledFor(source);
@@ -387,10 +399,10 @@ export class SessionService {
       compiled,
       seats,
       seed: source.board.seed,
-      dealer: source.board.dealer,
-      vul: source.board.vul,
-      hands: source.board.hands,
-      boardName: source.board.name,
+      dealer: options.dealer ?? source.board.dealer,
+      vul: options.vul ?? source.board.vul,
+      hands: options.hands ?? source.board.hands,
+      boardName: options.boardName ?? source.board.name,
       createdBy,
       forkedFromSessionId: source.sessionId,
       primedEvents: options.fresh ? [] : [...source.events],

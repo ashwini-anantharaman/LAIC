@@ -1,8 +1,8 @@
 // Play Arena provisioning (2026-07-16 fellows UI rework). Fellows shouldn't
-// hand-assemble a player before checking behavior: each ladder rung gets an
+// hand-assemble a player before checking behavior: each knowledge set gets an
 // auto-provisioned "house player" on demand, created once and then editable
-// like any other player. Compiled packs carry their full extends chain, so a
-// house player enables exactly one rung pack.
+// like any other player. Compiled sets carry their full Includes chain, so a
+// house player enables exactly one set.
 
 import {
   playerIsValid,
@@ -20,7 +20,7 @@ export function housePlayerName(pack: CompiledPack): string {
   return `${HOUSE_PREFIX}${pack.name}`;
 }
 
-/** Find-or-create the house player for a ladder rung (idempotent by name). */
+/** Find-or-create the house player for a knowledge set (idempotent by name). */
 export async function ensureHousePlayer(
   store: KbStore,
   compiled: CompiledKb,
@@ -36,8 +36,7 @@ export async function ensureHousePlayer(
     playerId: newId("pl"),
     kbId: compiled.kbId,
     name,
-    description: `Auto-provisioned by the Play Arena for the “${pack.name}” rung. Edit freely — the arena reuses it by name.`,
-    levelId: pack.levelId,
+    description: `Auto-provisioned by the Play Arena for the “${pack.name}” set. Edit freely — the arena reuses it by name.`,
     enabledPackIds: [pack.packId],
     settingOverrides: {},
     decisionPolicyId: "first_match",
@@ -59,7 +58,15 @@ export async function ensureHousePlayer(
   return saved;
 }
 
-/** Ladder rungs, lowest ordinal first (the arena's difficulty menu). */
-export function ladderRungs(compiled: CompiledKb): CompiledPack[] {
-  return [...compiled.packs].sort((a, b) => a.ordinal - b.ordinal);
+/** The arena's menu: every knowledge set, alphabetical. */
+export function arenaSets(compiled: CompiledKb): CompiledPack[] {
+  return [...compiled.packs].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The default table's opponent: the most capable set (largest roster). */
+export function pickDefaultSet(compiled: CompiledKb): CompiledPack | null {
+  return compiled.packs.reduce<CompiledPack | null>(
+    (best, p) => (!best || p.itemIds.length > best.itemIds.length ? p : best),
+    null,
+  );
 }

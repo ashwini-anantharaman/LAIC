@@ -88,16 +88,43 @@ export async function saveItemAction(formData: FormData): Promise<void> {
   const kbId = String(formData.get("kbId"));
   const itemId = String(formData.get("itemId"));
   const common = parseCommon(formData);
-  const saved = await kbService().saveItem(
-    kbId,
-    itemId,
-    {
-      ...common,
-      payload: parsePayload(formData, common.knowledgeType),
-      settings: parseSettings(formData),
-    },
-    context.nexusUserId,
-  );
+  const content = {
+    ...common,
+    payload: parsePayload(formData, common.knowledgeType),
+    settings: parseSettings(formData),
+  };
+
+  // "Save as a new knowledge item" branches: a fresh item with lineage — the
+  // original (a template) is never touched.
+  if (String(formData.get("saveAs") ?? "") === "new") {
+    const source = await kbStore().getItem(itemId);
+    let title = content.title;
+    if (source && title === source.title) {
+      const titles = new Set((await kbStore().listItemsForKb(kbId)).map((i) => i.title));
+      let candidate = `${title} (copy)`;
+      for (let n = 2; titles.has(candidate); n++) candidate = `${title} (copy ${n})`;
+      title = candidate;
+    }
+    const created = await kbService().createItem(kbId, {
+      ...content,
+      title,
+      status: "draft",
+      forkedFromItemId: itemId,
+      sourceReferences: source?.sourceReferences.length
+        ? source.sourceReferences
+        : [{ sourceId: "src_claude", anchor: "forked in the workspace" }],
+      createdBy: context.nexusUserId,
+    });
+    await audit(context, "kb.item.create", "kb_item", created.itemId, {
+      kbId,
+      forkedFrom: itemId,
+      savedAsNew: true,
+    });
+    revalidatePath(kbPath(kbId), "layout");
+    redirect(kbPath(kbId, `/items/${created.itemId}?saved=1`));
+  }
+
+  const saved = await kbService().saveItem(kbId, itemId, content, context.nexusUserId);
   await audit(context, "kb.item.edit", "kb_item", saved.itemId, {
     kbId,
     forkedFrom: saved.forkedFromItemId,
@@ -137,20 +164,72 @@ export async function removeEdgeAction(formData: FormData): Promise<void> {
 export async function savePackAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));
-  const pack = await kbService().savePack({
-    packId: String(formData.get("packId") ?? "").trim() || undefined,
-    kbId,
-    name: String(formData.get("name") ?? "").trim(),
-    description: String(formData.get("description") ?? "").trim() || undefined,
-    levelId: String(formData.get("levelId") ?? "").trim() || undefined,
-    ordinal: Number(formData.get("ordinal") ?? 0),
-    extendsPackId: String(formData.get("extendsPackId") ?? "").trim() || undefined,
-    itemIds: formData.getAll("itemIds").map(String),
-    createdBy: context.nexusUserId,
-  });
-  await audit(context, "kb.pack.save", "kb_pack", pack.packId, { kbId });
+  const packId = String(formData.get("packId") ?? "").trim() || undefined;
+  let pack;
+  try {
+    pack = await kbService().savePack({
+      packId,
+      kbId,
+      name: String(formData.get("name") ?? "").trim(),
+      description: String(formData.get("description") ?? "").trim() || undefined,
+      extendsPackId: String(formData.get("extendsPackId") ?? "").trim() || undefined,
+      intendedComplete: formData.get("intendedComplete") === "on" || undefined,
+      itemIds: formData.getAll("itemIds").map(String),
+      createdBy: context.nexusUserId,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not save this set.";
+    redirect(
+      kbPath(
+        kbId,
+        packId
+          ? `/sets/${packId}?error=${encodeURIComponent(message)}`
+          : `/sets/new?error=${encodeURIComponent(message)}`,
+      ),
+    );
+  }
+  const version = (await kbService().listPackVersions(pack.packId))[0]?.versionNumber;
+  await audit(context, "kb.pack.save", "kb_pack", pack.packId, { kbId, version });
   revalidatePath(kbPath(kbId), "layout");
-  redirect(kbPath(kbId, "/ladder"));
+  redirect(kbPath(kbId, `/sets/${pack.packId}?saved=1`));
+}
+
+export async function restorePackVersionAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const packId = String(formData.get("packId"));
+  const versionNumber = Number(formData.get("versionNumber"));
+  let result;
+  try {
+    result = await kbService().restorePackVersion(kbId, packId, versionNumber, context.nexusUserId);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not restore this version.";
+    redirect(kbPath(kbId, `/sets/${packId}?error=${encodeURIComponent(message)}`));
+  }
+  await audit(context, "kb.pack.version.restore", "kb_pack", packId, {
+    kbId,
+    versionNumber,
+    droppedItemIds: result.droppedItemIds.length,
+    droppedInclude: result.droppedInclude,
+  });
+  revalidatePath(kbPath(kbId), "layout");
+  const dropped = result.droppedItemIds.length + (result.droppedInclude ? 1 : 0);
+  redirect(kbPath(kbId, `/sets/${packId}?restored=${versionNumber}&dropped=${dropped}`));
+}
+
+export async function deletePackAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const packId = String(formData.get("packId"));
+  try {
+    await kbService().deletePack(kbId, packId); // refuses while referenced
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not delete this set.";
+    redirect(kbPath(kbId, `/sets/${packId}?error=${encodeURIComponent(message)}`));
+  }
+  await audit(context, "kb.pack.delete", "kb_pack", packId, { kbId });
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, "/sets?deleted=1"));
 }
 
 export async function registerSourceAction(formData: FormData): Promise<void> {
@@ -315,7 +394,9 @@ export async function suggestPlayersAction(formData: FormData): Promise<void> {
       suggested: suggestion.kind,
     });
   }
-  revalidatePath(kbPath(kbId, "/players"));
+  // Suggested players are system-owned, so land on Everyone to reveal them.
+  revalidatePath("/bridge/players");
+  redirect(`/bridge/players?kb=${kbId}&by=all`);
 }
 
 export async function savePlayerAction(formData: FormData): Promise<void> {

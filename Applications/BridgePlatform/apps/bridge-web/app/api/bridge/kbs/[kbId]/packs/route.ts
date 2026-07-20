@@ -1,4 +1,4 @@
-// GET /api/bridge/kbs/:kbId/packs — the ladder with derived envelopes.
+// GET /api/bridge/kbs/:kbId/packs — the knowledge sets with derived envelopes.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { apiError, requireContext } from "@/lib/api";

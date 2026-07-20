@@ -47,13 +47,21 @@ export default async function LibraryPage({
     <div className="mx-auto max-w-4xl">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">Library</p>
-          <h1 className="mt-1 text-3xl font-medium">Worth keeping</h1>
+          <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">Bridge</p>
+          <h1 className="mt-1 text-3xl font-medium">Library</h1>
           <p className="mt-1 text-sm text-neutral-500">
-            Snapshots you save from the table, or import as LIN / PBN.
+            Snapshots you save from the table, author in the deal editor, or import as LIN / PBN.
           </p>
         </div>
-        <ImportForm action={importFileAction} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/bridge/library/new"
+            className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+          >
+            New board
+          </Link>
+          <ImportForm action={importFileAction} />
+        </div>
       </header>
 
       {params.imported && (

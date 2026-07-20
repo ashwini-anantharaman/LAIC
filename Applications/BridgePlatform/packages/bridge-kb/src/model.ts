@@ -275,16 +275,48 @@ export interface KbPack {
   name: string;
   description?: string;
   levelId?: string;
-  /** Position within the ladder chain, 0-based. */
+  /** Legacy ladder position — retired from the UI; kept for back-compat. */
   ordinal: number;
-  /** Ladder chain: effective item set = union up the extends chain. */
+  /** Optional "Includes": effective item set = union up this chain. */
   extendsPackId?: string;
   itemIds: string[];
+  /**
+   * Fellow declaration: only when true does the UI run/show the 17-category
+   * completeness checklist for this set. Unchecked sets are "building" —
+   * no completeness nagging.
+   */
+  intendedComplete?: boolean;
   derivedEnvelope?: DealingEnvelope;
   envelopeOverrides?: DealingEnvelope;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * An immutable auto-snapshot of a knowledge set (pack) at one save. Unlike
+ * item versions (explicit commit), EVERY set save writes one — deduped when
+ * identical to the latest. Restore overlays a snapshot's content onto the
+ * head and saves, which mints the next snapshot (history is append-only).
+ * Deliberately excludes `ordinal`/`levelId` (retired) and `derivedEnvelope`
+ * (compiler-recomputed after every good compile — it would mint noise).
+ */
+export interface KbPackVersion {
+  packId: string;
+  kbId: string;
+  /** Contiguous number (1,2,3…). */
+  versionNumber: number;
+  name: string;
+  description?: string;
+  extendsPackId?: string;
+  /** Canonical (sorted) — picker order must never dirty a snapshot. */
+  itemIds: string[];
+  intendedComplete?: boolean;
+  envelopeOverrides?: DealingEnvelope;
+  /** Content hash — cheap dedupe against the previous snapshot. */
+  contentHash: string;
+  savedBy: string;
+  savedAt: string;
 }
 
 // ---------------------------------------------------------------------------

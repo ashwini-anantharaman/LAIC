@@ -22,10 +22,14 @@ export { compileKb, type CompileInput, type CompileResult } from "./compile";
 export { KbService, type KbServiceOptions } from "./service";
 export {
   ITEM_CONTENT_KEYS,
+  PACK_CONTENT_KEYS,
   itemContentFromVersion,
   itemContentHash,
   itemIsDirty,
+  packContentHash,
+  packIsDirty,
   snapshotItem,
+  snapshotPack,
 } from "./versioning";
 export { playerIsValid, validatePlayerStatic } from "./validatePlayer";
 export { FIXTURE_EDGES, FIXTURE_ITEMS, fixturePacks } from "./fixture";

@@ -4,14 +4,15 @@
 // entry back onto a table, start a saved table lineup, delete. Recording
 // FROM a live board lives in the table actions (it reads session state).
 
-import type { Seat } from "@bridge/events";
+import type { Card, Seat, Vul } from "@bridge/events";
 import { parseLinToContexts, parsePbn, validateDeal, type GameContext } from "@bridge/formats";
 import { newId } from "@bridge/kb";
+import { handFromSerialized } from "@/lib/dealText";
 import { SessionService, type LibraryEntry, type SeatConfig } from "@bridge/sessions";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
-import { ensureHousePlayer, ladderRungs } from "@/lib/arena";
+import { arenaSets, ensureHousePlayer } from "@/lib/arena";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
@@ -21,6 +22,50 @@ const MAX_IMPORT_BYTES = 1_000_000;
 
 function fail(message: string): never {
   redirect(`/bridge/library?error=${encodeURIComponent(message)}`);
+}
+
+/** The deal editor's save: four hand-authored hands → one board entry. */
+export async function createDealAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const failNew: (message: string) => never = (message) =>
+    redirect(`/bridge/library/new?error=${encodeURIComponent(message)}`);
+
+  const hands = {} as Record<Seat, Card[]>;
+  for (const seat of ["N", "E", "S", "W"] as Seat[]) {
+    const parsed = handFromSerialized(String(formData.get(`hand:${seat}`) ?? ""));
+    if ("error" in parsed) failNew(`${seat}: ${parsed.error}`);
+    if (parsed.length !== 13) failNew(`${seat} has ${parsed.length} cards — every hand needs 13.`);
+    hands[seat] = parsed;
+  }
+  const invalid = validateDeal(hands);
+  if (invalid) failNew(invalid);
+
+  const dealer = (String(formData.get("dealer") ?? "N") || "N") as Seat;
+  const vul = (String(formData.get("vul") ?? "none") || "none") as Vul;
+  const entry: LibraryEntry = {
+    entryId: newId("le"),
+    kind: "board",
+    name: String(formData.get("name") ?? "").trim() || "Authored board",
+    tags: [],
+    hands,
+    dealer,
+    vul,
+    auction: [],
+    play: [],
+    origin: "authored",
+    createdBy: context.nexusUserId,
+    createdAt: new Date().toISOString(),
+  };
+  try {
+    await libraryStore().putEntry(entry);
+  } catch {
+    failNew(
+      "Couldn't save — the library isn't provisioned on this backend yet (migration 0015_library.sql).",
+    );
+  }
+  await audit(context, "profile.create", "kb_library", entry.entryId, { authored: true });
+  revalidatePath("/bridge/library");
+  redirect(`/bridge/library/${entry.entryId}`);
 }
 
 /** Upload a .lin or .pbn file → one library entry per complete board. */
@@ -108,9 +153,13 @@ export async function playEntryAction(formData: FormData): Promise<void> {
   const compiled = await kbService().liveCompile(kbId);
   if (!compiled) throw new Error("This knowledge base has no live compile yet");
 
-  const rungs = ladderRungs(compiled);
-  const top = rungs[rungs.length - 1];
-  if (!top) throw new Error("This knowledge base has no ladder packs yet");
+  // The most capable set (largest effective roster) hosts library play.
+  const sets = arenaSets(compiled);
+  const top = sets.reduce(
+    (best, p) => (!best || p.itemIds.length > best.itemIds.length ? p : best),
+    sets[0],
+  );
+  if (!top) throw new Error("This knowledge base has no knowledge sets yet");
   const house = await ensureHousePlayer(store, compiled, top, context.nexusUserId);
   const ai = SessionService.seatFromPlayer(house, compiled);
   const seats = { N: ai, E: ai, S: ai, W: ai } as Record<Seat, SeatConfig>;

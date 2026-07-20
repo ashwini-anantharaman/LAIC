@@ -5,6 +5,18 @@ const nextConfig: NextConfig = {
   // isolated Playwright server (port 3105, own data dir) run alongside the
   // dev server a human is using on :3000.
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  async redirects() {
+    return [
+      // The ladder became "Knowledge sets" (2026-07-17 UX rework). Temporary
+      // redirect: an authed app with no SEO stake — a cached 308 would strand
+      // browsers on /sets if the deploy were ever rolled back.
+      {
+        source: "/bridge/kb/:kbId/ladder",
+        destination: "/bridge/kb/:kbId/sets",
+        permanent: false,
+      },
+    ];
+  },
   // Workspace packages ship TypeScript source directly (internal-package
   // pattern); Next transpiles them.
   transpilePackages: [

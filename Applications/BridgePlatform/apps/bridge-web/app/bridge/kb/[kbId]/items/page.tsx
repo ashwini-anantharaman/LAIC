@@ -1,5 +1,6 @@
 import type { KnowledgePhase, KnowledgeType } from "@bridge/kb";
 import Link from "next/link";
+import { AccordionGroup, AccordionSection } from "@/components/kb/Accordion";
 import { StatusBadge, TYPE_LABEL } from "@/components/kb/badges";
 import { kbStore } from "@/lib/kb";
 
@@ -8,8 +9,8 @@ const PHASES: KnowledgePhase[] = ["auction", "opening_lead", "declarer_play", "d
 const plural = (label: string) =>
   label.endsWith("y") ? `${label.slice(0, -1)}ies` : `${label}s`;
 
-/** The capability browser (2026-07-17 rework): searchable, faceted, grouped
- *  by kind into always-open accordion sections instead of one flat list. */
+/** The Master list — every knowledge item (template) in this KB: searchable,
+ *  faceted, grouped by kind into accordions whose open state is remembered. */
 export default async function ItemsPage({
   params,
   searchParams,
@@ -87,28 +88,32 @@ export default async function ItemsPage({
           href={`${base}/items/new`}
           className="ml-auto rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
         >
-          New capability
+          New knowledge item
         </Link>
       </form>
 
       {filtered.length === 0 ? (
         <p className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
-          Nothing here yet — run extraction on a source, or author a capability by hand.
+          Nothing here yet — run extraction on a source, or author a knowledge item by hand.
         </p>
       ) : (
-        <div className="space-y-3">
+        <AccordionGroup
+          storageKey={`bridge.kb.${kbId}.master.groups.v1`}
+          sectionIds={groups.map((g) => g.kind)}
+        >
           {groups.map((group) => (
-            <details
+            <AccordionSection
               key={group.kind}
-              open
-              className="rounded-lg border border-neutral-200 bg-[var(--card)]"
+              id={group.kind}
+              summary={
+                <>
+                  <span className="font-serif text-lg font-medium capitalize">
+                    {plural(TYPE_LABEL[group.kind])}
+                  </span>
+                  <span className="text-xs text-neutral-400">{group.items.length}</span>
+                </>
+              }
             >
-              <summary className="flex cursor-pointer items-baseline gap-2 px-5 py-3">
-                <span className="font-serif text-lg font-medium capitalize">
-                  {plural(TYPE_LABEL[group.kind])}
-                </span>
-                <span className="text-xs text-neutral-400">{group.items.length}</span>
-              </summary>
               <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
                 {group.items.map((item) => (
                   <li key={item.itemId}>
@@ -130,9 +135,9 @@ export default async function ItemsPage({
                   </li>
                 ))}
               </ul>
-            </details>
+            </AccordionSection>
           ))}
-        </div>
+        </AccordionGroup>
       )}
     </div>
   );

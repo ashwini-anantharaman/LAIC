@@ -44,31 +44,31 @@ export default async function KbOverviewPage({
     <div className="grid gap-4 sm:grid-cols-2">
       {items.length === 0 &&
         card(
-          "Start with a source",
+          "Sources",
           "Register the system document (e.g. the official SAYC booklet), upload it, and run extraction — items land here, cited to their exact passages.",
           `${base}/sources`,
           "Go to sources",
         )}
       {items.length > 0 &&
         card(
-          `${items.length} capabilities`,
+          `${items.length} knowledge items`,
           "Read, edit, and relate the agreements extraction produced. Every edit recompiles the KB immediately.",
           `${base}/items`,
-          "Browse capabilities",
+          "Browse the Master list",
         )}
       {packs.length === 0 && items.length > 0
         ? card(
-            "Build the ladder",
-            "Group items into capability packs — minimal-incomplete up to full-system — that players are assembled from.",
-            `${base}/ladder`,
-            "Create packs",
+            "Knowledge sets",
+            "Group knowledge items into named sets — players are assembled from them.",
+            `${base}/sets`,
+            "Create a set",
           )
         : packs.length > 0
           ? card(
-              `${packs.length} packs on the ladder`,
-              "The capability ladder this KB offers players.",
-              `${base}/ladder`,
-              "View ladder",
+              `${packs.length} knowledge set${packs.length === 1 ? "" : "s"}`,
+              "The groups of knowledge this KB offers players.",
+              `${base}/sets`,
+              "View sets",
             )
           : null}
       {failures.length > 0 &&
@@ -88,7 +88,7 @@ export default async function KbOverviewPage({
       {sources.length > 0 &&
         card(
           `${sources.length} registered source(s)`,
-          "The provenance registry — every capability cites passages from these.",
+          "The provenance registry — every knowledge item cites passages from these.",
           `${base}/sources`,
           "Manage sources",
         )}
@@ -105,8 +105,8 @@ export default async function KbOverviewPage({
             </p>
           )}
           <p className="text-sm text-neutral-600">
-            This permanently removes the knowledge base with its {items.length} capabilit
-            {items.length === 1 ? "y" : "ies"} (except any shared with another KB), packs,
+            This permanently removes the knowledge base with its {items.length} knowledge item
+            {items.length === 1 ? "" : "s"} (except any shared with another KB), sets,
             players, suggestions, compiles, and every board played on it. There is no undo.
           </p>
           <form action={deleteKbAction} className="mt-3 flex flex-wrap items-end gap-2">

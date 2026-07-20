@@ -97,7 +97,7 @@ export default async function KbListPage({
             </div>
             <div className="shrink-0 text-right text-xs text-neutral-500">
               <p>
-                {items.length} capabilit{items.length === 1 ? "y" : "ies"}
+                {items.length} knowledge item{items.length === 1 ? "" : "s"}
                 {kb.latestVersionNumber ? <> · v{kb.latestVersionNumber}</> : null}
               </p>
               <p className="mt-0.5">{statusLabel(kb)}</p>
@@ -117,7 +117,7 @@ export default async function KbListPage({
                   <input type="hidden" name="masterKbId" value={kb.kbId} />
                   <h4 className="text-sm font-medium">Derive a limited KB</h4>
                   <p className="mt-1 text-xs text-neutral-500">
-                    Branches a subset of capabilities into a new KB.
+                    Branches a subset of knowledge items into a new KB.
                   </p>
                   <div className="mt-3 grid gap-2">
                     <input
@@ -131,15 +131,15 @@ export default async function KbListPage({
                       <option value="copied">Copied — independent from the start</option>
                     </select>
                     <label className="flex items-center gap-2 text-xs text-neutral-600">
-                      <input type="checkbox" name="includePacks" /> also copy the pack ladder
+                      <input type="checkbox" name="includePacks" /> also copy the knowledge sets
                     </label>
                     <fieldset>
                       <legend className="text-[11px] text-neutral-500">
-                        Capabilities to include ({items.length} — none = all)
+                        Knowledge items to include ({items.length} — none = all)
                       </legend>
                       <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded border border-neutral-200 p-2">
                         {items.length === 0 ? (
-                          <p className="text-xs text-neutral-400">No capabilities yet.</p>
+                          <p className="text-xs text-neutral-400">No knowledge items yet.</p>
                         ) : (
                           items.map((i) => (
                             <label key={i.itemId} className="flex items-center gap-2 text-sm">
@@ -164,7 +164,7 @@ export default async function KbListPage({
                   <input type="hidden" name="kbId" value={kb.kbId} />
                   <h4 className="text-sm font-medium">Duplicate (full copy)</h4>
                   <p className="mt-1 text-xs text-neutral-500">
-                    An independent copy of every capability and pack, to build on top of.
+                    An independent copy of every knowledge item and set, to build on top of.
                   </p>
                   <div className="mt-3 flex flex-col gap-2">
                     <input
@@ -202,7 +202,7 @@ export default async function KbListPage({
         <h1 className="mt-1 text-3xl font-medium">Knowledge bases</h1>
         <p className="mt-2 max-w-xl text-sm text-neutral-600">
           A knowledge base holds one system&apos;s agreements — items, their
-          relationships, and the pack ladder players are built from. Each master
+          relationships, and the knowledge sets players are built from. Each master
           is listed with the limited bases derived from it grouped beneath it;
           everything inside a KB is mutually compatible by construction.
         </p>

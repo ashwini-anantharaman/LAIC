@@ -85,7 +85,7 @@ export default async function PlayerPage({
                   ))}
                 {report.static.every((r) => r.ok) && (
                   <li className="text-[color:var(--color-approved)]">
-                    ✓ all {report.static.length} capabilities covered
+                    ✓ all {report.static.length} categories covered
                   </li>
                 )}
                 {report.conflicts.map((c, i) => (
