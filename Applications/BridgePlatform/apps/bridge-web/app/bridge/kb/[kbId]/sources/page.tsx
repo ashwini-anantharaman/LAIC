@@ -206,6 +206,9 @@ export default async function SourcesPage({
           .filter((s) => s.sourceId !== "src_claude")
           .map((source) => {
             const doc = documents.get(source.sourceId);
+            const addedCount = jobs
+              .filter((j) => j.sourceId === source.sourceId)
+              .reduce((n, j) => n + j.createdItemIds.length, 0);
             return (
               <div key={source.sourceId} className="rounded-lg border border-neutral-200 bg-[var(--card)] p-5">
                 <div className="flex flex-wrap items-baseline gap-3">
@@ -229,6 +232,17 @@ export default async function SourcesPage({
                     >
                       read the document →
                     </Link>
+                    {addedCount > 0 && (
+                      <>
+                        {" · "}
+                        <Link
+                          href={`${base}/sources/review?source=${encodeURIComponent(source.sourceId)}`}
+                          className="text-emerald-700 underline-offset-2 hover:underline"
+                        >
+                          review the {addedCount} items it added →
+                        </Link>
+                      </>
+                    )}
                   </p>
                 ) : (
                   <p className="mt-1 text-sm italic text-neutral-500">No document yet.</p>

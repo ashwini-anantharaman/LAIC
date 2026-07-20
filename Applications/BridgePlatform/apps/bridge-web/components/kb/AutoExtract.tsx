@@ -22,6 +22,7 @@ export function AutoExtract({
   remaining: number;
   autostart: boolean;
 }>) {
+  const reviewHref = `/bridge/kb/${kbId}/sources/review?source=${encodeURIComponent(sourceId)}`;
   const router = useRouter();
   const [left, setLeft] = useState(remaining);
   const [running, setRunning] = useState(false);
@@ -91,6 +92,10 @@ export function AutoExtract({
         <p className="text-sm text-[color:var(--color-approved)]">
           ✓ all {total} sections extracted
           {created > 0 && ` · ${created} items this run`}
+          {" · "}
+          <a href={reviewHref} className="text-emerald-700 underline-offset-2 hover:underline">
+            review what was added →
+          </a>
         </p>
       ) : (
         <>
@@ -114,7 +119,17 @@ export function AutoExtract({
             )}
             <span className="text-sm text-neutral-600 tabular-nums">
               {done} / {total} sections
-              {created > 0 && ` · ${created} items`}
+              {created > 0 && (
+                <>
+                  {" · "}
+                  <a
+                    href={reviewHref}
+                    className="text-emerald-700 underline-offset-2 hover:underline"
+                  >
+                    {created} items →
+                  </a>
+                </>
+              )}
               {failed > 0 && ` · ${failed} need a person`}
             </span>
           </div>

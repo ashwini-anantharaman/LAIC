@@ -327,6 +327,80 @@ export class KbService {
     await this.store.deleteItemVersion(itemId, versionNumber);
   }
 
+  /**
+   * Bulk-delete knowledge items from a KB. Items pinned by a published
+   * release are blocked (the release manifest must stay resolvable — this is
+   * what makes the Base release's items undeletable). Deletable items are
+   * stripped from every set that lists them BEFORE the membership goes (a
+   * set referencing a missing item fails compile), and each strip is a
+   * normal snapshot-versioned set save, so it's restorable. The item record,
+   * its versions, and its edges are destroyed only when no other KB still
+   * shares the item. One recompile at the end.
+   */
+  async deleteItems(
+    kbId: string,
+    itemIds: string[],
+    deletedBy: string,
+  ): Promise<{
+    deleted: { itemId: string; title: string }[];
+    blocked: { itemId: string; title: string; reason: string }[];
+    setsTouched: string[];
+  }> {
+    const memberships = await this.store.listMembershipsForKb(kbId);
+    const memberIds = new Set(memberships.map((m) => m.itemId));
+    const releases = await this.store.listKbVersions(kbId);
+
+    const deleted: { itemId: string; title: string }[] = [];
+    const blocked: { itemId: string; title: string; reason: string }[] = [];
+    for (const itemId of new Set(itemIds)) {
+      const item = await this.store.getItem(itemId);
+      if (!item || !memberIds.has(itemId)) {
+        blocked.push({ itemId, title: item?.title ?? itemId, reason: "not in this knowledge base" });
+        continue;
+      }
+      const pin = releases.find((r) => r.items.some((i) => i.itemId === itemId));
+      if (pin) {
+        blocked.push({
+          itemId,
+          title: item.title,
+          reason: `pinned by published release v${pin.versionNumber}`,
+        });
+        continue;
+      }
+      deleted.push({ itemId, title: item.title });
+    }
+
+    const setsTouched: string[] = [];
+    if (deleted.length) {
+      const removeSet = new Set(deleted.map((d) => d.itemId));
+      for (const pack of await this.store.listPacksForKb(kbId)) {
+        if (!pack.itemIds.some((id) => removeSet.has(id))) continue;
+        setsTouched.push(pack.name);
+        await this.writePackWithSnapshot(
+          {
+            ...pack,
+            itemIds: pack.itemIds.filter((id) => !removeSet.has(id)),
+            updatedAt: this.now(),
+          },
+          deletedBy,
+        );
+      }
+      for (const { itemId } of deleted) {
+        for (const m of memberships.filter((x) => x.itemId === itemId))
+          await this.store.removeMembership(m);
+        const stillMember = await this.store.listMembershipsForItem(itemId);
+        if (!stillMember.length) {
+          const edges = await this.store.listEdgesTouching([itemId]);
+          for (const edge of edges) await this.store.deleteEdge(edge.edgeId);
+          await this.store.deleteItemVersionsForItem(itemId);
+          await this.store.deleteItem(itemId);
+        }
+      }
+      await this.recompile(kbId);
+    }
+    return { deleted, blocked, setsTouched };
+  }
+
   // ---- KB versions (releases: the manifest over compiles) --------------------
 
   /**

@@ -1,7 +1,10 @@
 import type { KnowledgePhase, KnowledgeType } from "@bridge/kb";
 import Link from "next/link";
+import { deleteItemsAction } from "@/app/bridge/kb/actions";
 import { AccordionGroup, AccordionSection } from "@/components/kb/Accordion";
 import { StatusBadge, TYPE_LABEL } from "@/components/kb/badges";
+import { BulkItemsForm } from "@/components/kb/BulkItemsForm";
+import { BulkResultBanner } from "@/components/kb/BulkResultBanner";
 import { kbStore } from "@/lib/kb";
 
 const PHASES: KnowledgePhase[] = ["auction", "opening_lead", "declarer_play", "defense", "scoring"];
@@ -16,10 +19,18 @@ export default async function ItemsPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ kbId: string }>;
-  searchParams: Promise<{ q?: string; type?: string; phase?: string; status?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    type?: string;
+    phase?: string;
+    status?: string;
+    bulkDeleted?: string;
+    bulkBlocked?: string;
+    bulkSets?: string;
+  }>;
 }>) {
   const { kbId } = await params;
-  const { q, type, phase, status } = await searchParams;
+  const { q, type, phase, status, bulkDeleted, bulkBlocked, bulkSets } = await searchParams;
   const items = await kbStore().listItemsForKb(kbId);
 
   const query = (q ?? "").toLowerCase();
@@ -35,9 +46,14 @@ export default async function ItemsPage({
     .filter((g) => g.items.length > 0);
 
   const base = `/bridge/kb/${kbId}`;
+  const filterQuery = new URLSearchParams(
+    Object.entries({ q, type, phase, status }).filter(([, v]) => v) as [string, string][],
+  ).toString();
+  const returnTo = `${base}/items${filterQuery ? `?${filterQuery}` : ""}`;
 
   return (
     <div>
+      <BulkResultBanner deleted={bulkDeleted} blocked={bulkBlocked} sets={bulkSets} />
       <form className="mb-4 flex flex-wrap items-end gap-3" method="GET">
         <label className="text-sm">
           <span className="mb-1 block text-xs text-neutral-500">Search</span>
@@ -97,47 +113,58 @@ export default async function ItemsPage({
           Nothing here yet — run extraction on a source, or author a knowledge item by hand.
         </p>
       ) : (
-        <AccordionGroup
-          storageKey={`bridge.kb.${kbId}.master.groups.v1`}
-          sectionIds={groups.map((g) => g.kind)}
-        >
-          {groups.map((group) => (
-            <AccordionSection
-              key={group.kind}
-              id={group.kind}
-              summary={
-                <>
-                  <span className="font-serif text-lg font-medium capitalize">
-                    {plural(TYPE_LABEL[group.kind])}
-                  </span>
-                  <span className="text-xs text-neutral-400">{group.items.length}</span>
-                </>
-              }
-            >
-              <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
-                {group.items.map((item) => (
-                  <li key={item.itemId}>
-                    <Link
-                      href={`${base}/items/${item.itemId}`}
-                      className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-3 hover:bg-neutral-50"
-                    >
-                      <span className="font-serif text-[15px] font-medium">{item.title}</span>
-                      <StatusBadge status={item.status} />
-                      {item.settings.length > 0 && (
-                        <span className="text-[10px] uppercase tracking-wide text-emerald-700">
-                          {item.settings.length} setting{item.settings.length > 1 ? "s" : ""}
+        <BulkItemsForm kbId={kbId} returnTo={returnTo} action={deleteItemsAction}>
+          <AccordionGroup
+            storageKey={`bridge.kb.${kbId}.master.groups.v1`}
+            sectionIds={groups.map((g) => g.kind)}
+          >
+            {groups.map((group) => (
+              <AccordionSection
+                key={group.kind}
+                id={group.kind}
+                summary={
+                  <>
+                    <span className="font-serif text-lg font-medium capitalize">
+                      {plural(TYPE_LABEL[group.kind])}
+                    </span>
+                    <span className="text-xs text-neutral-400">{group.items.length}</span>
+                  </>
+                }
+              >
+                <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
+                  {group.items.map((item) => (
+                    <li key={item.itemId} className="flex items-stretch">
+                      <label className="flex cursor-pointer items-center pl-4 pr-1">
+                        <input
+                          type="checkbox"
+                          name="itemIds"
+                          value={item.itemId}
+                          aria-label={`Select ${item.title}`}
+                          className="h-4 w-4 accent-emerald-700"
+                        />
+                      </label>
+                      <Link
+                        href={`${base}/items/${item.itemId}`}
+                        className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-3 hover:bg-neutral-50"
+                      >
+                        <span className="font-serif text-[15px] font-medium">{item.title}</span>
+                        <StatusBadge status={item.status} />
+                        {item.settings.length > 0 && (
+                          <span className="text-[10px] uppercase tracking-wide text-emerald-700">
+                            {item.settings.length} setting{item.settings.length > 1 ? "s" : ""}
+                          </span>
+                        )}
+                        <span className="ml-auto hidden max-w-md truncate text-xs text-neutral-400 sm:block">
+                          {item.humanReadableText}
                         </span>
-                      )}
-                      <span className="ml-auto hidden max-w-md truncate text-xs text-neutral-400 sm:block">
-                        {item.humanReadableText}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </AccordionSection>
-          ))}
-        </AccordionGroup>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </AccordionSection>
+            ))}
+          </AccordionGroup>
+        </BulkItemsForm>
       )}
     </div>
   );

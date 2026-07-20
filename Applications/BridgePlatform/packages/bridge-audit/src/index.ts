@@ -15,6 +15,7 @@ export type AuditAction =
   | "kb.create"
   | "kb.item.create"
   | "kb.item.edit"
+  | "kb.item.delete"
   | "kb.edge.change"
   | "kb.pack.save"
   | "kb.pack.version.restore"

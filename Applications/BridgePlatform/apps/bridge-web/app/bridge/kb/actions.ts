@@ -97,6 +97,36 @@ export async function createItemAction(formData: FormData): Promise<void> {
   redirect(kbPath(kbId, `/items/${item.itemId}`));
 }
 
+export async function deleteItemsAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const itemIds = formData.getAll("itemIds").map(String).filter(Boolean);
+  const returnToRaw = String(formData.get("returnTo") ?? "");
+  const returnTo = returnToRaw.startsWith(`/bridge/kb/${kbId}`)
+    ? returnToRaw
+    : kbPath(kbId, "/items");
+  if (!itemIds.length) redirect(returnTo);
+
+  const result = await kbService().deleteItems(kbId, itemIds, context.nexusUserId);
+  await audit(context, "kb.item.delete", "kb", kbId, {
+    deleted: result.deleted.length,
+    blocked: result.blocked.length,
+    itemIds: result.deleted.map((d) => d.itemId),
+  });
+
+  const params = new URLSearchParams();
+  params.set("bulkDeleted", String(result.deleted.length));
+  if (result.setsTouched.length) params.set("bulkSets", result.setsTouched.join(", "));
+  if (result.blocked.length) {
+    const shown = result.blocked.slice(0, 3);
+    const note = shown.map((b) => `"${b.title}" (${b.reason})`).join(" · ");
+    const more = result.blocked.length - shown.length;
+    params.set("bulkBlocked", more > 0 ? `${note} · and ${more} more` : note);
+  }
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}${params.toString()}`);
+}
+
 export async function saveItemAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));

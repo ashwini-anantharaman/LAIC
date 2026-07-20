@@ -321,3 +321,23 @@ test("Save as a new knowledge item forks with lineage", async ({ page, context }
   ).toBeVisible();
   await expect(page.getByRole("link", { name: /forked from 1NT opening/ })).toBeVisible();
 });
+
+test("bulk delete from the Master tab (sets updated, banner reports)", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto(`${kbUrl}/items`);
+  await expect(page.getByText("1NT opening (copy)")).toBeVisible();
+
+  // Tick the fork, arm the two-step confirm, delete.
+  await page.getByLabel("Select 1NT opening (copy)").check();
+  await expect(page.getByText("1 selected")).toBeVisible();
+  await page.getByRole("button", { name: "Delete selected…" }).click();
+  await page.getByRole("button", { name: "Yes, delete" }).click();
+
+  await expect(page.getByText("Deleted 1 item.")).toBeVisible();
+  await expect(page.getByText("1NT opening (copy)")).toHaveCount(0);
+  // The original survives untouched.
+  await expect(page.getByText("1NT opening", { exact: true })).toBeVisible();
+});
