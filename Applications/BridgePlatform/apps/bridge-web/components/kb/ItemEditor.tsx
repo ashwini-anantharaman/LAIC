@@ -106,6 +106,10 @@ interface RuleDraft {
   opening: PatternDraft;
   partnerLast: PatternDraft;
   rhoLast: PatternDraft;
+  ownLast: PatternDraft;
+  lhoLast: PatternDraft;
+  ownFirst: PatternDraft;
+  partnerFirst: PatternDraft;
   hcpMin: string;
   hcpMax: string;
   tpMin: string;
@@ -115,8 +119,16 @@ interface RuleDraft {
   actionLevel: string;
   actionStrain: string;
   actionAmong: string;
+  actionSuit: string;
+  /** Serialized action for types beyond the dropdown (first_legal_of…). */
+  actionJson: string;
   remove: boolean;
 }
+
+/** Action types the dropdown edits directly; others round-trip as JSON. */
+const TYPED_ACTIONS = new Set([
+  "bid", "pass", "double", "redouble", "raise_partner", "bid_longest", "bid_suit",
+]);
 
 const patternDraft = (p?: CallPattern): PatternDraft => ({
   kind: p?.kind ?? "unset",
@@ -139,6 +151,10 @@ function draftFrom(rule: AuctionRuleSpec | null, index: number): RuleDraft {
     opening: patternDraft(rule?.context.opening),
     partnerLast: patternDraft(rule?.context.partnerLast),
     rhoLast: patternDraft(rule?.context.rhoLast),
+    ownLast: patternDraft(rule?.context.ownLast),
+    lhoLast: patternDraft(rule?.context.lhoLast),
+    ownFirst: patternDraft(rule?.context.ownFirst),
+    partnerFirst: patternDraft(rule?.context.partnerFirst),
     hcpMin: showNum(c.hcpMin),
     hcpMax: showNum(c.hcpMax),
     tpMin: showNum(c.tpMin),
@@ -147,7 +163,7 @@ function draftFrom(rule: AuctionRuleSpec | null, index: number): RuleDraft {
       { suit: c.suits[0]?.suit ?? "", min: showNum(c.suits[0]?.min), max: showNum(c.suits[0]?.max) },
       { suit: c.suits[1]?.suit ?? "", min: showNum(c.suits[1]?.min), max: showNum(c.suits[1]?.max) },
     ],
-    actionType: a?.type ?? "bid",
+    actionType: a ? (TYPED_ACTIONS.has(a.type) ? a.type : "json") : "bid",
     actionLevel:
       a && "level" in a && a.level !== undefined
         ? String(a.level)
@@ -156,6 +172,8 @@ function draftFrom(rule: AuctionRuleSpec | null, index: number): RuleDraft {
           : "",
     actionStrain: a?.type === "bid" ? a.strain : "N",
     actionAmong: a?.type === "bid_longest" ? a.among.join(",") : "",
+    actionSuit: a?.type === "bid_suit" ? a.suit : "rho_bid_suit",
+    actionJson: a && !TYPED_ACTIONS.has(a.type) ? JSON.stringify(a) : "",
     remove: false,
   };
 }
@@ -211,7 +229,10 @@ function callDesc(p: PatternDraft): ReactNode | null {
 function suitName(s: string): ReactNode | null {
   if (!s) return null;
   if (s === "partner_last_bid_suit") return "partner's suit";
+  if (s === "partner_first_bid_suit") return "partner's first suit";
   if (s === "own_longest_suit") return "my longest suit";
+  if (s === "own_first_bid_suit") return "my first suit";
+  if (s === "own_last_bid_suit") return "my last bid suit";
   if (s === "rho_bid_suit") return "RHO's suit";
   return <Glyph s={s} />;
 }
@@ -241,6 +262,14 @@ function ruleSentence(d: RuleDraft): ReactNode {
   if (partner) when.push(<>partner's last call was {partner}</>);
   const rho = callDesc(d.rhoLast);
   if (rho) when.push(<>RHO's last call was {rho}</>);
+  const ownLast = callDesc(d.ownLast);
+  if (ownLast) when.push(<>my last call was {ownLast}</>);
+  const lho = callDesc(d.lhoLast);
+  if (lho) when.push(<>LHO's last call was {lho}</>);
+  const ownFirst = callDesc(d.ownFirst);
+  if (ownFirst) when.push(<>my first call was {ownFirst}</>);
+  const partnerFirst = callDesc(d.partnerFirst);
+  if (partnerFirst) when.push(<>partner's first call was {partnerFirst}</>);
   if (d.contested === "yes") when.push("the auction is contested");
   if (d.contested === "no") when.push("the opponents are silent");
   if (d.roundMin || d.roundMax)
@@ -303,6 +332,15 @@ function actionText(d: RuleDraft): ReactNode {
           {lvl && ` at the ${lvl} level`}
         </>
       );
+    case "bid_suit":
+      return (
+        <>
+          bid {suitName(d.actionSuit) ?? "?"}
+          {lvl ? ` at the ${lvl} level` : " at the cheapest level"}
+        </>
+      );
+    case "json":
+      return <>make a custom call (see the action JSON)</>;
     default:
       return (
         <>
@@ -326,6 +364,10 @@ function actionChip(d: RuleDraft): ReactNode {
       return `raise → ${d.actionLevel.trim() || "2"}`;
     case "bid_longest":
       return <>longest {strainList(d.actionAmong || "S,H")}</>;
+    case "bid_suit":
+      return <>{suitName(d.actionSuit) ?? "suit"}{d.actionLevel.trim() && ` @${d.actionLevel.trim()}`}</>;
+    case "json":
+      return "custom";
     default:
       return (
         <>
@@ -347,7 +389,14 @@ function PatternRow({
   onChange,
 }: Readonly<{
   p: string;
-  field: "opening" | "partnerLast" | "rhoLast";
+  field:
+    | "opening"
+    | "partnerLast"
+    | "rhoLast"
+    | "ownLast"
+    | "lhoLast"
+    | "ownFirst"
+    | "partnerFirst";
   title: string;
   value: PatternDraft;
   onChange: (patch: Partial<PatternDraft>) => void;
@@ -438,7 +487,7 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
       return { ...prev, suits };
     });
   const c = rule ? decompose(rule.conditions) : { suits: [] as TypedConditions["suits"] };
-  const showLevel = ["bid", "raise_partner", "bid_longest"].includes(d.actionType);
+  const showLevel = ["bid", "raise_partner", "bid_longest", "bid_suit"].includes(d.actionType);
 
   return (
     <details
@@ -575,6 +624,20 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
         <PatternRow p={p} field="opening" title="Our opening was…" value={d.opening} onChange={(patch) => set({ opening: { ...d.opening, ...patch } })} />
         <PatternRow p={p} field="partnerLast" title="Partner's last call was…" value={d.partnerLast} onChange={(patch) => set({ partnerLast: { ...d.partnerLast, ...patch } })} />
         <PatternRow p={p} field="rhoLast" title="RHO's last call was…" value={d.rhoLast} onChange={(patch) => set({ rhoLast: { ...d.rhoLast, ...patch } })} />
+        <details
+          className="sm:col-span-4"
+          open={[d.ownLast, d.lhoLast, d.ownFirst, d.partnerFirst].some((x) => x.kind !== "unset")}
+        >
+          <summary className="cursor-pointer text-[11px] text-neutral-500">
+            More auction memory — my/LHO&apos;s last call, first calls (rebid sequences)
+          </summary>
+          <div className="mt-2 grid gap-2 sm:grid-cols-4">
+            <PatternRow p={p} field="ownLast" title="My last call was…" value={d.ownLast} onChange={(patch) => set({ ownLast: { ...d.ownLast, ...patch } })} />
+            <PatternRow p={p} field="lhoLast" title="LHO's last call was…" value={d.lhoLast} onChange={(patch) => set({ lhoLast: { ...d.lhoLast, ...patch } })} />
+            <PatternRow p={p} field="ownFirst" title="My first call was…" value={d.ownFirst} onChange={(patch) => set({ ownFirst: { ...d.ownFirst, ...patch } })} />
+            <PatternRow p={p} field="partnerFirst" title="Partner's first call was…" value={d.partnerFirst} onChange={(patch) => set({ partnerFirst: { ...d.partnerFirst, ...patch } })} />
+          </div>
+        </details>
       </Band>
 
       <Band tag="And my hand" hint="all filled-in checks must hold; blank = no constraint" rail="border-l-amber-600">
@@ -642,7 +705,10 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
                 <option value="D">♦ diamonds</option>
                 <option value="C">♣ clubs</option>
                 <option value="partner_last_bid_suit">partner&apos;s last bid suit</option>
+                <option value="partner_first_bid_suit">partner&apos;s first bid suit</option>
                 <option value="own_longest_suit">my longest suit</option>
+                <option value="own_first_bid_suit">my first bid suit</option>
+                <option value="own_last_bid_suit">my last bid suit</option>
                 <option value="rho_bid_suit">RHO&apos;s bid suit</option>
               </select>
             </label>
@@ -690,6 +756,8 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
             <option value="redouble">redouble</option>
             <option value="raise_partner">raise partner&apos;s suit</option>
             <option value="bid_longest">bid my longest among…</option>
+            <option value="bid_suit">bid a contextual suit (cue bid / rebid my suit)</option>
+            <option value="json">advanced — raw action JSON</option>
           </select>
         </label>
         {showLevel && (
@@ -736,6 +804,40 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
               onChange={(e) => set({ actionAmong: e.target.value })}
               placeholder="S,H"
               className={input}
+            />
+          </label>
+        )}
+        {d.actionType === "bid_suit" && (
+          <label>
+            <span className={label}>Which suit</span>
+            <select
+              name={`${p}:actionSuit`}
+              value={d.actionSuit}
+              onChange={(e) => set({ actionSuit: e.target.value })}
+              className={input}
+            >
+              <option value="rho_bid_suit">RHO&apos;s bid suit (cue bid)</option>
+              <option value="own_first_bid_suit">my first bid suit (rebid it)</option>
+              <option value="own_last_bid_suit">my last bid suit</option>
+              <option value="partner_first_bid_suit">partner&apos;s first bid suit</option>
+              <option value="partner_last_bid_suit">partner&apos;s last bid suit</option>
+              <option value="own_longest_suit">my longest suit</option>
+              <option value="S">♠ spades</option>
+              <option value="H">♥ hearts</option>
+              <option value="D">♦ diamonds</option>
+              <option value="C">♣ clubs</option>
+            </select>
+          </label>
+        )}
+        {d.actionType === "json" && (
+          <label className="sm:col-span-3">
+            <span className={label}>Action JSON (e.g. first_legal_of)</span>
+            <input
+              name={`${p}:actionJson`}
+              value={d.actionJson}
+              onChange={(e) => set({ actionJson: e.target.value })}
+              placeholder='{"type":"first_legal_of","calls":[{"level":3,"strain":"N"}]}'
+              className={`${input} font-mono`}
             />
           </label>
         )}
@@ -1025,6 +1127,18 @@ export function ItemEditor({
                     "cash_winners",
                     "lowest_legal",
                     "discard_lowest",
+                    "draw_trumps",
+                    "finesse_toward_tenace",
+                    "hold_up_stopper",
+                    "duck_to_preserve_entry",
+                    "establish_long_suit",
+                    "ruff_loser",
+                    "discard_loser_on_winner",
+                    "cash_out_when_enough",
+                    "return_partner_suit",
+                    "hold_up_ace",
+                    "overruff_or_discard",
+                    "second_hand_rise_vs_honor",
                   ].map((b) => (
                     <option key={b}>{b}</option>
                   ))}

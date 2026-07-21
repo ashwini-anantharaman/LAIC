@@ -37,10 +37,16 @@ export function resolveSuitRef(ref: SuitRef, hand: Hand, env: ConditionEnv): Sui
   switch (ref) {
     case "partner_last_bid_suit":
       return suitOfBid(env.facts.partnerLast);
+    case "partner_first_bid_suit":
+      return suitOfBid(env.facts.partnerFirstBid);
     case "rho_bid_suit":
       return suitOfBid(env.facts.rhoLast);
     case "own_longest_suit":
       return longestSuits(hand)[0]?.suit ?? null;
+    case "own_first_bid_suit":
+      return suitOfBid(env.facts.ownFirstBid);
+    case "own_last_bid_suit":
+      return suitOfBid(env.facts.ownLastBid);
     default:
       return ref;
   }
@@ -108,6 +114,23 @@ function evalPredicate(pred: HandPredicate, hand: Hand, env: ConditionEnv): bool
   if ("hasStopperIn" in pred) {
     const suit = resolveSuitRef(pred.hasStopperIn.suit, hand, env);
     return suit !== null && hasStopper(hand, suit);
+  }
+  if ("aces" in pred)
+    return inRange(hand.filter((c) => c.rank === 14).length, pred.aces, env);
+  if ("kings" in pred)
+    return inRange(hand.filter((c) => c.rank === 13).length, pred.kings, env);
+  if ("keycards" in pred) {
+    // RKCB keycards: the four aces plus the ref suit's king.
+    const suit = resolveSuitRef(pred.keycards.suit, hand, env);
+    if (!suit) return false;
+    const count =
+      hand.filter((c) => c.rank === 14).length +
+      (hand.some((c) => c.suit === suit && c.rank === 13) ? 1 : 0);
+    return inRange(count, pred.keycards, env);
+  }
+  if ("holds" in pred) {
+    const suit = resolveSuitRef(pred.holds.suit, hand, env);
+    return suit !== null && hand.some((c) => c.suit === suit && c.rank === pred.holds.rank);
   }
   return false;
 }

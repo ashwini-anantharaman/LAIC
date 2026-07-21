@@ -97,21 +97,34 @@ function playCategories(rule: CompiledKb["playRules"][number]): string[] {
   const spec = rule.spec;
   const declarer = spec.side === "declarer" || spec.side === "any" || spec.side === undefined;
   const defense = spec.side === "defense" || spec.side === "any" || spec.side === undefined;
+  const DECLARER_TECHNIQUES = new Set([
+    "draw_trumps", "finesse_toward_tenace", "hold_up_stopper", "duck_to_preserve_entry",
+    "establish_long_suit", "ruff_loser", "discard_loser_on_winner", "cash_out_when_enough",
+  ]);
   if (declarer) {
     out.push("declarer.legal_card");
-    if (spec.behavior === "cash_winners") out.push("declarer.cash_winners");
+    if (spec.behavior === "cash_winners" || spec.behavior === "cash_out_when_enough")
+      out.push("declarer.cash_winners");
     if (spec.behavior === "lowest_legal" || spec.behavior === "lowest_following")
       out.push("declarer.fallback");
+    if (DECLARER_TECHNIQUES.has(spec.behavior)) out.push("declarer.legal_card");
   }
   if (defense) {
-    if (spec.position === "second" || spec.behavior === "second_hand_low")
+    if (
+      spec.position === "second" ||
+      spec.behavior === "second_hand_low" ||
+      spec.behavior === "second_hand_rise_vs_honor" ||
+      spec.behavior === "hold_up_ace"
+    )
       out.push("defense.second_hand");
     if (spec.position === "third" || spec.behavior === "third_hand_high")
       out.push("defense.third_hand");
     if (
       spec.behavior === "lowest_following" ||
       spec.behavior === "discard_lowest" ||
-      spec.behavior === "lowest_legal"
+      spec.behavior === "lowest_legal" ||
+      spec.behavior === "return_partner_suit" ||
+      spec.behavior === "overruff_or_discard"
     )
       out.push("defense.follow_discard");
   }
