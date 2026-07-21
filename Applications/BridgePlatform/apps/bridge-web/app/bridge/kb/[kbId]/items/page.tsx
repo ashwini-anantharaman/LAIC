@@ -170,14 +170,22 @@ export default async function ItemsPage({
   // ---- the three bodies ------------------------------------------------------
 
   const cards = (
-    <div className="space-y-8">
+    <AccordionGroup
+      storageKey={`bridge.kb.${kbId}.master.groups.v1`}
+      sectionIds={groups.map((g) => g.id)}
+    >
       {groups.map((g) => (
-        <section key={g.id}>
-          <h2 className="mb-3 flex items-baseline gap-2 font-serif text-lg font-medium capitalize">
-            {g.label}
-            <span className="text-xs font-normal text-neutral-400">{g.items.length}</span>
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+        <AccordionSection
+          key={g.id}
+          id={g.id}
+          summary={
+            <>
+              <span className="font-serif text-lg font-medium capitalize">{g.label}</span>
+              <span className="text-xs text-neutral-400">{g.items.length}</span>
+            </>
+          }
+        >
+          <div className="grid gap-3 border-t border-[var(--line)] p-4 sm:grid-cols-2">
             {g.items.map((item) => (
               <Link
                 key={item.itemId}
@@ -204,9 +212,9 @@ export default async function ItemsPage({
               </Link>
             ))}
           </div>
-        </section>
+        </AccordionSection>
       ))}
-    </div>
+    </AccordionGroup>
   );
 
   const list = (
