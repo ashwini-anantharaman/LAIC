@@ -2,18 +2,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getBridgeContext } from "@/lib/nexus";
 
-/** The in-app guide (2026-07-20): how knowledge works, written for fellows,
+/** The in-app guide (2026-07-21): how knowledge works, written for fellows,
  *  living where the work happens. Sections carry stable anchors so the
  *  workspace can deep-link ("what's this? →" next to Versions, History…). */
 
 const TOC = [
   ["how-it-fits", "How it fits together"],
+  ["play", "Playing a board"],
+  ["viewer", "The Master view"],
   ["items", "Knowledge items"],
   ["types", "Types & who wins"],
   ["rules", "Rules"],
+  ["forcing", "Forcing situations"],
   ["settings", "Settings & dials"],
   ["engine", "How the AI decides"],
   ["versions", "Versions & history"],
+  ["augment", "Augmenting with a source"],
   ["completeness", "Complete players"],
   ["editing", "Editing safely"],
 ] as const;
@@ -73,7 +77,7 @@ export default async function GuidePage() {
         <ol className="max-w-2xl space-y-2 text-[15px] text-neutral-700">
           <li>① A <b>knowledge base</b> holds one system (SAYC, 2/1, …).</li>
           <li>② Its <b>Master</b> tab holds every <b>knowledge item</b> — one per agreement, convention, or technique.</li>
-          <li>③ <b>Knowledge sets</b> group items ("Floor", "Full booklet"); a set may optionally include another set.</li>
+          <li>③ <b>Knowledge sets</b> group items (&ldquo;Floor&rdquo;, &ldquo;Full SAYC&rdquo;); a set may optionally include another set.</li>
           <li>④ A <b>player</b> carries one or more sets plus setting choices — that is <i>all</i> it knows.</li>
           <li>⑤ At the <b>table</b>, every decision traces to the rule, the item, and the cited source passage. Click any decision to see the chain.</li>
         </ol>
@@ -82,6 +86,117 @@ export default async function GuidePage() {
           situation it says so honestly (see <a href="#engine" className="text-emerald-700 underline-offset-2 hover:underline">How the AI decides</a>);
           when it does something wrong, a specific item — or a specific gap — is responsible.
         </p>
+      </Section>
+
+      <Section
+        id="play"
+        title="Playing a board"
+        intro="Play offers two doors, and a board never moves until you tell it to."
+      >
+        <div className="space-y-3">
+          <div className={card}>
+            <h3 className="text-sm font-semibold">Quickplay vs. Customize</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              <b>Quickplay</b> resumes your unfinished board, or deals a fresh one immediately —
+              you sit South against three house players carrying the strongest knowledge set.
+              <b> Customize</b> opens the table builder: pick a knowledge set to play against or
+              watch, choose <i>every</i> seat&apos;s player yourself, set the deal seed, start
+              from a saved board in the library (or author/import one), or run a{" "}
+              <b>constrained drill</b> — for incomplete players, the dealer only accepts a deal
+              a full simulation finishes without the engine floor.
+            </p>
+          </div>
+          <div className={card}>
+            <h3 className="text-sm font-semibold">Boards never self-start</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              Opening a board shows <b>▶ start</b> (or <b>▶ resume</b> on a board with history) —
+              the AI seats play one decision per beat only after you press it, and <b>❚❚</b>{" "}
+              pauses them again. <b>step ▸</b> pauses and advances exactly one decision —
+              the tool for walking a trace. <b>play to end</b> finishes the whole board at once.
+              <b> undo</b> rewinds the last decision and comes back paused, so the AI can&apos;t
+              instantly replay the decision you&apos;re inspecting.
+            </p>
+          </div>
+          <div className={card}>
+            <h3 className="text-sm font-semibold">Bidding and playing as a human</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              When it&apos;s your call, the bid pad works in two taps: pick a <b>level</b> (1–7 —
+              levels with no legal bid are greyed), then the five strains (♣ ♦ ♥ ♠ NT) light up —
+              tap one to bid. <b>Pass / Dbl / Rdbl</b> are always one tap. In the play, tap a
+              raised card in your hand (you also play dummy&apos;s cards when you&apos;re
+              declarer).
+            </p>
+          </div>
+          <div className={card}>
+            <h3 className="text-sm font-semibold">Everything else on the table bar</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              <b>show all hands</b> reveals the other seats. <b>save to library</b> keeps the
+              board (or the deal) for later. <b>edit deal</b> opens the mid-play deal editor —
+              the game continues on the edited cards, played cards locked where they fell.
+              <b> new board</b> deals again with the same lineup; <b>choose a table</b> returns
+              to the builder. <b>learner view</b> hides the verification rail for a clean
+              student-facing felt. The <b>Decisions</b> rail is the heart of it: every entry
+              opens into the full trace — which rules were considered, why each was rejected,
+              what the settings said — with <b>Flag</b> and <b>fix at the table</b> on each one.
+            </p>
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        id="viewer"
+        title="The Master view"
+        intro="Three ways to read a knowledge base, with grouping and sorting that mean something."
+      >
+        <div className="space-y-3">
+          <div className={card}>
+            <h3 className="text-sm font-semibold">Views</h3>
+            <dl className="mt-1 grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-[8rem_1fr]">
+              <dt className="font-medium">Cards</dt>
+              <dd className="text-neutral-600">For reading — each item&apos;s full text on a card, in collapsible groups that remember what you fold away.</dd>
+              <dt className="font-medium">List</dt>
+              <dd className="text-neutral-600">For working — one dense row per item, quickest way to scan titles and jump into the editor.</dd>
+              <dt className="font-medium">Table</dt>
+              <dd className="text-neutral-600">For auditing — columns for type, phase, status, rule count, and last update, plus checkboxes for bulk delete.</dd>
+            </dl>
+          </div>
+          <div className={card}>
+            <h3 className="text-sm font-semibold">Group by</h3>
+            <dl className="mt-1 grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-[8rem_1fr]">
+              <dt className="font-medium">Kind</dt>
+              <dd className="text-neutral-600">The knowledge type (agreement, convention, exception, …) — the &ldquo;what is this&rdquo; axis, and the one that decides precedence (<a href="#types" className="text-emerald-700 underline-offset-2 hover:underline">Types &amp; who wins</a>).</dd>
+              <dt className="font-medium">Phase</dt>
+              <dd className="text-neutral-600">Where in a board it applies: auction · opening lead · declarer play · defense · scoring. Group by phase to review &ldquo;everything about defense&rdquo; in one place.</dd>
+              <dt className="font-medium">Status</dt>
+              <dd className="text-neutral-600">The trust badge (draft / reviewed / approved / deprecated). Group by status to work through the review backlog — the curated SAYC items all start as drafts awaiting an expert.</dd>
+              <dt className="font-medium">None</dt>
+              <dd className="text-neutral-600">One flat run, for when you&apos;re sorting instead.</dd>
+            </dl>
+          </div>
+          <div className={card}>
+            <h3 className="text-sm font-semibold">Sort by</h3>
+            <dl className="mt-1 grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-[8rem_1fr]">
+              <dt className="font-medium">Title</dt>
+              <dd className="text-neutral-600">Alphabetical — for finding a specific agreement by name.</dd>
+              <dt className="font-medium">Updated</dt>
+              <dd className="text-neutral-600">Most recently edited first — for picking up where the last session left off, or seeing what a colleague just changed.</dd>
+              <dt className="font-medium">Rules</dt>
+              <dd className="text-neutral-600">Most executable rules first — the load-bearing items at the top, teaching prose at the bottom.</dd>
+            </dl>
+          </div>
+          <div className={card}>
+            <h3 className="text-sm font-semibold">The content chip</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              Every item card carries a chip saying what it contributes when a player carries it:
+              <b> &ldquo;N rules&rdquo;</b> (executable auction/play/lead rules),
+              <b> &ldquo;N forcing situations&rdquo;</b> (<a href="#forcing" className="text-emerald-700 underline-offset-2 hover:underline">below</a>),
+              <b> &ldquo;signal policy&rdquo;</b>, <b>&ldquo;fallback&rdquo;</b>, or
+              <b> &ldquo;teaching prose&rdquo;</b> — judgment the machine can&apos;t execute yet,
+              kept as first-class knowledge so it stays citable and reviewable. Items whose
+              conventions are toggleable also show <b>&ldquo;on/off by default&rdquo;</b>.
+            </p>
+          </div>
+        </div>
       </Section>
 
       <Section
@@ -131,6 +246,9 @@ export default async function GuidePage() {
           Within a band, each rule&apos;s <b>Priority</b> number breaks ties (lower fires first).
           Pick the type that names what the thing <i>is</i> and the banding mostly takes care of
           itself — reach for priority numbers only when two rules of the same type collide.
+          One special citizen sits alongside the bands:{" "}
+          <a href="#forcing" className="text-emerald-700 underline-offset-2 hover:underline">forcing situations</a>{" "}
+          don&apos;t choose calls at all — they forbid one.
         </p>
       </Section>
 
@@ -148,25 +266,64 @@ export default async function GuidePage() {
           </p>
           <p>
             <b>WHEN</b> — your role (opening / opener / responder / overcaller / advancer),
-            whether the auction is contested, and what specific calls were made: &ldquo;Our
-            opening was…&rdquo;, &ldquo;Partner&apos;s last call was…&rdquo; (set it to a 1-level
-            NT bid and the sentence reads &ldquo;partner&apos;s last call was 1NT&rdquo; — the
-            Stayman context), &ldquo;RHO&apos;s last call was…&rdquo;. Anything left at its
-            default doesn&apos;t constrain.
+            whether the auction is contested, the partnership round, and what specific calls were
+            made: &ldquo;Our opening was…&rdquo;, &ldquo;Partner&apos;s last call was…&rdquo;,
+            &ldquo;RHO&apos;s last call was…&rdquo;. Under <i>More auction context</i>: my and
+            LHO&apos;s last calls, each seat&apos;s <i>first</i> call (multi-round rebid
+            sequences), <b>vulnerability</b> relative to you (equal / favorable / unfavorable —
+            preempt discipline), how many <b>distinct suits the opponents have bid</b> (Michaels
+            is a cue only while they&apos;ve shown one suit), and whether{" "}
+            <b>partner cue-bid their suit</b>. Anything left at its default doesn&apos;t
+            constrain.
           </p>
           <p>
             <b>AND MY HAND</b> — HCP min/max (a number, or a dial like{" "}
             <code className="rounded bg-neutral-100 px-1">$nt_range.low</code>), total points,
             shape, and up to two suit holdings (&ldquo;4+ ♥ <i>and</i> 4+ ♠&rdquo; is one rule
-            with two holdings — the second field appears once the first is used). The suit can be
-            contextual: partner&apos;s last bid suit, my longest suit, RHO&apos;s suit. Three rare
-            checks live only in the &ldquo;Extra conditions (JSON)&rdquo; box: longest-suit-among,
-            suit quality, and stoppers.
+            with two holdings). The suit can be contextual: partner&apos;s last or first bid
+            suit, my longest/shortest/first/last suit, RHO&apos;s or LHO&apos;s suit, or{" "}
+            <b>the fourth (only unbid) suit</b> — the fourth-suit-forcing reference. Rarer checks
+            live in the &ldquo;Extra conditions (JSON)&rdquo; box: longest-suit-among, suit
+            quality, stoppers, ace/king/keycard counts (Blackwood &amp; friends), a specific card
+            (the trump queen), and <b>playing tricks</b> — the preempt-discipline count (an ace
+            is one trick; a king one with company, half alone; a queen half with three; plus one
+            per card past the third in an honor-headed suit).
           </p>
           <p>
             <b>THEN</b> — the call: bid exactly, pass, double, redouble, raise partner&apos;s
-            suit, or bid-my-longest-among. If the call is illegal in the live auction the rule
-            simply doesn&apos;t fire and the next candidate is tried.
+            suit, bid-my-longest-among, or <b>bid a contextual suit</b> (cue-bid RHO&apos;s suit,
+            rebid my first suit, bid the fourth suit) at a given level or the cheapest legal one.
+            If the call is illegal in the live auction the rule simply doesn&apos;t fire and the
+            next candidate is tried.
+          </p>
+        </div>
+      </Section>
+
+      <Section
+        id="forcing"
+        title="Forcing situations"
+        intro="Some auctions forbid passing. That knowledge is an item too — editable like any other."
+      >
+        <div className={prose}>
+          <p>
+            A <b>forcing-situations item</b> is a catalog of auction contexts where pass is not
+            an available call — a two-over-one response, a new suit over a weak two (RONF),
+            partner&apos;s Blackwood 4NT, and so on. Each situation is one editable card:
+            <b> when</b> the auction looks like this, <b>then pass is not available</b>. There is
+            no hand check and no action — the situation is about the auction, not your cards.
+          </p>
+          <p>
+            At the table the effect is a guard: in a matching context the player{" "}
+            <b>suppresses any rule that would pass</b> (the trace shows &ldquo;pass suppressed —
+            …&rdquo; on each one), and if no rule produces a bid at all, it{" "}
+            <b>bids its cheapest long suit</b> rather than drop the auction — citing the forcing
+            situation as the reason. That keeps the golden rule intact: even the &ldquo;I had to
+            say <i>something</i>&rdquo; bid traces to a specific piece of editable knowledge.
+          </p>
+          <p>
+            The curated SAYC ships one such item (&ldquo;Forcing situations&rdquo;, 17 cards,
+            toggleable). If your partnership plays a line differently — say, two-over-one as
+            game-forcing rather than one-round — edit or delete that card like any rule.
           </p>
         </div>
       </Section>
@@ -201,10 +358,11 @@ export default async function GuidePage() {
       >
         <ol className="max-w-2xl list-inside list-decimal space-y-2 text-[15px] text-neutral-700">
           <li><b>Collect the player&apos;s knowledge</b> — every item in its sets (Includes chains count); rules behind switched-off enable gates are dropped.</li>
-          <li><b>Read the auction</b> — role, contested, partner&apos;s and RHO&apos;s last calls, round.</li>
-          <li><b>Walk every rule in band-then-priority order</b> — wrong context is skipped; failed hand checks are recorded in the trace with the settings consulted; a legal match becomes a candidate.</li>
+          <li><b>Read the auction</b> — role, contested, everyone&apos;s last and first calls, round, vulnerability, the opponents&apos; suits.</li>
+          <li><b>Check the forcing guard</b> — if a <a href="#forcing" className="text-emerald-700 underline-offset-2 hover:underline">forcing situation</a> matches, pass is off the menu for this turn.</li>
+          <li><b>Walk every rule in band-then-priority order</b> — wrong context is skipped; failed hand checks are recorded in the trace with the settings consulted; a legal match becomes a candidate (a pass is suppressed when the guard is up).</li>
           <li><b>Pick a candidate</b> — <i>first match (deterministic)</i> by default; <i>weighted random (variety)</i> picks among ties, seeded per board so replays are identical.</li>
-          <li><b>Nothing matched?</b> The fallback item fires (auction: pass) — honestly labeled &ldquo;no agreement applied.&rdquo;</li>
+          <li><b>Nothing matched?</b> In a forcing situation the player bids its cheapest long suit, citing the situation. Otherwise the fallback item fires (auction: pass) — honestly labeled &ldquo;no agreement applied.&rdquo;</li>
           <li><b>No fallback either?</b> The <b>engine floor</b> acts, loudly marked — it exists so a game can&apos;t jam and never counts as knowledge. A well-built set produces zero floor events.</li>
         </ol>
       </Section>
@@ -259,9 +417,37 @@ export default async function GuidePage() {
               A board in progress is pinned to the knowledge that dealt it — your edits affect
               the <i>next</i> board. Swapping a seat or editing the deal mid-play <b>forks</b>{" "}
               the board (the original keeps its history); the mid-play deal editor continues the
-              game on the edited cards, with played cards locked where they fell.
+              game on the edited cards, with played cards locked where they fell. The exception
+              is deliberate: <b>fix at the table</b> re-pins the <i>same</i> board to the
+              recompiled knowledge, so an undo → fix → step continues under the corrected rules.
             </p>
           </div>
+        </div>
+      </Section>
+
+      <Section
+        id="augment"
+        title="Augmenting with a source"
+        intro="Add a document to an existing knowledge base without risking it — everything lands on a draft copy first."
+      >
+        <div className={prose}>
+          <p>
+            On a KB&apos;s <b>Sources</b> tab, <b>&ldquo;⇄ Augment into a new draft…&rdquo;</b>{" "}
+            takes an uploaded document and reads it <i>against the knowledge that already
+            exists</i>:
+            something an item already covers is skipped; something an item partly covers becomes
+            a proposed <b>modification</b> of that item; something new becomes a <b>new item</b>.
+            None of it touches your KB — it all lands on an isolated <b>draft copy</b>.
+          </p>
+          <p>
+            The draft&apos;s <b>review board</b> shows three panels: <b>modified items</b> (with
+            before/after against a pre-augmentation snapshot), <b>new items</b> (skim, edit, or
+            delete in bulk), and <b>new conflicts</b> (contradictions the merge would introduce,
+            compared against the base). Finish with <b>Keep</b> — the draft becomes a normal KB —
+            or <b>Discard</b>, which deletes it and leaves the original untouched. A good
+            augmentation of a complete KB should propose almost nothing; that&apos;s the
+            completeness test working.
+          </p>
         </div>
       </Section>
 
@@ -289,14 +475,16 @@ export default async function GuidePage() {
         intro="The platform is built so you can edit fearlessly."
       >
         <ul className="max-w-2xl list-inside list-disc space-y-2 text-[15px] text-neutral-700">
-          <li><b>Every save recompiles the KB immediately</b> — new boards use it at once; boards in progress keep what they started with.</li>
+          <li><b>Every save recompiles the KB immediately</b> — new boards use it at once; boards in progress keep what they started with (unless you <b>fix at the table</b>, which re-pins on purpose).</li>
           <li><b>You cannot break the table.</b> A save that doesn&apos;t compile leaves the last good version serving and banners the exact error. Fix and save again.</li>
           <li><b>Everything is versioned</b> — see <a href="#versions" className="text-emerald-700 underline-offset-2 hover:underline">Versions &amp; history</a>.</li>
           <li><b>Hand-authoring starts on the Sources tab</b>: sections the automatic reader couldn&apos;t structure queue under &ldquo;Sections that need a person&rdquo; — &ldquo;Write this up&rdquo; opens the editor with the passage alongside and the citation attached, and the card checks itself off once an item cites that passage.</li>
-          <li><b>Flag anything at the table.</b> Every decision has a Flag button that files a suggestion into the KB&apos;s queue, linked to the exact board and decision.</li>
+          <li><b>Flag anything at the table.</b> Every decision has a Flag button that files a suggestion into the KB&apos;s queue — with the exact deal, auction, and decision attached, so the reviewer sees precisely what you saw.</li>
+          <li><b>Fix it without leaving the board.</b> Undo the bad decision (the table pauses), open <b>fix at the table</b> from its trace, edit the item in the overlay, save — the board re-pins to the corrected knowledge and <b>step ▸</b> replays the decision under the new rules.</li>
+          <li><b>Hide, don&apos;t delete.</b> Archiving a knowledge base hides it — and its players and boards — everywhere, reversibly.</li>
         </ul>
         <p className="mt-6 text-xs text-neutral-400">
-          This guide matches the live platform (2026-07-20). Questions it doesn&apos;t answer are
+          This guide matches the live platform (2026-07-21). Questions it doesn&apos;t answer are
           bugs in the guide — flag them.
         </p>
       </Section>
