@@ -1,7 +1,5 @@
 import { roleLabel, stubDisplayName } from "@bridge/nexus-client";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { NEXUS_RETURN_COOKIE, safeReturnUrl } from "@/lib/nexusToken";
 import { clearDevUser, signOutNexus } from "@/app/actions";
 import { NavLink } from "@/components/NavLink";
 import { navForContext } from "@/lib/nav";
@@ -24,10 +22,7 @@ export default async function BridgeShellLayout({
     stubDisplayName(context.nexusUserId) ??
     context.nexusUserId;
 
-  // Where the Nexus console launched us from (set by /nexus/launch) — powers
-  // "Back to Nexus". Absent in stub/standalone runs, so the link hides itself.
-  const cookieStore = await cookies();
-  const nexusReturnUrl = safeReturnUrl(cookieStore.get(NEXUS_RETURN_COOKIE)?.value);
+
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
@@ -50,11 +45,6 @@ export default async function BridgeShellLayout({
         {/* Exit controls must exist on every screen size — nobody gets
             trapped in the platform. Identity details stay desktop-only. */}
         <div className="flex items-center gap-2 border-t border-[var(--line)] px-4 py-2 md:hidden">
-          {nexusReturnUrl && (
-            <a href={nexusReturnUrl} className="text-xs font-medium text-neutral-600 underline-offset-2 hover:underline">
-              &larr; Back to Nexus
-            </a>
-          )}
           {nexusMode() === "http" && (
             <form action={signOutNexus}>
               <button type="submit" className="text-xs font-medium text-neutral-600 underline-offset-2 hover:underline">
@@ -64,26 +54,16 @@ export default async function BridgeShellLayout({
           )}
         </div>
         <div className="hidden space-y-1 border-t border-[var(--line)] p-4 text-sm md:block">
-          <div className="mb-2 flex items-center gap-2">
-            {nexusReturnUrl && (
-              <a
-                href={nexusReturnUrl}
+          {nexusMode() === "http" && (
+            <form action={signOutNexus} className="mb-2">
+              <button
+                type="submit"
                 className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
               >
-                &larr; Back to Nexus
-              </a>
-            )}
-            {nexusMode() === "http" && (
-              <form action={signOutNexus}>
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
-                >
-                  Sign out
-                </button>
-              </form>
-            )}
-          </div>
+                Sign out
+              </button>
+            </form>
+          )}
           <p className="font-medium">{displayName}</p>
           <p className="text-xs text-neutral-500">
             {context.roles.map(roleLabel).join(", ")}

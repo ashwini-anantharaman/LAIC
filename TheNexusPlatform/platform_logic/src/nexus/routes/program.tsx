@@ -140,6 +140,10 @@ export function ProgramOverview() {
     }
   }
 
+  // Confined viewers (members / role previews) never see a half-loaded page:
+  // one spinner until we know whether to auto-launch or what cards to paint.
+  const confinedDeciding = !access.isAdmin && (access.loading || !caps || !program);
+
   const active = PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && enabled(p.key) && granted(p.key));
   // Only admins manage the envelope, so only they see the dashed "add" tiles.
   const addable = access.isAdmin ? PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && !enabled(p.key)) : [];
@@ -156,6 +160,8 @@ export function ProgramOverview() {
       navigate(`/o/${orgId}/p/${programId}/${soleActiveKey.path}`, { replace: true });
     }
   }, [access.loading, access.isAdmin, access.impersonating, caps, program, soleActiveKey, otherAreas, orgId, programId, navigate]);
+
+  if (confinedDeciding) return <Spinner />;
 
   return (
     <div>
