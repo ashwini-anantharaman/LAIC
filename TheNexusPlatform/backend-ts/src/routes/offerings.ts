@@ -275,8 +275,8 @@ offeringsRouter.post("/programs/:program_id/apps", async (c) => {
   _requireOfferingAdmin(user, program.org_id, programId);
   if (user.role !== "platform_admin") {
     const caps = await db.getOrgCapabilities(program.org_id);
-    if (!(caps.features as Row).appShells) {
-      throw new HttpError(403, "App Shell building isn't enabled for this organization");
+    if ((caps.features as Row).appbuilder === false) {
+      throw new HttpError(403, "App building isn't enabled for this organization");
     }
   }
   const [row, rawKey] = await db.createRegisteredApp(program.org_id, programId, req.app_name, {
@@ -668,12 +668,18 @@ offeringsRouter.get("/programs/:program_id/administrators", async (c) => {
     .filter((m: Row) => m.program_id === programId && (m.role === "administrator" || m.role === "owner"))
     .map((m: Row) => {
       const p = (m.profiles ?? {}) as Row;
-      return { email: p.email ?? null, display_name: p.display_name ?? p.name ?? null, role: m.role, status: "active" };
+      return {
+        membership_id: m.id, invitation_id: null as string | null,
+        email: p.email ?? null, display_name: p.display_name ?? p.name ?? null, role: m.role, status: "active",
+      };
     });
   const invited = dbEnabled()
     ? (await graph.listInvitations(program.org_id))
         .filter((i: Row) => i.status === "pending" && i.program_id === programId && i.role === "administrator")
-        .map((i: Row) => ({ email: i.email, display_name: i.display_name ?? null, role: "administrator", status: "invited" }))
+        .map((i: Row) => ({
+          membership_id: null as string | null, invitation_id: i.id,
+          email: i.email, display_name: i.display_name ?? null, role: "administrator", status: "invited",
+        }))
     : [];
   return c.json([...members, ...invited]);
 });

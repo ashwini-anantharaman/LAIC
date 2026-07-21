@@ -43,6 +43,7 @@ import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
 import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
+import type { Program } from "@/types/platform";
 import { accentForMode } from "@/nexus/theme/accent";
 
 interface NavItem {
@@ -344,6 +345,24 @@ export function AppShell() {
   // Are we previewing a role in THIS program?
   const impersonating = impersonation && impersonation.programId === programId ? impersonation : null;
 
+  // The current program (name for the breadcrumb, features for nav gating).
+  const [program, setProgram] = useState<Program | null>(null);
+  useEffect(() => {
+    if (!programId || !orgId) {
+      setProgram(null);
+      return;
+    }
+    listPrograms(orgId)
+      .then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null))
+      .catch(() => setProgram(null));
+  }, [orgId, programId]);
+  const programName = program?.name ?? programMemberships.find((m) => m.program_id === programId)?.program_name ?? null;
+  // Effective feature switches (already clamped by the org's Nexus envelope
+  // server-side). Until loaded, show everything to avoid a nav flash.
+  const programFeatures: Record<string, boolean> = program?.features ?? {};
+  const featureOn = (k: string) => !program || programFeatures[k] !== false;
+
+
   // A real member (mode "member") whose program membership is NOT administrator/
   // owner is confined to their assigned custom role's areas (§3.5). Program
   // administrators keep the full program workspace.
@@ -366,13 +385,33 @@ export function AppShell() {
       .catch(() => setMyRolePerms({}));
   }, [isPlainMember, programId]);
 
+  // Which program feature gates each program-nav segment. Segments not listed
+  // (overview, offerings, registrations, groups) are always available.
+  const NAV_FEATURE: Record<string, string> = {
+    shells: "appbuilder", community: "community", team: "teams",
+    partners: "partners", learning: "learning", bridge: "bridge",
+  };
+  const navKey = (to: string) => to.split("/").pop() ?? "";
+
+  // Direct URLs to a disabled area bounce to the program overview — toggling a
+  // feature off must actually close the door, not just hide the menu item.
+  const currentSegment = pathname.split("/").filter(Boolean).pop() ?? "";
+  const currentGate = programId ? NAV_FEATURE[currentSegment] : undefined;
+  useEffect(() => {
+    if (!programId || !program || !currentGate) return;
+    if (programFeatures[currentGate] === false) {
+      navigate(`/o/${orgId}/p/${programId}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programId, program, currentGate, pathname]);
+
   let heading: string;
   let items: NavItem[];
   let backLink: ReactNode = null;
 
   if (impersonating && programId) {
     heading = impersonating.roleName;
-    items = confinedProgramNav(orgId, programId, impersonating.perms);
+    items = confinedProgramNav(orgId, programId, impersonating.perms).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (mode === "nexus") {
     heading = "Nexus";
     items = [
@@ -381,10 +420,10 @@ export function AppShell() {
     ];
   } else if (programId && isPlainMember) {
     heading = myRoleName ?? programMembership?.program_name ?? "Program";
-    items = confinedProgramNav(orgId, programId, myRolePerms ?? {});
+    items = confinedProgramNav(orgId, programId, myRolePerms ?? {}).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (programId) {
     heading = "Program";
-    items = programNav(orgId, programId);
+    items = programNav(orgId, programId).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
     // Members live inside their program; only org-level admins get the org space.
     if (mode === "org") {
       backLink = (
@@ -401,22 +440,6 @@ export function AppShell() {
     items = orgNav(orgId);
   }
 
-  // Human breadcrumb: names, never raw ids.
-  const [programName, setProgramName] = useState<string | null>(null);
-  useEffect(() => {
-    if (!programId || !orgId) {
-      setProgramName(null);
-      return;
-    }
-    const fromMembership = programMemberships.find((m) => m.program_id === programId)?.program_name;
-    if (fromMembership) {
-      setProgramName(fromMembership);
-      return;
-    }
-    listPrograms(orgId)
-      .then((ps) => setProgramName(ps.find((p) => p.id === programId)?.name ?? null))
-      .catch(() => setProgramName(null));
-  }, [orgId, programId, programMemberships]);
 
   const PAGE_LABELS: Record<string, string> = {
     dashboard: "Dashboard", programs: "Programs", settings: "Settings", audit: "Audit",

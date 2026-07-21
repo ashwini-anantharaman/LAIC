@@ -782,10 +782,19 @@ platformRouter.post("/orgs/:org_id/programs", async (c) => {
   const orgId = c.req.param("org_id");
   const req = parseBody(programInput, await c.req.json());
   _assertOrgAccess(user, orgId, true);
-  if (user.role !== "platform_admin") {
+  {
     const caps = await db.getOrgCapabilities(orgId);
-    if (!(caps.programTypes as Row)[req.category]) {
+    if (user.role !== "platform_admin" && !(caps.programTypes as Row)[req.category]) {
       throw new HttpError(403, `This organization is not permitted to create '${req.category}' programs`);
+    }
+    // Program capacity (Nexus-governed; null = unlimited). Applies to everyone —
+    // the envelope is the org's boundary, not a per-caller permission.
+    const capacity = caps.programCapacity as number | null;
+    if (capacity != null) {
+      const count = (await db.listPrograms(orgId)).length;
+      if (count >= capacity) {
+        throw new HttpError(403, `Program capacity reached (${capacity}). Raise it from the Nexus console.`);
+      }
     }
   }
   const row = await db.createProgram(orgId, req.name, req.category, {
@@ -1534,6 +1543,8 @@ const capabilityPatchSchema = z.object({
   programTypes: z.record(z.string(), z.boolean()).optional(),
   offeringTypes: z.record(z.string(), z.boolean()).optional(),
   features: z.record(z.string(), z.boolean()).optional(),
+  // Max programs the org may create; null = unlimited.
+  programCapacity: z.number().int().min(1).nullable().optional(),
 });
 
 platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
@@ -1610,6 +1621,56 @@ platformRouter.post("/admin/organizations", async (c) => {
       redeem_url: base ? `${base}/invite/${inv.token}` : `/invite/${inv.token}`,
     })),
   });
+});
+
+// ── Boundary administrators (Nexus "Edit" tab) ──────────────────────────────
+// Who RUNS the org is boundary-governance data (the operator provisioned them
+// in the first place), distinct from the org's people (0021 wall): these
+// endpoints expose and manage ONLY org-level owner/administrator standing —
+// never program members, learners, or anyone else inside.
+platformRouter.get("/admin/organizations/:org_id/admins", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  // Privileged boundary read — the 0021 people wall hides org memberships from
+  // the operator, but WHO RUNS the org is governance data the operator set up.
+  return c.json(await graph.listOrgLevelAdmins(orgId));
+});
+
+const orgAdminAddSchema = z.object({ email: z.string().email(), display_name: z.string().nullish() });
+
+platformRouter.post("/admin/organizations/:org_id/admins", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  const req = parseBody(orgAdminAddSchema, await c.req.json());
+  const { invitation, token } = await graph.createOrgAdminInvitation(orgId, {
+    email: req.email,
+    displayName: req.display_name ?? null,
+  });
+  await db.recordAuditEvent("organization.administrator.invited", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    metadata: { email: req.email },
+  });
+  const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
+  return c.json({ ...invitation, token, redeem_url: base ? `${base}/invite/${token}` : `/invite/${token}` });
+});
+
+platformRouter.delete("/admin/organizations/:org_id/admins", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  const membershipId = c.req.query("membership_id");
+  const invitationId = c.req.query("invitation_id");
+  await graph.removeOrgLevelAdmin(orgId, { membershipId, invitationId });
+  await db.recordAuditEvent("organization.administrator.removed", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    metadata: { membership_id: membershipId ?? null, invitation_id: invitationId ?? null },
+  });
+  return c.json({ ok: true });
 });
 
 // Organizations the caller may reference (affiliations / relationships).

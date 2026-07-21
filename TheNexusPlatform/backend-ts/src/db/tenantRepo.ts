@@ -150,14 +150,30 @@ export async function updateProgramFeatures(programId: string, features: Program
     if (!existing.length) return null;
     const meta = { ...(existing[0].metadataJson as Row), features };
     const [p] = await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId)).returning();
-    return p ? programRow(p) : null;
+    if (!p) return null;
+    const caps = await _orgFeatureCaps(tx, p.orgId);
+    const row = programRow(p);
+    return { ...row, features: _clampFeatures(row.features as ProgramFeatures, caps) };
   });
 }
 
 export async function listPrograms(orgId: string): Promise<Row[]> {
   return scoped(async (tx) => {
     const rows = await tx.select().from(programs).where(eq(programs.orgId, orgId));
-    return Promise.all(rows.map(async (p) => ({ ...programRow(p), ...(await programCounts(tx, orgId, p.id)) })));
+    // Every reader sees EFFECTIVE features: the program's toggles clamped by
+    // the org's Nexus-governed envelope. One choke point — routes, launch
+    // guards, role builders, and platform access all read through here.
+    const caps = await _orgFeatureCaps(tx, orgId);
+    return Promise.all(
+      rows.map(async (p) => {
+        const row = programRow(p);
+        return {
+          ...row,
+          features: _clampFeatures(row.features as ProgramFeatures, caps),
+          ...(await programCounts(tx, orgId, p.id)),
+        };
+      }),
+    );
   });
 }
 
@@ -165,7 +181,13 @@ export async function getProgram(programId: string): Promise<Row | null> {
   return scoped(async (tx) => {
     const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
     if (!r.length) return null;
-    return { ...programRow(r[0]), ...(await programCounts(tx, r[0].orgId, r[0].id)) };
+    const caps = await _orgFeatureCaps(tx, r[0].orgId);
+    const row = programRow(r[0]);
+    return {
+      ...row,
+      features: _clampFeatures(row.features as ProgramFeatures, caps),
+      ...(await programCounts(tx, r[0].orgId, r[0].id)),
+    };
   });
 }
 
@@ -648,22 +670,41 @@ export async function updateOrgTheme(orgId: string, accentColor: string | null |
 export const DEFAULT_CAPABILITIES = {
   programTypes: { edu: true, game: true },
   offeringTypes: { course: true, challenge: true, app: true },
-  // Program platforms an org may use, plus other feature flags. Everything on
-  // by default; the Nexus operator narrows the envelope per org.
-  features: { learningPlatform: true, appShells: true, bridge: true, integrations: true },
+  // Feature-areas an org may use — the SAME six keys as per-program features,
+  // so the Nexus envelope and the org's program config speak one vocabulary.
+  // Everything on by default; the operator narrows per org.
+  features: { learning: true, bridge: true, appbuilder: true, community: true, teams: true, partners: true },
+  // Max programs the org may create; null = unlimited.
+  programCapacity: null as number | null,
 } as const;
+
+// Older envelopes stored platform-flavored keys — translate on read so a
+// previously-set restriction keeps meaning something.
+const LEGACY_FEATURE_KEYS: Record<string, string> = { learningPlatform: "learning", appShells: "appbuilder" };
+function _normalizeCapFeatures(raw: Row | undefined): Row {
+  const out: Row = {};
+  for (const [k, v] of Object.entries(raw ?? {})) {
+    const key = LEGACY_FEATURE_KEYS[k] ?? k;
+    if (key in DEFAULT_CAPABILITIES.features) out[key] = v;
+  }
+  return out;
+}
+
+function _capsFromSettings(settings: Record<string, unknown>): Row {
+  const caps = (settings.capabilities as Row | undefined) ?? {};
+  return {
+    programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((caps.programTypes as Row) ?? {}) },
+    offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((caps.offeringTypes as Row) ?? {}) },
+    features: { ...DEFAULT_CAPABILITIES.features, ..._normalizeCapFeatures(caps.features as Row) },
+    programCapacity: (caps.programCapacity as number | null | undefined) ?? null,
+  };
+}
 
 export async function getOrgCapabilities(orgId: string): Promise<Row> {
   return scoped(async (tx) => {
     const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
     if (!r.length) throw new Error("Organization not found");
-    const settings = (r[0].settings as Record<string, unknown>) ?? {};
-    const caps = (settings.capabilities as Row | undefined) ?? {};
-    return {
-      programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((caps.programTypes as Row) ?? {}) },
-      offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((caps.offeringTypes as Row) ?? {}) },
-      features: { ...DEFAULT_CAPABILITIES.features, ...((caps.features as Row) ?? {}) },
-    };
+    return _capsFromSettings((r[0].settings as Record<string, unknown>) ?? {});
   });
 }
 
@@ -672,16 +713,38 @@ export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row
     const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
     if (!r.length) throw new Error("Organization not found");
     const settings: Record<string, unknown> = { ...((r[0].settings as Record<string, unknown>) ?? {}) };
-    const existing = (settings.capabilities as Row | undefined) ?? {};
+    const existing = _capsFromSettings(settings);
     const merged: Row = {
-      programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((existing.programTypes as Row) ?? {}), ...((patch.programTypes as Row) ?? {}) },
-      offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((existing.offeringTypes as Row) ?? {}), ...((patch.offeringTypes as Row) ?? {}) },
-      features: { ...DEFAULT_CAPABILITIES.features, ...((existing.features as Row) ?? {}), ...((patch.features as Row) ?? {}) },
+      programTypes: { ...(existing.programTypes as Row), ...((patch.programTypes as Row) ?? {}) },
+      offeringTypes: { ...(existing.offeringTypes as Row), ...((patch.offeringTypes as Row) ?? {}) },
+      features: { ...(existing.features as Row), ..._normalizeCapFeatures(patch.features as Row) },
+      programCapacity:
+        "programCapacity" in patch ? ((patch.programCapacity as number | null) ?? null) : existing.programCapacity,
     };
     settings.capabilities = merged;
     await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));
     return merged;
   });
+}
+
+/**
+ * The org's allowed feature-areas (for clamping program features). Reads the
+ * org row inside the SAME transaction the caller already holds.
+ */
+async function _orgFeatureCaps(tx: Tx, orgId: string): Promise<Record<string, boolean>> {
+  const r = await tx.select({ settings: organizations.settings }).from(organizations)
+    .where(eq(organizations.id, orgId)).limit(1);
+  const caps = _capsFromSettings((r[0]?.settings as Record<string, unknown>) ?? {});
+  return caps.features as Record<string, boolean>;
+}
+
+/** Effective program features = program's own toggles AND the org envelope. */
+function _clampFeatures(features: ProgramFeatures, orgCaps: Record<string, boolean>): ProgramFeatures {
+  const out = { ...features };
+  for (const k of Object.keys(out) as (keyof ProgramFeatures)[]) {
+    if (orgCaps[k] === false) out[k] = false;
+  }
+  return out;
 }
 
 export async function createJoinCode(stageNodeId: string, kind: string, opts: localKeys.JoinCodeOptions = {}): Promise<Row> {

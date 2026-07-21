@@ -274,6 +274,96 @@ export async function listPlatformRoleAssignments(programId: string, platform: s
   );
 }
 
+// ── Boundary administrators (Nexus Edit tab) ────────────────────────────────
+// Deliberate, narrow bypass of the 0021 people wall: WHO RUNS an org is
+// boundary-governance data — the operator provisioned these people in the
+// first place. Exposes/touches ONLY org-level owner/administrator rows and
+// admin invitations; the org's members, learners, and program people stay
+// invisible to the operator.
+export async function listOrgLevelAdmins(orgId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const mships = (
+      await tx.select().from(orgMemberships).where(eq(orgMemberships.orgId, orgId))
+    ).filter((m) => !m.programId && (m.role === "owner" || m.role === "administrator"));
+    const pids = [...new Set(mships.map((m) => m.profileId))];
+    const profs = pids.length
+      ? await tx.select().from(profiles).where(or(inArray(profiles.id, pids), inArray(profiles.authUserId, pids)))
+      : [];
+    const profMap = new Map<string, (typeof profs)[number]>();
+    for (const p of profs) {
+      profMap.set(p.id, p);
+      if (p.authUserId) profMap.set(p.authUserId, p);
+    }
+    const members = mships.map((m) => {
+      const p = profMap.get(m.profileId);
+      return {
+        membership_id: m.id,
+        invitation_id: null as string | null,
+        email: p?.email ?? null,
+        display_name: p?.displayName ?? p?.name ?? null,
+        role: m.role,
+        status: "active",
+      };
+    });
+    const invited = (
+      await tx.select().from(invitations)
+        .where(and(eq(invitations.organizationId, orgId), eq(invitations.status, "pending")))
+    )
+      .filter((i) => !i.programId && (i.role === "administrator" || i.role === "owner"))
+      .map((i) => ({
+        membership_id: null as string | null,
+        invitation_id: i.id,
+        email: i.email,
+        display_name: i.displayName ?? null,
+        role: i.role,
+        status: "invited",
+      }));
+    return [...members, ...invited];
+  });
+}
+
+/** Create an org-level ADMIN invitation as the operator (privileged: the 0021
+ * wall blocks scoped inserts, and the operator has no profile inside the org —
+ * invited_by stays null, exactly like provisioning). */
+export async function createOrgAdminInvitation(
+  orgId: string,
+  opts: { email: string; displayName?: string | null },
+): Promise<{ invitation: Row; token: string }> {
+  return asPrivileged(async (tx) => {
+    const [rawToken, tokenHash] = localKeys.generateApiKey();
+    const [i] = await tx.insert(invitations).values({
+      organizationId: orgId, programId: null, offeringId: null, groupId: null,
+      tokenHash, email: opts.email, displayName: opts.displayName ?? null,
+      role: "administrator", invitedByUserId: null, expiresAt: null,
+    }).returning();
+    return { invitation: inviteRow(i), token: rawToken };
+  });
+}
+
+/** Remove an org-level administrator (never the owner) or revoke an admin invite. */
+export async function removeOrgLevelAdmin(
+  orgId: string,
+  ref: { membershipId?: string | null; invitationId?: string | null },
+): Promise<void> {
+  return asPrivileged(async (tx) => {
+    if (ref.membershipId) {
+      const r = await tx.select().from(orgMemberships)
+        .where(and(eq(orgMemberships.id, ref.membershipId), eq(orgMemberships.orgId, orgId))).limit(1);
+      if (!r.length || r[0].programId) throw new HttpError(404, "No such org-level administrator");
+      if (r[0].role === "owner") throw new HttpError(409, "The owner can't be removed — transfer ownership first");
+      if (r[0].role !== "administrator") throw new HttpError(404, "No such org-level administrator");
+      await tx.delete(orgMemberships).where(eq(orgMemberships.id, ref.membershipId));
+    } else if (ref.invitationId) {
+      const r = await tx.select().from(invitations)
+        .where(and(eq(invitations.id, ref.invitationId), eq(invitations.organizationId, orgId))).limit(1);
+      if (!r.length || r[0].programId) throw new HttpError(404, "No such invitation");
+      await tx.update(invitations).set({ status: "revoked" }).where(eq(invitations.id, ref.invitationId));
+    } else {
+      throw new HttpError(400, "membership_id or invitation_id required");
+    }
+  });
+}
+
 // ── Organization relationships ──────────────────────────────────────────────
 const relRow = (r: typeof organizationRelationships.$inferSelect): Row => ({
   id: r.id, source_organization_id: r.sourceOrganizationId, target_organization_id: r.targetOrganizationId,

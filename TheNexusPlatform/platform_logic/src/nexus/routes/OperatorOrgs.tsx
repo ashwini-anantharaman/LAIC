@@ -18,20 +18,23 @@ import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
 import {
+  addOrgAdmin,
   getOrgCapabilities,
   listAllOrganizations,
-  listEntitlements,
+  listOrgAdmins,
   provisionOrganization,
-  setEntitlement,
+  removeOrgAdmin,
   setOrgCapabilities,
+  type OrgAdmin,
   type OrgCapabilities,
   type OrgSummary,
   type ProvisionResult,
 } from "@/services/api";
-import type { Entitlement, ModuleKey } from "@/types/platform";
+import { PROGRAM_FEATURES } from "@/types/platform";
+import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { Switch } from "@/app/components/ui/switch";
 import { EmptyState, PageHeader, Pill, Spinner, Stat, statusTone } from "@/nexus/ui/kit";
-import { Copy, Plus, SlidersHorizontal } from "lucide-react";
+import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function OperatorOrgs() {
@@ -84,7 +87,7 @@ export function OperatorOrgs() {
                 <TableHead>Organization</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Governance</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -100,7 +103,7 @@ export function OperatorOrgs() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="ghost" onClick={() => setGovern(o)}>
-                      <SlidersHorizontal className="size-3.5" /> Govern
+                      <Pencil className="size-3.5" /> Edit
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -111,172 +114,256 @@ export function OperatorOrgs() {
       )}
 
       <ProvisionDialog open={open} onOpenChange={setOpen} onDone={load} />
-      <GovernDialog org={govern} onClose={() => setGovern(null)} />
+      <EditOrgDialog org={govern} onClose={() => setGovern(null)} />
     </div>
   );
 }
 
-const GOVERNABLE_MODULES: { key: ModuleKey; label: string; hint: string }[] = [
-  { key: "learning", label: "Learning", hint: "Courses, lessons, and the Learning Platform." },
-  { key: "coaching", label: "Coaching", hint: "Coach-driven programs and app runtimes." },
-  { key: "analytics", label: "Analytics", hint: "Cross-program reporting." },
-];
-
-const PROGRAM_TYPE_LABELS: Record<string, string> = { edu: "Education programs", game: "Game programs" };
-const OFFERING_TYPE_LABELS: Record<string, string> = { course: "Courses", challenge: "Challenges", app: "Applications" };
-const FEATURE_LABELS: Record<string, string> = {
-  learningPlatform: "Learning Platform",
-  appShells: "App Shell",
-  bridge: "Bridge Platform",
-  integrations: "Integrations",
-};
-
-/** A row of capability toggles for one section (programTypes / offeringTypes / features). */
-function CapabilityRow({
-  labels,
-  values,
-  disabled,
-  onToggle,
-}: {
-  labels: Record<string, string>;
-  values: Record<string, boolean>;
-  disabled: boolean;
-  onToggle: (key: string, on: boolean) => void;
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {Object.entries(labels).map(([key, label]) => (
-        <label
-          key={key}
-          className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
-        >
-          <span className="truncate">{label}</span>
-          <Switch checked={!!values[key]} disabled={disabled} onCheckedChange={(v) => onToggle(key, v)} />
-        </label>
-      ))}
-    </div>
-  );
-}
-
-/** Boundary governance: toggle the modules this org is entitled to, and its capability envelope. */
-function GovernDialog({ org, onClose }: { org: OrgSummary | null; onClose: () => void }) {
-  const [ents, setEnts] = useState<Entitlement[] | null>(null);
+/**
+ * Nexus "Edit" for one org — boundary controls only (§3.5): program capacity,
+ * which feature-areas the org may use (same six keys as per-program features;
+ * a key off here disappears from the org's own Features dialogs and every
+ * program's UI), and who administers the org.
+ */
+function EditOrgDialog({ org, onClose }: { org: OrgSummary | null; onClose: () => void }) {
   const [caps, setCaps] = useState<OrgCapabilities | null>(null);
-  const [saving, setSaving] = useState<ModuleKey | null>(null);
   const [capsBusy, setCapsBusy] = useState(false);
+  const [capacityDraft, setCapacityDraft] = useState<string>("");
+  const [admins, setAdmins] = useState<OrgAdmin[] | null>(null);
+  const [newAdmin, setNewAdmin] = useState({ email: "", displayName: "" });
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+
+  function loadAdmins(orgId: string) {
+    listOrgAdmins(orgId)
+      .then(setAdmins)
+      .catch(() => setAdmins([]));
+  }
 
   useEffect(() => {
     if (!org) {
-      setEnts(null);
       setCaps(null);
+      setAdmins(null);
+      setInviteLink(null);
+      setNewAdmin({ email: "", displayName: "" });
       return;
     }
-    listEntitlements(org.id)
-      .then(setEnts)
-      .catch(() => setEnts([]));
     getOrgCapabilities(org.id)
-      .then(setCaps)
+      .then((c) => {
+        setCaps(c);
+        setCapacityDraft(c.programCapacity != null ? String(c.programCapacity) : "");
+      })
       .catch(() => setCaps(null));
+    loadAdmins(org.id);
   }, [org]);
 
-  function statusOf(m: ModuleKey): string {
-    return ents?.find((e) => e.module === m)?.status ?? "disabled";
-  }
-
-  async function toggle(m: ModuleKey, on: boolean) {
-    if (!org) return;
-    setSaving(m);
-    try {
-      const updated = await setEntitlement(org.id, m, on ? "active" : "disabled");
-      setEnts((cur) => {
-        const rest = (cur ?? []).filter((e) => e.module !== m);
-        return [...rest, updated];
-      });
-      toast.success(`${m} ${on ? "enabled" : "disabled"}`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update entitlement");
-    } finally {
-      setSaving(null);
-    }
-  }
-
-  async function toggleCap(section: keyof OrgCapabilities, key: string, on: boolean) {
+  async function patchCaps(patch: Partial<OrgCapabilities>) {
     if (!org) return;
     setCapsBusy(true);
     try {
-      const updated = await setOrgCapabilities(org.id, { [section]: { [key]: on } });
+      const updated = await setOrgCapabilities(org.id, patch);
       setCaps(updated);
+      if ("programCapacity" in patch) {
+        setCapacityDraft(updated.programCapacity != null ? String(updated.programCapacity) : "");
+      }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update capability");
+      toast.error(e instanceof Error ? e.message : "Failed to update");
     } finally {
       setCapsBusy(false);
     }
   }
 
+  async function addAdmin() {
+    if (!org || !newAdmin.email.trim()) return;
+    setAdminBusy(true);
+    try {
+      const inv = await addOrgAdmin(org.id, {
+        email: newAdmin.email.trim(),
+        display_name: newAdmin.displayName.trim() || undefined,
+      });
+      setInviteLink(inv.redeem_url ?? (inv.token ? `${window.location.origin}/invite/${inv.token}` : null));
+      setNewAdmin({ email: "", displayName: "" });
+      loadAdmins(org.id);
+      toast.success("Administrator invited");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to invite administrator");
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function removeAdmin(a: OrgAdmin) {
+    if (!org) return;
+    try {
+      await removeOrgAdmin(org.id, {
+        membership_id: a.membership_id ?? undefined,
+        invitation_id: a.invitation_id ?? undefined,
+      });
+      toast.success(`${a.display_name ?? a.email} removed`);
+      loadAdmins(org.id);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove administrator");
+    }
+  }
+
+  const capacityOn = caps?.programCapacity != null;
+
   return (
     <Dialog open={!!org} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Govern · {org?.name}</DialogTitle>
+          <DialogTitle>Edit · {org?.name}</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground -mt-1">
-          Boundary controls only — Nexus grants module access and capabilities; it never sees inside the org.
+          Boundary controls only — Nexus sets the org's envelope; it never sees inside the org.
         </p>
-        <div className="space-y-3 mt-2">
-          {!ents ? (
-            <Spinner />
-          ) : (
-            GOVERNABLE_MODULES.map((m) => {
-              const on = statusOf(m.key) === "active";
-              return (
-                <div key={m.key} className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-foreground capitalize">{m.label}</div>
-                    <div className="text-xs text-muted-foreground">{m.hint}</div>
-                  </div>
-                  <Switch checked={on} disabled={saving === m.key} onCheckedChange={(v) => toggle(m.key, v)} />
-                </div>
-              );
-            })
-          )}
-          <div className="flex items-center justify-between rounded-lg border border-dashed border-border px-4 py-3 opacity-70">
-            <div className="text-sm font-medium text-foreground">Nexus</div>
-            <span className="text-xs text-muted-foreground">always on</span>
-          </div>
-        </div>
 
-        {caps ? (
-          <div className="space-y-3 mt-1 border-t border-border pt-4">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Capability envelope</div>
+        {!caps ? (
+          <Spinner />
+        ) : (
+          <div className="space-y-5 mt-1">
+            {/* Program capacity */}
             <div>
-              <div className="text-xs text-muted-foreground mb-1.5">Program categories this org may create</div>
-              <CapabilityRow
-                labels={PROGRAM_TYPE_LABELS}
-                values={caps.programTypes}
-                disabled={capsBusy}
-                onToggle={(k, v) => toggleCap("programTypes", k, v)}
-              />
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5">
+                Program capacity
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-foreground">Limit programs</div>
+                  <div className="text-xs text-muted-foreground">
+                    {capacityOn ? "The org can't create more than this many programs." : "Off — unlimited programs."}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {capacityOn ? (
+                    <Input
+                      type="number"
+                      min={1}
+                      value={capacityDraft}
+                      onChange={(e) => setCapacityDraft(e.target.value)}
+                      onBlur={() => {
+                        const n = parseInt(capacityDraft, 10);
+                        if (Number.isFinite(n) && n >= 1) void patchCaps({ programCapacity: n });
+                      }}
+                      className="w-20 h-8"
+                      disabled={capsBusy}
+                    />
+                  ) : null}
+                  <Switch
+                    checked={capacityOn}
+                    disabled={capsBusy}
+                    onCheckedChange={(on) => void patchCaps({ programCapacity: on ? 3 : null })}
+                  />
+                </div>
+              </div>
             </div>
+
+            {/* Program features */}
             <div>
-              <div className="text-xs text-muted-foreground mb-1.5">Offering types this org may publish</div>
-              <CapabilityRow
-                labels={OFFERING_TYPE_LABELS}
-                values={caps.offeringTypes}
-                disabled={capsBusy}
-                onToggle={(k, v) => toggleCap("offeringTypes", k, v)}
-              />
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5">
+                Program features
+              </div>
+              <p className="text-xs text-muted-foreground mb-2">
+                A feature off here disappears from every program in the org — and from the org's own
+                per-program Features dialog.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {PROGRAM_FEATURES.map((f) => (
+                  <label
+                    key={f.key}
+                    className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
+                  >
+                    <span className="truncate">{f.label}</span>
+                    <Switch
+                      checked={caps.features[f.key] !== false}
+                      disabled={capsBusy}
+                      onCheckedChange={(v) => void patchCaps({ features: { [f.key]: v } })}
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
+
+            {/* Administrators */}
             <div>
-              <div className="text-xs text-muted-foreground mb-1.5">Platform features</div>
-              <CapabilityRow
-                labels={FEATURE_LABELS}
-                values={caps.features}
-                disabled={capsBusy}
-                onToggle={(k, v) => toggleCap("features", k, v)}
-              />
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5">
+                Administrators
+              </div>
+              {!admins ? (
+                <Spinner />
+              ) : (
+                <div className="space-y-2">
+                  {admins.map((a) => (
+                    <div
+                      key={a.membership_id ?? a.invitation_id ?? a.email}
+                      className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm text-foreground truncate">{a.display_name ?? a.email}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {a.email} · {a.role}
+                          {a.status === "invited" ? " · invited" : ""}
+                        </div>
+                      </div>
+                      {a.role === "owner" ? (
+                        <span className="text-xs text-muted-foreground shrink-0">owner</span>
+                      ) : (
+                        <ConfirmButton
+                          title={`Remove ${a.display_name ?? a.email} as administrator?`}
+                          description={
+                            a.status === "invited"
+                              ? "Their activation link stops working."
+                              : "They lose administrator access to this organization immediately."
+                          }
+                          actionLabel="Remove"
+                          onConfirm={() => removeAdmin(a)}
+                          buttonTitle="Remove administrator"
+                        >
+                          <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                        </ConfirmButton>
+                      )}
+                    </div>
+                  ))}
+                  {admins.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No administrators yet.</p>
+                  ) : null}
+                  <div className="flex gap-2 pt-1">
+                    <Input
+                      value={newAdmin.displayName}
+                      onChange={(e) => setNewAdmin((c) => ({ ...c, displayName: e.target.value }))}
+                      placeholder="Name"
+                      className="flex-1"
+                    />
+                    <Input
+                      value={newAdmin.email}
+                      onChange={(e) => setNewAdmin((c) => ({ ...c, email: e.target.value }))}
+                      placeholder="email@example.org"
+                      className="flex-1"
+                    />
+                    <Button size="sm" onClick={addAdmin} disabled={adminBusy || !newAdmin.email.trim()}>
+                      <Plus className="size-3.5" /> Add
+                    </Button>
+                  </div>
+                  {inviteLink ? (
+                    <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
+                      <code className="flex-1 truncate text-xs font-mono">{inviteLink}</code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(inviteLink);
+                          toast.success("Copied");
+                        }}
+                        className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"
+                      >
+                        <Copy className="size-3.5" />
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
           </div>
-        ) : null}
+        )}
 
         <DialogFooter>
           <Button onClick={onClose}>Done</Button>

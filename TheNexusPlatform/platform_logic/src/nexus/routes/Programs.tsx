@@ -25,9 +25,13 @@ import {
   assignProgramAdministrator,
   createProgram,
   deleteProgram,
+  getOrgCapabilities,
   listProgramAdministrators,
   listPrograms,
+  removeMember,
+  revokeInvitation,
   updateProgramFeatures,
+  type OrgCapabilities,
   type ProgramAdministrator,
 } from "@/services/api";
 import type { Program, ProgramCategory, ProgramFeatures } from "@/types/platform";
@@ -38,6 +42,7 @@ import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 export function Programs() {
   const { orgId = "" } = useParams();
   const [programs, setPrograms] = useState<Program[] | null>(null);
+  const [caps, setCaps] = useState<OrgCapabilities | null>(null);
   const [open, setOpen] = useState(false);
   const [assigning, setAssigning] = useState<Program | null>(null);
   const [editingFeatures, setEditingFeatures] = useState<Program | null>(null);
@@ -47,7 +52,14 @@ export function Programs() {
   }
   useEffect(() => {
     void load();
+    getOrgCapabilities(orgId).then(setCaps).catch(() => setCaps(null));
   }, [orgId]);
+
+  // Feature-areas the Nexus envelope allows this org — anything off is gone
+  // from the per-program Features dialogs entirely.
+  const allowedFeatureKeys = PROGRAM_FEATURES.map((f) => f.key).filter(
+    (k) => !caps || caps.features[k] !== false,
+  );
 
   async function remove(p: Program) {
     try {
@@ -90,24 +102,28 @@ export function Programs() {
         </div>
       )}
 
-      <NewProgramDialog orgId={orgId} open={open} onOpenChange={setOpen} onDone={load} />
-      <AssignAdminDialog program={assigning} onClose={() => setAssigning(null)} />
-      <EditFeaturesDialog program={editingFeatures} onClose={() => setEditingFeatures(null)} onDone={load} />
+      <NewProgramDialog orgId={orgId} open={open} onOpenChange={setOpen} onDone={load} allowedFeatureKeys={allowedFeatureKeys} />
+      <AssignAdminsDialog program={assigning} onClose={() => setAssigning(null)} />
+      <EditFeaturesDialog program={editingFeatures} onClose={() => setEditingFeatures(null)} onDone={load} allowedFeatureKeys={allowedFeatureKeys} />
     </div>
   );
 }
 
-/** Reusable on/off list of the program's feature-areas. */
+/** Reusable on/off list of the program's feature-areas — only those the
+ * Nexus envelope allows this org (a key off at the Nexus level isn't shown). */
 function FeatureToggles({
   features,
   onChange,
+  allowedKeys,
 }: {
   features: ProgramFeatures;
   onChange: (next: ProgramFeatures) => void;
+  allowedKeys: string[];
 }) {
+  const visible = PROGRAM_FEATURES.filter((f) => allowedKeys.includes(f.key));
   return (
     <div className="space-y-2">
-      {PROGRAM_FEATURES.map((f) => (
+      {visible.map((f) => (
         <div key={f.key} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2">
           <Switch
             checked={features[f.key]}
@@ -116,6 +132,9 @@ function FeatureToggles({
           <span className="flex-1 text-sm">{f.label}</span>
         </div>
       ))}
+      {visible.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No features are enabled for this organization.</p>
+      ) : null}
     </div>
   );
 }
@@ -142,6 +161,12 @@ function ProgramCard({
   }, [p.id]);
 
   const admin = admins[0];
+  const adminLabel =
+    admins.length === 0
+      ? "Assign admins"
+      : admins.length === 1
+        ? `${admin.display_name ?? admin.email}${admin.status === "invited" ? " · invited" : ""}`
+        : `${admin.display_name ?? admin.email} +${admins.length - 1}`;
 
   return (
     <div className="glass-card p-4">
@@ -169,19 +194,10 @@ function ProgramCard({
             type="button"
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors min-w-0"
             onClick={onAssign}
-            title="Assign the program's administrator (delegation)"
+            title="Assign the program's administrators (delegation)"
           >
             <UserCog className="size-3.5 shrink-0" />
-            <span className="truncate">
-              {admin ? (
-                <>
-                  {admin.display_name ?? admin.email}
-                  {admin.status === "invited" ? " · invited" : ""}
-                </>
-              ) : (
-                "Assign admin"
-              )}
-            </span>
+            <span className="truncate">{adminLabel}</span>
           </button>
           <button
             type="button"
@@ -204,25 +220,39 @@ function ProgramCard({
   );
 }
 
-function AssignAdminDialog({ program, onClose }: { program: Program | null; onClose: () => void }) {
+function AssignAdminsDialog({ program, onClose }: { program: Program | null; onClose: () => void }) {
+  const [admins, setAdmins] = useState<ProgramAdministrator[] | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [link, setLink] = useState<string | null>(null);
 
-  function reset() {
-    setName("");
-    setEmail("");
-    setLink(null);
+  function load(programId: string) {
+    listProgramAdministrators(programId)
+      .then(setAdmins)
+      .catch(() => setAdmins([]));
   }
 
-  async function submit() {
+  useEffect(() => {
+    if (program) load(program.id);
+    else {
+      setAdmins(null);
+      setName("");
+      setEmail("");
+      setLink(null);
+    }
+  }, [program]);
+
+  async function add() {
     if (!program || !email.trim()) return;
     setBusy(true);
     try {
       const inv = await assignProgramAdministrator(program.id, email.trim(), name.trim() || undefined);
       setLink(inv.token ? `${window.location.origin}/invite/${inv.token}` : inv.redeem_url ?? null);
-      toast.success(`Administrator assigned to ${program.name}`);
+      setName("");
+      setEmail("");
+      load(program.id);
+      toast.success("Administrator assigned");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to assign administrator");
     } finally {
@@ -230,84 +260,115 @@ function AssignAdminDialog({ program, onClose }: { program: Program | null; onCl
     }
   }
 
+  async function remove(a: ProgramAdministrator) {
+    if (!program) return;
+    try {
+      if (a.membership_id) await removeMember(a.membership_id);
+      else if (a.invitation_id) await revokeInvitation(a.invitation_id);
+      toast.success(`${a.display_name ?? a.email} removed`);
+      load(program.id);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove administrator");
+    }
+  }
+
   return (
-    <Dialog
-      open={!!program}
-      onOpenChange={(v) => {
-        if (!v) {
-          onClose();
-          reset();
-        }
-      }}
-    >
+    <Dialog open={!!program} onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Assign administrator · {program?.name}</DialogTitle>
+          <DialogTitle>Assign admins · {program?.name}</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground -mt-1">
-          They'll run this program end to end — offerings, team &amp; roles, partners — without you
+          They run this program end to end — offerings, team &amp; roles, partners — without you
           needing to manage it directly.
         </p>
-        {link ? (
-          <div className="space-y-2">
-            <Label>Activation link</Label>
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
-              <code className="flex-1 truncate text-xs font-mono">{link}</code>
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(link);
-                  toast.success("Copied");
-                }}
-                className="grid size-7 place-items-center rounded-md hover:bg-accent"
-                title="Copy link"
-              >
-                <Copy className="size-3.5" />
-              </button>
-            </div>
-          </div>
+
+        {!admins ? (
+          <Spinner />
         ) : (
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="admin-name">Name</Label>
-              <Input id="admin-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Jordan Lee" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="admin-email">Email</Label>
+          <div className="space-y-2">
+            {admins.map((a) => (
+              <div
+                key={a.membership_id ?? a.invitation_id ?? a.email}
+                className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm text-foreground truncate">{a.display_name ?? a.email}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {a.email}
+                    {a.status === "invited" ? " · invited" : ""}
+                  </div>
+                </div>
+                {a.role === "owner" ? (
+                  <span className="text-xs text-muted-foreground shrink-0">owner</span>
+                ) : (
+                  <ConfirmButton
+                    title={`Remove ${a.display_name ?? a.email} as administrator?`}
+                    description={
+                      a.status === "invited"
+                        ? "Their activation link stops working."
+                        : "They lose administrator access to this program immediately."
+                    }
+                    actionLabel="Remove"
+                    onConfirm={() => remove(a)}
+                    buttonTitle="Remove administrator"
+                  >
+                    <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                  </ConfirmButton>
+                )}
+              </div>
+            ))}
+            {admins.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No administrators yet — add the first below.</p>
+            ) : null}
+
+            <div className="flex gap-2 pt-1">
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" className="flex-1" />
               <Input
-                id="admin-email"
-                type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="jordan@example.org"
+                placeholder="email@example.org"
+                className="flex-1"
               />
+              <Button size="sm" onClick={add} disabled={busy || !email.trim()}>
+                <Plus className="size-3.5" /> Add
+              </Button>
             </div>
+            {link ? (
+              <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
+                <code className="flex-1 truncate text-xs font-mono">{link}</code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(link);
+                    toast.success("Copied");
+                  }}
+                  className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"
+                  title="Copy link"
+                >
+                  <Copy className="size-3.5" />
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
+
         <DialogFooter>
-          {link ? (
-            <Button
-              onClick={() => {
-                onClose();
-                reset();
-              }}
-            >
-              Done
-            </Button>
-          ) : (
-            <>
-              <Button variant="ghost" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button onClick={submit} disabled={busy || !email.trim()}>
-                {busy ? "Assigning…" : "Assign"}
-              </Button>
-            </>
-          )}
+          <Button onClick={onClose}>Done</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
+}
+
+interface AdminDraft {
+  email: string;
+  displayName: string;
+}
+
+interface CreatedInvite {
+  email: string;
+  link: string | null;
 }
 
 function NewProgramDialog({
@@ -315,34 +376,68 @@ function NewProgramDialog({
   open,
   onOpenChange,
   onDone,
+  allowedFeatureKeys,
 }: {
   orgId: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
+  allowedFeatureKeys: string[];
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<ProgramCategory>("edu");
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
+  const [admins, setAdmins] = useState<AdminDraft[]>([{ email: "", displayName: "" }]);
+  const [invites, setInvites] = useState<CreatedInvite[] | null>(null);
   const [busy, setBusy] = useState(false);
+
+  function reset() {
+    setName("");
+    setDescription("");
+    setFeatures({ ...DEFAULT_PROGRAM_FEATURES });
+    setAdmins([{ email: "", displayName: "" }]);
+    setInvites(null);
+  }
+
+  function updateAdmin(i: number, patch: Partial<AdminDraft>) {
+    setAdmins((cur) => cur.map((a, idx) => (idx === i ? { ...a, ...patch } : a)));
+  }
+
+  const validAdmins = admins.filter((a) => a.email.trim());
 
   async function submit() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      await createProgram(orgId, {
+      const program = await createProgram(orgId, {
         name: name.trim(),
         category,
         description: description.trim() || undefined,
         features,
       });
+      // Assign each named administrator — same delegation the org provisioning
+      // flow uses; each gets an activation link.
+      const created: CreatedInvite[] = [];
+      for (const a of validAdmins) {
+        try {
+          const inv = await assignProgramAdministrator(program.id, a.email.trim(), a.displayName.trim() || undefined);
+          created.push({
+            email: a.email.trim(),
+            link: inv.token ? `${window.location.origin}/invite/${inv.token}` : inv.redeem_url ?? null,
+          });
+        } catch (e) {
+          toast.error(`Couldn't assign ${a.email}: ${e instanceof Error ? e.message : "failed"}`);
+        }
+      }
       toast.success("Program created");
-      onOpenChange(false);
-      setName("");
-      setDescription("");
-      setFeatures({ ...DEFAULT_PROGRAM_FEATURES });
       onDone();
+      if (created.length > 0) {
+        setInvites(created); // stay open to hand out the links
+      } else {
+        onOpenChange(false);
+        reset();
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create program");
     } finally {
@@ -351,47 +446,123 @@ function NewProgramDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        onOpenChange(v);
+        if (!v) reset();
+      }}
+    >
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>New program</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="p-name">Name</Label>
-            <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Brain Bee Program" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="p-desc">Description</Label>
-            <Input id="p-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What is this program about?" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Category</Label>
-            <Select value={category} onValueChange={(v) => setCategory(v as ProgramCategory)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="edu">Education (Teacher / Student)</SelectItem>
-                <SelectItem value="game">Game (Coach / Player)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Features</Label>
-            <p className="text-xs text-muted-foreground -mt-1">
-              Choose what's accessible in this program. Only enabled features can be granted to roles.
+        {invites ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Program created. Share each activation link — administrators set their own password on
+              first sign-in.
             </p>
-            <FeatureToggles features={features} onChange={setFeatures} />
+            {invites.map((inv) => (
+              <div key={inv.email} className="rounded-lg border border-border p-3 space-y-1.5">
+                <div className="text-sm font-medium text-foreground">{inv.email}</div>
+                {inv.link ? (
+                  <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
+                    <code className="flex-1 truncate text-xs font-mono">{inv.link}</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(inv.link!);
+                        toast.success("Copied");
+                      }}
+                      className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"
+                    >
+                      <Copy className="size-3.5" />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ))}
           </div>
-        </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="p-name">Name</Label>
+              <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Brain Bee Program" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="p-desc">Description</Label>
+              <Input id="p-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What is this program about?" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Category</Label>
+              <Select value={category} onValueChange={(v) => setCategory(v as ProgramCategory)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="edu">Education (Teacher / Student)</SelectItem>
+                  <SelectItem value="game">Game (Coach / Player)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>
+                Administrators <span className="text-xs font-normal text-muted-foreground">optional — they run the program</span>
+              </Label>
+              {admins.map((a, i) => (
+                <div key={i} className="flex gap-2">
+                  <Input
+                    value={a.displayName}
+                    onChange={(e) => updateAdmin(i, { displayName: e.target.value })}
+                    placeholder="Name"
+                    className="flex-1"
+                  />
+                  <Input
+                    value={a.email}
+                    onChange={(e) => updateAdmin(i, { email: e.target.value })}
+                    placeholder="email@example.org"
+                    className="flex-1"
+                  />
+                </div>
+              ))}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setAdmins((cur) => [...cur, { email: "", displayName: "" }])}
+              >
+                <Plus className="size-3.5" /> Add another administrator
+              </Button>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Features</Label>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Choose what's accessible in this program. Only enabled features can be granted to roles.
+              </p>
+              <FeatureToggles features={features} onChange={setFeatures} allowedKeys={allowedFeatureKeys} />
+            </div>
+          </div>
+        )}
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={busy || !name.trim()}>
-            {busy ? "Creating…" : "Create program"}
-          </Button>
+          {invites ? (
+            <Button
+              onClick={() => {
+                onOpenChange(false);
+                reset();
+              }}
+            >
+              Done
+            </Button>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submit} disabled={busy || !name.trim()}>
+                {busy ? "Creating…" : "Create program"}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -402,10 +573,12 @@ function EditFeaturesDialog({
   program,
   onClose,
   onDone,
+  allowedFeatureKeys,
 }: {
   program: Program | null;
   onClose: () => void;
   onDone: () => void;
+  allowedFeatureKeys: string[];
 }) {
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
   const [busy, setBusy] = useState(false);
@@ -439,7 +612,7 @@ function EditFeaturesDialog({
           Turn a feature off to hide it from this program's roles. Roles already granting it keep the
           record, but the area stops being offered.
         </p>
-        <FeatureToggles features={features} onChange={setFeatures} />
+        <FeatureToggles features={features} onChange={setFeatures} allowedKeys={allowedFeatureKeys} />
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Cancel

@@ -537,7 +537,10 @@ export async function setEntitlement(orgId: string, module: ModuleKey, status: E
 export interface OrgCapabilities {
   programTypes: Record<string, boolean>;
   offeringTypes: Record<string, boolean>;
+  /** Feature-areas the org may use — same six keys as per-program features. */
   features: Record<string, boolean>;
+  /** Max programs the org may create; null = unlimited. */
+  programCapacity?: number | null;
 }
 
 export async function getOrgCapabilities(orgId: string): Promise<OrgCapabilities> {
@@ -671,10 +674,46 @@ export async function adminAddRegistration(offeringId: string, payload: AdminAdd
 
 // ── Program-administrator assignment (§3.5 delegation) ──────────────────────
 export interface ProgramAdministrator {
+  membership_id?: string | null;
+  invitation_id?: string | null;
   email: string;
   display_name: string | null;
   role: string;
   status: "active" | "invited";
+}
+
+// ── Nexus-level org administrators (boundary governance, Edit tab) ──────────
+export interface OrgAdmin {
+  membership_id: string | null;
+  invitation_id: string | null;
+  email: string | null;
+  display_name: string | null;
+  role: string;
+  status: "active" | "invited";
+}
+
+export async function listOrgAdmins(orgId: string): Promise<OrgAdmin[]> {
+  return request<OrgAdmin[]>(`/api/platform/admin/organizations/${orgId}/admins`);
+}
+
+export async function addOrgAdmin(
+  orgId: string,
+  payload: { email: string; display_name?: string },
+): Promise<Invitation> {
+  return request<Invitation>(`/api/platform/admin/organizations/${orgId}/admins`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function removeOrgAdmin(
+  orgId: string,
+  ref: { membership_id?: string; invitation_id?: string },
+): Promise<void> {
+  const q = ref.membership_id
+    ? `membership_id=${encodeURIComponent(ref.membership_id)}`
+    : `invitation_id=${encodeURIComponent(ref.invitation_id ?? "")}`;
+  await request(`/api/platform/admin/organizations/${orgId}/admins?${q}`, { method: "DELETE" });
 }
 
 export async function listProgramAdministrators(programId: string): Promise<ProgramAdministrator[]> {

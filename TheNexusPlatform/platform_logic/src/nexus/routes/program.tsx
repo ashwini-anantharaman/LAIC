@@ -93,9 +93,9 @@ const PROGRAM_PLATFORMS: {
   icon: React.ReactNode;
   path: string;
 }[] = [
-  { key: "learning", cap: "learningPlatform", title: "Learning Platform", hint: "Author lessons and courses for this program.", icon: <Rocket className="size-5" />, path: "learning" },
+  { key: "learning", cap: "learning", title: "Learning Platform", hint: "Author lessons and courses for this program.", icon: <Rocket className="size-5" />, path: "learning" },
   { key: "bridge", cap: "bridge", title: "Bridge Platform", hint: "Coach-driven app runtime for this program.", icon: <Waypoints className="size-5" />, path: "bridge" },
-  { key: "appbuilder", cap: "appShells", title: "App Shell", hint: "Configure an App Shell and fill it with content.", icon: <BookOpen className="size-5" />, path: "shells" },
+  { key: "appbuilder", cap: "appbuilder", title: "App Shell", hint: "Configure an App Shell and fill it with content.", icon: <BookOpen className="size-5" />, path: "shells" },
 ];
 
 // Confined areas that aren't platforms — their presence keeps a single-platform
