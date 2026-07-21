@@ -1,9 +1,11 @@
 "use client";
 
-// Auto-advance (2026-07-16 table rework): when an AI seat is to act, the
-// table plays itself — one decision per beat — so a fellow just watches the
-// board unfold instead of clicking "advance" 26 times. Pausable; the pause
-// survives refreshes (React state lives across router.refresh()).
+// Auto-advance (2026-07-21 rework): when an AI seat is to act, the table can
+// play itself — one decision per beat — but it never starts on its own.
+// Opening a board shows ▶ start; the felt moves only after you press it.
+// Pausing (or an undo / mid-play fix, which remounts via `key`) hands the
+// tempo back; the pause survives refreshes (React state lives across
+// router.refresh()).
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -13,7 +15,7 @@ export function AutoAdvance({
   active,
   seq,
   beatMs = 750,
-  initialPaused = false,
+  initialPaused = true,
 }: Readonly<{
   sessionId: string;
   /** Server truth: an AI seat is to act and the board isn't complete. */
@@ -21,8 +23,7 @@ export function AutoAdvance({
   /** Event count — changes after every step so the effect re-arms. */
   seq: number;
   beatMs?: number;
-  /** Start paused (after an undo or mid-play fix the AI must not instantly
-   *  replay the decision being inspected). Remount via `key` to re-apply. */
+  /** Boards open paused; pass false only for flows that should self-start. */
   initialPaused?: boolean;
 }>) {
   const router = useRouter();
@@ -56,12 +57,12 @@ export function AutoAdvance({
         onClick={() => setPaused((p) => !p)}
         className={
           paused
-            ? "rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
+            ? "rounded-full bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
             : "rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs text-emerald-800"
         }
-        title={paused ? "Resume automatic play" : "Pause automatic play"}
+        title={paused ? "Start automatic play" : "Pause automatic play"}
       >
-        {paused ? "▶ resume" : "❚❚ auto-playing"}
+        {paused ? (seq === 0 ? "▶ start" : "▶ resume") : "❚❚ auto-playing"}
       </button>
       {/* Manual control: pauses auto-play, then one AI decision per click. */}
       <button

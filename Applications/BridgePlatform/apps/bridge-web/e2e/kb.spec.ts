@@ -234,7 +234,8 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   await dealForm.getByRole("button", { name: "Deal a board" }).click();
   await page.waitForURL(/\/bridge\/table\/bs_/);
 
-  // Dealer N, then E — the table auto-advances AI turns until South (us).
+  // Boards never self-start: hit ▶ start, then dealer N and E play to us.
+  await page.getByRole("button", { name: "▶ start" }).click();
   await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Your call")).toBeVisible();
   const firstDecision = page.locator("details").filter({ hasText: "#0" }).last();
@@ -278,6 +279,10 @@ test("Play offers Quickplay and Customize; Quickplay deals in one click", async 
     .first()
     .click();
   await page.waitForURL(/\/bridge\/table\/bs_/, { timeout: 30_000 });
+  // A fresh board sits paused behind ▶ start; a resumed one may already be
+  // at OUR turn (no AI to act → no start button, the bid pad is up).
+  const start = page.getByRole("button", { name: /▶ (start|resume)/ });
+  if (await start.isVisible().catch(() => false)) await start.click();
   await expect(page.getByText(/Decisions \(\d+\)|Your call/).first()).toBeVisible({
     timeout: 15_000,
   });
@@ -375,6 +380,7 @@ test("fix at the table: undo pauses, overlay edits the item, session re-pins", a
   }
   await dealForm.getByRole("button", { name: "Deal a board" }).click();
   await page.waitForURL(/\/bridge\/table\/bs_/);
+  await page.getByRole("button", { name: "▶ start" }).click();
   await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
 
   // Undo the last AI decision — the table comes back PAUSED.
@@ -457,7 +463,9 @@ test("curated SAYC template: install, complete sets, and a traced board", async 
   await card.getByRole("button", { name: "Watch 4 copies" }).click();
   await page.waitForURL(/\/bridge\/table\/bs_/);
 
-  // The AIs bid from the curated knowledge; the trace cites a curated item.
+  // The AIs bid from the curated knowledge once started; the trace cites a
+  // curated item.
+  await page.getByRole("button", { name: "▶ start" }).click();
   await expect(page.getByText(/Decisions \([1-9]/)).toBeVisible({ timeout: 20_000 });
   const first = page.locator("details").filter({ hasText: "#0" }).last();
   await first.locator("summary").click();

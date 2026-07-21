@@ -312,12 +312,13 @@ export default async function SessionPage({
 
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+        {/* Boards never self-start: fresh opens (and post-undo remounts via
+            `key`) sit paused until ▶ start. */}
         <AutoAdvance
           key={paused ?? "run"}
           sessionId={sessionId}
           active={aiToAct}
           seq={record.events.length}
-          initialPaused={Boolean(paused)}
         />
         {!learnerMode && (
           <Link
