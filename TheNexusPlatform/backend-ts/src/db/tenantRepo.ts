@@ -17,7 +17,7 @@ import { currentUserId } from "./requestContext";
 import { resolveProfileId, ensureOrgProfile } from "./resolveProfile";
 import {
   programs, stageNodes, offerings, registeredApps, registrations, participants,
-  orgMemberships, profiles, organizations, entitlements, integrations, auditEvents, appLaunchTokens,
+  orgMemberships, profiles, organizations, entitlements, integrations, auditEvents, appLaunchTokens, platformSettings,
   challenges, challengeStageConfig, orgPermissionDefaults, studentRegistrations,
   joinCodes as joinCodesTable,
 } from "./schema";
@@ -38,6 +38,7 @@ const programRow = (p: typeof programs.$inferSelect): Row => ({
   icon: p.icon, instructor_label: p.instructorLabel, learner_label: p.learnerLabel,
   features: normalizeProgramFeatures((p.metadataJson as Row)?.features as Row),
   secondary_categories: ((p.metadataJson as Row)?.secondary_categories as string[]) ?? [],
+  branding: ((p.metadataJson as Row)?.branding as Row) ?? null,
   created_at: p.createdAt,
 });
 const stageRow = (s: typeof stageNodes.$inferSelect): Row => ({
@@ -728,6 +729,48 @@ export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row
     settings.capabilities = merged;
     await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));
     return merged;
+  });
+}
+
+// ── Platform settings (Nexus's own branding) ────────────────────────────────
+// Boundary/platform data — privileged by nature (no org scope exists).
+export async function getPlatformSetting(key: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx.select().from(platformSettings).where(eq(platformSettings.key, key)).limit(1);
+    return r.length ? (r[0].value as Row) : null;
+  });
+}
+
+export async function setPlatformSetting(key: string, value: Row): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    await tx
+      .insert(platformSettings)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
+    return value;
+  });
+}
+
+/** Program branding (accent/logo) in metadata_json.branding; null clears (revert). */
+export async function setProgramBranding(
+  programId: string,
+  branding: { accent?: string | null; logo?: string | null } | null,
+): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
+    if (!r.length) return null;
+    const meta: Row = { ...((r[0].metadataJson as Row) ?? {}) };
+    if (branding === null) {
+      delete meta.branding;
+    } else {
+      const cur = (meta.branding as Row) ?? {};
+      meta.branding = {
+        accent: branding.accent !== undefined ? branding.accent : (cur.accent ?? null),
+        logo: branding.logo !== undefined ? branding.logo : (cur.logo ?? null),
+      };
+    }
+    await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId));
+    return (meta.branding as Row) ?? null;
   });
 }
 

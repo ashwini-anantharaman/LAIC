@@ -117,11 +117,43 @@ class S3Storage implements StorageAdapter {
   }
 }
 
+// ── Postgres adapter — the serverless default ────────────────────────────────
+// Vercel's filesystem is read-only/ephemeral, so small assets (logos, ≤1MB)
+// live in the shared database as base64 and are proxied by the serve route.
+class DbStorage implements StorageAdapter {
+  private async db() {
+    const { getDb, schema } = await import("../db/client");
+    return { db: getDb(), files: schema.storedFiles };
+  }
+  async put(key: string, body: Buffer, contentType: string): Promise<void> {
+    const { db, files } = await this.db();
+    await db
+      .insert(files)
+      .values({ key, contentType, data: body.toString("base64") })
+      .onConflictDoUpdate({ target: files.key, set: { contentType, data: body.toString("base64") } });
+  }
+  async url(key: string): Promise<string> {
+    return `/api/platform/storage/${key}`;
+  }
+  async delete(key: string): Promise<void> {
+    const { db, files } = await this.db();
+    const { eq } = await import("drizzle-orm");
+    await db.delete(files).where(eq(files.key, key));
+  }
+  async get(key: string): Promise<StoredObject | null> {
+    const { db, files } = await this.db();
+    const { eq } = await import("drizzle-orm");
+    const r = await db.select().from(files).where(eq(files.key, key)).limit(1);
+    if (!r.length) return null;
+    return { body: Buffer.from(r[0].data, "base64"), contentType: r[0].contentType };
+  }
+}
+
 let _adapter: StorageAdapter | null = null;
 export function getStorage(): StorageAdapter {
   if (_adapter) return _adapter;
   const s = getSettings();
-  _adapter = s.storageS3Enabled ? new S3Storage() : new FsStorage(s.storageDir);
+  _adapter = s.storageS3Enabled ? new S3Storage() : s.databaseUrl ? new DbStorage() : new FsStorage(s.storageDir);
   return _adapter;
 }
 

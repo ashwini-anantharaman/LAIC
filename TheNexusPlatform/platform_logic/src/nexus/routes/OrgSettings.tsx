@@ -5,7 +5,6 @@
  */
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
-import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -40,14 +39,12 @@ import { EmptyState, PageHeader, Pill, Section, Spinner } from "@/nexus/ui/kit";
 import { Check, Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useSession } from "@/nexus/session";
-import { accentForMode } from "@/nexus/theme/accent";
 import { writeBranding } from "@/nexus/branding";
+import { ThemeEditor } from "@/nexus/ui/ThemeEditor";
 
 export function OrgSettings() {
   const { orgId = "" } = useParams();
   const { user } = useSession();
-  const { resolvedTheme } = useTheme();
-  const dark = resolvedTheme === "dark";
   const [members, setMembers] = useState<OrgMember[] | null>(null);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [accent, setAccent] = useState("#4f46e5");
@@ -103,18 +100,6 @@ export function OrgSettings() {
   }
   useEffect(loadMembers, [orgId]);
 
-  async function saveTheme() {
-    try {
-      await updateOrgTheme(orgId, { accent_color: accent });
-      // Broadcast so the sidebar (and anything else showing branding)
-      // repaints immediately — no manual refresh.
-      writeBranding({ orgId, slug: orgSlug, accent, logo: resolveAssetUrl(logoUrl) });
-      toast.success("Theme saved");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save theme");
-    }
-  }
-
   const hasAny = (members?.length ?? 0) > 0 || invitations.length > 0;
 
   return (
@@ -122,66 +107,20 @@ export function OrgSettings() {
       <PageHeader title="Settings" subtitle="Your organization's profile, theme, and people." />
 
       <Section title="Theme">
-        <div className="glass-card p-5 flex flex-wrap items-end gap-6">
-          <div className="space-y-1.5">
-            <Label htmlFor="accent">Accent color</Label>
-            <div className="flex items-center gap-2">
-              <input
-                id="accent"
-                type="color"
-                value={accentForMode(accent, dark)}
-                onChange={(e) => setAccent(accentForMode(e.target.value, dark))}
-                className="size-9 rounded-md border border-border bg-transparent p-0.5"
-              />
-              <Input
-                value={accent}
-                onChange={(e) => setAccent(e.target.value)}
-                onBlur={(e) => setAccent(accentForMode(e.target.value, dark))}
-                className="w-32 font-mono"
-              />
-            </div>
-            <div className="flex items-center gap-3 pt-1 text-[11px] text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <span className="size-4 rounded-full border border-border" style={{ background: accentForMode(accent, false) }} />
-                Light
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="size-4 rounded-full border border-border" style={{ background: accentForMode(accent, true) }} />
-                Dark
-              </span>
-              <span>· auto-adjusts to each mode</span>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="logo">Logo</Label>
-            <div className="flex items-center gap-3">
-              {logoUrl ? (
-                <img src={resolveAssetUrl(logoUrl) ?? undefined} alt="" className="size-9 rounded-md object-cover border border-border" />
-              ) : (
-                <div className="grid size-9 place-items-center rounded-md border border-dashed border-border text-xs text-muted-foreground">—</div>
-              )}
-              <input
-                id="logo"
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                className="text-xs text-muted-foreground file:mr-2 file:rounded-md file:border file:border-border file:bg-transparent file:px-2.5 file:py-1.5 file:text-xs file:text-foreground"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  try {
-                    const r = await uploadOrgLogo(orgId, file);
-                    setLogoUrl(r.logo_url);
-                    writeBranding({ orgId, slug: orgSlug, accent, logo: resolveAssetUrl(r.logo_url) });
-                    toast.success("Logo uploaded — it now shows on your org portal");
-                  } catch (err) {
-                    toast.error(err instanceof Error ? err.message : "Upload failed");
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <Button onClick={saveTheme}>Save</Button>
-        </div>
+        <ThemeEditor
+          accent={accent}
+          logoUrl={resolveAssetUrl(logoUrl)}
+          onSaveAccent={async (hex) => {
+            await updateOrgTheme(orgId, { accent_color: hex });
+            setAccent(hex);
+            writeBranding({ orgId, slug: orgSlug, accent: hex, logo: resolveAssetUrl(logoUrl) });
+          }}
+          onUploadLogo={async (file) => {
+            const r = await uploadOrgLogo(orgId, file);
+            setLogoUrl(r.logo_url);
+            writeBranding({ orgId, slug: orgSlug, accent, logo: resolveAssetUrl(r.logo_url) });
+          }}
+        />
       </Section>
 
       <Section

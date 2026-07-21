@@ -54,6 +54,8 @@ export interface Program {
   instructor_count?: number;
   /** Per-program platform toggles; absent/true = enabled where the org allows it. */
   platforms?: Record<string, boolean> | null;
+  /** Program's own branding; null = inherit the organization's. */
+  branding?: { accent: string | null; logo: string | null } | null;
 }
 
 export interface Integration {

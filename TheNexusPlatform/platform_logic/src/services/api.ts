@@ -531,6 +531,55 @@ export async function uploadOrgLogo(orgId: string, file: File): Promise<{ logo_u
   });
 }
 
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve((r.result as string).split(",")[1] ?? "");
+    r.onerror = () => reject(new Error("Could not read file"));
+    r.readAsDataURL(file);
+  });
+}
+
+// ── Branding: Nexus platform + per-program ───────────────────────────────────
+export interface PlatformBranding {
+  accent: string | null;
+  logo: string | null;
+}
+
+export async function getPlatformBranding(): Promise<PlatformBranding> {
+  return request<PlatformBranding>("/api/platform/platform/branding");
+}
+export async function updatePlatformTheme(accent: string): Promise<PlatformBranding> {
+  return request<PlatformBranding>("/api/platform/admin/platform/theme", {
+    method: "PATCH",
+    body: JSON.stringify({ accent_color: accent }),
+  });
+}
+export async function uploadPlatformLogo(file: File): Promise<{ logo_url: string }> {
+  const data = await fileToBase64(file);
+  return request<{ logo_url: string }>("/api/platform/admin/platform/logo", {
+    method: "POST",
+    body: JSON.stringify({ data, content_type: file.type }),
+  });
+}
+
+export async function updateProgramTheme(
+  programId: string,
+  opts: { accent?: string; revert?: boolean },
+): Promise<{ branding: { accent: string | null; logo: string | null } | null }> {
+  return request(`/api/platform/programs/${programId}/theme`, {
+    method: "PATCH",
+    body: JSON.stringify({ accent_color: opts.accent, revert: opts.revert }),
+  });
+}
+export async function uploadProgramLogo(programId: string, file: File): Promise<{ logo_url: string }> {
+  const data = await fileToBase64(file);
+  return request<{ logo_url: string }>(`/api/platform/programs/${programId}/logo`, {
+    method: "POST",
+    body: JSON.stringify({ data, content_type: file.type }),
+  });
+}
+
 // ── Audit log + Entitlements ─────────────────────────────────────────────────
 export async function listAuditEvents(orgId: string, limit = 50): Promise<AuditEvent[]> {
   return request<AuditEvent[]>(`/api/platform/orgs/${orgId}/audit?limit=${limit}`);

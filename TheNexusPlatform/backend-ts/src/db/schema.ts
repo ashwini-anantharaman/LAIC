@@ -474,3 +474,19 @@ export const demoAuthUsers = pgTable("demo_auth_users", {
   passwordHash: text("password_hash").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+
+/** Platform-level settings (Nexus branding etc.) — key/value. */
+export const platformSettings = pgTable("platform_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Small binary assets (logos) stored as base64 — durable on serverless. */
+export const storedFiles = pgTable("stored_files", {
+  key: text("key").primaryKey(),
+  contentType: text("content_type").notNull(),
+  data: text("data").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

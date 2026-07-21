@@ -45,3 +45,8 @@ export function onBranding(cb: (b: CachedBranding) => void): () => void {
   window.addEventListener(EVENT, handler);
   return () => window.removeEventListener(EVENT, handler);
 }
+
+/** Drop a cached entry (e.g. a program reverting to its org's branding). */
+export function clearBranding(idOrSlug: string | null | undefined): void {
+  if (idOrSlug) localStorage.removeItem(key(idOrSlug));
+}

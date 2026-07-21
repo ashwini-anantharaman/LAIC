@@ -126,6 +126,7 @@ function _programResponse(row: Row): Row {
     instructor_count: row.instructor_count ?? 0,
     platforms: row.platforms ?? null,
     secondary_categories: row.secondary_categories ?? [],
+    branding: row.branding ?? null,
   };
 }
 
@@ -1559,6 +1560,95 @@ platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
     scopeId: orgId,
   });
   return c.json(caps);
+});
+
+// ── Branding: Nexus platform + per-program (theme + logo) ───────────────────
+// Same shape as the org theme; Nexus's own branding lives in platform_settings
+// and a program's rides its metadata (revert = clear, falls back to the org).
+
+platformRouter.get("/platform/branding", async (c) => {
+  // Public: the operator console shell (and login gate) needs it pre-auth.
+  if (!dbEnabled()) return c.json({ accent: null, logo: null });
+  const b = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
+  return c.json({ accent: (b.accent as string) ?? null, logo: (b.logo as string) ?? null });
+});
+
+const platformThemeSchema = z.object({ accent_color: z.string().trim().min(1).max(32) });
+
+platformRouter.patch("/admin/platform/theme", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(platformThemeSchema, await c.req.json());
+  const cur = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
+  const next = { ...cur, accent: req.accent_color };
+  await db.setPlatformSetting("branding", next);
+  return c.json(next);
+});
+
+platformRouter.post("/admin/platform/logo", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const body = (await c.req.json()) as { data?: string; content_type?: string };
+  const ext = _LOGO_EXT[body.content_type ?? ""];
+  if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
+  const buf = Buffer.from(body.data, "base64");
+  if (buf.length === 0) throw new HttpError(422, "Empty upload");
+  if (buf.length > _MAX_LOGO_BYTES) throw new HttpError(413, "Logo exceeds the 1 MB limit");
+  const key = `platform/logo.${ext}`;
+  await getStorage().put(key, buf, body.content_type as string);
+  const url = await getStorage().url(key);
+  const cur = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
+  await db.setPlatformSetting("branding", { ...cur, logo: url });
+  return c.json({ logo_url: url });
+});
+
+const programThemeSchema = z.object({
+  accent_color: z.string().trim().min(1).max(32).nullish(),
+  /** true clears the program's branding entirely (revert to the org's). */
+  revert: z.boolean().optional(),
+});
+
+platformRouter.patch("/programs/:program_id/theme", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _assertProgramConfigAccess(user, program.org_id, programId);
+  const req = parseBody(programThemeSchema, await c.req.json());
+  const branding = req.revert
+    ? await db.setProgramBranding(programId, null)
+    : await db.setProgramBranding(programId, { accent: req.accent_color ?? null });
+  await db.recordAuditEvent(req.revert ? "program.branding.reverted" : "program.theme_updated", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+  });
+  return c.json({ branding: branding ?? null });
+});
+
+platformRouter.post("/programs/:program_id/logo", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _assertProgramConfigAccess(user, program.org_id, programId);
+  const body = (await c.req.json()) as { data?: string; content_type?: string };
+  const ext = _LOGO_EXT[body.content_type ?? ""];
+  if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
+  const buf = Buffer.from(body.data, "base64");
+  if (buf.length === 0) throw new HttpError(422, "Empty upload");
+  if (buf.length > _MAX_LOGO_BYTES) throw new HttpError(413, "Logo exceeds the 1 MB limit");
+  const key = orgKey(program.org_id, `programs/${programId}/logo.${ext}`);
+  await getStorage().put(key, buf, body.content_type as string);
+  const url = await getStorage().url(key);
+  await db.setProgramBranding(programId, { logo: url });
+  await db.recordAuditEvent("program.logo_uploaded", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { key, bytes: buf.length },
+  });
+  return c.json({ logo_url: url });
 });
 
 // ── Org-defined program categories (Settings → Categories) ──────────────────

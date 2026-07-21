@@ -17,6 +17,8 @@ import { Login } from "@/nexus/routes/Login";
 import { OrgPortal } from "@/nexus/routes/OrgPortal";
 import { OperatorAudit } from "@/nexus/routes/OperatorAudit";
 import { OperatorOrgs } from "@/nexus/routes/OperatorOrgs";
+import { OperatorSettings } from "@/nexus/routes/OperatorSettings";
+import { ProgramSettings } from "@/nexus/routes/ProgramSettings";
 import { OrgAudit } from "@/nexus/routes/OrgAudit";
 import { OrgDashboard } from "@/nexus/routes/OrgDashboard";
 import { OrgSettings } from "@/nexus/routes/OrgSettings";
@@ -135,6 +137,7 @@ function Routed() {
         {/* Nexus operator */}
         <Route path="/orgs" element={<OperatorOrgs />} />
         <Route path="/audit" element={<OperatorAudit />} />
+        <Route path="/settings" element={<OperatorSettings />} />
         {/* Org space */}
         <Route path="/o/:orgId/dashboard" element={<OrgDashboard />} />
         <Route path="/o/:orgId/programs" element={<Programs />} />
@@ -150,6 +153,7 @@ function Routed() {
         <Route path="/o/:orgId/p/:programId/community" element={<ProgramCommunity />} />
         <Route path="/o/:orgId/p/:programId/team" element={<ProgramTeam />} />
         <Route path="/o/:orgId/p/:programId/partners" element={<ProgramPartners />} />
+        <Route path="/o/:orgId/p/:programId/settings" element={<ProgramSettings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

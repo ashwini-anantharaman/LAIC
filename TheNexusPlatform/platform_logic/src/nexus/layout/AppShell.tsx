@@ -24,6 +24,7 @@ import {
   Moon,
   Sun,
   LogOut,
+  Settings as SettingsIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -40,12 +41,13 @@ import {
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
 import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
-import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
+import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getPlatformBranding, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
+import { Spinner } from "@/nexus/ui/kit";
 import type { Program } from "@/types/platform";
 import { accentForMode } from "@/nexus/theme/accent";
-import { onBranding, readBranding, writeBranding } from "@/nexus/branding";
+import { clearBranding, onBranding, readBranding, writeBranding } from "@/nexus/branding";
 
 interface NavItem {
   to: string;
@@ -75,6 +77,7 @@ function programNav(orgId: string, programId: string): NavItem[] {
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
     { to: `${base}/team`, label: "Team & Roles", icon: KeyRound },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
+    { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
   ];
 }
 
@@ -328,37 +331,73 @@ export function AppShell() {
     const cached = readBranding(orgId);
     return cached ? { accent: cached.accent, logo: cached.logo } : { accent: null, logo: null };
   });
+  // "Ready" = we know the real branding (cache hit or fetch settled). Until
+  // then the shell paints a neutral spinner — never the default palette, so
+  // there is no flash of the wrong color even on a first visit.
+  const [brandingReady, setBrandingReady] = useState(() => !orgId || !!readBranding(orgId));
   useEffect(() => {
     if (mode === "nexus" || !orgId) {
       setOrgBranding({ accent: null, logo: null });
+      setBrandingReady(true);
       return;
     }
     const cached = readBranding(orgId);
     setOrgBranding(cached ? { accent: cached.accent, logo: cached.logo } : { accent: null, logo: null });
+    setBrandingReady(!!cached);
     (async () => {
       try {
         const mine = await listMyOrgs();
         const slug = mine.find((o) => o.id === orgId)?.slug;
-        if (!slug) return;
-        const b = await getOrgBySlug(slug);
-        writeBranding({
-          orgId,
-          slug,
-          accent: b.theme_accent_color,
-          logo: resolveAssetUrl(b.theme_logo_url),
-        });
+        if (slug) {
+          const b = await getOrgBySlug(slug);
+          writeBranding({
+            orgId,
+            slug,
+            accent: b.theme_accent_color,
+            logo: resolveAssetUrl(b.theme_logo_url),
+          });
+        }
       } catch {
         /* keep whatever we had */
+      } finally {
+        setBrandingReady(true);
       }
     })();
   }, [mode, orgId]);
+  // Nexus's own branding (operator console) + a program's override — same
+  // cache/broadcast pattern, three layers: platform | org | program.
+  const [platformBranding, setPlatformBranding] = useState<{ accent: string | null; logo: string | null }>(() => {
+    const c = readBranding("platform");
+    return c ? { accent: c.accent, logo: c.logo } : { accent: null, logo: null };
+  });
+  useEffect(() => {
+    if (mode !== "nexus") return;
+    getPlatformBranding()
+      .then((b) => writeBranding({ orgId: "platform", accent: b.accent, logo: resolveAssetUrl(b.logo) }))
+      .catch(() => {});
+  }, [mode]);
+
+  const [programBranding, setProgramBranding] = useState<{ accent: string | null; logo: string | null } | null>(() => {
+    const c = programId ? readBranding(programId) : null;
+    return c ? { accent: c.accent, logo: c.logo } : null;
+  });
+  useEffect(() => {
+    const c = programId ? readBranding(programId) : null;
+    setProgramBranding(c ? { accent: c.accent, logo: c.logo } : null);
+  }, [programId]);
   useEffect(
     () =>
       onBranding((b) => {
         if (b.orgId === orgId) setOrgBranding({ accent: b.accent, logo: b.logo });
+        if (b.orgId === "platform") setPlatformBranding({ accent: b.accent, logo: b.logo });
+        if (programId && b.orgId === programId) setProgramBranding({ accent: b.accent, logo: b.logo });
       }),
-    [orgId],
+    [orgId, programId],
   );
+
+  // What the shell actually paints.
+  const displayBranding =
+    mode === "nexus" ? platformBranding : programId && programBranding ? programBranding : orgBranding;
 
   // Are we previewing a role in THIS program?
   const impersonating = impersonation && impersonation.programId === programId ? impersonation : null;
@@ -374,6 +413,24 @@ export function AppShell() {
       .then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null))
       .catch(() => setProgram(null));
   }, [orgId, programId]);
+  useEffect(() => {
+    // Reconcile once the program row arrives: cache its branding, or clear a
+    // stale override if it reverted to the org's.
+    if (!programId || !program) return;
+    const b = (program as Program & { branding?: { accent: string | null; logo: string | null } | null }).branding;
+    if (b && (b.accent || b.logo)) {
+      const org = readBranding(orgId);
+      writeBranding({
+        orgId: programId,
+        accent: b.accent ?? org?.accent ?? null,
+        logo: b.logo ? resolveAssetUrl(b.logo) : org?.logo ?? null,
+      });
+    } else {
+      clearBranding(programId);
+      setProgramBranding(null);
+    }
+  }, [programId, program, orgId]);
+
   const programName = program?.name ?? programMemberships.find((m) => m.program_id === programId)?.program_name ?? null;
   // Effective feature switches (already clamped by the org's Nexus envelope
   // server-side). Until loaded, show everything to avoid a nav flash.
@@ -435,6 +492,7 @@ export function AppShell() {
     items = [
       { to: "/orgs", label: "Organizations", icon: Building2 },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
+      { to: "/settings", label: "Settings", icon: SettingsIcon },
     ];
   } else if (programId && isPlainMember) {
     heading = myRoleName ?? programMembership?.program_name ?? "Program";
@@ -475,15 +533,23 @@ export function AppShell() {
   if (pageLabel && crumbs[crumbs.length - 1] !== pageLabel) crumbs.push(pageLabel);
   else if (!pageLabel && programId && last !== programId) crumbs.push("Editor");
 
+  if (!brandingReady) {
+    return (
+      <div className="grid h-screen place-items-center">
+        <Spinner />
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex h-screen text-foreground"
-      style={accentVars(orgBranding.accent, dark)}
+      style={accentVars(displayBranding.accent, dark)}
     >
       <aside className="glass-sidebar flex w-60 shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground">
         <div className="flex items-center gap-2.5 px-5 h-14 border-b border-sidebar-border">
-          {orgBranding.logo ? (
-            <img src={orgBranding.logo} alt="" className="size-7 rounded-md object-cover" />
+          {displayBranding.logo ? (
+            <img src={displayBranding.logo} alt="" className="size-7 rounded-md object-cover" />
           ) : (
             <div className="grid size-7 place-items-center rounded-md bg-sidebar-accent text-sidebar-foreground text-sm font-semibold">
               {mode === "nexus" ? "N" : initials(orgName)}

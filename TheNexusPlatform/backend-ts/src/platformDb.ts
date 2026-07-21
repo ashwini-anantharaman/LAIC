@@ -360,6 +360,20 @@ export async function createProgram(
   );
 }
 
+// Platform settings + program branding (DB-backed; routes guard dbEnabled).
+export async function getPlatformSetting(key: string): Promise<Row | null> {
+  return tpg.getPlatformSetting(key);
+}
+export async function setPlatformSetting(key: string, value: Row): Promise<Row> {
+  return tpg.setPlatformSetting(key, value);
+}
+export async function setProgramBranding(
+  programId: string,
+  branding: { accent?: string | null; logo?: string | null } | null,
+): Promise<Row | null> {
+  return tpg.setProgramBranding(programId, branding);
+}
+
 // Org-defined program categories (DB-backed; routes guard dbEnabled).
 export async function listOrgCategories(orgId: string): Promise<string[]> {
   return tpg.listOrgCategories(orgId);
