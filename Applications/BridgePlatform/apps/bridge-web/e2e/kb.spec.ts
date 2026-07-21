@@ -262,11 +262,21 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   await expect(page.getByText(/Flagged: N chose/)).toBeVisible();
 });
 
-test("Play lands straight on a board, no selection needed", async ({ page, context }) => {
+test("Play offers Quickplay and Customize; Quickplay deals in one click", async ({
+  page,
+  context,
+}) => {
   await signInAs(context, "user_reviewer_rhea");
-  // Hitting Play deals (or resumes) a board immediately — a table URL, not a
-  // chooser.
+  // Play is a landing now — no board is dealt until you choose a door.
   await page.goto("/bridge/table");
+  await expect(page.getByRole("heading", { name: "Quickplay" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customize" })).toBeVisible();
+  // One click on Quickplay (deal or resume) lands on a table.
+  await page
+    .getByRole("button", { name: /Quickplay|Deal a fresh board/ })
+    .or(page.getByRole("link", { name: /^Resume / }))
+    .first()
+    .click();
   await page.waitForURL(/\/bridge\/table\/bs_/, { timeout: 30_000 });
   await expect(page.getByText(/Decisions \(\d+\)|Your call/).first()).toBeVisible({
     timeout: 15_000,

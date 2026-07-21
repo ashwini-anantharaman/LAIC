@@ -9,9 +9,9 @@ import { arenaPlayAction, createDrillAction, createSessionAction } from "../acti
 
 const SEATS = ["N", "E", "S", "W"] as const;
 
-/** Choose a table (2026-07-17): the full menu of who to play against. The
- *  plain "Play" entry deals a default board immediately; this is where you
- *  pick a specific knowledge set or configure seats. */
+/** Customize a table (2026-07-21): the full menu of who to play against —
+ *  knowledge sets, seat-by-seat player choice, saved boards from the
+ *  library, drills. Quickplay (on the Play page) is the no-questions door. */
 export default async function ChooseTablePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
@@ -44,14 +44,18 @@ export default async function ChooseTablePage() {
     <div className="mx-auto max-w-3xl">
       <header className="mb-8">
         <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">Play</p>
-        <h1 className="mt-1 text-3xl font-medium">Choose a table</h1>
+        <h1 className="mt-1 text-3xl font-medium">Customize a table</h1>
         <p className="mt-2 max-w-xl text-sm text-neutral-600">
           Pick a knowledge set to play against — house players are provisioned for you, and
-          every decision they make at the table stays traceable. Or just hit{" "}
+          every decision they make at the table stays traceable. Or configure{" "}
+          <a href="#custom" className="text-emerald-700 underline-offset-4 hover:underline">
+            every seat yourself
+          </a>
+          . In a hurry?{" "}
           <Link href="/bridge/table" className="text-emerald-700 underline-offset-4 hover:underline">
-            Play
+            Quickplay
           </Link>{" "}
-          for a default board.
+          deals instantly.
         </p>
       </header>
 
@@ -137,33 +141,39 @@ export default async function ChooseTablePage() {
         ))
       )}
 
-      {boards.length > 0 && (
-        <section className="mb-8">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
-            From the library
-          </h2>
-          <ul className="flex flex-wrap gap-2">
-            {boards.map((b) => (
-              <li key={b.entryId}>
-                <Link
-                  href={`/bridge/library/${b.entryId}`}
-                  className="inline-block rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-500"
-                >
-                  {b.name}
-                </Link>
-              </li>
-            ))}
-            <li>
+      <section className="mb-8">
+        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
+          From the library
+        </h2>
+        <ul className="flex flex-wrap gap-2">
+          {boards.map((b) => (
+            <li key={b.entryId}>
               <Link
-                href="/bridge/library"
-                className="inline-block rounded-full px-3 py-1 text-xs text-emerald-700 underline-offset-4 hover:underline"
+                href={`/bridge/library/${b.entryId}`}
+                className="inline-block rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-500"
               >
-                all saved boards →
+                {b.name}
               </Link>
             </li>
-          </ul>
-        </section>
-      )}
+          ))}
+          <li>
+            <Link
+              href="/bridge/library"
+              className="inline-block rounded-full px-3 py-1 text-xs text-emerald-700 underline-offset-4 hover:underline"
+            >
+              all saved boards →
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/bridge/library/new"
+              className="inline-block rounded-full px-3 py-1 text-xs text-emerald-700 underline-offset-4 hover:underline"
+            >
+              author or import a board →
+            </Link>
+          </li>
+        </ul>
+      </section>
 
       {sessions.length > 0 && (
         <section className="mb-8">
@@ -194,7 +204,7 @@ export default async function ChooseTablePage() {
 
       {/* Full control, tucked away */}
       {arenas.length > 0 && (
-        <details className="rounded-lg border border-neutral-200">
+        <details id="custom" className="rounded-lg border border-neutral-200">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-neutral-600 hover:text-neutral-900">
             Set up a custom table
           </summary>

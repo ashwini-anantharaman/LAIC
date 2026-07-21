@@ -565,7 +565,7 @@ export default async function SessionPage({
             {myTurn && callsNow && (
               <>
                 <p className="text-sm font-medium">Your call</p>
-                <BiddingBox sessionId={sessionId} legal={callsNow} />
+                <BiddingBox sessionId={sessionId} legal={[...callsNow]} />
               </>
             )}
             {myTurn && legalNow && (
