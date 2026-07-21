@@ -55,6 +55,12 @@ export function resolveSuitRef(ref: SuitRef, hand: Hand, env: ConditionEnv): Sui
     }
     case "own_first_bid_suit":
       return suitOfBid(env.facts.ownFirstBid);
+    case "only_unbid_suit": {
+      const unbid = (["S", "H", "D", "C"] as Suit[]).filter(
+        (su) => !env.facts.suitsBid.includes(su),
+      );
+      return unbid.length === 1 ? unbid[0]! : null;
+    }
     case "own_last_bid_suit":
       return suitOfBid(env.facts.ownLastBid);
     default:
@@ -137,6 +143,21 @@ function evalPredicate(pred: HandPredicate, hand: Hand, env: ConditionEnv): bool
       hand.filter((c) => c.rank === 14).length +
       (hand.some((c) => c.suit === suit && c.rank === 13) ? 1 : 0);
     return inRange(count, pred.keycards, env);
+  }
+  if ("playingTricks" in pred) {
+    // Per suit: A=1; K=1 with two-plus cards (0.5 alone); Q=0.5 with
+    // three-plus; +1 per card beyond the third when the suit is headed by a
+    // top-three honor (a ragged long suit promises nothing).
+    let tricks = 0;
+    for (const suit of ["S", "H", "D", "C"] as Suit[]) {
+      const cards = hand.filter((c) => c.suit === suit);
+      const has = (r: number) => cards.some((c) => c.rank === r);
+      if (has(14)) tricks += 1;
+      if (has(13)) tricks += cards.length >= 2 ? 1 : 0.5;
+      if (has(12) && cards.length >= 3) tricks += 0.5;
+      if (has(14) || has(13) || has(12)) tricks += Math.max(0, cards.length - 3);
+    }
+    return inRange(tricks, pred.playingTricks, env);
   }
   if ("holds" in pred) {
     const suit = resolveSuitRef(pred.holds.suit, hand, env);

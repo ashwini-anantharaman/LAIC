@@ -54,8 +54,9 @@ async function call(
   auction: [Seat, string][],
   seat: Seat = "S",
   overrides: Record<string, SettingValue> = {},
+  vul: "none" | "ns" | "ew" | "both" = "none",
 ) {
-  const state = initialState("t", "N", "none", dealFor(seat, hand));
+  const state = initialState("t", "N", vul, dealFor(seat, hand));
   state.auction = auction.map(([s, c]) => ({ seat: s, call: c as never }));
   state.turn = seat;
   const decider = createKbDecider({
@@ -841,5 +842,102 @@ describe("slam machinery", () => {
     // N is the responder to 5N here; N's hand is synthetic (round-robin), so
     // just assert the ask machinery yields SOME king response at the 6 level.
     expect(["6C", "6D", "6H", "6S"]).toContain(d.action);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Judgment tier (2026-07-21): forcing-pass guard, fourth suit forcing,
+// Michaels minor ask + two-suit gate, preempt discipline by vulnerability,
+// the (default-off) business redouble.
+// ---------------------------------------------------------------------------
+
+describe("judgment tier", () => {
+  it("fourth suit forcing: game values, no fit, no stopper → bid the fourth suit", async () => {
+    // 1♦ – 1♥ – 1♠: three suits bid, responder has 12 HCP and no club stopper.
+    const d = await call(
+      "SQ S3 S2 HA HK HJ H9 H8 DQ D7 D6 C4 C3",
+      [["N", "1D"], P("E"), ["S", "1H"], P("W"), ["N", "1S"], P("E")],
+    );
+    expect(d.action).toBe("2C");
+    expect(d.reason).toContain("fourth suit");
+  });
+
+  it("…and stays off when the toggle is off", async () => {
+    const d = await call(
+      "SQ S3 S2 HA HK HJ H9 H8 DQ D7 D6 C4 C3",
+      [["N", "1D"], P("E"), ["S", "1H"], P("W"), ["N", "1S"], P("E")],
+      "S",
+      { fsf_on: false },
+    );
+    expect(d.action).not.toBe("2C");
+  });
+
+  it("Michaels minor ask: advancer bids 2NT without major support", async () => {
+    const d = await call(
+      "S4 S3 H2 DK DQ DJ D9 D8 D7 C9 C8 C7 C6",
+      [P("N"), ["E", "1H"], ["S", "2H"], P("W")],
+      "N",
+    );
+    expect(d.action).toBe("2N");
+  });
+
+  it("…and the cue-bidder shows the minor over the ask", async () => {
+    const d = await call(
+      "SA SK SQ S4 S3 H2 DQ DJ D9 D8 D7 C4 C2",
+      [P("N"), ["E", "1H"], ["S", "2H"], P("W"), ["N", "2N"], P("E")],
+    );
+    expect(d.action).toBe("3D");
+  });
+
+  it("the cue is natural once the opponents have shown two suits", async () => {
+    // E opened 1♣, W responded 1♦ — a 2♦ \"cue\" would be nonsense Michaels.
+    const d = await call(
+      "SA SK S8 S7 S2 HQ HJ H9 H8 H3 D4 D3 C2",
+      [P("N"), ["E", "1C"], P("S"), ["W", "1D"]],
+      "N",
+    );
+    expect(d.action).not.toBe("2D");
+  });
+
+  it("weak two obeys the two-three-four guideline", async () => {
+    const kqj987 = "SK SQ SJ S9 S8 S7 H4 H3 D4 D3 C4 C3 C2"; // 4.5 playing tricks
+    expect((await call(kqj987, [P("N"), P("E")])).action).toBe("2S"); // equal
+    expect((await call(kqj987, [P("N"), P("E")], "S", {}, "ew")).action).toBe("2S"); // favorable
+    expect((await call(kqj987, [P("N"), P("E")], "S", {}, "ns")).action).toBe("P"); // unfavorable
+  });
+
+  it("three-level preempt obeys the guideline too", async () => {
+    const seven = "SK SQ SJ S9 S8 S7 S6 H4 H3 D4 D3 C3 C2"; // 5.5 playing tricks
+    expect((await call(seven, [P("N"), P("E")])).action).toBe("3S"); // equal
+    expect((await call(seven, [P("N"), P("E")], "S", {}, "ew")).action).toBe("3S"); // favorable
+    expect((await call(seven, [P("N"), P("E")], "S", {}, "ns")).action).toBe("P"); // unfavorable
+  });
+
+  it("RONF: a new suit over the weak two forces the opener to bid", async () => {
+    // N opened 2♥, partner's 2♠ is forcing — with nothing to say, N rebids hearts.
+    const d = await call(
+      "HK HQ HJ H9 H8 H7 S4 S3 D8 D7 D6 C3 C2",
+      [["N", "2H"], P("E"), ["S", "2S"], P("W")],
+      "N",
+    );
+    expect(d.action).not.toBe("P");
+  });
+
+  it("a two-over-one response may not be passed out by opener", async () => {
+    const d = await call(
+      "SA SK S9 S8 S7 H4 H3 D8 D7 D6 C4 C3 C2",
+      [["N", "1S"], P("E"), ["S", "2C"], P("W")],
+      "N",
+    );
+    expect(d.action).not.toBe("P");
+  });
+
+  it("business redouble is present but OFF until an expert enables it", async () => {
+    const hand = "SA SK SQ S9 S8 HA H8 H7 DK D4 D3 C3 C2"; // 16 HCP, two aces
+    const auction: [Seat, string][] = [
+      ["N", "1S"], P("E"), ["S", "4S"], P("W"), P("N"), ["E", "X"],
+    ];
+    expect((await call(hand, auction)).action).toBe("P");
+    expect((await call(hand, auction, "S", { rdbl_4plus_on: true })).action).toBe("XX");
   });
 });

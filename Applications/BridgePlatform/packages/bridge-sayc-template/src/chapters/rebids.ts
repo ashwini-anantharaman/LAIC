@@ -15,9 +15,11 @@ import {
   hcp,
   is,
   len,
+  not,
   pass as passAction,
   raise,
   rule,
+  stopper,
   toggle,
   tp,
   type TemplateItem,
@@ -316,6 +318,28 @@ export const REBIDS: TemplateItem[] = [
       ),
     ],
     { settings: [toggle("nmf_on", "New Minor Forcing")], sets: ["conventions"] },
+  ),
+
+  auctionItem(
+    "fourth-suit-forcing",
+    "Fourth suit forcing",
+    "When three suits have been bid by the partnership, responder's bid of the FOURTH suit is artificial and forcing for one round: it shows game-going values (12+) without a clear natural call — typically no fit for opener's suit and no stopper in the fourth suit for notrump — and asks opener to keep describing. The rule bids the fourth suit at the cheapest level; opener's ordinary rebid ladder answers it.",
+    "convention",
+    [
+      rule(
+        "ask",
+        "Bid the fourth suit as an artificial force",
+        ctx("responder", { contested: false, roundMin: 2 }),
+        all(
+          hcp(12),
+          len("partner_first_bid_suit", undefined, 3),
+          not(stopper("only_unbid_suit")),
+        ),
+        bidSuit("only_unbid_suit"),
+        25,
+      ),
+    ],
+    { settings: [toggle("fsf_on", "Fourth suit forcing")], sets: ["conventions"] },
   ),
 
   auctionItem(

@@ -6,6 +6,7 @@
 import type { SettingValue } from "@bridge/config";
 import type {
   CompiledAuctionRule,
+  CompiledForcingRule,
   CompiledFallback,
   CompiledItemSummary,
   CompiledKb,
@@ -93,6 +94,7 @@ export function compileKb(input: CompileInput): CompileResult {
 
   // ---- rules -----------------------------------------------------------------
   const auctionRules: CompiledAuctionRule[] = [];
+  const forcingRules: CompiledForcingRule[] = [];
   const leadRules: CompiledLeadRule[] = [];
   const playRules: CompiledPlayRule[] = [];
   const fallbacks: CompiledFallback[] = [];
@@ -127,6 +129,25 @@ export function compileKb(input: CompileInput): CompileResult {
             context: spec.context,
             conditions: spec.conditions,
             action: spec.action,
+            order: order(item.knowledgeType, spec.priority),
+            settingGates: gates,
+            provenance,
+          });
+        }
+        break;
+      }
+      case "forcing_rules": {
+        const fkeys = new Set<string>();
+        for (const spec of payload.rules) {
+          if (fkeys.has(spec.key)) {
+            errors.push({ itemId: item.itemId, message: `duplicate forcing key "${spec.key}"` });
+            continue;
+          }
+          fkeys.add(spec.key);
+          forcingRules.push({
+            ruleId: `${item.itemId}.${spec.key}`,
+            label: spec.label,
+            context: spec.context,
             order: order(item.knowledgeType, spec.priority),
             settingGates: gates,
             provenance,
@@ -176,6 +197,7 @@ export function compileKb(input: CompileInput): CompileResult {
   }
 
   auctionRules.sort((a, b) => a.order - b.order);
+  forcingRules.sort((a, b) => a.order - b.order);
   leadRules.sort((a, b) => a.order - b.order);
   playRules.sort((a, b) => a.order - b.order);
 
@@ -261,6 +283,7 @@ export function compileKb(input: CompileInput): CompileResult {
       settings,
       defaults,
       auctionRules,
+      forcingRules,
       leadRules,
       playRules,
       signalDefaults,

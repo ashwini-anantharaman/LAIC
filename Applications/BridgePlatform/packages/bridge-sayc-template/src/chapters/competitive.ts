@@ -5,6 +5,7 @@
 // finally expressible with LHO in the auction memory.
 
 import {
+  aces,
   all,
   any,
   anyBid,
@@ -244,13 +245,13 @@ export const COMPETITIVE: TemplateItem[] = [
   auctionItem(
     "michaels",
     "Michaels cue-bid",
-    "A direct cue-bid of their opening shows five-five: both majors over a minor, the other major plus a minor over a major.",
+    "A direct cue-bid of their opening shows five-five: both majors over a minor, the other major plus a minor over a major. The cue is Michaels only while the opponents have shown ONE suit — after they bid two, a cue-bid is natural. After Michaels over a MAJOR, advancer's 2NT asks for the unspecified minor and the cue-bidder answers 3♣ or 3♦.",
     "convention",
     [
       rule(
         "over-minor",
         "Michaels over a minor",
-        ctx("overcaller", { rhoLast: bidAt({ level: 1, strains: ["C", "D"] }) }),
+        ctx("overcaller", { rhoLast: bidAt({ level: 1, strains: ["C", "D"] }), oppSuitsBidMax: 1 }),
         all(len("S", 5), len("H", 5), hcp(8)),
         bidSuit("rho_bid_suit"),
         25,
@@ -258,7 +259,7 @@ export const COMPETITIVE: TemplateItem[] = [
       rule(
         "over-hearts",
         "Michaels over 1♥",
-        ctx("overcaller", { rhoLast: is("1H") }),
+        ctx("overcaller", { rhoLast: is("1H"), oppSuitsBidMax: 1 }),
         all(len("S", 5), any(len("C", 5), len("D", 5)), hcp(8)),
         bidSuit("rho_bid_suit"),
         26,
@@ -266,13 +267,56 @@ export const COMPETITIVE: TemplateItem[] = [
       rule(
         "over-spades",
         "Michaels over 1♠",
-        ctx("overcaller", { rhoLast: is("1S") }),
+        ctx("overcaller", { rhoLast: is("1S"), oppSuitsBidMax: 1 }),
         all(len("H", 5), any(len("C", 5), len("D", 5)), hcp(8)),
         bidSuit("rho_bid_suit"),
         27,
       ),
+      rule(
+        "minor-ask",
+        "2NT asks for the Michaels minor",
+        ctx("advancer", {
+          partnerCued: true,
+          partnerLast: bidAt({ level: 2, strains: ["H", "S"] }),
+        }),
+        all(len("H", 0, 2), len("S", 0, 2)),
+        bid(2, "N"),
+        28,
+      ),
+      rule(
+        "minor-reply",
+        "Show the minor over the 2NT ask",
+        ctx("overcaller", {
+          ownLast: bidAt({ level: 2, strains: ["H", "S"] }),
+          partnerLast: is("2N"),
+        }),
+        any(len("C", 5), len("D", 5)),
+        bidLongest(["C", "D"], 3),
+        29,
+      ),
     ],
     { settings: [toggle("michaels_on", "Michaels cue-bid")], sets: ["conventions"] },
+  ),
+
+  auctionItem(
+    "penalty-redouble",
+    "Penalty redouble at the four level",
+    "When your side reaches the four level or higher and the opponents double, a redouble is TO PLAY — pure confidence, raising the stakes. This rule is OFF by default: the machine cannot yet judge combined confidence, so an expert should calibrate the conditions (currently: the redoubler holds 16+ HCP with two aces) before enabling it.",
+    "convention",
+    [
+      rule(
+        "business",
+        "Business redouble of their double",
+        ctx("any", {
+          ownLast: bidAt({ min: 4, strains: ["C", "D", "H", "S"] }),
+          rhoLast: { kind: "double" },
+        }),
+        all(hcp(16), aces(2)),
+        rdbl,
+        30,
+      ),
+    ],
+    { settings: [toggle("rdbl_4plus_on", "Business redouble (4-level+)", false)], sets: ["conventions"] },
   ),
 
   auctionItem(

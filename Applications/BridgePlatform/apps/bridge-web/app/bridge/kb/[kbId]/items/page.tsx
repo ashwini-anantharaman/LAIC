@@ -31,6 +31,8 @@ function ruleCount(item: KnowledgeItem): number {
   switch (p.kind) {
     case "auction_rules":
       return p.rules.length;
+    case "forcing_rules":
+      return p.rules.length;
     case "play_rules":
       return p.rules.length;
     case "lead_rules":
@@ -47,6 +49,8 @@ function contentLabel(item: KnowledgeItem): string {
   const n = ruleCount(item);
   if (item.payload.kind === "signals") return "signal policy";
   if (item.payload.kind === "fallback") return "fallback";
+  if (item.payload.kind === "forcing_rules")
+    return `${n} forcing situation${n === 1 ? "" : "s"}`;
   if (n === 0) return "teaching prose";
   const noun = item.payload.kind === "lead_rules" ? "lead rule" : "rule";
   return `${n} ${noun}${n === 1 ? "" : "s"}`;

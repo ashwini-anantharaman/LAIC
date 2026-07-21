@@ -7,6 +7,7 @@ import type {
   AuctionContext,
   AuctionRuleSpec,
   CallPattern,
+  ForcingRuleSpec,
   HandCondition,
   ItemPayload,
   KnowledgePhase,
@@ -79,6 +80,11 @@ export const kings = (min?: number, max?: number): HandCondition => ({
 });
 export const keycards = (suit: SuitRef, min?: number, max?: number): HandCondition => ({
   keycards: { suit, ...(min !== undefined && { min }), ...(max !== undefined && { max }) },
+});
+/** Playing tricks (A=1; K=1 with 2+, ½ alone; Q=½ with 3+; +1/card past the
+ *  3rd in an honor-headed suit) — preempt discipline by vulnerability. */
+export const ptricks = (min?: NumParam, max?: NumParam): HandCondition => ({
+  playingTricks: { ...(min !== undefined && { min }), ...(max !== undefined && { max }) },
 });
 
 // ---------------------------------------------------------------------------
@@ -154,6 +160,14 @@ export const rule = (
   action: AuctionAction,
   priority: number,
 ): AuctionRuleSpec => ({ key, label, context, conditions, action, priority });
+
+/** A forcing situation: in this context, PASS is not an available call. */
+export const forcing = (
+  key: string,
+  label: string,
+  context: AuctionContext,
+  priority: number,
+): ForcingRuleSpec => ({ key, label, context, priority });
 
 /**
  * The booklet's interference policy for notrump systems: conventional

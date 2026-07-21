@@ -10,6 +10,8 @@ import {
   type AuctionCall,
   type Call,
   type Seat,
+  type Suit,
+  type Vul,
 } from "@bridge/events";
 import type { AuctionContext, AuctionRole, CallPattern, Strain } from "@bridge/kb";
 
@@ -33,6 +35,14 @@ export interface SeatAuctionFacts {
   partnerFirstBid?: Call;
   /** 1-based partnership bidding round (this seat's upcoming turn index). */
   round: number;
+  /** Vulnerability relative to this seat (equal / favorable / unfavorable). */
+  vulnerability: "equal" | "favorable" | "unfavorable";
+  /** DISTINCT suits the opponents have contract-bid. */
+  oppSuitsBid: number;
+  /** Every suit anyone has contract-bid (only_unbid_suit resolution). */
+  suitsBid: Suit[];
+  /** Partner's last bid cues a suit the opponents bid first. */
+  partnerCued: boolean;
 }
 
 /** First non-pass call in the auction, with its absolute index. */
@@ -43,7 +53,11 @@ function firstBid(auction: AuctionCall[]): { call: AuctionCall; index: number } 
   return null;
 }
 
-export function analyzeSeat(auction: AuctionCall[], seat: Seat): SeatAuctionFacts {
+export function analyzeSeat(
+  auction: AuctionCall[],
+  seat: Seat,
+  vul: Vul = "none",
+): SeatAuctionFacts {
   const partner = partnerOf(seat);
   const own = auction.filter((c) => c.seat === seat);
   const mine = own.length; // completed turns
@@ -91,6 +105,34 @@ export function analyzeSeat(auction: AuctionCall[], seat: Seat): SeatAuctionFact
     else role = "advancer";
   }
 
+  const weAreNS = seat === "N" || seat === "S";
+  const selfVul = vul === "both" || (vul === "ns" ? weAreNS : vul === "ew" ? !weAreNS : false);
+  const oppVul = vul === "both" || (vul === "ns" ? !weAreNS : vul === "ew" ? weAreNS : false);
+  const vulnerability = selfVul === oppVul ? "equal" : oppVul ? "favorable" : "unfavorable";
+
+  const suitOf = (c: Call): Suit | null =>
+    isContractBid(c) && c[1] !== "N" ? (c[1] as Suit) : null;
+  const suitsBid: Suit[] = [];
+  const oppSuits = new Set<Suit>();
+  for (const c of auction) {
+    const su = suitOf(c.call);
+    if (!su) continue;
+    if (!suitsBid.includes(su)) suitsBid.push(su);
+    if (!sameSide(c.seat, seat)) oppSuits.add(su);
+  }
+  const partnerLastCall = lastOf(partner);
+  const partnerLastSuit = partnerLastCall ? suitOf(partnerLastCall) : null;
+  // A cue: partner's suit was bid FIRST by the opponents (before partner bid it).
+  let partnerCued = false;
+  if (partnerLastSuit) {
+    for (const c of auction) {
+      const su = suitOf(c.call);
+      if (su !== partnerLastSuit) continue;
+      partnerCued = !sameSide(c.seat, seat);
+      break;
+    }
+  }
+
   return {
     role,
     contested,
@@ -105,6 +147,10 @@ export function analyzeSeat(auction: AuctionCall[], seat: Seat): SeatAuctionFact
     ownLastBid: lastBidOf(seat),
     partnerFirstBid: firstOf(partner, isContractBid),
     round: mine + 1,
+    vulnerability,
+    oppSuitsBid: oppSuits.size,
+    suitsBid,
+    partnerCued,
   };
 }
 
@@ -161,5 +207,13 @@ export function matchContext(context: AuctionContext, facts: SeatAuctionFacts): 
     return false;
   if (context.roundMin !== undefined && facts.round < context.roundMin) return false;
   if (context.roundMax !== undefined && facts.round > context.roundMax) return false;
+  if (context.vulnerability !== undefined && context.vulnerability !== facts.vulnerability)
+    return false;
+  if (context.oppSuitsBidMin !== undefined && facts.oppSuitsBid < context.oppSuitsBidMin)
+    return false;
+  if (context.oppSuitsBidMax !== undefined && facts.oppSuitsBid > context.oppSuitsBidMax)
+    return false;
+  if (context.partnerCued !== undefined && context.partnerCued !== facts.partnerCued)
+    return false;
   return true;
 }

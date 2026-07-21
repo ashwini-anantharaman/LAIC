@@ -9,6 +9,7 @@ import type {
   AuctionContext,
   AuctionRuleSpec,
   CallPattern,
+  ForcingRuleSpec,
   HandCondition,
   ItemPayload,
   KnowledgePhase,
@@ -128,6 +129,44 @@ function auctionAction(fd: FormData, prefix: string): AuctionAction {
   }
 }
 
+function auctionContext(fd: FormData, p: string): AuctionContext {
+  const context: AuctionContext = {
+    role: (str(fd, `${p}:role`) || "any") as AuctionContext["role"],
+  };
+  const contested = str(fd, `${p}:contested`);
+  if (contested === "yes") context.contested = true;
+  if (contested === "no") context.contested = false;
+  const opening = callPattern(fd, `${p}:opening`);
+  if (opening) context.opening = opening;
+  const partnerLast = callPattern(fd, `${p}:partnerLast`);
+  if (partnerLast) context.partnerLast = partnerLast;
+  const rhoLast = callPattern(fd, `${p}:rhoLast`);
+  if (rhoLast) context.rhoLast = rhoLast;
+  const ownLast = callPattern(fd, `${p}:ownLast`);
+  if (ownLast) context.ownLast = ownLast;
+  const lhoLast = callPattern(fd, `${p}:lhoLast`);
+  if (lhoLast) context.lhoLast = lhoLast;
+  const ownFirst = callPattern(fd, `${p}:ownFirst`);
+  if (ownFirst) context.ownFirst = ownFirst;
+  const partnerFirst = callPattern(fd, `${p}:partnerFirst`);
+  if (partnerFirst) context.partnerFirst = partnerFirst;
+  const roundMin = num(fd, `${p}:roundMin`);
+  const roundMax = num(fd, `${p}:roundMax`);
+  if (roundMin !== undefined) context.roundMin = roundMin;
+  if (roundMax !== undefined) context.roundMax = roundMax;
+  const vulnerability = str(fd, `${p}:vulnerability`);
+  if (vulnerability === "equal" || vulnerability === "favorable" || vulnerability === "unfavorable")
+    context.vulnerability = vulnerability;
+  const oppSuitsBidMin = num(fd, `${p}:oppSuitsBidMin`);
+  const oppSuitsBidMax = num(fd, `${p}:oppSuitsBidMax`);
+  if (oppSuitsBidMin !== undefined) context.oppSuitsBidMin = oppSuitsBidMin;
+  if (oppSuitsBidMax !== undefined) context.oppSuitsBidMax = oppSuitsBidMax;
+  const partnerCued = str(fd, `${p}:partnerCued`);
+  if (partnerCued === "yes") context.partnerCued = true;
+  if (partnerCued === "no") context.partnerCued = false;
+  return context;
+}
+
 function auctionRules(fd: FormData): AuctionRuleSpec[] {
   const count = num(fd, "ruleCount") ?? 0;
   const rules: AuctionRuleSpec[] = [];
@@ -136,37 +175,30 @@ function auctionRules(fd: FormData): AuctionRuleSpec[] {
     if (str(fd, `${p}:remove`) === "on") continue;
     const label = str(fd, `${p}:label`);
     if (!label) continue;
-    const context: AuctionContext = {
-      role: (str(fd, `${p}:role`) || "any") as AuctionContext["role"],
-    };
-    const contested = str(fd, `${p}:contested`);
-    if (contested === "yes") context.contested = true;
-    if (contested === "no") context.contested = false;
-    const opening = callPattern(fd, `${p}:opening`);
-    if (opening) context.opening = opening;
-    const partnerLast = callPattern(fd, `${p}:partnerLast`);
-    if (partnerLast) context.partnerLast = partnerLast;
-    const rhoLast = callPattern(fd, `${p}:rhoLast`);
-    if (rhoLast) context.rhoLast = rhoLast;
-    const ownLast = callPattern(fd, `${p}:ownLast`);
-    if (ownLast) context.ownLast = ownLast;
-    const lhoLast = callPattern(fd, `${p}:lhoLast`);
-    if (lhoLast) context.lhoLast = lhoLast;
-    const ownFirst = callPattern(fd, `${p}:ownFirst`);
-    if (ownFirst) context.ownFirst = ownFirst;
-    const partnerFirst = callPattern(fd, `${p}:partnerFirst`);
-    if (partnerFirst) context.partnerFirst = partnerFirst;
-    const roundMin = num(fd, `${p}:roundMin`);
-    const roundMax = num(fd, `${p}:roundMax`);
-    if (roundMin !== undefined) context.roundMin = roundMin;
-    if (roundMax !== undefined) context.roundMax = roundMax;
-
     rules.push({
       key: str(fd, `${p}:key`) || `r${i}`,
       label,
-      context,
+      context: auctionContext(fd, p),
       conditions: conditions(fd, p),
       action: auctionAction(fd, p),
+      priority: num(fd, `${p}:priority`) ?? 10,
+    });
+  }
+  return rules;
+}
+
+function forcingRules(fd: FormData): ForcingRuleSpec[] {
+  const count = num(fd, "forcingCount") ?? 0;
+  const rules: ForcingRuleSpec[] = [];
+  for (let i = 0; i < count; i++) {
+    const p = `forcing${i}`;
+    if (str(fd, `${p}:remove`) === "on") continue;
+    const label = str(fd, `${p}:label`);
+    if (!label) continue;
+    rules.push({
+      key: str(fd, `${p}:key`) || `f${i}`,
+      label,
+      context: auctionContext(fd, p),
       priority: num(fd, `${p}:priority`) ?? 10,
     });
   }
@@ -204,6 +236,11 @@ function playRules(fd: FormData): PlayRuleSpec[] {
 export function parsePayload(fd: FormData, knowledgeType: KnowledgeType): ItemPayload {
   const advanced = str(fd, "payloadJson");
   if (advanced) return JSON.parse(advanced) as ItemPayload;
+
+  // Forcing-rules items share knowledgeTypes with auction rules; the editor
+  // marks them so their payload family survives the round-trip.
+  if (str(fd, "payloadKind") === "forcing_rules")
+    return { kind: "forcing_rules", rules: forcingRules(fd) };
 
   switch (knowledgeType) {
     case "concept":

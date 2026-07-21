@@ -9,8 +9,10 @@
 // non-matching section would be silently ignored, so we don't show them).
 
 import type {
+  AuctionContext,
   AuctionRuleSpec,
   CallPattern,
+  ForcingRuleSpec,
   HandCondition,
   ItemPayload,
   KnowledgeItem,
@@ -95,14 +97,16 @@ interface SuitDraft {
   min: string;
   max: string;
 }
-interface RuleDraft {
-  label: string;
-  key: string;
-  priority: string;
+/** The auction-context slice shared by rule cards and forcing-rule cards. */
+interface ContextDraft {
   role: string;
   contested: string;
   roundMin: string;
   roundMax: string;
+  vulnerability: string;
+  oppSuitsBidMin: string;
+  oppSuitsBidMax: string;
+  partnerCued: string;
   opening: PatternDraft;
   partnerLast: PatternDraft;
   rhoLast: PatternDraft;
@@ -110,6 +114,12 @@ interface RuleDraft {
   lhoLast: PatternDraft;
   ownFirst: PatternDraft;
   partnerFirst: PatternDraft;
+}
+
+interface RuleDraft extends ContextDraft {
+  label: string;
+  key: string;
+  priority: string;
   hcpMin: string;
   hcpMax: string;
   tpMin: string;
@@ -137,24 +147,34 @@ const patternDraft = (p?: CallPattern): PatternDraft => ({
   strains: p?.strains?.join(",") ?? "",
 });
 
+function contextDraft(context: AuctionContext | undefined, fallbackRole: string): ContextDraft {
+  return {
+    role: context?.role ?? fallbackRole,
+    contested: context?.contested === true ? "yes" : context?.contested === false ? "no" : "",
+    roundMin: context?.roundMin?.toString() ?? "",
+    roundMax: context?.roundMax?.toString() ?? "",
+    vulnerability: context?.vulnerability ?? "",
+    oppSuitsBidMin: context?.oppSuitsBidMin?.toString() ?? "",
+    oppSuitsBidMax: context?.oppSuitsBidMax?.toString() ?? "",
+    partnerCued: context?.partnerCued === true ? "yes" : context?.partnerCued === false ? "no" : "",
+    opening: patternDraft(context?.opening),
+    partnerLast: patternDraft(context?.partnerLast),
+    rhoLast: patternDraft(context?.rhoLast),
+    ownLast: patternDraft(context?.ownLast),
+    lhoLast: patternDraft(context?.lhoLast),
+    ownFirst: patternDraft(context?.ownFirst),
+    partnerFirst: patternDraft(context?.partnerFirst),
+  };
+}
+
 function draftFrom(rule: AuctionRuleSpec | null, index: number): RuleDraft {
   const c = rule ? decompose(rule.conditions) : { suits: [] as TypedConditions["suits"] };
   const a = rule?.action;
   return {
+    ...contextDraft(rule?.context, "opening"),
     label: rule?.label ?? "",
     key: rule?.key ?? `r${index}`,
     priority: String(rule?.priority ?? 10),
-    role: rule?.context.role ?? "opening",
-    contested: rule?.context.contested === true ? "yes" : rule?.context.contested === false ? "no" : "",
-    roundMin: rule?.context.roundMin?.toString() ?? "",
-    roundMax: rule?.context.roundMax?.toString() ?? "",
-    opening: patternDraft(rule?.context.opening),
-    partnerLast: patternDraft(rule?.context.partnerLast),
-    rhoLast: patternDraft(rule?.context.rhoLast),
-    ownLast: patternDraft(rule?.context.ownLast),
-    lhoLast: patternDraft(rule?.context.lhoLast),
-    ownFirst: patternDraft(rule?.context.ownFirst),
-    partnerFirst: patternDraft(rule?.context.partnerFirst),
     hcpMin: showNum(c.hcpMin),
     hcpMax: showNum(c.hcpMax),
     tpMin: showNum(c.tpMin),
@@ -236,6 +256,7 @@ function suitName(s: string): ReactNode | null {
   if (s === "own_last_bid_suit") return "my last bid suit";
   if (s === "rho_bid_suit") return "RHO's suit";
   if (s === "lho_bid_suit") return "LHO's suit";
+  if (s === "only_unbid_suit") return "the fourth (only unbid) suit";
   return <Glyph s={s} />;
 }
 
@@ -247,7 +268,7 @@ const joinNodes = (parts: ReactNode[], sep = ", "): ReactNode =>
     </span>
   ));
 
-function ruleSentence(d: RuleDraft): ReactNode {
+function contextPhrases(d: ContextDraft): ReactNode[] {
   const when: ReactNode[] = [];
   const roleText: Record<string, string | null> = {
     opening: "nobody has bid yet",
@@ -282,6 +303,20 @@ function ruleSentence(d: RuleDraft): ReactNode {
           ? `from round ${d.roundMin}`
           : `up to round ${d.roundMax}`,
     );
+  if (d.vulnerability === "equal") when.push("at equal vulnerability");
+  if (d.vulnerability === "favorable") when.push("at favorable vulnerability");
+  if (d.vulnerability === "unfavorable") when.push("vulnerable against not");
+  if (d.oppSuitsBidMin && d.oppSuitsBidMax)
+    when.push(`the opponents have bid ${d.oppSuitsBidMin}–${d.oppSuitsBidMax} suits`);
+  else if (d.oppSuitsBidMin) when.push(`the opponents have bid ${d.oppSuitsBidMin}+ suits`);
+  else if (d.oppSuitsBidMax) when.push(`the opponents have bid at most ${d.oppSuitsBidMax} suit${d.oppSuitsBidMax === "1" ? "" : "s"}`);
+  if (d.partnerCued === "yes") when.push("partner cue-bid their suit");
+  if (d.partnerCued === "no") when.push("partner did not cue-bid");
+  return when;
+}
+
+function ruleSentence(d: RuleDraft): ReactNode {
+  const when = contextPhrases(d);
 
   const hand: ReactNode[] = [];
   const lo = numText(d.hcpMin);
@@ -478,6 +513,138 @@ function Band({
   );
 }
 
+/** The shared WHEN band: role, contest, rounds, patterns — and the judgment
+ *  context (vulnerability, opponents' suits, partner's cue). Field names are
+ *  the form contract with lib/itemForm.ts. */
+function WhenBand<T extends ContextDraft>({
+  p,
+  d,
+  set,
+}: Readonly<{ p: string; d: T; set: (patch: Partial<T>) => void }>) {
+  const patch = set as (patch: Partial<ContextDraft>) => void;
+  return (
+    <Band tag="When" hint="where in the auction this rule can fire" rail="border-l-emerald-600">
+      <label>
+        <span className={label}>My role</span>
+        <select
+          name={`${p}:role`}
+          value={d.role}
+          onChange={(e) => patch({ role: e.target.value })}
+          className={input}
+        >
+          <option value="opening">opening — nobody has bid yet</option>
+          <option value="opener">opener — rebidding my opening</option>
+          <option value="responder">responder — partner opened</option>
+          <option value="overcaller">overcaller — they opened</option>
+          <option value="advancer">advancer — partner overcalled</option>
+          <option value="any">any</option>
+        </select>
+      </label>
+      <label>
+        <span className={label}>Contested?</span>
+        <select
+          name={`${p}:contested`}
+          value={d.contested}
+          onChange={(e) => patch({ contested: e.target.value })}
+          className={input}
+        >
+          <option value="">either</option>
+          <option value="no">uncontested only</option>
+          <option value="yes">contested only</option>
+        </select>
+      </label>
+      <div className="grid grid-cols-2 gap-1">
+        <label>
+          <span className={label}>round ≥</span>
+          <input
+            name={`${p}:roundMin`}
+            value={d.roundMin}
+            onChange={(e) => patch({ roundMin: e.target.value })}
+            className={input}
+          />
+        </label>
+        <label>
+          <span className={label}>round ≤</span>
+          <input
+            name={`${p}:roundMax`}
+            value={d.roundMax}
+            onChange={(e) => patch({ roundMax: e.target.value })}
+            className={input}
+          />
+        </label>
+      </div>
+      <div className="hidden sm:block" />
+      <PatternRow p={p} field="opening" title="Our opening was…" value={d.opening} onChange={(pp) => patch({ opening: { ...d.opening, ...pp } })} />
+      <PatternRow p={p} field="partnerLast" title="Partner's last call was…" value={d.partnerLast} onChange={(pp) => patch({ partnerLast: { ...d.partnerLast, ...pp } })} />
+      <PatternRow p={p} field="rhoLast" title="RHO's last call was…" value={d.rhoLast} onChange={(pp) => patch({ rhoLast: { ...d.rhoLast, ...pp } })} />
+      <details
+        className="sm:col-span-4"
+        open={
+          [d.ownLast, d.lhoLast, d.ownFirst, d.partnerFirst].some((x) => x.kind !== "unset") ||
+          Boolean(d.vulnerability || d.oppSuitsBidMin || d.oppSuitsBidMax || d.partnerCued)
+        }
+      >
+        <summary className="cursor-pointer text-[11px] text-neutral-500">
+          More auction context — my/LHO&apos;s calls, first calls, vulnerability, their suits
+        </summary>
+        <div className="mt-2 grid gap-2 sm:grid-cols-4">
+          <PatternRow p={p} field="ownLast" title="My last call was…" value={d.ownLast} onChange={(pp) => patch({ ownLast: { ...d.ownLast, ...pp } })} />
+          <PatternRow p={p} field="lhoLast" title="LHO's last call was…" value={d.lhoLast} onChange={(pp) => patch({ lhoLast: { ...d.lhoLast, ...pp } })} />
+          <PatternRow p={p} field="ownFirst" title="My first call was…" value={d.ownFirst} onChange={(pp) => patch({ ownFirst: { ...d.ownFirst, ...pp } })} />
+          <PatternRow p={p} field="partnerFirst" title="Partner's first call was…" value={d.partnerFirst} onChange={(pp) => patch({ partnerFirst: { ...d.partnerFirst, ...pp } })} />
+          <label>
+            <span className={label}>Vulnerability (relative)</span>
+            <select
+              name={`${p}:vulnerability`}
+              value={d.vulnerability}
+              onChange={(e) => patch({ vulnerability: e.target.value })}
+              className={input}
+            >
+              <option value="">any</option>
+              <option value="equal">equal</option>
+              <option value="favorable">favorable — they are vul, we are not</option>
+              <option value="unfavorable">unfavorable — we are vul, they are not</option>
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-1">
+            <label>
+              <span className={label}>their suits ≥</span>
+              <input
+                name={`${p}:oppSuitsBidMin`}
+                value={d.oppSuitsBidMin}
+                onChange={(e) => patch({ oppSuitsBidMin: e.target.value })}
+                className={input}
+              />
+            </label>
+            <label>
+              <span className={label}>their suits ≤</span>
+              <input
+                name={`${p}:oppSuitsBidMax`}
+                value={d.oppSuitsBidMax}
+                onChange={(e) => patch({ oppSuitsBidMax: e.target.value })}
+                className={input}
+              />
+            </label>
+          </div>
+          <label>
+            <span className={label}>Partner cue-bid their suit?</span>
+            <select
+              name={`${p}:partnerCued`}
+              value={d.partnerCued}
+              onChange={(e) => patch({ partnerCued: e.target.value })}
+              className={input}
+            >
+              <option value="">either</option>
+              <option value="yes">yes — partner's bid is a cue</option>
+              <option value="no">no</option>
+            </select>
+          </label>
+        </div>
+      </details>
+    </Band>
+  );
+}
+
 function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index: number }>) {
   const p = `rule${index}`;
   const [d, setD] = useState<RuleDraft>(() => draftFrom(rule, index));
@@ -572,75 +739,7 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
         )}
       </div>
 
-      <Band tag="When" hint="where in the auction this rule can fire" rail="border-l-emerald-600">
-        <label>
-          <span className={label}>My role</span>
-          <select
-            name={`${p}:role`}
-            value={d.role}
-            onChange={(e) => set({ role: e.target.value })}
-            className={input}
-          >
-            <option value="opening">opening — nobody has bid yet</option>
-            <option value="opener">opener — rebidding my opening</option>
-            <option value="responder">responder — partner opened</option>
-            <option value="overcaller">overcaller — they opened</option>
-            <option value="advancer">advancer — partner overcalled</option>
-            <option value="any">any</option>
-          </select>
-        </label>
-        <label>
-          <span className={label}>Contested?</span>
-          <select
-            name={`${p}:contested`}
-            value={d.contested}
-            onChange={(e) => set({ contested: e.target.value })}
-            className={input}
-          >
-            <option value="">either</option>
-            <option value="no">uncontested only</option>
-            <option value="yes">contested only</option>
-          </select>
-        </label>
-        <div className="grid grid-cols-2 gap-1">
-          <label>
-            <span className={label}>round ≥</span>
-            <input
-              name={`${p}:roundMin`}
-              value={d.roundMin}
-              onChange={(e) => set({ roundMin: e.target.value })}
-              className={input}
-            />
-          </label>
-          <label>
-            <span className={label}>round ≤</span>
-            <input
-              name={`${p}:roundMax`}
-              value={d.roundMax}
-              onChange={(e) => set({ roundMax: e.target.value })}
-              className={input}
-            />
-          </label>
-        </div>
-        <div className="hidden sm:block" />
-        <PatternRow p={p} field="opening" title="Our opening was…" value={d.opening} onChange={(patch) => set({ opening: { ...d.opening, ...patch } })} />
-        <PatternRow p={p} field="partnerLast" title="Partner's last call was…" value={d.partnerLast} onChange={(patch) => set({ partnerLast: { ...d.partnerLast, ...patch } })} />
-        <PatternRow p={p} field="rhoLast" title="RHO's last call was…" value={d.rhoLast} onChange={(patch) => set({ rhoLast: { ...d.rhoLast, ...patch } })} />
-        <details
-          className="sm:col-span-4"
-          open={[d.ownLast, d.lhoLast, d.ownFirst, d.partnerFirst].some((x) => x.kind !== "unset")}
-        >
-          <summary className="cursor-pointer text-[11px] text-neutral-500">
-            More auction memory — my/LHO&apos;s last call, first calls (rebid sequences)
-          </summary>
-          <div className="mt-2 grid gap-2 sm:grid-cols-4">
-            <PatternRow p={p} field="ownLast" title="My last call was…" value={d.ownLast} onChange={(patch) => set({ ownLast: { ...d.ownLast, ...patch } })} />
-            <PatternRow p={p} field="lhoLast" title="LHO's last call was…" value={d.lhoLast} onChange={(patch) => set({ lhoLast: { ...d.lhoLast, ...patch } })} />
-            <PatternRow p={p} field="ownFirst" title="My first call was…" value={d.ownFirst} onChange={(patch) => set({ ownFirst: { ...d.ownFirst, ...patch } })} />
-            <PatternRow p={p} field="partnerFirst" title="Partner's first call was…" value={d.partnerFirst} onChange={(patch) => set({ partnerFirst: { ...d.partnerFirst, ...patch } })} />
-          </div>
-        </details>
-      </Band>
+      <WhenBand p={p} d={d} set={set} />
 
       <Band tag="And my hand" hint="all filled-in checks must hold; blank = no constraint" rail="border-l-amber-600">
         <label>
@@ -713,6 +812,7 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
                 <option value="own_first_bid_suit">my first bid suit</option>
                 <option value="own_last_bid_suit">my last bid suit</option>
                 <option value="rho_bid_suit">RHO&apos;s bid suit</option>
+                <option value="only_unbid_suit">the fourth (only unbid) suit</option>
               </select>
             </label>
             {d.suits[i].suit ? (
@@ -827,6 +927,7 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
               <option value="partner_last_bid_suit">partner&apos;s last bid suit</option>
               <option value="own_longest_suit">my longest suit</option>
               <option value="own_shortest_suit">my shortest suit (splinter/shortness)</option>
+              <option value="only_unbid_suit">the fourth (only unbid) suit</option>
               <option value="S">♠ spades</option>
               <option value="H">♥ hearts</option>
               <option value="D">♦ diamonds</option>
@@ -863,6 +964,114 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
   );
 }
 
+// ---- forcing-rule cards ------------------------------------------------------
+
+interface ForcingDraft extends ContextDraft {
+  label: string;
+  key: string;
+  priority: string;
+  remove: boolean;
+}
+
+function forcingDraftFrom(rule: ForcingRuleSpec | null, index: number): ForcingDraft {
+  return {
+    ...contextDraft(rule?.context, "any"),
+    label: rule?.label ?? "",
+    key: rule?.key ?? `f${index}`,
+    priority: String(rule?.priority ?? 10),
+    remove: false,
+  };
+}
+
+/** A forcing situation reads as: WHEN …, THEN pass is not available. */
+function ForcingRow({ rule, index }: Readonly<{ rule: ForcingRuleSpec | null; index: number }>) {
+  const p = `forcing${index}`;
+  const [d, setD] = useState<ForcingDraft>(() => forcingDraftFrom(rule, index));
+  const set = (patch: Partial<ForcingDraft>) => setD((prev) => ({ ...prev, ...patch }));
+  const when = contextPhrases(d);
+
+  return (
+    <details
+      open={!rule || index === 0}
+      className="group overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm"
+    >
+      <summary className="flex cursor-pointer list-none items-start gap-3 px-4 py-3 hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+        <svg
+          viewBox="0 0 12 12"
+          aria-hidden
+          className="mt-1.5 h-2.5 w-2.5 flex-none text-neutral-400 transition-transform group-open:rotate-90"
+        >
+          <path d="M3 1l6 5-6 5z" fill="currentColor" />
+        </svg>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">
+            {d.label || <span className="font-normal text-neutral-400">New forcing situation — give it a label below</span>}
+            {d.remove && (
+              <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-red-700">
+                will be removed on save
+              </span>
+            )}
+          </p>
+          <p className={`mt-0.5 text-[13px] leading-relaxed ${d.remove ? "text-neutral-300 line-through" : "text-neutral-500"}`}>
+            <b>When</b> {when.length ? joinNodes(when) : "it's my turn (no constraints)"},{" "}
+            <b>then</b> pass is not an available call.
+          </p>
+        </div>
+        <span className="flex-none rounded-md border border-neutral-300 bg-neutral-50 px-2 py-1 font-mono text-xs font-semibold">
+          no pass
+        </span>
+      </summary>
+
+      <div className="flex flex-wrap items-end gap-2 border-t border-neutral-200 bg-neutral-50/70 px-3 py-2">
+        <label className="min-w-40 flex-1">
+          <span className={label}>Label — what the trace shows</span>
+          <input
+            name={`${p}:label`}
+            value={d.label}
+            onChange={(e) => set({ label: e.target.value })}
+            placeholder={rule ? "" : "e.g. Two-over-one forces a rebid — blank rows are not saved"}
+            className={input}
+          />
+        </label>
+        <label className="w-28">
+          <span className={label}>Key (stable id)</span>
+          <input
+            name={`${p}:key`}
+            value={d.key}
+            onChange={(e) => set({ key: e.target.value })}
+            className={input}
+          />
+        </label>
+        <label className="w-20">
+          <span className={label} title="Lower checks first when situations overlap">
+            Priority
+          </span>
+          <input
+            name={`${p}:priority`}
+            type="number"
+            value={d.priority}
+            onChange={(e) => set({ priority: e.target.value })}
+            className={input}
+          />
+        </label>
+        {rule && (
+          <label className="mb-1.5 flex items-center gap-1 text-xs text-red-700">
+            <input
+              type="checkbox"
+              name={`${p}:remove`}
+              checked={d.remove}
+              onChange={(e) => set({ remove: e.target.checked })}
+            />{" "}
+            remove
+          </label>
+        )}
+      </div>
+
+      <WhenBand p={p} d={d} set={set} />
+    </details>
+  );
+}
+
 export function ItemEditor({
   kbId,
   item,
@@ -882,12 +1091,15 @@ export function ItemEditor({
 }>) {
   const payload: ItemPayload = item?.payload ?? { kind: "auction_rules", rules: [] };
   const auctionSpecs = payload.kind === "auction_rules" ? payload.rules : [];
+  const forcingSpecs = payload.kind === "forcing_rules" ? payload.rules : [];
+  const isForcing = payload.kind === "forcing_rules";
   const [knowledgeType, setKnowledgeType] = useState<KnowledgeType>(
     item?.knowledgeType ?? "agreement",
   );
   // New items start with one blank rule card; more arrive via "Add a rule".
   const [extraRules, setExtraRules] = useState(item ? 0 : 1);
-  const needsRules = ["bidding_rule", "convention", "agreement", "exception"].includes(knowledgeType);
+  const needsRules =
+    !isForcing && ["bidding_rule", "convention", "agreement", "exception"].includes(knowledgeType);
 
   return (
     <form action={action} className="space-y-4">
@@ -960,6 +1172,31 @@ export function ItemEditor({
           />
         </label>
       </div>
+
+      {isForcing && (
+        <div className="space-y-3">
+          <p className="text-xs text-neutral-500">
+            Each situation is one sentence: <b>when</b> the auction looks like this, <b>then</b>{" "}
+            pass is not an available call — the player suppresses any rule that would pass and,
+            with nothing better, bids its cheapest long suit citing the situation.
+          </p>
+          <input type="hidden" name="payloadKind" value="forcing_rules" />
+          <input type="hidden" name="forcingCount" value={forcingSpecs.length + extraRules} />
+          {forcingSpecs.map((rule, i) => (
+            <ForcingRow key={rule.key} rule={rule} index={i} />
+          ))}
+          {Array.from({ length: extraRules }, (_, j) => (
+            <ForcingRow key={`new${j}`} rule={null} index={forcingSpecs.length + j} />
+          ))}
+          <button
+            type="button"
+            onClick={() => setExtraRules((n) => n + 1)}
+            className="rounded border border-dashed border-neutral-300 px-3 py-1.5 text-sm text-neutral-600 hover:border-emerald-500 hover:text-emerald-800"
+          >
+            + Add a forcing situation
+          </button>
+        </div>
+      )}
 
       {needsRules && (
         <div className="space-y-3">

@@ -44,7 +44,11 @@ ItemPayload — one of:
   {"kind":"play_rules","rules":[{"position":"lead"|"second"|"third"|"fourth"|"any",
     "side":"declarer"|"defense"|"any","behavior":"lowest_following"|"highest_following"|
     "win_cheaply"|"second_hand_low"|"third_hand_high"|"cover_honor"|"cash_winners"|
-    "lowest_legal"|"discard_lowest","priority":number}]}
+    "lowest_legal"|"discard_lowest"|"draw_trumps"|"finesse_toward_tenace"|
+    "hold_up_stopper"|"duck_to_preserve_entry"|"establish_long_suit"|"ruff_loser"|
+    "discard_loser_on_winner"|"cash_out_when_enough"|"return_partner_suit"|
+    "hold_up_ace"|"overruff_or_discard"|"second_hand_rise_vs_honor","priority":number}]}
+  {"kind":"forcing_rules","rules":[ForcingRuleSpec...]}  // auctions where PASS is not available
   {"kind":"none"}                    // concepts / judgment guidelines (teaching prose)
 
 AuctionRuleSpec = {
@@ -57,7 +61,10 @@ AuctionRuleSpec = {
     "partnerLast"?: CallPattern, "ownLast"?: CallPattern, "rhoLast"?: CallPattern,
     "lhoLast"?: CallPattern,                       // left-hand opponent's last call
     "ownFirst"?: CallPattern, "partnerFirst"?: CallPattern,  // each seat's FIRST non-pass call
-    "roundMin"?: number, "roundMax"?: number   // 1-based partnership round
+    "roundMin"?: number, "roundMax"?: number,  // 1-based partnership round
+    "vulnerability"?: "equal"|"favorable"|"unfavorable",  // relative to this seat
+    "oppSuitsBidMin"?: number, "oppSuitsBidMax"?: number, // DISTINCT suits the opponents bid
+    "partnerCued"?: boolean            // partner's last bid is a cue of THEIR suit
   },
   "conditions": HandCondition,
   "action": {"type":"bid","level":1-7,"strain":"C"|"D"|"H"|"S"|"N"} |
@@ -73,8 +80,17 @@ CallPattern = {"kind":"bid"|"pass"|"double"|"redouble"|"any_bid"|"any"|"none",
   "level"?:number,                   // shorthand for levelMin = levelMax = level
   "levelMin"?:number,"levelMax"?:number,"strains"?:["C"|"D"|"H"|"S"|"N"...]}
 
+ForcingRuleSpec = {"key":string,"label":string,"context":<same shape as AuctionRuleSpec.context>,
+  "priority":number}
+  // In a matching context the player may NOT pass: pass-realizing rules are
+  // suppressed and, with nothing better, it bids its cheapest long suit.
+  // Use for: two-over-one, new-suit-forcing, strong 2C, RONF, cue-bid raises,
+  // Blackwood replies. NOT for merely invitational sequences.
+
 SuitRef = "S"|"H"|"D"|"C"|"partner_last_bid_suit"|"partner_first_bid_suit"|
-  "own_longest_suit"|"own_shortest_suit"|"own_first_bid_suit"|"own_last_bid_suit"|"rho_bid_suit"|"lho_bid_suit"
+  "own_longest_suit"|"own_shortest_suit"|"own_first_bid_suit"|"own_last_bid_suit"|
+  "rho_bid_suit"|"lho_bid_suit"|
+  "only_unbid_suit"   // the FOURTH suit when exactly three have been bid (fourth-suit-forcing)
 
 HandCondition = {"all":[...]} | {"any":[...]} | {"not":...} |
   {"hcp":{"min"?:NumParam,"max"?:NumParam}} |
@@ -87,7 +103,9 @@ HandCondition = {"all":[...]} | {"any":[...]} | {"not":...} |
   {"aces":{"min"?:NumParam,"max"?:NumParam}} |          // Blackwood/Gerber responses
   {"kings":{"min"?:NumParam,"max"?:NumParam}} |
   {"keycards":{"suit":SuitRef,"min"?:NumParam,"max"?:NumParam}} |  // aces + that suit's K (RKCB)
-  {"holds":{"suit":SuitRef,"rank":2-14}}                // a specific card (trump Q = rank 12)
+  {"holds":{"suit":SuitRef,"rank":2-14}} |              // a specific card (trump Q = rank 12)
+  {"playingTricks":{"min"?:NumParam,"max"?:NumParam}}   // A=1; K=1 with 2+ (0.5 alone); Q=0.5 with 3+;
+                                                        // +1/card past 3rd in an honor-headed suit (preempt discipline)
 
 NumParam = number | {"$setting":"<setting key>","field"?:"low"|"high"}
 

@@ -79,6 +79,16 @@ export interface AuctionContext {
   /** 1-based partnership bidding round (opening decision = round 1). */
   roundMin?: number;
   roundMax?: number;
+  /**
+   * Vulnerability relative to this seat: "favorable" = they are vulnerable
+   * and we are not, "unfavorable" = the reverse, "equal" = neither or both.
+   */
+  vulnerability?: "equal" | "favorable" | "unfavorable";
+  /** How many DIFFERENT suits the opponents have bid (cue-bid gating). */
+  oppSuitsBidMin?: number;
+  oppSuitsBidMax?: number;
+  /** Partner's last bid was a CUE of a suit the opponents bid first. */
+  partnerCued?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +105,9 @@ export type SuitRef =
   | "own_first_bid_suit"
   | "own_last_bid_suit"
   | "rho_bid_suit"
-  | "lho_bid_suit";
+  | "lho_bid_suit"
+  /** The single suit NOBODY has bid (resolves only when exactly three are bid). */
+  | "only_unbid_suit";
 
 export type HandPredicate =
   | { hcp: { min?: NumParam; max?: NumParam } }
@@ -114,7 +126,13 @@ export type HandPredicate =
   /** Keycards for the ref suit: the four aces + that suit's king (RKCB). */
   | { keycards: { suit: SuitRef; min?: NumParam; max?: NumParam } }
   /** Holds a specific card, e.g. the trump queen (rank: 11=J 12=Q 13=K 14=A). */
-  | { holds: { suit: SuitRef; rank: number } };
+  | { holds: { suit: SuitRef; rank: number } }
+  /**
+   * Estimated playing tricks (preempt discipline): per suit, A=1, K=1 with
+   * two-plus cards (half alone), Q=half with three-plus, plus one for every
+   * card beyond the third in the suit.
+   */
+  | { playingTricks: { min?: NumParam; max?: NumParam } };
 
 export type HandCondition =
   | { all: HandCondition[] }
@@ -213,6 +231,19 @@ export interface SignalSpec {
 // ---------------------------------------------------------------------------
 // Auction rule spec (one matching unit inside an item)
 // ---------------------------------------------------------------------------
+
+/**
+ * A FORCING situation: an auction pattern in which this seat must not pass
+ * (partner's last call is forcing). Declared by items with the
+ * "forcing_rules" payload — the decider suppresses pass and, with nothing
+ * better, makes the cheapest sensible bid, citing the declaring rule.
+ */
+export interface ForcingRuleSpec {
+  key: string;
+  label: string;
+  context: AuctionContext;
+  priority: number;
+}
 
 export interface AuctionRuleSpec {
   /** Stable within the item; compiled ruleId = `${itemId}.${key}`. */

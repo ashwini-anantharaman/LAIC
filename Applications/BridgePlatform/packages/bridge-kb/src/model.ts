@@ -5,6 +5,7 @@
 
 import type { SettingValue } from "@bridge/config";
 import type {
+  ForcingRuleSpec,
   AuctionRuleSpec,
   FallbackBehavior,
   LeadSpec,
@@ -122,6 +123,7 @@ export type ItemPayload =
   | { kind: "lead_rules"; leads: LeadSpec[] }
   | { kind: "signals"; signals: SignalSpec }
   | { kind: "play_rules"; rules: PlayRuleSpec[] }
+  | { kind: "forcing_rules"; rules: ForcingRuleSpec[] }
   | { kind: "fallback"; fallback: FallbackBehavior }
   | { kind: "none" };
 

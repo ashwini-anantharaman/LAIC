@@ -46,6 +46,16 @@ export interface CompiledAuctionRule {
   provenance: RuleProvenance;
 }
 
+/** A compiled forcing situation — the pass-suppression pattern. */
+export interface CompiledForcingRule {
+  ruleId: string;
+  label: string;
+  context: AuctionContext;
+  order: number;
+  settingGates: string[];
+  provenance: RuleProvenance;
+}
+
 export interface CompiledLeadRule {
   ruleId: string;
   label: string;
@@ -92,6 +102,7 @@ export interface CompiledKb {
   settings: CompiledSetting[];
   defaults: Record<string, SettingValue>;
   auctionRules: CompiledAuctionRule[];
+  forcingRules: CompiledForcingRule[];
   leadRules: CompiledLeadRule[];
   playRules: CompiledPlayRule[];
   signalDefaults: SignalSpec;
