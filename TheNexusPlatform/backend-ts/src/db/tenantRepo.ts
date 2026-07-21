@@ -751,6 +751,29 @@ export async function setPlatformSetting(key: string, value: Row): Promise<Row> 
   });
 }
 
+/** Switch a program's primary category and/or replace its secondary list. */
+export async function updateProgramCategories(
+  programId: string,
+  patch: { category?: string; secondaryCategories?: string[] },
+): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
+    if (!r.length) return null;
+    const primary = patch.category ?? r[0].category;
+    const meta: Row = { ...((r[0].metadataJson as Row) ?? {}) };
+    if (patch.secondaryCategories !== undefined) {
+      meta.secondary_categories = [...new Set(patch.secondaryCategories)].filter((c) => c !== primary);
+    } else {
+      // keep existing secondaries, but never let one duplicate the new primary
+      meta.secondary_categories = (((meta.secondary_categories as string[]) ?? [])).filter((c) => c !== primary);
+    }
+    const [p] = await tx.update(programs)
+      .set({ category: primary, metadataJson: meta })
+      .where(eq(programs.id, programId)).returning();
+    return p ? programRow(p) : null;
+  });
+}
+
 /** Program branding (accent/logo) in metadata_json.branding; null clears (revert). */
 export async function setProgramBranding(
   programId: string,

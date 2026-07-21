@@ -572,6 +572,15 @@ export async function updateProgramTheme(
     body: JSON.stringify({ accent_color: opts.accent, revert: opts.revert }),
   });
 }
+export async function updateProgramCategories(
+  programId: string,
+  patch: { category?: string; secondary_categories?: string[] },
+): Promise<Program> {
+  return request<Program>(`/api/platform/programs/${programId}/categories`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
 export async function uploadProgramLogo(programId: string, file: File): Promise<{ logo_url: string }> {
   const data = await fileToBase64(file);
   return request<{ logo_url: string }>(`/api/platform/programs/${programId}/logo`, {

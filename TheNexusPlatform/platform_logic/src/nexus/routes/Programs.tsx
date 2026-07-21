@@ -31,6 +31,7 @@ import {
   listPrograms,
   removeMember,
   revokeInvitation,
+  updateProgramCategories,
   updateProgramFeatures,
   type OrgCapabilities,
   type ProgramAdministrator,
@@ -202,7 +203,7 @@ export function Programs() {
 
       <NewProgramDialog orgId={orgId} open={open} onOpenChange={setOpen} onDone={load} allowedFeatureKeys={allowedFeatureKeys} categories={categories} />
       <AssignAdminsDialog program={assigning} onClose={() => setAssigning(null)} />
-      <EditFeaturesDialog program={editingFeatures} onClose={() => setEditingFeatures(null)} onDone={load} allowedFeatureKeys={allowedFeatureKeys} />
+      <EditFeaturesDialog program={editingFeatures} onClose={() => setEditingFeatures(null)} onDone={load} allowedFeatureKeys={allowedFeatureKeys} categories={categories} />
     </div>
   );
 }
@@ -730,29 +731,47 @@ function EditFeaturesDialog({
   onClose,
   onDone,
   allowedFeatureKeys,
+  categories,
 }: {
   program: Program | null;
   onClose: () => void;
   onDone: () => void;
   allowedFeatureKeys: string[];
+  categories: string[];
 }) {
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
+  const [primary, setPrimary] = useState<string>("");
+  const [secondary, setSecondary] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (program) setFeatures({ ...DEFAULT_PROGRAM_FEATURES, ...(program.features ?? {}) });
+    if (program) {
+      setFeatures({ ...DEFAULT_PROGRAM_FEATURES, ...(program.features ?? {}) });
+      setPrimary(program.category);
+      setSecondary(program.secondary_categories ?? []);
+    }
   }, [program]);
+
+  function toggleSecondary(c: string) {
+    setSecondary((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]));
+  }
 
   async function submit() {
     if (!program) return;
     setBusy(true);
     try {
       await updateProgramFeatures(program.id, features);
-      toast.success("Features updated");
+      if (primary !== program.category || JSON.stringify(secondary) !== JSON.stringify(program.secondary_categories ?? [])) {
+        await updateProgramCategories(program.id, {
+          category: primary,
+          secondary_categories: secondary.filter((c) => c !== primary),
+        });
+      }
+      toast.success("Program updated");
       onClose();
       onDone();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update features");
+      toast.error(e instanceof Error ? e.message : "Failed to update program");
     } finally {
       setBusy(false);
     }
@@ -764,11 +783,52 @@ function EditFeaturesDialog({
         <DialogHeader>
           <DialogTitle>Features · {program?.name}</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground -mt-1">
-          Turn a feature off to hide it from this program's roles. Roles already granting it keep the
-          record, but the area stops being offered.
-        </p>
-        <FeatureToggles features={features} onChange={setFeatures} allowedKeys={allowedFeatureKeys} />
+        <div className="space-y-1.5">
+          <Label>Primary category</Label>
+          <Select value={primary} onValueChange={setPrimary}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[...new Set([primary, ...categories])].filter(Boolean).map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {categories.filter((c) => c !== primary).length > 0 ? (
+            <div className="space-y-1.5 pt-1">
+              <Label className="text-xs text-muted-foreground">Also tagged as (click to add/remove)</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {categories
+                  .filter((c) => c !== primary)
+                  .map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => toggleSecondary(c)}
+                      className={
+                        secondary.includes(c)
+                          ? "rounded-full border border-primary bg-primary/10 px-2.5 py-1 text-xs font-medium text-foreground"
+                          : "rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                      }
+                    >
+                      {c}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="space-y-1.5">
+          <Label>Features</Label>
+          <p className="text-xs text-muted-foreground -mt-1">
+            Turn a feature off to hide it from this program's roles. Roles already granting it keep
+            the record, but the area stops being offered.
+          </p>
+          <FeatureToggles features={features} onChange={setFeatures} allowedKeys={allowedFeatureKeys} />
+        </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Cancel

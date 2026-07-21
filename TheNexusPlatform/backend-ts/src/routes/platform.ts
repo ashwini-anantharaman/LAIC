@@ -1610,6 +1610,31 @@ const programThemeSchema = z.object({
   revert: z.boolean().optional(),
 });
 
+const programCategoriesSchema = z.object({
+  category: z.string().trim().min(1).max(60).optional(),
+  secondary_categories: z.array(z.string().trim().min(1).max(60)).optional(),
+});
+
+platformRouter.patch("/programs/:program_id/categories", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _assertProgramConfigAccess(user, program.org_id, programId);
+  const req = parseBody(programCategoriesSchema, await c.req.json());
+  const row = await db.updateProgramCategories(programId, {
+    category: req.category,
+    secondaryCategories: req.secondary_categories,
+  });
+  if (!row) throw new HttpError(404, "Program not found");
+  await db.recordAuditEvent("program.categories_updated", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { category: row.category, secondary_categories: row.secondary_categories },
+  });
+  return c.json(_programResponse(row));
+});
+
 platformRouter.patch("/programs/:program_id/theme", async (c) => {
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");

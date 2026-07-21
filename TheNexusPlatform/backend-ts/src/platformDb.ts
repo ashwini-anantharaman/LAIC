@@ -367,6 +367,12 @@ export async function getPlatformSetting(key: string): Promise<Row | null> {
 export async function setPlatformSetting(key: string, value: Row): Promise<Row> {
   return tpg.setPlatformSetting(key, value);
 }
+export async function updateProgramCategories(
+  programId: string,
+  patch: { category?: string; secondaryCategories?: string[] },
+): Promise<Row | null> {
+  return tpg.updateProgramCategories(programId, patch);
+}
 export async function setProgramBranding(
   programId: string,
   branding: { accent?: string | null; logo?: string | null } | null,
