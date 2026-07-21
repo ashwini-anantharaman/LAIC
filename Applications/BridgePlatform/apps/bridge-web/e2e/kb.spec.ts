@@ -453,3 +453,58 @@ test("curated SAYC template: install, complete sets, and a traced board", async 
   await first.locator("summary").click();
   await expect(first.getByRole("link", { name: "open the knowledge item →" })).toBeVisible();
 });
+
+test("augmentation: source → draft copy → review board → discard", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  // Register a source on the e2e KB and upload a tiny text document.
+  await page.goto(`${kbUrl}/sources`);
+  await page.locator('input[name="slug"]').fill("augtest");
+  await page.locator('input[name="title"]').fill("Augment Test Notes");
+  await page.getByRole("button", { name: "Register", exact: true }).click();
+  await expect(page.getByText("Augment Test Notes")).toBeVisible();
+
+  const sourceCard = page
+    .locator("div")
+    .filter({ hasText: "src_augtest" })
+    .filter({ has: page.locator('input[type="file"]') })
+    .last();
+  await sourceCard.locator('input[type="file"]').setInputFiles({
+    name: "notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from(
+      "OVERCALL STYLE\nOvercalls should show a good suit.\n\nRAISES\nRaise with support.",
+    ),
+  });
+  await sourceCard.getByRole("button", { name: "Upload document" }).click();
+  await page.waitForURL(/uploaded=/);
+
+  // Start the augmentation — a DRAFT copy is created and the board opens.
+  await page
+    .getByRole("button", { name: "⇄ Augment into a new draft…" })
+    .first()
+    .click();
+  await page.waitForURL(/\/augment/);
+  await expect(page.getByText("Augmentation review")).toBeVisible();
+  await expect(page.getByText(/Merging “Augment Test Notes”/)).toBeVisible();
+  await expect(page.getByText("Items the source modified")).toBeVisible();
+  await expect(page.getByText("New items from the source")).toBeVisible();
+  await expect(page.getByText(/Conflicts the merge would introduce/)).toBeVisible();
+  // No LLM key in e2e — the board says so instead of pretending.
+  await expect(page.getByText(/Merging needs ANTHROPIC_API_KEY/)).toBeVisible();
+
+  // The draft shows up as a derived KB; the base is untouched.
+  const draftUrl = page.url().replace(/\/augment.*$/, "");
+  expect(draftUrl).not.toBe(kbUrl);
+
+  // Discard: back on the base with the banner; the draft is gone.
+  page.once("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Discard draft" }).click();
+  await page.waitForURL(/augmentDiscarded=1/);
+  await expect(page.getByText("Augmentation draft discarded.")).toBeVisible();
+  await page.goto("/bridge/kb");
+  await expect(page.getByText("(draft)")).toHaveCount(0);
+});

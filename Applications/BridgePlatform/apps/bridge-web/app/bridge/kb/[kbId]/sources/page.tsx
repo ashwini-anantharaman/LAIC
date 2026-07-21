@@ -10,6 +10,7 @@ import { scopeSources } from "@/lib/sources";
 import {
   deleteSourceAction,
   registerSourceAction,
+  startAugmentationAction,
   uploadExtractedTextAction,
 } from "../../actions";
 
@@ -276,6 +277,19 @@ export default async function SourcesPage({
                   </p>
                 ) : (
                   <p className="mt-1 text-sm italic text-neutral-500">No document yet.</p>
+                )}
+                {doc && (
+                  <form action={startAugmentationAction} className="mt-2">
+                    <input type="hidden" name="kbId" value={kbId} />
+                    <input type="hidden" name="sourceId" value={source.sourceId} />
+                    <button
+                      type="submit"
+                      title="Merge this source into a DRAFT COPY of the knowledge base — review modified/new items and conflicts, then keep or discard. This KB is not touched."
+                      className="rounded border border-emerald-400 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+                    >
+                      ⇄ Augment into a new draft…
+                    </button>
+                  </form>
                 )}
                 <div className="mt-3 space-y-3">
                   <PdfUploadForm

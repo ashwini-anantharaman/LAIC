@@ -9,10 +9,10 @@ export default async function KbOverviewPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ kbId: string }>;
-  searchParams: Promise<{ deleteError?: string }>;
+  searchParams: Promise<{ deleteError?: string; augmentKept?: string; augmentDiscarded?: string }>;
 }>) {
   const { kbId } = await params;
-  const { deleteError } = await searchParams;
+  const { deleteError, augmentKept, augmentDiscarded } = await searchParams;
   const store = kbStore();
   const [kb, items, packs, allSources, jobs, compiled] = await Promise.all([
     store.getKb(kbId),
@@ -46,6 +46,33 @@ export default async function KbOverviewPage({
   );
 
   return (
+    <div>
+      {augmentKept && (
+        <p className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Augmentation draft kept — this is now an ordinary knowledge base. Rename it below if
+          you like.
+        </p>
+      )}
+      {augmentDiscarded && (
+        <p className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Augmentation draft discarded. This knowledge base was never touched by it.
+        </p>
+      )}
+      {kb?.augmentation?.status === "review" && (
+        <Link
+          href={`${base}/augment`}
+          className="mb-4 block rounded-xl border border-emerald-400 bg-emerald-50 px-5 py-4 hover:bg-emerald-100"
+        >
+          <p className="text-xs uppercase tracking-[0.25em] text-emerald-700">
+            Augmentation in review
+          </p>
+          <p className="mt-1 text-sm text-neutral-700">
+            This is a draft merging “{allSources.find((s) => s.sourceId === kb?.augmentation?.sourceId)?.title ?? kb.augmentation.sourceId}” into{" "}
+            <b>{kb.augmentation.baseKbName}</b> — open the review board to see modified items,
+            new items, and conflicts, then keep or discard. →
+          </p>
+        </Link>
+      )}
     <div className="grid gap-4 sm:grid-cols-2">
       {items.length === 0 &&
         card(
@@ -136,6 +163,7 @@ export default async function KbOverviewPage({
           </form>
         </div>
       </details>
+    </div>
     </div>
   );
 }

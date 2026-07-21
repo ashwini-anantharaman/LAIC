@@ -11,7 +11,10 @@ export default defineConfig({
   use: { baseURL: "http://localhost:3105" },
   webServer: {
     command:
-      "rm -rf .data-e2e && BRIDGE_DATA_DIR=.data-e2e NEXT_DIST_DIR=.next-e2e pnpm next dev --port 3105",
+      // ANTHROPIC_API_KEY is stripped so extraction/augmentation stay
+      // deterministic (the UI shows its needs-a-key note instead of
+      // spending real tokens mid-test).
+      "rm -rf .data-e2e && ANTHROPIC_API_KEY= BRIDGE_DATA_DIR=.data-e2e NEXT_DIST_DIR=.next-e2e pnpm next dev --port 3105",
     port: 3105,
     reuseExistingServer: false,
     timeout: 60_000,

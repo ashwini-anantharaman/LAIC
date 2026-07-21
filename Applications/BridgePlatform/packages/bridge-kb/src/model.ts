@@ -36,6 +36,13 @@ export interface KnowledgeBase {
    * KB list's "Hidden knowledge bases" section.
    */
   archived?: boolean;
+  /**
+   * Set on a KB born as a source-augmentation DRAFT: a full copy of
+   * `baseKbId` that a source is being merged into, reviewed on the
+   * augmentation board (modified / new / conflicts), then kept or discarded.
+   * The base KB is never touched by the augmentation.
+   */
+  augmentation?: KbAugmentation;
   levels: LevelDef[];
   /**
    * Last-good pointer (spec decision 5): the compile sessions resolve
@@ -496,6 +503,20 @@ export interface KbSourcePassage {
   text: string;
 }
 
+/** A source-augmentation draft's review state (lives on the draft KB). */
+export interface KbAugmentation {
+  baseKbId: string;
+  baseKbName: string;
+  sourceId: string;
+  status: "review" | "kept";
+  /** Items the augmentation created (draft KB ids). */
+  newItemIds: string[];
+  /** Items the augmentation modified, with the extractor's stated reason. */
+  modified: { itemId: string; reason: string }[];
+  startedAt: string;
+  finishedAt?: string;
+}
+
 /** Extraction job (spec §4): one-shot structured, chunked per section. */
 export interface KbExtractionJob {
   jobId: string;
@@ -505,6 +526,8 @@ export interface KbExtractionJob {
   /** Passage ordinals covered by this job's section. */
   passageOrdinals: number[];
   createdItemIds: string[];
+  /** Existing items an AUGMENTATION job modified (absent on plain extraction). */
+  modifiedItemIds?: string[];
   /** Sections extraction couldn't structure — visible, hand-authorable. */
   failures: { anchor: string; reason: string }[];
   requestedBy: string;

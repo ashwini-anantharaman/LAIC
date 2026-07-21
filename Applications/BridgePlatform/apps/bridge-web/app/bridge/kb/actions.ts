@@ -49,6 +49,82 @@ export async function installSaycTemplateAction(formData: FormData): Promise<voi
   redirect(kbPath(result.kbId));
 }
 
+/**
+ * Start a source augmentation (2026-07-21): derive a full DRAFT COPY of the
+ * KB, stamp it with the augmentation ledger, and open the review board. The
+ * base KB is never touched — the draft is kept or discarded at the end.
+ */
+export async function startAugmentationAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  await ensureSeeds();
+  const kbId = String(formData.get("kbId"));
+  const sourceId = String(formData.get("sourceId"));
+  const base = await kbService().getKb(kbId);
+  const source = await kbStore().getSource(sourceId);
+  if (!source) redirect(kbPath(kbId, "/sources?uploadError=Source%20not%20found"));
+
+  const draft = await kbService().deriveKb(kbId, {
+    mode: "copied",
+    name: `${base.name} + ${source!.title}`.slice(0, 80) + " (draft)",
+    createdBy: context.nexusUserId,
+    includePacks: true,
+  });
+  await kbStore().putKb({
+    ...(await kbService().getKb(draft.kbId)),
+    description: `Augmentation draft: merging “${source!.title}” into ${base.name}. Review, then keep or discard.`,
+    augmentation: {
+      baseKbId: kbId,
+      baseKbName: base.name,
+      sourceId,
+      status: "review",
+      newItemIds: [],
+      modified: [],
+      startedAt: new Date().toISOString(),
+    },
+    updatedAt: new Date().toISOString(),
+  });
+  await audit(context, "kb.derive", "kb", draft.kbId, {
+    baseKbId: kbId,
+    augmentation: true,
+    sourceId,
+  });
+  revalidatePath("/bridge/kb", "layout");
+  redirect(kbPath(draft.kbId, "/augment?start=auto"));
+}
+
+/** Close the review: the draft becomes an ordinary KB (ledger kept). */
+export async function finishAugmentationAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const kb = await kbService().getKb(kbId);
+  if (!kb.augmentation) redirect(kbPath(kbId));
+  await kbStore().putKb({
+    ...kb,
+    augmentation: { ...kb.augmentation!, status: "kept", finishedAt: new Date().toISOString() },
+    updatedAt: new Date().toISOString(),
+  });
+  await audit(context, "kb.derive", "kb", kbId, { augmentation: "kept" });
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, "?augmentKept=1"));
+}
+
+/** Throw the draft away entirely — the base KB was never touched. */
+export async function discardAugmentationAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const kb = await kbService().getKb(kbId);
+  // Only augmentation drafts are discardable this way — everything else
+  // goes through the typed-name deletion on the danger zone.
+  if (!kb.augmentation) redirect(kbPath(kbId));
+  const baseKbId = kb.augmentation!.baseKbId;
+  await kbService().deleteKb(kbId);
+  const { sessionService } = await import("@/lib/sessions");
+  await sessionService().deleteForKb(kbId);
+  await audit(context, "kb.delete", "kb", kbId, { augmentationDraft: true, baseKbId });
+  revalidatePath("/bridge/kb", "layout");
+  redirect(kbPath(baseKbId, "?augmentDiscarded=1"));
+}
+
 /** Hide/unhide a KB everywhere. Nothing is deleted — fully reversible. */
 export async function setKbArchivedAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");

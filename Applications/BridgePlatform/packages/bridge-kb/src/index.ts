@@ -45,5 +45,12 @@ export {
   type RunExtractionOptions,
   type SectionExtractor,
 } from "./extraction";
+export {
+  runAugmentation,
+  type AugmentOutput,
+  type ExtractedModification,
+  type RunAugmentationOptions,
+  type SectionAugmentor,
+} from "./augment";
 export { applySandboxConstraints, effectiveAgreements, suggestMinimalPlayers, type AgreementsCard, type SuggestedPlayer } from "./players";
 export { acblConventionCard, type AcblCard, type CardEntry, type CardSection, type CardSettingChip } from "./card";

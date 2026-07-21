@@ -12,7 +12,7 @@ export function extractionAvailable(): boolean {
 
 // The knowledge-language contract, spelled out for the model. Kept in one
 // template so prompt and validator (the compiler) evolve together.
-const LANGUAGE_REFERENCE = `
+export const LANGUAGE_REFERENCE = `
 You convert bridge system documentation into STRUCTURED knowledge items.
 
 Return STRICT JSON (no markdown fences, no commentary) of shape:
