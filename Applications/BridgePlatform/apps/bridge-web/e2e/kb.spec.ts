@@ -300,7 +300,7 @@ test("constrained drill: an incomplete player never hits the engine floor", asyn
 
 test("Master accordions remember their collapsed state", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
-  await page.goto(`${kbUrl}/items`);
+  await page.goto(`${kbUrl}/items?view=list`);
   await expect(page.getByText("1NT opening").first()).toBeVisible();
 
   // Collapse the Agreements group; its items disappear.
@@ -309,7 +309,7 @@ test("Master accordions remember their collapsed state", async ({ page, context 
 
   // Navigate away and back — the group is still collapsed (localStorage).
   await page.goto(`${kbUrl}`);
-  await page.goto(`${kbUrl}/items`);
+  await page.goto(`${kbUrl}/items?view=list`);
   await expect(page.getByText("1NT opening")).toBeHidden();
 });
 
@@ -330,7 +330,7 @@ test("bulk delete from the Master tab (sets updated, banner reports)", async ({
   context,
 }) => {
   await signInAs(context, "user_reviewer_rhea");
-  await page.goto(`${kbUrl}/items`);
+  await page.goto(`${kbUrl}/items?view=list`);
   await expect(page.getByText("1NT opening (copy)")).toBeVisible();
 
   // Tick the fork, arm the two-step confirm, delete.
