@@ -21,7 +21,7 @@ const kbPath = (kbId: string, rest = "") => `/bridge/kb/${kbId}${rest}`;
  * Install the curated SAYC template (2026-07-21): a fresh KB populated from
  * @bridge/sayc-template — batch store puts + ONE recompile (the extraction
  * batching pattern), then a Base release so the starting point is pinned.
- * Items land `reviewed`, cited to src_claude; fellows edit and approve.
+ * Items land as drafts, cited to src_claude; fellows review and approve.
  */
 export async function installSaycTemplateAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
@@ -38,7 +38,7 @@ export async function installSaycTemplateAction(formData: FormData): Promise<voi
   }
   await kbService().publishKbVersion(result.kbId, {
     label: "Base — curated SAYC",
-    notes: "Installed from the machine-tested template. Items are reviewed; fellows approve.",
+    notes: "Installed from the machine-tested template. Items are drafts until experts review them.",
     publishedBy: context.nexusUserId,
   });
   await audit(context, "kb.create", "kb", result.kbId, {

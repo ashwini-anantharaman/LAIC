@@ -47,8 +47,9 @@ export async function installSaycTemplate(
         { sourceId: "src_claude", anchor: `curated SAYC · ${chapterOf(t.key)}` },
       ],
       supportedLevels: [],
-      // Curated + machine-tested = reviewed; fellows give the final approval.
-      status: "reviewed",
+      // Machine-tested, but no HUMAN has reviewed it yet — status is a trust
+      // badge and it must tell the truth: drafts until an expert reads them.
+      status: "draft",
       version: 1,
       createdBy: opts.createdBy,
       createdAt: now,

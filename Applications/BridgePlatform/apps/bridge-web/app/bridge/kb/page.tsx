@@ -321,8 +321,9 @@ export default async function KbListPage({
           A complete, machine-tested SAYC system authored by Claude (cited to the Claude
           source): openings through slam bidding, leads, signals, and card play — every
           convention toggleable. Installs as a fresh knowledge base with Floor / Core /
-          Conventions / Full sets and a pinned Base release. Items arrive
-          <em> reviewed</em>; your bridge experts edit and give the final approval.
+          Conventions / Full sets and a pinned Base release. Items arrive as
+          <em> drafts</em> — machine-tested but unreviewed — for your bridge experts to
+          edit, review, and approve.
         </p>
         <form action={installSaycTemplateAction} className="mt-3 flex flex-wrap items-end gap-3">
           <label className="text-sm">
