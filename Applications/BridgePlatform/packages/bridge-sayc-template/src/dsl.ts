@@ -155,6 +155,17 @@ export const rule = (
   priority: number,
 ): AuctionRuleSpec => ({ key, label, context, conditions, action, priority });
 
+/**
+ * The booklet's interference policy for notrump systems: conventional
+ * responses stay ON over an opponent's double and are OFF over a bid.
+ * Duplicates the rule for rhoLast = pass and rhoLast = double, so an
+ * intervening BID silently switches the convention off.
+ */
+export const overPassOrDouble = (r: AuctionRuleSpec): AuctionRuleSpec[] => [
+  { ...r, context: { ...r.context, rhoLast: { kind: "pass" } } },
+  { ...r, key: `${r.key}-x`, context: { ...r.context, rhoLast: { kind: "double" } } },
+];
+
 export const play = (
   behavior: PlayRuleSpec["behavior"],
   priority: number,

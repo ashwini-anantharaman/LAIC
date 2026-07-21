@@ -91,6 +91,7 @@ export type SuitRef =
   | "partner_last_bid_suit"
   | "partner_first_bid_suit"
   | "own_longest_suit"
+  | "own_shortest_suit"
   | "own_first_bid_suit"
   | "own_last_bid_suit"
   | "rho_bid_suit"

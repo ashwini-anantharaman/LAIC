@@ -231,6 +231,7 @@ function suitName(s: string): ReactNode | null {
   if (s === "partner_last_bid_suit") return "partner's suit";
   if (s === "partner_first_bid_suit") return "partner's first suit";
   if (s === "own_longest_suit") return "my longest suit";
+  if (s === "own_shortest_suit") return "my shortest suit";
   if (s === "own_first_bid_suit") return "my first suit";
   if (s === "own_last_bid_suit") return "my last bid suit";
   if (s === "rho_bid_suit") return "RHO's suit";
@@ -708,6 +709,7 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
                 <option value="partner_last_bid_suit">partner&apos;s last bid suit</option>
                 <option value="partner_first_bid_suit">partner&apos;s first bid suit</option>
                 <option value="own_longest_suit">my longest suit</option>
+                <option value="own_shortest_suit">my shortest suit</option>
                 <option value="own_first_bid_suit">my first bid suit</option>
                 <option value="own_last_bid_suit">my last bid suit</option>
                 <option value="rho_bid_suit">RHO&apos;s bid suit</option>
@@ -824,6 +826,7 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
               <option value="partner_first_bid_suit">partner&apos;s first bid suit</option>
               <option value="partner_last_bid_suit">partner&apos;s last bid suit</option>
               <option value="own_longest_suit">my longest suit</option>
+              <option value="own_shortest_suit">my shortest suit (splinter/shortness)</option>
               <option value="S">♠ spades</option>
               <option value="H">♥ hearts</option>
               <option value="D">♦ diamonds</option>

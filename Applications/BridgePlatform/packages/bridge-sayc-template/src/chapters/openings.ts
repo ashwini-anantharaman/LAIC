@@ -64,6 +64,16 @@ export const OPENINGS: TemplateItem[] = [
   ),
 
   auctionItem(
+    "open-3nt",
+    "3NT opening",
+    "Open 3NT with a balanced 25–27 HCP — the exception to the strong 2♣ (which otherwise takes all 22+ hands).",
+    "exception",
+    [
+      rule("open", "Open 3NT", ctx("opening"), all(bal(), hcp(25, 27)), bid(3, "N"), 18),
+    ],
+  ),
+
+  auctionItem(
     "open-strong-2c",
     "Strong artificial 2♣ opening",
     "All very strong hands (22+ points) open an artificial, forcing 2♣ regardless of shape.",
@@ -75,14 +85,14 @@ export const OPENINGS: TemplateItem[] = [
   auctionItem(
     "open-majors",
     "Five-card major openings",
-    "Open 1♥/1♠ with a five-card or longer major and opening values (13+ points). With two five-card suits, open the higher-ranking.",
+    "Open 1♥/1♠ with a five-card or longer major and opening values (12+ points). With two five-card suits, open the higher-ranking.",
     "agreement",
     [
       rule(
         "open",
         "Open a five-card major",
         ctx("opening"),
-        all(tp(13, 21), any(len("S", 5), len("H", 5))),
+        all(tp(12, 21), any(len("S", 5), len("H", 5))),
         bidLongest(["S", "H"], 1),
         30,
       ),
@@ -99,7 +109,7 @@ export const OPENINGS: TemplateItem[] = [
         "threethree",
         "Open 1♣ with 3-3 minors",
         ctx("opening"),
-        all(tp(13, 21), len("D", 3, 3), len("C", 3, 3)),
+        all(tp(12, 21), len("D", 3, 3), len("C", 3, 3)),
         bid(1, "C"),
         31,
       ),
@@ -107,7 +117,7 @@ export const OPENINGS: TemplateItem[] = [
         "open",
         "Open the longer minor",
         ctx("opening"),
-        tp(13, 21),
+        tp(12, 21),
         bidLongest(["D", "C"], 1),
         32,
       ),
@@ -182,8 +192,8 @@ export const OPENINGS: TemplateItem[] = [
   auctionItem(
     "open-pass",
     "Opening pass",
-    "With less than opening values and no preempt, pass. Openings start at 13 total points.",
+    "With less than opening values and no preempt, pass. Openings start at 12 total points.",
     "bidding_rule",
-    [rule("pass", "Pass without opening values", ctx("opening"), tp(undefined, 12), pass, 90)],
+    [rule("pass", "Pass without opening values", ctx("opening"), tp(undefined, 11), pass, 90)],
   ),
 ];
