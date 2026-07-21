@@ -19,7 +19,8 @@ export default async function ChooseTablePage() {
 
   const store = kbStore();
   const kbs = (await store.listKbs()).filter((k) => !k.archived);
-  const sessions = (await sessionService().listRecent()).slice(0, 6);
+  const visibleKbIds = new Set(kbs.map((k) => k.kbId));
+  const sessions = (await sessionService().listRecent()).filter((s) => visibleKbIds.has(s.kbId)).slice(0, 6);
   let boards: Awaited<ReturnType<ReturnType<typeof libraryStore>["listEntries"]>> = [];
   try {
     boards = (await libraryStore().listEntries("board")).slice(0, 4);

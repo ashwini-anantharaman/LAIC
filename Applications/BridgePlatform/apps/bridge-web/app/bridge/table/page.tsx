@@ -18,16 +18,24 @@ export default async function PlayPage() {
   if (!context) redirect("/welcome");
   await ensureSeeds();
 
+  // Hidden KBs are hidden here too: their boards neither resume nor deal.
+  const store = kbStore();
+  const archived = new Set(
+    (await store.listKbs()).filter((k) => k.archived).map((k) => k.kbId),
+  );
+
   // Resume the most recent unfinished board this player started.
   const recent = await sessionService().listRecent();
   const mine = recent.find(
-    (s) => s.createdBy === context.nexusUserId && s.status === "active",
+    (s) =>
+      s.createdBy === context.nexusUserId &&
+      s.status === "active" &&
+      !archived.has(s.kbId),
   );
   if (mine) redirect(`/bridge/table/${mine.sessionId}`);
 
   // Otherwise deal a fresh default board: strongest set of the first KB that
   // compiles, you South against three house players.
-  const store = kbStore();
   for (const kb of (await store.listKbs()).filter((k) => !k.archived)) {
     const compiled = await kbService().liveCompile(kb.kbId);
     if (!compiled) continue;
