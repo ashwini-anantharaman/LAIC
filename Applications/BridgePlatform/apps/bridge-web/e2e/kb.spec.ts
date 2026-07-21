@@ -15,7 +15,7 @@ let kbUrl = "";
 test("fellow creates a knowledge base", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
   await page.goto("/bridge/kb");
-  await page.getByLabel("Name").fill(KB_NAME);
+  await page.getByLabel("Name", { exact: true }).fill(KB_NAME);
   await page.getByLabel("System label").fill("SAYC");
   await page.getByRole("button", { name: "Create knowledge base" }).click();
   await expect(page.getByRole("heading", { name: KB_NAME })).toBeVisible();
@@ -134,7 +134,7 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
   await page.getByRole("button", { name: /Save \(recompiles/ }).click();
 
   await expect(page.getByText(/latest edit doesn't compile/)).toBeVisible();
-  await expect(page.getByText(/does_not_exist/)).toBeVisible();
+  await expect(page.getByText(/references unknown setting "does_not_exist"/)).toBeVisible();
   await expect(page.getByText(/draft compile/)).toBeVisible(); // last-good still live
 
   // Repair via the typed fields — the banner clears and compiles resume.
@@ -158,7 +158,6 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
     .getByLabel("What a player reads (the agreement, in plain words)")
     .fill("With no lead agreement, lead low from your longest suit.");
   await page.getByLabel("Type").selectOption("fallback_rule");
-  await page.getByText("Fallback behavior (fallback_rule items)").click();
   await page.locator('select[name="fb:phase"]').selectOption("opening_lead");
   await page.getByRole("button", { name: "Create knowledge item" }).click();
 
@@ -168,7 +167,6 @@ test("wizard suggests minimal players; simulation counts floors honestly", async
     .getByLabel("What a player reads (the agreement, in plain words)")
     .fill("With no technique that applies, play your lowest legal card.");
   await page.getByLabel("Type").selectOption("fallback_rule");
-  await page.getByText("Fallback behavior (fallback_rule items)").click();
   await page.locator('select[name="fb:phase"]').selectOption("card_play");
   await page.getByRole("button", { name: "Create knowledge item" }).click();
 
@@ -258,7 +256,10 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
 
   await page.goto(`${kbUrl}/suggestions`);
   await expect(page.getByText("Passing here looks wrong to me.")).toBeVisible();
-  await expect(page.getByText(/session bs_/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "open the session →" })).toBeVisible();
+  // The flagged position travels with the flag: deal, auction, decision.
+  await expect(page.getByText(/dealer N/)).toBeVisible();
+  await expect(page.getByText(/Flagged: N chose/)).toBeVisible();
 });
 
 test("Play lands straight on a board, no selection needed", async ({ page, context }) => {
@@ -299,7 +300,7 @@ test("constrained drill: an incomplete player never hits the engine floor", asyn
 
 test("Master accordions remember their collapsed state", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
-  await page.goto(`${kbUrl}/items`);
+  await page.goto(`${kbUrl}/items?view=list`);
   await expect(page.getByText("1NT opening").first()).toBeVisible();
 
   // Collapse the Agreements group; its items disappear.
@@ -308,7 +309,7 @@ test("Master accordions remember their collapsed state", async ({ page, context 
 
   // Navigate away and back — the group is still collapsed (localStorage).
   await page.goto(`${kbUrl}`);
-  await page.goto(`${kbUrl}/items`);
+  await page.goto(`${kbUrl}/items?view=list`);
   await expect(page.getByText("1NT opening")).toBeHidden();
 });
 
@@ -322,4 +323,133 @@ test("Save as a new knowledge item forks with lineage", async ({ page, context }
     page.getByRole("heading", { name: "1NT opening (copy)" }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: /forked from 1NT opening/ })).toBeVisible();
+});
+
+test("bulk delete from the Master tab (sets updated, banner reports)", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto(`${kbUrl}/items?view=list`);
+  await expect(page.getByText("1NT opening (copy)")).toBeVisible();
+
+  // Tick the fork, arm the two-step confirm, delete.
+  await page.getByLabel("Select 1NT opening (copy)").check();
+  await expect(page.getByText("1 selected")).toBeVisible();
+  await page.getByRole("button", { name: "Delete selected…" }).click();
+  await page.getByRole("button", { name: "Yes, delete" }).click();
+
+  await expect(page.getByText("Deleted 1 item.")).toBeVisible();
+  await expect(page.getByText("1NT opening (copy)")).toHaveCount(0);
+  // The original survives untouched.
+  await expect(page.getByText("1NT opening", { exact: true })).toBeVisible();
+});
+
+test("fix at the table: undo pauses, overlay edits the item, session re-pins", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  // Same lineup as the pinning test: human South, Floor AIs elsewhere.
+  await page.goto("/bridge/table/choose");
+  await page.getByText("Set up a custom table").click();
+  const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
+  const dealForm = block.locator("form").first();
+  await dealForm.locator('select[name="humanSeat"]').selectOption("S");
+  await dealForm.locator('input[name="seed"]').fill("11");
+  for (const seat of ["N", "E", "W"]) {
+    await dealForm
+      .locator(`select[name="player:${seat}"]`)
+      .selectOption({ label: "Minimal complete — Floor" });
+  }
+  await dealForm.getByRole("button", { name: "Deal a board" }).click();
+  await page.waitForURL(/\/bridge\/table\/bs_/);
+  await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
+
+  // Undo the last AI decision — the table comes back PAUSED.
+  await page.getByRole("button", { name: "undo" }).click();
+  await page.waitForURL(/paused=/);
+  await expect(page.getByText(/Decisions \(1\)/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();
+
+  // Open the trace, jump into the overlay editor for the matched item.
+  const decision = page.locator("details").filter({ hasText: "#0" }).last();
+  await decision.locator("summary").click();
+  await decision.getByRole("link", { name: "fix at the table →" }).click();
+  await page.waitForURL(/fix=ki_/);
+  await expect(page.getByText("Fixing at the table")).toBeVisible();
+
+  // Save without changes — still re-pins and returns to the paused board.
+  await page.getByRole("button", { name: "Save (recompiles the KB)" }).click();
+  await page.waitForURL(/fixed=1/);
+  await expect(page.getByText(/this table now plays from the updated rules/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();
+
+  // Step forward one decision — play continues under the (re)pinned compile.
+  await page.getByRole("button", { name: "step ▸" }).click();
+  await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
+});
+
+test("delete a player from the roster", async ({ page, context }) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto("/bridge/players");
+
+  // Take the first matching card and remember WHICH player it is (its edit
+  // href), since other tests mint similarly named players.
+  const card = page.locator("li").filter({ hasText: "Minimal complete — Floor" }).first();
+  await expect(card).toBeVisible();
+  const editHref = await card.getByRole("link", { name: "Edit" }).getAttribute("href");
+
+  page.once("dialog", (d) => void d.accept());
+  await card.getByRole("button", { name: "Delete" }).click();
+
+  await page.waitForURL(/deleted=1/);
+  await expect(page.getByText("Player deleted.")).toBeVisible();
+  await expect(page.locator(`a[href="${editHref}"]`)).toHaveCount(0);
+});
+
+test("curated SAYC template: install, complete sets, and a traced board", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  // Install from the KB list page.
+  await page.goto("/bridge/kb");
+  const name = `SAYC curated e2e ${Date.now().toString(36)}`;
+  const installSection = page
+    .locator("section")
+    .filter({ hasText: "Start from the curated SAYC template" });
+  await installSection.getByRole("textbox").fill(name);
+  await installSection.getByRole("button", { name: "Install curated SAYC" }).click();
+  await expect(page.getByRole("heading", { name })).toBeVisible({ timeout: 30_000 });
+  const curatedKbUrl = page.url();
+
+  // The sets landed, Full SAYC is intended-complete and 17/17.
+  await page.goto(`${curatedKbUrl}/sets`);
+  await expect(page.getByText("Full SAYC")).toBeVisible();
+  await page.getByRole("link", { name: /Full SAYC/ }).click();
+  await expect(page.getByText("Completeness · 17/17")).toBeVisible();
+
+  // A Base release was pinned.
+  await page.goto(`${curatedKbUrl}/versions`);
+  await expect(page.getByText(/Base — curated SAYC/)).toBeVisible();
+
+  // One-click a player from the Full SAYC set, then watch four copies play.
+  const kbId = curatedKbUrl.match(/kb\/(kb_[a-z0-9]+)/)![1]!;
+  await page.goto(`/bridge/players?kb=${kbId}`);
+  await page.getByRole("button", { name: "Full SAYC", exact: true }).click();
+  await page.waitForURL(/players\/pl_.*saved=1/);
+
+  await page.goto(`/bridge/players?kb=${kbId}`);
+  const card = page.locator("li").filter({ hasText: /Full SAYC — / }).first();
+  await card.getByRole("button", { name: "Watch 4 copies" }).click();
+  await page.waitForURL(/\/bridge\/table\/bs_/);
+
+  // The AIs bid from the curated knowledge; the trace cites a curated item.
+  await expect(page.getByText(/Decisions \([1-9]/)).toBeVisible({ timeout: 20_000 });
+  const first = page.locator("details").filter({ hasText: "#0" }).last();
+  await first.locator("summary").click();
+  await expect(first.getByRole("link", { name: "open the knowledge item →" })).toBeVisible();
 });

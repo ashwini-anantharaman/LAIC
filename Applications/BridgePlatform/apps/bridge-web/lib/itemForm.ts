@@ -107,6 +107,18 @@ function auctionAction(fd: FormData, prefix: string): AuctionAction {
       const level = num(fd, `${prefix}:actionLevel`);
       return { type: "bid_longest", among, ...(level !== undefined && { level }) };
     }
+    case "bid_suit": {
+      const level = num(fd, `${prefix}:actionLevel`);
+      return {
+        type: "bid_suit",
+        suit: (str(fd, `${prefix}:actionSuit`) || "rho_bid_suit") as never,
+        ...(level !== undefined && { level }),
+      };
+    }
+    // Round-trip escape: actions beyond the typed dropdown (first_legal_of…)
+    // ride through as JSON so editing an item never corrupts them.
+    case "json":
+      return JSON.parse(str(fd, `${prefix}:actionJson`) || '{"type":"pass"}') as AuctionAction;
     default:
       return {
         type: "bid",
@@ -136,6 +148,14 @@ function auctionRules(fd: FormData): AuctionRuleSpec[] {
     if (partnerLast) context.partnerLast = partnerLast;
     const rhoLast = callPattern(fd, `${p}:rhoLast`);
     if (rhoLast) context.rhoLast = rhoLast;
+    const ownLast = callPattern(fd, `${p}:ownLast`);
+    if (ownLast) context.ownLast = ownLast;
+    const lhoLast = callPattern(fd, `${p}:lhoLast`);
+    if (lhoLast) context.lhoLast = lhoLast;
+    const ownFirst = callPattern(fd, `${p}:ownFirst`);
+    if (ownFirst) context.ownFirst = ownFirst;
+    const partnerFirst = callPattern(fd, `${p}:partnerFirst`);
+    if (partnerFirst) context.partnerFirst = partnerFirst;
     const roundMin = num(fd, `${p}:roundMin`);
     const roundMax = num(fd, `${p}:roundMax`);
     if (roundMin !== undefined) context.roundMin = roundMin;

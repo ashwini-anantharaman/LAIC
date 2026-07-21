@@ -475,6 +475,12 @@ export class PgKbStore implements KbStore {
     const rows = check(await this.db.from("bridge_kb_sources").select("record"), "sources.list");
     return records<KbSource>(rows).sort((a, b) => a.title.localeCompare(b.title));
   }
+  async deleteSource(sourceId: string) {
+    check(
+      await this.db.from("bridge_kb_sources").delete().eq("source_id", sourceId),
+      "sources.delete",
+    );
+  }
   async putDocument(doc: KbSourceDocument) {
     check(
       await this.db
@@ -489,6 +495,12 @@ export class PgKbStore implements KbStore {
       "documents.get",
     );
     return rows.length ? (rows[0] as any).record as KbSourceDocument : null;
+  }
+  async deleteDocument(sourceId: string) {
+    check(
+      await this.db.from("bridge_kb_documents").delete().eq("source_id", sourceId),
+      "documents.delete",
+    );
   }
   async replacePassages(sourceId: string, passages: KbSourcePassage[]) {
     check(

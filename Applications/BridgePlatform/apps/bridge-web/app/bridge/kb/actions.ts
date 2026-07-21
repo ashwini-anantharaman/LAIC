@@ -17,6 +17,49 @@ import { parseCommon, parsePayload, parseSettings } from "@/lib/itemForm";
 
 const kbPath = (kbId: string, rest = "") => `/bridge/kb/${kbId}${rest}`;
 
+/**
+ * Install the curated SAYC template (2026-07-21): a fresh KB populated from
+ * @bridge/sayc-template — batch store puts + ONE recompile (the extraction
+ * batching pattern), then a Base release so the starting point is pinned.
+ * Items land `reviewed`, cited to src_claude; fellows edit and approve.
+ */
+export async function installSaycTemplateAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  await ensureSeeds();
+  const { installSaycTemplate } = await import("@bridge/sayc-template/install");
+  const name = String(formData.get("name") ?? "").trim() || undefined;
+  const result = await installSaycTemplate(kbStore(), kbService(), {
+    createdBy: context.nexusUserId,
+    kbName: name,
+  });
+  if (result.compileError) {
+    // Should be impossible — the template ships with a compile-clean test.
+    redirect(`/bridge/kb?error=${encodeURIComponent(result.compileError)}`);
+  }
+  await kbService().publishKbVersion(result.kbId, {
+    label: "Base — curated SAYC",
+    notes: "Installed from the machine-tested template. Items are reviewed; fellows approve.",
+    publishedBy: context.nexusUserId,
+  });
+  await audit(context, "kb.create", "kb", result.kbId, {
+    template: "sayc",
+    items: result.itemIdByKey.size,
+  });
+  revalidatePath("/bridge/kb", "layout");
+  redirect(kbPath(result.kbId));
+}
+
+/** Hide/unhide a KB everywhere. Nothing is deleted — fully reversible. */
+export async function setKbArchivedAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const archived = String(formData.get("archived")) === "true";
+  await kbService().setKbArchived(kbId, archived);
+  await audit(context, "kb.archive", "kb", kbId, { archived });
+  revalidatePath("/bridge", "layout");
+  redirect(`/bridge/kb?${archived ? "hidden" : "unhidden"}=1`);
+}
+
 export async function createKbAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   await ensureSeeds();
@@ -70,17 +113,61 @@ export async function createItemAction(formData: FormData): Promise<void> {
   await ensureSeeds();
   const kbId = String(formData.get("kbId"));
   const common = parseCommon(formData);
+  // The write-up-from-a-passage flow carries a real citation; hand-authored
+  // items without one cite the Claude source until a fellow attaches passages.
+  const citeSourceId = String(formData.get("cite:sourceId") ?? "").trim();
+  const citePassageId = String(formData.get("cite:passageId") ?? "").trim();
+  const sourceReferences = citeSourceId
+    ? [
+        {
+          sourceId: citeSourceId,
+          ...(citePassageId && { passageId: citePassageId }),
+          anchor: String(formData.get("cite:anchor") ?? "").trim() || common.title,
+        },
+      ]
+    : [{ sourceId: "src_claude", anchor: "fellow-authored in the workspace" }];
   const item = await kbService().createItem(kbId, {
     ...common,
     payload: parsePayload(formData, common.knowledgeType),
     settings: parseSettings(formData),
-    sourceReferences: [
-      { sourceId: "src_claude", anchor: "fellow-authored in the workspace" },
-    ],
+    sourceReferences,
     createdBy: context.nexusUserId,
   });
-  await audit(context, "kb.item.create", "kb_item", item.itemId, { kbId });
+  await audit(context, "kb.item.create", "kb_item", item.itemId, {
+    kbId,
+    citedSource: citeSourceId || undefined,
+  });
   redirect(kbPath(kbId, `/items/${item.itemId}`));
+}
+
+export async function deleteItemsAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const itemIds = formData.getAll("itemIds").map(String).filter(Boolean);
+  const returnToRaw = String(formData.get("returnTo") ?? "");
+  const returnTo = returnToRaw.startsWith(`/bridge/kb/${kbId}`)
+    ? returnToRaw
+    : kbPath(kbId, "/items");
+  if (!itemIds.length) redirect(returnTo);
+
+  const result = await kbService().deleteItems(kbId, itemIds, context.nexusUserId);
+  await audit(context, "kb.item.delete", "kb", kbId, {
+    deleted: result.deleted.length,
+    blocked: result.blocked.length,
+    itemIds: result.deleted.map((d) => d.itemId),
+  });
+
+  const params = new URLSearchParams();
+  params.set("bulkDeleted", String(result.deleted.length));
+  if (result.setsTouched.length) params.set("bulkSets", result.setsTouched.join(", "));
+  if (result.blocked.length) {
+    const shown = result.blocked.slice(0, 3);
+    const note = shown.map((b) => `"${b.title}" (${b.reason})`).join(" · ");
+    const more = result.blocked.length - shown.length;
+    params.set("bulkBlocked", more > 0 ? `${note} · and ${more} more` : note);
+  }
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}${params.toString()}`);
 }
 
 export async function saveItemAction(formData: FormData): Promise<void> {
@@ -131,6 +218,28 @@ export async function saveItemAction(formData: FormData): Promise<void> {
     version: saved.version,
   });
   revalidatePath(kbPath(kbId), "layout");
+
+  // Fix-at-the-table flow: saving from the session overlay re-pins the
+  // session to the fresh compile (sessions never float on their own) and
+  // returns to the board instead of the item page.
+  const repinSessionId = String(formData.get("repinSessionId") ?? "");
+  const returnToRaw = String(formData.get("returnTo") ?? "");
+  if (returnToRaw.startsWith("/bridge/")) {
+    let flag = "fixed=1";
+    if (repinSessionId) {
+      const kb = await kbService().getKb(kbId);
+      if (kb.lastCompileError) {
+        flag = `fixError=${encodeURIComponent(kb.lastCompileError.message)}`;
+      } else {
+        const { sessionService } = await import("@/lib/sessions");
+        const compiled = await kbService().liveCompile(kbId);
+        if (compiled) await sessionService().repinCompile(repinSessionId, compiled);
+      }
+      revalidatePath(`/bridge/table/${repinSessionId}`);
+    }
+    redirect(`${returnToRaw}${returnToRaw.includes("?") ? "&" : "?"}${flag}`);
+  }
+
   redirect(kbPath(kbId, `/items/${saved.itemId}?saved=1`));
 }
 
@@ -242,12 +351,28 @@ export async function registerSourceAction(formData: FormData): Promise<void> {
     sourceType: String(formData.get("sourceType")) as KbSource["sourceType"],
     rightsStatus: String(formData.get("rightsStatus")) as KbSource["rightsStatus"],
     locator: String(formData.get("locator") ?? "").trim() || undefined,
+    kbId,
     registeredBy: context.nexusUserId,
     createdAt: new Date().toISOString(),
   };
   await kbStore().putSource(source);
   await audit(context, "knowledge.source.register", "kb_source", source.sourceId, { kbId });
   revalidatePath(kbPath(kbId, "/sources"));
+}
+
+export async function deleteSourceAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const sourceId = String(formData.get("sourceId"));
+  try {
+    await kbService().deleteSource(sourceId); // refuses while items cite it
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not delete this source.";
+    redirect(kbPath(kbId, `/sources?uploadError=${encodeURIComponent(message)}`));
+  }
+  await audit(context, "knowledge.source.delete", "kb_source", sourceId, { kbId });
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, "/sources?sourceDeleted=1"));
 }
 
 export async function uploadDocumentAction(formData: FormData): Promise<void> {
@@ -288,8 +413,64 @@ export async function uploadDocumentAction(formData: FormData): Promise<void> {
   );
 }
 
-/** Batch size per click: keeps each run well inside serverless time limits;
- *  completed sections are skipped, so clicking through is resumable. */
+/**
+ * Upload a document whose text was already extracted in the browser (the
+ * whole-PDF flow: pdf.js runs client-side, so a 48 MB PDF never hits the
+ * ~4.5 MB serverless body limit — only its ~sub-MB text does). Same
+ * downstream path as uploadDocumentAction; redirects with extract=auto so
+ * the Sources tab starts draining sections on its own.
+ */
+export type UploadTextResult =
+  | { ok: true; passageCount: number; sectionCount: number }
+  | { ok: false; error: string };
+
+/**
+ * Called PROGRAMMATICALLY from the upload form (not as a form action), so it
+ * must RETURN a result instead of redirect(): a redirect() here surfaces as a
+ * caught "NEXT_REDIRECT" error in the client's try/catch. The client
+ * navigates on success.
+ */
+export async function uploadExtractedTextAction(
+  formData: FormData,
+): Promise<UploadTextResult> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const sourceId = String(formData.get("sourceId"));
+  const fileName = String(formData.get("fileName") ?? "").trim() || "document.txt";
+  const mediaType = String(formData.get("mediaType") ?? "text/plain");
+  const text = String(formData.get("text") ?? "");
+
+  if (!text.trim())
+    return {
+      ok: false,
+      error: "No text came out of that file — a scanned/image-only PDF has no text layer to read.",
+    };
+  if (text.length > 8_000_000)
+    return {
+      ok: false,
+      error: "That document's text is over ~8 MB — split it into chapters and upload those.",
+    };
+
+  const { uploadDocument } = await import("@/lib/documents");
+  let result: { passageCount: number; sectionCount: number };
+  try {
+    result = await uploadDocument(sourceId, fileName, mediaType, text);
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : "unknown storage error";
+    return { ok: false, error: `The document could not be stored: ${detail}` };
+  }
+  const { passageCount, sectionCount } = result;
+  await audit(context, "knowledge.source.upload", "kb_source", sourceId, {
+    kbId,
+    passageCount,
+    clientExtracted: true,
+  });
+  revalidatePath(kbPath(kbId, "/sources"));
+  return { ok: true, passageCount, sectionCount };
+}
+
+/** Batch size per click/tick: keeps each run well inside serverless time
+ *  limits; completed sections are skipped, so extraction is resumable. */
 const EXTRACTION_BATCH = 3;
 
 export async function runExtractionAction(formData: FormData): Promise<void> {

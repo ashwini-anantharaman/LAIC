@@ -27,6 +27,7 @@ const nextConfig: NextConfig = {
     "@bridge/kb",
     "@bridge/nexus-client",
     "@bridge/pg-stores",
+    "@bridge/sayc-template",
     "@bridge/profiles",
     "@bridge/sessions",
     "@laic/learner-contracts",

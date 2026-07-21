@@ -18,6 +18,9 @@ import { legalPlays, trickWinner } from "../apply";
 import { longestSuits, suitCounts } from "../hand";
 import { sideOf, type GameState } from "../state";
 import type { SeatAuctionFacts } from "./auctionContext";
+import { resolveSuitRef } from "./handConditions";
+import { realizeTechnique } from "./playTechniques";
+import { buildPlayView } from "./playView";
 
 // ---------------------------------------------------------------------------
 // Auction actions
@@ -71,6 +74,21 @@ export function realizeAuctionAction(
     case "first_legal_of": {
       for (const c of action.calls) {
         const call = ifLegal(`${c.level}${c.strain}`);
+        if (call) return call;
+      }
+      return null;
+    }
+    case "bid_suit": {
+      // Contextual suit (cue-bid RHO's suit, rebid own first suit, …).
+      const suit = resolveSuitRef(action.suit, state.hands[seat], {
+        values: {},
+        facts,
+        consulted: new Set(),
+      });
+      if (!suit) return null;
+      if (action.level !== undefined) return ifLegal(`${action.level}${suit}`);
+      for (let level = 1; level <= 7; level++) {
+        const call = ifLegal(`${level}${suit}`);
         if (call) return call;
       }
       return null;
@@ -212,6 +230,17 @@ export function realizePlayBehavior(
       const trump = state.contract && state.contract.strain !== "N" ? state.contract.strain : null;
       const nonTrump = sorted.filter((c) => c.suit !== trump);
       return nonTrump[0] ?? sorted[0]!;
+    }
+    default: {
+      // Expanded techniques (2026-07-21) decide from the legitimate-info
+      // PlayView, never raw GameState — see playView.ts / playTechniques.ts.
+      const view = buildPlayView(state, seat);
+      if (!view) return null;
+      const chosen = realizeTechnique(behavior, view);
+      // Techniques may only pick from the legal set (belt and braces).
+      return chosen && legal.some((c) => c.suit === chosen.suit && c.rank === chosen.rank)
+        ? chosen
+        : null;
     }
   }
 }

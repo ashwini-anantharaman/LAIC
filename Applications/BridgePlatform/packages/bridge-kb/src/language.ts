@@ -27,6 +27,8 @@ export type NumParam = number | { $setting: string; field?: "low" | "high" };
 export interface CallPattern {
   /** "any_bid" = any suit/NT bid; "none" = that seat has not called yet. */
   kind: "bid" | "pass" | "double" | "redouble" | "any_bid" | "any" | "none";
+  /** Shorthand for levelMin = levelMax = level (used when either is absent). */
+  level?: number;
   levelMin?: number;
   levelMax?: number;
   strains?: Strain[];
@@ -68,6 +70,12 @@ export interface AuctionContext {
   ownLast?: CallPattern;
   /** Right-hand opponent's most recent call. */
   rhoLast?: CallPattern;
+  /** Left-hand opponent's most recent call (balancing, responsive doubles). */
+  lhoLast?: CallPattern;
+  /** This seat's FIRST non-pass call (multi-round rebid sequences). */
+  ownFirst?: CallPattern;
+  /** Partner's FIRST non-pass call ("partner opened 1♠ and later…"). */
+  partnerFirst?: CallPattern;
   /** 1-based partnership bidding round (opening decision = round 1). */
   roundMin?: number;
   roundMax?: number;
@@ -81,8 +89,12 @@ export interface AuctionContext {
 export type SuitRef =
   | Suit
   | "partner_last_bid_suit"
+  | "partner_first_bid_suit"
   | "own_longest_suit"
-  | "rho_bid_suit";
+  | "own_first_bid_suit"
+  | "own_last_bid_suit"
+  | "rho_bid_suit"
+  | "lho_bid_suit";
 
 export type HandPredicate =
   | { hcp: { min?: NumParam; max?: NumParam } }
@@ -93,7 +105,15 @@ export type HandPredicate =
   | { balanced: boolean }
   /** Two of top three, or three of top five honors, in the suit. */
   | { suitQuality: { suit: SuitRef; quality: "two_of_top_three" | "three_of_top_five" } }
-  | { hasStopperIn: { suit: SuitRef } };
+  | { hasStopperIn: { suit: SuitRef } }
+  /** Number of aces held (Blackwood / Gerber responses). */
+  | { aces: { min?: NumParam; max?: NumParam } }
+  /** Number of kings held (5NT king ask). */
+  | { kings: { min?: NumParam; max?: NumParam } }
+  /** Keycards for the ref suit: the four aces + that suit's king (RKCB). */
+  | { keycards: { suit: SuitRef; min?: NumParam; max?: NumParam } }
+  /** Holds a specific card, e.g. the trump queen (rank: 11=J 12=Q 13=K 14=A). */
+  | { holds: { suit: SuitRef; rank: number } };
 
 export type HandCondition =
   | { all: HandCondition[] }
@@ -118,7 +138,13 @@ export type AuctionAction =
   /** Raise partner's last bid suit to the given level. */
   | { type: "raise_partner"; toLevel: number }
   /** First legal call from an ordered preference list. */
-  | { type: "first_legal_of"; calls: { level: number; strain: Strain }[] };
+  | { type: "first_legal_of"; calls: { level: number; strain: Strain }[] }
+  /**
+   * Bid a contextual suit at the given level (cheapest legal when omitted):
+   * cue-bid the opponents' suit, rebid your own first suit, raise partner's
+   * FIRST suit. Does not act when the reference can't be resolved.
+   */
+  | { type: "bid_suit"; suit: SuitRef; level?: number };
 
 // ---------------------------------------------------------------------------
 // Card-play language (leads, following, declarer/defense behaviors)
@@ -141,6 +167,7 @@ export interface LeadSpec {
 export type TrickPosition = "lead" | "second" | "third" | "fourth" | "any";
 
 export type PlayBehavior =
+  // Fundamentals (evaluated on the raw trick; always legal-info only).
   | "lowest_following"
   | "highest_following"
   | "win_cheaply"
@@ -149,7 +176,23 @@ export type PlayBehavior =
   | "cover_honor"
   | "cash_winners"
   | "lowest_legal"
-  | "discard_lowest";
+  | "discard_lowest"
+  // Declarer techniques (2026-07-21 play expansion). Each self-gates: it
+  // returns no card when its trigger doesn't hold, and decides ONLY from
+  // legitimate information (own hand + dummy + cards played).
+  | "draw_trumps"
+  | "finesse_toward_tenace"
+  | "hold_up_stopper"
+  | "duck_to_preserve_entry"
+  | "establish_long_suit"
+  | "ruff_loser"
+  | "discard_loser_on_winner"
+  | "cash_out_when_enough"
+  // Defense techniques.
+  | "return_partner_suit"
+  | "hold_up_ace"
+  | "overruff_or_discard"
+  | "second_hand_rise_vs_honor";
 
 export interface PlayRuleSpec {
   position: TrickPosition;

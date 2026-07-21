@@ -55,6 +55,8 @@ AuctionRuleSpec = {
     "contested"?: boolean,
     "opening"?: CallPattern,         // the partnership's opening (responder/rebids)
     "partnerLast"?: CallPattern, "ownLast"?: CallPattern, "rhoLast"?: CallPattern,
+    "lhoLast"?: CallPattern,                       // left-hand opponent's last call
+    "ownFirst"?: CallPattern, "partnerFirst"?: CallPattern,  // each seat's FIRST non-pass call
     "roundMin"?: number, "roundMax"?: number   // 1-based partnership round
   },
   "conditions": HandCondition,
@@ -62,22 +64,30 @@ AuctionRuleSpec = {
             {"type":"pass"} | {"type":"double"} | {"type":"redouble"} |
             {"type":"bid_longest","among":["S","H"],"level"?:number} |
             {"type":"raise_partner","toLevel":number} |
-            {"type":"first_legal_of","calls":[{"level":n,"strain":s}...]},
+            {"type":"first_legal_of","calls":[{"level":n,"strain":s}...]} |
+            {"type":"bid_suit","suit":SuitRef,"level"?:number},  // cue-bid RHO's suit / rebid own suit
   "priority": number                 // lower fires first within the item's band
 }
 
 CallPattern = {"kind":"bid"|"pass"|"double"|"redouble"|"any_bid"|"any"|"none",
+  "level"?:number,                   // shorthand for levelMin = levelMax = level
   "levelMin"?:number,"levelMax"?:number,"strains"?:["C"|"D"|"H"|"S"|"N"...]}
+
+SuitRef = "S"|"H"|"D"|"C"|"partner_last_bid_suit"|"partner_first_bid_suit"|
+  "own_longest_suit"|"own_first_bid_suit"|"own_last_bid_suit"|"rho_bid_suit"|"lho_bid_suit"
 
 HandCondition = {"all":[...]} | {"any":[...]} | {"not":...} |
   {"hcp":{"min"?:NumParam,"max"?:NumParam}} |
   {"totalPoints":{"min"?:NumParam,"max"?:NumParam}} |   // HCP + length points
-  {"suitLength":{"suit":"S"|"H"|"D"|"C"|"partner_last_bid_suit"|"own_longest_suit"|
-    "rho_bid_suit","min"?:NumParam,"max"?:NumParam}} |
+  {"suitLength":{"suit":SuitRef,"min"?:NumParam,"max"?:NumParam}} |
   {"longestSuitAmong":{"suits":["S","H"...]}} |
   {"balanced":true|false} |
-  {"suitQuality":{"suit":...,"quality":"two_of_top_three"|"three_of_top_five"}} |
-  {"hasStopperIn":{"suit":...}}
+  {"suitQuality":{"suit":SuitRef,"quality":"two_of_top_three"|"three_of_top_five"}} |
+  {"hasStopperIn":{"suit":SuitRef}} |
+  {"aces":{"min"?:NumParam,"max"?:NumParam}} |          // Blackwood/Gerber responses
+  {"kings":{"min"?:NumParam,"max"?:NumParam}} |
+  {"keycards":{"suit":SuitRef,"min"?:NumParam,"max"?:NumParam}} |  // aces + that suit's K (RKCB)
+  {"holds":{"suit":SuitRef,"rank":2-14}}                // a specific card (trump Q = rank 12)
 
 NumParam = number | {"$setting":"<setting key>","field"?:"low"|"high"}
 

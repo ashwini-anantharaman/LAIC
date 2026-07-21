@@ -22,6 +22,15 @@ export interface SeatAuctionFacts {
   partnerLast?: Call;
   ownLast?: Call;
   rhoLast?: Call;
+  lhoLast?: Call;
+  /** First NON-PASS call by this seat / partner (pattern matching). */
+  ownFirst?: Call;
+  partnerFirst?: Call;
+  /** First / last CONTRACT BID by seat and partner (SuitRef resolution —
+   *  doubles don't name a suit, so these skip X/XX as well as passes). */
+  ownFirstBid?: Call;
+  ownLastBid?: Call;
+  partnerFirstBid?: Call;
   /** 1-based partnership bidding round (this seat's upcoming turn index). */
   round: number;
 }
@@ -46,10 +55,20 @@ export function analyzeSeat(auction: AuctionCall[], seat: Seat): SeatAuctionFact
     }
     return undefined;
   };
+  const firstOf = (s: Seat, ok: (c: Call) => boolean): Call | undefined =>
+    auction.find((c) => c.seat === s && ok(c.call))?.call;
+  const nonPass = (c: Call) => c !== "P";
+  const lastBidOf = (s: Seat): Call | undefined => {
+    for (let i = auction.length - 1; i >= 0; i--) {
+      if (auction[i]!.seat === s && isContractBid(auction[i]!.call)) return auction[i]!.call;
+    }
+    return undefined;
+  };
 
-  // RHO = the seat that acts immediately before `seat`.
+  // RHO/LHO = the seats acting immediately before/after `seat`.
   const order: Seat[] = ["N", "E", "S", "W"];
   const rho = order[(order.indexOf(seat) + 3) % 4]!;
+  const lho = order[(order.indexOf(seat) + 1) % 4]!;
 
   const contested =
     opened !== null &&
@@ -79,6 +98,12 @@ export function analyzeSeat(auction: AuctionCall[], seat: Seat): SeatAuctionFact
     partnerLast: lastOf(partner),
     ownLast: lastOf(seat),
     rhoLast: lastOf(rho),
+    lhoLast: lastOf(lho),
+    ownFirst: firstOf(seat, nonPass),
+    partnerFirst: firstOf(partner, nonPass),
+    ownFirstBid: firstOf(seat, isContractBid),
+    ownLastBid: lastBidOf(seat),
+    partnerFirstBid: firstOf(partner, isContractBid),
     round: mine + 1,
   };
 }
@@ -110,8 +135,11 @@ export function matchCallPattern(pattern: CallPattern, call: Call | undefined): 
       const bid = parseBid(call);
       if (!bid) return false;
       if (pattern.kind === "any_bid") return true;
-      if (pattern.levelMin !== undefined && bid.level < pattern.levelMin) return false;
-      if (pattern.levelMax !== undefined && bid.level > pattern.levelMax) return false;
+      // `level` is shorthand for levelMin = levelMax = level.
+      const levelMin = pattern.levelMin ?? pattern.level;
+      const levelMax = pattern.levelMax ?? pattern.level;
+      if (levelMin !== undefined && bid.level < levelMin) return false;
+      if (levelMax !== undefined && bid.level > levelMax) return false;
       if (pattern.strains && !pattern.strains.includes(bid.strain)) return false;
       return true;
     }
@@ -127,6 +155,10 @@ export function matchContext(context: AuctionContext, facts: SeatAuctionFacts): 
     return false;
   if (context.ownLast && !matchCallPattern(context.ownLast, facts.ownLast)) return false;
   if (context.rhoLast && !matchCallPattern(context.rhoLast, facts.rhoLast)) return false;
+  if (context.lhoLast && !matchCallPattern(context.lhoLast, facts.lhoLast)) return false;
+  if (context.ownFirst && !matchCallPattern(context.ownFirst, facts.ownFirst)) return false;
+  if (context.partnerFirst && !matchCallPattern(context.partnerFirst, facts.partnerFirst))
+    return false;
   if (context.roundMin !== undefined && facts.round < context.roundMin) return false;
   if (context.roundMax !== undefined && facts.round > context.roundMax) return false;
   return true;

@@ -247,7 +247,15 @@ export default async function SetDetailPage({
 
       {/* History */}
       <section className="rounded-lg border border-neutral-200 p-4">
-        <h3 className="text-sm font-medium">History</h3>
+        <h3 className="flex items-baseline text-sm font-medium">
+          History
+          <Link
+            href="/bridge/guide#versions"
+            className="ml-auto text-[11px] font-normal text-neutral-400 underline-offset-2 hover:text-emerald-700 hover:underline"
+          >
+            how versions work →
+          </Link>
+        </h3>
         <p className="mt-0.5 text-xs text-neutral-500">
           Every save is kept. Restoring an older state saves it as the newest version —
           nothing is ever overwritten.

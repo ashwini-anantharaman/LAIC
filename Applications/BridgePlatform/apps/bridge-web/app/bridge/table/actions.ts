@@ -69,7 +69,7 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
   const { pickDefaultSet, ensureHousePlayer } = await import("@/lib/arena");
   const store = kbStore();
   const preferredKbId = String(formData.get("kbId") ?? "").trim();
-  const kbs = await store.listKbs();
+  const kbs = (await store.listKbs()).filter((k) => !k.archived);
   const ordered = preferredKbId
     ? [...kbs].sort((a) => (a.kbId === preferredKbId ? -1 : 0))
     : kbs;
@@ -268,6 +268,11 @@ export async function undoAction(formData: FormData): Promise<void> {
   await sessionService().undo(sessionId);
   await audit(context, "session.undo", "kb_session", sessionId);
   revalidatePath(`/bridge/table/${sessionId}`);
+  // Come back PAUSED: the point of undo is to inspect (and often fix) the
+  // decision — auto-play would instantly redo it. Step ▸ resumes one beat
+  // at a time. The token is unique per undo so AutoAdvance remounts paused
+  // even when the previous pause was already resumed.
+  redirect(`/bridge/table/${sessionId}?paused=${Date.now()}`);
 }
 
 /**
@@ -402,11 +407,52 @@ export async function flagDecisionAction(formData: FormData): Promise<void> {
   const seq = Number(formData.get("seq"));
   const itemId = String(formData.get("itemId") ?? "").trim() || undefined;
   const text = String(formData.get("text") ?? "").trim() || "Flagged from the table.";
+
+  // Freeze the position NOW: the session can be undone past this decision,
+  // re-pinned, or continued — the flag must keep showing what the fellow saw.
+  const { callLabel, rankLabel, isActionEvent } = await import("@bridge/events");
+  const { seededDeal } = await import("@bridge/engine");
+  const { suitTextsFromCards, SUIT_ORDER } = await import("@/lib/dealText");
+  const GLYPH: Record<Suit, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
+  const cardLabel = (c: Card) => `${rankLabel(c.rank)}${GLYPH[c.suit]}`;
+  const dealt = record.board.hands ?? seededDeal(record.board.seed);
+  const hands = Object.fromEntries(
+    (Object.entries(dealt) as [Seat, Card[]][]).map(([seat, cards]) => {
+      const bySuit = suitTextsFromCards(cards);
+      return [seat, SUIT_ORDER.map((s) => `${GLYPH[s]}${bySuit[s] || "—"}`).join(" ")];
+    }),
+  );
+  const before = record.events.filter(isActionEvent).filter((e) => e.seq < seq);
+  const flaggedEvent = record.events.find((e) => e.seq === seq);
+  const logic = flaggedEvent && !isActionEvent(flaggedEvent) ? flaggedEvent : undefined;
+  const board = {
+    name: record.board.name,
+    dealer: record.board.dealer,
+    vul: record.board.vul,
+    hands,
+    calls: before
+      .filter((e) => e.category === "bid-event")
+      .map((e) => ({ seat: e.seat, label: callLabel(e.call) })),
+    plays: before
+      .filter((e) => e.category === "play-event")
+      .map((e) => ({ seat: e.seat, label: cardLabel(e.card) })),
+    flagged: {
+      seat: logic?.seat ?? "?",
+      label: logic
+        ? logic.category === "bid-logic-event"
+          ? callLabel(logic.chosen)
+          : cardLabel(logic.chosen)
+        : "(decision no longer in the record)",
+      reason: logic?.reason ?? "",
+    },
+  };
+
   const suggestion = await kbService().createSuggestion({
     kbId: record.kbId,
     itemId,
     sessionId,
     decisionSeq: seq,
+    board,
     text,
     createdBy: context.nexusUserId,
   });

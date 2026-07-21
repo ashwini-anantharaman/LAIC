@@ -4,25 +4,26 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChipRow, UnderlineTabs } from "@/components/ChipTabs";
 import { ValidityBadge } from "@/components/kb/badges";
+import { ConfirmButton } from "@/components/kb/ConfirmButton";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { suggestPlayersAction } from "../kb/actions";
-import { createRungPlayerAction, tryPlayerAction } from "./actions";
+import { createRungPlayerAction, deletePlayerAction, tryPlayerAction } from "./actions";
 
 /** Players area (2026-07-16 rework): Configured (per-system, per-creator
  *  facets, one-click rung creation) | AI (reserved for BEN). */
 export default async function PlayersPage({
   searchParams,
 }: Readonly<{
-  searchParams: Promise<{ tab?: string; kb?: string; by?: string }>;
+  searchParams: Promise<{ tab?: string; kb?: string; by?: string; deleted?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   await ensureSeeds();
-  const { tab, kb: kbParam, by } = await searchParams;
+  const { tab, kb: kbParam, by, deleted } = await searchParams;
 
   const store = kbStore();
-  const kbs = await store.listKbs();
+  const kbs = (await store.listKbs()).filter((k) => !k.archived);
   const withPlayers: { kb: KnowledgeBase; players: KbPlayer[] }[] = [];
   for (const kb of kbs) {
     withPlayers.push({ kb, players: await store.listPlayersForKb(kb.kbId) });
@@ -79,6 +80,13 @@ export default async function PlayersPage({
         <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">Bridge</p>
         <h1 className="mt-1 text-3xl font-medium">Players</h1>
       </header>
+
+      {deleted && (
+        <p className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Player deleted. Boards already dealt with it keep playing — sessions carry their own
+          snapshot.
+        </p>
+      )}
 
       <UnderlineTabs
         tabs={[
@@ -258,6 +266,15 @@ export default async function PlayersPage({
                   >
                     Edit
                   </Link>
+                  <span className="ml-auto">
+                    <ConfirmButton
+                      action={deletePlayerAction}
+                      hidden={{ playerId: p.playerId, returnTo: playersHref({ tab, kb: kbParam, by }) }}
+                      confirm={`Delete "${p.name}"? Boards already dealt with it keep playing; this can't be undone.`}
+                      label="Delete"
+                      className="rounded border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                    />
+                  </span>
                 </div>
               </li>
             ))}

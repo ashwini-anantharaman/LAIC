@@ -99,7 +99,16 @@ export function explodeFlatText(paragraph: string): string[] {
   return out.filter(Boolean);
 }
 
-export function chunkDocument(text: string): ChunkResult {
+/**
+ * Deterministically chunk a document into citable passages + sections.
+ * `opts.scope` (the sourceId at upload time) feeds the passage-id hash so the
+ * SAME document uploaded under two sources gets DISJOINT ids — passage_id is
+ * the global primary key, and unscoped ids collide across sources. Ids stay
+ * stable per (scope, ordinal, text), so re-uploading an unchanged document to
+ * the same source keeps citations intact. Section-only callers omit it.
+ */
+export function chunkDocument(text: string, opts?: { scope?: string }): ChunkResult {
+  const scopePrefix = opts?.scope ? `${opts.scope}\n` : "";
   const paragraphs = text
     .split(/\r?\n\s*\r?\n/)
     .map((p) => p.trim())
@@ -130,7 +139,7 @@ export function chunkDocument(text: string): ChunkResult {
     const ordinal = passages.length;
     const anchor = firstLine.slice(0, 72);
     passages.push({
-      passageId: `pp_${ordinal}_${fnv1a(para)}`,
+      passageId: `pp_${ordinal}_${fnv1a(scopePrefix + para)}`,
       ordinal,
       anchor,
       text: para,

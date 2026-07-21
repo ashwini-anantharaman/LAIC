@@ -97,8 +97,10 @@ export interface KbStore {
   putSource(source: KbSource): Promise<void>;
   getSource(sourceId: string): Promise<KbSource | null>;
   listSources(): Promise<KbSource[]>;
+  deleteSource(sourceId: string): Promise<void>;
   putDocument(doc: KbSourceDocument): Promise<void>;
   getDocument(sourceId: string): Promise<KbSourceDocument | null>;
+  deleteDocument(sourceId: string): Promise<void>;
   /** Wholesale replace (documents are re-uploaded as a unit). */
   replacePassages(sourceId: string, passages: KbSourcePassage[]): Promise<void>;
   listPassages(sourceId: string): Promise<KbSourcePassage[]>;
@@ -410,11 +412,19 @@ export class InMemoryKbStore implements KbStore {
   async listSources() {
     return [...this.data.sources].sort((a, b) => a.title.localeCompare(b.title));
   }
+  async deleteSource(sourceId: string) {
+    this.data.sources = this.data.sources.filter((s) => s.sourceId !== sourceId);
+    this.persist();
+  }
   async putDocument(doc: KbSourceDocument) {
     this.upsert(this.data.documents, (d) => d.sourceId, doc);
   }
   async getDocument(sourceId: string) {
     return this.data.documents.find(byId((d) => d.sourceId, sourceId)) ?? null;
+  }
+  async deleteDocument(sourceId: string) {
+    this.data.documents = this.data.documents.filter((d) => d.sourceId !== sourceId);
+    this.persist();
   }
   async replacePassages(sourceId: string, passages: KbSourcePassage[]) {
     this.data.passages = this.data.passages

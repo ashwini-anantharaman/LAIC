@@ -30,6 +30,12 @@ export interface KnowledgeBase {
   description?: string;
   /** Display label of the system this KB captures ("SAYC", "2/1"…). */
   systemLabel: string;
+  /**
+   * Hidden everywhere (KB list, players, tables, arena) but never deleted —
+   * data, releases, and existing sessions stay intact. Reversible from the
+   * KB list's "Hidden knowledge bases" section.
+   */
+  archived?: boolean;
   levels: LevelDef[];
   /**
    * Last-good pointer (spec decision 5): the compile sessions resolve
@@ -416,6 +422,25 @@ export interface KbSandbox {
 // Suggestions (spec decision 22)
 // ---------------------------------------------------------------------------
 
+/**
+ * Board context frozen AT FLAG TIME. Deliberately denormalized (plain
+ * strings, render-ready): the session it came from may be undone past this
+ * decision, re-pinned, or continued — the flag must keep showing the exact
+ * position the fellow saw.
+ */
+export interface SuggestionBoard {
+  name: string;
+  dealer: string;
+  vul: string;
+  /** seat -> "♠KQ4 ♥A87 ♦T92 ♣QJ53" (the initial deal). */
+  hands: Record<string, string>;
+  /** Auction up to (not including) the flagged decision. */
+  calls: { seat: string; label: string }[];
+  /** Cards played up to (not including) the flagged decision. */
+  plays: { seat: string; label: string }[];
+  flagged: { seat: string; label: string; reason: string };
+}
+
 export interface KbSuggestion {
   suggestionId: string;
   kbId: string;
@@ -423,6 +448,8 @@ export interface KbSuggestion {
   /** Set when flagged from the table: the session + decision it concerns. */
   sessionId?: string;
   decisionSeq?: number;
+  /** Frozen position at flag time (see SuggestionBoard). */
+  board?: SuggestionBoard;
   text: string;
   status: "open" | "resolved";
   createdBy: string;
@@ -441,6 +468,13 @@ export interface KbSource {
   sourceType: "official_system_document" | "book" | "article" | "expert" | "model";
   rightsStatus: "licensed" | "public" | "owned" | "fair_use_excerpt";
   locator?: string;
+  /**
+   * The KB this source was registered from. The registry itself stays global
+   * (one rights record per document), but a source only SURFACES in its own
+   * KB. Absent on platform-global sources (src_claude) and on legacy rows —
+   * those surface wherever a KB's items or extraction runs reference them.
+   */
+  kbId?: string;
   registeredBy: string;
   createdAt: string;
 }

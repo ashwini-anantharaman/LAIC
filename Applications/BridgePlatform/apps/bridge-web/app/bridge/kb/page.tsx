@@ -5,21 +5,37 @@ import { redirect } from "next/navigation";
 import { DeleteKbButton } from "@/components/kb/DeleteKbButton";
 import { getBridgeContext } from "@/lib/nexus";
 import { ensureSeeds, kbStore } from "@/lib/kb";
-import { createKbAction, deleteKbAction, deriveKbAction, duplicateKbAction } from "./actions";
+import {
+  createKbAction,
+  deleteKbAction,
+  deriveKbAction,
+  duplicateKbAction,
+  installSaycTemplateAction,
+  setKbArchivedAction,
+} from "./actions";
 
 /** The knowledge-base list: one tree (masters with their limited derivatives
  *  nested underneath), branch/duplicate/delete inline per base. */
 export default async function KbListPage({
   searchParams,
-}: Readonly<{ searchParams: Promise<{ deleted?: string; deleteError?: string }> }>) {
+}: Readonly<{
+  searchParams: Promise<{
+    deleted?: string;
+    deleteError?: string;
+    hidden?: string;
+    unhidden?: string;
+  }>;
+}>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   if (!canAccessAdminArea(context)) redirect("/bridge/home");
   await ensureSeeds();
-  const { deleted, deleteError } = await searchParams;
+  const { deleted, deleteError, hidden, unhidden } = await searchParams;
 
   const store = kbStore();
-  const kbs = await store.listKbs();
+  const allKbs = await store.listKbs();
+  const hiddenKbs = allKbs.filter((k) => k.archived);
+  const kbs = allKbs.filter((k) => !k.archived);
   const itemsByKb = new Map<string, KnowledgeItem[]>(
     await Promise.all(
       kbs.map(async (k) => [k.kbId, await store.listItemsForKb(k.kbId)] as const),
@@ -184,6 +200,18 @@ export default async function KbListPage({
               </div>
             </details>
 
+            <form action={setKbArchivedAction}>
+              <input type="hidden" name="kbId" value={kb.kbId} />
+              <input type="hidden" name="archived" value="true" />
+              <button
+                type="submit"
+                title="Hide this knowledge base everywhere (nothing is deleted; unhide below)"
+                className="rounded border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
+              >
+                Hide
+              </button>
+            </form>
+
             <DeleteKbButton
               kbId={kb.kbId}
               name={kb.name}
@@ -211,6 +239,17 @@ export default async function KbListPage({
       {deleted && (
         <p className="mb-6 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           Knowledge base deleted.
+        </p>
+      )}
+      {hidden && (
+        <p className="mb-6 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Knowledge base hidden. It disappears from every list; nothing was deleted — unhide it
+          from &ldquo;Hidden knowledge bases&rdquo; below.
+        </p>
+      )}
+      {unhidden && (
+        <p className="mb-6 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Knowledge base restored.
         </p>
       )}
       {deleteError && (
@@ -247,7 +286,63 @@ export default async function KbListPage({
         </div>
       )}
 
-      <section className="mt-10 rounded-lg border border-neutral-200 p-5">
+      {hiddenKbs.length > 0 && (
+        <details className="mt-8">
+          <summary className="cursor-pointer text-sm text-neutral-500 hover:text-neutral-800">
+            Hidden knowledge bases ({hiddenKbs.length})
+          </summary>
+          <ul className="mt-3 space-y-2">
+            {hiddenKbs.map((kb) => (
+              <li
+                key={kb.kbId}
+                className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-neutral-300 px-4 py-2.5"
+              >
+                <span className="text-sm font-medium text-neutral-500">{kb.name}</span>
+                <span className="text-xs text-neutral-400">{kb.systemLabel}</span>
+                <form action={setKbArchivedAction} className="ml-auto">
+                  <input type="hidden" name="kbId" value={kb.kbId} />
+                  <input type="hidden" name="archived" value="false" />
+                  <button
+                    type="submit"
+                    className="rounded border border-neutral-300 px-3 py-1 text-xs hover:border-emerald-400"
+                  >
+                    Unhide
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <section className="mt-10 rounded-lg border border-emerald-300 bg-emerald-50/40 p-5">
+        <h2 className="font-medium">Start from the curated SAYC template</h2>
+        <p className="mt-1 max-w-2xl text-xs text-neutral-600">
+          A complete, machine-tested SAYC system authored by Claude (cited to the Claude
+          source): openings through slam bidding, leads, signals, and card play — every
+          convention toggleable. Installs as a fresh knowledge base with Floor / Core /
+          Conventions / Full sets and a pinned Base release. Items arrive
+          <em> reviewed</em>; your bridge experts edit and give the final approval.
+        </p>
+        <form action={installSaycTemplateAction} className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-neutral-500">Template KB name (optional)</span>
+            <input
+              name="name"
+              placeholder="SAYC (curated)"
+              className="w-64 rounded border border-neutral-300 px-2 py-1.5"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+          >
+            Install curated SAYC
+          </button>
+        </form>
+      </section>
+
+      <section className="mt-6 rounded-lg border border-neutral-200 p-5">
         <h2 className="font-medium">New knowledge base</h2>
         <p className="mt-1 text-xs text-neutral-500">
           A fresh master base. To make a limited version of an existing one,

@@ -111,6 +111,12 @@ export class KbService {
     await this.store.deleteKb(kbId);
   }
 
+  /** Hide/unhide a KB everywhere without touching its data (reversible). */
+  async setKbArchived(kbId: string, archived: boolean): Promise<void> {
+    const kb = await this.getKb(kbId);
+    await this.store.putKb({ ...kb, archived: archived || undefined, updatedAt: this.now() });
+  }
+
   /** The compile sessions/players resolve against (last-good). */
   async liveCompile(kbId: string): Promise<CompiledKb | null> {
     const kb = await this.getKb(kbId);
@@ -325,6 +331,118 @@ export class KbService {
         );
     }
     await this.store.deleteItemVersion(itemId, versionNumber);
+  }
+
+  /**
+   * Bulk-delete knowledge items from a KB. Items pinned by a published
+   * release are blocked (the release manifest must stay resolvable — this is
+   * what makes the Base release's items undeletable). Deletable items are
+   * stripped from every set that lists them BEFORE the membership goes (a
+   * set referencing a missing item fails compile), and each strip is a
+   * normal snapshot-versioned set save, so it's restorable. The item record,
+   * its versions, and its edges are destroyed only when no other KB still
+   * shares the item. One recompile at the end.
+   */
+  async deleteItems(
+    kbId: string,
+    itemIds: string[],
+    deletedBy: string,
+  ): Promise<{
+    deleted: { itemId: string; title: string }[];
+    blocked: { itemId: string; title: string; reason: string }[];
+    setsTouched: string[];
+  }> {
+    const memberships = await this.store.listMembershipsForKb(kbId);
+    const memberIds = new Set(memberships.map((m) => m.itemId));
+    const releases = await this.store.listKbVersions(kbId);
+
+    const deleted: { itemId: string; title: string }[] = [];
+    const blocked: { itemId: string; title: string; reason: string }[] = [];
+    for (const itemId of new Set(itemIds)) {
+      const item = await this.store.getItem(itemId);
+      if (!item || !memberIds.has(itemId)) {
+        blocked.push({ itemId, title: item?.title ?? itemId, reason: "not in this knowledge base" });
+        continue;
+      }
+      const pin = releases.find((r) => r.items.some((i) => i.itemId === itemId));
+      if (pin) {
+        blocked.push({
+          itemId,
+          title: item.title,
+          reason: `pinned by published release v${pin.versionNumber}`,
+        });
+        continue;
+      }
+      deleted.push({ itemId, title: item.title });
+    }
+
+    const setsTouched: string[] = [];
+    if (deleted.length) {
+      const removeSet = new Set(deleted.map((d) => d.itemId));
+      for (const pack of await this.store.listPacksForKb(kbId)) {
+        if (!pack.itemIds.some((id) => removeSet.has(id))) continue;
+        setsTouched.push(pack.name);
+        await this.writePackWithSnapshot(
+          {
+            ...pack,
+            itemIds: pack.itemIds.filter((id) => !removeSet.has(id)),
+            updatedAt: this.now(),
+          },
+          deletedBy,
+        );
+      }
+      for (const { itemId } of deleted) {
+        for (const m of memberships.filter((x) => x.itemId === itemId))
+          await this.store.removeMembership(m);
+        const stillMember = await this.store.listMembershipsForItem(itemId);
+        if (!stillMember.length) {
+          const edges = await this.store.listEdgesTouching([itemId]);
+          for (const edge of edges) await this.store.deleteEdge(edge.edgeId);
+          await this.store.deleteItemVersionsForItem(itemId);
+          await this.store.deleteItem(itemId);
+        }
+      }
+      await this.recompile(kbId);
+    }
+    return { deleted, blocked, setsTouched };
+  }
+
+  /**
+   * Delete a registered source and everything under it: document, passages,
+   * and extraction jobs (across every KB). Refuses while any item still cites
+   * it — provenance must never dangle silently; delete or re-cite the items
+   * first (the bulk delete on Master / the source review page makes that a
+   * one-screen sweep). src_claude, the platform-global source, is permanent.
+   */
+  async deleteSource(sourceId: string): Promise<void> {
+    if (sourceId === "src_claude")
+      throw new Error("The Claude source is platform-global and can't be deleted.");
+    const source = await this.store.getSource(sourceId);
+    if (!source) throw new Error(`No source ${sourceId}`);
+
+    const citing = new Map<string, number>(); // kb name -> count
+    const kbs = await this.store.listKbs();
+    for (const kb of kbs) {
+      const n = (await this.store.listItemsForKb(kb.kbId)).filter((i) =>
+        i.sourceReferences.some((r) => r.sourceId === sourceId),
+      ).length;
+      if (n > 0) citing.set(kb.name, n);
+    }
+    if (citing.size) {
+      const detail = [...citing.entries()].map(([name, n]) => `${n} in "${name}"`).join(", ");
+      throw new Error(
+        `Items still cite this source (${detail}). Delete those items first, or leave the source as their provenance.`,
+      );
+    }
+
+    for (const kb of kbs) {
+      const jobs = await this.store.listJobsForKb(kb.kbId);
+      for (const job of jobs)
+        if (job.sourceId === sourceId) await this.store.deleteJob(job.jobId);
+    }
+    await this.store.replacePassages(sourceId, []);
+    await this.store.deleteDocument(sourceId);
+    await this.store.deleteSource(sourceId);
   }
 
   // ---- KB versions (releases: the manifest over compiles) --------------------

@@ -21,6 +21,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/bridge/table", label: "Play" },
   { href: "/bridge/players", label: "Players" },
   { href: "/bridge/library", label: "Library" },
+  { href: "/bridge/guide", label: "Guide" },
   {
     href: "/bridge/kb",
     label: "Knowledge bases",

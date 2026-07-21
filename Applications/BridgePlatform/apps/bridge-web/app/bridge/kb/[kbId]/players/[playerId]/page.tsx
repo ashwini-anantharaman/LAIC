@@ -1,8 +1,10 @@
 import { acblConventionCard, CATEGORY_BY_ID } from "@bridge/kb";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { deletePlayerAction } from "@/app/bridge/players/actions";
 import { AcblCardView } from "@/components/kb/AcblCardView";
 import { ValidityBadge } from "@/components/kb/badges";
+import { ConfirmButton } from "@/components/kb/ConfirmButton";
 import { PlayerEditor } from "@/components/kb/PlayerEditor";
 import { kbService, kbStore } from "@/lib/kb";
 import { savePlayerAction, simulatePlayerAction } from "../../../actions";
@@ -53,8 +55,47 @@ export default async function PlayerPage({
           <ValidityBadge status={player.validationStatus} />
         </div>
         {player.description && (
-          <p className="mb-4 text-sm text-neutral-600">{player.description}</p>
+          <p className="mb-2 text-sm text-neutral-600">{player.description}</p>
         )}
+
+        {/* What this player knows, at a glance — before any editing. */}
+        <div className="mb-5 flex flex-wrap items-center gap-1.5 text-sm">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-neutral-400">
+            Plays from
+          </span>
+          {player.enabledPackIds.length === 0 ? (
+            <span className="text-neutral-500">no knowledge sets — enable one below</span>
+          ) : (
+            player.enabledPackIds.map((id) => {
+              const set = packs.find((p) => p.packId === id);
+              const effective = compiled.packs.find((p) => p.packId === id);
+              return (
+                <Link
+                  key={id}
+                  href={`${base}/sets/${id}`}
+                  title={
+                    effective
+                      ? `${effective.itemIds.length} knowledge items at the table — open the set`
+                      : "open the set"
+                  }
+                  className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 font-medium text-emerald-900 hover:border-emerald-500"
+                >
+                  {set?.name ?? id}
+                  {effective && (
+                    <span className="ml-1.5 font-normal text-emerald-700/70">
+                      {effective.itemIds.length}
+                    </span>
+                  )}
+                </Link>
+              );
+            })
+          )}
+          <span className="ml-1 text-xs text-neutral-400">
+            · {player.decisionPolicyId.replace(/_/g, " ")} ·{" "}
+            {Object.keys(player.settingOverrides).length} setting override
+            {Object.keys(player.settingOverrides).length === 1 ? "" : "s"}
+          </span>
+        </div>
 
         <PlayerEditor
           kbId={kbId}
@@ -148,6 +189,23 @@ export default async function PlayerPage({
         </section>
 
         <AcblCardView card={card} kbId={kbId} />
+
+        <section className="rounded-lg border border-red-200 p-4">
+          <h3 className="text-sm font-medium text-red-800">Danger zone</h3>
+          <p className="mt-1 text-xs text-neutral-500">
+            Boards already dealt with this player keep playing — sessions carry their own
+            snapshot. Deleting can&apos;t be undone.
+          </p>
+          <div className="mt-2">
+            <ConfirmButton
+              action={deletePlayerAction}
+              hidden={{ playerId, returnTo: "/bridge/players" }}
+              confirm={`Delete "${player.name}"? This can't be undone.`}
+              label="Delete this player"
+              className="rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+            />
+          </div>
+        </section>
       </aside>
     </div>
   );

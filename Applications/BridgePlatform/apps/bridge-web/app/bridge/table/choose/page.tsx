@@ -18,7 +18,7 @@ export default async function ChooseTablePage() {
   await ensureSeeds();
 
   const store = kbStore();
-  const kbs = await store.listKbs();
+  const kbs = (await store.listKbs()).filter((k) => !k.archived);
   const sessions = (await sessionService().listRecent()).slice(0, 6);
   let boards: Awaited<ReturnType<ReturnType<typeof libraryStore>["listEntries"]>> = [];
   try {

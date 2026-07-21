@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { kbService, kbStore } from "@/lib/kb";
+import { scopeSources } from "@/lib/sources";
 import { deleteKbAction } from "../actions";
 
 /** Overview: where to go next, and what needs attention. */
@@ -13,7 +14,7 @@ export default async function KbOverviewPage({
   const { kbId } = await params;
   const { deleteError } = await searchParams;
   const store = kbStore();
-  const [kb, items, packs, sources, jobs, compiled] = await Promise.all([
+  const [kb, items, packs, allSources, jobs, compiled] = await Promise.all([
     store.getKb(kbId),
     store.listItemsForKb(kbId),
     store.listPacksForKb(kbId),
@@ -21,6 +22,10 @@ export default async function KbOverviewPage({
     store.listJobsForKb(kbId),
     kbService().liveCompile(kbId),
   ]);
+  // Registry is global; count only this KB's real sources (and not src_claude).
+  const sources = scopeSources(allSources, kbId, items, jobs).filter(
+    (s) => s.sourceId !== "src_claude",
+  );
 
   const failures = jobs.flatMap((j) => j.failures);
   const base = `/bridge/kb/${kbId}`;

@@ -69,6 +69,34 @@ export async function createRungPlayerAction(formData: FormData): Promise<void> 
   redirect(`/bridge/kb/${kbId}/players/${player.playerId}?saved=1`);
 }
 
+/**
+ * Delete a player. Safe by construction: sessions SNAPSHOT the player into
+ * their seats at creation, so boards already dealt keep playing; the arena
+ * re-provisions house players on demand. Admin-gated like all player edits.
+ */
+export async function deletePlayerAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const { requireAdminContext } = await import("@/lib/api");
+  await requireAdminContext("bridge.knowledge.edit");
+  const playerId = String(formData.get("playerId"));
+  const store = kbStore();
+  const player = await store.getPlayer(playerId);
+  if (!player) redirect("/bridge/players?deleted=1");
+  await store.deletePlayer(playerId);
+  await audit(context, "profile.delete", "kb_player", playerId, {
+    kbId: player!.kbId,
+    name: player!.name,
+  });
+  revalidatePath("/bridge/players");
+  revalidatePath(`/bridge/kb/${player!.kbId}`, "layout");
+  const returnTo = String(formData.get("returnTo") ?? "");
+  redirect(
+    returnTo.startsWith("/bridge/")
+      ? `${returnTo}${returnTo.includes("?") ? "&" : "?"}deleted=1`
+      : "/bridge/players?deleted=1",
+  );
+}
+
 /** One-click check: you sit South, three copies of the player fill the rest. */
 export async function tryPlayerAction(formData: FormData): Promise<void> {
   const context = await requireContext();
