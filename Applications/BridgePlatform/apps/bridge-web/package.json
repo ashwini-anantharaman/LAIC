@@ -11,14 +11,18 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "@bridge/audit": "workspace:*",
     "@bridge/config": "workspace:*",
     "@bridge/engine": "workspace:*",
     "@bridge/events": "workspace:*",
     "@bridge/formats": "workspace:*",
+    "@bridge/kb": "workspace:*",
     "@bridge/nexus-client": "workspace:*",
     "@bridge/pg-stores": "workspace:*",
     "@bridge/profiles": "workspace:*",
+    "@bridge/sayc-template": "workspace:*",
+    "@bridge/sessions": "workspace:*",
     "@bridge/taxonomy": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts",
     "@supabase/ssr": "^0.12.0",
@@ -26,10 +30,7 @@
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@bridge/kb": "workspace:*",
-    "@anthropic-ai/sdk": "^0.110.0",
-    "unpdf": "^1.6.2",
-    "@bridge/sessions": "workspace:*"
+    "unpdf": "^1.6.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

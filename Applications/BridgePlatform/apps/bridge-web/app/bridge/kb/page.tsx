@@ -5,7 +5,13 @@ import { redirect } from "next/navigation";
 import { DeleteKbButton } from "@/components/kb/DeleteKbButton";
 import { getBridgeContext } from "@/lib/nexus";
 import { ensureSeeds, kbStore } from "@/lib/kb";
-import { createKbAction, deleteKbAction, deriveKbAction, duplicateKbAction } from "./actions";
+import {
+  createKbAction,
+  deleteKbAction,
+  deriveKbAction,
+  duplicateKbAction,
+  installSaycTemplateAction,
+} from "./actions";
 
 /** The knowledge-base list: one tree (masters with their limited derivatives
  *  nested underneath), branch/duplicate/delete inline per base. */
@@ -247,7 +253,34 @@ export default async function KbListPage({
         </div>
       )}
 
-      <section className="mt-10 rounded-lg border border-neutral-200 p-5">
+      <section className="mt-10 rounded-lg border border-emerald-300 bg-emerald-50/40 p-5">
+        <h2 className="font-medium">Start from the curated SAYC template</h2>
+        <p className="mt-1 max-w-2xl text-xs text-neutral-600">
+          A complete, machine-tested SAYC system authored by Claude (cited to the Claude
+          source): openings through slam bidding, leads, signals, and card play — every
+          convention toggleable. Installs as a fresh knowledge base with Floor / Core /
+          Conventions / Full sets and a pinned Base release. Items arrive
+          <em> reviewed</em>; your bridge experts edit and give the final approval.
+        </p>
+        <form action={installSaycTemplateAction} className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-neutral-500">Template KB name (optional)</span>
+            <input
+              name="name"
+              placeholder="SAYC (curated)"
+              className="w-64 rounded border border-neutral-300 px-2 py-1.5"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+          >
+            Install curated SAYC
+          </button>
+        </form>
+      </section>
+
+      <section className="mt-6 rounded-lg border border-neutral-200 p-5">
         <h2 className="font-medium">New knowledge base</h2>
         <p className="mt-1 text-xs text-neutral-500">
           A fresh master base. To make a limited version of an existing one,

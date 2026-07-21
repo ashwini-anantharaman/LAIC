@@ -59,6 +59,9 @@ importers:
       '@bridge/profiles':
         specifier: workspace:*
         version: link:../../packages/bridge-profiles
+      '@bridge/sayc-template':
+        specifier: workspace:*
+        version: link:../../packages/bridge-sayc-template
       '@bridge/sessions':
         specifier: workspace:*
         version: link:../../packages/bridge-sessions

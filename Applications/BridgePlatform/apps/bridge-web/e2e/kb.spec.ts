@@ -15,7 +15,7 @@ let kbUrl = "";
 test("fellow creates a knowledge base", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
   await page.goto("/bridge/kb");
-  await page.getByLabel("Name").fill(KB_NAME);
+  await page.getByLabel("Name", { exact: true }).fill(KB_NAME);
   await page.getByLabel("System label").fill("SAYC");
   await page.getByRole("button", { name: "Create knowledge base" }).click();
   await expect(page.getByRole("heading", { name: KB_NAME })).toBeVisible();
@@ -407,4 +407,49 @@ test("delete a player from the roster", async ({ page, context }) => {
   await page.waitForURL(/deleted=1/);
   await expect(page.getByText("Player deleted.")).toBeVisible();
   await expect(page.locator(`a[href="${editHref}"]`)).toHaveCount(0);
+});
+
+test("curated SAYC template: install, complete sets, and a traced board", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  // Install from the KB list page.
+  await page.goto("/bridge/kb");
+  const name = `SAYC curated e2e ${Date.now().toString(36)}`;
+  const installSection = page
+    .locator("section")
+    .filter({ hasText: "Start from the curated SAYC template" });
+  await installSection.getByRole("textbox").fill(name);
+  await installSection.getByRole("button", { name: "Install curated SAYC" }).click();
+  await expect(page.getByRole("heading", { name })).toBeVisible({ timeout: 30_000 });
+  const curatedKbUrl = page.url();
+
+  // The sets landed, Full SAYC is intended-complete and 17/17.
+  await page.goto(`${curatedKbUrl}/sets`);
+  await expect(page.getByText("Full SAYC")).toBeVisible();
+  await page.getByRole("link", { name: /Full SAYC/ }).click();
+  await expect(page.getByText("Completeness · 17/17")).toBeVisible();
+
+  // A Base release was pinned.
+  await page.goto(`${curatedKbUrl}/versions`);
+  await expect(page.getByText(/Base — curated SAYC/)).toBeVisible();
+
+  // One-click a player from the Full SAYC set, then watch four copies play.
+  const kbId = curatedKbUrl.match(/kb\/(kb_[a-z0-9]+)/)![1]!;
+  await page.goto(`/bridge/players?kb=${kbId}`);
+  await page.getByRole("button", { name: "Full SAYC", exact: true }).click();
+  await page.waitForURL(/players\/pl_.*saved=1/);
+
+  await page.goto(`/bridge/players?kb=${kbId}`);
+  const card = page.locator("li").filter({ hasText: /Full SAYC — / }).first();
+  await card.getByRole("button", { name: "Watch 4 copies" }).click();
+  await page.waitForURL(/\/bridge\/table\/bs_/);
+
+  // The AIs bid from the curated knowledge; the trace cites a curated item.
+  await expect(page.getByText(/Decisions \([1-9]/)).toBeVisible({ timeout: 20_000 });
+  const first = page.locator("details").filter({ hasText: "#0" }).last();
+  await first.locator("summary").click();
+  await expect(first.getByRole("link", { name: "open the knowledge item →" })).toBeVisible();
 });

@@ -123,11 +123,21 @@ landed 2026-07-14:
   deliberately deferred; laic-learner-contracts is untouched.
 - **Operations (2026-07-20)**: migrations 0013–0017 are ALL applied to the
   shared Supabase project. Production runs on the TheNexusDevTeam Vercel —
-  https://bridge-platform-theta.vercel.app (STORE_BACKEND=postgres; deploy
-  `vercel --prod` from the repo root; run new SQL in the Supabase dashboard
-  BEFORE deploying). Dev default remains STORE_BACKEND=file; Playwright is
-  isolated on :3105 (.data-e2e/.next-e2e). The old personal Vercel
-  (bridge-platform-gules) is deprecated.
+  https://nexus-bridge-79lkq4.vercel.app (rotated 2026-07-21 from the retired
+  bridge-platform-theta domain; STORE_BACKEND=postgres; deploy `vercel --prod`
+  from the repo root; run new SQL in the Supabase dashboard BEFORE deploying).
+  Dev default remains STORE_BACKEND=file; Playwright is isolated on :3105
+  (.data-e2e/.next-e2e). The old personal Vercel (bridge-platform-gules) is
+  deprecated.
+- **Curated SAYC template (2026-07-21)**: `packages/bridge-sayc-template`
+  ships the complete authored system (openings→slam, leads/signals, expanded
+  card play) as installable data — "Install curated SAYC" on /bridge/kb runs
+  `installSaycTemplate` (batch puts + one recompile) and pins a Base release.
+  The knowledge language gained aces/kings/keycards/holds predicates,
+  lhoLast/ownFirst/partnerFirst auction memory, the bid_suit action, and 12
+  legitimate-information play behaviors (playView.ts is the honesty boundary).
+  Gates: 52-scenario conformance suite, 100-deal zero-floor self-play, 17/17
+  completeness. Content stays out of @bridge/kb by design.
 - **The live SAYC extraction ran** (2026-07-16): prod carries 119 items
   from the ACBL booklet, a complete flagship player (17/17, zero floors),
   and Floor/Full-booklet sets. Extraction failures surface as the
