@@ -201,6 +201,8 @@ export interface MeResponse {
   display_name?: string;
   role: string;
   memberships: MembershipSummary[];
+  /** Confined Nexus operator: a platform-scope custom role (null otherwise). */
+  nexus_role?: { role_id: string; role_name: string | null; perms: Record<string, string> } | null;
 }
 
 export interface DashboardStageTab {

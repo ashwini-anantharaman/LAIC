@@ -18,6 +18,8 @@ import { OrgPortal } from "@/nexus/routes/OrgPortal";
 import { OperatorAudit } from "@/nexus/routes/OperatorAudit";
 import { OperatorOrgs } from "@/nexus/routes/OperatorOrgs";
 import { OperatorSettings } from "@/nexus/routes/OperatorSettings";
+import { NexusTeam } from "@/nexus/routes/NexusTeam";
+import { OrgTeam } from "@/nexus/routes/OrgTeam";
 import { ProgramSettings } from "@/nexus/routes/ProgramSettings";
 import { OrgAudit } from "@/nexus/routes/OrgAudit";
 import { OrgDashboard } from "@/nexus/routes/OrgDashboard";
@@ -138,11 +140,13 @@ function Routed() {
         <Route path="/orgs" element={<OperatorOrgs />} />
         <Route path="/audit" element={<OperatorAudit />} />
         <Route path="/settings" element={<OperatorSettings />} />
+        <Route path="/team" element={<NexusTeam />} />
         {/* Org space */}
         <Route path="/o/:orgId/dashboard" element={<OrgDashboard />} />
         <Route path="/o/:orgId/programs" element={<Programs />} />
         <Route path="/o/:orgId/settings" element={<OrgSettings />} />
         <Route path="/o/:orgId/audit" element={<OrgAudit />} />
+        <Route path="/o/:orgId/team" element={<OrgTeam />} />
         {/* Program workspace */}
         <Route path="/o/:orgId/p/:programId" element={<ProgramOverview />} />
         <Route path="/o/:orgId/p/:programId/offerings" element={<ProgramOfferings />} />

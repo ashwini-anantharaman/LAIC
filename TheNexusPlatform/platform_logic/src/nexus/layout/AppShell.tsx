@@ -41,7 +41,7 @@ import {
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
 import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
-import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getPlatformBranding, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
+import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
 import { Spinner } from "@/nexus/ui/kit";
@@ -56,11 +56,16 @@ interface NavItem {
   end?: boolean;
 }
 
+// Org nav — each item names the org-role area that gates it (null = always).
+const ORG_NAV_AREAS: Record<string, string | null> = {
+  dashboard: null, programs: "programs", team: "team", settings: "settings", audit: "audit",
+};
 function orgNav(orgId: string): NavItem[] {
   const base = `/o/${orgId}`;
   return [
     { to: `${base}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `${base}/programs`, label: "Programs", icon: Boxes },
+    { to: `${base}/team`, label: "Team & Roles", icon: KeyRound },
     { to: `${base}/settings`, label: "Settings", icon: Settings },
     { to: `${base}/audit`, label: "Audit", icon: ScrollText },
   ];
@@ -402,6 +407,21 @@ export function AppShell() {
   // Are we previewing a role in THIS program?
   const impersonating = impersonation && impersonation.programId === programId ? impersonation : null;
 
+  // A custom-role ORG member (org-level membership "member") is confined to
+  // the areas their org role grants — same mechanic as the program level.
+  const orgMembership = orgId ? orgMemberships.find((m) => m.org_id === orgId) : undefined;
+  const isPlainOrgMember = mode === "org" && !!orgMembership && !["owner", "administrator"].includes(orgMembership.role);
+  const [orgRolePerms, setOrgRolePerms] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (!isPlainOrgMember || !orgId) {
+      setOrgRolePerms(null);
+      return;
+    }
+    getOrgMyRole(orgId)
+      .then((r) => setOrgRolePerms((r?.perms as Record<string, string>) ?? {}))
+      .catch(() => setOrgRolePerms({}));
+  }, [isPlainOrgMember, orgId]);
+
   // The current program (name for the breadcrumb, features for nav gating).
   const [program, setProgram] = useState<Program | null>(null);
   useEffect(() => {
@@ -491,9 +511,23 @@ export function AppShell() {
     heading = "Nexus";
     items = [
       { to: "/orgs", label: "Organizations", icon: Building2 },
+      { to: "/team", label: "Team & Roles", icon: KeyRound },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
     ];
+    // A confined operator (custom platform-scope role) sees only granted areas;
+    // the Team tab is full-operator territory.
+    if (user?.role !== "platform_admin") {
+      const perms = user?.nexus_role?.perms ?? {};
+      const NEXUS_NAV_AREAS: Record<string, string | null> = {
+        orgs: "organizations", team: "__admin__", audit: "audit", settings: "settings",
+      };
+      items = items.filter((it) => {
+        const area = NEXUS_NAV_AREAS[navKey(it.to)];
+        if (area === "__admin__") return false;
+        return !area || !!perms[area];
+      });
+    }
   } else if (programId && isPlainMember) {
     heading = myRoleName ?? programMembership?.program_name ?? "Program";
     items = confinedProgramNav(orgId, programId, myRolePerms ?? {}).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
@@ -514,7 +548,25 @@ export function AppShell() {
   } else {
     heading = orgName;
     items = orgNav(orgId);
+    if (isPlainOrgMember) {
+      const perms = orgRolePerms ?? {};
+      items = items.filter((it) => {
+        const area = ORG_NAV_AREAS[navKey(it.to)];
+        return !area || !!perms[area];
+      });
+    }
   }
+
+  // Confined viewers bounce off areas their role doesn't grant (deep links).
+  useEffect(() => {
+    if (!isPlainOrgMember || orgRolePerms === null || programId) return;
+    const seg = pathname.split("/").filter(Boolean).pop() ?? "";
+    const area = ORG_NAV_AREAS[seg];
+    if (area && !orgRolePerms[area]) {
+      navigate(`/o/${orgId}/dashboard`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlainOrgMember, orgRolePerms, pathname, orgId, programId]);
 
 
   const PAGE_LABELS: Record<string, string> = {

@@ -43,12 +43,14 @@ export interface Session {
 
 function deriveMode(me: MeResponse | null): SessionMode | null {
   if (!me) return null;
-  if (me.role === "platform_admin") return "nexus";
-  const hasOrgAdmin = me.memberships.some(
-    (m) => !m.program_id && (m.role === "owner" || m.role === "administrator"),
-  );
-  if (hasOrgAdmin) return "org";
-  return "member";
+  // Full operator, or a confined operator carrying a platform-scope role.
+  if (me.role === "platform_admin" || me.nexus_role) return "nexus";
+  // Any org-LEVEL membership (owner/administrator/member) gets the org space;
+  // custom org roles confine the nav inside it.
+  const hasOrgLevel = me.memberships.some((m) => !m.program_id);
+  if (hasOrgLevel) return "org";
+  const hasProgram = me.memberships.some((m) => m.program_id);
+  return hasProgram ? "member" : "member";
 }
 
 const Ctx = createContext<Session | null>(null);

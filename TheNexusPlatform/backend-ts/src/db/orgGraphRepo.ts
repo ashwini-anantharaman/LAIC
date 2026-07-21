@@ -7,7 +7,7 @@
  * bulk registration import. Postgres-only (RLS-scoped via `scoped()`); returns
  * snake_case rows for the routes.
  */
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { HttpError } from "../httpError";
 import * as localKeys from "../platformLocalStore";
@@ -35,7 +35,9 @@ export async function listProgramRoles(programId: string): Promise<Row[]> {
 }
 
 export async function getProgramRole(id: string): Promise<Row | null> {
-  return scoped(async (tx) => {
+  // Privileged lookup: routes verify the caller's altitude; platform-scope
+  // rows (org null) are invisible to org-scoped RLS by construction.
+  return asPrivileged(async (tx) => {
     const r = await tx.select().from(programRoles).where(eq(programRoles.id, id)).limit(1);
     return r.length ? programRoleRow(r[0]) : null;
   });
@@ -58,7 +60,7 @@ export async function createProgramRole(
 }
 
 export async function updateProgramRole(id: string, patch: { name?: string; perms?: Row }): Promise<Row | null> {
-  return scoped(async (tx) => {
+  return asPrivileged(async (tx) => {
     const set: Row = {};
     if (patch.name != null) set.name = patch.name;
     if (patch.perms != null) set.perms = patch.perms;
@@ -69,8 +71,221 @@ export async function updateProgramRole(id: string, patch: { name?: string; perm
 }
 
 export async function deleteProgramRole(id: string): Promise<void> {
-  await scoped(async (tx) => {
+  await asPrivileged(async (tx) => {
     await tx.delete(programRoles).where(eq(programRoles.id, id));
+  });
+}
+
+// ── Scoped roles: ORGANIZATION and NEXUS altitudes (§Team & Roles everywhere)
+// Same tables as program roles; program_id null = org scope, org_id also null
+// = platform scope. Same builder, same email-keyed assignment flow.
+
+export async function listOrgRoles(orgId: string): Promise<Row[]> {
+  return scoped(async (tx) =>
+    (await tx.select().from(programRoles)
+      .where(and(eq(programRoles.organizationId, orgId), isNull(programRoles.programId))))
+      .map(programRoleRow),
+  );
+}
+
+export async function createOrgRole(orgId: string, name: string, perms: Row): Promise<Row> {
+  return scoped(async (tx) => {
+    const [r] = await tx.insert(programRoles)
+      .values({ organizationId: orgId, programId: null, name, perms }).returning();
+    return programRoleRow(r);
+  });
+}
+
+export async function listNexusRoles(): Promise<Row[]> {
+  return asPrivileged(async (tx) =>
+    (await tx.select().from(programRoles).where(isNull(programRoles.organizationId))).map(programRoleRow),
+  );
+}
+
+export async function createNexusRole(name: string, perms: Row): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const [r] = await tx.insert(programRoles)
+      .values({ organizationId: null, programId: null, name, perms }).returning();
+    return programRoleRow(r);
+  });
+}
+
+export async function setOrgRoleAssignment(orgId: string, email: string, roleId: string | null): Promise<void> {
+  return scoped(async (tx) => {
+    const key = email.trim().toLowerCase();
+    await tx.delete(programRoleAssignments)
+      .where(and(eq(programRoleAssignments.organizationId, orgId), isNull(programRoleAssignments.programId), eq(programRoleAssignments.email, key)));
+    if (roleId) {
+      await tx.insert(programRoleAssignments)
+        .values({ organizationId: orgId, programId: null, roleId, email: key });
+    }
+  });
+}
+
+export async function getOrgRoleForEmail(orgId: string, email: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select({ a: programRoleAssignments, roleName: programRoles.name, rolePerms: programRoles.perms })
+      .from(programRoleAssignments)
+      .leftJoin(programRoles, eq(programRoles.id, programRoleAssignments.roleId))
+      .where(and(eq(programRoleAssignments.organizationId, orgId), isNull(programRoleAssignments.programId), eq(programRoleAssignments.email, email.trim().toLowerCase())))
+      .limit(1);
+    if (!r.length) return null;
+    return { role_id: r[0].a.roleId, role_name: r[0].roleName ?? null, perms: r[0].rolePerms ?? {} };
+  });
+}
+
+export async function setNexusRoleAssignment(email: string, roleId: string | null): Promise<void> {
+  return asPrivileged(async (tx) => {
+    const key = email.trim().toLowerCase();
+    await tx.delete(programRoleAssignments)
+      .where(and(isNull(programRoleAssignments.organizationId), isNull(programRoleAssignments.programId), eq(programRoleAssignments.email, key)));
+    if (roleId) {
+      await tx.insert(programRoleAssignments)
+        .values({ organizationId: null, programId: null, roleId, email: key });
+    }
+  });
+}
+
+export async function getNexusRoleForEmail(email: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select({ a: programRoleAssignments, roleName: programRoles.name, rolePerms: programRoles.perms })
+      .from(programRoleAssignments)
+      .leftJoin(programRoles, eq(programRoles.id, programRoleAssignments.roleId))
+      .where(and(isNull(programRoleAssignments.organizationId), isNull(programRoleAssignments.programId), eq(programRoleAssignments.email, email.trim().toLowerCase())))
+      .limit(1);
+    if (!r.length) return null;
+    return { role_id: r[0].a.roleId, role_name: r[0].roleName ?? null, perms: r[0].rolePerms ?? {} };
+  });
+}
+
+/** Org-LEVEL people only (Q3): memberships and invites with program_id null.
+ * Programs own their own rosters. Privileged read (route walls the operator). */
+export async function listOrgTeam(orgId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const mships = (await tx.select().from(orgMemberships).where(eq(orgMemberships.orgId, orgId)))
+      .filter((m) => !m.programId);
+    const pids = [...new Set(mships.map((m) => m.profileId))];
+    const profs = pids.length
+      ? await tx.select().from(profiles).where(or(inArray(profiles.id, pids), inArray(profiles.authUserId, pids)))
+      : [];
+    const profMap = new Map<string, (typeof profs)[number]>();
+    for (const pr of profs) {
+      profMap.set(pr.id, pr);
+      if (pr.authUserId) profMap.set(pr.authUserId, pr);
+    }
+    const assignments = await tx
+      .select({ a: programRoleAssignments, roleName: programRoles.name })
+      .from(programRoleAssignments)
+      .leftJoin(programRoles, eq(programRoles.id, programRoleAssignments.roleId))
+      .where(and(eq(programRoleAssignments.organizationId, orgId), isNull(programRoleAssignments.programId)));
+    const byEmail = new Map(assignments.map((r) => [(r.a.email ?? "").toLowerCase(), { role_id: r.a.roleId, role_name: r.roleName ?? null }]));
+    const members = mships.map((m) => {
+      const pr = profMap.get(m.profileId);
+      const email = ((pr?.email as string | null) ?? "").toLowerCase();
+      const asg = byEmail.get(email);
+      return {
+        membership_id: m.id, invitation_id: null as string | null,
+        email: pr?.email ?? null, display_name: pr?.displayName ?? pr?.name ?? null,
+        membership_role: m.role, status: "active",
+        role_id: asg?.role_id ?? null, role_name: asg?.role_name ?? null,
+      };
+    });
+    const invites = (
+      await tx.select().from(invitations)
+        .where(and(eq(invitations.organizationId, orgId), isNull(invitations.programId), eq(invitations.status, "pending")))
+    ).map((i) => {
+      const asg = byEmail.get((i.email ?? "").toLowerCase());
+      return {
+        membership_id: null as string | null, invitation_id: i.id,
+        email: i.email, display_name: i.displayName ?? null,
+        membership_role: i.role, status: "invited",
+        role_id: asg?.role_id ?? null, role_name: asg?.role_name ?? null,
+      };
+    });
+    const seen = new Set(members.map((m) => (m.email as string | null)?.toLowerCase()).filter(Boolean));
+    return [...members, ...invites.filter((i) => !seen.has((i.email ?? "").toLowerCase()))];
+  });
+}
+
+/** Nexus operators: full platform_admin profiles + confined nexus-role holders
+ * + pending platform invitations. Privileged (platform_admin-only route). */
+export async function listNexusTeam(): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const admins = await tx.select().from(profiles)
+      .where(and(eq(profiles.role, "platform_admin"), isNull(profiles.organizationId)));
+    const assignments = await tx
+      .select({ a: programRoleAssignments, roleName: programRoles.name })
+      .from(programRoleAssignments)
+      .leftJoin(programRoles, eq(programRoles.id, programRoleAssignments.roleId))
+      .where(and(isNull(programRoleAssignments.organizationId), isNull(programRoleAssignments.programId)));
+    const invites = await tx.select().from(invitations)
+      .where(and(isNull(invitations.organizationId), eq(invitations.status, "pending")));
+    const rows: Row[] = admins.map((p) => ({
+      profile_id: p.id, invitation_id: null as string | null,
+      email: p.email, display_name: p.displayName ?? p.name ?? null,
+      kind: "admin", role_name: null as string | null, role_id: null as string | null, status: "active",
+    }));
+    const adminEmails = new Set(admins.map((p) => (p.email ?? "").toLowerCase()));
+    const inviteEmails = new Set(invites.map((i) => (i.email ?? "").toLowerCase()));
+    for (const a of assignments) {
+      const email = (a.a.email ?? "").toLowerCase();
+      if (adminEmails.has(email)) continue;
+      rows.push({
+        profile_id: null, invitation_id: null,
+        email: a.a.email, display_name: null,
+        kind: "confined", role_name: a.roleName ?? null, role_id: a.a.roleId,
+        status: inviteEmails.has(email) ? "invited" : "active",
+      });
+    }
+    for (const i of invites) {
+      const email = (i.email ?? "").toLowerCase();
+      if (adminEmails.has(email) || rows.some((r) => (r.email as string | null)?.toLowerCase() === email)) continue;
+      rows.push({
+        profile_id: null, invitation_id: i.id,
+        email: i.email, display_name: i.displayName ?? null,
+        kind: i.role === "administrator" ? "admin" : "confined",
+        role_name: null, role_id: null, status: "invited",
+      });
+    }
+    // attach invitation ids to confined invitees
+    for (const r of rows) {
+      if (r.status === "invited" && !r.invitation_id) {
+        const i = invites.find((x) => (x.email ?? "").toLowerCase() === (r.email as string | null)?.toLowerCase());
+        if (i) r.invitation_id = i.id;
+      }
+    }
+    return rows;
+  });
+}
+
+/** Platform-operator invitation (organization_id null). Privileged. */
+export async function createNexusInvitation(
+  opts: { email: string; displayName?: string | null; full: boolean },
+): Promise<{ invitation: Row; token: string }> {
+  return asPrivileged(async (tx) => {
+    const [rawToken, tokenHash] = localKeys.generateApiKey();
+    const [i] = await tx.insert(invitations).values({
+      organizationId: null, programId: null, offeringId: null, groupId: null,
+      tokenHash, email: opts.email, displayName: opts.displayName ?? null,
+      role: opts.full ? "administrator" : "member", invitedByUserId: null, expiresAt: null,
+    }).returning();
+    return { invitation: inviteRow(i), token: rawToken };
+  });
+}
+
+/** Remove a Nexus operator: demote a platform_admin profile, clear any nexus
+ * role assignment, revoke pending platform invites for the email. */
+export async function removeNexusOperator(email: string): Promise<void> {
+  return asPrivileged(async (tx) => {
+    const key = email.trim().toLowerCase();
+    await tx.update(profiles).set({ role: "student" })
+      .where(and(eq(profiles.role, "platform_admin"), sql`lower(${profiles.email}) = ${key}`));
+    await tx.delete(programRoleAssignments)
+      .where(and(isNull(programRoleAssignments.organizationId), isNull(programRoleAssignments.programId), eq(programRoleAssignments.email, key)));
+    await tx.update(invitations).set({ status: "revoked" })
+      .where(and(isNull(invitations.organizationId), eq(invitations.status, "pending"), sql`lower(${invitations.email}) = ${key}`));
   });
 }
 
@@ -213,6 +428,94 @@ export async function getProgramRoleForEmail(programId: string, email: string): 
       .limit(1);
     if (!r.length) return null;
     return { role_id: r[0].a.roleId, role_name: r[0].roleName ?? null, perms: r[0].rolePerms ?? {} };
+  });
+}
+
+// ── Program People at scale: team core + paged platform-role groups ─────────
+// The People tab must not render a thousand learners flat. "Team" = admins,
+// custom-role holders, and anyone with NO platform role (inherently small);
+// everyone else lives in collapsible per-platform-role groups, paged from the
+// database.
+
+export async function listProgramTeamSummary(orgId: string, programId: string): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    // Group counts straight from the assignment table.
+    const counts = await tx.execute(sql`
+      select platform, role, count(*)::int as count
+      from platform_role_assignments where program_id = ${programId}
+      group by platform, role order by platform, role`);
+    const groups = (counts as unknown as Row[]).map((g) => ({
+      platform: g.platform, role: g.role, count: Number(g.count),
+    }));
+    // Team core: anti-join out the platform-role holders (unless they're
+    // admins or hold a custom program role).
+    const team = await listProgramMembers(orgId, programId);
+    const platformEmails = new Set<string>();
+    const assigned = await tx
+      .select({ email: platformRoleAssignments.email })
+      .from(platformRoleAssignments)
+      .where(eq(platformRoleAssignments.programId, programId));
+    for (const a of assigned) platformEmails.add(a.email.toLowerCase());
+    const core = team.filter((m: Row) => {
+      const email = ((m.email as string | null) ?? "").toLowerCase();
+      const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
+      return isAdmin || m.role_id || !platformEmails.has(email);
+    });
+    return { team: core, groups };
+  });
+}
+
+export async function listPlatformGroupMembers(
+  orgId: string,
+  programId: string,
+  platform: string,
+  role: string,
+  offset: number,
+  limit: number,
+): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const page = await tx
+      .select({ email: platformRoleAssignments.email })
+      .from(platformRoleAssignments)
+      .where(and(
+        eq(platformRoleAssignments.programId, programId),
+        eq(platformRoleAssignments.platform, platform),
+        eq(platformRoleAssignments.role, role),
+      ))
+      .orderBy(platformRoleAssignments.email)
+      .offset(offset)
+      .limit(limit);
+    const emails = page.map((r) => r.email.toLowerCase());
+    if (!emails.length) return [];
+    // Enrich the page (≤ limit rows) with profile + membership/invite status.
+    const profs = await tx.select().from(profiles)
+      .where(and(eq(profiles.organizationId, orgId), inArray(sql`lower(${profiles.email})`, emails)));
+    const profByEmail = new Map(profs.map((pr) => [(pr.email ?? "").toLowerCase(), pr]));
+    const profIds = profs.flatMap((pr) => [pr.id, pr.authUserId].filter(Boolean)) as string[];
+    const mships = profIds.length
+      ? await tx.select().from(orgMemberships)
+          .where(and(eq(orgMemberships.programId, programId), inArray(orgMemberships.profileId, profIds)))
+      : [];
+    const mshipByProfile = new Map(mships.map((m) => [m.profileId, m]));
+    const invites = await tx.select().from(invitations)
+      .where(and(
+        eq(invitations.organizationId, orgId), eq(invitations.programId, programId),
+        eq(invitations.status, "pending"), inArray(sql`lower(${invitations.email})`, emails),
+      ));
+    const invByEmail = new Map(invites.map((i) => [(i.email ?? "").toLowerCase(), i]));
+    return emails.map((email) => {
+      const pr = profByEmail.get(email);
+      const m = pr ? mshipByProfile.get(pr.id) ?? (pr.authUserId ? mshipByProfile.get(pr.authUserId) : undefined) : undefined;
+      const inv = invByEmail.get(email);
+      return {
+        membership_id: m?.id ?? null,
+        invitation_id: m ? null : inv?.id ?? null,
+        email: pr?.email ?? inv?.email ?? email,
+        display_name: pr?.displayName ?? pr?.name ?? inv?.displayName ?? null,
+        status: m ? "active" : "invited",
+        platform, role,
+      };
+    });
   });
 }
 
@@ -690,10 +993,12 @@ export async function getInvitationByToken(rawToken: string): Promise<Row | null
     const r = await tx.select().from(invitations).where(eq(invitations.tokenHash, localKeys.hashApiKey(rawToken))).limit(1);
     if (!r.length) return null;
     const i = r[0];
-    const org = await tx.select({ name: organizations.name, slug: organizations.slug }).from(organizations).where(eq(organizations.id, i.organizationId)).limit(1);
+    const org = i.organizationId
+      ? await tx.select({ name: organizations.name, slug: organizations.slug }).from(organizations).where(eq(organizations.id, i.organizationId)).limit(1)
+      : [];
     return {
       ...inviteRow(i),
-      organization_name: org.length ? org[0].name : null,
+      organization_name: org.length ? org[0].name : "Nexus",
       organization_slug: org.length ? org[0].slug : null,
     };
   });
@@ -750,23 +1055,42 @@ export async function acceptInvitation(
       );
     }
 
+    const resolvedDisplayName = displayName ?? inv.displayName ?? null;
+
+    // ── Platform-operator invitation (no organization) ──────────────────────
+    if (!inv.organizationId) {
+      if (inv.role === "administrator") {
+        // Full Nexus operator; confined operators instead carry a nexus-role
+        // assignment (email-keyed, created at invite time) and keep their role.
+        await tx.update(profiles).set({ role: "platform_admin" }).where(eq(profiles.id, authUserId));
+        await tx.update(profiles).set({ role: "platform_admin" }).where(eq(profiles.authUserId, authUserId));
+      }
+      const [updated] = await tx.update(invitations)
+        .set({ status: "accepted", acceptedByUserId: authUserId, acceptedAt: new Date() })
+        .where(eq(invitations.id, inv.id)).returning();
+      return inviteRow(updated);
+    }
+
+    const orgId = inv.organizationId;
     const adminish = ["administrator", "owner"].includes(inv.role);
     const staff = ["instructor", "teacher", "coach"].includes(inv.role);
     // profiles.role vocabulary is student/teacher/org_admin; membership role is separate.
     const profileRole = adminish ? "org_admin" : staff ? "teacher" : "student";
-    // Prefer the name the invitee confirms at accept time; fall back to what the
-    // inviter typed when creating the invitation, so a name is never dropped.
-    const resolvedDisplayName = displayName ?? inv.displayName ?? null;
-    const profileId = await ensureOrgProfile(tx, authUserId, inv.organizationId, { email: inv.email, role: profileRole, displayName: resolvedDisplayName, allowSecondOrg: true });
-    // instructor/admin roles → membership; learner/participant → offering participant.
+    const profileId = await ensureOrgProfile(tx, authUserId, orgId, { email: inv.email, role: profileRole, displayName: resolvedDisplayName, allowSecondOrg: true });
     if (adminish || staff) {
       const mrole = adminish ? (inv.role === "owner" ? "owner" : "administrator") : "instructor";
       await tx.execute(
-        sql`insert into org_memberships (org_id, profile_id, role, program_id) values (${inv.organizationId}, ${profileId}, ${mrole}, ${inv.programId}) on conflict do nothing`,
+        sql`insert into org_memberships (org_id, profile_id, role, program_id) values (${orgId}, ${profileId}, ${mrole}, ${inv.programId}) on conflict do nothing`,
+      );
+    } else if (!inv.programId && inv.role === "member") {
+      // Org-level plain member: an org-space account confined by their custom
+      // org role (Team & Roles at the organization altitude).
+      await tx.execute(
+        sql`insert into org_memberships (org_id, profile_id, role, program_id) values (${orgId}, ${profileId}, 'member', null) on conflict do nothing`,
       );
     } else if (inv.offeringId) {
       await tx.insert(participants).values({
-        organizationId: inv.organizationId, programId: inv.programId, offeringId: inv.offeringId,
+        organizationId: orgId, programId: inv.programId, offeringId: inv.offeringId,
         groupId: inv.groupId, userId: profileId, participantType: "learner", registrationId: null,
       }).onConflictDoNothing();
     }

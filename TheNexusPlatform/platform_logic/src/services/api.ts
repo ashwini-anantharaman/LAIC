@@ -540,6 +540,78 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
+// ── Team & Roles at the ORG and NEXUS altitudes ──────────────────────────────
+export interface ScopedRole {
+  id: string;
+  organization_id: string | null;
+  program_id: string | null;
+  name: string;
+  perms: Record<string, string>;
+}
+
+export interface TeamPerson {
+  membership_id: string | null;
+  invitation_id: string | null;
+  email: string | null;
+  display_name: string | null;
+  membership_role: string;
+  status: "active" | "invited";
+  role_id: string | null;
+  role_name: string | null;
+}
+
+export async function listOrgScopedRoles(orgId: string): Promise<ScopedRole[]> {
+  return request<ScopedRole[]>(`/api/platform/orgs/${orgId}/roles`);
+}
+export async function createOrgScopedRole(orgId: string, payload: { name: string; perms: Record<string, string> }): Promise<ScopedRole> {
+  return request<ScopedRole>(`/api/platform/orgs/${orgId}/roles`, { method: "POST", body: JSON.stringify(payload) });
+}
+export async function listOrgTeam(orgId: string): Promise<TeamPerson[]> {
+  return request<TeamPerson[]>(`/api/platform/orgs/${orgId}/team`);
+}
+export async function inviteOrgTeamMember(
+  orgId: string,
+  payload: { email: string; display_name?: string; role_id?: string },
+): Promise<Invitation> {
+  return request<Invitation>(`/api/platform/orgs/${orgId}/team`, { method: "POST", body: JSON.stringify(payload) });
+}
+export async function setOrgTeamRole(orgId: string, email: string, roleId: string | null): Promise<void> {
+  await request(`/api/platform/orgs/${orgId}/team/role`, { method: "PUT", body: JSON.stringify({ email, role_id: roleId }) });
+}
+export async function getOrgMyRole(orgId: string): Promise<{ role_id: string; role_name: string | null; perms: Record<string, string> } | null> {
+  return request(`/api/platform/orgs/${orgId}/my-role`);
+}
+
+export interface NexusOperator {
+  profile_id: string | null;
+  invitation_id: string | null;
+  email: string | null;
+  display_name: string | null;
+  kind: "admin" | "confined";
+  role_id: string | null;
+  role_name: string | null;
+  status: "active" | "invited";
+}
+
+export async function listNexusScopedRoles(): Promise<ScopedRole[]> {
+  return request<ScopedRole[]>("/api/platform/admin/nexus/roles");
+}
+export async function createNexusScopedRole(payload: { name: string; perms: Record<string, string> }): Promise<ScopedRole> {
+  return request<ScopedRole>("/api/platform/admin/nexus/roles", { method: "POST", body: JSON.stringify(payload) });
+}
+export async function listNexusTeam(): Promise<NexusOperator[]> {
+  return request<NexusOperator[]>("/api/platform/admin/nexus/team");
+}
+export async function inviteNexusOperator(payload: { email: string; display_name?: string; role_id?: string }): Promise<Invitation> {
+  return request<Invitation>("/api/platform/admin/nexus/team", { method: "POST", body: JSON.stringify(payload) });
+}
+export async function setNexusTeamRole(email: string, roleId: string | null): Promise<void> {
+  await request("/api/platform/admin/nexus/team/role", { method: "PUT", body: JSON.stringify({ email, role_id: roleId }) });
+}
+export async function removeNexusOperator(email: string): Promise<void> {
+  await request(`/api/platform/admin/nexus/team?email=${encodeURIComponent(email)}`, { method: "DELETE" });
+}
+
 // ── Branding: Nexus platform + per-program ───────────────────────────────────
 export interface PlatformBranding {
   accent: string | null;
@@ -836,6 +908,37 @@ export async function removeMember(membershipId: string): Promise<void> {
 /** Withdraw a pending invitation — its activation link stops working. */
 export async function revokeInvitation(invitationId: string): Promise<void> {
   await request(`/api/platform/invitations/${invitationId}`, { method: "DELETE" });
+}
+
+export interface ProgramTeamSummary {
+  team: ProgramMember[];
+  groups: { platform: string; role: string; count: number }[];
+}
+
+export async function getProgramTeamSummary(programId: string): Promise<ProgramTeamSummary> {
+  return request<ProgramTeamSummary>(`/api/programs/${programId}/members/summary`);
+}
+
+export interface PlatformGroupMember {
+  membership_id: string | null;
+  invitation_id: string | null;
+  email: string | null;
+  display_name: string | null;
+  status: "active" | "invited";
+  platform: string;
+  role: string;
+}
+
+export async function listProgramPlatformGroup(
+  programId: string,
+  platform: string,
+  role: string,
+  offset = 0,
+  limit = 25,
+): Promise<PlatformGroupMember[]> {
+  return request<PlatformGroupMember[]>(
+    `/api/programs/${programId}/members/group?platform=${encodeURIComponent(platform)}&role=${encodeURIComponent(role)}&offset=${offset}&limit=${limit}`,
+  );
 }
 
 export async function listProgramMembers(programId: string): Promise<ProgramMember[]> {

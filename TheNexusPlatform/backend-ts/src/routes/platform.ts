@@ -483,12 +483,19 @@ platformRouter.post("/auth/launch-exchange", async (c) => {
 
 platformRouter.get("/auth/me", async (c) => {
   const user = await getCurrentUser(c);
+  // A confined Nexus operator (custom platform-scope role) — drives the
+  // operator mode + confined console nav.
+  const nexusRole =
+    dbEnabled() && user.email && user.role !== "platform_admin"
+      ? await graph.getNexusRoleForEmail(user.email).catch(() => null)
+      : null;
   return c.json({
     id: user.id,
     email: user.email,
     display_name: user.display_name,
     role: user.role,
     memberships: await _membershipSummaries(user),
+    nexus_role: nexusRole,
   });
 });
 
@@ -783,7 +790,7 @@ platformRouter.post("/orgs/:org_id/programs", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
   const req = parseBody(programInput, await c.req.json());
-  _assertOrgAccess(user, orgId, true);
+  await _requireOrgArea(user, orgId, "programs", "edit");
   {
     const caps = await db.getOrgCapabilities(orgId);
     // Program capacity (Nexus-governed; null = unlimited). Applies to everyone —
@@ -835,7 +842,7 @@ platformRouter.delete("/programs/:program_id", async (c) => {
   const programId = c.req.param("program_id");
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _assertOrgAccess(user, program.org_id, true);
+  await _requireOrgArea(user, program.org_id, "programs", "edit");
   await db.deleteProgram(programId);
   await db.recordAuditEvent("program.deleted", {
     orgId: program.org_id,
@@ -850,7 +857,7 @@ platformRouter.delete("/programs/:program_id", async (c) => {
 // Which feature-areas are accessible inside a program (§3.5). Editable from
 // two altitudes: org admins (configure any program) and the program's own
 // administrator — running the program end to end includes its platforms.
-function _assertProgramConfigAccess(user: PlatformUser, orgId: string, programId: string): void {
+async function _assertProgramConfigAccess(user: PlatformUser, orgId: string, programId: string): Promise<void> {
   if (user.role === "platform_admin") return;
   const ok = user.memberships.some(
     (m) =>
@@ -858,7 +865,10 @@ function _assertProgramConfigAccess(user: PlatformUser, orgId: string, programId
       (m.role === "owner" || m.role === "administrator" || m.access === "edit") &&
       (!m.program_id || m.program_id === programId),
   );
-  if (!ok) throw new HttpError(403, "Edit access required");
+  if (ok) return;
+  // Custom org role with Programs · edit configures any program (Team & Roles
+  // at the org altitude — the toggle has to actually do something).
+  await _requireOrgArea(user, orgId, "programs", "edit");
 }
 
 platformRouter.patch("/programs/:program_id/features", async (c) => {
@@ -866,7 +876,7 @@ platformRouter.patch("/programs/:program_id/features", async (c) => {
   const programId = c.req.param("program_id");
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _assertProgramConfigAccess(user, program.org_id, programId);
+  await _assertProgramConfigAccess(user, program.org_id, programId);
   const req = parseBody(programFeaturesUpdate, await c.req.json());
   const features = normalizeProgramFeatures(req.features);
   const row = await db.updateProgramFeatures(programId, features);
@@ -885,7 +895,7 @@ platformRouter.patch("/orgs/:org_id/theme", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
   const req = parseBody(orgThemeUpdateSchema, await c.req.json());
-  _assertOrgAccess(user, orgId, true);
+  await _requireOrgArea(user, orgId, "settings", "edit");
   const org = await db.updateOrgTheme(orgId, req.accent_color ?? null, req.logo_url ?? null);
   await db.recordAuditEvent("organization.theme_updated", {
     orgId,
@@ -1275,6 +1285,47 @@ platformRouter.patch("/members/:member_id", async (c) => {
 // than isOfferingAdmin, which counts instructors for offering-management tasks.
 // Removing PEOPLE is an admin act; an instructor must never be able to do it,
 // and (Phase 1 people isolation) neither can the platform operator.
+type OrgArea = "programs" | "team" | "settings" | "audit";
+type NexusArea = "organizations" | "audit" | "settings";
+
+/**
+ * Area-level access at the ORG altitude. Owners/administrators pass
+ * everything; custom org roles (Team & Roles, org scope) grant per-area
+ * view/edit. The operator passes boundary areas but is walled off "team".
+ */
+async function _requireOrgArea(
+  user: PlatformUser,
+  orgId: string,
+  area: OrgArea,
+  level: "view" | "edit",
+): Promise<void> {
+  if (user.role === "platform_admin") {
+    if (area === "team") throw new HttpError(403, "Nexus operators cannot access an organization's members");
+    return;
+  }
+  const mine = user.memberships.filter((m) => m.org_id === orgId);
+  if (mine.length === 0) throw new HttpError(403, "Not a member of this organization");
+  if (mine.some((m) => !m.program_id && ["owner", "administrator"].includes(m.role))) return;
+  if (dbEnabled() && user.email) {
+    const role = await graph.getOrgRoleForEmail(orgId, user.email).catch(() => null);
+    const g = (role?.perms as Row | undefined)?.[area] as string | undefined;
+    if (g === "edit" || (level === "view" && (g === "view" || g === "on"))) return;
+  }
+  throw new HttpError(403, `Your role does not grant ${level} access to ${area}`);
+}
+
+/** Area-level access at the NEXUS altitude: platform_admin passes everything;
+ * confined operators carry a nexus-scope custom role. */
+async function _requireNexusArea(user: PlatformUser, area: NexusArea, level: "view" | "edit"): Promise<void> {
+  if (user.role === "platform_admin") return;
+  if (dbEnabled() && user.email) {
+    const role = await graph.getNexusRoleForEmail(user.email).catch(() => null);
+    const g = (role?.perms as Row | undefined)?.[area] as string | undefined;
+    if (g === "edit" || (level === "view" && (g === "view" || g === "on"))) return;
+  }
+  throw new HttpError(403, "Nexus operator access required");
+}
+
 function _canManageMembers(user: PlatformUser, orgId: string, programId: string | null): boolean {
   return user.memberships.some(
     (m) =>
@@ -1298,8 +1349,12 @@ platformRouter.delete("/members/:member_id", async (c) => {
     if (!_canManageMembers(user, row.org_id, row.program_id)) {
       throw new HttpError(403, "Program admin access required");
     }
-  } else {
+  } else if (row.role === "administrator") {
+    // Admins stay owner/admin-managed (Q1) — a custom Team·edit role can't
+    // remove them.
     _assertOrgPeopleAccess(user, row.org_id, true);
+  } else {
+    await _requireOrgArea(user, row.org_id, "team", "edit");
   }
   await db.deleteMembership(memberId);
   await db.recordAuditEvent("member.removed", {
@@ -1377,6 +1432,7 @@ platformRouter.get("/orgs/:org_id/challenge", async (c) => {
 platformRouter.get("/orgs/:org_id/audit", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "audit", "view");
   const rawLimit = c.req.query("limit");
   let limit = 50;
   if (rawLimit !== undefined) {
@@ -1431,7 +1487,7 @@ const BOUNDARY_AUDIT_ACTIONS = new Set([
 
 platformRouter.get("/admin/audit", async (c) => {
   const user = await getCurrentUser(c);
-  _requirePlatformAdmin(user);
+  await _requireNexusArea(user, "audit", "view");
   const rawLimit = c.req.query("limit");
   let limit = 100;
   if (rawLimit !== undefined) {
@@ -1550,7 +1606,7 @@ const capabilityPatchSchema = z.object({
 platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
-  if (user.role !== "platform_admin") throw new HttpError(403, "Platform admin access required");
+  await _requireNexusArea(user, "organizations", "edit");
   const req = parseBody(capabilityPatchSchema, await c.req.json());
   const caps = await db.setOrgCapabilities(orgId, req);
   await db.recordAuditEvent("organization.capabilities_updated", {
@@ -1577,7 +1633,7 @@ const platformThemeSchema = z.object({ accent_color: z.string().trim().min(1).ma
 
 platformRouter.patch("/admin/platform/theme", async (c) => {
   const user = await getCurrentUser(c);
-  _requirePlatformAdmin(user);
+  await _requireNexusArea(user, "settings", "edit");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(platformThemeSchema, await c.req.json());
   const cur = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
@@ -1588,7 +1644,7 @@ platformRouter.patch("/admin/platform/theme", async (c) => {
 
 platformRouter.post("/admin/platform/logo", async (c) => {
   const user = await getCurrentUser(c);
-  _requirePlatformAdmin(user);
+  await _requireNexusArea(user, "settings", "edit");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const body = (await c.req.json()) as { data?: string; content_type?: string };
   const ext = _LOGO_EXT[body.content_type ?? ""];
@@ -1621,7 +1677,7 @@ platformRouter.patch("/programs/:program_id/categories", async (c) => {
   const programId = c.req.param("program_id");
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _assertProgramConfigAccess(user, program.org_id, programId);
+  await _assertProgramConfigAccess(user, program.org_id, programId);
   const req = parseBody(programCategoriesSchema, await c.req.json());
   const row = await db.updateProgramCategories(programId, {
     category: req.category,
@@ -1641,7 +1697,7 @@ platformRouter.patch("/programs/:program_id/theme", async (c) => {
   const programId = c.req.param("program_id");
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _assertProgramConfigAccess(user, program.org_id, programId);
+  await _assertProgramConfigAccess(user, program.org_id, programId);
   const req = parseBody(programThemeSchema, await c.req.json());
   const branding = req.revert
     ? await db.setProgramBranding(programId, null)
@@ -1658,7 +1714,7 @@ platformRouter.post("/programs/:program_id/logo", async (c) => {
   const programId = c.req.param("program_id");
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _assertProgramConfigAccess(user, program.org_id, programId);
+  await _assertProgramConfigAccess(user, program.org_id, programId);
   const body = (await c.req.json()) as { data?: string; content_type?: string };
   const ext = _LOGO_EXT[body.content_type ?? ""];
   if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
@@ -1694,7 +1750,7 @@ platformRouter.get("/orgs/:org_id/categories", async (c) => {
 platformRouter.post("/orgs/:org_id/categories", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
-  _assertOrgAccess(user, orgId, true);
+  await _requireOrgArea(user, orgId, "settings", "edit");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(categoryNameSchema, await c.req.json());
   const list = await db.addOrgCategory(orgId, req.name);
@@ -1707,7 +1763,7 @@ platformRouter.post("/orgs/:org_id/categories", async (c) => {
 platformRouter.delete("/orgs/:org_id/categories", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
-  _assertOrgAccess(user, orgId, true);
+  await _requireOrgArea(user, orgId, "settings", "edit");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const name = c.req.query("name");
   if (!name) throw new HttpError(400, "name required");
@@ -1725,7 +1781,7 @@ platformRouter.delete("/orgs/:org_id/categories", async (c) => {
 platformRouter.patch("/orgs/:org_id/categories", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
-  _assertOrgAccess(user, orgId, true);
+  await _requireOrgArea(user, orgId, "settings", "edit");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(categoryRenameSchema, await c.req.json());
   const list = await db.renameOrgCategory(orgId, req.from, req.to);
@@ -1734,6 +1790,154 @@ platformRouter.patch("/orgs/:org_id/categories", async (c) => {
     metadata: { from: req.from, to: req.to },
   });
   return c.json(list);
+});
+
+// ── Team & Roles: ORGANIZATION altitude ──────────────────────────────────────
+const scopedRoleSchema = z.object({ name: z.string().trim().min(1).max(80), perms: z.record(z.string(), z.string()) });
+
+platformRouter.get("/orgs/:org_id/roles", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "view");
+  return c.json(await graph.listOrgRoles(orgId));
+});
+
+platformRouter.post("/orgs/:org_id/roles", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "edit");
+  const req = parseBody(scopedRoleSchema, await c.req.json());
+  const row = await graph.createOrgRole(orgId, req.name, req.perms);
+  await db.recordAuditEvent("organization.role.created", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { name: req.name },
+  });
+  return c.json(row);
+});
+
+platformRouter.get("/orgs/:org_id/team", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "view");
+  return c.json(await graph.listOrgTeam(orgId));
+});
+
+const orgTeamInviteSchema = z.object({
+  email: z.string().email(),
+  display_name: z.string().nullish(),
+  role_id: z.string().nullish(),
+});
+
+platformRouter.post("/orgs/:org_id/team", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "edit");
+  const req = parseBody(orgTeamInviteSchema, await c.req.json());
+  const { invitation, token } = await graph.createInvitation(orgId, user.id, {
+    email: req.email, displayName: req.display_name ?? null, role: "member", programId: null,
+  });
+  if (req.role_id) await graph.setOrgRoleAssignment(orgId, req.email, req.role_id);
+  await db.recordAuditEvent("organization.member.invited", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    metadata: { email: req.email, role_id: req.role_id ?? null },
+  });
+  const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
+  return c.json({ ...invitation, token, redeem_url: base ? `${base}/invite/${token}` : `/invite/${token}` });
+});
+
+const orgTeamRoleSchema = z.object({ email: z.string().email(), role_id: z.string().nullable() });
+
+platformRouter.put("/orgs/:org_id/team/role", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "edit");
+  const req = parseBody(orgTeamRoleSchema, await c.req.json());
+  await graph.setOrgRoleAssignment(orgId, req.email, req.role_id);
+  return c.json({ ok: true });
+});
+
+platformRouter.get("/orgs/:org_id/my-role", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId);
+  if (!user.email) return c.json(null);
+  return c.json(await graph.getOrgRoleForEmail(orgId, user.email));
+});
+
+// ── Team & Roles: NEXUS altitude (full operators only manage it) ────────────
+platformRouter.get("/admin/nexus/roles", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  return c.json(await graph.listNexusRoles());
+});
+
+platformRouter.post("/admin/nexus/roles", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(scopedRoleSchema, await c.req.json());
+  return c.json(await graph.createNexusRole(req.name, req.perms));
+});
+
+platformRouter.get("/admin/nexus/team", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  return c.json(await graph.listNexusTeam());
+});
+
+const nexusInviteSchema = z.object({
+  email: z.string().email(),
+  display_name: z.string().nullish(),
+  /** Full operator, or confined by role_id. */
+  role_id: z.string().nullish(),
+});
+
+platformRouter.post("/admin/nexus/team", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(nexusInviteSchema, await c.req.json());
+  const { invitation, token } = await graph.createNexusInvitation({
+    email: req.email, displayName: req.display_name ?? null, full: !req.role_id,
+  });
+  if (req.role_id) await graph.setNexusRoleAssignment(req.email, req.role_id);
+  const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
+  return c.json({ ...invitation, token, redeem_url: base ? `${base}/invite/${token}` : `/invite/${token}` });
+});
+
+platformRouter.put("/admin/nexus/team/role", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(orgTeamRoleSchema, await c.req.json());
+  await graph.setNexusRoleAssignment(req.email, req.role_id);
+  return c.json({ ok: true });
+});
+
+platformRouter.delete("/admin/nexus/team", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const email = c.req.query("email");
+  if (!email) throw new HttpError(400, "email required");
+  if (user.email && email.toLowerCase() === user.email.toLowerCase()) {
+    throw new HttpError(409, "You can't remove yourself — another operator must do it");
+  }
+  await graph.removeNexusOperator(email);
+  return c.json({ ok: true });
+});
+
+platformRouter.get("/nexus/my-role", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled() || !user.email) return c.json(null);
+  return c.json(await graph.getNexusRoleForEmail(user.email));
 });
 
 // ─── Slice 11: relationships, affiliations, groups, invitations ─────────────
@@ -1758,7 +1962,7 @@ function _assertUuid(value: unknown, field: string): string {
 // Platform admin: manage every organization.
 platformRouter.get("/admin/organizations", async (c) => {
   const user = await getCurrentUser(c);
-  _requirePlatformAdmin(user);
+  await _requireNexusArea(user, "organizations", "view");
   return c.json(await db.listAllOrganizations());
 });
 
@@ -1773,7 +1977,7 @@ const provisionOrgSchema = z.object({
 
 platformRouter.post("/admin/organizations", async (c) => {
   const user = await getCurrentUser(c);
-  _requirePlatformAdmin(user);
+  await _requireNexusArea(user, "organizations", "edit");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(provisionOrgSchema, await c.req.json());
   const result = await graph.provisionOrganizationWithAdmins(
@@ -1804,7 +2008,7 @@ platformRouter.post("/admin/organizations", async (c) => {
 // never program members, learners, or anyone else inside.
 platformRouter.get("/admin/organizations/:org_id/admins", async (c) => {
   const user = await getCurrentUser(c);
-  _requirePlatformAdmin(user);
+  await _requireNexusArea(user, "organizations", "edit");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const orgId = c.req.param("org_id");
   // Privileged boundary read — the 0021 people wall hides org memberships from
@@ -1816,7 +2020,7 @@ const orgAdminAddSchema = z.object({ email: z.string().email(), display_name: z.
 
 platformRouter.post("/admin/organizations/:org_id/admins", async (c) => {
   const user = await getCurrentUser(c);
-  _requirePlatformAdmin(user);
+  await _requireNexusArea(user, "organizations", "edit");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const orgId = c.req.param("org_id");
   const req = parseBody(orgAdminAddSchema, await c.req.json());
@@ -1834,7 +2038,7 @@ platformRouter.post("/admin/organizations/:org_id/admins", async (c) => {
 
 platformRouter.delete("/admin/organizations/:org_id/admins", async (c) => {
   const user = await getCurrentUser(c);
-  _requirePlatformAdmin(user);
+  await _requireNexusArea(user, "organizations", "edit");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const orgId = c.req.param("org_id");
   const membershipId = c.req.query("membership_id");
@@ -2181,7 +2385,7 @@ const _MAX_LOGO_BYTES = 1_048_576; // ~1 MB (§9)
 platformRouter.post("/orgs/:org_id/logo", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
-  _assertOrgAccess(user, orgId, true);
+  await _requireOrgArea(user, orgId, "settings", "edit");
   const body = (await c.req.json()) as { data?: string; content_type?: string };
   const ext = _LOGO_EXT[body.content_type ?? ""];
   if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
