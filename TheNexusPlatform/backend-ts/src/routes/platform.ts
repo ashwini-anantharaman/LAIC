@@ -784,9 +784,6 @@ platformRouter.post("/orgs/:org_id/programs", async (c) => {
   _assertOrgAccess(user, orgId, true);
   {
     const caps = await db.getOrgCapabilities(orgId);
-    if (user.role !== "platform_admin" && !(caps.programTypes as Row)[req.category]) {
-      throw new HttpError(403, `This organization is not permitted to create '${req.category}' programs`);
-    }
     // Program capacity (Nexus-governed; null = unlimited). Applies to everyone —
     // the envelope is the org's boundary, not a per-caller permission.
     const capacity = caps.programCapacity as number | null;
@@ -805,7 +802,7 @@ platformRouter.post("/orgs/:org_id/programs", async (c) => {
     features: req.features ?? null,
   });
   // Give the new program its own group scope, mirroring org_setup behavior.
-  if (req.category === "edu") {
+  if (req.category !== "game") {
     await db.addStageNodes(
       orgId,
       [{ stage_type: req.stage_type || "national", name: req.name }],

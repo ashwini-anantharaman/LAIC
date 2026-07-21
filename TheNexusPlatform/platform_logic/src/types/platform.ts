@@ -2,7 +2,8 @@ export type SignupType = "org" | "administrator" | "teacher" | "student";
 export type StageKey = "international" | "national" | "state" | "chapter";
 export type JoinCodeKind = "student" | "teacher" | "administrator";
 export type Permission = "Can Edit" | "Can View" | "Per Level";
-export type ProgramCategory = "game" | "edu";
+/** Org-defined free text ("game" keeps its Coach/Player role words). */
+export type ProgramCategory = string;
 
 // Per-program feature accessibility. An org admin picks which of these areas are
 // accessible inside a program at creation (editable later); role creation then

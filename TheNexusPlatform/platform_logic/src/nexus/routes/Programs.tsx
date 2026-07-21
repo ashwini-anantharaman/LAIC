@@ -4,9 +4,9 @@
  * admin names who runs a program without having to manage that program's
  * internal roles (that's the assigned admin's own job, done from Team & Roles).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ChevronRight, Copy, Plus, SlidersHorizontal, Trash2, UserCog } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Layers, LayoutGrid, Plus, SlidersHorizontal, Trash2, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -39,6 +39,8 @@ import { DEFAULT_PROGRAM_FEATURES, PROGRAM_FEATURES } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Spinner } from "@/nexus/ui/kit";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 
+type ProgramsView = "grid" | "stack";
+
 export function Programs() {
   const { orgId = "" } = useParams();
   const [programs, setPrograms] = useState<Program[] | null>(null);
@@ -46,6 +48,24 @@ export function Programs() {
   const [open, setOpen] = useState(false);
   const [assigning, setAssigning] = useState<Program | null>(null);
   const [editingFeatures, setEditingFeatures] = useState<Program | null>(null);
+  // Grid shows everything (category tag on each card); stack groups by
+  // category and drills in. Same interaction as the theme toggle: the button
+  // wears the OTHER view's icon.
+  const [view, setView] = useState<ProgramsView>(
+    () => (localStorage.getItem("nexus_programs_view") as ProgramsView) || "grid",
+  );
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
+
+  function switchView(v: ProgramsView) {
+    setView(v);
+    localStorage.setItem("nexus_programs_view", v);
+    setOpenCategory(null);
+  }
+
+  const categories = useMemo(
+    () => [...new Set((programs ?? []).map((p) => p.category))].sort((a, b) => a.localeCompare(b)),
+    [programs],
+  );
 
   async function load() {
     setPrograms(await listPrograms(orgId));
@@ -79,15 +99,26 @@ export function Programs() {
         title="Programs"
         subtitle="Each program produces offerings — courses, challenges, and apps."
         actions={
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="size-4" /> New program
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => switchView(view === "grid" ? "stack" : "grid")}
+              className="grid size-9 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              title={view === "grid" ? "Stack view (group by category)" : "Grid view (all programs)"}
+              aria-label="Switch programs view"
+            >
+              {view === "grid" ? <Layers className="size-4" /> : <LayoutGrid className="size-4" />}
+            </button>
+            <Button onClick={() => setOpen(true)}>
+              <Plus className="size-4" /> New program
+            </Button>
+          </div>
         }
       />
 
       {programs.length === 0 ? (
         <EmptyState>No programs yet. Create the first one.</EmptyState>
-      ) : (
+      ) : view === "grid" ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {programs.map((p) => (
             <ProgramCard
@@ -100,9 +131,65 @@ export function Programs() {
             />
           ))}
         </div>
+      ) : openCategory ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => setOpenCategory(null)}
+            className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ChevronLeft className="size-4" /> All categories
+          </button>
+          <h2 className="mb-3 text-lg font-semibold tracking-tight">{openCategory}</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {programs
+              .filter((p) => p.category === openCategory)
+              .map((p) => (
+                <ProgramCard
+                  key={p.id}
+                  orgId={orgId}
+                  program={p}
+                  onAssign={() => setAssigning(p)}
+                  onEditFeatures={() => setEditingFeatures(p)}
+                  onRemove={() => remove(p)}
+                />
+              ))}
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {categories.map((cat) => {
+            const inCat = programs.filter((p) => p.category === cat);
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setOpenCategory(cat)}
+                className="glass-card p-5 text-left hover:border-foreground/20 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-foreground truncate">{cat}</span>
+                  <Pill tone="neutral">
+                    {inCat.length} program{inCat.length !== 1 ? "s" : ""}
+                  </Pill>
+                </div>
+                <div className="mt-2 space-y-0.5">
+                  {inCat.slice(0, 3).map((p) => (
+                    <div key={p.id} className="truncate text-xs text-muted-foreground">
+                      {p.name}
+                    </div>
+                  ))}
+                  {inCat.length > 3 ? (
+                    <div className="text-xs text-muted-foreground/70">+{inCat.length - 3} more</div>
+                  ) : null}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       )}
 
-      <NewProgramDialog orgId={orgId} open={open} onOpenChange={setOpen} onDone={load} allowedFeatureKeys={allowedFeatureKeys} />
+      <NewProgramDialog orgId={orgId} open={open} onOpenChange={setOpen} onDone={load} allowedFeatureKeys={allowedFeatureKeys} categories={categories} />
       <AssignAdminsDialog program={assigning} onClose={() => setAssigning(null)} />
       <EditFeaturesDialog program={editingFeatures} onClose={() => setEditingFeatures(null)} onDone={load} allowedFeatureKeys={allowedFeatureKeys} />
     </div>
@@ -377,16 +464,27 @@ function NewProgramDialog({
   onOpenChange,
   onDone,
   allowedFeatureKeys,
+  categories,
 }: {
   orgId: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
   allowedFeatureKeys: string[];
+  categories: string[];
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<ProgramCategory>("edu");
+  // Pick an existing org category or type a brand-new one — categories are
+  // whatever names the org wants (no presets).
+  const NEW_CATEGORY = "__new__";
+  const [categoryChoice, setCategoryChoice] = useState<string>(categories[0] ?? NEW_CATEGORY);
+  const [newCategory, setNewCategory] = useState("");
+  useEffect(() => {
+    if (open) setCategoryChoice(categories[0] ?? NEW_CATEGORY);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const category = categoryChoice === NEW_CATEGORY ? newCategory.trim() : categoryChoice;
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
   const [admins, setAdmins] = useState<AdminDraft[]>([{ email: "", displayName: "" }]);
   const [invites, setInvites] = useState<CreatedInvite[] | null>(null);
@@ -395,6 +493,8 @@ function NewProgramDialog({
   function reset() {
     setName("");
     setDescription("");
+    setNewCategory("");
+    setCategoryChoice(categories[0] ?? NEW_CATEGORY);
     setFeatures({ ...DEFAULT_PROGRAM_FEATURES });
     setAdmins([{ email: "", displayName: "" }]);
     setInvites(null);
@@ -407,7 +507,7 @@ function NewProgramDialog({
   const validAdmins = admins.filter((a) => a.email.trim());
 
   async function submit() {
-    if (!name.trim()) return;
+    if (!name.trim() || !category) return;
     setBusy(true);
     try {
       const program = await createProgram(orgId, {
@@ -496,15 +596,29 @@ function NewProgramDialog({
             </div>
             <div className="space-y-1.5">
               <Label>Category</Label>
-              <Select value={category} onValueChange={(v) => setCategory(v as ProgramCategory)}>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Group related programs. Pick one of yours or create a new one.
+              </p>
+              <Select value={categoryChoice} onValueChange={setCategoryChoice}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="edu">Education (Teacher / Student)</SelectItem>
-                  <SelectItem value="game">Game (Coach / Player)</SelectItem>
+                  {categories.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={NEW_CATEGORY}>+ New category…</SelectItem>
                 </SelectContent>
               </Select>
+              {categoryChoice === NEW_CATEGORY ? (
+                <Input
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  placeholder="e.g. Competitions, Summer Camps, Research"
+                />
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label>
@@ -558,7 +672,7 @@ function NewProgramDialog({
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button onClick={submit} disabled={busy || !name.trim()}>
+              <Button onClick={submit} disabled={busy || !name.trim() || !category}>
                 {busy ? "Creating…" : "Create program"}
               </Button>
             </>
