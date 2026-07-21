@@ -23,7 +23,7 @@ export default async function PlayersPage({
   const { tab, kb: kbParam, by, deleted } = await searchParams;
 
   const store = kbStore();
-  const kbs = await store.listKbs();
+  const kbs = (await store.listKbs()).filter((k) => !k.archived);
   const withPlayers: { kb: KnowledgeBase; players: KbPlayer[] }[] = [];
   for (const kb of kbs) {
     withPlayers.push({ kb, players: await store.listPlayersForKb(kb.kbId) });

@@ -28,7 +28,7 @@ export default async function PlayPage() {
   // Otherwise deal a fresh default board: strongest set of the first KB that
   // compiles, you South against three house players.
   const store = kbStore();
-  for (const kb of await store.listKbs()) {
+  for (const kb of (await store.listKbs()).filter((k) => !k.archived)) {
     const compiled = await kbService().liveCompile(kb.kbId);
     if (!compiled) continue;
     const pack = pickDefaultSet(compiled);

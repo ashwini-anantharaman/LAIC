@@ -29,6 +29,7 @@ export type AuditAction =
   | "kb.item.version.delete"
   | "kb.derive"
   | "kb.delete"
+  | "kb.archive"
   | "knowledge.item.edit"
   | "knowledge.item.status"
   | "knowledge.source.register"

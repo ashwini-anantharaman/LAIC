@@ -111,6 +111,12 @@ export class KbService {
     await this.store.deleteKb(kbId);
   }
 
+  /** Hide/unhide a KB everywhere without touching its data (reversible). */
+  async setKbArchived(kbId: string, archived: boolean): Promise<void> {
+    const kb = await this.getKb(kbId);
+    await this.store.putKb({ ...kb, archived: archived || undefined, updatedAt: this.now() });
+  }
+
   /** The compile sessions/players resolve against (last-good). */
   async liveCompile(kbId: string): Promise<CompiledKb | null> {
     const kb = await this.getKb(kbId);

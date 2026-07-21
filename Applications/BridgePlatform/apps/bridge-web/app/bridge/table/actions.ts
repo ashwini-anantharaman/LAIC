@@ -69,7 +69,7 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
   const { pickDefaultSet, ensureHousePlayer } = await import("@/lib/arena");
   const store = kbStore();
   const preferredKbId = String(formData.get("kbId") ?? "").trim();
-  const kbs = await store.listKbs();
+  const kbs = (await store.listKbs()).filter((k) => !k.archived);
   const ordered = preferredKbId
     ? [...kbs].sort((a) => (a.kbId === preferredKbId ? -1 : 0))
     : kbs;

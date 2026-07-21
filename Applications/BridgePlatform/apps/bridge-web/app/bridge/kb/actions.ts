@@ -49,6 +49,17 @@ export async function installSaycTemplateAction(formData: FormData): Promise<voi
   redirect(kbPath(result.kbId));
 }
 
+/** Hide/unhide a KB everywhere. Nothing is deleted — fully reversible. */
+export async function setKbArchivedAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const archived = String(formData.get("archived")) === "true";
+  await kbService().setKbArchived(kbId, archived);
+  await audit(context, "kb.archive", "kb", kbId, { archived });
+  revalidatePath("/bridge", "layout");
+  redirect(`/bridge/kb?${archived ? "hidden" : "unhidden"}=1`);
+}
+
 export async function createKbAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   await ensureSeeds();

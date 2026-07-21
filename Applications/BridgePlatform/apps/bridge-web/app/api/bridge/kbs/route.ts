@@ -8,7 +8,7 @@ export async function GET() {
   try {
     await requireContext();
     await ensureSeeds();
-    const kbs = await kbStore().listKbs();
+    const kbs = (await kbStore().listKbs()).filter((k) => !k.archived);
     const out = [];
     for (const kb of kbs) {
       const compiled = await kbService().liveCompile(kb.kbId);

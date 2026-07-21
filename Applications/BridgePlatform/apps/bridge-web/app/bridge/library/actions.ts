@@ -141,7 +141,7 @@ export async function playEntryAction(formData: FormData): Promise<void> {
   const requestedKb = String(formData.get("kbId") ?? "").trim();
   let kbId = requestedKb || entry.kbId || "";
   if (!kbId) {
-    for (const kb of await store.listKbs()) {
+    for (const kb of (await store.listKbs()).filter((k) => !k.archived)) {
       if (await kbService().liveCompile(kb.kbId)) {
         kbId = kb.kbId;
         break;

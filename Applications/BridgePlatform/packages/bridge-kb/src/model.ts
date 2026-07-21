@@ -30,6 +30,12 @@ export interface KnowledgeBase {
   description?: string;
   /** Display label of the system this KB captures ("SAYC", "2/1"…). */
   systemLabel: string;
+  /**
+   * Hidden everywhere (KB list, players, tables, arena) but never deleted —
+   * data, releases, and existing sessions stay intact. Reversible from the
+   * KB list's "Hidden knowledge bases" section.
+   */
+  archived?: boolean;
   levels: LevelDef[];
   /**
    * Last-good pointer (spec decision 5): the compile sessions resolve
