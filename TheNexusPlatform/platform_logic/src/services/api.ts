@@ -704,6 +704,8 @@ export interface ProgramMember {
   role_name: string | null;
   /** Pre-built platform role assigned inside Bridge (read-only here). */
   bridge_role?: string | null;
+  /** All platform-role assignments: { bridge?, learning?, … } (read-only here). */
+  platform_roles?: Record<string, string> | null;
 }
 
 /** Remove a member (org- or program-scoped membership). */

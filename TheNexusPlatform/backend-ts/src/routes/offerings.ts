@@ -780,15 +780,26 @@ offeringsRouter.get("/programs/:program_id/my-role", async (c) => {
   // Bridge People & Roles). The merge is what makes a Bridge-assigned learner
   // see (and auto-launch into) the Bridge card even with "No role" here.
   const role = await graph.getProgramRoleForEmail(programId, user.email);
-  const bridgeRole = await graph.getPlatformRoleForEmail(programId, "bridge", user.email).catch(() => null);
-  if (!role && !bridgeRole) return c.json(null);
+  // Merge in platform-role assignments (made inside each platform's own People
+  // & Roles UI). This is what makes a platform-assigned member see (and
+  // auto-launch into) that platform's card even with "No role" in Team & Roles.
   const perms = { ...((role?.perms as Record<string, unknown>) ?? {}) };
-  if (bridgeRole) perms.bridge = bridgeRole;
+  let anyPlatformRole = false;
+  for (const platform of ["bridge", "learning"]) {
+    const assigned = await graph.getPlatformRoleForEmail(programId, platform, user.email).catch(() => null);
+    if (assigned) {
+      perms[platform] = assigned;
+      anyPlatformRole = true;
+    }
+  }
+  if (!role && !anyPlatformRole) return c.json(null);
   return c.json({
     role_id: role?.role_id ?? null,
     role_name: role?.role_name ?? null,
     perms,
-    bridge_role: bridgeRole,
+    // Convenience mirrors (perms already carries these).
+    bridge_role: (perms.bridge as string) ?? null,
+    learning_role: (perms.learning as string) ?? null,
   });
 });
 

@@ -49,6 +49,7 @@ import {
   BRIDGE_ROLE_MAP,
   LEARNING_ROLE_MAP,
   platformAppSlug,
+  platformRoleConfig,
   resolvePlatformAccess,
 } from "../platformAccess";
 
@@ -521,105 +522,144 @@ platformRouter.get("/bridge/context", async (c) => {
   });
 });
 
-// ── Bridge People & Roles (administered from Bridge's own UI) ───────────────
-// Bridge's admin surface manages who holds which PRE-BUILT Bridge role, but
-// the data lives here: Nexus stays the single access authority, so org-portal
-// logins and test-as resolve the same answer the Bridge UI configured.
-// Assignable from Bridge's People & Roles: the simplified non-admin set.
-// Admin is never assigned here — it comes from Nexus membership (§3.5).
-// "Reviewer & Fellow" is one choice, stored as bridge_reviewer.
-const _BRIDGE_ASSIGNABLE = ["bridge_coach", "bridge_reviewer", "bridge_learner"] as const;
-const _BRIDGE_ROLE_BODY = z.object({
-  program_id: z.string().uuid(),
-  email: z.string().email(),
-  role: z.enum(_BRIDGE_ASSIGNABLE).nullable(),
-});
+// ── Platform People & Roles (administered from each platform's own UI) ──────
+// A platform's admin surface manages who holds which PRE-BUILT platform role,
+// but the data lives here: Nexus stays the single access authority, so
+// org-portal logins and test-as resolve the same answer the platform's UI set.
+// Admin is never assigned here — it comes from Nexus membership (§3.5). One set
+// of generic handlers serves every platform (bridge, learning, …), mounted at
+// /platforms/:platform/people and, for the already-deployed Bridge app, the
+// legacy /bridge/people aliases.
 
-async function _requireBridgeAdmin(user: PlatformUser, programId: string) {
-  const access = await resolvePlatformAccess(user, "bridge", programId);
-  if (access.level !== "admin") throw new HttpError(403, "Bridge admin access required");
+async function _requirePlatformRoleAdmin(user: PlatformUser, platform: string, programId: string) {
+  if (!platformRoleConfig(platform)) throw new HttpError(404, "Unknown platform");
+  const access = await resolvePlatformAccess(user, platform as never, programId);
+  if (access.level !== "admin") throw new HttpError(403, "Platform admin access required");
   return access;
 }
 
-platformRouter.get("/bridge/people", async (c) => {
-  const user = await getCurrentUser(c);
-  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
-  const programId = c.req.query("program_id");
-  if (!programId) throw new HttpError(400, "program_id required");
-  const access = await _requireBridgeAdmin(user, programId);
-  const members = await graph.listProgramMembers(access.orgId, programId);
-  const assignments = await graph.listPlatformRoleAssignments(programId, "bridge");
-  const byEmail = new Map(assignments.map((a: Row) => [String(a.email).toLowerCase(), a.role]));
-  return c.json(
-    members.map((m: Row) => {
-      const email = ((m.email as string) ?? "").toLowerCase();
-      // Admin standing = Nexus membership owner/administrator OR a custom
-      // program role that grants the Bridge area "administrator". Either way
-      // it's Nexus territory — read-only in Bridge, not reassignable here.
-      const isAdmin =
-        m.membership_role === "administrator" ||
-        m.membership_role === "owner" ||
-        (m.role_perms as Row | undefined)?.bridge === "administrator";
-      return {
-        email: m.email ?? null,
-        display_name: m.display_name ?? null,
-        status: m.status ?? "active",
-        membership_id: m.membership_id ?? null,
-        invitation_id: m.invitation_id ?? null,
-        bridge_role: isAdmin ? "bridge_program_admin" : byEmail.get(email) ?? null,
-        is_admin: isAdmin,
-      };
-    }),
-  );
-});
+// A person is an admin of this platform if: Nexus membership owner/administrator,
+// OR their custom program role grants the area "administrator", OR their stored
+// assignment is an admin-tier role. Either way it's Nexus territory (read-only).
+function _memberIsPlatformAdmin(m: Row, platform: string, assignedRole: string | null): boolean {
+  if (m.membership_role === "administrator" || m.membership_role === "owner") return true;
+  if ((m.role_perms as Row | undefined)?.[platform] === "administrator") return true;
+  const cfg = platformRoleConfig(platform);
+  return !!(cfg && assignedRole && cfg.adminRoles.includes(assignedRole));
+}
 
-platformRouter.put("/bridge/people/role", async (c) => {
-  const user = await getCurrentUser(c);
+async function _platformPeopleList(user: PlatformUser, platform: string, programId: string): Promise<Row[]> {
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
-  const req = parseBody(_BRIDGE_ROLE_BODY, await c.req.json());
-  const access = await _requireBridgeAdmin(user, req.program_id);
+  const access = await _requirePlatformRoleAdmin(user, platform, programId);
+  const members = await graph.listProgramMembers(access.orgId, programId);
+  const assignments = await graph.listPlatformRoleAssignments(programId, platform);
+  const byEmail = new Map(assignments.map((a: Row) => [String(a.email).toLowerCase(), a.role]));
+  const adminRole = platformRoleConfig(platform)?.adminRoles[0] ?? "administrator";
+  return members.map((m: Row) => {
+    const email = ((m.email as string) ?? "").toLowerCase();
+    const assigned = byEmail.get(email) ?? null;
+    const isAdmin = _memberIsPlatformAdmin(m, platform, assigned);
+    return {
+      email: m.email ?? null,
+      display_name: m.display_name ?? null,
+      status: m.status ?? "active",
+      membership_id: m.membership_id ?? null,
+      invitation_id: m.invitation_id ?? null,
+      role: isAdmin ? adminRole : assigned,
+      is_admin: isAdmin,
+    };
+  });
+}
+
+async function _platformRolePut(user: PlatformUser, platform: string, body: Row): Promise<Row> {
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const cfg = platformRoleConfig(platform);
+  if (!cfg) throw new HttpError(404, "Unknown platform");
+  const schema = z.object({
+    program_id: z.string().uuid(),
+    email: z.string().email(),
+    role: z.string().nullable(),
+  });
+  const req = parseBody(schema, body);
+  if (req.role !== null && !cfg.assignable.includes(req.role)) {
+    throw new HttpError(400, `Not an assignable ${platform} role`);
+  }
+  const access = await _requirePlatformRoleAdmin(user, platform, req.program_id);
   const members = await graph.listProgramMembers(access.orgId, req.program_id);
   const target = members.find((m: Row) => ((m.email as string) ?? "").toLowerCase() === req.email.toLowerCase());
   if (!target) throw new HttpError(404, "That person is not in this program");
   if (target.membership_role === "administrator" || target.membership_role === "owner") {
-    throw new HttpError(409, "Program administrators already hold the Bridge Program Admin role via Nexus");
+    throw new HttpError(409, "Program administrators hold admin via Nexus, not here");
   }
   const row = await graph.setPlatformRoleAssignment(
-    access.orgId, req.program_id, "bridge", req.email, req.role, access.profileId,
+    access.orgId, req.program_id, platform, req.email, req.role, access.profileId,
   );
-  await db.recordAuditEvent("bridge.role.assigned", {
+  await db.recordAuditEvent(`${platform}.role.assigned`, {
     orgId: access.orgId, actorUserId: user.id, scopeType: "program", scopeId: req.program_id,
     metadata: { email: req.email, role: req.role },
   });
-  return c.json(row ?? { email: req.email.toLowerCase(), role: null });
-});
+  return row ?? { email: req.email.toLowerCase(), role: null };
+}
 
-// Remove a person from the program (Bridge admin action — parity with the
-// console's trash-can). Refuses to remove admins. Clears their Bridge role too.
-platformRouter.delete("/bridge/people", async (c) => {
-  const user = await getCurrentUser(c);
+async function _platformPersonDelete(user: PlatformUser, platform: string, programId: string, email: string): Promise<Row> {
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
-  const programId = c.req.query("program_id");
-  const email = c.req.query("email");
-  if (!programId || !email) throw new HttpError(400, "program_id and email required");
-  const access = await _requireBridgeAdmin(user, programId);
+  const access = await _requirePlatformRoleAdmin(user, platform, programId);
   const members = await graph.listProgramMembers(access.orgId, programId);
   const target = members.find((m: Row) => ((m.email as string) ?? "").toLowerCase() === email.toLowerCase());
   if (!target) throw new HttpError(404, "That person is not in this program");
-  const targetIsAdmin =
-    target.membership_role === "administrator" ||
-    target.membership_role === "owner" ||
-    (target.role_perms as Row | undefined)?.bridge === "administrator";
-  if (targetIsAdmin) throw new HttpError(409, "Admins are managed from the Nexus console, not removed here");
-  // Clear any Bridge role, then remove the membership or revoke the invite.
-  await graph.setPlatformRoleAssignment(access.orgId, programId, "bridge", email, null);
+  const assignments = await graph.listPlatformRoleAssignments(programId, platform);
+  const assigned = (assignments.find((a: Row) => String(a.email).toLowerCase() === email.toLowerCase())?.role as string | undefined) ?? null;
+  if (_memberIsPlatformAdmin(target, platform, assigned)) {
+    throw new HttpError(409, "Admins are managed from the Nexus console, not removed here");
+  }
+  await graph.setPlatformRoleAssignment(access.orgId, programId, platform, email, null);
   if (target.membership_id) await db.deleteMembership(target.membership_id as string);
   else if (target.invitation_id) await graph.revokeInvitation(target.invitation_id as string);
-  await db.recordAuditEvent("bridge.person.removed", {
+  await db.recordAuditEvent(`${platform}.person.removed`, {
     orgId: access.orgId, actorUserId: user.id, scopeType: "program", scopeId: programId,
     metadata: { email },
   });
-  return c.json({ ok: true });
+  return { ok: true };
+}
+
+// Generic routes (any platform).
+platformRouter.get("/platforms/:platform/people", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.query("program_id");
+  if (!programId) throw new HttpError(400, "program_id required");
+  return c.json(await _platformPeopleList(user, c.req.param("platform"), programId));
+});
+platformRouter.put("/platforms/:platform/people/role", async (c) => {
+  const user = await getCurrentUser(c);
+  return c.json(await _platformRolePut(user, c.req.param("platform"), await c.req.json()));
+});
+platformRouter.delete("/platforms/:platform/people", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.query("program_id");
+  const email = c.req.query("email");
+  if (!programId || !email) throw new HttpError(400, "program_id and email required");
+  return c.json(await _platformPersonDelete(user, c.req.param("platform"), programId, email));
+});
+
+// Legacy Bridge aliases (the deployed bridge-web calls these). Same handlers,
+// plus a `bridge_role` field mirror so the app's existing reads keep working.
+platformRouter.get("/bridge/people", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.query("program_id");
+  if (!programId) throw new HttpError(400, "program_id required");
+  const rows = await _platformPeopleList(user, "bridge", programId);
+  return c.json(rows.map((r) => ({ ...r, bridge_role: r.role })));
+});
+platformRouter.put("/bridge/people/role", async (c) => {
+  const user = await getCurrentUser(c);
+  return c.json(await _platformRolePut(user, "bridge", await c.req.json()));
+});
+platformRouter.delete("/bridge/people", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.query("program_id");
+  const email = c.req.query("email");
+  if (!programId || !email) throw new HttpError(400, "program_id and email required");
+  return c.json(await _platformPersonDelete(user, "bridge", programId, email));
 });
 
 // The person's display name in THIS org (their org-scoped profile), falling

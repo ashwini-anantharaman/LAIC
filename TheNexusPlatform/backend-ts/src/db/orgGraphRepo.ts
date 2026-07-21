@@ -156,18 +156,28 @@ export async function listProgramMembers(orgId: string, programId: string): Prom
     const rows = [...members, ...invites.filter((i) => !seen.has((i.email ?? "").toLowerCase()))];
 
     // Attach platform-role assignments (made inside the platforms' own UIs)
-    // so the console can show them — read-only there by design.
-    const bridgeRoles = new Map(
-      (await tx
-        .select({ email: platformRoleAssignments.email, role: platformRoleAssignments.role })
-        .from(platformRoleAssignments)
-        .where(and(eq(platformRoleAssignments.programId, programId), eq(platformRoleAssignments.platform, "bridge"))))
-        .map((a) => [a.email.toLowerCase(), a.role]),
-    );
-    return rows.map((r) => ({
-      ...r,
-      bridge_role: bridgeRoles.get(((r.email as string | null) ?? "").toLowerCase()) ?? null,
-    }));
+    // so the console can show them — read-only there by design. Keyed by
+    // email → { platform: role } across every platform.
+    const allAssignments = await tx
+      .select({ email: platformRoleAssignments.email, platform: platformRoleAssignments.platform, role: platformRoleAssignments.role })
+      .from(platformRoleAssignments)
+      .where(eq(platformRoleAssignments.programId, programId));
+    const platformRolesByEmail = new Map<string, Record<string, string>>();
+    for (const a of allAssignments) {
+      const key = a.email.toLowerCase();
+      const m = platformRolesByEmail.get(key) ?? {};
+      m[a.platform] = a.role;
+      platformRolesByEmail.set(key, m);
+    }
+    return rows.map((r) => {
+      const pr = platformRolesByEmail.get(((r.email as string | null) ?? "").toLowerCase()) ?? {};
+      return {
+        ...r,
+        platform_roles: pr,
+        // Back-compat: the console + bridge alias still read bridge_role.
+        bridge_role: pr.bridge ?? null,
+      };
+    });
   });
 }
 

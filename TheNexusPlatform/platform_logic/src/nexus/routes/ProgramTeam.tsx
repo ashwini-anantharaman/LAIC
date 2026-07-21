@@ -59,13 +59,21 @@ const AREAS: { key: RoleArea; label: string; platform?: boolean }[] =
   }));
 const LEVELS: AccessLevel[] = ["view", "edit", "comment"];
 const areaLabel = (k: string) => AREAS.find((a) => a.key === k)?.label ?? k;
-// Simplified Bridge role label (assigned inside Bridge; read-only here).
-const bridgeRoleLabel = (r: string) => {
-  if (["bridge_program_admin", "bridge_org_admin", "bridge_club_admin"].includes(r)) return "Admin";
+// Human labels for platform roles assigned inside a platform (read-only here).
+const PLATFORM_LABELS: Record<string, string> = { bridge: "Bridge Platform", learning: "Learning Platform" };
+const platformRoleLabel = (r: string) => {
+  if (["bridge_program_admin", "bridge_org_admin", "bridge_club_admin", "administrator"].includes(r)) return "Admin";
   if (r === "bridge_reviewer" || r === "bridge_fellow") return "Reviewer & Fellow";
   if (r === "bridge_coach") return "Coach";
   if (r === "bridge_learner") return "Learner";
-  return r.replace(/^bridge_/, "");
+  // Learning + generic: turn a key like "content-developer" into "Content Developer".
+  return r.replace(/^(bridge|learning)[_-]/, "").split(/[-_]/).map((w) => w[0]?.toUpperCase() + w.slice(1)).join(" ");
+};
+// The first platform this person holds a role in, if any.
+const heldPlatform = (m: { platform_roles?: Record<string, string> | null; bridge_role?: string | null }) => {
+  const roles = m.platform_roles ?? (m.bridge_role ? { bridge: m.bridge_role } : {});
+  const platform = Object.keys(roles)[0];
+  return platform ? { platform, role: roles[platform] } : null;
 };
 
 export function ProgramTeam() {
@@ -256,16 +264,22 @@ export function ProgramTeam() {
                             <Pill tone="accent">Admin</Pill>
                             <div className="text-[11px] text-muted-foreground mt-0.5">Program-level access</div>
                           </div>
-                        ) : m.bridge_role ? (
-                          // A Bridge platform role — assigned inside Bridge, so
+                        ) : heldPlatform(m) ? (
+                          // A platform role — assigned inside that platform, so
                           // read-only here (no dropdown). Removal is via delete.
-                          <span
-                            className="text-sm text-muted-foreground"
-                            title="Assigned inside the Bridge Platform (People & Roles) — managed there, not here."
-                          >
-                            {bridgeRoleLabel(m.bridge_role)}
-                            <span className="block text-[11px] text-muted-foreground/70">Bridge Platform · managed in Bridge</span>
-                          </span>
+                          (() => {
+                            const held = heldPlatform(m)!;
+                            const label = PLATFORM_LABELS[held.platform] ?? held.platform;
+                            return (
+                              <span
+                                className="text-sm text-muted-foreground"
+                                title={`Assigned inside the ${label} (People & Roles) — managed there, not here.`}
+                              >
+                                {platformRoleLabel(held.role)}
+                                <span className="block text-[11px] text-muted-foreground/70">{label} · managed in platform</span>
+                              </span>
+                            );
+                          })()
                         ) : (
                           <Select
                             value={m.role_id ?? "none"}

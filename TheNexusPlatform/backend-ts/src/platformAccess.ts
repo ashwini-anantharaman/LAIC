@@ -77,12 +77,65 @@ export const BRIDGE_ROLE_MAP: Record<AreaGrantLevel, { roles: string[]; accessLe
   view: { roles: ["bridge_learner"], accessLevel: "learner" },
 };
 
+// Learning uses the app's own role vocabulary (ashwiniNew src/lib/types.ts) so
+// the emitted roles are ones the Learning Platform already understands.
 export const LEARNING_ROLE_MAP: Record<AreaGrantLevel, { roles: string[]; accessLevel: string }> = {
-  admin: { roles: ["learning_admin"], accessLevel: "admin" },
-  edit: { roles: ["learning_instructor"], accessLevel: "instructor" },
-  comment: { roles: ["learning_reviewer"], accessLevel: "reviewer" },
-  view: { roles: ["learning_student"], accessLevel: "learner" },
+  admin: { roles: ["administrator"], accessLevel: "administrator" },
+  edit: { roles: ["content-developer"], accessLevel: "content-developer" },
+  comment: { roles: ["course-reviewer"], accessLevel: "course-reviewer" },
+  view: { roles: ["student"], accessLevel: "student" },
 };
+
+const LEARNING_PREBUILT_ROLES = [
+  "administrator",
+  "content-developer",
+  "course-reviewer",
+  "object-reviewer",
+  "coach",
+  "student",
+] as const;
+
+const LEARNING_ROLE_LEVEL: Record<string, AreaGrantLevel> = {
+  administrator: "admin",
+  "content-developer": "edit",
+  coach: "edit",
+  "object-reviewer": "comment",
+  "course-reviewer": "comment",
+  student: "view",
+};
+
+// ── One config per platform: the whole per-platform role surface in one place,
+// so the People endpoints, access resolution, and context emit stay in sync and
+// a new platform is just another entry (no copy-pasted bridge logic). ─────────
+export interface PlatformRoleConfig {
+  /** Every valid pre-built role key for this platform. */
+  prebuilt: readonly string[];
+  /** Which pre-built keys are admin-tier (read-only; from Nexus, not assignable). */
+  adminRoles: readonly string[];
+  /** Assignable from the platform's own People & Roles UI (the non-admin set). */
+  assignable: readonly string[];
+  /** role key → grant level. */
+  level: Record<string, AreaGrantLevel>;
+}
+
+export const PLATFORM_ROLES: Record<string, PlatformRoleConfig> = {
+  bridge: {
+    prebuilt: BRIDGE_PREBUILT_ROLES,
+    adminRoles: ["bridge_program_admin", "bridge_org_admin", "bridge_club_admin"],
+    assignable: ["bridge_coach", "bridge_reviewer", "bridge_learner"],
+    level: BRIDGE_ROLE_LEVEL,
+  },
+  learning: {
+    prebuilt: LEARNING_PREBUILT_ROLES,
+    adminRoles: ["administrator"],
+    assignable: ["content-developer", "object-reviewer", "course-reviewer", "coach", "student"],
+    level: LEARNING_ROLE_LEVEL,
+  },
+};
+
+export function platformRoleConfig(platform: string): PlatformRoleConfig | null {
+  return PLATFORM_ROLES[platform] ?? null;
+}
 
 // ── The resolver ─────────────────────────────────────────────────────────────
 
@@ -173,7 +226,7 @@ async function _grantLevel(
   user: PlatformUser,
   program: Row,
   area: ProgramFeatureKey,
-): Promise<{ level: AreaGrantLevel; platformRole?: BridgePrebuiltRole } | null> {
+): Promise<{ level: AreaGrantLevel; platformRole?: string } | null> {
   const orgId = program.org_id as string;
   const pid = program.id as string;
   // Org owner/administrator (org-level, program_id null) or this program's
@@ -190,22 +243,24 @@ async function _grantLevel(
   // assignments live in the DB layer only (501-free: absent in demo mode).
   if (!dbEnabled() || !user.email) return null;
 
-  // Most specific first: a person-level platform-role assignment (made from
-  // the platform's own People & Roles UI, stored centrally here).
-  if (area === "bridge") {
-    const assigned = await graph.getPlatformRoleForEmail(pid, "bridge", user.email).catch(() => null);
-    if (assigned && (BRIDGE_PREBUILT_ROLES as readonly string[]).includes(assigned)) {
-      const r = assigned as BridgePrebuiltRole;
-      return { level: BRIDGE_ROLE_LEVEL[r], platformRole: r };
+  // A platform area (bridge/learning) may carry a pre-built platform role,
+  // assigned either from the platform's own People & Roles UI (most specific)
+  // or named directly in a custom program role's perms.
+  const cfg = platformRoleConfig(area);
+
+  // Most specific first: a person-level platform-role assignment.
+  if (cfg) {
+    const assigned = await graph.getPlatformRoleForEmail(pid, area, user.email).catch(() => null);
+    if (assigned && cfg.prebuilt.includes(assigned)) {
+      return { level: cfg.level[assigned], platformRole: assigned };
     }
   }
 
   const role = await graph.getProgramRoleForEmail(pid, user.email).catch(() => null);
   const level = role ? ((role.perms as Row)?.[area] as string | undefined) : undefined;
-  // An exact pre-built platform role from the picker (bridge area).
-  if (level && (BRIDGE_PREBUILT_ROLES as readonly string[]).includes(level)) {
-    const r = level as BridgePrebuiltRole;
-    return { level: BRIDGE_ROLE_LEVEL[r], platformRole: r };
+  // An exact pre-built platform role named in the custom role.
+  if (cfg && level && cfg.prebuilt.includes(level)) {
+    return { level: cfg.level[level], platformRole: level };
   }
   // Platform areas granted as a single "administrator" toggle — full access.
   if (level === "administrator") return { level: "admin" };

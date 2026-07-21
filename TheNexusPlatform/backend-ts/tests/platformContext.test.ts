@@ -120,8 +120,8 @@ describe("platform context endpoints (Phase 3, local mode)", () => {
     );
     expect(r.status).toBe(200);
     expect(r.body.programId).toBe(programId);
-    expect(r.body.roles).toEqual(["learning_admin"]);
-    expect(r.body.accessLevel).toBe("admin");
+    expect(r.body.roles).toEqual(["administrator"]);
+    expect(r.body.accessLevel).toBe("administrator");
   });
 
   it("resolves without a pinned program (first granting program wins)", async () => {

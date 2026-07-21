@@ -108,11 +108,11 @@ describe.skipIf(!RUN)("platform context — custom-role grants (Postgres)", () =
     expect(r.body.accessLevel).toBe("coach");
   });
 
-  it("learning:edit maps to learning_instructor; no learning grant → 403", async () => {
+  it("learning:edit maps to content-developer; no learning grant → 403", async () => {
     const instructor = await get(`/api/platform/learning/context?program_id=${programId}`, learnerToken);
     expect(instructor.status).toBe(200);
-    expect(instructor.body.roles).toEqual(["learning_instructor"]);
-    expect(instructor.body.accessLevel).toBe("instructor");
+    expect(instructor.body.roles).toEqual(["content-developer"]);
+    expect(instructor.body.accessLevel).toBe("content-developer");
     expect(instructor.body.programId).toBe(programId);
 
     const denied = await get(`/api/platform/learning/context?program_id=${programId}`, coachToken);
