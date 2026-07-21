@@ -14,12 +14,17 @@ import { Label } from "@/app/components/ui/label";
 import { devLoginAs, getDevPersonas, getOrgBySlug, type DevPersonaEntry, type OrgBranding } from "@/services/api";
 import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { useSession } from "@/nexus/session";
+import { readBranding, writeBranding } from "@/nexus/branding";
+import { resolveAssetUrl } from "@/services/apiBase";
 
 export function OrgPortal() {
   const { slug = "" } = useParams();
   const { login, refresh } = useSession();
   const navigate = useNavigate();
 
+  // First paint uses the cached accent (no flash); the fetch below refreshes
+  // the cache AND seeds it for the org space entered after login.
+  const cached = readBranding(slug);
   const [org, setOrg] = useState<OrgBranding | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [email, setEmail] = useState("");
@@ -30,7 +35,10 @@ export function OrgPortal() {
 
   useEffect(() => {
     getOrgBySlug(slug)
-      .then(setOrg)
+      .then((b) => {
+        setOrg(b);
+        writeBranding({ orgId: b.id, slug, accent: b.theme_accent_color, logo: resolveAssetUrl(b.theme_logo_url) });
+      })
       .catch(() => setNotFound(true));
   }, [slug]);
 
@@ -80,7 +88,7 @@ export function OrgPortal() {
     );
   }
 
-  const accent = org?.theme_accent_color || "#4f46e5";
+  const accent = org?.theme_accent_color || cached?.accent || "#4f46e5";
   const glyph = (org?.name ?? "•").slice(0, 1).toUpperCase();
 
   return (

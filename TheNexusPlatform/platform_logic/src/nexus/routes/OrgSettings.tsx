@@ -41,6 +41,7 @@ import { Check, Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useSession } from "@/nexus/session";
 import { accentForMode } from "@/nexus/theme/accent";
+import { writeBranding } from "@/nexus/branding";
 
 export function OrgSettings() {
   const { orgId = "" } = useParams();
@@ -51,6 +52,7 @@ export function OrgSettings() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [accent, setAccent] = useState("#4f46e5");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [orgSlug, setOrgSlug] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
 
@@ -81,6 +83,7 @@ export function OrgSettings() {
         const mine = await listMyOrgs();
         const slug = mine.find((o) => o.id === orgId)?.slug;
         if (!slug) return;
+        setOrgSlug(slug);
         const b = await getOrgBySlug(slug);
         if (b.theme_accent_color) setAccent(b.theme_accent_color);
         if (b.theme_logo_url) setLogoUrl(b.theme_logo_url);
@@ -103,6 +106,9 @@ export function OrgSettings() {
   async function saveTheme() {
     try {
       await updateOrgTheme(orgId, { accent_color: accent });
+      // Broadcast so the sidebar (and anything else showing branding)
+      // repaints immediately — no manual refresh.
+      writeBranding({ orgId, slug: orgSlug, accent, logo: resolveAssetUrl(logoUrl) });
       toast.success("Theme saved");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to save theme");
@@ -165,6 +171,7 @@ export function OrgSettings() {
                   try {
                     const r = await uploadOrgLogo(orgId, file);
                     setLogoUrl(r.logo_url);
+                    writeBranding({ orgId, slug: orgSlug, accent, logo: resolveAssetUrl(r.logo_url) });
                     toast.success("Logo uploaded — it now shows on your org portal");
                   } catch (err) {
                     toast.error(err instanceof Error ? err.message : "Upload failed");

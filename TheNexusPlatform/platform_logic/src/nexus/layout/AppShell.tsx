@@ -45,6 +45,7 @@ import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
 import type { Program } from "@/types/platform";
 import { accentForMode } from "@/nexus/theme/accent";
+import { onBranding, readBranding, writeBranding } from "@/nexus/branding";
 
 interface NavItem {
   to: string;
@@ -320,27 +321,44 @@ export function AppShell() {
 
   // Org branding (§6.4): the org's accent recolors primary actions inside its
   // space, and its logo takes the brand slot. Nexus operator pages stay neutral.
-  const [orgBranding, setOrgBranding] = useState<{ accent: string | null; logo: string | null }>({
-    accent: null,
-    logo: null,
+  // No flash, no manual refresh: hydrate synchronously from the branding
+  // cache, revalidate in the background, and live-update on any write
+  // (e.g. Settings saving a new accent). See nexus/branding.ts.
+  const [orgBranding, setOrgBranding] = useState<{ accent: string | null; logo: string | null }>(() => {
+    const cached = readBranding(orgId);
+    return cached ? { accent: cached.accent, logo: cached.logo } : { accent: null, logo: null };
   });
   useEffect(() => {
     if (mode === "nexus" || !orgId) {
       setOrgBranding({ accent: null, logo: null });
       return;
     }
+    const cached = readBranding(orgId);
+    setOrgBranding(cached ? { accent: cached.accent, logo: cached.logo } : { accent: null, logo: null });
     (async () => {
       try {
         const mine = await listMyOrgs();
         const slug = mine.find((o) => o.id === orgId)?.slug;
         if (!slug) return;
         const b = await getOrgBySlug(slug);
-        setOrgBranding({ accent: b.theme_accent_color, logo: resolveAssetUrl(b.theme_logo_url) });
+        writeBranding({
+          orgId,
+          slug,
+          accent: b.theme_accent_color,
+          logo: resolveAssetUrl(b.theme_logo_url),
+        });
       } catch {
-        /* neutral defaults */
+        /* keep whatever we had */
       }
     })();
   }, [mode, orgId]);
+  useEffect(
+    () =>
+      onBranding((b) => {
+        if (b.orgId === orgId) setOrgBranding({ accent: b.accent, logo: b.logo });
+      }),
+    [orgId],
+  );
 
   // Are we previewing a role in THIS program?
   const impersonating = impersonation && impersonation.programId === programId ? impersonation : null;
