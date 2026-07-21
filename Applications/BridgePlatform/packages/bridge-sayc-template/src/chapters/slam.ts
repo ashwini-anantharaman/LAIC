@@ -6,6 +6,7 @@
 
 import {
   aces,
+  quality,
   all,
   any,
   anyBid,
@@ -199,15 +200,41 @@ export const SLAM: TemplateItem[] = [
   auctionItem(
     "five-nt-kings",
     "5NT king ask",
-    "After Blackwood confirms all the aces, 5NT asks for kings (grand-slam interest): 6♣ = 0, 6♦ = 1, 6♥ = 2, 6♠ = 3.",
+    "After Blackwood confirms all the aces, 5NT asks for kings by steps: 6♣ = 0 or 4, 6♦ = 1, 6♥ = 2, 6♠ = 3. (A JUMP to 5NT without Blackwood is the Grand Slam Force instead.)",
     "convention",
     [
-      rule("k0", "No kings", ctx("any", { partnerLast: is("5N"), ownFirst: SUIT_FIRST, contested: false }), kings(undefined, 0), bid(6, "C"), 12),
-      rule("k1", "One king", ctx("any", { partnerLast: is("5N"), ownFirst: SUIT_FIRST, contested: false }), kings(1, 1), bid(6, "D"), 13),
-      rule("k2", "Two kings", ctx("any", { partnerLast: is("5N"), ownFirst: SUIT_FIRST, contested: false }), kings(2, 2), bid(6, "H"), 14),
-      rule("k3", "Three kings", ctx("any", { partnerLast: is("5N"), ownFirst: SUIT_FIRST, contested: false }), kings(3, 3), bid(6, "S"), 15),
+      rule("k0", "No kings", ctx("any", { partnerLast: is("5N"), ownLast: bidAt({ level: 5, strains: ["C", "D", "H", "S"] }), contested: false }), kings(undefined, 0), bid(6, "C"), 12),
+      rule("k1", "One king", ctx("any", { partnerLast: is("5N"), ownLast: bidAt({ level: 5, strains: ["C", "D", "H", "S"] }), contested: false }), kings(1, 1), bid(6, "D"), 13),
+      rule("k2", "Two kings", ctx("any", { partnerLast: is("5N"), ownLast: bidAt({ level: 5, strains: ["C", "D", "H", "S"] }), contested: false }), kings(2, 2), bid(6, "H"), 14),
+      rule("k3", "Three kings", ctx("any", { partnerLast: is("5N"), ownLast: bidAt({ level: 5, strains: ["C", "D", "H", "S"] }), contested: false }), kings(3, 3), bid(6, "S"), 15),
     ],
     { settings: [toggle("king_ask_on", "5NT king ask")], sets: ["conventions"] },
+  ),
+
+  auctionItem(
+    "grand-slam-force",
+    "Grand Slam Force",
+    "A jump to 5NT (not preceded by Blackwood) asks partner to bid a grand slam holding two of the three top trump honors (A, K, Q of the agreed suit), else six.",
+    "convention",
+    [
+      rule(
+        "gsf-seven",
+        "Bid seven with two top honors",
+        ctx("any", { partnerLast: is("5N"), ownLast: bidAt({ max: 4, strains: ["C", "D", "H", "S"] }), contested: false }),
+        quality("own_last_bid_suit"),
+        bidSuit("own_last_bid_suit", 7),
+        21,
+      ),
+      rule(
+        "gsf-six",
+        "Sign off at six without them",
+        ctx("any", { partnerLast: is("5N"), ownLast: bidAt({ max: 4, strains: ["C", "D", "H", "S"] }), contested: false }),
+        { all: [] },
+        bidSuit("own_last_bid_suit", 6),
+        22,
+      ),
+    ],
+    { settings: [toggle("gsf_on", "Grand Slam Force")], sets: ["conventions"] },
   ),
 
   auctionItem(

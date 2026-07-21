@@ -13,6 +13,7 @@ import { FLOOR } from "./chapters/floor";
 import { LEADS_SIGNALS_PLAY } from "./chapters/leadsSignalsPlay";
 import { NT_RESPONSES } from "./chapters/ntResponses";
 import { OPENINGS } from "./chapters/openings";
+import { PROSE } from "./chapters/prose";
 import { REBIDS } from "./chapters/rebids";
 import { SLAM, SLAM_EDGES } from "./chapters/slam";
 import { SUIT_RESPONSES } from "./chapters/suitResponses";
@@ -45,6 +46,7 @@ const CHAPTERS: { name: string; items: TemplateItem[] }[] = [
   { name: "competitive", items: COMPETITIVE },
   { name: "slam", items: SLAM },
   { name: "leads-signals-play", items: LEADS_SIGNALS_PLAY },
+  { name: "judgment", items: PROSE },
   { name: "floor", items: FLOOR },
 ];
 

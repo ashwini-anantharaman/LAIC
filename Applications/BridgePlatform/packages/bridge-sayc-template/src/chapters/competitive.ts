@@ -70,7 +70,7 @@ export const COMPETITIVE: TemplateItem[] = [
   auctionItem(
     "nt-overcall",
     "1NT overcall",
-    "A direct 1NT overcall shows 15–18 balanced with a stopper in their suit.",
+    "A direct 1NT overcall shows 15–18 balanced with a stopper in their suit. Advancer's only conventional response is 2♣ Stayman; everything else is natural.",
     "agreement",
     [
       rule(
@@ -81,13 +81,45 @@ export const COMPETITIVE: TemplateItem[] = [
         bid(1, "N"),
         39,
       ),
+      rule(
+        "stayman-advance",
+        "2♣ Stayman by advancer",
+        ctx("advancer", { partnerLast: is("1N"), contested: true }),
+        all(hcp(8), any(len("S", 4), len("H", 4))),
+        bid(2, "C"),
+        40,
+      ),
+      rule(
+        "stayman-reply-h",
+        "Show four hearts (over the advance)",
+        ctx("overcaller", { ownLast: is("1N"), partnerLast: is("2C") }),
+        len("H", 4),
+        bid(2, "H"),
+        41,
+      ),
+      rule(
+        "stayman-reply-s",
+        "Show four spades (over the advance)",
+        ctx("overcaller", { ownLast: is("1N"), partnerLast: is("2C") }),
+        len("S", 4),
+        bid(2, "S"),
+        42,
+      ),
+      rule(
+        "stayman-reply-d",
+        "Deny a major (over the advance)",
+        ctx("overcaller", { ownLast: is("1N"), partnerLast: is("2C") }),
+        { all: [] },
+        bid(2, "D"),
+        43,
+      ),
     ],
   ),
 
   auctionItem(
     "takeout-double",
     "Takeout doubles",
-    "Double their suit opening for takeout with opening values and shortness in their suit (or 17+ with any shape). Partner MUST advance: cheapest suit with a weak hand, a cue-bid of their suit with 12+.",
+    "Double is for takeout over any opening partscore bid (through 4♦), with opening values and shortness in their suit (or 17+ with any shape); a double of a game-level opening (4♥ or higher) is penalty. Partner MUST advance: cheapest suit with a weak hand, a JUMP with invitational values (9–11), and a cue-bid of their suit as the game force.",
     "convention",
     [
       rule(
@@ -123,12 +155,28 @@ export const COMPETITIVE: TemplateItem[] = [
         33,
       ),
       rule(
+        "advance-jump",
+        "Invitational jump advance (9–11)",
+        ctx("advancer", { partnerLast: { kind: "double" }, lhoLast: bidAt({ level: 1 }) }),
+        all(tp(9, 11), any(len("S", 4), len("H", 4), len("D", 4), len("C", 4))),
+        bidLongest(["S", "H", "D", "C"], 2),
+        34,
+      ),
+      rule(
         "advance",
         "Advance to the cheapest suit",
         ctx("advancer", { partnerLast: { kind: "double" } }),
         { all: [] },
         bidLongest(["S", "H", "D", "C"]),
-        34,
+        35,
+      ),
+      rule(
+        "penalty-game-double",
+        "Penalty double of a game-level opening",
+        ctx("overcaller", { rhoLast: bidAt({ min: 4, strains: ["H", "S"] }) }),
+        all(hcp(13), { aces: { min: 1 } }),
+        dbl,
+        36,
       ),
     ],
     { settings: [toggle("takeout_dbl_on", "Takeout doubles")], sets: ["conventions"] },
@@ -137,7 +185,7 @@ export const COMPETITIVE: TemplateItem[] = [
   auctionItem(
     "negative-double",
     "Negative doubles",
-    "When partner opens and RHO overcalls (through 2♠), double shows the unbid major(s) and 6+ points instead of a penalty.",
+    "When partner opens and RHO overcalls (through 2♠), double is for takeout: over their 1♦ it shows both majors (4–4 or better); over 1♥ it shows EXACTLY four spades (1♠ would promise five); over 1♠ it shows four-plus hearts. Bidding a new major at the two level instead shows 11+ points and five-plus cards.",
     "convention",
     [
       // Booklet: 1♦–(1♥)–1♠ promises FIVE spades; the double shows four.
@@ -150,12 +198,44 @@ export const COMPETITIVE: TemplateItem[] = [
         35,
       ),
       rule(
-        "double",
-        "Negative double",
-        ctx("responder", { contested: true, rhoLast: bidAt({ max: 2, strains: ["C", "D", "H", "S"] }) }),
-        all(hcp(6), any(len("S", 4), len("H", 4))),
+        "double-vs-1d",
+        "Negative double of 1♦ (both majors)",
+        ctx("responder", { contested: true, rhoLast: is("1D") }),
+        all(hcp(6), len("S", 4), len("H", 4)),
         dbl,
         36,
+      ),
+      rule(
+        "double-vs-1h",
+        "Negative double of 1♥ (exactly four spades)",
+        ctx("responder", { contested: true, rhoLast: is("1H") }),
+        all(hcp(6), len("S", 4, 4)),
+        dbl,
+        37,
+      ),
+      rule(
+        "double-vs-1s",
+        "Negative double of 1♠ (four-plus hearts)",
+        ctx("responder", { contested: true, rhoLast: is("1S") }),
+        all(hcp(6), len("H", 4)),
+        dbl,
+        38,
+      ),
+      rule(
+        "double-generic",
+        "Negative double (two-level overcalls)",
+        ctx("responder", { contested: true, rhoLast: bidAt({ level: 2, strains: ["C", "D", "H", "S"] }) }),
+        all(hcp(8), any(len("S", 4), len("H", 4))),
+        dbl,
+        39,
+      ),
+      rule(
+        "two-level-major",
+        "New major at the two level (11+, five cards)",
+        ctx("responder", { contested: true, rhoLast: bidAt({ max: 2, strains: ["C", "D", "H", "S"] }) }),
+        all(tp(11), any(len("S", 5), len("H", 5))),
+        { type: "bid_longest", among: ["S", "H"], level: 2 },
+        40,
       ),
     ],
     { settings: [toggle("neg_dbl_on", "Negative doubles")], sets: ["conventions"] },
@@ -198,16 +278,32 @@ export const COMPETITIVE: TemplateItem[] = [
   auctionItem(
     "unusual-2nt",
     "Unusual 2NT",
-    "A jump to 2NT over their major opening shows at least five-five in the minors.",
+    "A jump overcall of 2NT shows at least 5–5 in the LOWEST TWO UNBID suits: both minors over a major opening, clubs and hearts over 1♦, diamonds and hearts over 1♣.",
     "convention",
     [
       rule(
         "jump",
-        "Unusual 2NT",
+        "Unusual 2NT over a major (both minors)",
         ctx("overcaller", { rhoLast: bidAt({ level: 1, strains: ["H", "S"] }) }),
         all(len("C", 5), len("D", 5), hcp(6)),
         bid(2, "N"),
         28,
+      ),
+      rule(
+        "jump-1d",
+        "Unusual 2NT over 1♦ (clubs + hearts)",
+        ctx("overcaller", { rhoLast: is("1D") }),
+        all(len("C", 5), len("H", 5), hcp(6)),
+        bid(2, "N"),
+        29,
+      ),
+      rule(
+        "jump-1c",
+        "Unusual 2NT over 1♣ (diamonds + hearts)",
+        ctx("overcaller", { rhoLast: is("1C") }),
+        all(len("D", 5), len("H", 5), hcp(6)),
+        bid(2, "N"),
+        30,
       ),
     ],
     { settings: [toggle("unt_on", "Unusual 2NT")], sets: ["conventions"] },
@@ -234,7 +330,7 @@ export const COMPETITIVE: TemplateItem[] = [
   auctionItem(
     "jordan-2nt",
     "Jordan 2NT and the 10+ redouble",
-    "When partner's opening is doubled for takeout: 2NT shows a limit raise or better with support (Jordan/Truscott); redouble shows 10+ points and usually no fit.",
+    "When partner's opening is doubled for takeout: 2NT shows a limit raise or better with support (Jordan); redouble shows 10+ points (though a descriptive bid is usually better); a jump shift is weak and preemptive — a six-plus card suit, like a weak two-bid; a raise is preemptive.",
     "convention",
     [
       rule(
@@ -253,6 +349,14 @@ export const COMPETITIVE: TemplateItem[] = [
         rdbl,
         34,
       ),
+      rule(
+        "weak-jump",
+        "Weak jump response over the double",
+        ctx("responder", { rhoLast: { kind: "double" } }),
+        all(hcp(undefined, 9), len("own_longest_suit", 6)),
+        { type: "bid_longest", among: ["S", "H", "D", "C"], level: 2 },
+        35,
+      ),
     ],
     { settings: [toggle("jordan_on", "Jordan 2NT over doubles")], sets: ["conventions"] },
   ),
@@ -260,7 +364,7 @@ export const COMPETITIVE: TemplateItem[] = [
   auctionItem(
     "cue-bid-raise",
     "Cue-bid raise by advancer",
-    "After partner overcalls, a cue-bid of the opponents' suit shows a good raise (11+ with support); a direct raise is merely competitive.",
+    "After partner overcalls, the ONLY forcing advance is a cue-bid of opener's suit — it asks about the quality of the overcall (and usually shows a good raise, 11+). Overcaller rebids the suit with a minimum; any other bid shows extra strength. A direct raise is merely competitive.",
     "agreement",
     [
       rule(
@@ -270,6 +374,22 @@ export const COMPETITIVE: TemplateItem[] = [
         all(len("partner_last_bid_suit", 3), tp(11)),
         bidSuit("lho_bid_suit"),
         36,
+      ),
+      rule(
+        "quality-reply-min",
+        "Minimum overcall — rebid the suit",
+        ctx("overcaller", { ownFirst: bidAt({ level: 1, strains: ["C", "D", "H", "S"] }), partnerLast: bidAt({ max: 3 }), roundMin: 2, contested: true }),
+        all(tp(undefined, 11), len("own_first_bid_suit", 5)),
+        bidSuit("own_first_bid_suit"),
+        38,
+      ),
+      rule(
+        "quality-reply-extra",
+        "Extra strength — bid beyond the suit",
+        ctx("overcaller", { ownFirst: bidAt({ level: 1, strains: ["C", "D", "H", "S"] }), partnerLast: bidAt({ max: 3 }), roundMin: 2, contested: true }),
+        all(tp(12), bal()),
+        bid(2, "N"),
+        39,
       ),
       rule(
         "raise",
@@ -285,7 +405,7 @@ export const COMPETITIVE: TemplateItem[] = [
   auctionItem(
     "balancing",
     "Balancing",
-    "In the pass-out seat, compete with less than a direct action would need: a balancing 1NT shows 10–15 with a stopper.",
+    "In the pass-out seat, compete with less than a direct action would need: a reopening double is takeout from about 9 points, and a balancing 1NT shows 10–15 with a stopper. A reopening bid means much the same as a direct-seat bid, a king lighter.",
     "agreement",
     [
       rule(
@@ -295,6 +415,14 @@ export const COMPETITIVE: TemplateItem[] = [
         all(bal(), hcp(10, 15), stopper("lho_bid_suit")),
         bid(1, "N"),
         50,
+      ),
+      rule(
+        "balance-double",
+        "Reopening takeout double",
+        ctx("overcaller", { rhoLast: passed, lhoLast: THEIR_ONE_LEVEL, partnerLast: passed }),
+        all(hcp(9), len("lho_bid_suit", undefined, 2)),
+        dbl,
+        49,
       ),
       rule(
         "balance-suit",

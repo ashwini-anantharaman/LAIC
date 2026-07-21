@@ -37,7 +37,7 @@ export const NT_RESPONSES: TemplateItem[] = [
   auctionItem(
     "stayman",
     "Stayman",
-    "Over partner's 1NT (or 2NT), 2♣ (3♣) asks for a four-card major with invitational values or better; opener shows a major or denies with 2♦. Stayman stays on over an opponent's double and switches off over a bid — with game-forcing values, a cue-bid of their suit takes its place. The same 3♣ ask applies after 2♣–2♦–2NT.",
+    "Over partner's 1NT (or 2NT), 2♣ (3♣) asks for a four-card major with invitational values or better — NON-forcing Stayman: the auction may stop in two of a suit. Opener rebids 2♥ with 4–4 in the majors and denies with 2♦. If responder rebids three of either minor, that shows slam interest and a five-card or longer suit. Stayman stays on over an opponent's double and switches off over a bid — with game-forcing values, a cue-bid of their suit takes its place. The same ask applies after 2♣–2♦–2NT (3♣) and over a 3NT opening (4♣ when not Gerber).",
     "convention",
     [
       // The asks (on over a double, off over a bid).
@@ -62,12 +62,53 @@ export const NT_RESPONSES: TemplateItem[] = [
         ),
       ),
       rule(
+        "ask-3n",
+        "4♣ Stayman over a 3NT opening",
+        ctx("responder", { opening: is("3N"), partnerLast: is("3N"), contested: false }),
+        any(len("S", 4), len("H", 4)),
+        bid(4, "C"),
+        24,
+      ),
+      rule(
+        "reply-h-3n",
+        "Show four hearts (over 3NT)",
+        ctx("opener", { ownFirst: is("3N"), partnerLast: is("4C") }),
+        len("H", 4),
+        bid(4, "H"),
+        23,
+      ),
+      rule(
+        "reply-s-3n",
+        "Show four spades (over 3NT)",
+        ctx("opener", { ownFirst: is("3N"), partnerLast: is("4C") }),
+        len("S", 4),
+        bid(4, "S"),
+        23,
+      ),
+      rule(
         "ask-2c",
         "Stayman 3♣ after 2♣–2♦–2NT",
         ctx("responder", { ...AFTER_2C_2NT }),
         any(len("S", 4), len("H", 4)),
         bid(3, "C"),
         27,
+      ),
+      // Responder's 3♣/3♦ REBID after the reply: slam interest, 5+ minor.
+      rule(
+        "cont-minor-slam-c",
+        "3♣ rebid — slam interest, five clubs",
+        ctx("responder", { opening: is("1N"), ownLast: is("2C"), partnerLast: bidAt({ level: 2 }) }),
+        all(len("C", 5), tp(14)),
+        bid(3, "C"),
+        33,
+      ),
+      rule(
+        "cont-minor-slam-d",
+        "3♦ rebid — slam interest, five diamonds",
+        ctx("responder", { opening: is("1N"), ownLast: is("2C"), partnerLast: bidAt({ level: 2 }) }),
+        all(len("D", 5), tp(14)),
+        bid(3, "D"),
+        34,
       ),
       // Their overcall killed the systems: cue-bid = Stayman with game force.
       rule(
@@ -218,6 +259,38 @@ export const NT_RESPONSES: TemplateItem[] = [
           bid(3, "H"),
           18,
         ),
+      ),
+      rule(
+        "xfer-h-3n",
+        "4♦ transfer to hearts (over 3NT)",
+        ctx("responder", { opening: is("3N"), partnerLast: is("3N"), contested: false }),
+        len("H", 5),
+        bid(4, "D"),
+        21,
+      ),
+      rule(
+        "xfer-s-3n",
+        "4♥ transfer to spades (over 3NT)",
+        ctx("responder", { opening: is("3N"), partnerLast: is("3N"), contested: false }),
+        len("S", 5),
+        bid(4, "H"),
+        22,
+      ),
+      rule(
+        "complete-h-4",
+        "Complete the 4♦ transfer",
+        ctx("opener", { ownFirst: is("3N"), partnerLast: is("4D") }),
+        { all: [] },
+        bid(4, "H"),
+        29,
+      ),
+      rule(
+        "complete-s-4",
+        "Complete the 4♥ transfer",
+        ctx("opener", { ownFirst: is("3N"), partnerLast: is("4H") }),
+        { all: [] },
+        bid(4, "S"),
+        30,
       ),
       rule(
         "xfer-h-2c",
@@ -498,7 +571,7 @@ export const NT_RESPONSES: TemplateItem[] = [
   auctionItem(
     "gerber",
     "Gerber over notrump",
-    "4♣ over partner's 1NT or 2NT asks for aces: 4♦ shows 0 or 4, 4♥ one, 4♠ two, 4NT three. A continuation of 5♣ asks for kings the same way (5♦ = 0 or 4 up to 5NT = 3); any other continuation is to play.",
+    "4♣ is Gerber over ANY 1NT or 2NT by partner — openings AND rebids. Responses show aces by steps: 4♦ = 0 or 4, 4♥ = 1, 4♠ = 2, 4NT = 3. A 5♣ continuation asks kings the same way (and guarantees the partnership holds all the aces); ANY other continuation by the Gerber bidder — including 4NT — is to play.",
     "convention",
     [
       rule(
@@ -509,43 +582,53 @@ export const NT_RESPONSES: TemplateItem[] = [
         bid(4, "C"),
         12,
       ),
+      // The booklet: 4♣ is Gerber over ANY 1NT/2NT by partner, including
+      // REBIDS of 1NT/2NT.
+      rule(
+        "ask-rebid",
+        "Gerber over a notrump rebid",
+        ctx("responder", { partnerLast: NT_OPENING, roundMin: 2, contested: false }),
+        all(tp(18), not(any(len("S", 4), len("H", 4)))),
+        bid(4, "C"),
+        13,
+      ),
       rule(
         "r0",
         "0 or 4 aces",
-        ctx("opener", { ownFirst: NT_OPENING, partnerLast: is("4C") }),
+        ctx("any", { ownLast: NT_OPENING, partnerLast: is("4C") }),
         any({ aces: { max: 0 } }, { aces: { min: 4 } }),
         bid(4, "D"),
-        13,
+        14,
       ),
       rule(
         "r1",
         "One ace",
-        ctx("opener", { ownFirst: NT_OPENING, partnerLast: is("4C") }),
+        ctx("any", { ownLast: NT_OPENING, partnerLast: is("4C") }),
         { aces: { min: 1, max: 1 } },
         bid(4, "H"),
-        14,
+        15,
       ),
       rule(
         "r2",
         "Two aces",
-        ctx("opener", { ownFirst: NT_OPENING, partnerLast: is("4C") }),
+        ctx("any", { ownLast: NT_OPENING, partnerLast: is("4C") }),
         { aces: { min: 2, max: 2 } },
         bid(4, "S"),
-        15,
+        16,
       ),
       rule(
         "r3",
         "Three aces",
-        ctx("opener", { ownFirst: NT_OPENING, partnerLast: is("4C") }),
+        ctx("any", { ownLast: NT_OPENING, partnerLast: is("4C") }),
         { aces: { min: 3, max: 3 } },
         bid(4, "N"),
-        16,
+        17,
       ),
       // 5♣ continuation asks for kings (guarantees all the aces).
       rule(
         "k04",
         "0 or 4 kings",
-        ctx("opener", { ownFirst: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        ctx("any", { ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
         any({ kings: { max: 0 } }, { kings: { min: 4 } }),
         bid(5, "D"),
         17,
@@ -553,7 +636,7 @@ export const NT_RESPONSES: TemplateItem[] = [
       rule(
         "k1",
         "One king",
-        ctx("opener", { ownFirst: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        ctx("any", { ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
         { kings: { min: 1, max: 1 } },
         bid(5, "H"),
         18,
@@ -561,7 +644,7 @@ export const NT_RESPONSES: TemplateItem[] = [
       rule(
         "k2",
         "Two kings",
-        ctx("opener", { ownFirst: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        ctx("any", { ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
         { kings: { min: 2, max: 2 } },
         bid(5, "S"),
         19,
@@ -569,7 +652,7 @@ export const NT_RESPONSES: TemplateItem[] = [
       rule(
         "k3",
         "Three kings",
-        ctx("opener", { ownFirst: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        ctx("any", { ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
         { kings: { min: 3, max: 3 } },
         bid(5, "N"),
         20,
@@ -611,7 +694,7 @@ export const NT_RESPONSES: TemplateItem[] = [
       rule(
         "accept-quant",
         "Accept the quantitative invite",
-        ctx("opener", { ownFirst: is("1N"), partnerLast: is("4N") }),
+        ctx("opener", { ownFirst: is("1N"), ownLast: is("1N"), partnerLast: is("4N") }),
         hcp(17),
         bid(6, "N"),
         43,

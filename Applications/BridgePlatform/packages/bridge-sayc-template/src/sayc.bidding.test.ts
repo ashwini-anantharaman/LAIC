@@ -618,6 +618,159 @@ describe("booklet pass additions (2026-07-21)", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("maximal coverage pass (2026-07-21)", () => {
+  it("opens a weak two on a POOR seven-card suit (not good enough for three)", async () => {
+    const d = await call("S9 S8 S7 S6 S5 S3 S2 HK H3 DQ D4 C3 C2", [P("N"), P("E")]);
+    expect(d.action).toBe("2S"); // 5 HCP, ragged seven-carder
+  });
+
+  it("Unusual 2NT over 1♦ shows clubs and hearts", async () => {
+    const d = await call(
+      "S2 HK HQ H8 H6 H2 D3 CA CQ C8 C4 C2 C3".replace("C3", "C5"),
+      [P("N"), ["E", "1D"]],
+      "S",
+    );
+    expect(d.action).toBe("2N");
+  });
+
+  it("negative double of 1♦ needs BOTH majors", async () => {
+    const both = await call(
+      "SA SQ S8 S4 HK H8 H3 H2 D2 CQ C8 C3 C2",
+      [["N", "1C"], ["E", "1D"]],
+      "S",
+    );
+    expect(both.action).toBe("X");
+    const oneMajor = await call(
+      "SA SQ S8 S4 H8 H3 H2 D4 D2 CQ C8 C3 C2",
+      [["N", "1C"], ["E", "1D"]],
+      "S",
+    );
+    expect(oneMajor.action).not.toBe("X"); // only spades — no negative double
+  });
+
+  it("opener reverses into hearts with 17+", async () => {
+    const d = await call(
+      "SA S4 HA HK H9 H2 DK DQ D8 D4 D2 C3 C2",
+      [P("N"), ["E", "P"], ["S", "1D"], P("W"), ["N", "1S"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("2H");
+    expect(d.matchedRuleId).toContain("rev-2h");
+  });
+
+  it("opener shows a second suit at the one level with a minimum", async () => {
+    const d = await call(
+      "SA SQ S9 S4 H9 DK DQ DJ D4 C6 C4 C3 C2",
+      [P("N"), ["E", "P"], ["S", "1D"], P("W"), ["N", "1H"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("1S");
+  });
+
+  it("opener double-jump raises with a maximum", async () => {
+    const d = await call(
+      "SA SQ S9 S4 HA HK H2 DA DQ D4 C4 C3 C2",
+      [P("N"), ["E", "P"], ["S", "1C"], P("W"), ["N", "1S"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("4S");
+  });
+
+  it("responder's jump raise of opener's first suit after a 2/1 is game forcing", async () => {
+    const d = await call(
+      "SK S9 S4 H4 H2 DA D8 D3 CA CQ C8 C3 C2",
+      [["N", "1S"], P("E"), ["S", "2C"], P("W"), ["N", "2H"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("3S");
+  });
+
+  it("responder signs off in a six-card suit after opener's 1NT rebid", async () => {
+    const d = await call(
+      "SA SJ S9 S8 S6 S4 H8 H3 D9 D4 D3 C3 C2",
+      [["N", "1C"], P("E"), ["S", "1S"], P("W"), ["N", "1N"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("2S"); // weak, six spades — sign-off
+  });
+
+  it("responder rebids 3♣ over the Stayman reply as a slam try (five clubs)", async () => {
+    const d = await call(
+      "SA SQ S8 S4 H3 H2 DA D3 CK CQ C8 C4 C2",
+      [["N", "1N"], P("E"), ["S", "2C"], P("W"), ["N", "2H"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("3C");
+  });
+
+  it("responds to a 3NT opening with Texas-style transfers", async () => {
+    const d = await call(
+      "S7 S4 S2 HK HQ H8 H4 H2 DA D4 D3 CQ C2",
+      [["N", "3N"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("4D"); // transfer to hearts over 3NT
+  });
+
+  it("Grand Slam Force: 7 with two top honors, 6 without", async () => {
+    const seven = await call(
+      "SA SK S9 S8 S4 HK H9 H2 DQ D4 D2 C4 C3",
+      [P("N"), ["E", "P"], ["S", "3S"], P("W"), ["N", "5N"], P("E")],
+      "S",
+    );
+    expect(seven.action).toBe("7S");
+    const six = await call(
+      "SA SJ S9 S8 S4 HK H9 H2 DQ D4 D2 C4 C3",
+      [P("N"), ["E", "P"], ["S", "3S"], P("W"), ["N", "5N"], P("E")],
+      "S",
+    );
+    expect(six.action).toBe("6S");
+  });
+
+  it("advancer jumps invitationally over the takeout double", async () => {
+    const d = await call(
+      "SA SQ S8 S4 HK H8 H3 H2 D9 D4 CQ C3 C2",
+      [P("N"), ["E", "1D"], ["S", "X"], P("W")],
+      "N",
+    );
+    expect(d.action).toBe("2S"); // 9–11, jump advance
+  });
+
+  it("weak jump response over their takeout double", async () => {
+    const d = await call(
+      "SK SQ S9 S8 S7 S2 H8 H3 D9 D4 D3 C3 C2",
+      [["N", "1D"], ["E", "X"]],
+      "S",
+    );
+    expect(d.action).toBe("2S");
+  });
+
+  it("doubles a 4♥ opening for penalty", async () => {
+    const d = await call(
+      "SA SQ S8 S4 HK H9 H3 DA D4 D2 CQ C3 C2",
+      [P("N"), ["E", "4H"]],
+      "S",
+    );
+    expect(d.action).toBe("X");
+  });
+
+  it("advancer uses Stayman over the 1NT overcall; overcaller answers", async () => {
+    const ask = await call(
+      "SA SQ S8 S4 H9 H3 H2 DQ D4 D3 CJ C3 C2",
+      [P("N"), ["E", "1D"], ["S", "1N"], P("W")],
+      "N",
+    );
+    expect(ask.action).toBe("2C");
+    const reply = await call(
+      "SA SK S9 S4 HA H9 H2 DQ DJ D2 CK C3 C2",
+      [P("N"), ["E", "1D"], ["S", "1N"], P("W"), ["N", "2C"], P("E")],
+      "S",
+    );
+    expect(reply.action).toBe("2S");
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe("slam machinery", () => {
   const BLACKWOOD_AUCTION: [Seat, string][] = [
     P("N"), ["E", "P"], ["S", "1S"], P("W"), ["N", "3S"], P("E"), ["S", "4N"], P("W"),

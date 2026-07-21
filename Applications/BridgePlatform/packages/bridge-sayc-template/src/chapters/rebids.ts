@@ -30,9 +30,17 @@ export const REBIDS: TemplateItem[] = [
   auctionItem(
     "opener-rebids",
     "Opener's rebids",
-    "After a one-of-a-suit opening and partner's response: rebid 1NT balanced with a minimum (12–14), jump to 2NT with 18–19, raise partner's suit with four-card support (single with a minimum, jump with extras), or rebid a six-card suit.",
+    "Opener's second call follows the booklet ladder. Minimum (13–15): cheapest notrump, single raise, a new suit without reversing, or the cheapest rebid of the opening suit. Medium (16–18): jump raise, jump rebid, or a REVERSE (a new suit at the two level higher-ranking than the opening suit). Maximum (19–21): jump in notrump, double-jump raise, or a jump shift.",
     "agreement",
     [
+      rule(
+        "raise-double-jump",
+        "Double-jump raise (maximum)",
+        ctx("opener", { ownFirst: SUIT_OPENING, partnerLast: ONE_LEVEL_RESPONSE, roundMin: 2 }),
+        all(len("partner_last_bid_suit", 4), tp(19, 21)),
+        raise(4),
+        29,
+      ),
       rule(
         "raise-min",
         "Raise partner's suit (minimum)",
@@ -81,13 +89,80 @@ export const REBIDS: TemplateItem[] = [
         bidSuit("own_first_bid_suit", 3),
         35,
       ),
+      // New suit WITHOUT reversing: the one level first…
+      rule(
+        "second-suit-1",
+        "New suit at the one level",
+        ctx("opener", { ownFirst: SUIT_OPENING, partnerLast: ONE_LEVEL_RESPONSE, roundMin: 2, contested: false }),
+        all(tp(12, 18), any(len("D", 4), len("H", 4), len("S", 4))),
+        { type: "bid_longest", among: ["D", "H", "S"], level: 1 },
+        36,
+      ),
+      // …then two-level suits LOWER-ranking than the opening (not a reverse).
+      rule(
+        "second-suit-2-after-1s",
+        "Lower-ranking second suit (after 1♠)",
+        ctx("opener", { ownFirst: is("1S"), roundMin: 2, contested: false }),
+        all(tp(12, 18), any(len("C", 4), len("H", 4), len("D", 4))),
+        { type: "bid_longest", among: ["C", "D", "H"], level: 2 },
+        37,
+      ),
+      rule(
+        "second-suit-2-after-1h",
+        "Lower-ranking second suit (after 1♥)",
+        ctx("opener", { ownFirst: is("1H"), roundMin: 2, contested: false }),
+        all(tp(12, 18), any(len("C", 4), len("D", 4))),
+        { type: "bid_longest", among: ["C", "D"], level: 2 },
+        38,
+      ),
+      rule(
+        "second-suit-2-after-1d",
+        "2♣ second suit (after 1♦)",
+        ctx("opener", { ownFirst: is("1D"), roundMin: 2, contested: false }),
+        all(tp(12, 18), len("C", 4)),
+        bid(2, "C"),
+        39,
+      ),
+    ],
+  ),
+
+  auctionItem(
+    "reverses",
+    "Reverses by opener",
+    "A new suit at the two level HIGHER-ranking than the opening suit is a reverse: 16–18+ points, forcing for one round (with a jump shift it forces game). 1♣–1♠–2♥ and 1♦–1♠–2♥ are reverses; 2♣ over anything is not.",
+    "agreement",
+    [
+      rule(
+        "rev-1c-2d",
+        "Reverse into diamonds",
+        ctx("opener", { ownFirst: is("1C"), partnerLast: ONE_LEVEL_RESPONSE, roundMin: 2, contested: false }),
+        all(tp(17, 21), len("D", 4)),
+        bid(2, "D"),
+        33,
+      ),
+      rule(
+        "rev-2h",
+        "Reverse into hearts",
+        ctx("opener", { ownFirst: bidAt({ level: 1, strains: ["C", "D"] }), partnerLast: ONE_LEVEL_RESPONSE, roundMin: 2, contested: false }),
+        all(tp(17, 21), len("H", 4)),
+        bid(2, "H"),
+        34,
+      ),
+      rule(
+        "rev-2s",
+        "Reverse into spades",
+        ctx("opener", { ownFirst: bidAt({ level: 1, strains: ["C", "D", "H"] }), partnerLast: ONE_LEVEL_RESPONSE, roundMin: 2, contested: false }),
+        all(tp(17, 21), len("S", 4)),
+        bid(2, "S"),
+        35,
+      ),
     ],
   ),
 
   auctionItem(
     "responder-rebids",
     "Responder's rebids",
-    "Responder's second call: pass a minimum, invite with 11–12 over opener's 1NT rebid, drive to 3NT with 13+, or take the partnership back to opener's major with a doubleton and a weak hand.",
+    "Responder's second call (booklet framework): sign off in a partscore (pass, 1NT, two of a bid suit), invite with 2NT or three of a bid suit (10–11), or sign off in game. After a TWO-level first response, responder promises another bid below game, and a jump raise of opener's first suit to the three level is game forcing. After opener's 1NT rebid, a new suit is non-forcing; only a jump shift or reverse forces.",
     "agreement",
     [
       rule(
@@ -113,6 +188,46 @@ export const REBIDS: TemplateItem[] = [
         all(len("partner_last_bid_suit", 4), tp(13)),
         raise(4),
         32,
+      ),
+      rule(
+        "invite-raise-second",
+        "Invite in opener's second suit",
+        ctx("responder", { partnerLast: bidAt({ level: 2 }), partnerFirst: bidAt({ level: 1, strains: ["C", "D", "H", "S"] }), roundMin: 2, contested: false }),
+        all(len("partner_last_bid_suit", 4), tp(10, 12)),
+        raise(3),
+        33,
+      ),
+      rule(
+        "gf-raise-first",
+        "Jump raise of opener's first suit (game force)",
+        ctx("responder", { ownFirst: bidAt({ level: 2 }), partnerFirst: bidAt({ level: 1, strains: ["C", "D", "H", "S"] }), roundMin: 2, contested: false }),
+        all(len("partner_first_bid_suit", 3), tp(13)),
+        bidSuit("partner_first_bid_suit", 3),
+        34,
+      ),
+      rule(
+        "invite-nt-generic",
+        "2NT invitation on the second round",
+        ctx("responder", { partnerLast: bidAt({ max: 2 }), roundMin: 2, contested: false }),
+        all(bal(), tp(10, 12)),
+        bid(2, "N"),
+        35,
+      ),
+      rule(
+        "rebid-own-weak",
+        "Rebid a six-card suit (sign-off)",
+        ctx("responder", { partnerLast: is("1N"), ownFirst: bidAt({ level: 1 }), roundMin: 2, contested: false }),
+        all(len("own_first_bid_suit", 6), tp(undefined, 9)),
+        bidSuit("own_first_bid_suit", 2),
+        36,
+      ),
+      rule(
+        "jump-own-gf",
+        "Jump rebid of responder's suit (game force after 1NT)",
+        ctx("responder", { partnerLast: is("1N"), ownFirst: bidAt({ level: 1 }), roundMin: 2, contested: false }),
+        all(len("own_first_bid_suit", 6), tp(13)),
+        bidSuit("own_first_bid_suit", 3),
+        37,
       ),
       rule(
         "preference",

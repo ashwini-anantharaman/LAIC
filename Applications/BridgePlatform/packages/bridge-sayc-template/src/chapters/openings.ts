@@ -7,6 +7,7 @@
 import {
   all,
   any,
+  not,
   auctionItem,
   bal,
   bid,
@@ -30,7 +31,7 @@ export const OPENINGS: TemplateItem[] = [
   auctionItem(
     "open-1nt",
     "1NT opening",
-    "Open 1NT with a balanced hand and 15–17 HCP (the range is a dial). Five-card majors inside a balanced hand still open 1NT.",
+    "Open 1NT with a balanced hand and 15–17 HCP (the range is a dial). Notrump openings may be made with a five-card major or a five-card minor inside the balanced shape.",
     "agreement",
     [
       rule(
@@ -102,7 +103,7 @@ export const OPENINGS: TemplateItem[] = [
   auctionItem(
     "open-minors",
     "Minor suit openings (better minor)",
-    "Without a five-card major, open the longer minor; with 3–3 in the minors open 1♣, with 4–4 open 1♦.",
+    "Without a five-card major, open the longer minor: 1♦ with 4–4 in the minors, 1♣ with 3–3. A 1♦ opening suggests four-plus diamonds — the one exception is the 4=4=3=2 hand (four spades, four hearts, three diamonds, two clubs), which opens 1♦.",
     "agreement",
     [
       rule(
@@ -127,7 +128,7 @@ export const OPENINGS: TemplateItem[] = [
   auctionItem(
     "open-weak-two",
     "Weak two-bids",
-    "Open 2♦/2♥/2♠ with a good six-card suit and 5–10 HCP. 2♣ is reserved for strong hands.",
+    "Open 2♦/2♥/2♠ with a good six-card suit and 5–11 HCP. On rare occasions a very good five-card suit qualifies, and a POOR seven-card suit (not good enough for a three-level preempt) opens a weak two instead. 2♣ is always reserved for strong hands.",
     "convention",
     [
       rule(
@@ -143,11 +144,24 @@ export const OPENINGS: TemplateItem[] = [
         bidLongest(["D", "H", "S"], 2),
         20,
       ),
+      rule(
+        "poor-seven",
+        "Weak two on a poor seven-card suit",
+        ctx("opening"),
+        all(
+          hcp(low("weak2_range"), high("weak2_range")),
+          longestAmong("D", "H", "S"),
+          len("own_longest_suit", 7, 7),
+          not(any(quality("own_longest_suit"), quality("own_longest_suit", "three_of_top_five"))),
+        ),
+        bidLongest(["D", "H", "S"], 2),
+        23,
+      ),
     ],
     {
       settings: [
         toggle("weak2_on", "Weak two-bids"),
-        range("weak2_range", "Weak two range (HCP)", 5, 10, { min: 3, max: 12 }),
+        range("weak2_range", "Weak two range (HCP)", 5, 11, { min: 3, max: 12 }),
       ],
       sets: ["core", "conventions"],
     },
