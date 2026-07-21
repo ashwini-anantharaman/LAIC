@@ -92,8 +92,13 @@ describe("openings", () => {
   });
 
   it("opens a strong 2♣ with 22+", async () => {
-    const d = await call("SA SK SQ HA HK H2 DA DQ D3 CK CJ C3 C2", [P("N"), P("E")]);
+    const d = await call("SA SK SQ SJ S8 S2 HA HK DA DQ D3 CK C2", [P("N"), P("E")]);
     expect(d.action).toBe("2C");
+  });
+
+  it("…but a balanced 25–27 opens 3NT (the exception)", async () => {
+    const d = await call("SA SK SQ HA HK H2 DA DQ D3 CK CJ C3 C2", [P("N"), P("E")]);
+    expect(d.action).toBe("3N");
   });
 
   it("opens the five-card major", async () => {
@@ -467,6 +472,148 @@ describe("the competitive seat", () => {
       "N",
     );
     expect(d.action).toBe("1N");
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe("booklet pass additions (2026-07-21)", () => {
+  it("opens 3NT on a balanced 25-count", async () => {
+    const d = await call("SA SK SQ HA HK H2 DA DQ D3 CK C4 C3 C2", [P("N"), P("E")]);
+    expect(d.action).toBe("3N");
+  });
+
+  it("opens a 12-count now (slide threshold)", async () => {
+    const d = await call("SA SK S7 S6 S2 HQ H3 DJ D4 D3 CJ C3 C2", [P("N"), P("E")]);
+    expect(d.action).toBe("1S"); // 12 total points, five spades
+  });
+
+  it("2♠ minor signoff: relay, forced 3♣, correction to 3♦", async () => {
+    const relay = await call("S4 S2 H8 H3 H2 DQ D9 D8 D6 D4 D3 C3 C2", [
+      ["N", "1N"], P("E"),
+    ]);
+    expect(relay.action).toBe("2S");
+    const forced = await call(
+      "SA S9 S4 HA HK H9 DQ D4 D2 CK CJ C3 C2",
+      [P("N"), ["E", "P"], ["S", "1N"], P("W"), ["N", "2S"], P("E")],
+      "S",
+    );
+    expect(forced.action).toBe("3C");
+    const correct = await call(
+      "S4 S2 H8 H3 H2 DQ D9 D8 D6 D4 D3 C3 C2",
+      [["N", "1N"], P("E"), ["S", "2S"], P("W"), ["N", "3C"], P("E")],
+      "S",
+    );
+    expect(correct.action).toBe("3D");
+  });
+
+  it("3♦ over 1NT is invitational with a six-card minor", async () => {
+    const d = await call("S4 S2 HK H3 H2 DA DJ D9 D8 D4 D3 C3 C2", [
+      ["N", "1N"], P("E"),
+    ]);
+    expect(d.action).toBe("3D"); // 8 HCP, six diamonds
+  });
+
+  it("transfers stay ON over a double and OFF over a bid (cue replaces Stayman)", async () => {
+    const overDouble = await call(
+      "S7 S4 S2 HK HQ H8 H4 H2 DQ D4 D3 C3 C2",
+      [["N", "1N"], ["E", "X"]],
+    );
+    expect(overDouble.action).toBe("2D"); // transfer still on
+    const overBid = await call(
+      "S7 S4 S2 HK HQ H8 H4 H2 DQ D4 D3 C3 C2",
+      [["N", "1N"], ["E", "2C"]],
+    );
+    expect(overBid.action).not.toBe("2D"); // transfer off over a bid
+    const cue = await call(
+      "SA SQ S8 S4 HK H3 H2 DA D4 D3 CJ C3 C2",
+      [["N", "1N"], ["E", "2D"]],
+    );
+    expect(cue.action).toBe("3D"); // cue-bid = Stayman substitute, game force
+  });
+
+  it("Gerber continuation: 5♣ asks kings", async () => {
+    const d = await call(
+      "SA S9 S4 HA H9 H2 DQ DJ D2 CK CQ C3 C2",
+      [P("N"), ["E", "P"], ["S", "1N"], P("W"), ["N", "4C"], P("E"), ["S", "4S"], P("W"), ["N", "5C"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("5H"); // one king
+  });
+
+  it("Stayman applies after 2♣–2♦–2NT", async () => {
+    const d = await call(
+      "S8 S4 S2 H9 H8 H3 H2 DQ D4 D3 C4 C3 C2",
+      [["N", "2C"], P("E"), ["S", "2D"], P("W"), ["N", "2N"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("3C"); // four hearts → Stayman at the three level
+  });
+
+  it("3NT response to a major shows 15–17 balanced with a doubleton", async () => {
+    const d = await call("SK S4 HK HQ H2 DA DJ D4 D3 CK CJ C3 C2", [
+      ["N", "1S"], P("E"),
+    ]);
+    expect(d.action).toBe("3N"); // 16 HCP balanced, two spades
+  });
+
+  it("makes a strong jump shift with 17+ and a good suit", async () => {
+    const d = await call("SA SK SQ S8 S2 HA H3 DA D4 D3 CQ C3 C2", [
+      ["N", "1H"], P("E"),
+    ]);
+    expect(d.action).toBe("2S");
+  });
+
+  it("Jacoby 2NT: opener shows the short suit", async () => {
+    const d = await call(
+      "SA SQ S8 S6 S2 HK H3 H2 D2 CQ C8 C3 C2",
+      [P("N"), ["E", "P"], ["S", "1S"], P("W"), ["N", "2N"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("3D"); // singleton diamond
+  });
+
+  it("raises 1♦ with four-card support", async () => {
+    const d = await call("S4 S2 HK H8 H3 DQ DJ D6 D3 C9 C8 C3 C2", [
+      ["N", "1D"], P("E"),
+    ]);
+    expect(d.action).toBe("2D");
+  });
+
+  it("gives preference to opener's first suit with a doubleton", async () => {
+    const d = await call(
+      "SJ S4 HK H8 H3 DQ D8 D4 D3 C9 C8 C3 C2",
+      [["N", "1S"], P("E"), ["S", "1N"], P("W"), ["N", "2H"], P("E")],
+      "S",
+    );
+    // Opener bid spades then hearts; responder prefers spades with the
+    // doubleton… preference here = pass or 2S; with 2 spades and 2 hearts
+    // equal length the rule bids 2S (partner's FIRST suit).
+    expect(d.action).toBe("2S");
+  });
+
+  it("responds 2NT to 2♣ with a balanced 8", async () => {
+    const d = await call("SQ S8 S4 HK H8 H3 DQ DJ D4 C9 C8 C3 C2", [
+      ["N", "2C"], P("E"),
+    ]);
+    expect(d.action).toBe("2N");
+  });
+
+  it("doubles a weak two for takeout", async () => {
+    const d = await call(
+      "SA SQ S8 S4 HK H9 H3 H2 D2 CA C8 C3 C2",
+      [P("N"), ["E", "3D"]],
+      "S",
+    );
+    expect(d.action).toBe("X");
+  });
+
+  it("bids 1♠ with five spades instead of a negative double", async () => {
+    const d = await call(
+      "SA SQ S8 S4 S2 H8 H3 DQ D4 D3 CJ C3 C2",
+      [["N", "1D"], ["E", "1H"]],
+      "S",
+    );
+    expect(d.action).toBe("1S");
   });
 });
 

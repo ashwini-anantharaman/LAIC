@@ -1,22 +1,26 @@
-// Responding to 1NT/2NT (SAYC booklet ch. 2): Stayman with every opener
-// reply and responder continuation, Jacoby + Texas transfers with
-// completions, super-accepts, continuations and opener's 3NT correction,
-// Gerber, and the natural quantitative ladder. The generic continuation
-// rules lean on the new auction memory (ownLast/ownFirst/partnerFirst), so
-// one rule covers both majors wherever possible.
+// Responding to notrump (SAYC booklet ch. 2, full pass 2026-07-21):
+// Stayman with every opener reply and responder continuation, Jacoby + Texas
+// transfers, the 2♠ minor-suit signoff relay, invitational 3♣/3♦, slam-try
+// 3♥/3♠, Gerber with the 5♣ king ask, the quantitative ladder — and the
+// booklet's interference policy (systems ON over a double, OFF over a bid;
+// a cue-bid substitutes for Stayman over their overcall). The same systems
+// apply after a 2♣–2♦–2NT start.
 
 import {
   all,
   any,
+  anyBid,
   auctionItem,
   bal,
   bid,
   bidAt,
+  bidSuit,
   ctx,
   hcp,
   is,
   len,
   not,
+  overPassOrDouble,
   pass as passAction,
   raise,
   rule,
@@ -26,30 +30,53 @@ import {
 } from "../dsl";
 
 const NT_OPENING = bidAt({ max: 2, strains: ["N"] });
+/** After 2♣ – 2♦ – 2NT the notrump systems apply as over a 2NT opening. */
+const AFTER_2C_2NT = { opening: is("2C"), ownLast: is("2D"), partnerLast: is("2N") } as const;
 
 export const NT_RESPONSES: TemplateItem[] = [
   auctionItem(
     "stayman",
     "Stayman",
-    "Over partner's 1NT (or 2NT), 2♣ (3♣) asks for a four-card major with invitational values or better. Opener shows a major or denies with 2♦; responder places the contract.",
+    "Over partner's 1NT (or 2NT), 2♣ (3♣) asks for a four-card major with invitational values or better; opener shows a major or denies with 2♦. Stayman stays on over an opponent's double and switches off over a bid — with game-forcing values, a cue-bid of their suit takes its place. The same 3♣ ask applies after 2♣–2♦–2NT.",
     "convention",
     [
-      // The ask.
-      rule(
-        "ask",
-        "Stayman 2♣ ask",
-        ctx("responder", { opening: is("1N"), partnerLast: is("1N") }),
-        all(hcp(8), any(len("S", 4), len("H", 4))),
-        bid(2, "C"),
-        25,
+      // The asks (on over a double, off over a bid).
+      ...overPassOrDouble(
+        rule(
+          "ask",
+          "Stayman 2♣ ask",
+          ctx("responder", { opening: is("1N"), partnerLast: is("1N") }),
+          all(hcp(8), any(len("S", 4), len("H", 4))),
+          bid(2, "C"),
+          25,
+        ),
+      ),
+      ...overPassOrDouble(
+        rule(
+          "ask2n",
+          "Stayman 3♣ over 2NT",
+          ctx("responder", { opening: is("2N"), partnerLast: is("2N") }),
+          all(hcp(4), any(len("S", 4), len("H", 4))),
+          bid(3, "C"),
+          26,
+        ),
       ),
       rule(
-        "ask2n",
-        "Stayman 3♣ over 2NT",
-        ctx("responder", { opening: is("2N"), partnerLast: is("2N") }),
-        all(hcp(4), any(len("S", 4), len("H", 4))),
+        "ask-2c",
+        "Stayman 3♣ after 2♣–2♦–2NT",
+        ctx("responder", { ...AFTER_2C_2NT }),
+        any(len("S", 4), len("H", 4)),
         bid(3, "C"),
-        26,
+        27,
+      ),
+      // Their overcall killed the systems: cue-bid = Stayman with game force.
+      rule(
+        "cue-as-stayman",
+        "Cue-bid replaces Stayman over their bid",
+        ctx("responder", { opening: is("1N"), partnerLast: is("1N"), rhoLast: anyBid, contested: true }),
+        all(hcp(10), any(len("S", 4), len("H", 4))),
+        bidSuit("rho_bid_suit"),
+        28,
       ),
       // Opener's replies (hearts first with both).
       rule(
@@ -58,7 +85,7 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("opener", { ownFirst: is("1N"), partnerLast: is("2C") }),
         len("H", 4),
         bid(2, "H"),
-        27,
+        29,
       ),
       rule(
         "reply-s",
@@ -66,7 +93,7 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("opener", { ownFirst: is("1N"), partnerLast: is("2C") }),
         len("S", 4),
         bid(2, "S"),
-        28,
+        30,
       ),
       rule(
         "reply-d",
@@ -74,31 +101,31 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("opener", { ownFirst: is("1N"), partnerLast: is("2C") }),
         { all: [] },
         bid(2, "D"),
-        29,
-      ),
-      rule(
-        "reply-h-2n",
-        "Show four hearts (over 2NT)",
-        ctx("opener", { ownFirst: is("2N"), partnerLast: is("3C") }),
-        len("H", 4),
-        bid(3, "H"),
-        30,
-      ),
-      rule(
-        "reply-s-2n",
-        "Show four spades (over 2NT)",
-        ctx("opener", { ownFirst: is("2N"), partnerLast: is("3C") }),
-        len("S", 4),
-        bid(3, "S"),
         31,
       ),
       rule(
+        "reply-h-2n",
+        "Show four hearts (over a 3♣ ask)",
+        ctx("opener", { ownLast: bidAt({ level: 2, strains: ["N"] }), partnerLast: is("3C") }),
+        len("H", 4),
+        bid(3, "H"),
+        32,
+      ),
+      rule(
+        "reply-s-2n",
+        "Show four spades (over a 3♣ ask)",
+        ctx("opener", { ownLast: bidAt({ level: 2, strains: ["N"] }), partnerLast: is("3C") }),
+        len("S", 4),
+        bid(3, "S"),
+        33,
+      ),
+      rule(
         "reply-d-2n",
-        "Deny a major (over 2NT)",
-        ctx("opener", { ownFirst: is("2N"), partnerLast: is("3C") }),
+        "Deny a major (over a 3♣ ask)",
+        ctx("opener", { ownLast: bidAt({ level: 2, strains: ["N"] }), partnerLast: is("3C") }),
         { all: [] },
         bid(3, "D"),
-        32,
+        34,
       ),
       // Responder's continuations after a 2♦ denial.
       rule(
@@ -107,7 +134,7 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("responder", { opening: is("1N"), ownLast: is("2C"), partnerLast: is("2D") }),
         hcp(8, 9),
         bid(2, "N"),
-        33,
+        35,
       ),
       rule(
         "cont-3n",
@@ -115,7 +142,7 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("responder", { opening: is("1N"), ownLast: is("2C"), partnerLast: is("2D") }),
         hcp(10, 15),
         bid(3, "N"),
-        34,
+        36,
       ),
       // Continuations when opener shows a major.
       rule(
@@ -124,7 +151,7 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("responder", { opening: is("1N"), ownLast: is("2C"), partnerLast: bidAt({ level: 2, strains: ["H", "S"] }) }),
         all(hcp(8, 9), len("partner_last_bid_suit", 4)),
         raise(3),
-        35,
+        37,
       ),
       rule(
         "cont-raise-game",
@@ -132,7 +159,7 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("responder", { opening: is("1N"), ownLast: is("2C"), partnerLast: bidAt({ level: 2, strains: ["H", "S"] }) }),
         all(hcp(10, 15), len("partner_last_bid_suit", 4)),
         raise(4),
-        36,
+        38,
       ),
       rule(
         "cont-3n-nofit",
@@ -140,7 +167,7 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("responder", { opening: is("1N"), ownLast: is("2C"), partnerLast: bidAt({ level: 2, strains: ["H", "S"] }) }),
         all(hcp(10, 15), len("partner_last_bid_suit", undefined, 3)),
         bid(3, "N"),
-        37,
+        39,
       ),
     ],
     { settings: [toggle("stayman_on", "Stayman")], sets: ["conventions"] },
@@ -149,40 +176,64 @@ export const NT_RESPONSES: TemplateItem[] = [
   auctionItem(
     "jacoby-transfers",
     "Jacoby transfers",
-    "Over partner's notrump opening, 2♦ shows five-plus hearts and 2♥ shows five-plus spades (3♦/3♥ over 2NT). Opener completes the transfer — jumping with four-card support and a maximum — and responder then passes, invites, or drives to game.",
+    "Over partner's notrump opening, 2♦ shows five-plus hearts and 2♥ shows five-plus spades (3♦/3♥ over 2NT and after 2♣–2♦–2NT). Opener completes — jumping with four-card support and 17 — and responder passes, invites, or drives to game. Transfers stay on over a double and switch off over a bid.",
     "convention",
     [
-      rule(
-        "xfer-h",
-        "Transfer to hearts",
-        ctx("responder", { opening: is("1N"), partnerLast: is("1N") }),
-        len("H", 5),
-        bid(2, "D"),
-        15,
+      ...overPassOrDouble(
+        rule(
+          "xfer-h",
+          "Transfer to hearts",
+          ctx("responder", { opening: is("1N"), partnerLast: is("1N") }),
+          len("H", 5),
+          bid(2, "D"),
+          15,
+        ),
+      ),
+      ...overPassOrDouble(
+        rule(
+          "xfer-s",
+          "Transfer to spades",
+          ctx("responder", { opening: is("1N"), partnerLast: is("1N") }),
+          len("S", 5),
+          bid(2, "H"),
+          16,
+        ),
+      ),
+      ...overPassOrDouble(
+        rule(
+          "xfer-h-2n",
+          "Transfer to hearts (over 2NT)",
+          ctx("responder", { opening: is("2N"), partnerLast: is("2N") }),
+          len("H", 5),
+          bid(3, "D"),
+          17,
+        ),
+      ),
+      ...overPassOrDouble(
+        rule(
+          "xfer-s-2n",
+          "Transfer to spades (over 2NT)",
+          ctx("responder", { opening: is("2N"), partnerLast: is("2N") }),
+          len("S", 5),
+          bid(3, "H"),
+          18,
+        ),
       ),
       rule(
-        "xfer-s",
-        "Transfer to spades",
-        ctx("responder", { opening: is("1N"), partnerLast: is("1N") }),
-        len("S", 5),
-        bid(2, "H"),
-        16,
-      ),
-      rule(
-        "xfer-h-2n",
-        "Transfer to hearts (over 2NT)",
-        ctx("responder", { opening: is("2N"), partnerLast: is("2N") }),
+        "xfer-h-2c",
+        "Transfer to hearts (after 2♣–2♦–2NT)",
+        ctx("responder", { ...AFTER_2C_2NT }),
         len("H", 5),
         bid(3, "D"),
-        17,
+        19,
       ),
       rule(
-        "xfer-s-2n",
-        "Transfer to spades (over 2NT)",
-        ctx("responder", { opening: is("2N"), partnerLast: is("2N") }),
+        "xfer-s-2c",
+        "Transfer to spades (after 2♣–2♦–2NT)",
+        ctx("responder", { ...AFTER_2C_2NT }),
         len("S", 5),
         bid(3, "H"),
-        18,
+        20,
       ),
       // Opener: super-accept with four trumps and a maximum, else complete.
       rule(
@@ -191,7 +242,7 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("opener", { ownFirst: is("1N"), partnerLast: is("2D") }),
         all(len("H", 4), hcp(17)),
         bid(3, "H"),
-        19,
+        21,
       ),
       rule(
         "super-s",
@@ -199,7 +250,7 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("opener", { ownFirst: is("1N"), partnerLast: is("2H") }),
         all(len("S", 4), hcp(17)),
         bid(3, "S"),
-        20,
+        22,
       ),
       rule(
         "complete-h",
@@ -207,7 +258,7 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("opener", { ownFirst: is("1N"), partnerLast: is("2D") }),
         { all: [] },
         bid(2, "H"),
-        21,
+        23,
       ),
       rule(
         "complete-s",
@@ -215,23 +266,23 @@ export const NT_RESPONSES: TemplateItem[] = [
         ctx("opener", { ownFirst: is("1N"), partnerLast: is("2H") }),
         { all: [] },
         bid(2, "S"),
-        22,
+        24,
       ),
       rule(
-        "complete-h-2n",
-        "Complete (over 2NT)",
-        ctx("opener", { ownFirst: is("2N"), partnerLast: is("3D") }),
+        "complete-h-3",
+        "Complete at the three level",
+        ctx("opener", { ownLast: bidAt({ level: 2, strains: ["N"] }), partnerLast: is("3D") }),
         { all: [] },
         bid(3, "H"),
-        23,
+        25,
       ),
       rule(
-        "complete-s-2n",
-        "Complete (over 2NT)",
-        ctx("opener", { ownFirst: is("2N"), partnerLast: is("3H") }),
+        "complete-s-3",
+        "Complete at the three level",
+        ctx("opener", { ownLast: bidAt({ level: 2, strains: ["N"] }), partnerLast: is("3H") }),
         { all: [] },
         bid(3, "S"),
-        24,
+        26,
       ),
       // Responder's continuations (generic across both majors).
       rule(
@@ -316,26 +367,113 @@ export const NT_RESPONSES: TemplateItem[] = [
   ),
 
   auctionItem(
-    "texas-transfers",
-    "Texas transfers",
-    "Over 1NT with a six-card major and game values, 4♦ transfers to 4♥ and 4♥ transfers to 4♠.",
+    "minor-signoff",
+    "2♠ minor-suit signoff over 1NT",
+    "With a weak hand and a long minor, respond 2♠: opener must rebid 3♣, which responder passes with clubs or corrects to 3♦ with diamonds.",
     "convention",
     [
       rule(
-        "tx-h",
-        "Texas transfer to hearts",
-        ctx("responder", { opening: is("1N"), partnerLast: is("1N") }),
-        all(len("H", 6), hcp(10, 15)),
-        bid(4, "D"),
-        13,
+        "relay",
+        "2♠ with a weak long minor",
+        ctx("responder", { opening: is("1N"), partnerLast: is("1N"), rhoLast: { kind: "pass" } }),
+        all(hcp(undefined, 7), any(len("C", 6), len("D", 6))),
+        bid(2, "S"),
+        17,
       ),
       rule(
-        "tx-s",
-        "Texas transfer to spades",
-        ctx("responder", { opening: is("1N"), partnerLast: is("1N") }),
-        all(len("S", 6), hcp(10, 15)),
-        bid(4, "H"),
-        14,
+        "forced-3c",
+        "Forced 3♣ rebid",
+        ctx("opener", { ownFirst: is("1N"), partnerLast: is("2S") }),
+        { all: [] },
+        bid(3, "C"),
+        18,
+      ),
+      rule(
+        "correct-3d",
+        "Correct to 3♦ (diamond bust)",
+        ctx("responder", { opening: is("1N"), ownLast: is("2S"), partnerLast: is("3C") }),
+        len("D", 6),
+        bid(3, "D"),
+        19,
+      ),
+      rule(
+        "pass-3c",
+        "Pass with the club bust",
+        ctx("responder", { opening: is("1N"), ownLast: is("2S"), partnerLast: is("3C") }),
+        { all: [] },
+        passAction,
+        20,
+      ),
+    ],
+    { settings: [toggle("minor_signoff_on", "2♠ minor signoff")], sets: ["conventions"] },
+  ),
+
+  auctionItem(
+    "nt-invitational-minors",
+    "Invitational 3♣/3♦ over 1NT",
+    "A direct 3♣/3♦ over 1NT shows a six-card or longer minor and invites 3NT; a direct 3♥/3♠ shows a six-card major with slam interest (with only game values, transfer instead).",
+    "agreement",
+    [
+      rule(
+        "inv-c",
+        "3♣ invitational",
+        ctx("responder", { opening: is("1N"), partnerLast: is("1N"), contested: false }),
+        all(len("C", 6), hcp(8, 9)),
+        bid(3, "C"),
+        43,
+      ),
+      rule(
+        "inv-d",
+        "3♦ invitational",
+        ctx("responder", { opening: is("1N"), partnerLast: is("1N"), contested: false }),
+        all(len("D", 6), hcp(8, 9)),
+        bid(3, "D"),
+        44,
+      ),
+      rule(
+        "slam-try-h",
+        "3♥ slam try (six-card suit)",
+        ctx("responder", { opening: is("1N"), partnerLast: is("1N"), contested: false }),
+        all(len("H", 6), tp(16)),
+        bid(3, "H"),
+        45,
+      ),
+      rule(
+        "slam-try-s",
+        "3♠ slam try (six-card suit)",
+        ctx("responder", { opening: is("1N"), partnerLast: is("1N"), contested: false }),
+        all(len("S", 6), tp(16)),
+        bid(3, "S"),
+        46,
+      ),
+    ],
+  ),
+
+  auctionItem(
+    "texas-transfers",
+    "Texas transfers",
+    "Over 1NT with a six-card major and game values, 4♦ transfers to 4♥ and 4♥ transfers to 4♠. On over a double, off over a bid.",
+    "convention",
+    [
+      ...overPassOrDouble(
+        rule(
+          "tx-h",
+          "Texas transfer to hearts",
+          ctx("responder", { opening: is("1N"), partnerLast: is("1N") }),
+          all(len("H", 6), hcp(10, 15)),
+          bid(4, "D"),
+          13,
+        ),
+      ),
+      ...overPassOrDouble(
+        rule(
+          "tx-s",
+          "Texas transfer to spades",
+          ctx("responder", { opening: is("1N"), partnerLast: is("1N") }),
+          all(len("S", 6), hcp(10, 15)),
+          bid(4, "H"),
+          14,
+        ),
       ),
       rule(
         "tx-complete-h",
@@ -360,7 +498,7 @@ export const NT_RESPONSES: TemplateItem[] = [
   auctionItem(
     "gerber",
     "Gerber over notrump",
-    "Over partner's notrump opening, 4♣ asks for aces with slam interest: 4♦ shows 0 or 4, 4♥ one, 4♠ two, 4NT three.",
+    "4♣ over partner's 1NT or 2NT asks for aces: 4♦ shows 0 or 4, 4♥ one, 4♠ two, 4NT three. A continuation of 5♣ asks for kings the same way (5♦ = 0 or 4 up to 5NT = 3); any other continuation is to play.",
     "convention",
     [
       rule(
@@ -402,6 +540,39 @@ export const NT_RESPONSES: TemplateItem[] = [
         { aces: { min: 3, max: 3 } },
         bid(4, "N"),
         16,
+      ),
+      // 5♣ continuation asks for kings (guarantees all the aces).
+      rule(
+        "k04",
+        "0 or 4 kings",
+        ctx("opener", { ownFirst: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        any({ kings: { max: 0 } }, { kings: { min: 4 } }),
+        bid(5, "D"),
+        17,
+      ),
+      rule(
+        "k1",
+        "One king",
+        ctx("opener", { ownFirst: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        { kings: { min: 1, max: 1 } },
+        bid(5, "H"),
+        18,
+      ),
+      rule(
+        "k2",
+        "Two kings",
+        ctx("opener", { ownFirst: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        { kings: { min: 2, max: 2 } },
+        bid(5, "S"),
+        19,
+      ),
+      rule(
+        "k3",
+        "Three kings",
+        ctx("opener", { ownFirst: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        { kings: { min: 3, max: 3 } },
+        bid(5, "N"),
+        20,
       ),
     ],
     { settings: [toggle("gerber_on", "Gerber over notrump")], sets: ["conventions"] },

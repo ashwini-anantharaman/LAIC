@@ -45,6 +45,14 @@ export function resolveSuitRef(ref: SuitRef, hand: Hand, env: ConditionEnv): Sui
       return suitOfBid(env.facts.lhoLast);
     case "own_longest_suit":
       return longestSuits(hand)[0]?.suit ?? null;
+    case "own_shortest_suit": {
+      const counts = suitCounts(hand);
+      let best: Suit | null = null;
+      for (const suit of ["S", "H", "D", "C"] as Suit[]) {
+        if (best === null || counts[suit] < counts[best]) best = suit;
+      }
+      return best;
+    }
     case "own_first_bid_suit":
       return suitOfBid(env.facts.ownFirstBid);
     case "own_last_bid_suit":

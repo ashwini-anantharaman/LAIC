@@ -115,6 +115,14 @@ export const REBIDS: TemplateItem[] = [
         32,
       ),
       rule(
+        "preference",
+        "Give preference to opener's first suit",
+        ctx("responder", { partnerLast: bidAt({ level: 2 }), partnerFirst: bidAt({ level: 1, strains: ["C", "D", "H", "S"] }), roundMin: 2, contested: false }),
+        all(tp(6, 9), len("partner_first_bid_suit", 2)),
+        bidSuit("partner_first_bid_suit", 2),
+        50,
+      ),
+      rule(
         "pass-min",
         "Pass a minimum",
         ctx("responder", { partnerLast: bidAt({ max: 2 }), roundMin: 2, contested: false }),
@@ -207,6 +215,14 @@ export const REBIDS: TemplateItem[] = [
         ctx("responder", { opening: is("2C"), partnerLast: is("2C") }),
         all(hcp(8), any(len("S", 5), len("H", 5)), { suitQuality: { suit: "own_longest_suit", quality: "two_of_top_three" } }),
         { type: "bid_longest", among: ["S", "H"], level: 2 },
+        29,
+      ),
+      rule(
+        "positive-nt",
+        "2NT positive response (balanced 8+)",
+        ctx("responder", { opening: is("2C"), partnerLast: is("2C") }),
+        all(bal(), hcp(8)),
+        bid(2, "N"),
         30,
       ),
       rule(
