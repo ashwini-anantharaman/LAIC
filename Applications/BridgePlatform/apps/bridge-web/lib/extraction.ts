@@ -74,7 +74,7 @@ CallPattern = {"kind":"bid"|"pass"|"double"|"redouble"|"any_bid"|"any"|"none",
   "levelMin"?:number,"levelMax"?:number,"strains"?:["C"|"D"|"H"|"S"|"N"...]}
 
 SuitRef = "S"|"H"|"D"|"C"|"partner_last_bid_suit"|"partner_first_bid_suit"|
-  "own_longest_suit"|"own_first_bid_suit"|"own_last_bid_suit"|"rho_bid_suit"
+  "own_longest_suit"|"own_first_bid_suit"|"own_last_bid_suit"|"rho_bid_suit"|"lho_bid_suit"
 
 HandCondition = {"all":[...]} | {"any":[...]} | {"not":...} |
   {"hcp":{"min"?:NumParam,"max"?:NumParam}} |

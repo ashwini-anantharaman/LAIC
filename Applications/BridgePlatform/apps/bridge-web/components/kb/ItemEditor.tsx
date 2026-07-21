@@ -234,6 +234,7 @@ function suitName(s: string): ReactNode | null {
   if (s === "own_first_bid_suit") return "my first suit";
   if (s === "own_last_bid_suit") return "my last bid suit";
   if (s === "rho_bid_suit") return "RHO's suit";
+  if (s === "lho_bid_suit") return "LHO's suit";
   return <Glyph s={s} />;
 }
 
@@ -817,6 +818,7 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
               className={input}
             >
               <option value="rho_bid_suit">RHO&apos;s bid suit (cue bid)</option>
+              <option value="lho_bid_suit">LHO&apos;s bid suit (advancer cue)</option>
               <option value="own_first_bid_suit">my first bid suit (rebid it)</option>
               <option value="own_last_bid_suit">my last bid suit</option>
               <option value="partner_first_bid_suit">partner&apos;s first bid suit</option>

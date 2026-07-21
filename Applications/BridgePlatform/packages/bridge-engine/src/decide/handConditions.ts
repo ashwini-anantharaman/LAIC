@@ -41,6 +41,8 @@ export function resolveSuitRef(ref: SuitRef, hand: Hand, env: ConditionEnv): Sui
       return suitOfBid(env.facts.partnerFirstBid);
     case "rho_bid_suit":
       return suitOfBid(env.facts.rhoLast);
+    case "lho_bid_suit":
+      return suitOfBid(env.facts.lhoLast);
     case "own_longest_suit":
       return longestSuits(hand)[0]?.suit ?? null;
     case "own_first_bid_suit":

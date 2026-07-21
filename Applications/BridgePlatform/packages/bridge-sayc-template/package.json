@@ -1,0 +1,26 @@
+{
+  "name": "@bridge/sayc-template",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The curated SAYC system: Claude-authored, machine-tested knowledge items installable as a fresh knowledge base. Content lives here (not in @bridge/kb, which stays content-free); every item cites src_claude and remains fully editable in the workspace.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": { "types": "./src/index.ts", "default": "./src/index.ts" } },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bridge/config": "workspace:*",
+    "@bridge/events": "workspace:*",
+    "@bridge/kb": "workspace:*"
+  },
+  "devDependencies": {
+    "@bridge/engine": "workspace:*",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

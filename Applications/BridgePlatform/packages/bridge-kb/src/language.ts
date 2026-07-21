@@ -93,7 +93,8 @@ export type SuitRef =
   | "own_longest_suit"
   | "own_first_bid_suit"
   | "own_last_bid_suit"
-  | "rho_bid_suit";
+  | "rho_bid_suit"
+  | "lho_bid_suit";
 
 export type HandPredicate =
   | { hcp: { min?: NumParam; max?: NumParam } }

@@ -211,6 +211,31 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)
 
+  packages/bridge-sayc-template:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+      '@bridge/kb':
+        specifier: workspace:*
+        version: link:../bridge-kb
+    devDependencies:
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)
+
   packages/bridge-sessions:
     dependencies:
       '@bridge/config':
