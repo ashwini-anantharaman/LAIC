@@ -42,6 +42,8 @@ export interface Program {
   org_id: string;
   name: string;
   category: ProgramCategory;
+  /** Optional extra categories; grouping (stack view) uses the primary only. */
+  secondary_categories?: string[];
   description?: string;
   icon?: string;
   instructor_label?: string;

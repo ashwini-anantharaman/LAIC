@@ -125,6 +125,7 @@ function _programResponse(row: Row): Row {
     learner_count: row.learner_count ?? 0,
     instructor_count: row.instructor_count ?? 0,
     platforms: row.platforms ?? null,
+    secondary_categories: row.secondary_categories ?? [],
   };
 }
 
@@ -800,6 +801,7 @@ platformRouter.post("/orgs/:org_id/programs", async (c) => {
     instructorLabel: req.instructor_label ?? null,
     learnerLabel: req.learner_label ?? null,
     features: req.features ?? null,
+    secondaryCategories: req.secondary_categories?.filter((c) => c !== req.category) ?? null,
   });
   // Give the new program its own group scope, mirroring org_setup behavior.
   if (req.category !== "game") {
@@ -1557,6 +1559,66 @@ platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
     scopeId: orgId,
   });
   return c.json(caps);
+});
+
+// ── Org-defined program categories (Settings → Categories) ──────────────────
+const categoryNameSchema = z.object({ name: z.string().trim().min(1).max(60) });
+const categoryRenameSchema = z.object({
+  from: z.string().trim().min(1).max(60),
+  to: z.string().trim().min(1).max(60),
+});
+
+platformRouter.get("/orgs/:org_id/categories", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  return c.json(await db.listOrgCategories(orgId));
+});
+
+platformRouter.post("/orgs/:org_id/categories", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId, true);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(categoryNameSchema, await c.req.json());
+  const list = await db.addOrgCategory(orgId, req.name);
+  await db.recordAuditEvent("organization.category.added", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { name: req.name },
+  });
+  return c.json(list);
+});
+
+platformRouter.delete("/orgs/:org_id/categories", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId, true);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const name = c.req.query("name");
+  if (!name) throw new HttpError(400, "name required");
+  try {
+    const list = await db.removeOrgCategory(orgId, name);
+    await db.recordAuditEvent("organization.category.removed", {
+      orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { name },
+    });
+    return c.json(list);
+  } catch (e) {
+    throw new HttpError(409, e instanceof Error ? e.message : "Category is in use");
+  }
+});
+
+platformRouter.patch("/orgs/:org_id/categories", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  _assertOrgAccess(user, orgId, true);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(categoryRenameSchema, await c.req.json());
+  const list = await db.renameOrgCategory(orgId, req.from, req.to);
+  await db.recordAuditEvent("organization.category.renamed", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    metadata: { from: req.from, to: req.to },
+  });
+  return c.json(list);
 });
 
 // ─── Slice 11: relationships, affiliations, groups, invitations ─────────────

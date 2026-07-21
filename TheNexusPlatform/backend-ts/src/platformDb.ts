@@ -360,6 +360,21 @@ export async function createProgram(
   );
 }
 
+// Org-defined program categories (DB-backed; routes guard dbEnabled).
+export async function listOrgCategories(orgId: string): Promise<string[]> {
+  return tpg.listOrgCategories(orgId);
+}
+export async function addOrgCategory(orgId: string, name: string): Promise<string[]> {
+  return tpg.addOrgCategory(orgId, name);
+}
+export async function removeOrgCategory(orgId: string, name: string): Promise<string[]> {
+  return tpg.removeOrgCategory(orgId, name);
+}
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<string[]> {
+  return tpg.renameOrgCategory(orgId, from, to);
+}
+
+/** Per-program platform enablement — DB-backed only (route guards dbEnabled). */
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,

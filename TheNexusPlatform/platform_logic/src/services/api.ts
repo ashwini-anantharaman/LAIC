@@ -45,6 +45,7 @@ import { permissionToApi, type Permission } from "../types/platform";
 export interface DraftProgramInput {
   name: string;
   category: ProgramCategory;
+  secondary_categories?: string[];
   description?: string;
   icon?: string;
   instructor_label?: string;
@@ -449,6 +450,28 @@ export async function bulkImportRegistrations(
 
 export async function deleteProgram(programId: string): Promise<void> {
   await request(`/api/platform/programs/${programId}`, { method: "DELETE" });
+}
+
+// ── Org-defined program categories (Settings → Categories) ──────────────────
+export async function listOrgCategories(orgId: string): Promise<string[]> {
+  return request<string[]>(`/api/platform/orgs/${orgId}/categories`);
+}
+export async function addOrgCategory(orgId: string, name: string): Promise<string[]> {
+  return request<string[]>(`/api/platform/orgs/${orgId}/categories`, {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+export async function removeOrgCategory(orgId: string, name: string): Promise<string[]> {
+  return request<string[]>(`/api/platform/orgs/${orgId}/categories?name=${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+}
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<string[]> {
+  return request<string[]>(`/api/platform/orgs/${orgId}/categories`, {
+    method: "PATCH",
+    body: JSON.stringify({ from, to }),
+  });
 }
 
 export async function createProgram(orgId: string, program: DraftProgramInput): Promise<Program> {

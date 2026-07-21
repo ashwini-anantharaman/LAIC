@@ -37,6 +37,7 @@ const programRow = (p: typeof programs.$inferSelect): Row => ({
   id: p.id, org_id: p.orgId, name: p.name, category: p.category, description: p.description,
   icon: p.icon, instructor_label: p.instructorLabel, learner_label: p.learnerLabel,
   features: normalizeProgramFeatures((p.metadataJson as Row)?.features as Row),
+  secondary_categories: ((p.metadataJson as Row)?.secondary_categories as string[]) ?? [],
   created_at: p.createdAt,
 });
 const stageRow = (s: typeof stageNodes.$inferSelect): Row => ({
@@ -137,7 +138,10 @@ export async function createProgram(orgId: string, name: string, category: strin
       icon: (opts.icon as string) ?? null,
       instructorLabel: (opts.instructorLabel as string) ?? null,
       learnerLabel: (opts.learnerLabel as string) ?? null,
-      metadataJson: { features: normalizeProgramFeatures(opts.features as Row) },
+      metadataJson: {
+        features: normalizeProgramFeatures(opts.features as Row),
+        secondary_categories: opts.secondaryCategories ?? [],
+      },
     }).returning();
     return programRow(p);
   });
@@ -724,6 +728,87 @@ export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row
     settings.capabilities = merged;
     await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));
     return merged;
+  });
+}
+
+// ── Org-defined program categories (Settings → Categories) ──────────────────
+// The taxonomy lives in organizations.settings.program_categories. When unset
+// (orgs that predate the feature), the effective list derives from categories
+// already in use, so nothing ever disappears.
+async function _effectiveCategories(tx: Tx, orgId: string): Promise<string[]> {
+  const r = await tx.select({ settings: organizations.settings }).from(organizations)
+    .where(eq(organizations.id, orgId)).limit(1);
+  const stored = ((r[0]?.settings as Row | undefined)?.program_categories as string[] | undefined) ?? null;
+  if (stored) return stored;
+  const progs = await tx.select({ category: programs.category }).from(programs).where(eq(programs.orgId, orgId));
+  return [...new Set(progs.map((p) => p.category))].sort((a, b) => a.localeCompare(b));
+}
+
+async function _saveCategories(tx: Tx, orgId: string, list: string[]): Promise<void> {
+  const r = await tx.select({ settings: organizations.settings }).from(organizations)
+    .where(eq(organizations.id, orgId)).limit(1);
+  const settings: Row = { ...((r[0]?.settings as Row) ?? {}) };
+  settings.program_categories = list;
+  await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));
+}
+
+export async function listOrgCategories(orgId: string): Promise<string[]> {
+  return scoped((tx) => _effectiveCategories(tx, orgId));
+}
+
+export async function addOrgCategory(orgId: string, name: string): Promise<string[]> {
+  return scoped(async (tx) => {
+    const list = await _effectiveCategories(tx, orgId);
+    if (!list.some((c) => c.toLowerCase() === name.toLowerCase())) list.push(name);
+    await _saveCategories(tx, orgId, list);
+    return list;
+  });
+}
+
+/** Remove a category. Refused while any program uses it as PRIMARY; silently
+ * stripped from secondaries. */
+export async function removeOrgCategory(orgId: string, name: string): Promise<string[]> {
+  return scoped(async (tx) => {
+    const inUse = await tx.select({ id: programs.id }).from(programs)
+      .where(and(eq(programs.orgId, orgId), eq(programs.category, name)));
+    if (inUse.length > 0) {
+      throw new Error(`${inUse.length} program${inUse.length !== 1 ? "s" : ""} use this as their primary category — reassign them first`);
+    }
+    const progs = await tx.select().from(programs).where(eq(programs.orgId, orgId));
+    for (const p of progs) {
+      const meta = { ...((p.metadataJson as Row) ?? {}) };
+      const secs = (meta.secondary_categories as string[]) ?? [];
+      if (secs.includes(name)) {
+        meta.secondary_categories = secs.filter((c) => c !== name);
+        await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, p.id));
+      }
+    }
+    const list = (await _effectiveCategories(tx, orgId)).filter((c) => c !== name);
+    await _saveCategories(tx, orgId, list);
+    return list;
+  });
+}
+
+/** Rename a category everywhere: the stored list, every program's primary, and
+ * every secondary list. Renaming onto an existing name merges the two. */
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<string[]> {
+  return scoped(async (tx) => {
+    await tx.update(programs).set({ category: to })
+      .where(and(eq(programs.orgId, orgId), eq(programs.category, from)));
+    const progs = await tx.select().from(programs).where(eq(programs.orgId, orgId));
+    for (const p of progs) {
+      const meta = { ...((p.metadataJson as Row) ?? {}) };
+      const secs = (meta.secondary_categories as string[]) ?? [];
+      if (secs.includes(from)) {
+        // map from→to, dedupe, and drop a secondary that now equals the primary
+        const primary = p.category === from ? to : p.category;
+        meta.secondary_categories = [...new Set(secs.map((c) => (c === from ? to : c)))].filter((c) => c !== primary);
+        await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, p.id));
+      }
+    }
+    const list = [...new Set((await _effectiveCategories(tx, orgId)).map((c) => (c === from ? to : c)))];
+    await _saveCategories(tx, orgId, list);
+    return list;
   });
 }
 

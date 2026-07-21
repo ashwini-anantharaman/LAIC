@@ -26,6 +26,7 @@ import {
   createProgram,
   deleteProgram,
   getOrgCapabilities,
+  listOrgCategories,
   listProgramAdministrators,
   listPrograms,
   removeMember,
@@ -62,9 +63,19 @@ export function Programs() {
     setOpenCategory(null);
   }
 
+  const [orgCategories, setOrgCategories] = useState<string[]>([]);
+  useEffect(() => {
+    listOrgCategories(orgId).then(setOrgCategories).catch(() => setOrgCategories([]));
+  }, [orgId]);
+  // The stack view groups by PRIMARY category; the org's defined taxonomy is
+  // the backbone (managed in Settings → Categories), with any legacy program
+  // primaries unioned in so nothing disappears.
   const categories = useMemo(
-    () => [...new Set((programs ?? []).map((p) => p.category))].sort((a, b) => a.localeCompare(b)),
-    [programs],
+    () =>
+      [...new Set([...orgCategories, ...(programs ?? []).map((p) => p.category)])].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [orgCategories, programs],
   );
 
   async function load() {
@@ -264,6 +275,11 @@ function ProgramCard({
         </Link>
         <div className="flex shrink-0 items-center gap-1.5">
           <Pill tone="neutral">{p.category}</Pill>
+          {(p.secondary_categories ?? []).slice(0, 2).map((c) => (
+            <span key={c} className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+              {c}
+            </span>
+          ))}
           <ConfirmButton
             title={`Remove the "${p.name}" program?`}
             description="This deletes the program and everything inside it — offerings, app shells, registrations, groups, and roles. This can't be undone."
@@ -475,16 +491,20 @@ function NewProgramDialog({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  // Pick an existing org category or type a brand-new one — categories are
-  // whatever names the org wants (no presets).
-  const NEW_CATEGORY = "__new__";
-  const [categoryChoice, setCategoryChoice] = useState<string>(categories[0] ?? NEW_CATEGORY);
-  const [newCategory, setNewCategory] = useState("");
+  // Categories come from Settings → Categories: pick a primary, optionally tag
+  // secondaries. (Creating categories happens in Settings, not here.)
+  const [category, setCategory] = useState<string>(categories[0] ?? "");
+  const [secondary, setSecondary] = useState<string[]>([]);
   useEffect(() => {
-    if (open) setCategoryChoice(categories[0] ?? NEW_CATEGORY);
+    if (open) {
+      setCategory(categories[0] ?? "");
+      setSecondary([]);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  const category = categoryChoice === NEW_CATEGORY ? newCategory.trim() : categoryChoice;
+  function toggleSecondary(c: string) {
+    setSecondary((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]));
+  }
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
   const [admins, setAdmins] = useState<AdminDraft[]>([{ email: "", displayName: "" }]);
   const [invites, setInvites] = useState<CreatedInvite[] | null>(null);
@@ -493,8 +513,8 @@ function NewProgramDialog({
   function reset() {
     setName("");
     setDescription("");
-    setNewCategory("");
-    setCategoryChoice(categories[0] ?? NEW_CATEGORY);
+    setCategory(categories[0] ?? "");
+    setSecondary([]);
     setFeatures({ ...DEFAULT_PROGRAM_FEATURES });
     setAdmins([{ email: "", displayName: "" }]);
     setInvites(null);
@@ -513,6 +533,7 @@ function NewProgramDialog({
       const program = await createProgram(orgId, {
         name: name.trim(),
         category,
+        secondary_categories: secondary.filter((c) => c !== category),
         description: description.trim() || undefined,
         features,
       });
@@ -595,29 +616,50 @@ function NewProgramDialog({
               <Input id="p-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What is this program about?" />
             </div>
             <div className="space-y-1.5">
-              <Label>Category</Label>
+              <Label>Primary category</Label>
               <p className="text-xs text-muted-foreground -mt-1">
-                Group related programs. Pick one of yours or create a new one.
+                The stack view groups by this. Manage the list in Settings → Categories.
               </p>
-              <Select value={categoryChoice} onValueChange={setCategoryChoice}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value={NEW_CATEGORY}>+ New category…</SelectItem>
-                </SelectContent>
-              </Select>
-              {categoryChoice === NEW_CATEGORY ? (
-                <Input
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  placeholder="e.g. Competitions, Summer Camps, Research"
-                />
+              {categories.length === 0 ? (
+                <p className="rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">
+                  No categories yet — add one in Settings → Categories first.
+                </p>
+              ) : (
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {categories.length > 1 ? (
+                <div className="space-y-1.5 pt-1">
+                  <Label className="text-xs text-muted-foreground">Also tag as (optional)</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {categories
+                      .filter((c) => c !== category)
+                      .map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => toggleSecondary(c)}
+                          className={
+                            secondary.includes(c)
+                              ? "rounded-full border border-primary bg-primary/10 px-2.5 py-1 text-xs font-medium text-foreground"
+                              : "rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                          }
+                        >
+                          {c}
+                        </button>
+                      ))}
+                  </div>
+                </div>
               ) : null}
             </div>
             <div className="space-y-2">

@@ -253,6 +253,7 @@ export interface CreateProgramOptions {
   instructorLabel?: string | null;
   learnerLabel?: string | null;
   features?: Record<string, boolean> | null;
+  secondaryCategories?: string[] | null;
 }
 
 export function localCreateProgram(

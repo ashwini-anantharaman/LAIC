@@ -87,6 +87,7 @@ export const programFeaturesUpdate = z.object({ features: programFeatures });
 export const programInput = z.object({
   name: z.string(),
   category: programCategory,
+  secondary_categories: z.array(z.string().trim().min(1).max(60)).optional(),
   description: z.string().nullish(),
   icon: z.string().nullish(),
   // Configurable per-program overrides for the instructor/learner display words

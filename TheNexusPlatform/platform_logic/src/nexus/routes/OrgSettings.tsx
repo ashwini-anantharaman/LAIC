@@ -20,12 +20,16 @@ import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
 import {
+  addOrgCategory,
   createInvitation,
   getOrgBySlug,
   listMyOrgs,
   listMembers,
+  listOrgCategories,
   listOrgInvitations,
   removeMember,
+  removeOrgCategory,
+  renameOrgCategory,
   revokeInvitation,
   updateOrgTheme,
   uploadOrgLogo,
@@ -33,7 +37,7 @@ import {
 import { resolveAssetUrl } from "@/services/apiBase";
 import type { Invitation, OrgMember } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Section, Spinner } from "@/nexus/ui/kit";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { Check, Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useSession } from "@/nexus/session";
 import { accentForMode } from "@/nexus/theme/accent";
@@ -254,6 +258,8 @@ export function OrgSettings() {
         )}
       </Section>
 
+      <CategoriesSection orgId={orgId} />
+
       <InviteAdminDialog orgId={orgId} open={inviteOpen} onOpenChange={setInviteOpen} onInvited={loadMembers} />
     </div>
   );
@@ -369,5 +375,123 @@ function InviteAdminDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+
+/**
+ * Settings → Categories: the org's program taxonomy. Programs pick a primary
+ * (and optional secondaries) from this list; renames cascade to every program.
+ */
+function CategoriesSection({ orgId }: { orgId: string }) {
+  const [categories, setCategories] = useState<string[] | null>(null);
+  const [newName, setNewName] = useState("");
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameTo, setRenameTo] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    listOrgCategories(orgId)
+      .then(setCategories)
+      .catch(() => setCategories([]));
+  }, [orgId]);
+
+  async function run(op: () => Promise<string[]>, ok: string) {
+    setBusy(true);
+    try {
+      setCategories(await op());
+      toast.success(ok);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Section title="Categories">
+      <div className="glass-card p-5 space-y-2">
+        <p className="text-xs text-muted-foreground">
+          Programs pick a primary category (and optional secondaries) from this list. Renaming a
+          category updates every program using it; a category can only be removed once no program
+          uses it as its primary.
+        </p>
+        {!categories ? (
+          <Spinner />
+        ) : (
+          <>
+            {categories.map((c) => (
+              <div key={c} className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
+                {renaming === c ? (
+                  <div className="flex flex-1 items-center gap-2">
+                    <Input value={renameTo} onChange={(e) => setRenameTo(e.target.value)} className="h-8 flex-1" autoFocus />
+                    <Button
+                      size="sm"
+                      disabled={busy || !renameTo.trim() || renameTo.trim() === c}
+                      onClick={() => {
+                        void run(() => renameOrgCategory(orgId, c, renameTo.trim()), `Renamed to "${renameTo.trim()}" everywhere`);
+                        setRenaming(null);
+                      }}
+                    >
+                      <Check className="size-3.5" />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setRenaming(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-sm text-foreground truncate">{c}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Rename category"
+                        onClick={() => {
+                          setRenaming(c);
+                          setRenameTo(c);
+                        }}
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <ConfirmButton
+                        title={`Remove the "${c}" category?`}
+                        description="It disappears from every program's secondary categories. Removal is refused while any program uses it as its primary."
+                        actionLabel="Remove"
+                        onConfirm={() => run(() => removeOrgCategory(orgId, c), `Removed "${c}"`)}
+                        buttonTitle="Remove category"
+                      >
+                        <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                      </ConfirmButton>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+            {categories.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No categories yet — add the first below.</p>
+            ) : null}
+            <div className="flex gap-2 pt-1">
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. Competitions, Summer Camps"
+                className="flex-1"
+              />
+              <Button
+                size="sm"
+                disabled={busy || !newName.trim()}
+                onClick={() => {
+                  void run(() => addOrgCategory(orgId, newName.trim()), `Added "${newName.trim()}"`);
+                  setNewName("");
+                }}
+              >
+                <Plus className="size-3.5" /> Add
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </Section>
   );
 }
