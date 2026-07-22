@@ -17,7 +17,7 @@ import { currentUserId } from "./requestContext";
 import { resolveProfileId, ensureOrgProfile } from "./resolveProfile";
 import {
   programs, stageNodes, offerings, registeredApps, registrations, participants,
-  orgMemberships, profiles, organizations, entitlements, integrations, auditEvents, appLaunchTokens,
+  orgMemberships, profiles, organizations, entitlements, integrations, auditEvents, appLaunchTokens, platformSettings,
   challenges, challengeStageConfig, orgPermissionDefaults, studentRegistrations,
   joinCodes as joinCodesTable,
 } from "./schema";
@@ -37,6 +37,8 @@ const programRow = (p: typeof programs.$inferSelect): Row => ({
   id: p.id, org_id: p.orgId, name: p.name, category: p.category, description: p.description,
   icon: p.icon, instructor_label: p.instructorLabel, learner_label: p.learnerLabel,
   features: normalizeProgramFeatures((p.metadataJson as Row)?.features as Row),
+  secondary_categories: ((p.metadataJson as Row)?.secondary_categories as string[]) ?? [],
+  branding: ((p.metadataJson as Row)?.branding as Row) ?? null,
   created_at: p.createdAt,
 });
 const stageRow = (s: typeof stageNodes.$inferSelect): Row => ({
@@ -137,7 +139,10 @@ export async function createProgram(orgId: string, name: string, category: strin
       icon: (opts.icon as string) ?? null,
       instructorLabel: (opts.instructorLabel as string) ?? null,
       learnerLabel: (opts.learnerLabel as string) ?? null,
-      metadataJson: { features: normalizeProgramFeatures(opts.features as Row) },
+      metadataJson: {
+        features: normalizeProgramFeatures(opts.features as Row),
+        secondary_categories: opts.secondaryCategories ?? [],
+      },
     }).returning();
     return programRow(p);
   });
@@ -150,14 +155,30 @@ export async function updateProgramFeatures(programId: string, features: Program
     if (!existing.length) return null;
     const meta = { ...(existing[0].metadataJson as Row), features };
     const [p] = await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId)).returning();
-    return p ? programRow(p) : null;
+    if (!p) return null;
+    const caps = await _orgFeatureCaps(tx, p.orgId);
+    const row = programRow(p);
+    return { ...row, features: _clampFeatures(row.features as ProgramFeatures, caps) };
   });
 }
 
 export async function listPrograms(orgId: string): Promise<Row[]> {
   return scoped(async (tx) => {
     const rows = await tx.select().from(programs).where(eq(programs.orgId, orgId));
-    return Promise.all(rows.map(async (p) => ({ ...programRow(p), ...(await programCounts(tx, orgId, p.id)) })));
+    // Every reader sees EFFECTIVE features: the program's toggles clamped by
+    // the org's Nexus-governed envelope. One choke point — routes, launch
+    // guards, role builders, and platform access all read through here.
+    const caps = await _orgFeatureCaps(tx, orgId);
+    return Promise.all(
+      rows.map(async (p) => {
+        const row = programRow(p);
+        return {
+          ...row,
+          features: _clampFeatures(row.features as ProgramFeatures, caps),
+          ...(await programCounts(tx, orgId, p.id)),
+        };
+      }),
+    );
   });
 }
 
@@ -165,7 +186,13 @@ export async function getProgram(programId: string): Promise<Row | null> {
   return scoped(async (tx) => {
     const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
     if (!r.length) return null;
-    return { ...programRow(r[0]), ...(await programCounts(tx, r[0].orgId, r[0].id)) };
+    const caps = await _orgFeatureCaps(tx, r[0].orgId);
+    const row = programRow(r[0]);
+    return {
+      ...row,
+      features: _clampFeatures(row.features as ProgramFeatures, caps),
+      ...(await programCounts(tx, r[0].orgId, r[0].id)),
+    };
   });
 }
 
@@ -648,22 +675,41 @@ export async function updateOrgTheme(orgId: string, accentColor: string | null |
 export const DEFAULT_CAPABILITIES = {
   programTypes: { edu: true, game: true },
   offeringTypes: { course: true, challenge: true, app: true },
-  // Program platforms an org may use, plus other feature flags. Everything on
-  // by default; the Nexus operator narrows the envelope per org.
-  features: { learningPlatform: true, appShells: true, bridge: true, integrations: true },
+  // Feature-areas an org may use — the SAME six keys as per-program features,
+  // so the Nexus envelope and the org's program config speak one vocabulary.
+  // Everything on by default; the operator narrows per org.
+  features: { learning: true, bridge: true, appbuilder: true, community: true, teams: true, partners: true },
+  // Max programs the org may create; null = unlimited.
+  programCapacity: null as number | null,
 } as const;
+
+// Older envelopes stored platform-flavored keys — translate on read so a
+// previously-set restriction keeps meaning something.
+const LEGACY_FEATURE_KEYS: Record<string, string> = { learningPlatform: "learning", appShells: "appbuilder" };
+function _normalizeCapFeatures(raw: Row | undefined): Row {
+  const out: Row = {};
+  for (const [k, v] of Object.entries(raw ?? {})) {
+    const key = LEGACY_FEATURE_KEYS[k] ?? k;
+    if (key in DEFAULT_CAPABILITIES.features) out[key] = v;
+  }
+  return out;
+}
+
+function _capsFromSettings(settings: Record<string, unknown>): Row {
+  const caps = (settings.capabilities as Row | undefined) ?? {};
+  return {
+    programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((caps.programTypes as Row) ?? {}) },
+    offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((caps.offeringTypes as Row) ?? {}) },
+    features: { ...DEFAULT_CAPABILITIES.features, ..._normalizeCapFeatures(caps.features as Row) },
+    programCapacity: (caps.programCapacity as number | null | undefined) ?? null,
+  };
+}
 
 export async function getOrgCapabilities(orgId: string): Promise<Row> {
   return scoped(async (tx) => {
     const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
     if (!r.length) throw new Error("Organization not found");
-    const settings = (r[0].settings as Record<string, unknown>) ?? {};
-    const caps = (settings.capabilities as Row | undefined) ?? {};
-    return {
-      programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((caps.programTypes as Row) ?? {}) },
-      offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((caps.offeringTypes as Row) ?? {}) },
-      features: { ...DEFAULT_CAPABILITIES.features, ...((caps.features as Row) ?? {}) },
-    };
+    return _capsFromSettings((r[0].settings as Record<string, unknown>) ?? {});
   });
 }
 
@@ -672,16 +718,184 @@ export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row
     const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
     if (!r.length) throw new Error("Organization not found");
     const settings: Record<string, unknown> = { ...((r[0].settings as Record<string, unknown>) ?? {}) };
-    const existing = (settings.capabilities as Row | undefined) ?? {};
+    const existing = _capsFromSettings(settings);
     const merged: Row = {
-      programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((existing.programTypes as Row) ?? {}), ...((patch.programTypes as Row) ?? {}) },
-      offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((existing.offeringTypes as Row) ?? {}), ...((patch.offeringTypes as Row) ?? {}) },
-      features: { ...DEFAULT_CAPABILITIES.features, ...((existing.features as Row) ?? {}), ...((patch.features as Row) ?? {}) },
+      programTypes: { ...(existing.programTypes as Row), ...((patch.programTypes as Row) ?? {}) },
+      offeringTypes: { ...(existing.offeringTypes as Row), ...((patch.offeringTypes as Row) ?? {}) },
+      features: { ...(existing.features as Row), ..._normalizeCapFeatures(patch.features as Row) },
+      programCapacity:
+        "programCapacity" in patch ? ((patch.programCapacity as number | null) ?? null) : existing.programCapacity,
     };
     settings.capabilities = merged;
     await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));
     return merged;
   });
+}
+
+// ── Platform settings (Nexus's own branding) ────────────────────────────────
+// Boundary/platform data — privileged by nature (no org scope exists).
+export async function getPlatformSetting(key: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx.select().from(platformSettings).where(eq(platformSettings.key, key)).limit(1);
+    return r.length ? (r[0].value as Row) : null;
+  });
+}
+
+export async function setPlatformSetting(key: string, value: Row): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    await tx
+      .insert(platformSettings)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
+    return value;
+  });
+}
+
+/** Switch a program's primary category and/or replace its secondary list. */
+export async function updateProgramCategories(
+  programId: string,
+  patch: { category?: string; secondaryCategories?: string[] },
+): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
+    if (!r.length) return null;
+    const primary = patch.category ?? r[0].category;
+    const meta: Row = { ...((r[0].metadataJson as Row) ?? {}) };
+    if (patch.secondaryCategories !== undefined) {
+      meta.secondary_categories = [...new Set(patch.secondaryCategories)].filter((c) => c !== primary);
+    } else {
+      // keep existing secondaries, but never let one duplicate the new primary
+      meta.secondary_categories = (((meta.secondary_categories as string[]) ?? [])).filter((c) => c !== primary);
+    }
+    const [p] = await tx.update(programs)
+      .set({ category: primary, metadataJson: meta })
+      .where(eq(programs.id, programId)).returning();
+    return p ? programRow(p) : null;
+  });
+}
+
+/** Program branding (accent/logo) in metadata_json.branding; null clears (revert). */
+export async function setProgramBranding(
+  programId: string,
+  branding: { accent?: string | null; logo?: string | null } | null,
+): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
+    if (!r.length) return null;
+    const meta: Row = { ...((r[0].metadataJson as Row) ?? {}) };
+    if (branding === null) {
+      delete meta.branding;
+    } else {
+      const cur = (meta.branding as Row) ?? {};
+      meta.branding = {
+        accent: branding.accent !== undefined ? branding.accent : (cur.accent ?? null),
+        logo: branding.logo !== undefined ? branding.logo : (cur.logo ?? null),
+      };
+    }
+    await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId));
+    return (meta.branding as Row) ?? null;
+  });
+}
+
+// ── Org-defined program categories (Settings → Categories) ──────────────────
+// The taxonomy lives in organizations.settings.program_categories. When unset
+// (orgs that predate the feature), the effective list derives from categories
+// already in use, so nothing ever disappears.
+async function _effectiveCategories(tx: Tx, orgId: string): Promise<string[]> {
+  const r = await tx.select({ settings: organizations.settings }).from(organizations)
+    .where(eq(organizations.id, orgId)).limit(1);
+  const stored = ((r[0]?.settings as Row | undefined)?.program_categories as string[] | undefined) ?? null;
+  if (stored) return stored;
+  const progs = await tx.select({ category: programs.category }).from(programs).where(eq(programs.orgId, orgId));
+  return [...new Set(progs.map((p) => p.category))].sort((a, b) => a.localeCompare(b));
+}
+
+async function _saveCategories(tx: Tx, orgId: string, list: string[]): Promise<void> {
+  const r = await tx.select({ settings: organizations.settings }).from(organizations)
+    .where(eq(organizations.id, orgId)).limit(1);
+  const settings: Row = { ...((r[0]?.settings as Row) ?? {}) };
+  settings.program_categories = list;
+  await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));
+}
+
+export async function listOrgCategories(orgId: string): Promise<string[]> {
+  return scoped((tx) => _effectiveCategories(tx, orgId));
+}
+
+export async function addOrgCategory(orgId: string, name: string): Promise<string[]> {
+  return scoped(async (tx) => {
+    const list = await _effectiveCategories(tx, orgId);
+    if (!list.some((c) => c.toLowerCase() === name.toLowerCase())) list.push(name);
+    await _saveCategories(tx, orgId, list);
+    return list;
+  });
+}
+
+/** Remove a category. Refused while any program uses it as PRIMARY; silently
+ * stripped from secondaries. */
+export async function removeOrgCategory(orgId: string, name: string): Promise<string[]> {
+  return scoped(async (tx) => {
+    const inUse = await tx.select({ id: programs.id }).from(programs)
+      .where(and(eq(programs.orgId, orgId), eq(programs.category, name)));
+    if (inUse.length > 0) {
+      throw new Error(`${inUse.length} program${inUse.length !== 1 ? "s" : ""} use this as their primary category — reassign them first`);
+    }
+    const progs = await tx.select().from(programs).where(eq(programs.orgId, orgId));
+    for (const p of progs) {
+      const meta = { ...((p.metadataJson as Row) ?? {}) };
+      const secs = (meta.secondary_categories as string[]) ?? [];
+      if (secs.includes(name)) {
+        meta.secondary_categories = secs.filter((c) => c !== name);
+        await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, p.id));
+      }
+    }
+    const list = (await _effectiveCategories(tx, orgId)).filter((c) => c !== name);
+    await _saveCategories(tx, orgId, list);
+    return list;
+  });
+}
+
+/** Rename a category everywhere: the stored list, every program's primary, and
+ * every secondary list. Renaming onto an existing name merges the two. */
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<string[]> {
+  return scoped(async (tx) => {
+    await tx.update(programs).set({ category: to })
+      .where(and(eq(programs.orgId, orgId), eq(programs.category, from)));
+    const progs = await tx.select().from(programs).where(eq(programs.orgId, orgId));
+    for (const p of progs) {
+      const meta = { ...((p.metadataJson as Row) ?? {}) };
+      const secs = (meta.secondary_categories as string[]) ?? [];
+      if (secs.includes(from)) {
+        // map from→to, dedupe, and drop a secondary that now equals the primary
+        const primary = p.category === from ? to : p.category;
+        meta.secondary_categories = [...new Set(secs.map((c) => (c === from ? to : c)))].filter((c) => c !== primary);
+        await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, p.id));
+      }
+    }
+    const list = [...new Set((await _effectiveCategories(tx, orgId)).map((c) => (c === from ? to : c)))];
+    await _saveCategories(tx, orgId, list);
+    return list;
+  });
+}
+
+/**
+ * The org's allowed feature-areas (for clamping program features). Reads the
+ * org row inside the SAME transaction the caller already holds.
+ */
+async function _orgFeatureCaps(tx: Tx, orgId: string): Promise<Record<string, boolean>> {
+  const r = await tx.select({ settings: organizations.settings }).from(organizations)
+    .where(eq(organizations.id, orgId)).limit(1);
+  const caps = _capsFromSettings((r[0]?.settings as Record<string, unknown>) ?? {});
+  return caps.features as Record<string, boolean>;
+}
+
+/** Effective program features = program's own toggles AND the org envelope. */
+function _clampFeatures(features: ProgramFeatures, orgCaps: Record<string, boolean>): ProgramFeatures {
+  const out = { ...features };
+  for (const k of Object.keys(out) as (keyof ProgramFeatures)[]) {
+    if (orgCaps[k] === false) out[k] = false;
+  }
+  return out;
 }
 
 export async function createJoinCode(stageNodeId: string, kind: string, opts: localKeys.JoinCodeOptions = {}): Promise<Row> {

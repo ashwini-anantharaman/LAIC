@@ -11,7 +11,10 @@ export const accessLevel = z.enum(["view", "edit", "per_level"]);
 // still comes from roleLabel(), not from this stored value.
 export const membershipRole = z.enum(["owner", "administrator", "instructor"]);
 export const joinCodeKind = z.enum(["student", "teacher", "administrator"]);
-export const programCategory = z.enum(["game", "edu"]);
+// Categories are org-defined free text (the old "game"/"edu" presets remain
+// meaningful: "game" flips role words to Coach/Player and skips the edu stage
+// scaffold; anything else behaves like an education program).
+export const programCategory = z.string().trim().min(1).max(60);
 export const deliveryMethod = z.enum(["join_code", "email_direct"]);
 export const integrationType = z.enum(["discord"]);
 export const integrationPermissionLevel = z.enum(["can_edit", "can_view", "per_level"]);
@@ -84,6 +87,7 @@ export const programFeaturesUpdate = z.object({ features: programFeatures });
 export const programInput = z.object({
   name: z.string(),
   category: programCategory,
+  secondary_categories: z.array(z.string().trim().min(1).max(60)).optional(),
   description: z.string().nullish(),
   icon: z.string().nullish(),
   // Configurable per-program overrides for the instructor/learner display words

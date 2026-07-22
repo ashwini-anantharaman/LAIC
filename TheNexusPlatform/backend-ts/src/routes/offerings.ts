@@ -293,8 +293,8 @@ offeringsRouter.post("/programs/:program_id/apps", async (c) => {
   _requireOfferingAdmin(user, program.org_id, programId);
   if (user.role !== "platform_admin") {
     const caps = await db.getOrgCapabilities(program.org_id);
-    if (!(caps.features as Row).appShells) {
-      throw new HttpError(403, "App Shell building isn't enabled for this organization");
+    if ((caps.features as Row).appbuilder === false) {
+      throw new HttpError(403, "App building isn't enabled for this organization");
     }
   }
   const [row, rawKey] = await db.createRegisteredApp(program.org_id, programId, req.app_name, {
@@ -650,6 +650,16 @@ offeringsRouter.post("/offerings/:offering_id/registrations/bulk-import", async 
 const _ACCESS_LEVEL = z.enum(["view", "edit", "comment", "administrator"]);
 const _BRIDGE_ROLE = z.enum(BRIDGE_PREBUILT_ROLES);
 const _programRolePerms = z.record(z.string(), z.union([_ACCESS_LEVEL, _BRIDGE_ROLE]));
+// Roles now exist at three altitudes: program (org+program set), organization
+// (program null), and nexus (both null). The guard follows the scope.
+function _requireScopedRoleAdmin(user: PlatformUser, role: Row): void {
+  if (!role.organization_id) {
+    if (user.role !== "platform_admin") throw new HttpError(403, "Nexus operator access required");
+    return;
+  }
+  _requireOfferingAdmin(user, role.organization_id as string, (role.program_id as string) ?? null);
+}
+
 const programRoleCreateSchema = z.object({ name: z.string().min(1), perms: _programRolePerms.default({}) });
 const programRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _programRolePerms.optional() });
 
@@ -701,7 +711,7 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
   const req = parseBody(programRoleUpdateSchema, await c.req.json());
   const existing = await graph.getProgramRole(roleId);
   if (!existing) throw new HttpError(404, "Role not found");
-  _requireOfferingAdmin(user, existing.organization_id as string, existing.program_id as string);
+  _requireScopedRoleAdmin(user, existing);
   let perms = req.perms;
   if (perms !== undefined) {
     const program = await db.getProgram(existing.program_id as string);
@@ -721,7 +731,7 @@ offeringsRouter.delete("/roles/:role_id", async (c) => {
   const roleId = c.req.param("role_id");
   const existing = await graph.getProgramRole(roleId);
   if (!existing) throw new HttpError(404, "Role not found");
-  _requireOfferingAdmin(user, existing.organization_id as string, existing.program_id as string);
+  _requireScopedRoleAdmin(user, existing);
   await graph.deleteProgramRole(roleId);
   await db.recordAuditEvent("program.role.deleted", {
     orgId: existing.organization_id as string, actorUserId: user.id, scopeType: "program",
@@ -745,12 +755,18 @@ offeringsRouter.get("/programs/:program_id/administrators", async (c) => {
     .filter((m: Row) => m.program_id === programId && (m.role === "administrator" || m.role === "owner"))
     .map((m: Row) => {
       const p = (m.profiles ?? {}) as Row;
-      return { email: p.email ?? null, display_name: p.display_name ?? p.name ?? null, role: m.role, status: "active" };
+      return {
+        membership_id: m.id, invitation_id: null as string | null,
+        email: p.email ?? null, display_name: p.display_name ?? p.name ?? null, role: m.role, status: "active",
+      };
     });
   const invited = dbEnabled()
     ? (await graph.listInvitations(program.org_id))
         .filter((i: Row) => i.status === "pending" && i.program_id === programId && i.role === "administrator")
-        .map((i: Row) => ({ email: i.email, display_name: i.display_name ?? null, role: "administrator", status: "invited" }))
+        .map((i: Row) => ({
+          membership_id: null as string | null, invitation_id: i.id,
+          email: i.email, display_name: i.display_name ?? null, role: "administrator", status: "invited",
+        }))
     : [];
   return c.json([...members, ...invited]);
 });
@@ -790,6 +806,31 @@ offeringsRouter.get("/programs/:program_id/members", async (c) => {
   if (!program) throw new HttpError(404, "Program not found");
   _requireOrgPeopleMember(user, program.org_id);
   return c.json(await graph.listProgramMembers(program.org_id, programId));
+});
+
+offeringsRouter.get("/programs/:program_id/members/summary", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgPeopleMember(user, program.org_id);
+  return c.json(await graph.listProgramTeamSummary(program.org_id, programId));
+});
+
+offeringsRouter.get("/programs/:program_id/members/group", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgPeopleMember(user, program.org_id);
+  const platform = c.req.query("platform");
+  const role = c.req.query("role");
+  if (!platform || !role) throw new HttpError(400, "platform and role required");
+  const offset = Math.max(0, Number(c.req.query("offset") ?? 0) || 0);
+  const limit = Math.min(100, Math.max(1, Number(c.req.query("limit") ?? 25) || 25));
+  return c.json(await graph.listPlatformGroupMembers(program.org_id, programId, platform, role, offset, limit));
 });
 
 const inviteMemberSchema = z.object({

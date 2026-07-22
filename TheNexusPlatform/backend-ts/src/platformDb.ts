@@ -360,6 +360,41 @@ export async function createProgram(
   );
 }
 
+// Platform settings + program branding (DB-backed; routes guard dbEnabled).
+export async function getPlatformSetting(key: string): Promise<Row | null> {
+  return tpg.getPlatformSetting(key);
+}
+export async function setPlatformSetting(key: string, value: Row): Promise<Row> {
+  return tpg.setPlatformSetting(key, value);
+}
+export async function updateProgramCategories(
+  programId: string,
+  patch: { category?: string; secondaryCategories?: string[] },
+): Promise<Row | null> {
+  return tpg.updateProgramCategories(programId, patch);
+}
+export async function setProgramBranding(
+  programId: string,
+  branding: { accent?: string | null; logo?: string | null } | null,
+): Promise<Row | null> {
+  return tpg.setProgramBranding(programId, branding);
+}
+
+// Org-defined program categories (DB-backed; routes guard dbEnabled).
+export async function listOrgCategories(orgId: string): Promise<string[]> {
+  return tpg.listOrgCategories(orgId);
+}
+export async function addOrgCategory(orgId: string, name: string): Promise<string[]> {
+  return tpg.addOrgCategory(orgId, name);
+}
+export async function removeOrgCategory(orgId: string, name: string): Promise<string[]> {
+  return tpg.removeOrgCategory(orgId, name);
+}
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<string[]> {
+  return tpg.renameOrgCategory(orgId, from, to);
+}
+
+/** Per-program platform enablement — DB-backed only (route guards dbEnabled). */
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,

@@ -2,7 +2,8 @@ export type SignupType = "org" | "administrator" | "teacher" | "student";
 export type StageKey = "international" | "national" | "state" | "chapter";
 export type JoinCodeKind = "student" | "teacher" | "administrator";
 export type Permission = "Can Edit" | "Can View" | "Per Level";
-export type ProgramCategory = "game" | "edu";
+/** Org-defined free text ("game" keeps its Coach/Player role words). */
+export type ProgramCategory = string;
 
 // Per-program feature accessibility. An org admin picks which of these areas are
 // accessible inside a program at creation (editable later); role creation then
@@ -41,6 +42,8 @@ export interface Program {
   org_id: string;
   name: string;
   category: ProgramCategory;
+  /** Optional extra categories; grouping (stack view) uses the primary only. */
+  secondary_categories?: string[];
   description?: string;
   icon?: string;
   instructor_label?: string;
@@ -51,6 +54,8 @@ export interface Program {
   instructor_count?: number;
   /** Per-program platform toggles; absent/true = enabled where the org allows it. */
   platforms?: Record<string, boolean> | null;
+  /** Program's own branding; null = inherit the organization's. */
+  branding?: { accent: string | null; logo: string | null } | null;
 }
 
 export interface Integration {
@@ -198,6 +203,8 @@ export interface MeResponse {
   display_name?: string;
   role: string;
   memberships: MembershipSummary[];
+  /** Confined Nexus operator: a platform-scope custom role (null otherwise). */
+  nexus_role?: { role_id: string; role_name: string | null; perms: Record<string, string> } | null;
 }
 
 export interface DashboardStageTab {

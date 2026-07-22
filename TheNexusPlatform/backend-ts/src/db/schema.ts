@@ -340,8 +340,8 @@ export const groups = pgTable("groups", {
 
 export const programRoles = pgTable("program_roles", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").notNull(),
-  programId: uuid("program_id").notNull(),
+  organizationId: uuid("organization_id"),
+  programId: uuid("program_id"),
   name: text("name").notNull(),
   perms: jsonb("perms").notNull().default({}),
   createdByUserId: uuid("created_by_user_id"),
@@ -350,8 +350,8 @@ export const programRoles = pgTable("program_roles", {
 
 export const programRoleAssignments = pgTable("program_role_assignments", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").notNull(),
-  programId: uuid("program_id").notNull(),
+  organizationId: uuid("organization_id"),
+  programId: uuid("program_id"),
   roleId: uuid("role_id").notNull(),
   email: text("email").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -444,7 +444,7 @@ export const roleAssignments = pgTable("role_assignments", {
 
 export const invitations = pgTable("invitations", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").notNull(),
+  organizationId: uuid("organization_id"),
   programId: uuid("program_id"),
   offeringId: uuid("offering_id"),
   groupId: uuid("group_id"),
@@ -472,5 +472,21 @@ export const demoAuthUsers = pgTable("demo_auth_users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull(),
   passwordHash: text("password_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+
+/** Platform-level settings (Nexus branding etc.) — key/value. */
+export const platformSettings = pgTable("platform_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Small binary assets (logos) stored as base64 — durable on serverless. */
+export const storedFiles = pgTable("stored_files", {
+  key: text("key").primaryKey(),
+  contentType: text("content_type").notNull(),
+  data: text("data").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { Copy, Eye, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Copy, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -27,7 +27,8 @@ import {
   deleteProgramRole,
   devLoginAs,
   inviteProgramMember,
-  listProgramMembers,
+  getProgramTeamSummary,
+  listProgramPlatformGroup,
   listProgramRoles,
   listPrograms,
   removeMember,
@@ -35,6 +36,7 @@ import {
   setProgramMemberRole,
   updateProgramRole,
   type AccessLevel,
+  type PlatformGroupMember,
   type ProgramMember,
   type ProgramRole,
   type RoleArea,
@@ -84,6 +86,7 @@ export function ProgramTeam() {
   const [program, setProgram] = useState<Program | null>(null);
   const [roles, setRoles] = useState<ProgramRole[] | null>(null);
   const [members, setMembers] = useState<ProgramMember[] | null>(null);
+  const [groups, setGroups] = useState<{ platform: string; role: string; count: number }[]>([]);
   const [editing, setEditing] = useState<ProgramRole | "new" | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
 
@@ -96,7 +99,17 @@ export function ProgramTeam() {
 
   const load = useCallback(() => {
     listProgramRoles(programId).then(setRoles).catch(() => setRoles([]));
-    listProgramMembers(programId).then(setMembers).catch(() => setMembers([]));
+    // Team core + per-platform-role group counts; group MEMBERS page in lazily
+    // (a flat list won't scale to hundreds of learners).
+    getProgramTeamSummary(programId)
+      .then((s) => {
+        setMembers(s.team);
+        setGroups(s.groups);
+      })
+      .catch(() => {
+        setMembers([]);
+        setGroups([]);
+      });
   }, [programId]);
   useEffect(() => load(), [load]);
 
@@ -338,6 +351,24 @@ export function ProgramTeam() {
           </div>
         )}
       </Section>
+
+      {groups.length > 0 ? (
+        <Section title="Platform members">
+          <div className="space-y-2">
+            {groups.map((g) => (
+              <PlatformGroup
+                key={`${g.platform}:${g.role}`}
+                programId={programId}
+                group={g}
+                onTestAs={(email) => {
+                  void devLoginAs(email, { id: orgId }).then(() => refresh()).then(() => navigate("/", { replace: true }));
+                }}
+                onRemoved={load}
+              />
+            ))}
+          </div>
+        </Section>
+      ) : null}
 
       {editing ? (
         <RoleBuilder
@@ -618,5 +649,117 @@ function RoleBuilder({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+
+/**
+ * One collapsible platform-role group (e.g. "Bridge Platform · Learner (128)"):
+ * collapsed by default, pages members from the server 25 at a time.
+ */
+function PlatformGroup({
+  programId,
+  group,
+  onTestAs,
+  onRemoved,
+}: {
+  programId: string;
+  group: { platform: string; role: string; count: number };
+  onTestAs: (email: string) => void;
+  onRemoved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<PlatformGroupMember[]>([]);
+  const [loading, setLoading] = useState(false);
+  const PAGE = 25;
+
+  async function loadMore() {
+    setLoading(true);
+    try {
+      const page = await listProgramPlatformGroup(programId, group.platform, group.role, rows.length, PAGE);
+      setRows((cur) => [...cur, ...page]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load members");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function removeRow(m: PlatformGroupMember) {
+    try {
+      if (m.membership_id) await removeMember(m.membership_id);
+      else if (m.invitation_id) await revokeInvitation(m.invitation_id);
+      setRows((cur) => cur.filter((r) => r.email !== m.email));
+      toast.success(`${m.display_name ?? m.email} removed`);
+      onRemoved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove");
+    }
+  }
+
+  const platformLabel = PLATFORM_LABELS[group.platform] ?? group.platform;
+
+  return (
+    <div className="glass-card overflow-hidden">
+      <button
+        type="button"
+        onClick={() => {
+          setOpen((v) => !v);
+          if (!open && rows.length === 0) void loadMore();
+        }}
+        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left hover:bg-accent/40 transition-colors"
+      >
+        <span className="text-sm font-medium text-foreground">
+          {platformLabel} · {platformRoleLabel(group.role)}
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            {group.count} {group.count === 1 ? "person" : "people"}
+          </span>
+        </span>
+        <ChevronRight className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open ? (
+        <div className="divide-y divide-border border-t border-border">
+          {rows.map((m) => (
+            <div key={m.email ?? m.invitation_id} className="flex items-center justify-between gap-2 px-4 py-2.5">
+              <div className="min-w-0">
+                <div className="text-sm text-foreground truncate">{m.display_name ?? m.email}</div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {m.email}
+                  {m.status === "invited" ? " · invited" : ""}
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {DEV_ENABLED && m.email ? (
+                  <Button size="sm" variant="ghost" onClick={() => onTestAs(m.email!)} title="Sign in as this person (dev)">
+                    <Eye className="size-3.5" /> Test as
+                  </Button>
+                ) : null}
+                {m.membership_id || m.invitation_id ? (
+                  <ConfirmButton
+                    title={`Remove ${m.display_name ?? m.email} from this program?`}
+                    description="They lose access immediately."
+                    actionLabel="Remove"
+                    onConfirm={() => removeRow(m)}
+                    buttonTitle="Remove"
+                  >
+                    <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                  </ConfirmButton>
+                ) : null}
+              </div>
+            </div>
+          ))}
+          {rows.length < group.count ? (
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={loading}
+              className="w-full px-4 py-2.5 text-center text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            >
+              {loading ? "Loading…" : `Show more (${rows.length} of ${group.count})`}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }

@@ -14,12 +14,17 @@ import { Label } from "@/app/components/ui/label";
 import { devLoginAs, getDevPersonas, getOrgBySlug, type DevPersonaEntry, type OrgBranding } from "@/services/api";
 import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { useSession } from "@/nexus/session";
+import { readBranding, writeBranding } from "@/nexus/branding";
+import { resolveAssetUrl } from "@/services/apiBase";
 
 export function OrgPortal() {
   const { slug = "" } = useParams();
   const { login, refresh } = useSession();
   const navigate = useNavigate();
 
+  // First paint uses the cached accent (no flash); the fetch below refreshes
+  // the cache AND seeds it for the org space entered after login.
+  const cached = readBranding(slug);
   const [org, setOrg] = useState<OrgBranding | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [email, setEmail] = useState("");
@@ -30,7 +35,10 @@ export function OrgPortal() {
 
   useEffect(() => {
     getOrgBySlug(slug)
-      .then(setOrg)
+      .then((b) => {
+        setOrg(b);
+        writeBranding({ orgId: b.id, slug, accent: b.theme_accent_color, logo: resolveAssetUrl(b.theme_logo_url) });
+      })
       .catch(() => setNotFound(true));
   }, [slug]);
 
@@ -80,11 +88,20 @@ export function OrgPortal() {
     );
   }
 
-  const accent = org?.theme_accent_color || "#4f46e5";
+  // Never paint the default palette: until we know the org's accent (cache or
+  // fetch), the page stays neutral — no indigo flash.
+  const accent = org?.theme_accent_color || cached?.accent || null;
+  if (!org && !cached && !notFound) {
+    return (
+      <div className="min-h-screen grid place-items-center text-foreground px-4">
+        <div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
+      </div>
+    );
+  }
   const glyph = (org?.name ?? "•").slice(0, 1).toUpperCase();
 
   return (
-    <div className="min-h-screen grid place-items-center text-foreground px-4" style={{ ["--primary" as string]: accent } as CSSProperties}>
+    <div className="min-h-screen grid place-items-center text-foreground px-4" style={accent ? ({ ["--primary" as string]: accent } as CSSProperties) : undefined}>
       <div className="w-full max-w-sm">
         <div className="mb-8 flex items-center gap-3">
           {org?.theme_logo_url ? (
@@ -92,7 +109,7 @@ export function OrgPortal() {
           ) : (
             <div
               className="grid size-9 place-items-center rounded-lg text-white text-base font-semibold"
-              style={{ background: accent }}
+              style={{ background: accent ?? "var(--primary)" }}
             >
               {glyph}
             </div>
@@ -149,7 +166,7 @@ export function OrgPortal() {
               <span className="text-xs uppercase tracking-wide text-muted-foreground">Test as anyone in this org</span>
               <span className="h-px flex-1 bg-border" />
             </div>
-            <GroupedPersonas personas={devPersonas} accent={accent} busy={busy} onPick={devSignIn} />
+            <GroupedPersonas personas={devPersonas} accent={accent ?? "var(--primary)"} busy={busy} onPick={devSignIn} />
           </div>
         ) : null}
 
@@ -220,7 +237,7 @@ function GroupedPersonas({
                   >
                     <span
                       className="grid size-7 place-items-center rounded-full text-white text-[11px] font-semibold shrink-0"
-                      style={{ background: accent }}
+                      style={{ background: accent ?? "var(--primary)" }}
                     >
                       {name.slice(0, 1).toUpperCase()}
                     </span>

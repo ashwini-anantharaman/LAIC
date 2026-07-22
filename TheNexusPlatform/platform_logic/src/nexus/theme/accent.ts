@@ -75,3 +75,16 @@ export function accentForMode(hex: string, dark: boolean): string {
   const [sLo, sHi] = dark ? DARK_S : LIGHT_S;
   return hslToHex(h, clamp(s, sLo, sHi), clamp(l, lLo, lHi));
 }
+
+/** The hue (0–360) of a hex color — drives the one-dimensional picker. */
+export function hueOf(hex: string): number {
+  const rgb = parseHex(hex);
+  if (!rgb) return 231; // indigo default
+  return Math.round(rgbToHsl(...rgb)[0]);
+}
+
+/** A canonical hex for a hue — lightness/saturation are mode-derived later
+ * (accentForMode), so the stored color only really carries the hue. */
+export function hexFromHue(hue: number): string {
+  return hslToHex(((hue % 360) + 360) % 360, 60, 62);
+}

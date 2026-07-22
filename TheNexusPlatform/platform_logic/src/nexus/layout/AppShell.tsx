@@ -24,6 +24,7 @@ import {
   Moon,
   Sun,
   LogOut,
+  Settings as SettingsIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -40,10 +41,13 @@ import {
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
 import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
-import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
+import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
+import { Spinner } from "@/nexus/ui/kit";
+import type { Program } from "@/types/platform";
 import { accentForMode } from "@/nexus/theme/accent";
+import { clearBranding, onBranding, readBranding, writeBranding } from "@/nexus/branding";
 
 interface NavItem {
   to: string;
@@ -52,11 +56,16 @@ interface NavItem {
   end?: boolean;
 }
 
+// Org nav — each item names the org-role area that gates it (null = always).
+const ORG_NAV_AREAS: Record<string, string | null> = {
+  dashboard: null, programs: "programs", team: "team", settings: "settings", audit: "audit",
+};
 function orgNav(orgId: string): NavItem[] {
   const base = `/o/${orgId}`;
   return [
     { to: `${base}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `${base}/programs`, label: "Programs", icon: Boxes },
+    { to: `${base}/team`, label: "Team & Roles", icon: KeyRound },
     { to: `${base}/settings`, label: "Settings", icon: Settings },
     { to: `${base}/audit`, label: "Audit", icon: ScrollText },
   ];
@@ -73,6 +82,7 @@ function programNav(orgId: string, programId: string): NavItem[] {
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
     { to: `${base}/team`, label: "Team & Roles", icon: KeyRound },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
+    { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
   ];
 }
 
@@ -319,30 +329,134 @@ export function AppShell() {
 
   // Org branding (§6.4): the org's accent recolors primary actions inside its
   // space, and its logo takes the brand slot. Nexus operator pages stay neutral.
-  const [orgBranding, setOrgBranding] = useState<{ accent: string | null; logo: string | null }>({
-    accent: null,
-    logo: null,
+  // No flash, no manual refresh: hydrate synchronously from the branding
+  // cache, revalidate in the background, and live-update on any write
+  // (e.g. Settings saving a new accent). See nexus/branding.ts.
+  const [orgBranding, setOrgBranding] = useState<{ accent: string | null; logo: string | null }>(() => {
+    const cached = readBranding(orgId);
+    return cached ? { accent: cached.accent, logo: cached.logo } : { accent: null, logo: null };
   });
+  // "Ready" = we know the real branding (cache hit or fetch settled). Until
+  // then the shell paints a neutral spinner — never the default palette, so
+  // there is no flash of the wrong color even on a first visit.
+  const [brandingReady, setBrandingReady] = useState(() => !orgId || !!readBranding(orgId));
   useEffect(() => {
     if (mode === "nexus" || !orgId) {
       setOrgBranding({ accent: null, logo: null });
+      setBrandingReady(true);
       return;
     }
+    const cached = readBranding(orgId);
+    setOrgBranding(cached ? { accent: cached.accent, logo: cached.logo } : { accent: null, logo: null });
+    setBrandingReady(!!cached);
     (async () => {
       try {
         const mine = await listMyOrgs();
         const slug = mine.find((o) => o.id === orgId)?.slug;
-        if (!slug) return;
-        const b = await getOrgBySlug(slug);
-        setOrgBranding({ accent: b.theme_accent_color, logo: resolveAssetUrl(b.theme_logo_url) });
+        if (slug) {
+          const b = await getOrgBySlug(slug);
+          writeBranding({
+            orgId,
+            slug,
+            accent: b.theme_accent_color,
+            logo: resolveAssetUrl(b.theme_logo_url),
+          });
+        }
       } catch {
-        /* neutral defaults */
+        /* keep whatever we had */
+      } finally {
+        setBrandingReady(true);
       }
     })();
   }, [mode, orgId]);
+  // Nexus's own branding (operator console) + a program's override — same
+  // cache/broadcast pattern, three layers: platform | org | program.
+  const [platformBranding, setPlatformBranding] = useState<{ accent: string | null; logo: string | null }>(() => {
+    const c = readBranding("platform");
+    return c ? { accent: c.accent, logo: c.logo } : { accent: null, logo: null };
+  });
+  useEffect(() => {
+    if (mode !== "nexus") return;
+    getPlatformBranding()
+      .then((b) => writeBranding({ orgId: "platform", accent: b.accent, logo: resolveAssetUrl(b.logo) }))
+      .catch(() => {});
+  }, [mode]);
+
+  const [programBranding, setProgramBranding] = useState<{ accent: string | null; logo: string | null } | null>(() => {
+    const c = programId ? readBranding(programId) : null;
+    return c ? { accent: c.accent, logo: c.logo } : null;
+  });
+  useEffect(() => {
+    const c = programId ? readBranding(programId) : null;
+    setProgramBranding(c ? { accent: c.accent, logo: c.logo } : null);
+  }, [programId]);
+  useEffect(
+    () =>
+      onBranding((b) => {
+        if (b.orgId === orgId) setOrgBranding({ accent: b.accent, logo: b.logo });
+        if (b.orgId === "platform") setPlatformBranding({ accent: b.accent, logo: b.logo });
+        if (programId && b.orgId === programId) setProgramBranding({ accent: b.accent, logo: b.logo });
+      }),
+    [orgId, programId],
+  );
+
+  // What the shell actually paints.
+  const displayBranding =
+    mode === "nexus" ? platformBranding : programId && programBranding ? programBranding : orgBranding;
 
   // Are we previewing a role in THIS program?
   const impersonating = impersonation && impersonation.programId === programId ? impersonation : null;
+
+  // A custom-role ORG member (org-level membership "member") is confined to
+  // the areas their org role grants — same mechanic as the program level.
+  const orgMembership = orgId ? orgMemberships.find((m) => m.org_id === orgId) : undefined;
+  const isPlainOrgMember = mode === "org" && !!orgMembership && !["owner", "administrator"].includes(orgMembership.role);
+  const [orgRolePerms, setOrgRolePerms] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (!isPlainOrgMember || !orgId) {
+      setOrgRolePerms(null);
+      return;
+    }
+    getOrgMyRole(orgId)
+      .then((r) => setOrgRolePerms((r?.perms as Record<string, string>) ?? {}))
+      .catch(() => setOrgRolePerms({}));
+  }, [isPlainOrgMember, orgId]);
+
+  // The current program (name for the breadcrumb, features for nav gating).
+  const [program, setProgram] = useState<Program | null>(null);
+  useEffect(() => {
+    if (!programId || !orgId) {
+      setProgram(null);
+      return;
+    }
+    listPrograms(orgId)
+      .then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null))
+      .catch(() => setProgram(null));
+  }, [orgId, programId]);
+  useEffect(() => {
+    // Reconcile once the program row arrives: cache its branding, or clear a
+    // stale override if it reverted to the org's.
+    if (!programId || !program) return;
+    const b = (program as Program & { branding?: { accent: string | null; logo: string | null } | null }).branding;
+    if (b && (b.accent || b.logo)) {
+      const org = readBranding(orgId);
+      writeBranding({
+        orgId: programId,
+        accent: b.accent ?? org?.accent ?? null,
+        logo: b.logo ? resolveAssetUrl(b.logo) : org?.logo ?? null,
+      });
+    } else {
+      clearBranding(programId);
+      setProgramBranding(null);
+    }
+  }, [programId, program, orgId]);
+
+  const programName = program?.name ?? programMemberships.find((m) => m.program_id === programId)?.program_name ?? null;
+  // Effective feature switches (already clamped by the org's Nexus envelope
+  // server-side). Until loaded, show everything to avoid a nav flash.
+  const programFeatures: Record<string, boolean> = program?.features ?? {};
+  const featureOn = (k: string) => !program || programFeatures[k] !== false;
+
 
   // A real member (mode "member") whose program membership is NOT administrator/
   // owner is confined to their assigned custom role's areas (§3.5). Program
@@ -366,25 +480,60 @@ export function AppShell() {
       .catch(() => setMyRolePerms({}));
   }, [isPlainMember, programId]);
 
+  // Which program feature gates each program-nav segment. Segments not listed
+  // (overview, offerings, registrations, groups) are always available.
+  const NAV_FEATURE: Record<string, string> = {
+    shells: "appbuilder", community: "community", team: "teams",
+    partners: "partners", learning: "learning", bridge: "bridge",
+  };
+  const navKey = (to: string) => to.split("/").pop() ?? "";
+
+  // Direct URLs to a disabled area bounce to the program overview — toggling a
+  // feature off must actually close the door, not just hide the menu item.
+  const currentSegment = pathname.split("/").filter(Boolean).pop() ?? "";
+  const currentGate = programId ? NAV_FEATURE[currentSegment] : undefined;
+  useEffect(() => {
+    if (!programId || !program || !currentGate) return;
+    if (programFeatures[currentGate] === false) {
+      navigate(`/o/${orgId}/p/${programId}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programId, program, currentGate, pathname]);
+
   let heading: string;
   let items: NavItem[];
   let backLink: ReactNode = null;
 
   if (impersonating && programId) {
     heading = impersonating.roleName;
-    items = confinedProgramNav(orgId, programId, impersonating.perms);
+    items = confinedProgramNav(orgId, programId, impersonating.perms).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (mode === "nexus") {
     heading = "Nexus";
     items = [
       { to: "/orgs", label: "Organizations", icon: Building2 },
+      { to: "/team", label: "Team & Roles", icon: KeyRound },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
+      { to: "/settings", label: "Settings", icon: SettingsIcon },
     ];
+    // A confined operator (custom platform-scope role) sees only granted areas;
+    // the Team tab is full-operator territory.
+    if (user?.role !== "platform_admin") {
+      const perms = user?.nexus_role?.perms ?? {};
+      const NEXUS_NAV_AREAS: Record<string, string | null> = {
+        orgs: "organizations", team: "__admin__", audit: "audit", settings: "settings",
+      };
+      items = items.filter((it) => {
+        const area = NEXUS_NAV_AREAS[navKey(it.to)];
+        if (area === "__admin__") return false;
+        return !area || !!perms[area];
+      });
+    }
   } else if (programId && isPlainMember) {
     heading = myRoleName ?? programMembership?.program_name ?? "Program";
-    items = confinedProgramNav(orgId, programId, myRolePerms ?? {});
+    items = confinedProgramNav(orgId, programId, myRolePerms ?? {}).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (programId) {
     heading = "Program";
-    items = programNav(orgId, programId);
+    items = programNav(orgId, programId).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
     // Members live inside their program; only org-level admins get the org space.
     if (mode === "org") {
       backLink = (
@@ -399,24 +548,26 @@ export function AppShell() {
   } else {
     heading = orgName;
     items = orgNav(orgId);
+    if (isPlainOrgMember) {
+      const perms = orgRolePerms ?? {};
+      items = items.filter((it) => {
+        const area = ORG_NAV_AREAS[navKey(it.to)];
+        return !area || !!perms[area];
+      });
+    }
   }
 
-  // Human breadcrumb: names, never raw ids.
-  const [programName, setProgramName] = useState<string | null>(null);
+  // Confined viewers bounce off areas their role doesn't grant (deep links).
   useEffect(() => {
-    if (!programId || !orgId) {
-      setProgramName(null);
-      return;
+    if (!isPlainOrgMember || orgRolePerms === null || programId) return;
+    const seg = pathname.split("/").filter(Boolean).pop() ?? "";
+    const area = ORG_NAV_AREAS[seg];
+    if (area && !orgRolePerms[area]) {
+      navigate(`/o/${orgId}/dashboard`, { replace: true });
     }
-    const fromMembership = programMemberships.find((m) => m.program_id === programId)?.program_name;
-    if (fromMembership) {
-      setProgramName(fromMembership);
-      return;
-    }
-    listPrograms(orgId)
-      .then((ps) => setProgramName(ps.find((p) => p.id === programId)?.name ?? null))
-      .catch(() => setProgramName(null));
-  }, [orgId, programId, programMemberships]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlainOrgMember, orgRolePerms, pathname, orgId, programId]);
+
 
   const PAGE_LABELS: Record<string, string> = {
     dashboard: "Dashboard", programs: "Programs", settings: "Settings", audit: "Audit",
@@ -434,15 +585,23 @@ export function AppShell() {
   if (pageLabel && crumbs[crumbs.length - 1] !== pageLabel) crumbs.push(pageLabel);
   else if (!pageLabel && programId && last !== programId) crumbs.push("Editor");
 
+  if (!brandingReady) {
+    return (
+      <div className="grid h-screen place-items-center">
+        <Spinner />
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex h-screen text-foreground"
-      style={accentVars(orgBranding.accent, dark)}
+      style={accentVars(displayBranding.accent, dark)}
     >
       <aside className="glass-sidebar flex w-60 shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground">
         <div className="flex items-center gap-2.5 px-5 h-14 border-b border-sidebar-border">
-          {orgBranding.logo ? (
-            <img src={orgBranding.logo} alt="" className="size-7 rounded-md object-cover" />
+          {displayBranding.logo ? (
+            <img src={displayBranding.logo} alt="" className="size-7 rounded-md object-cover" />
           ) : (
             <div className="grid size-7 place-items-center rounded-md bg-sidebar-accent text-sidebar-foreground text-sm font-semibold">
               {mode === "nexus" ? "N" : initials(orgName)}
