@@ -313,7 +313,7 @@ export default async function SessionPage({
       {fixed && (
         <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           Knowledge item saved — this table now plays from the updated rules. Auto-play is
-          paused; use ask ▸ to watch the fix take effect.
+          paused; use step ▸ to watch the fix take effect.
         </p>
       )}
       {fixError && (

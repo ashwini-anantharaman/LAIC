@@ -116,7 +116,7 @@ export default async function GuidePage() {
             <p className="mt-1 text-sm text-neutral-600">
               Opening a board shows <b>▶ start</b> (or <b>▶ resume</b> on a board with history) —
               the AI seats play one decision per beat only after you press it, and <b>❚❚</b>{" "}
-              pauses them again. <b>ask ▸</b> pauses and advances exactly one decision — the
+              pauses them again. <b>step ▸</b> pauses and advances exactly one decision — the
               tool for walking a trace. It never disappears on your turn; when it can&apos;t act
               it disables and tells you why. <b>play to end</b> finishes the whole board at once.
               <b> undo</b> rewinds the last decision and comes back paused, so the AI can&apos;t
@@ -663,7 +663,7 @@ export default async function GuidePage() {
           <li><b>Everything is versioned</b> — see <a href="#versions" className="text-emerald-700 underline-offset-2 hover:underline">Versions &amp; history</a>.</li>
           <li><b>Hand-authoring starts on the Sources tab</b>: sections the automatic reader couldn&apos;t structure queue under &ldquo;Sections that need a person&rdquo; — &ldquo;Write this up&rdquo; opens the editor with the passage alongside and the citation attached, and the card checks itself off once an item cites that passage.</li>
           <li><b>Flag anything at the table.</b> Every decision has a Flag button that files a suggestion into the KB&apos;s queue — with the exact deal, auction, and decision attached, so the reviewer sees precisely what you saw.</li>
-          <li><b>Fix it without leaving the board.</b> Undo the bad decision (the table pauses), open <b>fix at the table</b> from its trace, edit the item in the overlay, save — the board re-pins to the corrected knowledge and <b>ask ▸</b> replays the decision under the new rules.</li>
+          <li><b>Fix it without leaving the board.</b> Undo the bad decision (the table pauses), open <b>fix at the table</b> from its trace, edit the item in the overlay, save — the board re-pins to the corrected knowledge and <b>step ▸</b> replays the decision under the new rules.</li>
           <li><b>Nothing is deleted.</b> A knowledge base is <i>hidden</i> — it and its players and boards disappear from view everywhere, reversibly. A knowledge item is <i>deprecated</i> — it stops compiling and leaves the Master&apos;s default view, and flipping its Status back brings it back whole. A source cited by items can&apos;t be deleted at all — the provenance chain stays intact. The one exception: discarding an augmentation draft really does delete it (<a href="#augment" className="text-emerald-700 underline-offset-2 hover:underline">Augmenting with a source</a>).</li>
         </ul>
         <p className="mt-6 text-xs text-neutral-400">

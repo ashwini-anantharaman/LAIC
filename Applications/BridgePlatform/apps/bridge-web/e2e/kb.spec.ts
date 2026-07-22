@@ -419,7 +419,7 @@ test("fix at the table: undo pauses, overlay edits the item, session re-pins", a
   await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();
 
   // Ask for one decision — play continues under the (re)pinned compile.
-  await page.getByRole("button", { name: "ask ▸" }).click();
+  await page.getByRole("button", { name: "step ▸" }).click();
   await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
 });
 

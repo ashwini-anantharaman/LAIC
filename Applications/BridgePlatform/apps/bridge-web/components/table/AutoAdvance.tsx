@@ -83,11 +83,11 @@ export function AutoAdvance({
         }`}
         title={
           active
-            ? "Pause and ask the AI for one decision"
+            ? "Pause and advance one AI decision"
             : "A human is to act — bid or play from the hand"
         }
       >
-        ask ▸
+        step ▸
       </button>
     </>
   );

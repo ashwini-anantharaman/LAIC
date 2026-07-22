@@ -44,7 +44,7 @@ test("save a play from a live board, then resume it from the library", async ({
   const playName = `E2E resumable play ${Date.now().toString(36)}`;
 
   // Deal a watch-only board (no human seat) via the custom-table builder so
-  // "ask ▸" can step deterministically without ever hitting a human turn.
+  // "step ▸" can step deterministically without ever hitting a human turn.
   await page.goto("/bridge/library/tables/new");
   await page.getByText("Set up a custom table").click();
   const block = page.locator("[data-kb-block]").first();
@@ -56,7 +56,7 @@ test("save a play from a live board, then resume it from the library", async ({
   // Three asked-for decisions (auto-play stays paused), then save as a play —
   // the recording stops at an AI seat, so the resumed board has work left.
   for (let n = 1; n <= 3; n++) {
-    await page.getByRole("button", { name: "ask ▸" }).click();
+    await page.getByRole("button", { name: "step ▸" }).click();
     await expect(page.getByText(`Decisions (${n})`)).toBeVisible({ timeout: 15_000 });
   }
   await page.getByText("save to library ▾").click();
