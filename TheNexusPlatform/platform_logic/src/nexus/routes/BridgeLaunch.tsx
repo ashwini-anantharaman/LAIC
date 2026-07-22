@@ -5,16 +5,16 @@
  * Sign out stays available so nobody is trapped if the handoff fails.
  */
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useParams } from "react-router";
 import { LogOut, Waypoints } from "lucide-react";
 
 import { launchBridgePlatform } from "@/services/api";
 import { Spinner } from "@/nexus/ui/kit";
 import { useSession } from "@/nexus/session";
+import { orgPortalPath } from "@/nexus/branding";
 
 export function BridgeLaunch() {
   const { orgId = "", programId = "" } = useParams();
-  const navigate = useNavigate();
   const { logout } = useSession();
   const [error, setError] = useState<string | null>(null);
 
@@ -55,8 +55,9 @@ export function BridgeLaunch() {
             <button
               type="button"
               onClick={() => {
+                const dest = orgPortalPath(orgId) ?? "/login";
                 logout();
-                navigate("/login");
+                window.location.assign(dest);
               }}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             >

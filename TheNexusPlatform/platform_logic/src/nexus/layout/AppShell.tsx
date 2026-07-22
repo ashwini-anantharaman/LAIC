@@ -47,7 +47,7 @@ import { useSession } from "@/nexus/session";
 import { Spinner } from "@/nexus/ui/kit";
 import type { Program } from "@/types/platform";
 import { accentForMode } from "@/nexus/theme/accent";
-import { clearBranding, onBranding, readBranding, writeBranding } from "@/nexus/branding";
+import { clearBranding, onBranding, orgPortalPath, readBranding, writeBranding } from "@/nexus/branding";
 import { useDocumentChrome } from "@/nexus/useDocumentChrome";
 
 interface NavItem {
@@ -304,8 +304,9 @@ function DevPersonaSwitcher({ orgId, programId }: { orgId: string; programId?: s
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => {
+            const dest = orgPortalPath(orgId) ?? "/login";
             logout();
-            navigate("/login");
+            window.location.assign(dest);
           }}
         >
           Sign out
@@ -668,8 +669,11 @@ export function AppShell() {
           <button
             type="button"
             onClick={() => {
+              const dest = mode === "nexus" ? "/login" : orgPortalPath(orgId) ?? "/login";
               logout();
-              navigate("/login");
+              // Hard nav: clearing the session makes RequireAuth want to bounce
+              // to /login, which would override an in-app navigate to the org gate.
+              window.location.assign(dest);
             }}
             className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
             title="Sign out"

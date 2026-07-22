@@ -60,3 +60,15 @@ export function onBranding(cb: (b: CachedBranding) => void): () => void {
 export function clearBranding(idOrSlug: string | null | undefined): void {
   if (idOrSlug) localStorage.removeItem(key(idOrSlug));
 }
+
+/**
+ * The org's own sign-in URL (`/@/slug`), or null if we don't know the slug.
+ * Used so signing out of an org returns to THAT org's gate, not the Nexus one.
+ * The slug is cached whenever the org space loads (portal login or the shell's
+ * branding fetch), so by the time a signed-in person can click "Sign out" it's
+ * present; callers fall back to the Nexus login when it isn't.
+ */
+export function orgPortalPath(orgId: string | null | undefined): string | null {
+  const slug = orgId ? readBranding(orgId)?.slug : null;
+  return slug ? `/@/${slug}` : null;
+}

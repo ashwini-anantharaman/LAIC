@@ -7,22 +7,31 @@
  * set on the "learning-platform" app and this page opens it with the token.
  */
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { ChevronLeft, GraduationCap, LogOut } from "lucide-react";
 
 import { exchangeLaunchToken, launchLearningPlatform, type LpLaunch } from "@/services/api";
 import { Pill, Spinner } from "@/nexus/ui/kit";
 import { useSession } from "@/nexus/session";
+import { useProgramAccess } from "@/nexus/access";
+import { orgPortalPath } from "@/nexus/branding";
 
 type Handshake = "pending" | "verified" | "failed";
 
 export function LearningLaunch() {
   const { orgId = "", programId = "" } = useParams();
-  const navigate = useNavigate();
   const { logout } = useSession();
+  const access = useProgramAccess(programId);
   const [launch, setLaunch] = useState<LpLaunch | null>(null);
   const [handshake, setHandshake] = useState<Handshake>("pending");
   const [error, setError] = useState<string | null>(null);
+
+  // A "Back" out of the platform only makes sense if the person has somewhere
+  // to go back TO — i.e. the program workspace. A member confined to just this
+  // platform has no workspace (they'd only be bounced here again), so they get
+  // Sign out only.
+  const otherAreas = Object.keys(access.perms).filter((k) => k !== "learning");
+  const canGoBack = !access.loading && (access.isAdmin || access.impersonating || otherAreas.length > 0);
 
   useEffect(() => {
     let live = true;
@@ -81,17 +90,20 @@ export function LearningLaunch() {
                 : "verifying…"}
           </Pill>
         ) : null}
-        <Link
-          to={`/o/${orgId}/p/${programId}`}
-          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-        >
-          <ChevronLeft className="size-3.5" /> Back to Nexus
-        </Link>
+        {canGoBack ? (
+          <Link
+            to={`/o/${orgId}/p/${programId}`}
+            className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          >
+            <ChevronLeft className="size-3.5" /> Back to {launch?.context.program_name ?? "program"}
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={() => {
+            const dest = orgPortalPath(orgId) ?? "/login";
             logout();
-            navigate("/login");
+            window.location.assign(dest);
           }}
           className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         >
