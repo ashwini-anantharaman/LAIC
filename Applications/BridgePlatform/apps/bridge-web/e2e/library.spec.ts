@@ -73,7 +73,7 @@ test("save a play from a live board, then resume it from the library", async ({
 
   // The auction table carries the recorded calls…
   await expect(
-    page.getByRole("cell", { name: /^(Pass|Dbl|Rdbl|[1-7](NT|[♠♥♦♣]))$/ }).first(),
+    page.getByRole("cell", { name: /^(P|X|XX|[1-7](NT|[♠♥♦♣]))$/ }).first(),
   ).toBeVisible();
   // …and the board sits paused mid-play behind ▶ resume.
   await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();

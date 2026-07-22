@@ -98,9 +98,9 @@ export function isContractBid(call: Call): boolean {
 }
 
 export function callLabel(call: Call): string {
-  if (call === "P") return "Pass";
-  if (call === "X") return "Dbl";
-  if (call === "XX") return "Rdbl";
+  if (call === "P") return "P";
+  if (call === "X") return "X";
+  if (call === "XX") return "XX";
   const level = call[0];
   const strain = call[1];
   return strain === "N" ? `${level}NT` : `${level}${GLYPH[strain!]}`;
