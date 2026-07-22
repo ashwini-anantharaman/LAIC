@@ -438,6 +438,12 @@ export async function getProgramRoleForEmail(programId: string, email: string): 
 // database.
 
 export async function listProgramTeamSummary(orgId: string, programId: string): Promise<Row> {
+  // Fetch the team roster FIRST, in its own transaction. `listProgramMembers`
+  // opens its own privileged transaction, so it must never run nested inside
+  // another one: with a single-connection pool (DB_POOL_MAX=1 in prod) the
+  // inner transaction would wait forever for the connection the outer one
+  // holds — a self-deadlock that hangs the request and starves the pool.
+  const team = await listProgramMembers(orgId, programId);
   return asPrivileged(async (tx) => {
     // Group counts straight from the assignment table.
     const counts = await tx.execute(sql`
@@ -449,7 +455,6 @@ export async function listProgramTeamSummary(orgId: string, programId: string): 
     }));
     // Team core: anti-join out the platform-role holders (unless they're
     // admins or hold a custom program role).
-    const team = await listProgramMembers(orgId, programId);
     const platformEmails = new Set<string>();
     const assigned = await tx
       .select({ email: platformRoleAssignments.email })
