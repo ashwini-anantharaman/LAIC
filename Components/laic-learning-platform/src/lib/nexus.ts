@@ -20,6 +20,12 @@ const TOKEN_KEY = "laic_nexus_token";
 const PROGRAM_KEY = "laic_nexus_program";
 const RETURN_KEY = "laic_nexus_return";
 
+export interface LearningRole {
+  id: string;
+  name: string;
+  perms: Record<string, 'view' | 'edit'>;
+}
+
 /** What /learning/context returns (the fields we use). */
 export interface LearningContext {
   nexusUserId: string;
@@ -31,6 +37,9 @@ export interface LearningContext {
   displayName?: string | null;
   program_name?: string | null;
   role_name?: string | null;
+  is_admin?: boolean;
+  /** The person's assigned custom Learning role (null for admins / unassigned). */
+  learning_role?: { role_id: string; role_name: string | null; perms: Record<string, 'view' | 'edit'> } | null;
 }
 
 export function getToken(): string | null {
@@ -141,4 +150,57 @@ export function backToNexus(): void {
 }
 export function hasReturnUrl(): boolean {
   return !!getReturnUrl();
+}
+
+// ── Custom Learning roles (People tab) ──────────────────────────────────────
+export interface RosterPerson {
+  email: string;
+  display_name: string | null;
+  status: string;
+  role_id: string | null;
+  role_name: string | null;
+  is_admin: boolean;
+  membership_id: string | null;
+  invitation_id: string | null;
+}
+
+function pid(): string {
+  return getProgramId() ?? '';
+}
+
+export async function listLearningRoles(): Promise<LearningRole[]> {
+  const res = await nexusFetch(`/api/platform/learning/roles?program_id=${encodeURIComponent(pid())}`);
+  if (!res.ok) return [];
+  return (await res.json()) as LearningRole[];
+}
+export async function createLearningRole(name: string, perms: Record<string, 'view' | 'edit'>): Promise<LearningRole> {
+  const res = await nexusFetch('/api/platform/learning/roles', {
+    method: 'POST',
+    body: JSON.stringify({ program_id: pid(), name, perms }),
+  });
+  if (!res.ok) throw new Error(`Create role failed (${res.status})`);
+  return (await res.json()) as LearningRole;
+}
+export async function updateLearningRole(id: string, patch: { name?: string; perms?: Record<string, 'view' | 'edit'> }): Promise<void> {
+  const res = await nexusFetch(`/api/platform/learning/roles/${id}?program_id=${encodeURIComponent(pid())}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`Update role failed (${res.status})`);
+}
+export async function deleteLearningRole(id: string): Promise<void> {
+  const res = await nexusFetch(`/api/platform/learning/roles/${id}?program_id=${encodeURIComponent(pid())}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Delete role failed (${res.status})`);
+}
+export async function listLearningRoster(): Promise<RosterPerson[]> {
+  const res = await nexusFetch(`/api/platform/learning/roster?program_id=${encodeURIComponent(pid())}`);
+  if (!res.ok) return [];
+  return (await res.json()) as RosterPerson[];
+}
+export async function assignLearningRole(email: string, roleId: string | null): Promise<void> {
+  const res = await nexusFetch('/api/platform/learning/assign', {
+    method: 'PUT',
+    body: JSON.stringify({ program_id: pid(), email, role_id: roleId }),
+  });
+  if (!res.ok) throw new Error(`Assign failed (${res.status})`);
 }

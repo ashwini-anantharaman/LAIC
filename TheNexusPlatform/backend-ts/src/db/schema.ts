@@ -373,6 +373,26 @@ export const platformRoleAssignments = pgTable("platform_role_assignments", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Custom Learning-Platform roles (name + per-area view/edit perms) and their
+ * email-keyed assignments — the learning app's own People-tab role system. */
+export const learningRoles = pgTable("learning_roles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  name: text("name").notNull(),
+  perms: jsonb("perms").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const learningRoleAssignments = pgTable("learning_role_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  email: text("email").notNull(),
+  roleId: uuid("role_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const groupMemberships = pgTable("group_memberships", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull(),

@@ -18,6 +18,7 @@ import {
   organizations, offerings, organizationRelationships, programOrganizationAffiliations,
   programAffiliations, groups, groupMemberships, invitations, registrations, participants, profiles, programs,
   programRoles, programRoleAssignments, platformRoleAssignments, entitlements, orgMemberships, registeredApps, appConfigVersions,
+  learningRoles, learningRoleAssignments,
 } from "./schema";
 
 type Row = Record<string, unknown>;
@@ -1420,5 +1421,104 @@ export async function upsertLearningObject(orgId: string, r: Row): Promise<void>
         tags = excluded.tags, source_ids = excluded.source_ids,
         pipeline_draft = excluded.pipeline_draft, updated_at = now()
       where learning_objects.organization_id = ${orgId}`);
+  });
+}
+
+// ── Learning Platform custom roles (its own People tab) ─────────────────────
+// Name + per-area view/edit perms; email-keyed assignments. Same shape/flow as
+// program roles, but a separate table so the learning app owns its own areas.
+const learningRoleRow = (r: typeof learningRoles.$inferSelect): Row => ({
+  id: r.id, organization_id: r.organizationId, program_id: r.programId,
+  name: r.name, perms: r.perms, created_at: r.createdAt,
+});
+
+export async function listLearningRoles(orgId: string, programId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) =>
+    (await tx.select().from(learningRoles)
+      .where(and(eq(learningRoles.organizationId, orgId), eq(learningRoles.programId, programId))))
+      .map(learningRoleRow),
+  );
+}
+
+export async function createLearningRole(orgId: string, programId: string, name: string, perms: Row): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const [r] = await tx.insert(learningRoles)
+      .values({ organizationId: orgId, programId, name, perms }).returning();
+    return learningRoleRow(r);
+  });
+}
+
+export async function updateLearningRole(id: string, patch: { name?: string; perms?: Row }): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const set: Row = {};
+    if (patch.name != null) set.name = patch.name;
+    if (patch.perms != null) set.perms = patch.perms;
+    if (Object.keys(set).length === 0) {
+      const r = await tx.select().from(learningRoles).where(eq(learningRoles.id, id)).limit(1);
+      return r.length ? learningRoleRow(r[0]) : null;
+    }
+    const [r] = await tx.update(learningRoles).set(set).where(eq(learningRoles.id, id)).returning();
+    return r ? learningRoleRow(r) : null;
+  });
+}
+
+export async function deleteLearningRole(id: string): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx.delete(learningRoleAssignments).where(eq(learningRoleAssignments.roleId, id));
+    await tx.delete(learningRoles).where(eq(learningRoles.id, id));
+  });
+}
+
+/** Assign (or clear, roleId null) a person's learning role, email-keyed. */
+export async function setLearningRoleAssignment(
+  orgId: string, programId: string, email: string, roleId: string | null,
+): Promise<void> {
+  const key = email.trim().toLowerCase();
+  await asPrivileged(async (tx) => {
+    await tx.delete(learningRoleAssignments)
+      .where(and(eq(learningRoleAssignments.programId, programId), sql`lower(${learningRoleAssignments.email}) = ${key}`));
+    if (roleId) {
+      await tx.insert(learningRoleAssignments)
+        .values({ organizationId: orgId, programId, email: key, roleId });
+    }
+  });
+}
+
+/** The person's learning role (id, name, perms) for this program, or null. */
+export async function getLearningRoleForEmail(programId: string, email: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select({ roleId: learningRoleAssignments.roleId, name: learningRoles.name, perms: learningRoles.perms })
+      .from(learningRoleAssignments)
+      .leftJoin(learningRoles, eq(learningRoles.id, learningRoleAssignments.roleId))
+      .where(and(eq(learningRoleAssignments.programId, programId), sql`lower(${learningRoleAssignments.email}) = ${email.trim().toLowerCase()}`))
+      .limit(1);
+    if (!r.length) return null;
+    return { role_id: r[0].roleId, role_name: r[0].name ?? null, perms: r[0].perms ?? {} };
+  });
+}
+
+/** Program people with their assigned LEARNING role (for the People tab). */
+export async function listLearningPeople(orgId: string, programId: string): Promise<Row[]> {
+  const team = await listProgramMembers(orgId, programId);
+  return asPrivileged(async (tx) => {
+    const assigns = await tx
+      .select({ email: learningRoleAssignments.email, roleId: learningRoleAssignments.roleId, name: learningRoles.name })
+      .from(learningRoleAssignments)
+      .leftJoin(learningRoles, eq(learningRoles.id, learningRoleAssignments.roleId))
+      .where(eq(learningRoleAssignments.programId, programId));
+    const byEmail = new Map(assigns.map((a) => [(a.email ?? "").toLowerCase(), a]));
+    return team.map((m: Row) => {
+      const email = ((m.email as string | null) ?? "").toLowerCase();
+      const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
+      const a = byEmail.get(email);
+      return {
+        email: m.email, display_name: m.display_name, status: m.status,
+        role_id: isAdmin ? null : a?.roleId ?? null,
+        role_name: isAdmin ? null : a?.name ?? null,
+        is_admin: isAdmin,
+        membership_id: m.membership_id ?? null, invitation_id: m.invitation_id ?? null,
+      };
+    });
   });
 }

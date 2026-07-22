@@ -1,6 +1,6 @@
 /** Platform layer API routes for orgs, challenges, permissions, and join codes. */
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 
 import {
@@ -693,6 +693,11 @@ platformRouter.get("/learning/context", async (c) => {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   const mapped = LEARNING_ROLE_MAP[access.level];
+  // A person's custom Learning role (if assigned) carries per-area view/edit
+  // perms that gate the app's nav/screens. Admins get no custom role (they see
+  // everything); everyone else is confined to their role's granted areas.
+  const isAdmin = access.level === "admin";
+  const customRole = !isAdmin && user.email ? await graph.getLearningRoleForEmail(access.programId, user.email) : null;
   return c.json({
     nexusUserId: access.profileId,
     laicOrgId: access.orgId,
@@ -704,6 +709,8 @@ platformRouter.get("/learning/context", async (c) => {
     displayName: await _platformDisplayName(access.profileId, user),
     program_name: access.programName,
     role_name: access.roleName,
+    is_admin: isAdmin,
+    learning_role: customRole, // { role_id, role_name, perms } or null
   });
 });
 
@@ -728,6 +735,61 @@ platformRouter.put("/learning/objects", async (c) => {
   }
   if (!body.id || !body.type) throw new HttpError(422, "id and type are required");
   await graph.upsertLearningObject(access.orgId, body);
+  return c.json({ ok: true });
+});
+
+// ── Learning Platform custom roles (the learning app's own People tab) ──────
+const _learningPerms = z.record(z.string(), z.enum(["view", "edit"]));
+const learningRoleCreateSchema = z.object({ program_id: z.string(), name: z.string().min(1), perms: _learningPerms.default({}) });
+const learningRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _learningPerms.optional() });
+const learningAssignSchema = z.object({ program_id: z.string(), email: z.string().email(), role_id: z.string().nullable() });
+
+/** The caller must be a learning admin of the program. Returns the resolved access. */
+async function _learningAdmin(c: Context, programId: string) {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", programId);
+  if (access.level !== "admin") throw new HttpError(403, "Learning admin access required");
+  return access;
+}
+
+platformRouter.get("/learning/roles", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  const access = await _learningAdmin(c, pid);
+  return c.json(await graph.listLearningRoles(access.orgId, access.programId));
+});
+
+platformRouter.post("/learning/roles", async (c) => {
+  const req = parseBody(learningRoleCreateSchema, await c.req.json());
+  const access = await _learningAdmin(c, req.program_id);
+  return c.json(await graph.createLearningRole(access.orgId, access.programId, req.name, req.perms));
+});
+
+platformRouter.patch("/learning/roles/:id", async (c) => {
+  const body = parseBody(learningRoleUpdateSchema, await c.req.json());
+  const pid = c.req.query("program_id") ?? "";
+  await _learningAdmin(c, pid);
+  const row = await graph.updateLearningRole(c.req.param("id"), { name: body.name, perms: body.perms });
+  if (!row) throw new HttpError(404, "Role not found");
+  return c.json(row);
+});
+
+platformRouter.delete("/learning/roles/:id", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _learningAdmin(c, pid);
+  await graph.deleteLearningRole(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+platformRouter.get("/learning/roster", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  const access = await _learningAdmin(c, pid);
+  return c.json(await graph.listLearningPeople(access.orgId, access.programId));
+});
+
+platformRouter.put("/learning/assign", async (c) => {
+  const req = parseBody(learningAssignSchema, await c.req.json());
+  const access = await _learningAdmin(c, req.program_id);
+  await graph.setLearningRoleAssignment(access.orgId, access.programId, req.email, req.role_id);
   return c.json({ ok: true });
 });
 

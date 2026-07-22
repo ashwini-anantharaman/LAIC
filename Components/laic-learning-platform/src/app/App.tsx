@@ -21,6 +21,7 @@ import {
   contextToRole,
   signOutToNexus,
 } from '../lib/nexus';
+import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
 
 export interface AppState {
   role: Role;
@@ -30,6 +31,9 @@ export interface AppState {
   isLoggedIn: boolean;
   /** True when the session came from a Nexus launch (vs the demo picker). */
   nexusMode: boolean;
+  /** Custom-role area perms (null = admin/none); admins see everything. */
+  learningPerms: Record<string, AreaLevel> | null;
+  learningIsAdmin: boolean;
   readerObjectId: string | null;
   creatorObjectType: string;
   createdObjects: LearningObject[];
@@ -78,6 +82,8 @@ export default function App() {
   /** Only persist to localStorage after the library for this user has been loaded. */
   const [libraryReady, setLibraryReady] = useState(false);
   const [nexusMode, setNexusMode] = useState(false);
+  const [learningPerms, setLearningPerms] = useState<Record<string, AreaLevel> | null>(null);
+  const [learningIsAdmin, setLearningIsAdmin] = useState(false);
   /** Gate first paint until we know whether this is a Nexus launch. */
   const [booting, setBooting] = useState(true);
 
@@ -150,10 +156,17 @@ export default function App() {
       if (ctx) {
         const r = contextToRole(ctx);
         const uid = ctx.nexusUserId || 'nexus';
+        const isAdmin = ctx.is_admin ?? r === 'administrator';
+        const perms = ctx.learning_role?.perms ?? null;
         setNexusMode(true);
+        setLearningIsAdmin(isAdmin);
+        setLearningPerms(perms);
         setActiveUserId(uid);
         setRoleState(r);
-        setCurrentScreen(DEFAULT_SCREEN[r]);
+        // Land on the first screen the person's granted areas expose (admins:
+        // Program Overview), not the persona default.
+        const nav = navItemsForPerms(perms, isAdmin);
+        setCurrentScreen(isAdmin ? 'admin-overview' : nav[0]?.id ?? DEFAULT_SCREEN[r]);
         setIsLoggedIn(true);
         void hydrateForUser(uid);
         setBooting(false);
@@ -307,6 +320,7 @@ export default function App() {
 
   const ctx: AppState = {
     role, program, currentScreen, activeUserId, isLoggedIn, nexusMode,
+    learningPerms, learningIsAdmin,
     readerObjectId, creatorObjectType, createdObjects, editingObjectId,
     navigate, login, logout,
     setRole, setProgram, openReader, closeReader, setCreatorObjectType, addObject,
