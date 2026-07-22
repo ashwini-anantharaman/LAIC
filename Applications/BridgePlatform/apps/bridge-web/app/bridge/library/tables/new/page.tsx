@@ -21,17 +21,26 @@ export default async function NewTablePage() {
   const store = kbStore();
   const kbs = (await store.listKbs()).filter((k) => !k.archived);
 
-  const arenas = [];
-  for (const kb of kbs) {
-    const compiled = await kbService().liveCompile(kb.kbId);
-    if (!compiled) continue;
-    const players = await store.listPlayersForKb(kb.kbId);
-    const houseByName = new Map(
-      players.filter((p) => p.name.startsWith(HOUSE_PREFIX)).map((p) => [p.name, p]),
-    );
-    const valid = players.filter((p) => playerIsValid(validatePlayerStatic(compiled, p)));
-    arenas.push({ kb, compiled, sets: arenaSets(compiled), players, valid, houseByName });
-  }
+  // All KBs fetch in parallel (compile + roster per KB, skipping KBs that
+  // never compiled without touching their artifacts).
+  const arenas = (
+    await Promise.all(
+      kbs
+        .filter((kb) => kb.liveCompileId)
+        .map(async (kb) => {
+          const [compiled, players] = await Promise.all([
+            kbService().liveCompile(kb.kbId),
+            store.listPlayersForKb(kb.kbId),
+          ]);
+          if (!compiled) return null;
+          const houseByName = new Map(
+            players.filter((p) => p.name.startsWith(HOUSE_PREFIX)).map((p) => [p.name, p]),
+          );
+          const valid = players.filter((p) => playerIsValid(validatePlayerStatic(compiled, p)));
+          return { kb, compiled, sets: arenaSets(compiled), players, valid, houseByName };
+        }),
+    )
+  ).filter((a) => a !== null);
 
   return (
     <div className="mx-auto max-w-3xl">

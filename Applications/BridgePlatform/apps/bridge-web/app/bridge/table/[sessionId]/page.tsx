@@ -95,32 +95,31 @@ export default async function SessionPage({
   // Fix-at-the-table overlay: ?fix=<itemId> opens the real item editor over
   // the board; saving re-pins this session to the fresh compile and returns
   // here paused, so the corrected rule can be stepped through immediately.
-  const fixItem = fix && !learnerMode ? await kbStore().getItem(fix) : null;
   const overlayReturn = `/bridge/table/${sessionId}?paused=${Date.now()}`;
   const logicEvents = record.events.filter(isLogicEvent);
   const aiToAct = !actingIsHuman && state.phase !== "complete";
 
-  // The decisions rail renders in English off the PINNED compile. Old
-  // sessions whose compile went missing must still open — DecisionEntry
-  // falls back to id-free phrasing without an index.
-  let compiled;
-  try {
-    compiled = await sessionService().compiledFor(record);
-  } catch {
-    compiled = undefined;
-  }
+  // One parallel round: the fix-overlay item, the PINNED compile for the
+  // English decisions rail (cache-hot — view() above already fetched it;
+  // missing-compile sessions still open, DecisionEntry falls back to
+  // id-free phrasing), and the seat menus' swap roster.
+  const [fixItem, compiled, rosterRaw] = await Promise.all([
+    fix && !learnerMode ? kbStore().getItem(fix) : null,
+    sessionService()
+      .compiledFor(record)
+      .catch(() => undefined),
+    learnerMode ? [] : kbStore().listPlayersForKb(record.kbId),
+  ]);
   const ruleIndex = compiled ? buildRuleIndex(compiled) : undefined;
 
-  // The seat menus' swap roster (valid players first, then drafts).
-  const roster = learnerMode
-    ? []
-    : (await kbStore().listPlayersForKb(record.kbId)).sort((a, b) =>
-        a.validationStatus === b.validationStatus
-          ? a.name.localeCompare(b.name)
-          : a.validationStatus === "valid"
-            ? -1
-            : 1,
-      );
+  // Valid players first, then drafts.
+  const roster = [...rosterRaw].sort((a, b) =>
+    a.validationStatus === b.validationStatus
+      ? a.name.localeCompare(b.name)
+      : a.validationStatus === "valid"
+        ? -1
+        : 1,
+  );
 
   const seatLabel = (seat: Seat) => {
     const config = record.seats[seat];

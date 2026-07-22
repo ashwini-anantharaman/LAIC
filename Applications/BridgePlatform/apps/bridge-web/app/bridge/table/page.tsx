@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { pickDefaultSet } from "@/lib/arena";
-import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
+import { ensureSeeds, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore, sessionService } from "@/lib/sessions";
 import { resumePlayEntryAction } from "../library/actions";
@@ -19,13 +18,23 @@ export default async function PlayPage() {
   if (!context) redirect("/welcome");
   await ensureSeeds();
 
+  // One parallel round-trip for everything the landing needs — no compiled
+  // artifacts are downloaded here (quickPlayAction stays the authority on
+  // what actually deals).
+  const [kbs, recent, plays] = await Promise.all([
+    kbStore().listKbs(),
+    sessionService().listRecent(),
+    libraryStore()
+      .listEntries("play")
+      .then((e) => e.slice(0, 8))
+      // Library storage not migrated yet (0015) — the dropdown just hides.
+      .catch(() => [] as Awaited<ReturnType<ReturnType<typeof libraryStore>["listEntries"]>>),
+  ]);
+
   // Hidden KBs are hidden here too: their boards neither resume nor deal.
-  const store = kbStore();
-  const kbs = await store.listKbs();
   const archived = new Set(kbs.filter((k) => k.archived).map((k) => k.kbId));
 
   // Unfinished boards this player started become the resume affordance.
-  const recent = await sessionService().listRecent();
   const actives = recent
     .filter(
       (s) =>
@@ -36,23 +45,9 @@ export default async function PlayPage() {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 8);
 
-  // Saved plays from the library resume onto a fresh table.
-  let plays: Awaited<ReturnType<ReturnType<typeof libraryStore>["listEntries"]>> = [];
-  try {
-    plays = (await libraryStore().listEntries("play")).slice(0, 8);
-  } catch {
-    // Library storage not migrated yet (0015) — the dropdown just hides.
-  }
-
-  // Anything to deal at all? (Same walk Quickplay makes, minus the session.)
-  let dealable = false;
-  for (const kb of kbs.filter((k) => !k.archived)) {
-    const compiled = await kbService().liveCompile(kb.kbId);
-    if (compiled && pickDefaultSet(compiled)) {
-      dealable = true;
-      break;
-    }
-  }
+  // Anything to deal at all? A live compile on any visible KB is the cheap
+  // proxy (the KB record carries the pointer — no artifact fetch needed).
+  const dealable = kbs.some((k) => !k.archived && k.liveCompileId);
 
   const resumable = actives.length > 0 || plays.length > 0;
   const single = actives.length === 1 ? actives[0] : undefined;
