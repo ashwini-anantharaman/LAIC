@@ -6,7 +6,11 @@ import { navForContext } from "@/lib/nav";
 import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
 
 /** Hidden on the fellows-testing deployment. */
-const DEMO_HIDDEN_NAV = new Set(["/bridge/home", "/bridge/admin/audit"]);
+const DEMO_HIDDEN_NAV = new Set([
+  "/bridge/home",
+  "/bridge/admin/audit",
+  "/bridge/teams",
+]);
 
 /**
  * Bridge app shell: all bridge routes live under /bridge/* so the app slots

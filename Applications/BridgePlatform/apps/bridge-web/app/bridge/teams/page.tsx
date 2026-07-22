@@ -2,7 +2,7 @@ import { canAccessAdminArea, roleLabel } from "@bridge/nexus-client";
 import type { BridgeRole } from "@laic/learner-contracts";
 import { redirect } from "next/navigation";
 import { NAV_ITEMS } from "@/lib/nav";
-import { getBridgeContext } from "@/lib/nexus";
+import { getBridgeContext, isFellowDemo } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
 
 /** Every Bridge role, in rank order — columns of the visibility table. */
@@ -30,6 +30,8 @@ const MOCK_PERMISSIONS = [
 export default async function TeamsPage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  // Hidden on the fellows-testing deployment.
+  if (await isFellowDemo()) redirect("/bridge/table");
   if (!canAccessAdminArea(context)) redirect("/bridge/home");
   const org = await profileService().getOrgProfile(context);
 
