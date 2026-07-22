@@ -28,7 +28,7 @@ import { sideOf } from "../state";
 import type { AsyncDecider } from "../game";
 import type { Decision, MatchedRule } from "../decision";
 import { analyzeSeat, matchContext, type SeatAuctionFacts } from "./auctionContext";
-import { evalCondition, type ConditionEnv } from "./handConditions";
+import { evalCondition, explainFailures, type ConditionEnv } from "./handConditions";
 import { realizeAuctionAction, realizeLead, realizePlayBehavior } from "./actions";
 import { mulberry32, seedFrom } from "./rng";
 
@@ -172,6 +172,7 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
             matched: false,
             settingsConsulted: cited(compiled, newKeys, surface.values),
             reason: "hand conditions not met",
+            failedChecks: explainFailures(rule.conditions, hand, env),
           });
           continue;
         }
@@ -327,7 +328,13 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
           if (spec.side === "defense" && declarerSide) continue;
         }
         if (spec.conditions && !evalCondition(spec.conditions, hand, env)) {
-          trace.push({ ruleId: rule.ruleId, matched: false, settingsConsulted: [], reason: "conditions not met" });
+          trace.push({
+            ruleId: rule.ruleId,
+            matched: false,
+            settingsConsulted: [],
+            reason: "conditions not met",
+            failedChecks: explainFailures(spec.conditions, hand, env),
+          });
           continue;
         }
         const card = realizePlayBehavior(spec.behavior, state, seat);

@@ -19,9 +19,11 @@ import { PlayingCard } from "@/components/table/PlayingCard";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
+import { buildRuleIndex } from "@/components/table/decisionText";
 import {
+  newDealAction,
   playToEndAction,
-  quickPlayAction,
+  rewindAction,
   saveToLibraryAction,
   swapSeatAction,
   undoAction,
@@ -92,6 +94,17 @@ export default async function SessionPage({
   const overlayReturn = `/bridge/table/${sessionId}?paused=${Date.now()}`;
   const logicEvents = record.events.filter(isLogicEvent);
   const aiToAct = !actingIsHuman && state.phase !== "complete";
+
+  // The decisions rail renders in English off the PINNED compile. Old
+  // sessions whose compile went missing must still open — DecisionEntry
+  // falls back to id-free phrasing without an index.
+  let compiled;
+  try {
+    compiled = await sessionService().compiledFor(record);
+  } catch {
+    compiled = undefined;
+  }
+  const ruleIndex = compiled ? buildRuleIndex(compiled) : undefined;
 
   // The seat menus' swap roster (valid players first, then drafts).
   const roster = learnerMode
@@ -300,7 +313,7 @@ export default async function SessionPage({
       {fixed && (
         <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           Knowledge item saved — this table now plays from the updated rules. Auto-play is
-          paused; use step ▸ to watch the fix take effect.
+          paused; use ask ▸ to watch the fix take effect.
         </p>
       )}
       {fixError && (
@@ -319,6 +332,7 @@ export default async function SessionPage({
           sessionId={sessionId}
           active={aiToAct}
           seq={record.events.length}
+          complete={state.phase === "complete"}
         />
         {!learnerMode && (
           <Link
@@ -337,27 +351,39 @@ export default async function SessionPage({
             <summary className="cursor-pointer list-none rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400">
               save to library ▾
             </summary>
-            <div className="absolute z-10 mt-1 flex w-44 flex-col gap-1 rounded-lg border border-neutral-200 bg-white p-2 shadow-md">
-              {(
-                [
-                  ["deal", "Deal (cards only)"],
-                  ["board", "Board (+dealer/vul)"],
-                  ["play", "Play (calls + cards)"],
-                  ["table", "Table lineup"],
-                ] as const
-              ).map(([kind, label]) => (
-                <form key={kind} action={saveToLibraryAction}>
-                  <input type="hidden" name="sessionId" value={sessionId} />
-                  <input type="hidden" name="kind" value={kind} />
-                  <button
-                    type="submit"
-                    className="w-full rounded px-2 py-1 text-left hover:bg-emerald-50"
-                  >
-                    {label}
-                  </button>
-                </form>
-              ))}
-            </div>
+            <form
+              action={saveToLibraryAction}
+              className="absolute z-10 mt-1 flex w-64 flex-col gap-1.5 rounded-lg border border-neutral-200 bg-white p-2 shadow-md"
+            >
+              <input type="hidden" name="sessionId" value={sessionId} />
+              <select
+                name="kind"
+                defaultValue="board"
+                className="rounded border border-neutral-300 px-1.5 py-1"
+              >
+                <option value="deal">Deal (cards only)</option>
+                <option value="board">Board (+dealer/vul)</option>
+                <option value="play">Play (calls + cards)</option>
+                <option value="table">Table lineup</option>
+              </select>
+              <input
+                name="name"
+                placeholder={record.board.name}
+                className="rounded border border-neutral-300 px-1.5 py-1"
+              />
+              <textarea
+                name="notes"
+                rows={2}
+                placeholder="Notes (optional)"
+                className="rounded border border-neutral-300 px-1.5 py-1"
+              />
+              <button
+                type="submit"
+                className="rounded bg-emerald-700 px-2 py-1 font-medium text-white hover:bg-emerald-800"
+              >
+                Save
+              </button>
+            </form>
           </details>
         )}
         {!learnerMode && aiToAct && (
@@ -380,14 +406,26 @@ export default async function SessionPage({
             undo
           </button>
         </form>
+        <form action={rewindAction}>
+          <input type="hidden" name="sessionId" value={sessionId} />
+          <button
+            type="submit"
+            disabled={record.events.length === 0}
+            className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 enabled:hover:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Rewind this board to the deal"
+          >
+            go to beginning
+          </button>
+        </form>
         {!learnerMode && (
-          <form action={quickPlayAction}>
-            <input type="hidden" name="kbId" value={record.kbId} />
+          <form action={newDealAction}>
+            <input type="hidden" name="sessionId" value={sessionId} />
             <button
               type="submit"
               className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
+              title="Fresh cards, same table"
             >
-              new board
+              new deal
             </button>
           </form>
         )}
@@ -398,14 +436,6 @@ export default async function SessionPage({
             title="Change any cards, then deal the edited board to this table"
           >
             edit deal
-          </Link>
-        )}
-        {!learnerMode && (
-          <Link
-            href="/bridge/table/choose"
-            className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
-          >
-            choose a table
           </Link>
         )}
         {isFellow && (
@@ -607,6 +637,8 @@ export default async function SessionPage({
                   sessionId={sessionId}
                   kbId={record.kbId}
                   fixBase={`/bridge/table/${sessionId}`}
+                  rules={ruleIndex}
+                  defaults={compiled?.defaults}
                 />
               ))}
               {logicEvents.length === 0 && (

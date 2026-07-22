@@ -4,17 +4,27 @@ import { notFound, redirect } from "next/navigation";
 import { HandDiagram } from "@/components/library/HandDiagram";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";
-import { deleteEntryAction, playEntryAction, startTableEntryAction } from "../actions";
+import {
+  deleteEntryAction,
+  playEntryAction,
+  resumePlayEntryAction,
+  startTableEntryAction,
+} from "../actions";
 
 const GLYPH: Record<Suit, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const red = (s: Suit) => s === "H" || s === "D";
 
 export default async function LibraryEntryPage({
   params,
-}: Readonly<{ params: Promise<{ entryId: string }> }>) {
+  searchParams,
+}: Readonly<{
+  params: Promise<{ entryId: string }>;
+  searchParams: Promise<{ error?: string }>;
+}>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { entryId } = await params;
+  const { error } = await searchParams;
   const entry = await libraryStore().getEntry(entryId);
   if (!entry) notFound();
 
@@ -56,13 +66,13 @@ export default async function LibraryEntryPage({
             </form>
           ) : (
             entry.hands && (
-              <form action={playEntryAction}>
+              <form action={entry.kind === "play" ? resumePlayEntryAction : playEntryAction}>
                 <input type="hidden" name="entryId" value={entry.entryId} />
                 <button
                   type="submit"
                   className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
                 >
-                  Deal to a table
+                  {entry.kind === "play" ? "Resume" : "Play"}
                 </button>
               </form>
             )
@@ -78,6 +88,12 @@ export default async function LibraryEntryPage({
           </form>
         </span>
       </header>
+
+      {error && (
+        <p className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          {error}
+        </p>
+      )}
 
       {entry.notes && <p className="mb-4 text-sm text-neutral-600">{entry.notes}</p>}
 

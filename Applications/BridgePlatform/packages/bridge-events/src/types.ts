@@ -35,6 +35,8 @@ export interface RuleEval {
   matched: boolean;
   settingsConsulted: CitedSetting[];
   reason: string;
+  /** Needed-vs-held detail for failed hand checks ("needed 15–17 HCP, held 12"). */
+  failedChecks?: string[];
 }
 
 /** Numeric facts the deliberation used (attribution honesty). */

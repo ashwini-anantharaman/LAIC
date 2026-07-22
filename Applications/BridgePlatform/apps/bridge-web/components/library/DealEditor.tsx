@@ -40,18 +40,23 @@ export function DealEditor({
   initialName = "",
   initialDealer = "N",
   initialVul = "none",
+  initialNotes = "",
   initialHands,
   locked,
+  hideBoardFacts,
   submitLabel = "Save board",
   footer,
 }: Readonly<{
   initialName?: string;
   initialDealer?: Seat;
   initialVul?: Vul;
+  initialNotes?: string;
   /** Prefill — when `locked` is given, pass only the UNPLAYED cards here. */
   initialHands?: Record<Seat, Card[]>;
   /** Already-played cards (mid-play editing): pinned to their seats, greyed. */
   locked?: { seat: Seat; card: Card }[];
+  /** Bare deals: no dealer/vul selects (the name field stays). */
+  hideBoardFacts?: boolean;
   submitLabel?: string;
   /** Extra form controls rendered just above the submit button. */
   footer?: ReactNode;
@@ -72,6 +77,7 @@ export function DealEditor({
   const [name, setName] = useState(initialName);
   const [dealer, setDealer] = useState<Seat>(initialDealer);
   const [vul, setVul] = useState<Vul>(initialVul);
+  const [notes, setNotes] = useState(initialNotes);
   const [paste, setPaste] = useState("");
   const [pasteNote, setPasteNote] = useState<string | null>(null);
 
@@ -228,34 +234,48 @@ export function DealEditor({
             className="w-full rounded border border-neutral-300 px-2 py-1.5"
           />
         </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-xs text-neutral-500">Dealer</span>
-          <select
-            name="dealer"
-            value={dealer}
-            onChange={(e) => setDealer(e.target.value as Seat)}
+        {!hideBoardFacts && (
+          <>
+            <label className="text-sm">
+              <span className="mb-1 block text-xs text-neutral-500">Dealer</span>
+              <select
+                name="dealer"
+                value={dealer}
+                onChange={(e) => setDealer(e.target.value as Seat)}
+                className="w-full rounded border border-neutral-300 px-2 py-1.5"
+              >
+                {SEATS.map((s) => (
+                  <option key={s} value={s}>
+                    {SEAT_NAME[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-xs text-neutral-500">Vulnerability</span>
+              <select
+                name="vul"
+                value={vul}
+                onChange={(e) => setVul(e.target.value as Vul)}
+                className="w-full rounded border border-neutral-300 px-2 py-1.5"
+              >
+                <option value="none">none</option>
+                <option value="ns">NS</option>
+                <option value="ew">EW</option>
+                <option value="both">both</option>
+              </select>
+            </label>
+          </>
+        )}
+        <label className="text-sm sm:col-span-3">
+          <span className="mb-1 block text-xs text-neutral-500">Notes (optional)</span>
+          <textarea
+            name="notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
             className="w-full rounded border border-neutral-300 px-2 py-1.5"
-          >
-            {SEATS.map((s) => (
-              <option key={s} value={s}>
-                {SEAT_NAME[s]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-xs text-neutral-500">Vulnerability</span>
-          <select
-            name="vul"
-            value={vul}
-            onChange={(e) => setVul(e.target.value as Vul)}
-            className="w-full rounded border border-neutral-300 px-2 py-1.5"
-          >
-            <option value="none">none</option>
-            <option value="ns">NS</option>
-            <option value="ew">EW</option>
-            <option value="both">both</option>
-          </select>
+          />
         </label>
       </div>
 

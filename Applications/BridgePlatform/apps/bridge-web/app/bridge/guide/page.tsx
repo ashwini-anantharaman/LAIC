@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getBridgeContext } from "@/lib/nexus";
 
-/** The in-app guide (2026-07-21): how knowledge works, written for fellows,
+/** The in-app guide (2026-07-22): how knowledge works, written for fellows,
  *  living where the work happens. Sections carry stable anchors so the
  *  workspace can deep-link ("what's this? →" next to Versions, History…). */
 
@@ -13,6 +13,7 @@ const TOC = [
   ["items", "Knowledge items"],
   ["types", "Types & who wins"],
   ["rules", "Rules"],
+  ["json", "The JSON boxes"],
   ["forcing", "Forcing situations"],
   ["settings", "Settings & dials"],
   ["engine", "How the AI decides"],
@@ -98,12 +99,16 @@ export default async function GuidePage() {
             <h3 className="text-sm font-semibold">Quickplay vs. Customize</h3>
             <p className="mt-1 text-sm text-neutral-600">
               <b>Quickplay</b> resumes your unfinished board, or deals a fresh one immediately —
-              you sit South against three house players carrying the strongest knowledge set.
+              you sit South against three house players carrying the strongest knowledge set —
+              and the Quickplay card lists your resumable boards and saved plays as dropdowns,
+              so picking up any earlier game is one click.
               <b> Customize</b> opens the table builder: pick a knowledge set to play against or
               watch, choose <i>every</i> seat&apos;s player yourself, set the deal seed, start
               from a saved board in the library (or author/import one), or run a{" "}
               <b>constrained drill</b> — for incomplete players, the dealer only accepts a deal
-              a full simulation finishes without the engine floor.
+              a full simulation finishes without the engine floor. Table lineups themselves live
+              in <b>Library → Tables → &ldquo;New table&rdquo;</b> (Customize takes you there
+              too) — build one once, play it many times.
             </p>
           </div>
           <div className={card}>
@@ -111,10 +116,12 @@ export default async function GuidePage() {
             <p className="mt-1 text-sm text-neutral-600">
               Opening a board shows <b>▶ start</b> (or <b>▶ resume</b> on a board with history) —
               the AI seats play one decision per beat only after you press it, and <b>❚❚</b>{" "}
-              pauses them again. <b>step ▸</b> pauses and advances exactly one decision —
-              the tool for walking a trace. <b>play to end</b> finishes the whole board at once.
+              pauses them again. <b>ask ▸</b> pauses and advances exactly one decision — the
+              tool for walking a trace. It never disappears on your turn; when it can&apos;t act
+              it disables and tells you why. <b>play to end</b> finishes the whole board at once.
               <b> undo</b> rewinds the last decision and comes back paused, so the AI can&apos;t
-              instantly replay the decision you&apos;re inspecting.
+              instantly replay the decision you&apos;re inspecting — and <b>go to beginning</b>{" "}
+              rewinds the whole board the same way, returning it paused at the first decision.
             </p>
           </div>
           <div className={card}>
@@ -130,11 +137,16 @@ export default async function GuidePage() {
           <div className={card}>
             <h3 className="text-sm font-semibold">Everything else on the table bar</h3>
             <p className="mt-1 text-sm text-neutral-600">
-              <b>show all hands</b> reveals the other seats. <b>save to library</b> keeps the
-              board (or the deal) for later. <b>edit deal</b> opens the mid-play deal editor —
+              <b>show all hands</b> reveals the other seats. <b>save to library</b> asks for a
+              name and notes and lets you pick what to keep — the <b>deal</b> (just the cards),
+              the <b>board</b> (cards plus conditions), the <b>play</b> (everything that
+              happened), or the <b>table</b> (the lineup itself). In the library, a board&apos;s
+              action is <b>Play</b>; a saved play&apos;s is <b>Resume</b> — resuming replays the
+              recorded auction and cards into a live board you can continue, undo, and rewind
+              like any other. <b>edit deal</b> opens the mid-play deal editor —
               the game continues on the edited cards, played cards locked where they fell.
-              <b> new board</b> deals again with the same lineup; <b>choose a table</b> returns
-              to the builder. <b>learner view</b> hides the verification rail for a clean
+              <b> new deal</b> deals fresh cards to the same table lineup. <b>learner view</b>{" "}
+              hides the verification rail for a clean
               student-facing felt. The <b>Decisions</b> rail is the heart of it: every entry
               opens into the full trace — which rules were considered, why each was rejected,
               what the settings said — with <b>Flag</b> and <b>fix at the table</b> on each one.
@@ -146,25 +158,27 @@ export default async function GuidePage() {
       <Section
         id="viewer"
         title="The Master view"
-        intro="Three ways to read a knowledge base, with grouping and sorting that mean something."
+        intro="Three ways to read a knowledge base, with grouping and sorting that mean something. The toolbar is three dropdowns — View, Group by, Sort — and the Master remembers your last choice of all three per knowledge base (a link with explicit choices in it always wins)."
       >
         <div className="space-y-3">
           <div className={card}>
-            <h3 className="text-sm font-semibold">Views</h3>
+            <h3 className="text-sm font-semibold">View</h3>
             <dl className="mt-1 grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-[8rem_1fr]">
               <dt className="font-medium">Cards</dt>
               <dd className="text-neutral-600">For reading — each item&apos;s full text on a card, in collapsible groups that remember what you fold away.</dd>
               <dt className="font-medium">List</dt>
               <dd className="text-neutral-600">For working — one dense row per item, quickest way to scan titles and jump into the editor.</dd>
               <dt className="font-medium">Table</dt>
-              <dd className="text-neutral-600">For auditing — columns for type, phase, status, rule count, and last update, plus checkboxes for bulk delete.</dd>
+              <dd className="text-neutral-600">For auditing — columns for type, phase, status, rule count, and last update, plus checkboxes for bulk deprecation (nothing is ever deleted — see <a href="#editing" className="text-emerald-700 underline-offset-2 hover:underline">Editing safely</a>).</dd>
             </dl>
           </div>
           <div className={card}>
             <h3 className="text-sm font-semibold">Group by</h3>
             <dl className="mt-1 grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-[8rem_1fr]">
               <dt className="font-medium">Kind</dt>
-              <dd className="text-neutral-600">The knowledge type (agreement, convention, exception, …) — the &ldquo;what is this&rdquo; axis, and the one that decides precedence (<a href="#types" className="text-emerald-700 underline-offset-2 hover:underline">Types &amp; who wins</a>).</dd>
+              <dd className="text-neutral-600">The knowledge type (agreement, convention, exception, …) — the &ldquo;what is this&rdquo; axis, and the one that decides precedence (<a href="#types" className="text-emerald-700 underline-offset-2 hover:underline">Types &amp; who wins</a>). Each kind&apos;s group header names its precedence band right there, so you never have to look it up.</dd>
+              <dt className="font-medium">When</dt>
+              <dd className="text-neutral-600">Auction position — Opening · Responding · Rebidding · Competing · Mixed · Leads · Declarer · Defense · Teaching prose, derived from each rule&apos;s seat role. Combine with the Phase filter to read the bidding by position, the way a system book is organized.</dd>
               <dt className="font-medium">Phase</dt>
               <dd className="text-neutral-600">Where in a board it applies: auction · opening lead · declarer play · defense · scoring. Group by phase to review &ldquo;everything about defense&rdquo; in one place.</dd>
               <dt className="font-medium">Status</dt>
@@ -183,6 +197,15 @@ export default async function GuidePage() {
               <dt className="font-medium">Rules</dt>
               <dd className="text-neutral-600">Most executable rules first — the load-bearing items at the top, teaching prose at the bottom.</dd>
             </dl>
+          </div>
+          <div className={card}>
+            <h3 className="text-sm font-semibold">The filter row</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              Alongside kind, phase, and status, two newer filters: <b>Applies when</b> narrows
+              to items with a rule for a given auction position — it answers &ldquo;which of
+              these apply to opening?&rdquo; directly — and <b>Tag</b> narrows to items carrying
+              a given tag (see <a href="#items" className="text-emerald-700 underline-offset-2 hover:underline">Knowledge items</a>).
+            </p>
           </div>
           <div className={card}>
             <h3 className="text-sm font-semibold">The content chip</h3>
@@ -204,6 +227,13 @@ export default async function GuidePage() {
         title="Knowledge items"
         intro="What each field on an item page means. Names match the editor."
       >
+        <p className={`${prose} mb-3`}>
+          Opening an item lands on a <b>read-only view</b> — the agreement in plain words, every
+          rule as an English sentence, the settings, where it sits in the precedence order, its
+          tags, and any internal notes. Nothing can change by accident while you read.
+          <b> Edit</b> switches to the typed editor, and <b>&ldquo;← Back to Master&rdquo;</b>{" "}
+          returns you to the filtered list you came from, exactly as you left it.
+        </p>
         <div className={card}>
           <dl className="grid gap-x-6 gap-y-2.5 text-sm sm:grid-cols-[11rem_1fr]">
             <dt className="font-medium">Title</dt>
@@ -215,13 +245,17 @@ export default async function GuidePage() {
             <dt className="font-medium">Phase</dt>
             <dd className="text-neutral-600">auction · opening lead · declarer play · defense · scoring (scoring items are teaching prose; the engine always scores by Law 77).</dd>
             <dt className="font-medium">Status</dt>
-            <dd className="text-neutral-600">draft → reviewed → approved: <b>a trust badge only</b> — a draft plays exactly like an approved item. Deprecated items stop compiling.</dd>
+            <dd className="text-neutral-600">draft → reviewed → approved: <b>a trust badge only</b> — a draft plays exactly like an approved item. Deprecated items stop compiling and leave the default view — reversibly; nothing is deleted.</dd>
             <dt className="font-medium">Rules</dt>
             <dd className="text-neutral-600">The precise version of the agreement — the part that plays (<a href="#rules" className="text-emerald-700 underline-offset-2 hover:underline">Rules</a>).</dd>
             <dt className="font-medium">Settings</dt>
             <dd className="text-neutral-600">Toggles and dials the item offers every player carrying it (<a href="#settings" className="text-emerald-700 underline-offset-2 hover:underline">Settings &amp; dials</a>).</dd>
             <dt className="font-medium">Citations</dt>
             <dd className="text-neutral-600">Which passages of which source this came from — click one to open the source with the passage highlighted. Hand-authored items cite the Claude source, unless you arrived from the Sources tab&apos;s write-up queue, which attaches the real passage for you.</dd>
+            <dt className="font-medium">Tags</dt>
+            <dd className="text-neutral-600">Free organizing chips (&ldquo;slam bidding&rdquo;, &ldquo;week 3&rdquo;…) — purely for finding things; the Master&apos;s Tag filter reads them. They never affect play.</dd>
+            <dt className="font-medium">Internal notes</dt>
+            <dd className="text-neutral-600">Notes between fellows — &ldquo;check this range against the 2004 booklet&rdquo;. Never shown to players, never read by the engine.</dd>
             <dt className="font-medium">Level tags</dt>
             <dd className="text-neutral-600">Advisory labels from extraction. Knowledge <i>sets</i> are what actually decide who knows what.</dd>
           </dl>
@@ -235,21 +269,50 @@ export default async function GuidePage() {
       >
         <div className={card}>
           <ol className="space-y-2 text-sm text-neutral-700">
-            <li><b>1 · Exceptions</b> — &ldquo;…but not when&rdquo; rules. Always outrank what they carve out.</li>
-            <li><b>2 · Conventions</b> — Stayman, transfers, Gerber… outrank natural bidding.</li>
-            <li><b>3 · The system</b> — bidding rules, agreements, techniques, lead &amp; signal agreements.</li>
-            <li><b>4 · Fallbacks</b> — &ldquo;when nothing else applies&rdquo;: pass; lowest legal card; a default lead. Tried dead last.</li>
+            <li><b>Band 0 · Exceptions</b> — &ldquo;…but not when&rdquo; rules. Always outrank what they carve out.</li>
+            <li><b>Band 1 · Conventions</b> — Stayman, transfers, Gerber… outrank natural bidding.</li>
+            <li><b>Band 2 · The system</b> — bidding rules, agreements, techniques, lead &amp; signal agreements.</li>
+            <li><b>Band 9 · Fallbacks</b> — &ldquo;when nothing else applies&rdquo;: pass; lowest legal card; a default lead. Tried dead last.</li>
             <li><b>— · Teaching prose</b> — concepts and judgment guidelines carry no rules and never play.</li>
           </ol>
         </div>
         <p className={`${prose} mt-3`}>
-          Within a band, each rule&apos;s <b>Priority</b> number breaks ties (lower fires first).
-          Pick the type that names what the thing <i>is</i> and the banding mostly takes care of
-          itself — reach for priority numbers only when two rules of the same type collide.
-          One special citizen sits alongside the bands:{" "}
+          So: <b>what outranks Stayman?</b> Only an exception. Stayman (a convention) outranks
+          every natural system rule and every fallback — and an exception item outranks Stayman
+          itself. Within a band, each rule&apos;s <b>Priority</b> number breaks ties (lower fires
+          first). Pick the type that names what the thing <i>is</i> and the banding mostly takes
+          care of itself — reach for priority numbers only when two rules of the same type
+          collide. One special citizen sits alongside the bands:{" "}
           <a href="#forcing" className="text-emerald-700 underline-offset-2 hover:underline">forcing situations</a>{" "}
           don&apos;t choose calls at all — they forbid one.
         </p>
+        <div className={`${card} mt-3`}>
+          <h3 className="text-sm font-semibold">All eleven kinds</h3>
+          <dl className="mt-2 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[11rem_1fr]">
+            <dt className="font-medium">Exception</dt>
+            <dd className="text-neutral-600">An override that outranks everything else when its narrow situation comes up — the &ldquo;…but not when&rdquo; carve-out. Example: &ldquo;No Stayman after interference&rdquo;. <i>Band 0: outranks everything; outranked by nothing.</i></dd>
+            <dt className="font-medium">Convention</dt>
+            <dd className="text-neutral-600">An artificial agreement — a bid that doesn&apos;t mean its suit. Carries an on/off toggle so a partnership can decline it. Example: &ldquo;Stayman&rdquo;. <i>Band 1: outranked by exceptions; outranks system rules and fallbacks.</i></dd>
+            <dt className="font-medium">Bidding rule</dt>
+            <dd className="text-neutral-600">A natural bidding rule: when the auction and my hand look like this, make this call. Example: &ldquo;1NT opening&rdquo;. <i>Band 2 (system): outranked by exceptions and conventions; outranks fallbacks.</i></dd>
+            <dt className="font-medium">Agreement</dt>
+            <dd className="text-neutral-600">A partnership understanding about natural bidding — opening ranges, raise structures, what a jump shows. Example: &ldquo;Major-suit raises&rdquo;. <i>Band 2 (system), same standing as bidding rules.</i></dd>
+            <dt className="font-medium">Declarer technique</dt>
+            <dd className="text-neutral-600">A card-play habit for declarer — drawing trumps, taking a finesse, setting up a long suit. Example: &ldquo;Draw trumps first&rdquo;. <i>Band 2 (system).</i></dd>
+            <dt className="font-medium">Defensive technique</dt>
+            <dd className="text-neutral-600">A card-play habit on defense — second hand low, returning partner&apos;s suit, holding up an ace. Example: &ldquo;Third hand high&rdquo;. <i>Band 2 (system).</i></dd>
+            <dt className="font-medium">Lead agreement</dt>
+            <dd className="text-neutral-600">Which card the partnership leads against suit or notrump contracts. Example: &ldquo;Fourth best vs. NT&rdquo;. <i>Band 2 (system).</i></dd>
+            <dt className="font-medium">Signal agreement</dt>
+            <dd className="text-neutral-600">How defenders&apos; spot cards carry meaning — attitude, count, and the first discard. Every complete player needs one, even an explicit &ldquo;none&rdquo;. Example: &ldquo;Standard signals&rdquo;. <i>Band 2 (system).</i></dd>
+            <dt className="font-medium">Fallback rule</dt>
+            <dd className="text-neutral-600">The action of last resort — tried only when nothing else applies, so the player always has a call. Example: &ldquo;Auction fallback: pass&rdquo;. <i>Band 9: tried dead last, when nothing else applies.</i></dd>
+            <dt className="font-medium">Concept</dt>
+            <dd className="text-neutral-600">Teaching prose that explains an idea — it never makes a call at the table. Example: &ldquo;What a reverse shows&rdquo;. <i>No band — teaching prose never plays.</i></dd>
+            <dt className="font-medium">Judgment guideline</dt>
+            <dd className="text-neutral-600">Teaching guidance for close decisions — advice a player weighs, never a rule that fires. Example: &ldquo;Upgrading a good five-card suit&rdquo;. <i>No band — teaching prose never plays.</i></dd>
+          </dl>
+        </div>
       </Section>
 
       <Section
@@ -283,7 +346,7 @@ export default async function GuidePage() {
             with two holdings). The suit can be contextual: partner&apos;s last or first bid
             suit, my longest/shortest/first/last suit, RHO&apos;s or LHO&apos;s suit, or{" "}
             <b>the fourth (only unbid) suit</b> — the fourth-suit-forcing reference. Rarer checks
-            live in the &ldquo;Extra conditions (JSON)&rdquo; box: longest-suit-among, suit
+            live in the &ldquo;Extra conditions (JSON)&rdquo; box (<a href="#json" className="text-emerald-700 underline-offset-2 hover:underline">The JSON boxes</a>): longest-suit-among, suit
             quality, stoppers, ace/king/keycard counts (Blackwood &amp; friends), a specific card
             (the trump queen), and <b>playing tricks</b> — the preempt-discipline count (an ace
             is one trick; a king one with company, half alone; a queen half with three; plus one
@@ -296,6 +359,125 @@ export default async function GuidePage() {
             If the call is illegal in the live auction the rule simply doesn&apos;t fire and the
             next candidate is tried.
           </p>
+        </div>
+      </Section>
+
+      <Section
+        id="json"
+        title="The JSON boxes"
+        intro="The typed editor covers the common cases; three JSON boxes cover the rest. Every example here is copy-pasteable."
+      >
+        <div className="space-y-3">
+          <div className={card}>
+            <h3 className="text-sm font-semibold">Extra conditions (JSON) — one hand check</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              The box on a rule holds <b>one condition</b> — a single check, or checks combined
+              with <code className="rounded bg-neutral-100 px-1">all</code> /{" "}
+              <code className="rounded bg-neutral-100 px-1">any</code> /{" "}
+              <code className="rounded bg-neutral-100 px-1">not</code> (below). The twelve checks:
+            </p>
+            <dl className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[9.5rem_1fr]">
+              <dt className="font-medium">hcp</dt>
+              <dd className="text-neutral-600">High-card points, min and/or max.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"hcp":{"min":15,"max":17}}`}</code></dd>
+              <dt className="font-medium">totalPoints</dt>
+              <dd className="text-neutral-600">HCP plus length points (one per card past the fourth in 3+ card suits).<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"totalPoints":{"min":13}}`}</code></dd>
+              <dt className="font-medium">suitLength</dt>
+              <dd className="text-neutral-600">Cards held in a suit — a literal suit (<code className="rounded bg-neutral-100 px-1 text-xs">&quot;S&quot; &quot;H&quot; &quot;D&quot; &quot;C&quot;</code>) or a contextual one: <code className="rounded bg-neutral-100 px-1 text-xs">partner_last_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">partner_first_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_longest_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_shortest_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_first_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_last_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">rho_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">lho_bid_suit</code>, or <code className="rounded bg-neutral-100 px-1 text-xs">only_unbid_suit</code> (the fourth suit — resolves only when exactly three are bid).<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"suitLength":{"suit":"partner_last_bid_suit","min":3}}`}</code></dd>
+              <dt className="font-medium">longestSuitAmong</dt>
+              <dd className="text-neutral-600">My longest suit is one of these.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"longestSuitAmong":{"suits":["H","S"]}}`}</code></dd>
+              <dt className="font-medium">balanced</dt>
+              <dd className="text-neutral-600">Balanced shape (or, with <code className="rounded bg-neutral-100 px-1 text-xs">false</code>, unbalanced).<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"balanced":true}`}</code></dd>
+              <dt className="font-medium">suitQuality</dt>
+              <dd className="text-neutral-600">Honor strength in a suit: <code className="rounded bg-neutral-100 px-1 text-xs">two_of_top_three</code> or <code className="rounded bg-neutral-100 px-1 text-xs">three_of_top_five</code>.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"suitQuality":{"suit":"own_longest_suit","quality":"two_of_top_three"}}`}</code></dd>
+              <dt className="font-medium">hasStopperIn</dt>
+              <dd className="text-neutral-600">A stopper in the suit — for NT bids over their overcall.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"hasStopperIn":{"suit":"rho_bid_suit"}}`}</code></dd>
+              <dt className="font-medium">aces</dt>
+              <dd className="text-neutral-600">Number of aces held — Blackwood and Gerber responses.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"aces":{"min":1,"max":1}}`}</code></dd>
+              <dt className="font-medium">kings</dt>
+              <dd className="text-neutral-600">Number of kings held — the 5NT king ask.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"kings":{"min":2}}`}</code></dd>
+              <dt className="font-medium">keycards</dt>
+              <dd className="text-neutral-600">Keycards for a suit — the four aces plus that suit&apos;s king (RKCB).<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"keycards":{"suit":"partner_last_bid_suit","min":2}}`}</code></dd>
+              <dt className="font-medium">holds</dt>
+              <dd className="text-neutral-600">A specific card, by rank number: 11 = J, 12 = Q, 13 = K, 14 = A — e.g. the trump queen.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"holds":{"suit":"partner_last_bid_suit","rank":12}}`}</code></dd>
+              <dt className="font-medium">playingTricks</dt>
+              <dd className="text-neutral-600">Estimated playing tricks — the preempt-discipline count (an ace is one; a king one with company, half alone; a queen half with three; plus one per card past the third in a suit).<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"playingTricks":{"min":6}}`}</code></dd>
+            </dl>
+            <p className="mt-3 text-sm text-neutral-600">
+              <b>Combining checks:</b>{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"all":[…]}`}</code> means
+              every check must hold,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"any":[…]}`}</code> means
+              at least one, and{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"not":…}`}</code> flips
+              one. They nest freely:{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"all":[{"hcp":{"min":6}},{"not":{"balanced":true}}]}`}</code>.
+            </p>
+            <p className="mt-3 text-sm text-neutral-600">
+              <b>Numbers vs. dials:</b> anywhere a number goes you can write a plain{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">15</code> — or point at a
+              setting dial:{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"$setting":"nt_range","field":"low"}`}</code>.
+              That&apos;s the long form of what the typed fields write as{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">$nt_range.low</code> — same
+              dial, same behavior (<a href="#settings" className="text-emerald-700 underline-offset-2 hover:underline">Settings &amp; dials</a>).
+            </p>
+          </div>
+          <div className={card}>
+            <h3 className="text-sm font-semibold">Action JSON — calls the pickers don&apos;t offer</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              A rule&apos;s action can also be written as JSON. The one you&apos;ll actually
+              reach for is <b>first_legal_of</b> — an ordered preference list, &ldquo;bid the
+              first of these that&apos;s legal&rdquo;:
+            </p>
+            <p className="mt-2 text-sm">
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"type":"first_legal_of","calls":[{"level":3,"strain":"N"},{"level":4,"strain":"H"}]}`}</code>
+            </p>
+            <p className="mt-3 text-sm text-neutral-600">
+              The full list: <code className="rounded bg-neutral-100 px-1 text-xs">{`{"type":"bid","level":1,"strain":"N"}`}</code> (bid
+              exactly), <code className="rounded bg-neutral-100 px-1 text-xs">{`{"type":"pass"}`}</code>,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"type":"double"}`}</code>,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"type":"redouble"}`}</code>,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"type":"raise_partner","toLevel":3}`}</code> (raise
+              partner&apos;s last suit),{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"type":"bid_longest","among":["H","S"],"level":2}`}</code> (my
+              longest among these; cheapest legal level if omitted), and{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"type":"bid_suit","suit":"rho_bid_suit","level":2}`}</code> (a
+              contextual suit — cue-bids, rebids, fourth suit; it simply doesn&apos;t act when
+              the reference can&apos;t be resolved). Strains are{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">&quot;C&quot; &quot;D&quot; &quot;H&quot; &quot;S&quot; &quot;N&quot;</code>.
+            </p>
+          </div>
+          <div className={card}>
+            <h3 className="text-sm font-semibold">Advanced — the whole payload as JSON</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              The item editor&apos;s Advanced panel exposes <b>payloadJson</b> and{" "}
+              <b>settingsJson</b> — the raw form of everything the typed editor writes. The
+              payload is an envelope named for what the item contributes:{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"kind":"auction_rules","rules":[…]}`}</code>,
+              or the same shape with{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">forcing_rules</code>,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">lead_rules</code>,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">play_rules</code>,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">signals</code>,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">fallback</code>, or{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">none</code> (teaching prose).
+              settingsJson is a list of setting declarations, each with{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">key</code>,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">label</code>,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">control</code> (toggle ·
+              single_select · multi_select · range_hcp · number),{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">role</code> (enable or
+              parameter), <code className="rounded bg-neutral-100 px-1 text-xs">default</code>,
+              and optional <code className="rounded bg-neutral-100 px-1 text-xs">options</code>,{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">min</code>/<code className="rounded bg-neutral-100 px-1 text-xs">max</code>,
+              and <code className="rounded bg-neutral-100 px-1 text-xs">description</code>.
+            </p>
+            <p className="mt-2 text-sm text-neutral-600">
+              When either box is filled it <b>overrides the typed fields</b>; the compiler
+              validates either way — a bad save leaves the last good version serving and
+              banners the error, exactly as with the typed editor.
+            </p>
+          </div>
         </div>
       </Section>
 
@@ -323,7 +505,7 @@ export default async function GuidePage() {
           <p>
             The curated SAYC ships one such item (&ldquo;Forcing situations&rdquo;, 17 cards,
             toggleable). If your partnership plays a line differently — say, two-over-one as
-            game-forcing rather than one-round — edit or delete that card like any rule.
+            game-forcing rather than one-round — edit or remove that card like any rule.
           </p>
         </div>
       </Section>
@@ -360,7 +542,7 @@ export default async function GuidePage() {
           <li><b>Collect the player&apos;s knowledge</b> — every item in its sets (Includes chains count); rules behind switched-off enable gates are dropped.</li>
           <li><b>Read the auction</b> — role, contested, everyone&apos;s last and first calls, round, vulnerability, the opponents&apos; suits.</li>
           <li><b>Check the forcing guard</b> — if a <a href="#forcing" className="text-emerald-700 underline-offset-2 hover:underline">forcing situation</a> matches, pass is off the menu for this turn.</li>
-          <li><b>Walk every rule in band-then-priority order</b> — wrong context is skipped; failed hand checks are recorded in the trace with the settings consulted; a legal match becomes a candidate (a pass is suppressed when the guard is up).</li>
+          <li><b>Walk every rule in band-then-priority order</b> — wrong context is skipped; a failed hand check explains itself in the trace (&ldquo;needed 15–17 HCP, held 12&rdquo;) alongside the settings consulted; a legal match becomes a candidate (a pass is suppressed when the guard is up). Every line cites the rule&apos;s label and its item&apos;s title — never a raw internal ID.</li>
           <li><b>Pick a candidate</b> — <i>first match (deterministic)</i> by default; <i>weighted random (variety)</i> picks among ties, seeded per board so replays are identical.</li>
           <li><b>Nothing matched?</b> In a forcing situation the player bids its cheapest long suit, citing the situation. Otherwise the fallback item fires (auction: pass) — honestly labeled &ldquo;no agreement applied.&rdquo;</li>
           <li><b>No fallback either?</b> The <b>engine floor</b> acts, loudly marked — it exists so a game can&apos;t jam and never counts as knowledge. A well-built set produces zero floor events.</li>
@@ -442,9 +624,10 @@ export default async function GuidePage() {
           <p>
             The draft&apos;s <b>review board</b> shows three panels: <b>modified items</b> (with
             before/after against a pre-augmentation snapshot), <b>new items</b> (skim, edit, or
-            delete in bulk), and <b>new conflicts</b> (contradictions the merge would introduce,
+            drop in bulk), and <b>new conflicts</b> (contradictions the merge would introduce,
             compared against the base). Finish with <b>Keep</b> — the draft becomes a normal KB —
-            or <b>Discard</b>, which deletes it and leaves the original untouched. A good
+            or <b>Discard</b>, which deletes it and leaves the original untouched — the one true
+            deletion on the platform, and it only ever touches the draft copy. A good
             augmentation of a complete KB should propose almost nothing; that&apos;s the
             completeness test working.
           </p>
@@ -480,11 +663,11 @@ export default async function GuidePage() {
           <li><b>Everything is versioned</b> — see <a href="#versions" className="text-emerald-700 underline-offset-2 hover:underline">Versions &amp; history</a>.</li>
           <li><b>Hand-authoring starts on the Sources tab</b>: sections the automatic reader couldn&apos;t structure queue under &ldquo;Sections that need a person&rdquo; — &ldquo;Write this up&rdquo; opens the editor with the passage alongside and the citation attached, and the card checks itself off once an item cites that passage.</li>
           <li><b>Flag anything at the table.</b> Every decision has a Flag button that files a suggestion into the KB&apos;s queue — with the exact deal, auction, and decision attached, so the reviewer sees precisely what you saw.</li>
-          <li><b>Fix it without leaving the board.</b> Undo the bad decision (the table pauses), open <b>fix at the table</b> from its trace, edit the item in the overlay, save — the board re-pins to the corrected knowledge and <b>step ▸</b> replays the decision under the new rules.</li>
-          <li><b>Hide, don&apos;t delete.</b> Archiving a knowledge base hides it — and its players and boards — everywhere, reversibly.</li>
+          <li><b>Fix it without leaving the board.</b> Undo the bad decision (the table pauses), open <b>fix at the table</b> from its trace, edit the item in the overlay, save — the board re-pins to the corrected knowledge and <b>ask ▸</b> replays the decision under the new rules.</li>
+          <li><b>Nothing is deleted.</b> A knowledge base is <i>hidden</i> — it and its players and boards disappear from view everywhere, reversibly. A knowledge item is <i>deprecated</i> — it stops compiling and leaves the Master&apos;s default view, and flipping its Status back brings it back whole. A source cited by items can&apos;t be deleted at all — the provenance chain stays intact. The one exception: discarding an augmentation draft really does delete it (<a href="#augment" className="text-emerald-700 underline-offset-2 hover:underline">Augmenting with a source</a>).</li>
         </ul>
         <p className="mt-6 text-xs text-neutral-400">
-          This guide matches the live platform (2026-07-21). Questions it doesn&apos;t answer are
+          This guide matches the live platform (2026-07-22). Questions it doesn&apos;t answer are
           bugs in the guide — flag them.
         </p>
       </Section>

@@ -1,6 +1,9 @@
-// One decision in the verification rail (2026-07-16 rework): what was
-// chosen, why, with the full rule trace and one-line flagging. Server-only.
+// One decision in the verification rail (2026-07-16 rework, English pass
+// 2026-07-22): what was chosen, why — phrased from the pinned compile's rule
+// labels and provenance instead of raw ruleIds — with the full rule trace
+// and one-line flagging. Server-only.
 
+import type { SettingValue } from "@bridge/config";
 import {
   callLabel,
   rankLabel,
@@ -9,6 +12,12 @@ import {
 } from "@bridge/events";
 import Link from "next/link";
 import { flagDecisionAction } from "@/app/bridge/table/actions";
+import {
+  becauseClause,
+  humanReason,
+  ruleLabel,
+  type RuleInfo,
+} from "@/components/table/decisionText";
 
 const GLYPH: Record<Suit, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 
@@ -17,20 +26,40 @@ export function DecisionEntry({
   sessionId,
   kbId,
   fixBase,
+  rules,
+  defaults,
 }: Readonly<{
   event: LogicEvent;
   sessionId: string;
   kbId: string;
   /** Session URL — when set, decisions offer "fix at the table" (overlay). */
   fixBase?: string;
+  /** ruleId → compiled rule, from the session's PINNED compile. Absent (old
+   *  sessions whose compile went missing) falls back to id-free phrasing. */
+  rules?: Map<string, RuleInfo>;
+  defaults?: Record<string, SettingValue>;
 }>) {
   const chosen =
     event.category === "bid-logic-event"
       ? callLabel(event.chosen)
       : `${rankLabel(event.chosen.rank)}${GLYPH[event.chosen.suit]}`;
   const floor = event.reason.startsWith("ENGINE FLOOR");
-  const itemId = event.matchedRuleId?.split(".")[0];
   const human = event.reason === "human action";
+  const matched = event.matchedRuleId ? rules?.get(event.matchedRuleId) : undefined;
+  const itemId = matched?.rule.provenance.itemId ?? event.matchedRuleId?.split(".")[0];
+  // $setting refs resolve against the KB defaults, overridden by whatever the
+  // decision actually consulted (attribution honesty: cited beats default).
+  const values: Record<string, SettingValue> = {
+    ...defaults,
+    ...Object.fromEntries(event.citedSettings.map((s) => [s.key, s.value])),
+  };
+  const held = event.facts.hcp !== undefined && (
+    <>
+      {" "}
+      Held: {event.facts.hcp} HCP
+      {event.facts.shape && `, ${event.facts.shape.join("=")} shape`}.
+    </>
+  );
   return (
     <details className="rounded border border-neutral-200 bg-[var(--card)] px-3 py-2">
       <summary className="flex cursor-pointer flex-wrap items-baseline gap-2 text-sm">
@@ -55,7 +84,34 @@ export function DecisionEntry({
       <div className="mt-2 space-y-2 border-t border-[var(--line)] pt-2 text-xs">
         {event.matchedRuleId && (
           <p>
-            Rule <span className="font-mono">{event.matchedRuleId}</span>
+            {matched?.kind === "fallback" ? (
+              <>
+                No agreement covered this — the fallback item{" "}
+                <b>&ldquo;{matched.rule.provenance.itemTitle}&rdquo;</b> chose {chosen}.
+              </>
+            ) : matched?.kind === "forcing" ? (
+              <>
+                <b>
+                  {event.seat} {chosen}
+                </b>{" "}
+                — pass wasn&apos;t available — {matched.rule.label}.{held}
+              </>
+            ) : matched ? (
+              <>
+                <b>
+                  {event.seat} {chosen}
+                </b>{" "}
+                — {ruleLabel(matched)} (from &ldquo;{matched.rule.provenance.itemTitle}&rdquo;):{" "}
+                {becauseClause(matched, values)}.{held}
+              </>
+            ) : (
+              <>
+                <b>
+                  {event.seat} {chosen}
+                </b>{" "}
+                — <span title={event.matchedRuleId}>this rule</span>.{held}
+              </>
+            )}
             {itemId && (
               <>
                 {" "}
@@ -100,11 +156,18 @@ export function DecisionEntry({
         )}
         {event.trace.length > 0 && (
           <ul className="max-h-40 space-y-0.5 overflow-y-auto text-neutral-500">
-            {event.trace.map((t, i) => (
-              <li key={i}>
-                {t.matched ? "✓" : "·"} <span className="font-mono">{t.ruleId}</span> — {t.reason}
-              </li>
-            ))}
+            {event.trace.map((t, i) => {
+              const info = rules?.get(t.ruleId);
+              return (
+                <li key={i}>
+                  {t.matched ? "✓" : "·"}{" "}
+                  <span title={t.ruleId}>
+                    {info ? ruleLabel(info) : t.ruleId.split(".").pop()}
+                  </span>{" "}
+                  — {humanReason(t)}
+                </li>
+              );
+            })}
           </ul>
         )}
         <form

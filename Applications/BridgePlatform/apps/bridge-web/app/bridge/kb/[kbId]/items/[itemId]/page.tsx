@@ -1,9 +1,10 @@
 import { itemIsDirty, type EdgeType } from "@bridge/kb";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { StatusBadge, TypeChip } from "@/components/kb/badges";
+import { bandLine, StatusBadge, TypeChip } from "@/components/kb/badges";
 import { ConfirmButton } from "@/components/kb/ConfirmButton";
 import { ItemEditor } from "@/components/kb/ItemEditor";
+import { ItemView } from "@/components/kb/ItemView";
 import { kbStore } from "@/lib/kb";
 import {
   addEdgeAction,
@@ -35,10 +36,17 @@ export default async function ItemPage({
     madeMain?: string;
     versionDeleted?: string;
     versionError?: string;
+    mode?: string;
+    from?: string;
   }>;
 }>) {
   const { kbId, itemId } = await params;
-  const { saved, committed, madeMain, versionDeleted, versionError } = await searchParams;
+  const sp = await searchParams;
+  const { saved, committed, madeMain, versionDeleted, versionError } = sp;
+  const edit = sp.mode === "edit";
+  // Back link (R9): only honor a `from` that points back into this KB's
+  // Master view — anything else falls back to the plain items list.
+  const from = sp.from?.startsWith(`/bridge/kb/${kbId}/items`) ? sp.from : undefined;
   const store = kbStore();
   const item = await store.getItem(itemId);
   if (!item) notFound();
@@ -71,13 +79,16 @@ export default async function ItemPage({
   }));
 
   const base = `/bridge/kb/${kbId}`;
+  const backHref = from ?? `${base}/items`;
+  const fromQuery = from ? `&from=${encodeURIComponent(from)}` : "";
+  const selfHref = `${base}/items/${itemId}`;
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div>
         <p className="mb-2 text-xs text-neutral-400">
-          <Link href={`${base}/items`} className="hover:underline">
-            Master
+          <Link href={backHref} className="hover:underline">
+            ← Back to Master
           </Link>{" "}
           / {item.itemId} · rev {item.version}
           {item.mainVersion ? <> · main v{item.mainVersion}</> : <> · uncommitted</>}
@@ -122,14 +133,64 @@ export default async function ItemPage({
             {versionError}
           </p>
         )}
-        <div className="mb-4 flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <h2 className="text-2xl font-medium">{item.title}</h2>
           <TypeChip type={item.knowledgeType} />
           <StatusBadge status={item.status} />
+          {edit ? (
+            <Link
+              href={`${selfHref}${from ? `?from=${encodeURIComponent(from)}` : ""}`}
+              className="ml-auto rounded border border-neutral-300 px-3 py-1 text-sm hover:border-emerald-400 hover:text-emerald-800"
+            >
+              View
+            </Link>
+          ) : (
+            <Link
+              href={`${selfHref}?mode=edit${fromQuery}`}
+              className="ml-auto rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800"
+            >
+              Edit
+            </Link>
+          )}
         </div>
-        <p className="prose-knowledge mb-6 text-neutral-800">{item.humanReadableText}</p>
+        <p className="mb-2 mt-1 text-xs text-neutral-400">
+          {bandLine(item.knowledgeType) ?? "teaching prose — never plays"}
+        </p>
+        {(item.tags?.length ?? 0) > 0 && (
+          <p className="mb-2 flex flex-wrap gap-1.5">
+            {item.tags!.map((t) => (
+              <Link
+                key={t}
+                href={`${base}/items?tag=${encodeURIComponent(t)}`}
+                className="rounded-full border border-neutral-200 px-1.5 py-0.5 text-[10px] text-neutral-500 hover:border-emerald-400 hover:text-emerald-800"
+              >
+                {t}
+              </Link>
+            ))}
+          </p>
+        )}
+        <p className="prose-knowledge mb-6 mt-2 text-neutral-800">{item.humanReadableText}</p>
+        {item.internalNotes && (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-amber-800">
+              Internal notes — never shown to players
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-amber-900">
+              {item.internalNotes}
+            </p>
+          </div>
+        )}
 
-        <ItemEditor kbId={kbId} item={item} action={saveItemAction} />
+        {edit ? (
+          <ItemEditor
+            kbId={kbId}
+            item={item}
+            action={saveItemAction}
+            hiddenFields={{ ...(from && { from }) }}
+          />
+        ) : (
+          <ItemView item={item} />
+        )}
       </div>
 
       <aside className="space-y-6">

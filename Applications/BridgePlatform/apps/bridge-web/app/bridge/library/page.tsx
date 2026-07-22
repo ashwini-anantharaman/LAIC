@@ -5,7 +5,12 @@ import { redirect } from "next/navigation";
 import { ChipRow } from "@/components/ChipTabs";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";
-import { importFileAction, playEntryAction, startTableEntryAction } from "./actions";
+import {
+  importFileAction,
+  playEntryAction,
+  resumePlayEntryAction,
+  startTableEntryAction,
+} from "./actions";
 import { ImportForm } from "@/components/library/ImportForm";
 
 /** The fellows' library (2026-07-16 rework): saved deals, boards, table
@@ -43,6 +48,17 @@ export default async function LibraryPage({
   const entries = byKind.get(active) ?? [];
   const shelf = SHELVES.find((s) => s.kind === active)!;
 
+  // Creation is shelf-contextual: deals/boards go through the deal editor,
+  // tables through the lineup builder; plays only arrive by recording/import.
+  const createLink =
+    active === "deal"
+      ? { href: "/bridge/library/new?kind=deal", label: "New deal" }
+      : active === "board"
+        ? { href: "/bridge/library/new", label: "New board" }
+        : active === "table"
+          ? { href: "/bridge/library/tables/new", label: "New table" }
+          : null;
+
   return (
     <div className="mx-auto max-w-4xl">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -54,12 +70,14 @@ export default async function LibraryPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/bridge/library/new"
-            className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
-          >
-            New board
-          </Link>
+          {createLink && (
+            <Link
+              href={createLink.href}
+              className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+            >
+              {createLink.label}
+            </Link>
+          )}
           <ImportForm action={importFileAction} />
         </div>
       </header>
@@ -161,13 +179,13 @@ export default async function LibraryPage({
                 </form>
               ) : (
                 e.hands && (
-                  <form action={playEntryAction}>
+                  <form action={e.kind === "play" ? resumePlayEntryAction : playEntryAction}>
                     <input type="hidden" name="entryId" value={e.entryId} />
                     <button
                       type="submit"
                       className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
                     >
-                      Deal to a table
+                      {e.kind === "play" ? "Resume" : "Play"}
                     </button>
                   </form>
                 )

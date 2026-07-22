@@ -275,6 +275,42 @@ export async function undoAction(formData: FormData): Promise<void> {
   redirect(`/bridge/table/${sessionId}?paused=${Date.now()}`);
 }
 
+/** Rewind the whole board to the deal — undo's big sibling. Comes back
+ *  paused for the same reason undo does: rewinding is for re-watching. */
+export async function rewindAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const sessionId = String(formData.get("sessionId"));
+  await sessionService().rewindToStart(sessionId);
+  await audit(context, "session.undo", "kb_session", sessionId, { toStart: true });
+  revalidatePath(`/bridge/table/${sessionId}`);
+  redirect(`/bridge/table/${sessionId}?paused=${Date.now()}`);
+}
+
+/**
+ * "New deal" (2026-07-22 rework): fresh cards for the SAME table — same
+ * lineup, same pinned compile — unlike quickPlayAction, which re-derives a
+ * default lineup from the KB's live compile.
+ */
+export async function newDealAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const sessionId = String(formData.get("sessionId"));
+  const service = sessionService();
+  const record = await service.requireSession(sessionId);
+  const compiled = await service.compiledFor(record);
+  const next = await service.createSession({
+    kbId: record.kbId,
+    compiled,
+    seats: record.seats,
+    seed: (Date.now() % 100_000) + 1,
+    createdBy: context.nexusUserId,
+  });
+  await audit(context, "profile.update", "kb_session", next.sessionId, {
+    kbId: record.kbId,
+    newDealFrom: sessionId,
+  });
+  redirect(`/bridge/table/${next.sessionId}`);
+}
+
 /**
  * Swap who sits in a seat (2026-07-16). Sessions snapshot their seats, so a
  * swap is a FORK: same board, same pinned compile, new lineup. Mid-board the
@@ -339,11 +375,13 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
   const name =
     String(formData.get("name") ?? "").trim() ||
     `${record.board.name} · ${kind}`;
+  const notes = String(formData.get("notes") ?? "").trim();
   const now = new Date().toISOString();
 
   const base = {
     entryId: newId("le"),
     name,
+    ...(notes && { notes }),
     tags: [] as string[],
     origin: "recorded" as const,
     sourceSessionId: sessionId,

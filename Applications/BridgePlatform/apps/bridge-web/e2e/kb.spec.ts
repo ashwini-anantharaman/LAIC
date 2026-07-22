@@ -66,6 +66,8 @@ test("edits the 1NT range — the KB recompiles to a new version", async ({ page
   const before = await page.getByText(/draft compile/).textContent();
 
   await page.getByText("1NT opening").click();
+  // Items open in VIEW mode now — the typed editor is behind the Edit link.
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
   await page.locator('input[name="rule0:hcpMin"]').fill("14");
   await page.getByRole("button", { name: /Save \(recompiles/ }).click();
   await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
@@ -111,6 +113,7 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
   await signInAs(context, "user_reviewer_rhea");
   await page.goto(`${kbUrl}/items`);
   await page.getByText("1NT opening").click();
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
 
   // Sabotage via the advanced payload box: reference an unknown setting.
   await page.getByText("Advanced: raw payload / settings JSON").click();
@@ -138,6 +141,8 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
   await expect(page.getByText(/draft compile/)).toBeVisible(); // last-good still live
 
   // Repair via the typed fields — the banner clears and compiles resume.
+  // (The save redirect lands back in VIEW mode, so re-open the editor.)
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
   await page.locator('input[name="rule0:hcpMin"]').fill("15");
   await page.locator('input[name="rule0:hcpMax"]').fill("17");
   await page.getByRole("button", { name: /Save \(recompiles/ }).click();
@@ -220,7 +225,7 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   await signInAs(context, "user_reviewer_rhea");
 
   // Deal a board via the custom-table setup: human South, Floor elsewhere.
-  await page.goto("/bridge/table/choose");
+  await page.goto("/bridge/library/tables/new");
   await page.getByText("Set up a custom table").click();
   const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
   const dealForm = block.locator("form").first();
@@ -240,7 +245,11 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   await expect(page.getByText("Your call")).toBeVisible();
   const firstDecision = page.locator("details").filter({ hasText: "#0" }).last();
   await firstDecision.locator("summary").click();
-  await expect(firstDecision.getByText(/fallback: pass/)).toBeVisible();
+  // The summary's honest reason (the body also names the item "Auction
+  // fallback: pass", so match the exact reason string, not a loose regex).
+  await expect(
+    firstDecision.getByText("no agreement applied — fallback: pass"),
+  ).toBeVisible();
 
   // Flag it → the suggestion appears in the KB's queue with the session link.
   // Wait for the action POST to finish — navigating away aborts it otherwise.
@@ -294,7 +303,7 @@ test("constrained drill: an incomplete player never hits the engine floor", asyn
 }) => {
   await signInAs(context, "user_reviewer_rhea");
 
-  await page.goto("/bridge/table/choose");
+  await page.goto("/bridge/library/tables/new");
   await page.getByText("Set up a custom table").click();
   const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
   const drillForm = block.locator("form").last();
@@ -332,6 +341,8 @@ test("Save as a new knowledge item forks with lineage", async ({ page, context }
   await signInAs(context, "user_reviewer_rhea");
   await page.goto(`${kbUrl}/items`);
   await page.getByText("1NT opening", { exact: true }).click();
+  // The fork button lives in the editor — enter edit mode first.
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
   await page.getByRole("button", { name: "Save as a new knowledge item" }).click();
 
   await expect(
@@ -340,7 +351,7 @@ test("Save as a new knowledge item forks with lineage", async ({ page, context }
   await expect(page.getByRole("link", { name: /forked from 1NT opening/ })).toBeVisible();
 });
 
-test("bulk delete from the Master tab (sets updated, banner reports)", async ({
+test("bulk deprecate from the Master tab (banner reports, deprecated view keeps it)", async ({
   page,
   context,
 }) => {
@@ -348,16 +359,21 @@ test("bulk delete from the Master tab (sets updated, banner reports)", async ({
   await page.goto(`${kbUrl}/items?view=list`);
   await expect(page.getByText("1NT opening (copy)")).toBeVisible();
 
-  // Tick the fork, arm the two-step confirm, delete.
+  // Tick the fork, arm the two-step confirm, deprecate.
   await page.getByLabel("Select 1NT opening (copy)").check();
   await expect(page.getByText("1 selected")).toBeVisible();
-  await page.getByRole("button", { name: "Delete selected…" }).click();
-  await page.getByRole("button", { name: "Yes, delete" }).click();
+  await page.getByRole("button", { name: "Deprecate selected…" }).click();
+  await page.getByRole("button", { name: "Yes, deprecate" }).click();
 
-  await expect(page.getByText("Deleted 1 item.")).toBeVisible();
+  await expect(page.getByText(/Deprecated 1 item/)).toBeVisible();
+  // The default status filter hides deprecated items.
   await expect(page.getByText("1NT opening (copy)")).toHaveCount(0);
   // The original survives untouched.
   await expect(page.getByText("1NT opening", { exact: true })).toBeVisible();
+
+  // The deprecated view still lists it — knowledge is never deleted.
+  await page.goto(`${kbUrl}/items?status=deprecated&view=list`);
+  await expect(page.getByText("1NT opening (copy)")).toBeVisible();
 });
 
 test("fix at the table: undo pauses, overlay edits the item, session re-pins", async ({
@@ -367,7 +383,7 @@ test("fix at the table: undo pauses, overlay edits the item, session re-pins", a
   await signInAs(context, "user_reviewer_rhea");
 
   // Same lineup as the pinning test: human South, Floor AIs elsewhere.
-  await page.goto("/bridge/table/choose");
+  await page.goto("/bridge/library/tables/new");
   await page.getByText("Set up a custom table").click();
   const block = page.locator('[data-kb-block^="SAYC e2e"]').last();
   const dealForm = block.locator("form").first();
@@ -402,8 +418,8 @@ test("fix at the table: undo pauses, overlay edits the item, session re-pins", a
   await expect(page.getByText(/this table now plays from the updated rules/)).toBeVisible();
   await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();
 
-  // Step forward one decision — play continues under the (re)pinned compile.
-  await page.getByRole("button", { name: "step ▸" }).click();
+  // Ask for one decision — play continues under the (re)pinned compile.
+  await page.getByRole("button", { name: "ask ▸" }).click();
   await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
 });
 

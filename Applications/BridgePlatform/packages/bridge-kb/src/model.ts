@@ -140,6 +140,10 @@ export interface KnowledgeItem {
   /** Advisory tags from extraction; ladder membership is authoritative. */
   supportedLevels: string[];
   status: ItemStatus;
+  /** Fellow-facing working notes — never shown to players. */
+  internalNotes?: string;
+  /** Free-form organizing tags (filterable in the Master view). */
+  tags?: string[];
   /** Head revision — bumps on every content edit (provenance/trace lineage). */
   version: number;
   /**
@@ -185,6 +189,8 @@ export interface KnowledgeItemVersion {
   sourceReferences: Citation[];
   supportedLevels: string[];
   status: ItemStatus;
+  internalNotes?: string;
+  tags?: string[];
   /** Content hash — cheap dirty-detection against the head. */
   contentHash: string;
   changeNote?: string;

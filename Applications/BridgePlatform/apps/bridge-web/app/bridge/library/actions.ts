@@ -4,11 +4,17 @@
 // entry back onto a table, start a saved table lineup, delete. Recording
 // FROM a live board lives in the table actions (it reads session state).
 
-import type { Card, Seat, Vul } from "@bridge/events";
+import type { Card, GameEvent, Seat, Vul } from "@bridge/events";
 import { parseLinToContexts, parsePbn, validateDeal, type GameContext } from "@bridge/formats";
-import { newId } from "@bridge/kb";
+import { newId, type CompiledKb } from "@bridge/kb";
+import type { NexusBridgeContext } from "@bridge/nexus-client";
 import { handFromSerialized } from "@/lib/dealText";
-import { SessionService, type LibraryEntry, type SeatConfig } from "@bridge/sessions";
+import {
+  eventsFromRecording,
+  SessionService,
+  type LibraryEntry,
+  type SeatConfig,
+} from "@bridge/sessions";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
@@ -24,11 +30,12 @@ function fail(message: string): never {
   redirect(`/bridge/library?error=${encodeURIComponent(message)}`);
 }
 
-/** The deal editor's save: four hand-authored hands → one board entry. */
+/** The deal editor's save: four hand-authored hands → one deal/board entry. */
 export async function createDealAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  const kind = String(formData.get("kind")) === "deal" ? "deal" : "board";
   const failNew: (message: string) => never = (message) =>
-    redirect(`/bridge/library/new?error=${encodeURIComponent(message)}`);
+    redirect(`/bridge/library/new?kind=${kind}&error=${encodeURIComponent(message)}`);
 
   const hands = {} as Record<Seat, Card[]>;
   for (const seat of ["N", "E", "S", "W"] as Seat[]) {
@@ -42,14 +49,18 @@ export async function createDealAction(formData: FormData): Promise<void> {
 
   const dealer = (String(formData.get("dealer") ?? "N") || "N") as Seat;
   const vul = (String(formData.get("vul") ?? "none") || "none") as Vul;
+  const notes = String(formData.get("notes") ?? "").trim();
   const entry: LibraryEntry = {
     entryId: newId("le"),
-    kind: "board",
-    name: String(formData.get("name") ?? "").trim() || "Authored board",
+    kind,
+    name:
+      String(formData.get("name") ?? "").trim() ||
+      (kind === "deal" ? "Authored deal" : "Authored board"),
     tags: [],
     hands,
-    dealer,
-    vul,
+    // A bare deal is just the card distribution — board facts stay off it.
+    ...(kind === "board" ? { dealer, vul } : {}),
+    ...(notes ? { notes } : {}),
     auction: [],
     play: [],
     origin: "authored",
@@ -126,20 +137,16 @@ function contractText(ctx: GameContext): string | undefined {
   return `${ctx.contract.level}${strain}${dbl} by ${ctx.contract.declarer}`;
 }
 
-/** Deal a saved deal/board/play onto a fresh table vs. house players. */
-export async function playEntryAction(formData: FormData): Promise<void> {
-  const context = await requireContext();
-  await ensureSeeds();
-  await assertAiAllowed(context);
-  const entryId = String(formData.get("entryId"));
-  const entry = await libraryStore().getEntry(entryId);
-  if (!entry?.hands) throw new Error("This entry has no deal to play");
-
-  // The lineup: a saved `table` entry names its KB; card entries play against
-  // the house lineup of the requested (or first compiled) knowledge base.
+/** The lineup for a saved entry: a saved `table` entry names its KB; card
+ *  entries play against the house lineup of the requested (or first compiled)
+ *  knowledge base — N/E/W the house player, South the caller. */
+async function resolveEntryLineup(
+  entry: LibraryEntry,
+  requestedKbId: string,
+  context: NexusBridgeContext,
+): Promise<{ kbId: string; compiled: CompiledKb; seats: Record<Seat, SeatConfig> }> {
   const store = kbStore();
-  const requestedKb = String(formData.get("kbId") ?? "").trim();
-  let kbId = requestedKb || entry.kbId || "";
+  let kbId = requestedKbId || entry.kbId || "";
   if (!kbId) {
     for (const kb of (await store.listKbs()).filter((k) => !k.archived)) {
       if (await kbService().liveCompile(kb.kbId)) {
@@ -164,6 +171,20 @@ export async function playEntryAction(formData: FormData): Promise<void> {
   const ai = SessionService.seatFromPlayer(house, compiled);
   const seats = { N: ai, E: ai, S: ai, W: ai } as Record<Seat, SeatConfig>;
   seats.S = { kind: "human", nexusUserId: context.nexusUserId };
+  return { kbId, compiled, seats };
+}
+
+/** Deal a saved deal/board/play onto a fresh table vs. house players. */
+export async function playEntryAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  await ensureSeeds();
+  await assertAiAllowed(context);
+  const entryId = String(formData.get("entryId"));
+  const entry = await libraryStore().getEntry(entryId);
+  if (!entry?.hands) throw new Error("This entry has no deal to play");
+
+  const requestedKb = String(formData.get("kbId") ?? "").trim();
+  const { kbId, compiled, seats } = await resolveEntryLineup(entry, requestedKb, context);
 
   const record = await sessionService().createSession({
     kbId,
@@ -179,6 +200,58 @@ export async function playEntryAction(formData: FormData): Promise<void> {
   await audit(context, "profile.update", "kb_session", record.sessionId, {
     kbId,
     fromLibrary: entryId,
+  });
+  redirect(`/bridge/table/${record.sessionId}`);
+}
+
+/** Resume a saved play: replay its recorded calls & cards onto a fresh table
+ *  (mid-board stays live; a full recording opens as a completed board). */
+export async function resumePlayEntryAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  await ensureSeeds();
+  await assertAiAllowed(context);
+  const entryId = String(formData.get("entryId"));
+  const entry = await libraryStore().getEntry(entryId);
+  if (entry?.kind !== "play" || !entry.hands)
+    throw new Error("This entry is not a saved play");
+
+  const { kbId, compiled, seats } = await resolveEntryLineup(entry, "", context);
+
+  let primed: { events: GameEvent[]; complete: boolean };
+  try {
+    primed = eventsFromRecording({
+      boardRef: entry.name,
+      dealer: entry.dealer ?? "N",
+      vul: entry.vul ?? "none",
+      hands: entry.hands,
+      auction: entry.auction ?? [],
+      play: entry.play ?? [],
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    redirect(
+      `/bridge/library/${entryId}?error=${encodeURIComponent(
+        `This recording can't be replayed: ${detail}`,
+      )}`,
+    );
+  }
+
+  const record = await sessionService().createSession({
+    kbId,
+    compiled,
+    seats,
+    seed: 1,
+    hands: entry.hands,
+    dealer: entry.dealer ?? "N",
+    vul: entry.vul ?? "none",
+    boardName: entry.name,
+    primedEvents: primed.events,
+    status: primed.complete ? "completed" : "active",
+    createdBy: context.nexusUserId,
+  });
+  await audit(context, "profile.update", "kb_session", record.sessionId, {
+    kbId,
+    resumedFrom: entryId,
   });
   redirect(`/bridge/table/${record.sessionId}`);
 }

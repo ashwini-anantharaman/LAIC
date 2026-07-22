@@ -24,7 +24,7 @@ import type { KbEdge, KbPack, KnowledgeItem, KnowledgeType } from "./model";
  * Priority bands by knowledgeType (lower fires first): exceptions override
  * conventions, conventions override plain rules/agreements, fallbacks last.
  */
-const BAND: Partial<Record<KnowledgeType, number>> = {
+export const BAND: Partial<Record<KnowledgeType, number>> = {
   exception: 0,
   convention: 1,
   bidding_rule: 2,
@@ -35,6 +35,10 @@ const BAND: Partial<Record<KnowledgeType, number>> = {
   signal_agreement: 2,
   fallback_rule: 9,
 };
+
+/** The band a type compiles into; null for teaching-only types (never play). */
+export const bandOf = (t: KnowledgeType): number | null =>
+  t === "concept" || t === "judgment_guideline" ? null : (BAND[t] ?? 2);
 
 const order = (type: KnowledgeType, priority: number) => (BAND[type] ?? 2) * 100_000 + priority;
 

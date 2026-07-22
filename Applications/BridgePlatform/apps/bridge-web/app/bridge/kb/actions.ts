@@ -113,8 +113,9 @@ export async function discardAugmentationAction(formData: FormData): Promise<voi
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));
   const kb = await kbService().getKb(kbId);
-  // Only augmentation drafts are discardable this way — everything else
-  // goes through the typed-name deletion on the danger zone.
+  // Augmentation drafts are the ONE intentionally deletable KB — a draft
+  // lifecycle, guarded by kb.augmentation. Real KBs are never deleted;
+  // archive (Hide) is their removal path.
   if (!kb.augmentation) redirect(kbPath(kbId));
   const baseKbId = kb.augmentation!.baseKbId;
   await kbService().deleteKb(kbId);
@@ -147,41 +148,6 @@ export async function createKbAction(formData: FormData): Promise<void> {
   });
   await audit(context, "kb.create", "kb", kb.kbId, { name: kb.name });
   redirect(kbPath(kb.kbId));
-}
-
-/**
- * Delete a knowledge base and everything scoped to it — memberships, items
- * that belong only to this KB (with their edges), packs, players, sandboxes,
- * suggestions, jobs, compiles, and the KB's play sessions. Irreversible.
- * The typed-name confirmation is checked server-side.
- */
-export async function deleteKbAction(formData: FormData): Promise<void> {
-  const context = await requireAdminContext("bridge.knowledge.edit");
-  const kbId = String(formData.get("kbId"));
-  const kb = await kbService().getKb(kbId);
-  // Two confirmed entry points share this action: the Overview danger zone
-  // (the fellow types the KB's name) and the list-row button (client-side
-  // confirm + hidden name). The name check is the server-side bar for both.
-  const confirm = String(formData.get("confirmName") ?? "").trim();
-  const from = String(formData.get("from") ?? "list");
-  if (confirm !== kb.name) {
-    redirect(kbPath(kbId, `?deleteError=${encodeURIComponent("Type the knowledge base's exact name to confirm deletion.")}`));
-  }
-  try {
-    await kbService().deleteKb(kbId); // refuses while derived KBs exist
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Could not delete this knowledge base.";
-    redirect(
-      from === "overview"
-        ? kbPath(kbId, `?deleteError=${encodeURIComponent(message)}`)
-        : `/bridge/kb?deleteError=${encodeURIComponent(message)}`,
-    );
-  }
-  const { sessionService } = await import("@/lib/sessions");
-  await sessionService().deleteForKb(kbId);
-  await audit(context, "kb.delete", "kb", kbId, { name: kb.name });
-  revalidatePath("/bridge/kb");
-  redirect("/bridge/kb?deleted=1");
 }
 
 export async function createItemAction(formData: FormData): Promise<void> {
@@ -224,6 +190,10 @@ export async function deleteItemsAction(formData: FormData): Promise<void> {
   const returnTo = returnToRaw.startsWith(`/bridge/kb/${kbId}`)
     ? returnToRaw
     : kbPath(kbId, "/items");
+  // Bulk delete only exists inside augmentation drafts (the review board's
+  // cleanup sweep). Real KBs never delete knowledge — deprecate instead.
+  const kb = await kbService().getKb(kbId);
+  if (!kb.augmentation) redirect(returnTo);
   if (!itemIds.length) redirect(returnTo);
 
   const result = await kbService().deleteItems(kbId, itemIds, context.nexusUserId);
@@ -246,6 +216,37 @@ export async function deleteItemsAction(formData: FormData): Promise<void> {
   redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}${params.toString()}`);
 }
 
+/**
+ * Bulk deprecate — the removal path for real KBs (knowledge is never
+ * deleted): deprecated items stop compiling and drop out of the default view,
+ * fully reversibly from the item editor.
+ */
+export async function deprecateItemsAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const itemIds = formData.getAll("itemIds").map(String).filter(Boolean);
+  const returnToRaw = String(formData.get("returnTo") ?? "");
+  const returnTo = returnToRaw.startsWith(`/bridge/kb/${kbId}`)
+    ? returnToRaw
+    : kbPath(kbId, "/items");
+  if (!itemIds.length) redirect(returnTo);
+
+  const result = await kbService().setItemsStatus(
+    kbId,
+    itemIds,
+    "deprecated",
+    context.nexusUserId,
+  );
+  await audit(context, "kb.item.edit", "kb", kbId, {
+    deprecated: result.changed.length,
+    itemIds: result.changed.map((c) => c.itemId),
+  });
+
+  revalidatePath(kbPath(kbId), "layout");
+  const params = new URLSearchParams({ bulkDeprecated: String(result.changed.length) });
+  redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}${params.toString()}`);
+}
+
 export async function saveItemAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));
@@ -256,6 +257,10 @@ export async function saveItemAction(formData: FormData): Promise<void> {
     payload: parsePayload(formData, common.knowledgeType),
     settings: parseSettings(formData),
   };
+  // Where the editor was opened from (e.g. the deprecated view) — carried
+  // through the redirect so the item page can offer a way back.
+  const from = String(formData.get("from") ?? "").trim();
+  const fromSuffix = from ? `&from=${encodeURIComponent(from)}` : "";
 
   // "Save as a new knowledge item" branches: a fresh item with lineage — the
   // original (a template) is never touched.
@@ -284,7 +289,7 @@ export async function saveItemAction(formData: FormData): Promise<void> {
       savedAsNew: true,
     });
     revalidatePath(kbPath(kbId), "layout");
-    redirect(kbPath(kbId, `/items/${created.itemId}?saved=1`));
+    redirect(kbPath(kbId, `/items/${created.itemId}?saved=1${fromSuffix}`));
   }
 
   const saved = await kbService().saveItem(kbId, itemId, content, context.nexusUserId);
@@ -316,7 +321,7 @@ export async function saveItemAction(formData: FormData): Promise<void> {
     redirect(`${returnToRaw}${returnToRaw.includes("?") ? "&" : "?"}${flag}`);
   }
 
-  redirect(kbPath(kbId, `/items/${saved.itemId}?saved=1`));
+  redirect(kbPath(kbId, `/items/${saved.itemId}?saved=1${fromSuffix}`));
 }
 
 export async function addEdgeAction(formData: FormData): Promise<void> {

@@ -3,7 +3,14 @@
 // checked, undo drops logic+action pairs, forks adopt the prefix, and a
 // knowledge edit AFTER session creation never changes the pinned session.
 
-import { isActionEvent, isLogicEvent, type Seat } from "@bridge/events";
+import {
+  isActionEvent,
+  isLogicEvent,
+  type Call,
+  type Seat,
+  type Vul,
+} from "@bridge/events";
+import { applyEvent, initialState, legalPlays, seededDeal } from "@bridge/engine";
 import {
   FIXTURE_EDGES,
   FIXTURE_ITEMS,
@@ -14,8 +21,10 @@ import {
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   AwaitingHumanError,
+  eventsFromRecording,
   InMemorySessionStore,
   SessionService,
+  type RecordedActions,
   type SeatConfig,
 } from "./index";
 
@@ -230,6 +239,166 @@ describe("explicit-deal boards (library/import)", () => {
     const forkView = await service.view(forked.sessionId);
     expect(forkView.state.hands.E).toEqual(hands.E);
     expect(forked.board.name).toBe("Library board #1");
+  });
+});
+
+describe("eventsFromRecording", () => {
+  const boardRef = "recorded-board";
+  const hands = seededDeal(11);
+
+  /** A legal 4-call auction (1N by N, passed out) plus two full tricks,
+   *  derived by folding the real engine so every entry is legal. */
+  const buildRecording = (): RecordedActions => {
+    const auction: RecordedActions["auction"] = [
+      { seat: "N", call: "1N" },
+      { seat: "E", call: "P" },
+      { seat: "S", call: "P" },
+      { seat: "W", call: "P" },
+    ];
+    let state = initialState(boardRef, "N", "none", hands);
+    for (const { seat, call } of auction)
+      state = applyEvent(state, {
+        seq: 0,
+        ts: 0,
+        boardRef,
+        category: "bid-event",
+        seat,
+        call,
+        fallback: false,
+      });
+    const play: RecordedActions["play"] = [];
+    for (let i = 0; i < 8; i++) {
+      const seat = state.turn;
+      const card = legalPlays(state, seat)[0]!;
+      play.push({ seat, card });
+      state = applyEvent(state, {
+        seq: 0,
+        ts: 0,
+        boardRef,
+        category: "play-event",
+        seat,
+        card,
+        fallback: false,
+      });
+    }
+    return { boardRef, dealer: "N", vul: "none", hands, auction, play };
+  };
+
+  it("emits logic+action pairs with the engine's seq invariant", () => {
+    const { events, complete } = eventsFromRecording(buildRecording());
+    expect(events).toHaveLength(2 * (4 + 8));
+    expect(complete).toBe(false);
+    for (let i = 0; i < events.length; i += 2) {
+      const logic = events[i]!;
+      const action = events[i + 1]!;
+      expect(isLogicEvent(logic)).toBe(true);
+      expect(isActionEvent(action)).toBe(true);
+      expect(logic.seq).toBe(i); // even seqs are logic events
+      expect(action.seq).toBe(logic.seq + 1); // logicSeq = action.seq - 1
+    }
+  });
+
+  it("a session primed with the events replays the recorded auction and play", async () => {
+    const rec = buildRecording();
+    const { events } = eventsFromRecording(rec);
+    const compiled = (await kbService.liveCompile(kbId))!;
+    const record = await service.createSession({
+      kbId,
+      compiled,
+      seats: allAi,
+      seed: 1,
+      dealer: rec.dealer,
+      vul: rec.vul,
+      hands: rec.hands,
+      boardName: rec.boardRef,
+      createdBy: "u",
+      primedEvents: events,
+    });
+
+    const view = await service.view(record.sessionId);
+    expect(view.state.auction.map((c) => c.call)).toEqual(rec.auction.map((a) => a.call));
+    expect(view.state.phase).toBe("play");
+    // Two full tricks are gone from the hands (13 → 11 each).
+    for (const seat of ["N", "E", "S", "W"] as Seat[])
+      expect(view.state.hands[seat]).toHaveLength(11);
+    // The next actor follows the recorded prefix, not the deal.
+    const played = rec.play.map((p) => `${p.card.suit}${p.card.rank}`);
+    for (const seat of ["N", "E", "S", "W"] as Seat[])
+      for (const card of view.state.hands[seat])
+        expect(played).not.toContain(`${card.suit}${card.rank}`);
+  });
+
+  it("throws on an out-of-turn or unavailable recorded call", () => {
+    const rec = buildRecording();
+    expect(() =>
+      eventsFromRecording({ ...rec, auction: [{ seat: "E", call: "P" }], play: [] }),
+    ).toThrow(/out of turn/);
+    expect(() =>
+      eventsFromRecording({
+        ...rec,
+        auction: [
+          { seat: "N", call: "P" },
+          { seat: "E", call: "X" }, // nothing to double
+        ],
+        play: [],
+      }),
+    ).toThrow(/not legal/);
+  });
+
+  it("flags a fully passed-out recording complete", () => {
+    const auction: RecordedActions["auction"] = (["N", "E", "S", "W"] as Seat[]).map(
+      (seat) => ({ seat, call: "P" as Call }),
+    );
+    const { events, complete } = eventsFromRecording({
+      boardRef,
+      dealer: "N",
+      vul: "none" as Vul,
+      hands,
+      auction,
+      play: [],
+    });
+    expect(complete).toBe(true);
+    expect(events).toHaveLength(8);
+  });
+});
+
+describe("rewindToStart and createSession status", () => {
+  it("rewinds a completed board to the fresh deal, back to active", async () => {
+    const compiled = (await kbService.liveCompile(kbId))!;
+    const record = await service.createSession({
+      kbId,
+      compiled,
+      seats: allAi,
+      seed: 7,
+      createdBy: "u",
+    });
+    let view = await service.view(record.sessionId);
+    let guard = 0;
+    while (view.state.phase !== "complete" && guard++ < 400) {
+      view = await service.step(record.sessionId);
+    }
+    expect(view.record.status).toBe("completed");
+
+    const rewound = await service.rewindToStart(record.sessionId);
+    expect(rewound.record.events).toHaveLength(0);
+    expect(rewound.record.status).toBe("active");
+    expect(rewound.state.phase).toBe("auction");
+    expect(rewound.state.auction).toHaveLength(0);
+  });
+
+  it("createSession persists an explicit completed status", async () => {
+    const compiled = (await kbService.liveCompile(kbId))!;
+    const record = await service.createSession({
+      kbId,
+      compiled,
+      seats: allAi,
+      seed: 7,
+      createdBy: "u",
+      status: "completed",
+    });
+    expect(record.status).toBe("completed");
+    const view = await service.view(record.sessionId);
+    expect(view.record.status).toBe("completed");
   });
 });
 

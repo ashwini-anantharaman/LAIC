@@ -317,6 +317,8 @@ export function parseCommon(fd: FormData): {
   phase: KnowledgePhase;
   status: "draft" | "reviewed" | "approved" | "deprecated";
   supportedLevels: string[];
+  internalNotes: string | undefined;
+  tags: string[] | undefined;
 } {
   return {
     title: str(fd, "title"),
@@ -328,5 +330,10 @@ export function parseCommon(fd: FormData): {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    internalNotes: str(fd, "internalNotes") || undefined,
+    tags: (() => {
+      const t = str(fd, "tags").split(",").map((s) => s.trim()).filter(Boolean);
+      return t.length ? t : undefined;
+    })(),
   };
 }

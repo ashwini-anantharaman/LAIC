@@ -28,6 +28,11 @@ export const NAV_ITEMS: readonly NavItem[] = [
     requiresRoles: ADMIN_AREA_ROLES,
   },
   {
+    href: "/bridge/teams",
+    label: "Teams & roles",
+    requiresRoles: ADMIN_AREA_ROLES,
+  },
+  {
     href: "/bridge/org",
     label: "Organization",
     requiresRoles: ["bridge_coach", "bridge_org_admin", "bridge_club_admin", "bridge_program_admin"],

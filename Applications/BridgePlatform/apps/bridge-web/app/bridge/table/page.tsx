@@ -3,15 +3,16 @@ import { redirect } from "next/navigation";
 import { pickDefaultSet } from "@/lib/arena";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
-import { sessionService } from "@/lib/sessions";
+import { libraryStore, sessionService } from "@/lib/sessions";
+import { resumePlayEntryAction } from "../library/actions";
 import { quickPlayAction } from "./actions";
 
 /**
- * Play (2026-07-21 rework): a landing with two doors instead of an
- * auto-dealt board. QUICKPLAY starts immediately — resume your unfinished
- * board or deal a fresh one against the house lineup. CUSTOMIZE opens the
- * table builder: pick the players, the seats, the knowledge set, or start
- * from a saved board in the library.
+ * Play (2026-07-22 rework, R16): a landing with two doors instead of an
+ * auto-dealt board. QUICKPLAY starts immediately — resume any of your
+ * unfinished boards, resume a saved play from the library, or deal a fresh
+ * one against the house lineup. CUSTOMIZE opens the table builder: pick the
+ * players seat by seat, save the lineup, or start from a saved table.
  */
 export default async function PlayPage() {
   const context = await getBridgeContext();
@@ -23,14 +24,25 @@ export default async function PlayPage() {
   const kbs = await store.listKbs();
   const archived = new Set(kbs.filter((k) => k.archived).map((k) => k.kbId));
 
-  // An unfinished board this player started becomes the resume card.
+  // Unfinished boards this player started become the resume affordance.
   const recent = await sessionService().listRecent();
-  const unfinished = recent.find(
-    (s) =>
-      s.createdBy === context.nexusUserId &&
-      s.status === "active" &&
-      !archived.has(s.kbId),
-  );
+  const actives = recent
+    .filter(
+      (s) =>
+        s.createdBy === context.nexusUserId &&
+        s.status === "active" &&
+        !archived.has(s.kbId),
+    )
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 8);
+
+  // Saved plays from the library resume onto a fresh table.
+  let plays: Awaited<ReturnType<ReturnType<typeof libraryStore>["listEntries"]>> = [];
+  try {
+    plays = (await libraryStore().listEntries("play")).slice(0, 8);
+  } catch {
+    // Library storage not migrated yet (0015) — the dropdown just hides.
+  }
 
   // Anything to deal at all? (Same walk Quickplay makes, minus the session.)
   let dealable = false;
@@ -41,6 +53,9 @@ export default async function PlayPage() {
       break;
     }
   }
+
+  const resumable = actives.length > 0 || plays.length > 0;
+  const single = actives.length === 1 ? actives[0] : undefined;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -53,7 +68,7 @@ export default async function PlayPage() {
         </p>
       </header>
 
-      {!dealable && !unfinished ? (
+      {!dealable && !resumable ? (
         <p className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
           No knowledge base compiles yet.{" "}
           <Link href="/bridge/kb" className="text-emerald-700 underline-offset-4 hover:underline">
@@ -66,30 +81,76 @@ export default async function PlayPage() {
           <section className="flex flex-col rounded-xl border border-neutral-200 bg-[var(--card)] p-6">
             <h2 className="font-serif text-xl font-medium">Quickplay</h2>
             <p className="mt-2 flex-1 text-sm text-neutral-600">
-              {unfinished
-                ? "You have a board in progress — pick it up where you left off, or deal a fresh one."
+              {resumable
+                ? "Pick up a board or a saved play where you left off, or deal a fresh one."
                 : "A fresh board, dealt now: you sit South against three house players carrying the strongest knowledge set."}
             </p>
             <div className="mt-4 space-y-2">
-              {unfinished && (
+              {single && (
                 <Link
-                  href={`/bridge/table/${unfinished.sessionId}`}
+                  href={`/bridge/table/${single.sessionId}`}
                   className="block w-full rounded bg-emerald-700 px-4 py-2 text-center text-sm font-medium text-white hover:bg-emerald-800"
                 >
-                  Resume {unfinished.board.name}
+                  Resume {single.board.name}
                 </Link>
+              )}
+              {actives.length > 1 && (
+                <details className="relative">
+                  <summary className="block w-full cursor-pointer rounded bg-emerald-700 px-4 py-2 text-center text-sm font-medium text-white hover:bg-emerald-800">
+                    Resume board ▾ ({actives.length} in progress)
+                  </summary>
+                  <div className="absolute left-0 right-0 z-10 mt-1 rounded-lg border border-neutral-200 bg-[var(--card)] p-1 shadow-lg">
+                    {actives.map((s) => (
+                      <Link
+                        key={s.sessionId}
+                        href={`/bridge/table/${s.sessionId}`}
+                        className="flex items-baseline gap-3 rounded px-3 py-1.5 text-sm hover:bg-emerald-50"
+                      >
+                        <span className="font-medium">{s.board.name}</span>
+                        <span className="ml-auto text-xs text-neutral-400">
+                          {s.updatedAt.slice(5, 16).replace("T", " ")}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </details>
+              )}
+              {plays.length > 0 && (
+                <details className="relative">
+                  <summary className="block w-full cursor-pointer rounded border border-neutral-300 px-4 py-2 text-center text-sm hover:border-emerald-400">
+                    Resume play ▾
+                  </summary>
+                  <div className="absolute left-0 right-0 z-10 mt-1 rounded-lg border border-neutral-200 bg-[var(--card)] p-1 shadow-lg">
+                    {plays.map((p) => (
+                      <form key={p.entryId} action={resumePlayEntryAction}>
+                        <input type="hidden" name="entryId" value={p.entryId} />
+                        <button
+                          type="submit"
+                          className="flex w-full items-baseline gap-3 rounded px-3 py-1.5 text-left text-sm hover:bg-emerald-50"
+                        >
+                          <span className="font-medium">{p.name}</span>
+                          {p.resultLabel && (
+                            <span className="ml-auto text-xs text-neutral-400">
+                              {p.resultLabel}
+                            </span>
+                          )}
+                        </button>
+                      </form>
+                    ))}
+                  </div>
+                </details>
               )}
               {dealable && (
                 <form action={quickPlayAction}>
                   <button
                     type="submit"
                     className={
-                      unfinished
+                      resumable
                         ? "w-full rounded border border-neutral-300 px-4 py-2 text-sm hover:border-emerald-400"
                         : "w-full rounded bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"
                     }
                   >
-                    {unfinished ? "Deal a fresh board" : "Quickplay"}
+                    {resumable ? "Deal a fresh board" : "Quickplay"}
                   </button>
                 </form>
               )}
@@ -99,16 +160,21 @@ export default async function PlayPage() {
           <section className="flex flex-col rounded-xl border border-neutral-200 bg-[var(--card)] p-6">
             <h2 className="font-serif text-xl font-medium">Customize</h2>
             <p className="mt-2 flex-1 text-sm text-neutral-600">
-              Choose who sits where — any player from any knowledge base — set the deal seed,
-              start from a saved board in the library, or drill an incomplete player on a safe
-              deal.
+              Build a table seat by seat — any player from any knowledge base, your seat, the
+              deal seed — and save lineups you like to the library to start them again anytime.
             </p>
-            <div className="mt-4">
+            <div className="mt-4 space-y-2">
               <Link
-                href="/bridge/table/choose"
+                href="/bridge/library/tables/new"
                 className="block w-full rounded border border-neutral-300 px-4 py-2 text-center text-sm font-medium hover:border-emerald-500 hover:bg-emerald-50"
               >
                 Set up a table
+              </Link>
+              <Link
+                href="/bridge/library?kind=table"
+                className="block w-full rounded px-4 py-2 text-center text-sm text-emerald-700 underline-offset-4 hover:underline"
+              >
+                Saved tables →
               </Link>
             </div>
           </section>

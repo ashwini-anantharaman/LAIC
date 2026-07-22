@@ -15,13 +15,18 @@ import {
   createEventLog,
   isActionEvent,
   type ActionEvent,
+  type BidEvent,
+  type BidLogicEvent,
   type Call,
   type Card,
   type GameEvent,
+  type PlayEvent,
+  type PlayLogicEvent,
   type Seat,
   type Vul,
 } from "@bridge/events";
 import {
+  applyEvent,
   createGame,
   createKbDecider,
   initialState,
@@ -113,6 +118,105 @@ export class InMemorySessionStore implements SessionStore {
 }
 
 // ---------------------------------------------------------------------------
+// Recorded boards
+// ---------------------------------------------------------------------------
+
+/** A board recorded as plain actions (library/imported), no event stream. */
+export interface RecordedActions {
+  boardRef: string;
+  dealer: Seat;
+  vul: Vul;
+  hands: Record<Seat, Card[]>;
+  auction: { seat: Seat; call: Call }[];
+  play: { seat: Seat; card: Card }[];
+}
+
+/**
+ * Synthesize a legal event prefix from a recorded auction+play. Emits
+ * logic+action PAIRS (logic seq 2i, action seq 2i+1) so undo() and the
+ * engine's `logicSeq = seq - 1` invariant hold. Throws on out-of-turn or
+ * illegal recorded actions.
+ */
+export function eventsFromRecording(rec: RecordedActions): {
+  events: GameEvent[];
+  complete: boolean;
+} {
+  const events: GameEvent[] = [];
+  let state = initialState(rec.boardRef, rec.dealer, rec.vul, rec.hands);
+  let pair = 0;
+  const reason = "recorded — resumed from the library";
+  const logicBase = (seat: Seat) => ({
+    seq: pair * 2,
+    ts: Date.now(),
+    boardRef: rec.boardRef,
+    seat,
+    fallback: false,
+    trace: [],
+    citedSettings: [],
+    facts: {},
+    reason,
+    rejected: [],
+  });
+
+  for (const { seat, call } of rec.auction) {
+    if (state.phase !== "auction")
+      throw new Error(`Recorded call ${call} by ${seat} falls outside the auction`);
+    if (state.turn !== seat)
+      throw new Error(`Recorded call ${call} by ${seat} is out of turn (${state.turn} to act)`);
+    if (!legalCalls(state.auction, seat).has(call))
+      throw new Error(`Recorded call ${call} by ${seat} is not legal at this point`);
+    const logic: BidLogicEvent = {
+      ...logicBase(seat),
+      category: "bid-logic-event",
+      candidates: [call],
+      chosen: call,
+    };
+    const action: BidEvent = {
+      seq: pair * 2 + 1,
+      ts: Date.now(),
+      boardRef: rec.boardRef,
+      category: "bid-event",
+      seat,
+      call,
+      fallback: false,
+    };
+    events.push(logic, action);
+    state = applyEvent(state, action);
+    pair++;
+  }
+
+  for (const { seat, card } of rec.play) {
+    const label = `${card.suit}${card.rank}`;
+    if (state.phase !== "play")
+      throw new Error(`Recorded play ${label} by ${seat} falls outside the play`);
+    if (state.turn !== seat)
+      throw new Error(`Recorded play ${label} by ${seat} is out of turn (${state.turn} to act)`);
+    if (!legalPlays(state, seat).some((c) => c.suit === card.suit && c.rank === card.rank))
+      throw new Error(`Recorded play ${label} by ${seat} is not legal at this point`);
+    const logic: PlayLogicEvent = {
+      ...logicBase(seat),
+      category: "play-logic-event",
+      candidates: [card],
+      chosen: card,
+    };
+    const action: PlayEvent = {
+      seq: pair * 2 + 1,
+      ts: Date.now(),
+      boardRef: rec.boardRef,
+      category: "play-event",
+      seat,
+      card,
+      fallback: false,
+    };
+    events.push(logic, action);
+    state = applyEvent(state, action);
+    pair++;
+  }
+
+  return { events, complete: state.phase === "complete" };
+}
+
+// ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
 
@@ -177,6 +281,8 @@ export class SessionService {
     forkedFromSessionId?: string;
     /** Adopted event prefix (forks resume mid-board). */
     primedEvents?: GameEvent[];
+    /** Initial status ("completed" for fully recorded boards). */
+    status?: "active" | "completed";
   }): Promise<SessionRecord> {
     const record: SessionRecord = {
       sessionId: newId("bs"),
@@ -191,7 +297,7 @@ export class SessionService {
       },
       seats: input.seats,
       events: input.primedEvents ?? [],
-      status: "active",
+      status: input.status ?? "active",
       createdBy: input.createdBy,
       createdAt: this.now(),
       updatedAt: this.now(),
@@ -377,6 +483,16 @@ export class SessionService {
     // The single-writer emits logic then action as consecutive seqs — drop
     // the pair together.
     record.events = record.events.filter((e) => e.seq < lastAction.seq - 1);
+    record.status = "active";
+    record.updatedAt = this.now();
+    await this.store.putSession(record);
+    return this.view(sessionId);
+  }
+
+  /** Rewind the whole board to the deal: drop every event, back to active. */
+  async rewindToStart(sessionId: string): Promise<SessionView> {
+    const record = await this.requireSession(sessionId);
+    record.events = [];
     record.status = "active";
     record.updatedAt = this.now();
     await this.store.putSession(record);

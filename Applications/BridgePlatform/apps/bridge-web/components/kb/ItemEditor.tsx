@@ -21,6 +21,9 @@ import type {
 } from "@bridge/kb";
 import { useState, type ReactNode } from "react";
 import { TYPE_LABEL } from "./badges";
+import { Glyph, joinNodes, suitRefName } from "./ruleEnglish";
+
+const suitName = suitRefName;
 
 const showNum = (p: NumParam | undefined): string =>
   p === undefined ? "" : typeof p === "number" ? String(p) : `$${p.$setting}${p.field ? `.${p.field}` : ""}`;
@@ -78,13 +81,6 @@ const label = "mb-0.5 block text-[11px] text-neutral-500";
 // cards so a many-rule item scans as a list of sentences. Field NAMES are the
 // stable form contract with lib/itemForm.ts — do not rename them.
 // ---------------------------------------------------------------------------
-
-const SUIT_GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
-const redGlyph = (s: string) => s === "H" || s === "D";
-
-function Glyph({ s }: Readonly<{ s: string }>) {
-  return <span className={redGlyph(s) ? "text-[var(--madder)]" : ""}>{SUIT_GLYPH[s] ?? s}</span>;
-}
 
 interface PatternDraft {
   kind: string;
@@ -245,28 +241,6 @@ function callDesc(p: PatternDraft): ReactNode | null {
     </>
   );
 }
-
-function suitName(s: string): ReactNode | null {
-  if (!s) return null;
-  if (s === "partner_last_bid_suit") return "partner's suit";
-  if (s === "partner_first_bid_suit") return "partner's first suit";
-  if (s === "own_longest_suit") return "my longest suit";
-  if (s === "own_shortest_suit") return "my shortest suit";
-  if (s === "own_first_bid_suit") return "my first suit";
-  if (s === "own_last_bid_suit") return "my last bid suit";
-  if (s === "rho_bid_suit") return "RHO's suit";
-  if (s === "lho_bid_suit") return "LHO's suit";
-  if (s === "only_unbid_suit") return "the fourth (only unbid) suit";
-  return <Glyph s={s} />;
-}
-
-const joinNodes = (parts: ReactNode[], sep = ", "): ReactNode =>
-  parts.map((part, i) => (
-    <span key={i}>
-      {i > 0 && sep}
-      {part}
-    </span>
-  ));
 
 function contextPhrases(d: ContextDraft): ReactNode[] {
   const when: ReactNode[] = [];
@@ -1168,6 +1142,19 @@ export function ItemEditor({
           <input
             name="supportedLevels"
             defaultValue={item?.supportedLevels.join(", ") ?? ""}
+            className={input}
+          />
+        </label>
+        <label className="text-sm">
+          <span className={label}>Tags (comma-separated)</span>
+          <input name="tags" defaultValue={item?.tags?.join(", ") ?? ""} className={input} />
+        </label>
+        <label className="text-sm sm:col-span-2">
+          <span className={label}>Internal notes (fellows only — never shown to players)</span>
+          <textarea
+            name="internalNotes"
+            rows={2}
+            defaultValue={item?.internalNotes ?? ""}
             className={input}
           />
         </label>

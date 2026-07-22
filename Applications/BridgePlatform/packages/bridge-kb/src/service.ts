@@ -163,8 +163,23 @@ export class KbService {
         | "sourceReferences"
         | "supportedLevels"
         | "status"
+        | "internalNotes"
+        | "tags"
       >
     >,
+    editedBy: string,
+  ): Promise<KnowledgeItem> {
+    const target = await this.applyItemEdit(kbId, itemId, changes, editedBy);
+    await this.recompile(kbId);
+    return target;
+  }
+
+  /** saveItem's core (fork-on-write for shared items) WITHOUT the recompile —
+   *  bulk operations apply many edits and recompile once at the end. */
+  private async applyItemEdit(
+    kbId: string,
+    itemId: string,
+    changes: Parameters<KbService["saveItem"]>[2],
     editedBy: string,
   ): Promise<KnowledgeItem> {
     const existing = await this.store.getItem(itemId);
@@ -209,8 +224,28 @@ export class KbService {
         }
       }
     }
-    await this.recompile(kbId);
     return target;
+  }
+
+  /**
+   * Bulk status change (trust badge). Items already at `status` are skipped;
+   * shared items fork exactly as saveItem would. One recompile at the end.
+   */
+  async setItemsStatus(
+    kbId: string,
+    itemIds: string[],
+    status: KnowledgeItem["status"],
+    editedBy: string,
+  ): Promise<{ changed: { itemId: string; title: string }[] }> {
+    const changed: { itemId: string; title: string }[] = [];
+    for (const itemId of new Set(itemIds)) {
+      const existing = await this.store.getItem(itemId);
+      if (!existing || existing.status === status) continue;
+      const target = await this.applyItemEdit(kbId, itemId, { status }, editedBy);
+      changed.push({ itemId: target.itemId, title: target.title });
+    }
+    if (changed.length) await this.recompile(kbId);
+    return { changed };
   }
 
   /** List an item into another KB while identical (shared membership). */
@@ -288,6 +323,8 @@ export class KbService {
         sourceReferences: version.sourceReferences,
         supportedLevels: version.supportedLevels,
         status: version.status,
+        internalNotes: version.internalNotes,
+        tags: version.tags,
       },
       editedBy,
     );

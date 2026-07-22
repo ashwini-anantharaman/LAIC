@@ -4,29 +4,22 @@ import { redirect } from "next/navigation";
 import { arenaSets, HOUSE_PREFIX } from "@/lib/arena";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
-import { libraryStore, sessionService } from "@/lib/sessions";
-import { arenaPlayAction, createDrillAction, createSessionAction } from "../actions";
+import { arenaPlayAction, createDrillAction, createSessionAction } from "../../../table/actions";
+import { createTableEntryAction } from "./actions";
 
 const SEATS = ["N", "E", "S", "W"] as const;
 
-/** Customize a table (2026-07-21): the full menu of who to play against —
- *  knowledge sets, seat-by-seat player choice, saved boards from the
- *  library, drills. Quickplay (on the Play page) is the no-questions door. */
-export default async function ChooseTablePage() {
+/** New table (2026-07-22, moved from /bridge/table/choose): the full menu of
+ *  who to play against — knowledge sets, seat-by-seat player choice, drills —
+ *  with the option to save a lineup back into the library. Quickplay (on the
+ *  Play page) is the no-questions door. */
+export default async function NewTablePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   await ensureSeeds();
 
   const store = kbStore();
   const kbs = (await store.listKbs()).filter((k) => !k.archived);
-  const visibleKbIds = new Set(kbs.map((k) => k.kbId));
-  const sessions = (await sessionService().listRecent()).filter((s) => visibleKbIds.has(s.kbId)).slice(0, 6);
-  let boards: Awaited<ReturnType<ReturnType<typeof libraryStore>["listEntries"]>> = [];
-  try {
-    boards = (await libraryStore().listEntries("board")).slice(0, 4);
-  } catch {
-    // Library storage not migrated yet (0015) — the strip just hides.
-  }
 
   const arenas = [];
   for (const kb of kbs) {
@@ -43,19 +36,17 @@ export default async function ChooseTablePage() {
   return (
     <div className="mx-auto max-w-3xl">
       <header className="mb-8">
-        <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">Play</p>
-        <h1 className="mt-1 text-3xl font-medium">Customize a table</h1>
+        <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">
+          Library / new table
+        </p>
+        <h1 className="mt-1 text-3xl font-medium">New table</h1>
         <p className="mt-2 max-w-xl text-sm text-neutral-600">
-          Pick a knowledge set to play against — house players are provisioned for you, and
-          every decision they make at the table stays traceable. Or configure{" "}
+          Pick a knowledge set to play against right away — house players are provisioned for
+          you, and every decision they make at the table stays traceable. Or set up{" "}
           <a href="#custom" className="text-emerald-700 underline-offset-4 hover:underline">
             every seat yourself
-          </a>
-          . In a hurry?{" "}
-          <Link href="/bridge/table" className="text-emerald-700 underline-offset-4 hover:underline">
-            Quickplay
-          </Link>{" "}
-          deals instantly.
+          </a>{" "}
+          and, if the lineup is a keeper, save it to the library to start it again anytime.
         </p>
       </header>
 
@@ -141,67 +132,6 @@ export default async function ChooseTablePage() {
         ))
       )}
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
-          From the library
-        </h2>
-        <ul className="flex flex-wrap gap-2">
-          {boards.map((b) => (
-            <li key={b.entryId}>
-              <Link
-                href={`/bridge/library/${b.entryId}`}
-                className="inline-block rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-500"
-              >
-                {b.name}
-              </Link>
-            </li>
-          ))}
-          <li>
-            <Link
-              href="/bridge/library"
-              className="inline-block rounded-full px-3 py-1 text-xs text-emerald-700 underline-offset-4 hover:underline"
-            >
-              all saved boards →
-            </Link>
-          </li>
-          <li>
-            <Link
-              href="/bridge/library/new"
-              className="inline-block rounded-full px-3 py-1 text-xs text-emerald-700 underline-offset-4 hover:underline"
-            >
-              author or import a board →
-            </Link>
-          </li>
-        </ul>
-      </section>
-
-      {sessions.length > 0 && (
-        <section className="mb-8">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
-            Recent boards
-          </h2>
-          <ul className="space-y-1">
-            {sessions.map((s) => (
-              <li key={s.sessionId}>
-                <Link
-                  href={`/bridge/table/${s.sessionId}`}
-                  className="flex items-baseline gap-3 rounded border border-neutral-200 bg-[var(--card)] px-3 py-2 text-sm hover:border-emerald-400"
-                >
-                  <span className="font-medium">{s.board.name}</span>
-                  <span className="text-xs text-neutral-500">
-                    {s.status}
-                    {s.forkedFromSessionId && " · fork"}
-                  </span>
-                  <span className="ml-auto text-xs text-neutral-400">
-                    {s.createdAt.slice(5, 16).replace("T", " ")}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       {/* Full control, tucked away */}
       {arenas.length > 0 && (
         <details id="custom" className="rounded-lg border border-neutral-200">
@@ -214,6 +144,26 @@ export default async function ChooseTablePage() {
                 <h3 className="mb-2 font-serif text-base font-medium">{kb.name}</h3>
                 <form action={createSessionAction} className="space-y-3">
                   <input type="hidden" name="kbId" value={kb.kbId} />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-sm">
+                      <span className="mb-1 block text-xs text-neutral-500">
+                        Table name (for saving)
+                      </span>
+                      <input
+                        name="name"
+                        placeholder={`${kb.name} lineup`}
+                        className="w-full rounded border border-neutral-300 px-2 py-1.5"
+                      />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1 block text-xs text-neutral-500">Notes (optional)</span>
+                      <textarea
+                        name="notes"
+                        rows={2}
+                        className="w-full rounded border border-neutral-300 px-2 py-1.5"
+                      />
+                    </label>
+                  </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="text-sm">
                       <span className="mb-1 block text-xs text-neutral-500">Your seat</span>
@@ -257,13 +207,23 @@ export default async function ChooseTablePage() {
                       </label>
                     ))}
                   </div>
-                  <button
-                    type="submit"
-                    className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
-                    disabled={players.length === 0}
-                  >
-                    Deal a board
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+                      disabled={players.length === 0}
+                    >
+                      Deal a board
+                    </button>
+                    <button
+                      type="submit"
+                      formAction={createTableEntryAction}
+                      className="rounded border border-neutral-300 px-4 py-1.5 text-sm hover:border-emerald-400"
+                      disabled={players.length === 0}
+                    >
+                      Save lineup to library
+                    </button>
+                  </div>
                 </form>
 
                 <form action={createDrillAction} className="mt-4 border-t border-[var(--line)] pt-4">

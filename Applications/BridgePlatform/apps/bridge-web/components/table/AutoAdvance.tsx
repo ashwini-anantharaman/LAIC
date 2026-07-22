@@ -14,6 +14,7 @@ export function AutoAdvance({
   sessionId,
   active,
   seq,
+  complete,
   beatMs = 750,
   initialPaused = true,
 }: Readonly<{
@@ -22,6 +23,8 @@ export function AutoAdvance({
   active: boolean;
   /** Event count — changes after every step so the effect re-arms. */
   seq: number;
+  /** Board complete — nothing left to advance; the controls disappear. */
+  complete?: boolean;
   beatMs?: number;
   /** Boards open paused; pass false only for flows that should self-start. */
   initialPaused?: boolean;
@@ -49,32 +52,42 @@ export function AutoAdvance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, paused, seq, sessionId, beatMs, router]);
 
-  if (!active) return null;
+  if (complete) return null;
   return (
     <>
+      {active && (
+        <button
+          type="button"
+          onClick={() => setPaused((p) => !p)}
+          className={
+            paused
+              ? "rounded-full bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+              : "rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs text-emerald-800"
+          }
+          title={paused ? "Start automatic play" : "Pause automatic play"}
+        >
+          {paused ? (seq === 0 ? "▶ start" : "▶ resume") : "❚❚ auto-playing"}
+        </button>
+      )}
+      {/* Manual control: pauses auto-play, then one AI decision per click.
+          Stays visible on a human turn — disabled, explaining why. */}
       <button
         type="button"
-        onClick={() => setPaused((p) => !p)}
-        className={
-          paused
-            ? "rounded-full bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
-            : "rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs text-emerald-800"
-        }
-        title={paused ? "Start automatic play" : "Pause automatic play"}
-      >
-        {paused ? (seq === 0 ? "▶ start" : "▶ resume") : "❚❚ auto-playing"}
-      </button>
-      {/* Manual control: pauses auto-play, then one AI decision per click. */}
-      <button
-        type="button"
+        disabled={!active}
         onClick={() => {
           setPaused(true);
           void advance();
         }}
-        className="rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
-        title="Pause and advance one decision"
+        className={`rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 ${
+          active ? "hover:border-emerald-400" : "cursor-not-allowed opacity-40"
+        }`}
+        title={
+          active
+            ? "Pause and ask the AI for one decision"
+            : "A human is to act — bid or play from the hand"
+        }
       >
-        step ▸
+        ask ▸
       </button>
     </>
   );

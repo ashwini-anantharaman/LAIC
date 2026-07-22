@@ -12,7 +12,7 @@ import { initialState, type GameState } from "../state";
 import { realizeAuctionAction } from "./actions";
 import { analyzeSeat, matchCallPattern, matchContext } from "./auctionContext";
 import { createKbDecider, type KbPlayerConfig } from "./decider";
-import { evalCondition, type ConditionEnv } from "./handConditions";
+import { evalCondition, explainFailures, type ConditionEnv } from "./handConditions";
 
 const rankOf: Record<string, number> = {
   "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
@@ -237,6 +237,101 @@ describe("playingTricks", () => {
   it("a bare king is half a trick", () => {
     const bareK = hand("SK H8 H7 H6 H5 D8 D7 D6 D5 C5 C4 C3 C2");
     expect(evalCondition({ playingTricks: { min: 0.5, max: 0.5 } }, bareK, env)).toBe(true);
+  });
+});
+
+describe("explainFailures: needed vs held", () => {
+  // TWO_ACES: 13 HCP, 4-3-3-3.
+  const env = envFor([], "S");
+  const explain = (cond: HandCondition) => explainFailures(cond, TWO_ACES, env);
+
+  it("hcp: range and min-only formats", () => {
+    expect(explain({ hcp: { min: 15, max: 17 } })).toEqual(["needed 15–17 HCP, held 13"]);
+    expect(explain({ hcp: { min: 15 } })).toEqual(["needed 15+ HCP, held 13"]);
+  });
+
+  it("suitLength with a contextual ref, resolved and unresolvable", () => {
+    // Partner (N) bid hearts; S holds three of them.
+    const auction = calls(["N", "1H"], ["E", "P"]);
+    expect(
+      explainFailures(
+        { suitLength: { suit: "partner_last_bid_suit", min: 5 } },
+        TWO_ACES,
+        envFor(auction, "S"),
+      ),
+    ).toEqual(["needed 5+ cards in partner's suit, held 3"]);
+    // No partner bid yet — the ref does not resolve.
+    expect(explain({ suitLength: { suit: "partner_last_bid_suit", min: 5 } })).toEqual([
+      "needed 5+ cards in partner's suit (no such suit yet)",
+    ]);
+  });
+
+  it("balanced reports the held shape", () => {
+    const FIVE_FOUR = hand("SA SK SQ S5 S4 HA H7 H6 H5 D8 D7 D6 C2");
+    expect(explainFailures({ balanced: true }, FIVE_FOUR, env)).toEqual([
+      "needed a balanced hand, held 5-4-3-1",
+    ]);
+  });
+
+  it("any-combinator collapses to one 'needed one of' string", () => {
+    expect(
+      explain({ any: [{ hcp: { min: 15 } }, { suitLength: { suit: "S", min: 6 } }] }),
+    ).toEqual(["needed one of: 15+ HCP / 6+ cards in ♠"]);
+  });
+
+  it("returns [] for a condition that passes", () => {
+    expect(explain({ hcp: { min: 10, max: 15 } })).toEqual([]);
+    expect(explain({ all: [{ balanced: true }, { aces: { min: 2 } }] })).toEqual([]);
+  });
+
+  it("a condition-rejected rule's trace entry carries failedChecks", async () => {
+    const NOW = "2026-07-21T00:00:00.000Z";
+    const item: KnowledgeItem = {
+      sourceReferences: [{ sourceId: "src_claude", anchor: "test" }],
+      supportedLevels: [],
+      status: "approved",
+      version: 1,
+      createdBy: "u",
+      createdAt: NOW,
+      updatedAt: NOW,
+      settings: [],
+      itemId: "ki_strong",
+      title: "Strong 2C",
+      humanReadableText: "Open 2C with 22+ HCP.",
+      knowledgeType: "agreement",
+      phase: "auction",
+      payload: {
+        kind: "auction_rules",
+        rules: [
+          {
+            key: "strong2c",
+            label: "Strong 2C opening",
+            context: { role: "any" },
+            conditions: { hcp: { min: 22 } },
+            action: { type: "pass" },
+            priority: 10,
+          },
+        ],
+      },
+    };
+    const store = new InMemoryKbStore();
+    const service = new KbService(store, { now: () => NOW });
+    const kb = await service.createKb({ name: "E", systemLabel: "SAYC", createdBy: "u" });
+    await store.putItem(item);
+    await store.addMembership({ kbId: kb.kbId, itemId: item.itemId });
+    await service.recompile(kb.kbId);
+    const compiled = (await service.liveCompile(kb.kbId))!;
+
+    const hands: Record<Seat, Card[]> = { N: [], E: [], S: TWO_ACES, W: [] };
+    const state = initialState("t1", "S", "none", hands);
+    const decider = createKbDecider({
+      compiled,
+      player: { enabledPackIds: [], settingOverrides: {}, decisionPolicyId: "first_match" },
+    });
+    const d = await decider.decideBid(state, "S");
+    const rejected = d.trace.find((t) => t.ruleId === "ki_strong.strong2c")!;
+    expect(rejected.matched).toBe(false);
+    expect(rejected.failedChecks).toEqual(["needed 22+ HCP, held 13"]);
   });
 });
 

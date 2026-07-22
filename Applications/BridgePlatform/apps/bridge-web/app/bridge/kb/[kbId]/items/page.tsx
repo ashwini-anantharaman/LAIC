@@ -1,11 +1,14 @@
 import type { KnowledgeItem, KnowledgePhase, KnowledgeType } from "@bridge/kb";
 import Link from "next/link";
-import { deleteItemsAction } from "@/app/bridge/kb/actions";
+import { deprecateItemsAction } from "@/app/bridge/kb/actions";
 import { AccordionGroup, AccordionSection } from "@/components/kb/Accordion";
-import { StatusBadge, TYPE_LABEL } from "@/components/kb/badges";
+import { bandLine, StatusBadge, TYPE_DESCRIPTION, TYPE_LABEL } from "@/components/kb/badges";
 import { BulkItemsForm } from "@/components/kb/BulkItemsForm";
 import { BulkResultBanner } from "@/components/kb/BulkResultBanner";
+import { SelectNav } from "@/components/kb/SelectNav";
+import { ViewerPrefs } from "@/components/kb/ViewerPrefs";
 import { kbStore } from "@/lib/kb";
+import { WHEN_LABEL, WHEN_ORDER, whenOf, whenRoles } from "@/lib/whenFacet";
 
 const PHASES: KnowledgePhase[] = ["auction", "opening_lead", "declarer_play", "defense", "scoring"];
 const PHASE_LABEL: Record<KnowledgePhase, string> = {
@@ -57,8 +60,20 @@ function contentLabel(item: KnowledgeItem): string {
 }
 
 type View = "cards" | "list" | "table";
-type Group = "kind" | "phase" | "status" | "none";
+type Group = "kind" | "phase" | "status" | "when" | "none";
 type Sort = "title" | "updated" | "rules";
+
+/** Does the item speak in this auction position? ("any"-role rules match all
+ *  four positions; items with no auction roles never match.) */
+function matchesWhen(item: KnowledgeItem, when: string): boolean {
+  const roles = whenRoles(item);
+  if (when === "opening") return roles.has("opening") || roles.has("any");
+  if (when === "responding") return roles.has("responder") || roles.has("any");
+  if (when === "rebidding") return roles.has("opener") || roles.has("any");
+  if (when === "competing")
+    return roles.has("overcaller") || roles.has("advancer") || roles.has("any");
+  return true;
+}
 
 /** The Master knowledge viewer: three views (cards for reading, list for
  *  working, table for auditing), groupable and sortable, all URL-driven. */
@@ -72,20 +87,25 @@ export default async function ItemsPage({
     type?: string;
     phase?: string;
     status?: string;
+    when?: string;
+    tag?: string;
     view?: string;
     group?: string;
     sort?: string;
     bulkDeleted?: string;
+    bulkDeprecated?: string;
     bulkBlocked?: string;
     bulkSets?: string;
   }>;
 }>) {
   const { kbId } = await params;
   const sp = await searchParams;
-  const { q, type, phase, status, bulkDeleted, bulkBlocked, bulkSets } = sp;
+  const { q, type, phase, status, when, tag, bulkDeleted, bulkDeprecated, bulkBlocked, bulkSets } = sp;
   const view: View = sp.view === "list" || sp.view === "table" ? sp.view : "cards";
   const group: Group =
-    sp.group === "phase" || sp.group === "status" || sp.group === "none" ? sp.group : "kind";
+    sp.group === "phase" || sp.group === "status" || sp.group === "when" || sp.group === "none"
+      ? sp.group
+      : "kind";
   const sort: Sort = sp.sort === "updated" || sp.sort === "rules" ? sp.sort : "title";
 
   const items = await kbStore().listItemsForKb(kbId);
@@ -96,6 +116,8 @@ export default async function ItemsPage({
     .filter((i) => !type || i.knowledgeType === type)
     .filter((i) => !phase || i.phase === phase)
     .filter((i) => (status ? i.status === status : i.status !== "deprecated"))
+    .filter((i) => !when || matchesWhen(i, when))
+    .filter((i) => !tag || (i.tags ?? []).includes(tag))
     .sort((a, b) => {
       if (sort === "updated") return b.updatedAt.localeCompare(a.updatedAt);
       if (sort === "rules") return ruleCount(b) - ruleCount(a) || a.title.localeCompare(b.title);
@@ -116,6 +138,12 @@ export default async function ItemsPage({
       label: STATUS_LABEL[s] ?? s,
       items: filtered.filter((i) => i.status === s),
     }));
+  } else if (group === "when") {
+    groups = WHEN_ORDER.map((w) => ({
+      id: w,
+      label: WHEN_LABEL[w],
+      items: filtered.filter((i) => whenOf(i) === w),
+    }));
   } else if (group === "none") {
     groups = [{ id: "all", label: "All knowledge", items: filtered }];
   } else {
@@ -130,7 +158,7 @@ export default async function ItemsPage({
   const base = `/bridge/kb/${kbId}`;
   const qs = (overrides: Record<string, string | undefined>) => {
     const merged: Record<string, string | undefined> = {
-      q, type, phase, status, view, group, sort, ...overrides,
+      q, type, phase, status, when, tag, view, group, sort, ...overrides,
     };
     // Defaults stay out of the URL so links stay clean.
     if (merged.view === "cards") delete merged.view;
@@ -142,11 +170,34 @@ export default async function ItemsPage({
     return `${base}/items${p ? `?${p}` : ""}`;
   };
   const returnTo = qs({});
+  // Detail pages get a `from` param so their back link restores this exact
+  // list shape (filters + view/group/sort).
+  const itemHref = (item: KnowledgeItem) =>
+    `${base}/items/${item.itemId}?from=${encodeURIComponent(returnTo)}`;
 
-  const chip = (active: boolean) =>
-    active
-      ? "rounded-full border border-emerald-400 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"
-      : "rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400";
+  // Tag facet is built from ALL items (not the filtered set) so options don't
+  // vanish as you narrow.
+  const allTags = [...new Set(items.flatMap((i) => i.tags ?? []))].sort();
+
+  /** Muted priority-band suffix for kind group headers ("· convention (band 1 — …)"). */
+  const kindSuffix = (id: string) =>
+    group === "kind" ? (
+      <span className="text-xs font-normal normal-case text-neutral-400">
+        {" "}
+        · {bandLine(id as KnowledgeType) ?? "teaching prose — never plays"}
+      </span>
+    ) : null;
+
+  const tagChips = (item: KnowledgeItem) =>
+    (item.tags ?? []).map((t) => (
+      <Link
+        key={t}
+        href={qs({ tag: t })}
+        className="relative rounded-full border border-neutral-200 px-1.5 py-0.5 text-[10px] text-neutral-500 hover:border-emerald-400 hover:text-emerald-800"
+      >
+        {t}
+      </Link>
+    ));
 
   const kindChip = (item: KnowledgeItem) => (
     <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-600">
@@ -184,22 +235,29 @@ export default async function ItemsPage({
           id={g.id}
           summary={
             <>
-              <span className="font-serif text-lg font-medium capitalize">{g.label}</span>
+              <span className="font-serif text-lg font-medium capitalize">
+                {g.label}
+                {kindSuffix(g.id)}
+              </span>
               <span className="text-xs text-neutral-400">{g.items.length}</span>
             </>
           }
         >
           <div className="grid gap-3 border-t border-[var(--line)] p-4 sm:grid-cols-2">
             {g.items.map((item) => (
-              <Link
+              // Stretched-link card: the title link's ::after covers the card,
+              // so tag chips can stay real links (no nested anchors).
+              <div
                 key={item.itemId}
-                href={`${base}/items/${item.itemId}`}
-                className="group flex flex-col rounded-xl border border-neutral-200 bg-[var(--card)] p-4 shadow-sm transition-shadow hover:border-emerald-300 hover:shadow"
+                className="group relative flex flex-col rounded-xl border border-neutral-200 bg-[var(--card)] p-4 shadow-sm transition-shadow hover:border-emerald-300 hover:shadow"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-serif text-[15px] font-medium group-hover:text-emerald-900">
+                  <Link
+                    href={itemHref(item)}
+                    className="font-serif text-[15px] font-medium after:absolute after:inset-0 after:content-[''] group-hover:text-emerald-900"
+                  >
                     {item.title}
-                  </span>
+                  </Link>
                   <StatusBadge status={item.status} />
                 </div>
                 <p className="mt-1.5 flex-1 text-sm leading-relaxed text-neutral-600">
@@ -211,9 +269,10 @@ export default async function ItemsPage({
                   <span className="text-[10px] uppercase tracking-wide text-neutral-400">
                     {contentLabel(item)}
                   </span>
+                  {tagChips(item)}
                   <span className="ml-auto">{toggleChip(item)}</span>
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
         </AccordionSection>
@@ -221,8 +280,17 @@ export default async function ItemsPage({
     </AccordionGroup>
   );
 
+  const bulkProps = {
+    kbId,
+    returnTo,
+    action: deprecateItemsAction,
+    verb: "Deprecate",
+    warning:
+      "Deprecate the selected items? They stop compiling and are hidden from the default view — reversible from each item's Status.",
+  };
+
   const list = (
-    <BulkItemsForm kbId={kbId} returnTo={returnTo} action={deleteItemsAction}>
+    <BulkItemsForm {...bulkProps}>
       <AccordionGroup
         storageKey={`bridge.kb.${kbId}.master.groups.v1`}
         sectionIds={groups.map((g) => g.id)}
@@ -233,7 +301,10 @@ export default async function ItemsPage({
             id={g.id}
             summary={
               <>
-                <span className="font-serif text-lg font-medium capitalize">{g.label}</span>
+                <span className="font-serif text-lg font-medium capitalize">
+                  {g.label}
+                  {kindSuffix(g.id)}
+                </span>
                 <span className="text-xs text-neutral-400">{g.items.length}</span>
               </>
             }
@@ -251,7 +322,7 @@ export default async function ItemsPage({
                     />
                   </label>
                   <Link
-                    href={`${base}/items/${item.itemId}`}
+                    href={itemHref(item)}
                     className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-3 hover:bg-neutral-50"
                   >
                     <span className="font-serif text-[15px] font-medium">{item.title}</span>
@@ -276,13 +347,15 @@ export default async function ItemsPage({
 
   const th = "px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-neutral-500";
   const table = (
-    <BulkItemsForm kbId={kbId} returnTo={returnTo} action={deleteItemsAction}>
+    <BulkItemsForm {...bulkProps}>
       <div className="space-y-6">
         {groups.map((g) => (
           <section key={g.id}>
             {group !== "none" && (
               <h2 className="mb-2 font-serif text-lg font-medium capitalize">
-                {g.label} <span className="text-xs font-normal text-neutral-400">{g.items.length}</span>
+                {g.label}
+                {kindSuffix(g.id)}{" "}
+                <span className="text-xs font-normal text-neutral-400">{g.items.length}</span>
               </h2>
             )}
             <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-[var(--card)]">
@@ -325,7 +398,7 @@ export default async function ItemsPage({
                       </td>
                       <td className="px-3 py-2">
                         <Link
-                          href={`${base}/items/${item.itemId}`}
+                          href={itemHref(item)}
                           className="font-medium text-emerald-900 underline-offset-2 hover:underline"
                         >
                           {item.title}
@@ -354,9 +427,18 @@ export default async function ItemsPage({
     </BulkItemsForm>
   );
 
+  const explicit = sp.view !== undefined || sp.group !== undefined || sp.sort !== undefined;
+
   return (
     <div>
-      <BulkResultBanner deleted={bulkDeleted} blocked={bulkBlocked} sets={bulkSets} />
+      <ViewerPrefs
+        storageKey={`bridge.kb.${kbId}.master.prefs.v1`}
+        view={view}
+        group={group}
+        sort={sort}
+        explicit={explicit}
+      />
+      <BulkResultBanner deleted={bulkDeleted} deprecated={bulkDeprecated} blocked={bulkBlocked} sets={bulkSets} />
 
       {/* Toolbar: search + facets (GET form) and view/group/sort (links). */}
       <form className="mb-3 flex flex-wrap items-end gap-3" method="GET">
@@ -377,7 +459,7 @@ export default async function ItemsPage({
           <select name="type" defaultValue={type ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
             <option value="">all</option>
             {Object.entries(TYPE_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>
+              <option key={value} value={value} title={TYPE_DESCRIPTION[value as KnowledgeType]}>
                 {label}
               </option>
             ))}
@@ -405,6 +487,30 @@ export default async function ItemsPage({
             ))}
           </select>
         </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs text-neutral-500">Applies when</span>
+          <select name="when" defaultValue={when ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
+            <option value="">any stage</option>
+            {(["opening", "responding", "rebidding", "competing"] as const).map((w) => (
+              <option key={w} value={w}>
+                {WHEN_LABEL[w]}
+              </option>
+            ))}
+          </select>
+        </label>
+        {allTags.length > 0 && (
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-neutral-500">Tag</span>
+            <select name="tag" defaultValue={tag ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
+              <option value="">all</option>
+              {allTags.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button type="submit" className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-400">
           Filter
         </button>
@@ -417,45 +523,35 @@ export default async function ItemsPage({
       </form>
 
       <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-[var(--line)] pb-3 text-xs">
-        <span className="flex items-center gap-1.5">
-          <span className="text-neutral-400">View</span>
-          <Link href={qs({ view: "cards" })} className={chip(view === "cards")}>
-            Cards
-          </Link>
-          <Link href={qs({ view: "list" })} className={chip(view === "list")}>
-            List
-          </Link>
-          <Link href={qs({ view: "table" })} className={chip(view === "table")}>
-            Table
-          </Link>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="text-neutral-400">Group by</span>
-          <Link href={qs({ group: "kind" })} className={chip(group === "kind")}>
-            Kind
-          </Link>
-          <Link href={qs({ group: "phase" })} className={chip(group === "phase")}>
-            Phase
-          </Link>
-          <Link href={qs({ group: "status" })} className={chip(group === "status")}>
-            Status
-          </Link>
-          <Link href={qs({ group: "none" })} className={chip(group === "none")}>
-            None
-          </Link>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="text-neutral-400">Sort</span>
-          <Link href={qs({ sort: "title" })} className={chip(sort === "title")}>
-            A–Z
-          </Link>
-          <Link href={qs({ sort: "updated" })} className={chip(sort === "updated")}>
-            Recently updated
-          </Link>
-          <Link href={qs({ sort: "rules" })} className={chip(sort === "rules")}>
-            Most rules
-          </Link>
-        </span>
+        <SelectNav
+          label="View"
+          value={view}
+          options={[
+            { value: "cards", label: "Cards", href: qs({ view: "cards" }) },
+            { value: "list", label: "List", href: qs({ view: "list" }) },
+            { value: "table", label: "Table", href: qs({ view: "table" }) },
+          ]}
+        />
+        <SelectNav
+          label="Group by"
+          value={group}
+          options={[
+            { value: "kind", label: "Kind — what it is", href: qs({ group: "kind" }) },
+            { value: "phase", label: "Phase", href: qs({ group: "phase" }) },
+            { value: "status", label: "Status", href: qs({ group: "status" }) },
+            { value: "when", label: "When — auction position", href: qs({ group: "when" }) },
+            { value: "none", label: "None", href: qs({ group: "none" }) },
+          ]}
+        />
+        <SelectNav
+          label="Sort"
+          value={sort}
+          options={[
+            { value: "title", label: "A–Z", href: qs({ sort: "title" }) },
+            { value: "updated", label: "Recently updated", href: qs({ sort: "updated" }) },
+            { value: "rules", label: "Most rules", href: qs({ sort: "rules" }) },
+          ]}
+        />
         <span className="ml-auto text-neutral-400">
           {filtered.length} item{filtered.length === 1 ? "" : "s"}
         </span>
