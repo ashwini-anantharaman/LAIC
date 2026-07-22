@@ -2,11 +2,13 @@ import { roleLabel, STUB_USERS } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
 import { setDevUser } from "@/app/actions";
 import { LoginForm } from "@/components/LoginForm";
-import { getBridgeContext, nexusMode } from "@/lib/nexus";
+import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
 
 export default async function WelcomePage() {
   const context = await getBridgeContext();
-  if (context) redirect("/bridge/home");
+  // On the fellows-testing host everyone is auto-signed-in as "Fellow"; there
+  // is no login, and Home is hidden — land straight on Play.
+  if (context) redirect((await isFellowDemo()) ? "/bridge/table" : "/bridge/home");
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-8 p-8">

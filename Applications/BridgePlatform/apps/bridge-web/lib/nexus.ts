@@ -2,11 +2,31 @@ import {
   createNexusClient,
   type NexusBridgeContext,
 } from "@bridge/nexus-client";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { cache } from "react";
 import { createSupabaseServerClient } from "./supabase-server";
 
 export const DEV_USER_COOKIE = "bridge_dev_user";
+
+/** The fellows-testing deployment: same build, but reached on a demo host,
+ *  it hides the login and auto-signs the caller in as the shared "Fellow"
+ *  account. Host-gated (one production build serves both aliases); the demo
+ *  hosts default to any alias containing "nexus-bridge-fellows" and can be
+ *  overridden with FELLOW_DEMO_HOSTS (comma-separated substrings). */
+export const FELLOW_DEMO_USER = "user_fellow_demo";
+
+export const isFellowDemo = cache(async (): Promise<boolean> => {
+  const hosts = (process.env.FELLOW_DEMO_HOSTS ?? "nexus-bridge-fellows")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  try {
+    const host = (await headers()).get("host") ?? "";
+    return hosts.some((h) => host.includes(h));
+  } catch {
+    return false;
+  }
+});
 
 export type NexusMode = "stub" | "http";
 
@@ -45,8 +65,12 @@ async function applyActiveOrg(context: NexusBridgeContext): Promise<NexusBridgeC
 export const getBridgeContext = cache(
   async (): Promise<NexusBridgeContext | null> => {
     if (nexusMode() === "stub") {
+      // On the fellows-testing host, sign everyone in as the shared account —
+      // no cookie, no login screen.
       const cookieStore = await cookies();
-      const devUserId = cookieStore.get(DEV_USER_COOKIE)?.value;
+      const devUserId = (await isFellowDemo())
+        ? FELLOW_DEMO_USER
+        : cookieStore.get(DEV_USER_COOKIE)?.value;
       if (!devUserId) return null;
       try {
         const context = await createNexusClient({

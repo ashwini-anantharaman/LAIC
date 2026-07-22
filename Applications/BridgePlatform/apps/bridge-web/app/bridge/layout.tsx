@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { clearDevUser } from "@/app/actions";
 import { NavLink } from "@/components/NavLink";
 import { navForContext } from "@/lib/nav";
-import { getBridgeContext, nexusMode } from "@/lib/nexus";
+import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
+
+/** Hidden on the fellows-testing deployment. */
+const DEMO_HIDDEN_NAV = new Set(["/bridge/home", "/bridge/admin/audit"]);
 
 /**
  * Bridge app shell: all bridge routes live under /bridge/* so the app slots
@@ -15,6 +18,11 @@ export default async function BridgeShellLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+
+  const demo = await isFellowDemo();
+  const navItems = navForContext(context).filter(
+    (item) => !demo || !DEMO_HIDDEN_NAV.has(item.href),
+  );
 
   const displayName =
     stubDisplayName(context.nexusUserId) ?? context.nexusUserId;
@@ -33,7 +41,7 @@ export default async function BridgeShellLayout({
           <p className="hidden text-xs text-neutral-500 md:block">LAIC Bridge Program</p>
         </div>
         <nav className="flex flex-row flex-wrap gap-1 px-2 py-1.5 md:flex-1 md:flex-col md:flex-nowrap md:gap-0 md:space-y-1 md:p-3">
-          {navForContext(context).map((item) => (
+          {navItems.map((item) => (
             <NavLink key={item.href} href={item.href} label={item.label} />
           ))}
         </nav>
@@ -51,7 +59,7 @@ export default async function BridgeShellLayout({
           ) : (
             <p className="text-xs text-neutral-500">Program-level access</p>
           )}
-          {nexusMode() === "stub" && (
+          {nexusMode() === "stub" && !demo && (
             <form action={clearDevUser}>
               <button
                 type="submit"
