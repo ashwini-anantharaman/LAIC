@@ -74,6 +74,33 @@ export default async function KbOverviewPage({
         </Link>
       )}
     <div className="grid gap-4 sm:grid-cols-2">
+      {items.length > 0 && (
+        <section className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-[var(--card)] p-5 sm:col-span-2">
+          <h2 className="font-medium">Try the knowledge</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <p className="text-sm text-neutral-600">
+              <Link
+                href={`${base}/test`}
+                className="font-medium text-emerald-700 underline-offset-4 hover:underline"
+              >
+                Test a decision →
+              </Link>
+              <br />
+              Type a hand and auction and see the exact call the knowledge makes, and why.
+            </p>
+            <p className="text-sm text-neutral-600">
+              <Link
+                href={`${base}/coverage`}
+                className="font-medium text-emerald-700 underline-offset-4 hover:underline"
+              >
+                Run a 100-deal coverage check →
+              </Link>
+              <br />
+              Play a knowledge set across random deals to find rules that never fire.
+            </p>
+          </div>
+        </section>
+      )}
       {items.length === 0 &&
         card(
           "Sources",

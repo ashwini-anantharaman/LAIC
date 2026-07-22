@@ -355,6 +355,12 @@ export async function setItemStatusAction(formData: FormData): Promise<void> {
     changed: changed.length,
   });
   revalidatePath(kbPath(kbId), "layout");
+  // Row-approve controls pass a returnTo (the Master list url) so the fellow
+  // lands back on the list with a statusSet banner instead of the item page.
+  const returnToRaw = String(formData.get("returnTo") ?? "");
+  if (returnToRaw.startsWith(`/bridge/kb/${kbId}`)) {
+    redirect(`${returnToRaw}${returnToRaw.includes("?") ? "&" : "?"}statusSet=${status}`);
+  }
   redirect(kbPath(kbId, `/items/${itemId}?statusSet=${status}`));
 }
 

@@ -53,6 +53,17 @@ export function DecisionEntry({
     ...defaults,
     ...Object.fromEntries(event.citedSettings.map((s) => [s.key, s.value])),
   };
+  // Same-phase rules the trace didn't touch: the trace only lists rules whose
+  // auction/play context matched this position. Count how many bidding (or
+  // play) rules the pinned compile carries in total, so we can note the ones
+  // that never applied here (needs the index — old id-free sessions skip it).
+  const isBidPhase = event.category === "bid-logic-event";
+  const samePhaseTotal = rules
+    ? [...rules.values()].filter((info) =>
+        isBidPhase ? info.kind === "auction" || info.kind === "forcing" : info.kind === "play",
+      ).length
+    : 0;
+  const otherRuleCount = samePhaseTotal - event.trace.length;
   const held = event.facts.hcp !== undefined && (
     <>
       {" "}
@@ -199,6 +210,13 @@ export function DecisionEntry({
                 );
               })}
             </ul>
+            {rules && otherRuleCount > 0 && (
+              <p className="border-t border-neutral-200 bg-neutral-50 px-2 py-1 text-[10px] leading-snug text-neutral-400">
+                {otherRuleCount} other {isBidPhase ? "bidding" : "play"} rules didn&apos;t apply to
+                this position (different seat/auction context, or a set this player doesn&apos;t
+                carry).
+              </p>
+            )}
           </div>
         )}
         <form

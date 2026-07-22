@@ -58,13 +58,16 @@ export default async function KbLayout({
           <p className="text-xs text-neutral-500">
             {kb.latestVersionNumber ? (
               <>
-                published <span className="font-medium">v{kb.latestVersionNumber}</span> ·{" "}
+                <span title="Releases are frozen, numbered publications of the whole KB">
+                  release <span className="font-medium">v{kb.latestVersionNumber}</span>
+                </span>{" "}
+                ·{" "}
               </>
             ) : null}
             {compiled ? (
-              <>
-                draft compile <span className="font-medium">v{compiled.version}</span>
-              </>
+              <span title="The working compile updates on every save — what new boards play from">
+                working compile <span className="font-medium">v{compiled.version}</span>
+              </span>
             ) : (
               "no compile yet"
             )}
@@ -103,6 +106,8 @@ export default async function KbLayout({
         <nav className="mt-6 flex flex-wrap gap-5 border-b border-[var(--line)]">
           <TabLink href={base} exact label="Overview" />
           <TabLink href={`${base}/items`} label="Master" />
+          <TabLink href={`${base}/test`} label="Test" />
+          <TabLink href={`${base}/coverage`} label="Coverage" />
           <TabLink href={`${base}/sets`} label="Knowledge sets" />
           <TabLink href={`${base}/sources`} label="Sources" />
           <TabLink href={`${base}/versions`} label="Versions" />

@@ -74,6 +74,14 @@ export default async function SuggestionsPage({
             {titleOf.get(s.itemId) ?? s.itemId}
           </Link>
         )}
+        {s.itemId && (
+          <Link
+            href={`${base}/items/${s.itemId}?mode=edit`}
+            className="text-emerald-800 hover:underline"
+          >
+            edit item →
+          </Link>
+        )}
         {s.sessionId && (
           <span>
             <Link href={`/bridge/table/${s.sessionId}`} className="text-emerald-800 hover:underline">

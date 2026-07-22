@@ -5,7 +5,9 @@ import { bandLine, StatusBadge, TypeChip } from "@/components/kb/badges";
 import { ConfirmButton } from "@/components/kb/ConfirmButton";
 import { ItemEditor } from "@/components/kb/ItemEditor";
 import { ItemView } from "@/components/kb/ItemView";
+import { summarizeItemDiff } from "@/lib/itemDiff";
 import { kbStore } from "@/lib/kb";
+import { applyMasterQuery, parseMasterQuery } from "@/lib/masterQuery";
 import {
   addEdgeAction,
   commitItemVersionAction,
@@ -86,6 +88,37 @@ export default async function ItemPage({
   const fromQuery = from ? `&from=${encodeURIComponent(from)}` : "";
   const selfHref = `${base}/items/${itemId}`;
 
+  // Prev/next review navigation (R4): re-run the Master query the `from` URL
+  // encoded, so the neighbors match the exact filtered/sorted list the fellow
+  // was working. Fall back to the full title-sorted list when this item isn't
+  // in that filtered set (e.g. deprecated) or there's no `from`.
+  const fromQs = from ? (from.split("?")[1] ?? "") : "";
+  let ordered = from
+    ? applyMasterQuery(kbItems, parseMasterQuery(new URLSearchParams(fromQs)))
+    : [];
+  let navIdx = ordered.findIndex((i) => i.itemId === itemId);
+  if (navIdx === -1) {
+    ordered = [...kbItems].sort((a, b) => a.title.localeCompare(b.title));
+    navIdx = ordered.findIndex((i) => i.itemId === itemId);
+  }
+  const prevItem = navIdx > 0 ? ordered[navIdx - 1] : undefined;
+  const nextItem =
+    navIdx >= 0 && navIdx < ordered.length - 1 ? ordered[navIdx + 1] : undefined;
+  // Neighbors preserve `from` but drop mode — land in the reading view.
+  const neighborHref = (i: { itemId: string }) =>
+    `${base}/items/${i.itemId}${from ? `?from=${encodeURIComponent(from)}` : ""}`;
+
+  // Draft-vs-main diff one-liner (R5): shown only when the item is dirty.
+  const diffSummary = dirty
+    ? mainSnapshot
+      ? (() => {
+          const d = summarizeItemDiff(item, mainSnapshot);
+          const more = d.length > 3 ? `, +${d.length - 3} more` : "";
+          return `vs v${item.mainVersion}: ${d.slice(0, 3).join("; ")}${more}`;
+        })()
+      : "never committed to a version yet"
+    : null;
+
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div>
@@ -150,8 +183,29 @@ export default async function ItemPage({
               title="This item has draft edits no committed version captures — Save as new version (Versions panel) to freeze them. Committed versions are never modified."
               className="inline-block rounded border border-amber-400 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-700"
             >
-              draft
+              draft edits
             </span>
+          )}
+          {!edit && navIdx >= 0 && (
+            <nav className="ml-auto flex items-center gap-2 text-xs text-neutral-500">
+              {prevItem ? (
+                <Link href={neighborHref(prevItem)} title={prevItem.title} className="hover:text-emerald-800">
+                  ← prev
+                </Link>
+              ) : (
+                <span className="text-neutral-300">← prev</span>
+              )}
+              <span className="tabular-nums">
+                {navIdx + 1} of {ordered.length}
+              </span>
+              {nextItem ? (
+                <Link href={neighborHref(nextItem)} title={nextItem.title} className="hover:text-emerald-800">
+                  next →
+                </Link>
+              ) : (
+                <span className="text-neutral-300">next →</span>
+              )}
+            </nav>
           )}
           {edit ? (
             <Link
@@ -163,12 +217,15 @@ export default async function ItemPage({
           ) : (
             <Link
               href={`${selfHref}?mode=edit${fromQuery}`}
-              className="ml-auto rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800"
+              className={`rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800 ${navIdx >= 0 ? "" : "ml-auto"}`}
             >
               Edit
             </Link>
           )}
         </div>
+        {diffSummary && (
+          <p className="mt-1 text-xs text-neutral-400">{diffSummary}</p>
+        )}
         <p className="mb-2 mt-1 text-xs text-neutral-400">
           {bandLine(item.knowledgeType) ?? "teaching prose — never plays"}
         </p>

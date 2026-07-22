@@ -48,6 +48,7 @@ export {
   seededDeal,
   simulateDeal,
   simulateSelfPlay,
+  type SelfPlayReport,
   type SimulatedDeal,
   type SimulateOptions,
 } from "./decide/simulate";

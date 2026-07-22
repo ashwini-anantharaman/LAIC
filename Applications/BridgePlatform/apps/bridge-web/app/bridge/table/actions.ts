@@ -18,6 +18,22 @@ import { libraryStore, sessionService } from "@/lib/sessions";
 const SEATS: Seat[] = ["N", "E", "S", "W"];
 
 /**
+ * Strip any trailing auto-appended " · deal"/" · board"/" · play"/" · table"
+ * kind suffixes from a board name before we append a fresh one. These stack
+ * across save→resume→save cycles ("Board 1 · play · play · deal"), so we peel
+ * them off repeatedly. Only touches the auto-generated tail; user-typed names
+ * never reach this (they short-circuit the default before it's called).
+ */
+function stripKindSuffixes(name: string): string {
+  let out = name.trim();
+  for (;;) {
+    const stripped = out.replace(/\s*·\s*(deal|board|play|table)$/, "").trimEnd();
+    if (stripped === out) return out;
+    out = stripped;
+  }
+}
+
+/**
  * Play Arena (2026-07-16 rework): one click on a ladder rung seats you South
  * against three auto-provisioned house players of that strength. Fellows
  * edit the house players afterwards instead of assembling one up front.
@@ -377,7 +393,7 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
   const originalHands = record.board.hands ?? seededDeal(record.board.seed);
   const name =
     String(formData.get("name") ?? "").trim() ||
-    `${record.board.name} · ${kind}`;
+    `${stripKindSuffixes(record.board.name)} · ${kind}`;
   const notes = String(formData.get("notes") ?? "").trim();
   const now = new Date().toISOString();
 

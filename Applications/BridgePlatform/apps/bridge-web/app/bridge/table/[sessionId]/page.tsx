@@ -350,6 +350,7 @@ export default async function SessionPage({
             }
           >
             {showAll ? "👁" : "👁‍🗨"}
+            <span className="ml-1 hidden lg:inline text-[10px]">hands</span>
           </Link>
         )}
         {!learnerMode && (
@@ -359,7 +360,7 @@ export default async function SessionPage({
               aria-label="Save to library"
               title="Save to library"
             >
-              💾 ▾
+              💾<span className="ml-1 hidden lg:inline text-[10px]">save</span> ▾
             </summary>
             <form
               action={saveToLibraryAction}
@@ -405,7 +406,7 @@ export default async function SessionPage({
               title="Play to end"
               className="rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
             >
-              ⏭
+              ⏭<span className="ml-1 hidden lg:inline text-[10px]">to end</span>
             </button>
           </form>
         )}
@@ -417,7 +418,7 @@ export default async function SessionPage({
             title="Undo the last decision"
             className="rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
           >
-            ↩
+            ↩<span className="ml-1 hidden lg:inline text-[10px]">undo</span>
           </button>
         </form>
         <form action={rewindAction}>
@@ -429,7 +430,7 @@ export default async function SessionPage({
             title="Go to the beginning — rewind this board to the deal"
             className="rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 enabled:hover:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            ⏮
+            ⏮<span className="ml-1 hidden lg:inline text-[10px]">start</span>
           </button>
         </form>
         {!learnerMode && (
@@ -441,7 +442,7 @@ export default async function SessionPage({
               title="New deal — fresh cards, same table"
               className="rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
             >
-              🎲
+              🎲<span className="ml-1 hidden lg:inline text-[10px]">deal</span>
             </button>
           </form>
         )}
@@ -452,7 +453,7 @@ export default async function SessionPage({
             title="Edit the deal — change any cards, then deal the edited board to this table"
             className="rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
           >
-            ✏️
+            ✏️<span className="ml-1 hidden lg:inline text-[10px]">edit</span>
           </Link>
         )}
         {isFellow && (
@@ -463,6 +464,9 @@ export default async function SessionPage({
             className="ml-auto rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
           >
             {learnerMode ? "🔍" : "🎓"}
+            <span className="ml-1 hidden lg:inline text-[10px]">
+              {learnerMode ? "verify" : "learner"}
+            </span>
           </Link>
         )}
       </div>

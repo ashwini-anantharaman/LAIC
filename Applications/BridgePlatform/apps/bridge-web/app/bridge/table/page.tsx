@@ -125,10 +125,11 @@ export default async function PlayPage() {
                         >
                           <span className="font-medium">{p.name}</span>
                           {p.resultLabel && (
-                            <span className="ml-auto text-xs text-neutral-400">
-                              {p.resultLabel}
-                            </span>
+                            <span className="text-xs text-neutral-400">{p.resultLabel}</span>
                           )}
+                          <span className="ml-auto text-xs text-neutral-400">
+                            {p.createdAt.slice(5, 16).replace("T", " ")}
+                          </span>
                         </button>
                       </form>
                     ))}

@@ -5,7 +5,9 @@ import { bandLine, bandOf, BAND_TEXT, StatusBadge, TYPE_DESCRIPTION, TYPE_LABEL 
 import { SelectNav } from "@/components/kb/SelectNav";
 import { ViewerPrefs } from "@/components/kb/ViewerPrefs";
 import { kbStore } from "@/lib/kb";
-import { WHEN_LABEL, WHEN_ORDER, whenOf, whenRoles } from "@/lib/whenFacet";
+import { applyMasterQuery, parseMasterQuery, ruleCount } from "@/lib/masterQuery";
+import { WHEN_LABEL, WHEN_ORDER, whenOf } from "@/lib/whenFacet";
+import { setItemStatusAction } from "../../actions";
 
 const PHASES: KnowledgePhase[] = ["auction", "opening_lead", "declarer_play", "defense", "scoring"];
 const PHASE_LABEL: Record<KnowledgePhase, string> = {
@@ -24,26 +26,6 @@ const STATUS_LABEL: Record<string, string> = {
 
 const plural = (label: string) =>
   label.endsWith("y") ? `${label.slice(0, -1)}ies` : `${label}s`;
-
-/** How many executable rules an item carries (0 = teaching prose). */
-function ruleCount(item: KnowledgeItem): number {
-  const p = item.payload;
-  switch (p.kind) {
-    case "auction_rules":
-      return p.rules.length;
-    case "forcing_rules":
-      return p.rules.length;
-    case "play_rules":
-      return p.rules.length;
-    case "lead_rules":
-      return p.leads.length;
-    case "signals":
-    case "fallback":
-      return 1;
-    default:
-      return 0;
-  }
-}
 
 function contentLabel(item: KnowledgeItem): string {
   const n = ruleCount(item);
@@ -75,18 +57,6 @@ type View = "cards" | "list" | "table" | "priority";
 type Group = "kind" | "phase" | "status" | "when" | "band" | "none";
 type Sort = "title" | "updated" | "rules";
 
-/** Does the item speak in this auction position? ("any"-role rules match all
- *  four positions; items with no auction roles never match.) */
-function matchesWhen(item: KnowledgeItem, when: string): boolean {
-  const roles = whenRoles(item);
-  if (when === "opening") return roles.has("opening") || roles.has("any");
-  if (when === "responding") return roles.has("responder") || roles.has("any");
-  if (when === "rebidding") return roles.has("opener") || roles.has("any");
-  if (when === "competing")
-    return roles.has("overcaller") || roles.has("advancer") || roles.has("any");
-  return true;
-}
-
 /** The Master knowledge viewer: three views (cards for reading, list for
  *  working, table for auditing), groupable and sortable, all URL-driven. */
 export default async function ItemsPage({
@@ -104,11 +74,12 @@ export default async function ItemsPage({
     view?: string;
     group?: string;
     sort?: string;
+    statusSet?: string;
   }>;
 }>) {
   const { kbId } = await params;
   const sp = await searchParams;
-  const { q, type, phase, status, when, tag } = sp;
+  const { q, type, phase, status, when, tag, statusSet } = sp;
   const view: View =
     sp.view === "list" || sp.view === "table" || sp.view === "priority" ? sp.view : "cards";
   const group: Group =
@@ -123,19 +94,9 @@ export default async function ItemsPage({
 
   const items = await kbStore().listItemsForKb(kbId);
 
-  const query = (q ?? "").toLowerCase();
-  const filtered = items
-    .filter((i) => !query || `${i.title} ${i.humanReadableText}`.toLowerCase().includes(query))
-    .filter((i) => !type || i.knowledgeType === type)
-    .filter((i) => !phase || i.phase === phase)
-    .filter((i) => (status ? i.status === status : i.status !== "deprecated"))
-    .filter((i) => !when || matchesWhen(i, when))
-    .filter((i) => !tag || (i.tags ?? []).includes(tag))
-    .sort((a, b) => {
-      if (sort === "updated") return b.updatedAt.localeCompare(a.updatedAt);
-      if (sort === "rules") return ruleCount(b) - ruleCount(a) || a.title.localeCompare(b.title);
-      return a.title.localeCompare(b.title);
-    });
+  // Filter + sort via the shared Master query module (same semantics the item
+  // page re-runs for prev/next review navigation).
+  const filtered = applyMasterQuery(items, parseMasterQuery(sp));
 
   // ---- grouping ------------------------------------------------------------
   let groups: { id: string; label: string; items: KnowledgeItem[] }[];
@@ -225,6 +186,38 @@ export default async function ItemsPage({
         {t}
       </Link>
     ));
+
+  // List-view row-approve controls: advance an item's trust status inline
+  // without opening it. Real forms (siblings of the stretched row link), so
+  // they need `relative z-10` to sit above the link's ::after overlay. The
+  // returnTo is this exact list url so we land back here with a statusSet banner.
+  const approveControls = (item: KnowledgeItem) => {
+    if (item.status !== "draft" && item.status !== "reviewed") return null;
+    const btn = (status: string, label: string, primary: boolean) => (
+      <form action={setItemStatusAction} className="relative">
+        <input type="hidden" name="kbId" value={kbId} />
+        <input type="hidden" name="itemId" value={item.itemId} />
+        <input type="hidden" name="status" value={status} />
+        <input type="hidden" name="returnTo" value={returnTo} />
+        <button
+          type="submit"
+          className={
+            primary
+              ? "rounded bg-emerald-700 px-2 py-0.5 text-xs font-medium text-white hover:bg-emerald-800"
+              : "rounded border border-neutral-300 px-2 py-0.5 text-xs hover:border-emerald-400 hover:text-emerald-800"
+          }
+        >
+          {label}
+        </button>
+      </form>
+    );
+    return (
+      <div className="relative z-10 flex shrink-0 items-center gap-1.5 pr-4">
+        {item.status === "draft" && btn("reviewed", "Reviewed", false)}
+        {btn("approved", "Approve", true)}
+      </div>
+    );
+  };
 
   const kindChip = (item: KnowledgeItem) => (
     <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-600">
@@ -425,10 +418,12 @@ export default async function ItemsPage({
         >
           <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
             {g.items.map((item) => (
-              <li key={item.itemId} className="flex items-stretch">
+              // Stretched-link row: the row link's ::after covers the <li>, so
+              // the approve forms stay real siblings (no nested anchors).
+              <li key={item.itemId} className="group relative flex items-stretch hover:bg-neutral-50">
                 <Link
                   href={itemHref(item)}
-                  className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 hover:bg-neutral-50"
+                  className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 after:absolute after:inset-0 after:content-['']"
                 >
                   <span className="font-serif text-[15px] font-medium">{item.title}</span>
                   <StatusBadge status={item.status} />
@@ -441,6 +436,7 @@ export default async function ItemsPage({
                     {item.humanReadableText}
                   </span>
                 </Link>
+                {approveControls(item)}
               </li>
             ))}
           </ul>
@@ -531,87 +527,112 @@ export default async function ItemsPage({
         explicit={explicit}
       />
 
-      {/* Toolbar: search + facets (GET form) and view/group/sort (links). */}
-      <form className="mb-3 flex flex-wrap items-end gap-3" method="GET">
-        {view !== "cards" && <input type="hidden" name="view" value={view} />}
-        {group !== "kind" && <input type="hidden" name="group" value={group} />}
-        {sort !== "title" && <input type="hidden" name="sort" value={sort} />}
+      {statusSet && (
+        <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Status updated to <span className="font-medium">{statusSet}</span>.
+        </p>
+      )}
+
+      {/* Toolbar: search (GET form) + facets (SelectNav navigations). Every
+          facet auto-applies on change; only search waits for Enter. */}
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <form className="flex items-end gap-3" method="GET">
+          {/* Carry every OTHER current param so Enter preserves state. */}
+          {type && <input type="hidden" name="type" value={type} />}
+          {phase && <input type="hidden" name="phase" value={phase} />}
+          {status && <input type="hidden" name="status" value={status} />}
+          {when && <input type="hidden" name="when" value={when} />}
+          {tag && <input type="hidden" name="tag" value={tag} />}
+          {view !== "cards" && <input type="hidden" name="view" value={view} />}
+          {group !== "kind" && <input type="hidden" name="group" value={group} />}
+          {sort !== "title" && <input type="hidden" name="sort" value={sort} />}
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-neutral-500">Search</span>
+            <input
+              name="q"
+              defaultValue={q ?? ""}
+              placeholder="Search… press Enter"
+              className="w-56 rounded border border-neutral-300 px-2 py-1.5"
+            />
+          </label>
+        </form>
         <label className="text-sm">
-          <span className="mb-1 block text-xs text-neutral-500">Search</span>
-          <input
-            name="q"
-            defaultValue={q ?? ""}
-            placeholder="stayman, 1NT, lead…"
-            className="w-56 rounded border border-neutral-300 px-2 py-1.5"
+          <span className="mb-1 block text-xs text-neutral-500">Kind</span>
+          <SelectNav
+            label=""
+            value={type ?? ""}
+            options={[
+              { value: "", label: "all", href: qs({ type: undefined }) },
+              ...Object.entries(TYPE_LABEL).map(([value, label]) => ({
+                value,
+                label,
+                href: qs({ type: value }),
+                title: TYPE_DESCRIPTION[value as KnowledgeType],
+              })),
+            ]}
           />
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-xs text-neutral-500">Kind</span>
-          <select name="type" defaultValue={type ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
-            <option value="">all</option>
-            {Object.entries(TYPE_LABEL).map(([value, label]) => (
-              <option key={value} value={value} title={TYPE_DESCRIPTION[value as KnowledgeType]}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
           <span className="mb-1 block text-xs text-neutral-500">Phase</span>
-          <select name="phase" defaultValue={phase ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
-            <option value="">all</option>
-            {PHASES.map((p) => (
-              <option key={p} value={p}>
-                {PHASE_LABEL[p]}
-              </option>
-            ))}
-          </select>
+          <SelectNav
+            label=""
+            value={phase ?? ""}
+            options={[
+              { value: "", label: "all", href: qs({ phase: undefined }) },
+              ...PHASES.map((p) => ({ value: p, label: PHASE_LABEL[p], href: qs({ phase: p }) })),
+            ]}
+          />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-xs text-neutral-500">Status</span>
-          <select name="status" defaultValue={status ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
-            <option value="">active (default)</option>
-            {["draft", "reviewed", "approved", "deprecated"].map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          <SelectNav
+            label=""
+            value={status ?? ""}
+            options={[
+              { value: "", label: "active (default)", href: qs({ status: undefined }) },
+              ...["draft", "reviewed", "approved", "deprecated"].map((s) => ({
+                value: s,
+                label: s,
+                href: qs({ status: s }),
+              })),
+            ]}
+          />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-xs text-neutral-500">Applies when</span>
-          <select name="when" defaultValue={when ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
-            <option value="">any stage</option>
-            {(["opening", "responding", "rebidding", "competing"] as const).map((w) => (
-              <option key={w} value={w}>
-                {WHEN_LABEL[w]}
-              </option>
-            ))}
-          </select>
+          <SelectNav
+            label=""
+            value={when ?? ""}
+            options={[
+              { value: "", label: "any stage", href: qs({ when: undefined }) },
+              ...(["opening", "responding", "rebidding", "competing"] as const).map((w) => ({
+                value: w,
+                label: WHEN_LABEL[w],
+                href: qs({ when: w }),
+              })),
+            ]}
+          />
         </label>
         {allTags.length > 0 && (
           <label className="text-sm">
             <span className="mb-1 block text-xs text-neutral-500">Tag</span>
-            <select name="tag" defaultValue={tag ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
-              <option value="">all</option>
-              {allTags.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+            <SelectNav
+              label=""
+              value={tag ?? ""}
+              options={[
+                { value: "", label: "all", href: qs({ tag: undefined }) },
+                ...allTags.map((t) => ({ value: t, label: t, href: qs({ tag: t }) })),
+              ]}
+            />
           </label>
         )}
-        <button type="submit" className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-400">
-          Filter
-        </button>
         <Link
           href={`${base}/items/new`}
           className="ml-auto rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
         >
           New knowledge item
         </Link>
-      </form>
+      </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-[var(--line)] pb-3 text-xs">
         <SelectNav

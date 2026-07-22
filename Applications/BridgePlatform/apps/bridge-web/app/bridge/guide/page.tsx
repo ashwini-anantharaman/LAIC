@@ -205,6 +205,10 @@ export default async function GuidePage() {
               to items with a rule for a given auction position — it answers &ldquo;which of
               these apply to opening?&rdquo; directly — and <b>Tag</b> narrows to items carrying
               a given tag (see <a href="#items" className="text-emerald-700 underline-offset-2 hover:underline">Knowledge items</a>).
+              Every facet applies <b>instantly</b> as you pick it — there&apos;s no Filter button
+              to press — and the <b>search</b> box matches rule labels as well as item titles, so
+              typing a convention&apos;s name finds items whose <i>rules</i> mention it, not just
+              those with it in the title.
             </p>
           </div>
           <div className={card}>
@@ -547,6 +551,15 @@ export default async function GuidePage() {
           <li><b>Nothing matched?</b> In a forcing situation the player bids its cheapest long suit, citing the situation. Otherwise the fallback item fires (auction: pass) — honestly labeled &ldquo;no agreement applied.&rdquo;</li>
           <li><b>No fallback either?</b> The <b>engine floor</b> acts, loudly marked — it exists so a game can&apos;t jam and never counts as knowledge. A well-built set produces zero floor events.</li>
         </ol>
+        <div className={`${card} mt-4`}>
+          <h3 className="text-sm font-semibold">Test a decision</h3>
+          <p className="mt-1 text-sm text-neutral-600">
+            You don&apos;t have to deal a whole board to check a rule: the KB&apos;s <b>Test</b> tab
+            lets you type a hand and an auction and see the exact decision — with its full trace —
+            instantly. The <b>Coverage</b> tab plays N random deals and reports which rules never
+            fired, so you can spot the knowledge that isn&apos;t pulling its weight.
+          </p>
+        </div>
       </Section>
 
       <Section
@@ -559,7 +572,7 @@ export default async function GuidePage() {
             <h3 className="text-sm font-semibold">Knowledge items — commit &amp; restore</h3>
             <p className="mt-1 text-sm text-neutral-600">
               Every save lands on the item&apos;s working <b>draft</b> — the item wears a{" "}
-              <b>draft</b> chip until you freeze it with <b>Save as new version</b> (Versions
+              <b>draft edits</b> chip until you freeze it with <b>Save as new version</b> (Versions
               panel), which mints an immutable numbered snapshot — v1, v2… — and marks it{" "}
               <b>main</b>. Committed versions are <i>never</i> modified: &ldquo;Make main&rdquo;
               on an older version restores its content into the draft without touching the

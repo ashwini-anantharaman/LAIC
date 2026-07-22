@@ -57,13 +57,13 @@ test("hand-authors a fallback item and a 1NT agreement", async ({ page, context 
   await page.goto(`${kbUrl}/items`);
   await expect(page.getByText("Auction fallback: pass")).toBeVisible();
   await expect(page.getByText("1NT opening")).toBeVisible();
-  await expect(page.getByText(/draft compile/)).toBeVisible();
+  await expect(page.getByText(/working compile/)).toBeVisible();
 });
 
 test("edits the 1NT range — the KB recompiles to a new version", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
   await page.goto(`${kbUrl}/items`);
-  const before = await page.getByText(/draft compile/).textContent();
+  const before = await page.getByText(/working compile/).textContent();
 
   await page.getByText("1NT opening").click();
   // Items open in VIEW mode now — the typed editor is behind the Edit link.
@@ -72,7 +72,7 @@ test("edits the 1NT range — the KB recompiles to a new version", async ({ page
   await page.getByRole("button", { name: "Save to current draft" }).click();
   await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
 
-  const after = await page.getByText(/draft compile/).textContent();
+  const after = await page.getByText(/working compile/).textContent();
   expect(after).not.toBe(before);
 });
 
@@ -138,7 +138,7 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
 
   await expect(page.getByText(/latest edit doesn't compile/)).toBeVisible();
   await expect(page.getByText(/references unknown setting "does_not_exist"/)).toBeVisible();
-  await expect(page.getByText(/draft compile/)).toBeVisible(); // last-good still live
+  await expect(page.getByText(/working compile/)).toBeVisible(); // last-good still live
 
   // Repair via the typed fields — the banner clears and compiles resume.
   // (The save redirect lands back in VIEW mode, so re-open the editor.)
@@ -545,4 +545,57 @@ test("augmentation: source → draft copy → review board → discard", async (
   await expect(page.getByText("Augmentation draft discarded.")).toBeVisible();
   await page.goto("/bridge/kb");
   await expect(page.getByText("(draft)")).toHaveCount(0);
+});
+
+test("test bench: a typed hand + auction returns a decision and a rules panel", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  // Empty form first: the page renders without a decision yet.
+  await page.goto(`${kbUrl}/test`);
+  await expect(page.getByRole("heading", { name: "Test a decision" })).toBeVisible();
+
+  // A valid 13-card PBN hand, opening seat (empty auction), full knowledge.
+  await page.goto(
+    `${kbUrl}/test?hand=${encodeURIComponent("AKQ2.T94.532.A87")}&auction=&dealer=N&player=defaults`,
+  );
+  await expect(page.getByText(/Bidding decisions only/)).toBeVisible();
+  await expect(page.getByText(/Rules considered/)).toBeVisible();
+
+  // A malformed hand shows a friendly parse error, not a crash.
+  await page.goto(`${kbUrl}/test?hand=nonsense&auction=&dealer=N&player=defaults`);
+  await expect(page.getByText(/isn't a card|need 13/)).toBeVisible();
+});
+
+test("coverage: a short self-play run reports fired vs never-fired rules", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto(`${kbUrl}/coverage?deals=5`);
+  await expect(page.getByRole("heading", { name: "Coverage check" })).toBeVisible();
+  await expect(page.getByText("deals completed")).toBeVisible();
+  await expect(page.getByText(/rules fired/)).toBeVisible();
+});
+
+test("review from the list: Approve flips status inline and banners", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto(`${kbUrl}/items?view=list`);
+  // The fallback item is a draft — approve it straight from its row.
+  const row = page.locator("li").filter({ hasText: "Auction fallback: pass" });
+  await row.getByRole("button", { name: "Approve", exact: true }).first().click();
+  await expect(page.getByText(/Status updated to approved/)).toBeVisible();
+});
+
+test("item page: prev/next walk the filtered Master list", async ({ page, context }) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto(`${kbUrl}/items?view=list`);
+  await page.getByText("1NT opening", { exact: true }).click();
+  // Arrived with ?from=, so the reviewer position indicator renders.
+  await expect(page.getByText(/\d+ of \d+/)).toBeVisible();
 });
