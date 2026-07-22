@@ -314,7 +314,7 @@ test("constrained drill: an incomplete player never hits the engine floor", asyn
   await drillForm.getByRole("button", { name: "Find a safe deal" }).click();
   await page.waitForURL(/\/bridge\/table\/bs_/, { timeout: 90_000 });
 
-  await page.getByRole("button", { name: "play to end" }).click();
+  await page.getByRole("button", { name: "Play to end" }).click();
   await expect(page.getByText(/Passed out|made|down/).first()).toBeVisible({ timeout: 60_000 });
 
   // The verification panel proves the guarantee: zero engine-floor badges.
@@ -400,7 +400,7 @@ test("fix at the table: undo pauses, overlay edits the item, session re-pins", a
   await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
 
   // Undo the last AI decision — the table comes back PAUSED.
-  await page.getByRole("button", { name: "undo" }).click();
+  await page.getByRole("button", { name: "Undo the last decision" }).click();
   await page.waitForURL(/paused=/);
   await expect(page.getByText(/Decisions \(1\)/)).toBeVisible();
   await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();

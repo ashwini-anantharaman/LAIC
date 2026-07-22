@@ -342,19 +342,25 @@ export default async function SessionPage({
         {!learnerMode && (
           <Link
             href={toggleHref({ hands: showAll ? "mine" : "all" })}
+            aria-label={showAll ? "Hide other hands" : "Show all hands"}
+            title={showAll ? "All hands shown — click to hide" : "Show all hands"}
             className={
               showAll
-                ? "rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-emerald-800"
-                : "rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
+                ? "rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-emerald-800"
+                : "rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
             }
           >
-            {showAll ? "all hands shown" : "show all hands"}
+            {showAll ? "👁" : "👁‍🗨"}
           </Link>
         )}
         {!learnerMode && (
           <details className="relative">
-            <summary className="cursor-pointer list-none rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400">
-              save to library ▾
+            <summary
+              className="cursor-pointer list-none rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
+              aria-label="Save to library"
+              title="Save to library"
+            >
+              💾 ▾
             </summary>
             <form
               action={saveToLibraryAction}
@@ -396,9 +402,11 @@ export default async function SessionPage({
             <input type="hidden" name="sessionId" value={sessionId} />
             <button
               type="submit"
-              className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
+              aria-label="Play to end"
+              title="Play to end"
+              className="rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
             >
-              play to end
+              ⏭
             </button>
           </form>
         )}
@@ -406,9 +414,11 @@ export default async function SessionPage({
           <input type="hidden" name="sessionId" value={sessionId} />
           <button
             type="submit"
-            className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
+            aria-label="Undo the last decision"
+            title="Undo the last decision"
+            className="rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
           >
-            undo
+            ↩
           </button>
         </form>
         <form action={rewindAction}>
@@ -416,10 +426,11 @@ export default async function SessionPage({
           <button
             type="submit"
             disabled={record.events.length === 0}
-            className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 enabled:hover:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
-            title="Rewind this board to the deal"
+            aria-label="Go to the beginning"
+            title="Go to the beginning — rewind this board to the deal"
+            className="rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 enabled:hover:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            go to beginning
+            ⏮
           </button>
         </form>
         {!learnerMode && (
@@ -427,28 +438,32 @@ export default async function SessionPage({
             <input type="hidden" name="sessionId" value={sessionId} />
             <button
               type="submit"
-              className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
-              title="Fresh cards, same table"
+              aria-label="New deal"
+              title="New deal — fresh cards, same table"
+              className="rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
             >
-              new deal
+              🎲
             </button>
           </form>
         )}
         {!learnerMode && (
           <Link
             href={toggleHref({ editDeal: "1", paused })}
-            className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
-            title="Change any cards, then deal the edited board to this table"
+            aria-label="Edit the deal"
+            title="Edit the deal — change any cards, then deal the edited board to this table"
+            className="rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
           >
-            edit deal
+            ✏️
           </Link>
         )}
         {isFellow && (
           <Link
             href={learnerMode ? `/bridge/table/${sessionId}` : `/bridge/table/${sessionId}?mode=learner`}
-            className="ml-auto text-neutral-400 underline-offset-2 hover:underline"
+            aria-label={learnerMode ? "Switch to verification view" : "Switch to learner view"}
+            title={learnerMode ? "Verification view — show the decisions rail" : "Learner view — hide the decisions rail"}
+            className="ml-auto rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
           >
-            {learnerMode ? "verification view" : "learner view"}
+            {learnerMode ? "🔍" : "🎓"}
           </Link>
         )}
       </div>

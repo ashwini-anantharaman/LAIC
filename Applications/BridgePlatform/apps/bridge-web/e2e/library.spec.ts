@@ -59,7 +59,7 @@ test("save a play from a live board, then resume it from the library", async ({
     await page.getByRole("button", { name: "step ▸" }).click();
     await expect(page.getByText(`Decisions (${n})`)).toBeVisible({ timeout: 15_000 });
   }
-  await page.getByText("save to library ▾").click();
+  await page.locator('summary[aria-label="Save to library"]').click();
   await page.locator('select[name="kind"]').selectOption("play");
   await page.locator('input[name="name"]').fill(playName);
   await page.getByRole("button", { name: "Save", exact: true }).click();
