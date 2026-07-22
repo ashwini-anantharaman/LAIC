@@ -34,6 +34,11 @@ export interface Settings {
   // and "Launch Bridge Platform" hands off with a single-use launch token.
   bridgePlatformUrl: string;
 
+  // Learning Platform origin (launch handoff, mirror of Bridge). When set, the
+  // program's learning-platform registered app gets launch_url = `${origin}`
+  // (the SPA reads the launch token from the URL on load).
+  learningPlatformUrl: string;
+
   // Object storage (S3-compatible). When s3Bucket is set the S3 adapter is used;
   // otherwise a local-filesystem fallback (dev) writes under storageDir.
   s3Bucket: string;
@@ -68,6 +73,7 @@ export function getSettings(): Settings {
     hookRateLimitPerMin: Number(env.HOOK_RATE_LIMIT_PER_MIN ?? "120"),
 
     bridgePlatformUrl: (env.BRIDGE_PLATFORM_URL ?? "").replace(/\/+$/, ""),
+    learningPlatformUrl: (env.LEARNING_PLATFORM_URL ?? "").replace(/\/+$/, ""),
 
     s3Bucket: env.S3_BUCKET ?? "",
     s3Endpoint: env.S3_ENDPOINT ?? "",

@@ -1069,18 +1069,26 @@ offeringsRouter.post("/programs/:program_id/learning-platform/launch", async (c)
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
 
-  // Find-or-create the program's LP app record.
+  // When LEARNING_PLATFORM_URL is configured, the app origin becomes the
+  // registered app's launch_url, so the console does the real token handoff
+  // instead of showing the placeholder pane (mirror of Bridge).
+  const learningBase = getSettings().learningPlatformUrl;
+  const learningLaunchUrl = learningBase || null;
   const apps = await db.listRegisteredApps(programId);
   let lp = apps.find((a: Row) => a.app_slug?.startsWith("learning-platform"));
   if (!lp) {
     const [row] = await db.createRegisteredApp(program.org_id, programId, "Learning Platform", {
       appSlug: `learning-platform-${programId.slice(0, 8)}`,
+      launchUrl: learningLaunchUrl,
     });
     lp = row;
     await db.recordAuditEvent("learning_platform.provisioned", {
       orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
       targetType: "registered_app", targetId: lp.id,
     });
+  } else if (!lp.launch_url && learningLaunchUrl) {
+    // Backfill records provisioned before the env was configured.
+    lp = await db.updateRegisteredApp(lp.id as string, { launch_url: learningLaunchUrl });
   }
 
   const [tokenRow, rawToken] = await db.createLaunchToken(lp.id, user.id);

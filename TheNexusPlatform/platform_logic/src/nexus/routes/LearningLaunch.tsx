@@ -46,7 +46,8 @@ export function LearningLaunch() {
           const returnUrl = `${window.location.origin}/o/${orgId}/p/${programId}`;
           window.location.href =
             `${l.launch_url}?launch_token=${encodeURIComponent(l.launch_token)}` +
-            `&return_url=${encodeURIComponent(returnUrl)}`;
+            `&return_url=${encodeURIComponent(returnUrl)}` +
+            `&program_id=${encodeURIComponent(programId)}`;
           return;
         }
         // Placeholder interior: prove the handshake ourselves (the LP's side
