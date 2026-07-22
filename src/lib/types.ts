@@ -177,26 +177,74 @@ export type ConceptCardViewKey =
   | 'analogy'
   | 'example'
   | 'visual'
-  | 'misconception';
+  | 'misconception'
+  | 'meaning'
+  | 'why'
+  | 'core'
+  | 'components'
+  | 'nonExample'
+  | 'mistake'
+  | 'connection'
+  | 'recall'
+  | 'teachBack';
 
+/** Full pedagogical concept-card template (matches the fixed UI sheet). */
 export interface ConceptCardContent {
   term: string;
-  /** Formal / plain definition. */
-  definition: string;
-  /** Worked example or concrete case. */
+  /** ONE-SENTENCE MEANING */
+  oneSentenceMeaning?: string;
+  /** WHY IT MATTERS */
+  whyItMatters?: string;
+  /** CORE IDEA */
+  coreIdea?: string;
+  /** KEY COMPONENTS — bullet list */
+  keyComponents?: string[];
+  /** EXAMPLE */
   example?: string;
-  /** Everyday analogy. */
+  /** NON-EXAMPLE */
+  nonExample?: string;
+  /** Free-text visual / formula description */
+  visualOrFormula?: string;
+  /** Left box in the visual flow diagram */
+  visualChoice?: string;
+  /** Right box in the visual flow diagram */
+  visualAlternative?: string;
+  /** Formula line under the diagram */
+  visualFormula?: string;
+  /** COMMON MISTAKE */
+  commonMistake?: string;
+  /** CONNECTION */
+  connection?: string;
+  /** RECALL QUESTION */
+  recallQuestion?: string;
+  /** TEACH-BACK */
+  teachBack?: string;
+
+  /** @deprecated Prefer oneSentenceMeaning — kept for older saved cards. */
+  definition?: string;
+  /** @deprecated Prefer whyItMatters / connection. */
   analogy?: string;
-  /** Suggestion for a diagram / visual. */
+  /** @deprecated Prefer visualOrFormula. */
   visualSuggestion?: string;
-  /** Common misconception to correct. */
+  /** @deprecated Prefer commonMistake. */
   misconception?: string;
+
+  /** Ordered categories for this card (from Define). Controls which panels show. */
+  categories?: Array<{
+    id: string;
+    label: string;
+    enabled: boolean;
+    builtin?: boolean;
+    tone?: string;
+  }>;
+  /** Author-added / custom category bodies. */
+  extraSections?: Array<{ id: string; title: string; body: string }>;
+
   voice?: string;
   length?: string;
-  /** Views selected in Define (controls tabs — not content emptiness). */
+  /** Legacy Include chips — ignored by the fixed template UI. */
   includedViews?: ConceptCardViewKey[];
-  /** Per-view citation back to the source chunk. */
-  citations?: Partial<Record<ConceptCardViewKey, string>>;
+  citations?: Partial<Record<string, string>>;
 }
 export type QuestionType =
   | 'multiple-choice'

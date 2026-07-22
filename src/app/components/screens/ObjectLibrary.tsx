@@ -40,13 +40,19 @@ export function ObjectLibrary() {
   const [filterStatus, setFilterStatus] = useState<ObjectStatus | 'all'>('all');
   const { openReader, openEditor, createdObjects } = useApp();
 
-  const allObjects = [...createdObjects, ...OBJECTS];
+  // Saved objects first (account library), then seed catalog without duplicates.
+  const allObjects = [
+    ...createdObjects,
+    ...OBJECTS.filter(o => !createdObjects.some(c => c.id === o.id)),
+  ];
 
   const filtered = allObjects.filter(o => {
     const matchSearch = o.title.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || o.status === filterStatus;
     return matchSearch && matchStatus;
   });
+
+  const savedCount = createdObjects.length;
 
   const courseFiltered = COURSES.filter(c => {
     const matchSearch = c.title.toLowerCase().includes(search.toLowerCase());
@@ -56,6 +62,12 @@ export function ObjectLibrary() {
 
   return (
     <div className="px-6 py-6 w-full">
+      {savedCount > 0 && (
+        <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 12 }}>
+          <span style={{ fontWeight: 650, color: '#0B1220' }}>{savedCount} saved</span>
+          {' '}in your account library (shown first)
+        </p>
+      )}
       {/* Search + filter bar */}
       <div className="flex gap-2 mb-6">
         <div

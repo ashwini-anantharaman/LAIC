@@ -4,6 +4,7 @@ import type {
 } from './types';
 
 export const USERS: User[] = [
+  { id: 'demo-cd', name: 'Course Dev Demo', initials: 'CD', email: '1@gmail.com', role: 'content-developer', program: 'bridge' },
   { id: 'sam', name: 'Sam Rivera', initials: 'SR', email: 'sam@laic.org', role: 'content-developer', program: 'bridge' },
   { id: 'lee', name: 'Lee Park', initials: 'LP', email: 'lee@laic.org', role: 'object-reviewer', program: 'bridge' },
   { id: 'maria', name: 'María Gómez', initials: 'MG', email: 'maria@laic.org', role: 'course-reviewer', program: 'bridge' },

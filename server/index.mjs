@@ -1800,46 +1800,100 @@ function readingLevelRules(aud, lvl) {
   return `Reading level (${a} / ${l}): clear prose matched to the audience. These set HOW you write, not WHAT the source says.`;
 }
 
-function normalizeConceptCard(raw, prev = {}, { views } = {}) {
+function normalizeConceptCard(raw, prev = {}, { views, categories } = {}) {
   if (!raw || typeof raw !== 'object') return null;
-  const want = Array.isArray(views) && views.length
-    ? views
-    : (Array.isArray(prev.includedViews) ? prev.includedViews : ['definition']);
-
   const term = String(raw.term || raw.concept || prev.term || '').trim();
-  let definition = String(raw.definition || raw.plain || prev.definition || '').trim();
-  if (want.includes('definition') && !definition) return null;
   if (!term) return null;
-  if (!want.includes('definition')) definition = '';
+
+  const str = (...keys) => {
+    for (const k of keys) {
+      if (typeof raw[k] === 'string' && raw[k].trim()) return raw[k].trim();
+      if (typeof prev[k] === 'string' && prev[k].trim()) return prev[k].trim();
+    }
+    return '';
+  };
+
+  const oneSentenceMeaning = str('oneSentenceMeaning', 'definition', 'plain');
+  const coreIdea = str('coreIdea', 'definition', 'oneSentenceMeaning', 'plain');
+  if (!oneSentenceMeaning && !coreIdea) return null;
+
+  let keyComponents = [];
+  const rawComp = raw.keyComponents ?? prev.keyComponents;
+  if (Array.isArray(rawComp)) {
+    keyComponents = rawComp.map((x) => String(x || '').trim()).filter(Boolean);
+  } else if (typeof rawComp === 'string' && rawComp.trim()) {
+    keyComponents = rawComp.split(/\n|•|;/).map((s) => s.replace(/^[-*\d.)\s]+/, '').trim()).filter(Boolean);
+  }
+
+  const cats = Array.isArray(categories) && categories.length
+    ? categories
+    : (Array.isArray(raw.categories) ? raw.categories : (Array.isArray(prev.categories) ? prev.categories : null));
+
+  const extraFromRaw = Array.isArray(raw.extraSections) ? raw.extraSections : [];
+  const extraFromPrev = Array.isArray(prev.extraSections) ? prev.extraSections : [];
+  const extraMap = new Map();
+  for (const s of [...extraFromPrev, ...extraFromRaw]) {
+    if (!s || typeof s !== 'object') continue;
+    const id = String(s.id || '').trim();
+    const title = String(s.title || s.label || '').trim();
+    const body = String(s.body || s.text || '').trim();
+    if (!id || !title) continue;
+    extraMap.set(id, { id, title, body });
+  }
+  // Also accept custom fields as top-level keys matching category ids
+  if (Array.isArray(cats)) {
+    for (const cat of cats) {
+      if (!cat?.id || !String(cat.id).startsWith('custom-')) continue;
+      if (typeof raw[cat.id] === 'string' && raw[cat.id].trim()) {
+        extraMap.set(cat.id, {
+          id: cat.id,
+          title: String(cat.label || cat.id),
+          body: raw[cat.id].trim(),
+        });
+      }
+    }
+  }
 
   const out = {
     id: prev.id || `cc${Date.now()}`,
     term,
-    definition,
-    includedViews: want,
+    oneSentenceMeaning: oneSentenceMeaning || coreIdea,
+    whyItMatters: str('whyItMatters', 'analogy'),
+    coreIdea: coreIdea || oneSentenceMeaning,
+    keyComponents,
+    example: str('example', 'workedExample'),
+    nonExample: str('nonExample'),
+    visualOrFormula: str('visualOrFormula', 'visualSuggestion', 'visual'),
+    visualChoice: str('visualChoice') || undefined,
+    visualAlternative: str('visualAlternative') || undefined,
+    visualFormula: str('visualFormula') || undefined,
+    commonMistake: str('commonMistake', 'misconception', 'misc'),
+    connection: str('connection'),
+    recallQuestion: str('recallQuestion'),
+    teachBack: str('teachBack'),
+    categories: cats || undefined,
+    extraSections: [...extraMap.values()],
+    definition: oneSentenceMeaning || coreIdea,
+    analogy: str('whyItMatters', 'analogy') || undefined,
+    visualSuggestion: str('visualOrFormula', 'visualSuggestion', 'visual') || undefined,
+    misconception: str('commonMistake', 'misconception', 'misc') || undefined,
+    includedViews: Array.isArray(views) && views.length ? views : [
+      'definition', 'analogy', 'example', 'visual', 'misconception',
+    ],
   };
 
-  const take = (viewKey, field, ...alts) => {
-    if (!want.includes(viewKey)) return;
-    for (const k of [field, ...alts]) {
-      if (typeof raw[k] === 'string' && raw[k].trim()) { out[field] = raw[k].trim(); return; }
-    }
-    if (typeof prev[field] === 'string' && prev[field].trim()) out[field] = prev[field].trim();
-  };
-
-  take('analogy', 'analogy');
-  take('example', 'example', 'workedExample');
-  take('visual', 'visualSuggestion', 'visual');
-  take('misconception', 'misconception', 'misc');
+  if (!out.visualChoice && !out.visualAlternative && !out.visualFormula && out.visualOrFormula) {
+    out.visualFormula = out.visualOrFormula;
+  }
 
   const cites = (raw.citations && typeof raw.citations === 'object') ? raw.citations : {};
   const prevCites = (prev.citations && typeof prev.citations === 'object') ? prev.citations : {};
-  const citations = {};
-  for (const v of want) {
-    const c = cites[v] || prevCites[v];
-    if (typeof c === 'string' && c.trim()) citations[v] = c.trim();
+  const citations = { ...prevCites, ...cites };
+  const cleaned = {};
+  for (const [k, v] of Object.entries(citations)) {
+    if (typeof v === 'string' && v.trim()) cleaned[k] = v.trim();
   }
-  if (Object.keys(citations).length) out.citations = citations;
+  if (Object.keys(cleaned).length) out.citations = cleaned;
 
   if (typeof raw.voice === 'string' && raw.voice.trim()) out.voice = raw.voice.trim();
   else if (prev.voice) out.voice = prev.voice;
@@ -1850,41 +1904,70 @@ function normalizeConceptCard(raw, prev = {}, { views } = {}) {
 }
 
 function buildConceptCardPrompt({ title, config, retrieved, views, prompt }) {
+  void views;
   const c = config || {};
   const len = c.len || 'Standard';
   const aud = c.aud || 'High school';
   const lvl = c.lvl || 'Basic';
   const voi = c.voi || 'Plain & friendly';
   const intent = String(c.concept || title || '').trim();
-  const viewSet = new Set(views);
+  const cats = Array.isArray(c.categories) ? c.categories.filter((x) => x && x.enabled !== false) : [];
+  const enabled = cats.length
+    ? cats
+    : [
+        { id: 'meaning', label: 'One-sentence meaning' },
+        { id: 'why', label: 'Why it matters' },
+        { id: 'core', label: 'Core idea' },
+        { id: 'components', label: 'Key components' },
+        { id: 'example', label: 'Example' },
+        { id: 'nonExample', label: 'Non-example' },
+        { id: 'visual', label: 'Visual or formula' },
+        { id: 'mistake', label: 'Common mistake' },
+        { id: 'connection', label: 'Connection' },
+        { id: 'recall', label: 'Recall question' },
+        { id: 'teachBack', label: 'Teach-back (explain in 30 seconds)' },
+      ];
 
-  const fieldLines = [
-    'term (string) — the concept name as used in the source',
-    viewSet.has('definition') ? 'definition (string) — required: the concept AS THE SOURCE defines it, in the audience\'s words. Disambiguate by the source (e.g. card-game Bridge, not a river bridge).' : null,
-    viewSet.has('analogy') ? 'analogy (string) — one concrete analogy that MAPS the concept\'s structure onto the analogy domain; not merely adjacent.' : 'analogy: null',
-    viewSet.has('example') ? 'example (string) — a specific instance drawn from the source, stepped through.' : 'example: null',
-    viewSet.has('visual') ? 'visualSuggestion (string) — describe a diagram/layout that would help (not prose explanation).' : 'visualSuggestion: null',
-    viewSet.has('misconception') ? 'misconception (string) — a real learner mistake about THIS concept, stated then corrected, grounded in the source.' : 'misconception: null',
-    'citations (object) — for EACH non-null view key, a short citation string using the chunk ids/from labels you used (e.g. "p.3" or "(2)").',
-  ].filter(Boolean);
+  const fieldGuide = {
+    meaning: 'oneSentenceMeaning (string) — a single clear sentence defining the concept as the source does.',
+    why: 'whyItMatters (string) — why a learner should care / when it shows up.',
+    core: 'coreIdea (string) — the deeper explanation (a short paragraph).',
+    components: 'keyComponents (string[]) — 2–5 short bullet phrases naming the parts / conditions.',
+    example: 'example (string) — a concrete positive instance from the source.',
+    nonExample: 'nonExample (string) — what it is NOT — a near-miss that clarifies the boundary.',
+    visual: 'visualChoice / visualAlternative / visualFormula (strings) — tiny choice→gives-up→alternative labels plus a one-line formula.',
+    mistake: 'commonMistake (string) — a real learner mistake, then the correction.',
+    connection: 'connection (string) — how this links to a neighbouring idea in the source.',
+    recall: 'recallQuestion (string) — one short check question (no answer key needed).',
+    teachBack: 'teachBack (string) — a 30-second spoken explanation the learner could say aloud.',
+  };
+
+  const requestedFields = [];
+  const customIds = [];
+  for (const cat of enabled) {
+    const id = String(cat.id || '');
+    if (fieldGuide[id]) requestedFields.push(`- ${cat.label}: ${fieldGuide[id]}`);
+    else if (id.startsWith('custom-')) {
+      customIds.push({ id, label: String(cat.label || id) });
+      requestedFields.push(`- ${cat.label}: put the body in extraSections as {"id":"${id}","title":"${String(cat.label || id).replace(/"/g, '')}","body":string}`);
+    }
+  }
 
   const system = [
-    'You generate ONE concept card as STRUCTURED JSON for learners.',
-    'CRITICAL GROUNDING RULE: Every view MUST be defined by what the retrieved source chunks say about the concept.',
-    'If the source is about the card game Bridge, every view is about the card game — full stop. Never invent a different sense.',
-    'Do NOT use outside knowledge that contradicts or replaces the source. If a requested view is not supported by the chunks, set that field to null rather than inventing.',
+    'You generate ONE pedagogical concept card as STRUCTURED JSON for learners.',
+    'CRITICAL GROUNDING RULE: Every field MUST be defined by what the retrieved source chunks say about the concept.',
+    'If the source is about the card game Bridge, every field is about the card game — full stop. Never invent a different sense.',
+    'Do NOT use outside knowledge that contradicts or replaces the source.',
     'Output ONLY a single JSON object. No prose, no markdown fences.',
-    `Shape fields: ${fieldLines.join(' | ')}`,
-    'Set unrequested optional fields to null.',
+    'Include "term" plus ONLY the fields for the requested categories below.',
+    'Also include "extraSections": array (may be empty) for any custom categories.',
+    'Also include "citations": object mapping field names → short cite using chunk ids/from labels.',
+    'Requested categories / fields:',
+    ...requestedFields,
     lengthBudget(len),
     readingLevelRules(aud, lvl),
-    `Voice (${voi}): tone ONLY — warm, second-person-ish, not lecturing. Never change what is said, only how.`,
+    `Voice (${voi}): tone ONLY — warm, second-person-ish, not lecturing.`,
   ].join('\n');
-
-  const requestedLabels = views.map((v) => {
-    const row = CC_VIEW_MAP.find((r) => r.key === v);
-    return row ? row.label : v;
-  });
 
   const user = [
     `Object title: ${title || '(untitled)'}`,
@@ -1896,12 +1979,10 @@ function buildConceptCardPrompt({ title, config, retrieved, views, prompt }) {
     `Audience: ${aud}`,
     `Level: ${lvl}`,
     `Voice: ${voi}`,
-    `Length per view: ${len}`,
-    `Views to generate (ONLY these, in this order): ${requestedLabels.join(' → ')}`,
-    viewSet.has('analogy')
-      ? (c.analogy
-        ? `Analogy domain (must map onto): ${c.analogy}`
-        : 'Analogy domain: (not specified — pick a domain this audience already knows)')
+    `Length per section: ${len}`,
+    `Categories to fill (${enabled.length}): ${enabled.map((x) => x.label).join(' · ')}`,
+    customIds.length
+      ? `Custom category ids: ${customIds.map((x) => `${x.id} (${x.label})`).join(', ')}`
       : '',
     prompt ? `\nAuthor note (style/context only; still ground in chunks):\n${prompt}` : '',
     '',
@@ -2237,10 +2318,10 @@ function buildItemEditPrompt(kind, item, instruction) {
   }
   if (kind === 'concept-card') {
     const system = [
-      'You are editing ONE concept card for a course author.',
+      'You are editing ONE pedagogical concept card for a course author.',
       'Return ONLY a JSON object — no prose, no markdown fences.',
-      'Shape: {"term":string,"definition":string,"analogy":string|null,"example":string|null,"visualSuggestion":string|null,"misconception":string|null}',
-      'Keep the same concept unless the instruction changes it. Preserve accuracy and the requested voice/length if mentioned.',
+      'Shape: {"term":string,"oneSentenceMeaning":string,"whyItMatters":string,"coreIdea":string,"keyComponents":string[],"example":string,"nonExample":string,"visualChoice":string,"visualAlternative":string,"visualFormula":string,"commonMistake":string,"connection":string,"recallQuestion":string,"teachBack":string}',
+      'Keep the same concept unless the instruction changes it. Preserve accuracy and fill every template field.',
     ].join('\n');
     const user = [
       'Current concept card (JSON):',
@@ -2484,15 +2565,7 @@ const server = createServer(async (req, res) => {
         return send(res, 200, { item: normalized });
       }
       if (kind === 'concept-card') {
-        let views = Array.isArray(item?.includedViews) ? item.includedViews.filter(Boolean) : [];
-        if (!views.length) {
-          views = ['definition'];
-          if (item?.analogy) views.push('analogy');
-          if (item?.example) views.push('example');
-          if (item?.visualSuggestion) views.push('visual');
-          if (item?.misconception) views.push('misconception');
-        }
-        const normalized = normalizeConceptCard(obj, item, { views });
+        const normalized = normalizeConceptCard(obj, item, {});
         if (!normalized) throw new LlmError(502, 'llm_parse', 'The model did not return a usable concept card.');
         return send(res, 200, { item: normalized });
       }
@@ -2571,7 +2644,7 @@ const server = createServer(async (req, res) => {
       if (resolvedIntent && resolvedIntent !== intent) config.concept = resolvedIntent;
       sseSend(res, {
         type: 'progress',
-        message: `Grounded in ${hits.length} marked-up unit${hits.length === 1 ? '' : 's'} (score ${bestScore.toFixed(1)}). Writing only the selected views…`,
+        message: `Grounded in ${hits.length} marked-up unit${hits.length === 1 ? '' : 's'} (score ${bestScore.toFixed(1)}). Filling the concept-card template…`,
       });
 
       const { system, user } = buildConceptCardPrompt({
@@ -2581,21 +2654,22 @@ const server = createServer(async (req, res) => {
         views,
         prompt: body?.prompt,
       });
-      sseSend(res, { type: 'progress', message: 'Writing grounded views with the model…' });
-      const raw = await callAnthropic({ system, user, maxTokens: 4096 });
+      sseSend(res, { type: 'progress', message: 'Writing the full template with the model…' });
+      const raw = await callAnthropic({ system, user, maxTokens: 6144 });
       const parsed = extractJson(raw);
       const obj = Array.isArray(parsed) ? parsed[0] : parsed;
-      const card = normalizeConceptCard(obj, {}, { views });
+      const card = normalizeConceptCard(obj, {}, { views, categories: config.categories });
       if (!card) throw new LlmError(502, 'llm_parse', 'The model did not return a usable concept card.');
       if (config.voi) card.voice = String(config.voi);
       if (config.len) card.length = String(config.len);
-      // Fallback citations from top retrieved chunks when the model omits them.
+      if (Array.isArray(config.categories)) card.categories = config.categories;
       if (!card.citations) card.citations = {};
       const fallbackCite = hits.slice(0, 2).map((h) => h.from || h.id).filter(Boolean).join('; ');
-      for (const v of views) {
-        if (!card.citations[v] && fallbackCite) card.citations[v] = fallbackCite;
+      if (fallbackCite && !Object.keys(card.citations).length) {
+        card.citations.coreIdea = fallbackCite;
+        card.citations.oneSentenceMeaning = fallbackCite;
       }
-      sseSend(res, { type: 'progress', message: 'Assembling the concept card…' });
+      sseSend(res, { type: 'progress', message: 'Assembling the concept card sheet…' });
       sseSend(res, { type: 'card', card });
       sseSend(res, { type: 'done' });
     } catch (e) {

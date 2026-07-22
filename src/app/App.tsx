@@ -1,7 +1,18 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import type { Role, Program, LearningObject, ObjectType } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
 import { supabaseEnabled, listObjects, saveObject } from '../lib/supabase';
+import {
+  loadUserObjects,
+  saveUserObjects,
+  mergeObjects,
+  readSessionUserId,
+  writeSessionUserId,
+  isDemoCdUser,
+  loadDemoCdLibrary,
+  remoteObjectsForDemoCd,
+  DEMO_CD_USER_ID,
+} from '../lib/demoAuth';
 import { LoginPortal } from './components/LoginPortal';
 import { Layout } from './components/Layout';
 
@@ -41,6 +52,11 @@ const DEFAULT_SCREEN: Record<Role, string> = {
   'student': 'student-dashboard',
 };
 
+function objectsForUser(all: LearningObject[], userId: string): LearningObject[] {
+  if (isDemoCdUser(userId)) return remoteObjectsForDemoCd(all);
+  return all.filter((o) => o.ownerId === userId);
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeUserId, setActiveUserId] = useState('riya');
@@ -51,30 +67,76 @@ export default function App() {
   const [creatorObjectType, setCreatorObjectTypeState] = useState<string>('lesson');
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
+  const activeUserIdRef = useRef(activeUserId);
+  const createdObjectsRef = useRef(createdObjects);
+  activeUserIdRef.current = activeUserId;
+  createdObjectsRef.current = createdObjects;
 
-  // Hydrate persisted objects from Supabase (if configured) on first load.
-  useEffect(() => {
+  const hydrateForUser = useCallback(async (userId: string) => {
+    const local = isDemoCdUser(userId) ? loadDemoCdLibrary() : loadUserObjects(userId);
+    setCreatedObjects(local);
     if (!supabaseEnabled) return;
-    let cancelled = false;
-    listObjects()
-      .then(objs => { if (!cancelled) setCreatedObjects(objs); })
-      .catch(err => console.warn('[supabase] could not load objects:', err?.message || err));
-    return () => { cancelled = true; };
+    try {
+      const remote = objectsForUser(await listObjects(), userId);
+      const claimedRemote = isDemoCdUser(userId)
+        ? remote.map((o) => ({
+            ...o,
+            ownerId: DEMO_CD_USER_ID,
+            ownerName: o.ownerName || 'Course Dev Demo',
+          }))
+        : remote;
+      const merged = mergeObjects(local, claimedRemote);
+      setCreatedObjects(merged);
+      saveUserObjects(userId, merged);
+    } catch (err: any) {
+      console.warn('[supabase] could not load objects:', err?.message || err);
+    }
   }, []);
+
+  // Keep the active user's library written to localStorage whenever it changes.
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    saveUserObjects(activeUserId, createdObjects);
+  }, [isLoggedIn, activeUserId, createdObjects]);
+
+  // Restore last demo session on first load.
+  useEffect(() => {
+    const uid = readSessionUserId();
+    if (!uid) return;
+    const user = USERS.find((u) => u.id === uid);
+    if (!user) {
+      writeSessionUserId(null);
+      return;
+    }
+    setActiveUserId(uid);
+    setRoleState(user.role);
+    setCurrentScreen(DEFAULT_SCREEN[user.role]);
+    setIsLoggedIn(true);
+    void hydrateForUser(uid);
+  }, [hydrateForUser]);
 
   const login = useCallback((userId: string) => {
     const user = USERS.find(u => u.id === userId);
     if (!user) return;
     setActiveUserId(userId);
     setRoleState(user.role);
+    // Email demo + all CDs land on Object Library (saved objects).
     setCurrentScreen(DEFAULT_SCREEN[user.role]);
     setReaderObjectId(null);
+    setEditingObjectId(null);
     setIsLoggedIn(true);
-  }, []);
+    writeSessionUserId(userId);
+    void hydrateForUser(userId);
+  }, [hydrateForUser]);
 
   const logout = useCallback(() => {
+    // Persist current user's objects before clearing session.
+    saveUserObjects(activeUserIdRef.current, createdObjectsRef.current);
+    writeSessionUserId(null);
     setIsLoggedIn(false);
     setReaderObjectId(null);
+    setEditingObjectId(null);
+    setCreatedObjects([]);
   }, []);
 
   const navigate = useCallback((screen: string) => {
@@ -87,9 +149,17 @@ export default function App() {
     setRoleState(newRole);
     setCurrentScreen(DEFAULT_SCREEN[newRole]);
     setReaderObjectId(null);
-    const match = USERS.find(u => u.role === newRole);
-    if (match) setActiveUserId(match.id);
-  }, []);
+    // Prefer demo-cd when switching into content-developer so the email account's library sticks.
+    const match =
+      newRole === 'content-developer'
+        ? USERS.find((u) => u.id === DEMO_CD_USER_ID) || USERS.find((u) => u.role === newRole)
+        : USERS.find((u) => u.role === newRole);
+    if (match) {
+      setActiveUserId(match.id);
+      writeSessionUserId(match.id);
+      void hydrateForUser(match.id);
+    }
+  }, [hydrateForUser]);
 
   const setProgram = useCallback((p: Program) => {
     setProgramState(p);
@@ -108,7 +178,8 @@ export default function App() {
   }, []);
 
   const addObject = useCallback((partial: Partial<LearningObject> & { type: ObjectType; title: string }) => {
-    const user = USERS.find(u => u.id === activeUserId);
+    const ownerId = activeUserIdRef.current;
+    const user = USERS.find(u => u.id === ownerId);
     const now = new Date().toISOString().slice(0, 10);
     const id = partial.id || `obj-new-${Date.now()}`;
     setCreatedObjects(prev => {
@@ -117,7 +188,7 @@ export default function App() {
         id,
         type: partial.type,
         title: partial.title || 'Untitled',
-        ownerId: existing?.ownerId || activeUserId,
+        ownerId: existing?.ownerId || ownerId,
         ownerName: existing?.ownerName || user?.name || 'You',
         status: partial.status || 'draft',
         scope: partial.scope || existing?.scope || 'bridge',
@@ -131,13 +202,15 @@ export default function App() {
         sourceIds: partial.sourceIds ?? existing?.sourceIds ?? [],
         pipelineDraft: partial.pipelineDraft !== undefined ? partial.pipelineDraft : existing?.pipelineDraft,
       };
+      const nextList = [obj, ...prev.filter(o => o.id !== id)];
+      saveUserObjects(ownerId, nextList);
       if (supabaseEnabled) {
         saveObject(obj).catch(err => console.warn('[supabase] could not save object:', err?.message || err));
       }
-      return [obj, ...prev.filter(o => o.id !== id)];
+      return nextList;
     });
     return id;
-  }, [activeUserId]);
+  }, []);
 
   const openEditor = useCallback((objectId: string) => {
     const fromCreated = createdObjects.find(o => o.id === objectId);

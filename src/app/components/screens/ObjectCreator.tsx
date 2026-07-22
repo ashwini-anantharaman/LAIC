@@ -37,7 +37,13 @@ import {
   type PartSnapshot,
   type TutorialEditorPart,
 } from '../../../lib/assistant';
-import { buildGlossary, type GlossaryEntry } from '../../../lib/glossary';
+import { buildGlossary } from '../../../lib/glossary';
+import {
+  DEFAULT_CONCEPT_CATEGORIES,
+  resolveConceptCategories,
+  slugCategoryId,
+  type ConceptCategoryDef,
+} from '../../../lib/conceptCard';
 import { FlashcardEditor } from './FlashcardStudy';
 import { QuizEditor } from './QuizEditor';
 import { ConceptCardEditor } from './ConceptCardEditor';
@@ -372,10 +378,8 @@ const CFG: Record<string, GDef[]> = {
       { id: 'lvl', label: 'Level', type: 'pick', options: LVL, default: 'Basic' },
       { id: 'voi', label: 'Voice', type: 'pick', options: VOI, default: 'Plain & friendly' },
     ]},
-    { title: 'How to represent it', note: 'Only selected views are generated and shown. Definition is always included.', fields: [
-      { id: 'incl', label: 'Include', type: 'multi', options: ['Formal definition', 'Everyday analogy', 'Worked example', 'Visual suggestion', 'Common misconception'], default: ['Formal definition', 'Everyday analogy', 'Common misconception'] },
-      { id: 'analogy', label: 'Analogy should relate to…', type: 'text', hint: 'optional — e.g. sports, cooking (analogy view only)' },
-      { id: 'len', label: 'Length per view', type: 'pick', options: ['Tight', 'Standard', 'Expanded'], default: 'Standard' },
+    { title: 'Sheet categories', note: 'Toggle which panels appear on the concept card, rename them, or add your own. Generation fills only the ones you keep on.', fields: [
+      { id: 'len', label: 'Length per section', type: 'pick', options: ['Tight', 'Standard', 'Expanded'], default: 'Standard' },
     ]},
   ],
   summary: [
@@ -1391,6 +1395,126 @@ function S3({ extracts, setExtracts, markHighlights, docTitle, typeNoun }: any) 
   );
 }
 
+function ConceptCategoryEditor({
+  categories,
+  onChange,
+}: {
+  categories: ConceptCategoryDef[];
+  onChange: (next: ConceptCategoryDef[]) => void;
+}) {
+  const [newLabel, setNewLabel] = useState('');
+  const cats = categories.length ? categories : DEFAULT_CONCEPT_CATEGORIES.map((c) => ({ ...c }));
+  const enabledCount = cats.filter((c) => c.enabled).length;
+
+  const update = (id: string, patch: Partial<ConceptCategoryDef>) => {
+    onChange(cats.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  };
+  const remove = (id: string) => {
+    const target = cats.find((c) => c.id === id);
+    if (!target) return;
+    if (target.builtin) {
+      update(id, { enabled: false });
+      return;
+    }
+    onChange(cats.filter((c) => c.id !== id));
+  };
+  const addCustom = () => {
+    const label = newLabel.trim();
+    if (!label) return;
+    onChange([
+      ...cats,
+      {
+        id: slugCategoryId(label),
+        label,
+        enabled: true,
+        builtin: false,
+        tone: 'blue',
+      },
+    ]);
+    setNewLabel('');
+  };
+
+  return (
+    <div className="mt-2">
+      <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 10, lineHeight: 1.45 }}>
+        {enabledCount} categor{enabledCount === 1 ? 'y' : 'ies'} on · click to toggle · edit the name · add your own below
+      </p>
+      <div className="space-y-2">
+        {cats.map((cat) => (
+          <div
+            key={cat.id}
+            className="flex items-center gap-2 rounded-xl border px-2.5 py-2"
+            style={{
+              borderColor: cat.enabled ? 'rgba(11,15,26,0.18)' : 'rgba(0,0,0,0.08)',
+              background: cat.enabled ? 'rgba(255,255,255,0.95)' : 'rgba(249,250,251,0.8)',
+              opacity: cat.enabled ? 1 : 0.72,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => update(cat.id, { enabled: !cat.enabled })}
+              className="w-5 h-5 rounded border flex items-center justify-center shrink-0"
+              style={{
+                borderColor: cat.enabled ? '#0B0F1A' : '#D1D5DB',
+                background: cat.enabled ? '#0B0F1A' : '#fff',
+              }}
+              title={cat.enabled ? 'On the sheet' : 'Off the sheet'}
+            >
+              {cat.enabled && <Check size={11} color="#fff" strokeWidth={3} />}
+            </button>
+            <input
+              value={cat.label}
+              onChange={(e) => update(cat.id, { label: e.target.value })}
+              className="flex-1 min-w-0 rounded-lg px-2 py-1 outline-none"
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#0B1220',
+                border: '1px solid transparent',
+                background: 'transparent',
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.12)'; e.currentTarget.style.background = '#fff'; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = 'transparent'; }}
+            />
+            {!cat.builtin && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0" style={{ background: '#EFF6FF', color: '#2563EB' }}>
+                custom
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => remove(cat.id)}
+              className="p-1 shrink-0"
+              title={cat.builtin ? 'Turn off' : 'Remove'}
+            >
+              <Trash2 size={13} style={{ color: '#EF4444' }} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 mt-3">
+        <input
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') addCustom(); }}
+          placeholder="Add a category… e.g. Real-world tip"
+          className="flex-1 rounded-xl px-3 py-2 outline-none"
+          style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.9)' }}
+        />
+        <button
+          type="button"
+          onClick={addCustom}
+          disabled={!newLabel.trim()}
+          className="flex items-center gap-1 px-3 py-2 rounded-xl text-white shrink-0"
+          style={{ fontSize: 12.5, fontWeight: 600, background: '#0B0F1A', opacity: newLabel.trim() ? 1 : 0.5 }}
+        >
+          <Plus size={13} />Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function S4({
   typeId, title, setTitle, scope, setScope, fv, setF, srcCount, extCount, hlCount,
   intentSuggestions, suggestingIntents, suggestIntentError, onSuggestIntents,
@@ -1408,6 +1532,12 @@ function S4({
     const tpl = typeId === 'tutorial' && fv.templateId ? getTutorialTemplate(fv.templateId).name : null;
     if (writeMyself) {
       return `${tpl || 'Template'} · blank skeleton with your section count and recipe blocks. You write every part — nothing is AI-generated.`;
+    }
+    if (typeId === 'concept-card') {
+      const cats = resolveConceptCategories(fv.categories).filter((c) => c.enabled);
+      const names = cats.slice(0, 4).map((c) => c.label).join(', ');
+      const more = cats.length > 4 ? ` +${cats.length - 4} more` : '';
+      return `Concept card sheet with ${cats.length} categor${cats.length === 1 ? 'y' : 'ies'}${names ? `: ${names}${more}` : ''}. Drawing on ${srcCount} source${srcCount !== 1 ? 's' : ''}${extCount > 0 ? ` · ${extCount} extract${extCount !== 1 ? 's' : ''}` : ''}.`;
     }
     const clusterBit = typeId === 'tutorial' && clusterCount > 0 ? ` · ${clusterCount} cluster${clusterCount !== 1 ? 's' : ''}` : '';
     return `${tpl ? `${tpl} · ` : ''}Drawing on ${srcCount} source${srcCount !== 1 ? 's' : ''}${extCount > 0 ? ` · ${extCount} extract${extCount !== 1 ? 's' : ''}` : ''}${clusterBit}${chips.length > 0 ? ' · ' + chips.slice(0, 3).join(' · ') : ''}. Everything editable after generating.`;
@@ -1510,6 +1640,12 @@ function S4({
               </div>
             );
           })}
+          {typeId === 'concept-card' && g.title === 'Sheet categories' && (
+            <ConceptCategoryEditor
+              categories={resolveConceptCategories(fv.categories)}
+              onChange={(next) => setF('categories', next)}
+            />
+          )}
         </div>
       ))}
 
@@ -1788,11 +1924,10 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   const [parts, setParts] = useState(
     Array.isArray(generatedParts) && generatedParts.length ? generatedParts : DRAFT_PARTS,
   );
-  const [mode, setMode] = useState<'edit' | 'preview' | 'glossary'>('edit');
+  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [editId, setEditId] = useState<string | null>(null);
   const [aiId, setAiId] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
-  const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
   const displayTitle = title || `${fmtType(typeId)} on Bidding Basics`;
   const briefObjective = (fv?.obj as string)?.trim() || 'After this tutorial, the learner can apply the key ideas from the source.';
   const briefChips: string[] = typeId === 'tutorial'
@@ -1926,7 +2061,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
 
   const buildBlocks = (): Block[] =>
     parts.map((p: any, i: number) => {
-      const id = `blk-preview-${i}-${p.id || i}`;
+      const id = String(p.id || `blk-${i}`);
       if (p.type === 'concept-card')
         return { id, type: 'concept-card', content: { term: p.concept || p.label || '', definition: p.plain || '', example: p.misc || '' } };
       if (p.type === 'question')
@@ -2032,18 +2167,9 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   const glossaryEntries = buildGlossary({
     knowledgeBase: pipelineDraft?.knowledgeBase,
     parts: parts as TutorialEditorPart[],
+    blocks: previewBlocks,
     highlights: pipelineDraft?.highlights || [],
   });
-
-  const jumpToGlossaryPassage = (entry: GlossaryEntry) => {
-    setActiveGlossaryId(entry.id);
-    if (entry.blockId && parts.some((p: any) => p.id === entry.blockId)) {
-      focusPartInEditor(entry.blockId);
-      return;
-    }
-    // Stay on glossary and surface the source excerpt when no block match.
-    setMode('glossary');
-  };
 
   return (
     <div className="flex flex-col h-full min-h-0 relative">
@@ -2067,14 +2193,6 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
             </button>
             <button
               type="button"
-              onClick={() => { setMode('glossary'); setEditId(null); setAiId(null); }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-full"
-              style={{ fontSize: 12, fontWeight: 600, background: mode === 'glossary' ? '#0B0F1A' : 'transparent', color: mode === 'glossary' ? '#fff' : '#6B7280' }}
-            >
-              <BookOpen size={12} />Glossary
-            </button>
-            <button
-              type="button"
               onClick={() => { setMode('preview'); setEditId(null); setAiId(null); }}
               className="flex items-center gap-1 px-3 py-1.5 rounded-full"
               style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}
@@ -2090,6 +2208,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
             <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>{docTitle || displayTitle}</h1>
             <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 16 }}>
               Student preview · how learners will see this tutorial · {parts.length} part{parts.length !== 1 ? 's' : ''}
+              {glossaryEntries.length > 0 ? ' · open Glossary from the right edge' : ''}
             </p>
             <LearningBlocksPreview
               blocks={previewBlocks}
@@ -2097,61 +2216,8 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
               cumulativePassMark={tutorialPassMark}
               maxHints={hintSettings.count}
               hintsEnabled={hintSettings.enabled}
+              glossary={glossaryEntries}
             />
-          </>
-        ) : mode === 'glossary' ? (
-          <>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>Glossary</h1>
-            <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 16 }}>
-              Words from the passage. Click any word to jump back to where it appears.
-            </p>
-            {glossaryEntries.length === 0 ? (
-              <div className="rounded-2xl border p-6 text-center" style={{ borderColor: 'rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.7)' }}>
-                <BookOpen size={22} style={{ color: '#9AA3AF', margin: '0 auto 8px' }} />
-                <p style={{ fontSize: 13.5, color: '#6B7280' }}>
-                  No vocabulary words yet. Mark source sentences in Mark up / Extract, or add concept cards in Edit.
-                </p>
-              </div>
-            ) : (
-              <div
-                className="rounded-2xl border overflow-hidden"
-                style={{ borderColor: 'rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.9)' }}
-              >
-                {glossaryEntries.map((entry, i) => {
-                  const active = activeGlossaryId === entry.id;
-                  const blurb = entry.definition.length > 110
-                    ? `${entry.definition.slice(0, 110).trim()}…`
-                    : entry.definition;
-                  return (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      onClick={() => jumpToGlossaryPassage(entry)}
-                      className="w-full text-left px-4 py-3 transition-colors"
-                      style={{
-                        background: active ? 'rgba(11,15,26,0.05)' : 'transparent',
-                        borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.06)',
-                      }}
-                    >
-                      <div className="flex items-baseline gap-3">
-                        <span style={{
-                          fontSize: 14.5, fontWeight: 700, color: '#0B1220',
-                          minWidth: 120, flexShrink: 0,
-                        }}>
-                          {entry.term}
-                        </span>
-                        <span style={{ fontSize: 13, color: '#4B5563', lineHeight: 1.45, flex: 1 }}>
-                          {blurb}
-                        </span>
-                        {entry.page != null && (
-                          <span style={{ fontSize: 11, color: '#9AA3AF', flexShrink: 0 }}>p. {entry.page}</span>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </>
         ) : (
           <>
@@ -2394,7 +2460,9 @@ export function ObjectCreator() {
   const [fv, setFvState] = useState<Record<string, any>>(() => (
     typeId === 'tutorial'
       ? { templateId: DEFAULT_TUTORIAL_TEMPLATE_ID, ...getTutorialTemplate(DEFAULT_TUTORIAL_TEMPLATE_ID).knobDefaults }
-      : {}
+      : typeId === 'concept-card'
+        ? { categories: DEFAULT_CONCEPT_CATEGORIES.map((c) => ({ ...c })), len: 'Standard' }
+        : {}
   ));
   const setF = (id: string, v: any) => setFvState(p => ({ ...p, [id]: v }));
 
@@ -2742,19 +2810,12 @@ export function ObjectCreator() {
     } else if (obj.type === 'concept-card') {
       const ccBlock = (obj.blocks || []).find(b => b.type === 'concept-card');
       const c = (ccBlock?.content || {}) as any;
-      if (c.term || c.definition) {
+      if (c.term || c.definition || c.oneSentenceMeaning) {
         setGenConceptCard({
           id: ccBlock?.id || 'cc-edit',
+          ...c,
           term: c.term || '',
-          definition: c.definition || '',
-          example: c.example,
-          analogy: c.analogy,
-          visualSuggestion: c.visualSuggestion,
-          misconception: c.misconception,
-          voice: c.voice,
-          length: c.length,
-          includedViews: c.includedViews,
-          citations: c.citations,
+          definition: c.oneSentenceMeaning || c.definition || '',
         });
       }
       setShowEditor(true);
@@ -3185,9 +3246,8 @@ export function ObjectCreator() {
         aud: fv.aud ?? 'High school',
         lvl: fv.lvl ?? 'Basic',
         voi: fv.voi ?? 'Plain & friendly',
-        incl: Array.isArray(fv.incl) ? fv.incl : (fv.incl ? [fv.incl] : ['Formal definition', 'Everyday analogy', 'Common misconception']),
-        analogy: fv.analogy || '',
         len: fv.len ?? 'Standard',
+        categories: resolveConceptCategories(fv.categories),
       };
       const payload = {
         title,
@@ -3206,7 +3266,9 @@ export function ObjectCreator() {
         else if (ev.type === 'error') throw new Error(ev.message);
         else if (ev.type === 'done') break;
       }
-      if (!card?.term || !card?.definition) throw new Error('No concept card was generated.');
+      if (!card?.term || !(card.oneSentenceMeaning || card.definition || card.coreIdea)) {
+        throw new Error('No concept card was generated.');
+      }
       setGenerating(false);
       setShowEditor(true);
     } catch (e) {
