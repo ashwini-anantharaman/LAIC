@@ -48,6 +48,7 @@ import { Spinner } from "@/nexus/ui/kit";
 import type { Program } from "@/types/platform";
 import { accentForMode } from "@/nexus/theme/accent";
 import { clearBranding, onBranding, readBranding, writeBranding } from "@/nexus/branding";
+import { useDocumentChrome } from "@/nexus/useDocumentChrome";
 
 interface NavItem {
   to: string;
@@ -65,7 +66,7 @@ function orgNav(orgId: string): NavItem[] {
   return [
     { to: `${base}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `${base}/programs`, label: "Programs", icon: Boxes },
-    { to: `${base}/team`, label: "Team & Roles", icon: KeyRound },
+    { to: `${base}/team`, label: "People", icon: KeyRound },
     { to: `${base}/settings`, label: "Settings", icon: Settings },
     { to: `${base}/audit`, label: "Audit", icon: ScrollText },
   ];
@@ -80,7 +81,7 @@ function programNav(orgId: string, programId: string): NavItem[] {
     { to: `${base}/registrations`, label: "Registrations", icon: UserPlus },
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
-    { to: `${base}/team`, label: "Team & Roles", icon: KeyRound },
+    { to: `${base}/team`, label: "People", icon: KeyRound },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
     { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
   ];
@@ -97,7 +98,7 @@ function confinedProgramNav(orgId: string, programId: string, perms: Record<stri
   if (perms.bridge) items.push({ to: `${base}/bridge`, label: "Bridge Platform", icon: Waypoints });
   if (perms.appbuilder) items.push({ to: `${base}/shells`, label: "App Shells", icon: AppWindow });
   if (perms.community) items.push({ to: `${base}/community`, label: "Community", icon: MessagesSquare });
-  if (perms.teams) items.push({ to: `${base}/team`, label: "Team & Roles", icon: KeyRound });
+  if (perms.teams) items.push({ to: `${base}/team`, label: "People", icon: KeyRound });
   if (perms.partners) items.push({ to: `${base}/partners`, label: "Partners", icon: Handshake });
   return items;
 }
@@ -336,6 +337,10 @@ export function AppShell() {
     const cached = readBranding(orgId);
     return cached ? { accent: cached.accent, logo: cached.logo } : { accent: null, logo: null };
   });
+  // Display titles for the browser tab (see useDocumentChrome), tracked
+  // separately from the paint branding so a live rename updates the tab.
+  const [orgTitle, setOrgTitle] = useState<string | null>(() => (orgId ? readBranding(orgId)?.title ?? null : null));
+  const [platformTitle, setPlatformTitle] = useState<string | null>(() => readBranding("platform")?.title ?? null);
   // "Ready" = we know the real branding (cache hit or fetch settled). Until
   // then the shell paints a neutral spinner — never the default palette, so
   // there is no flash of the wrong color even on a first visit.
@@ -348,6 +353,7 @@ export function AppShell() {
     }
     const cached = readBranding(orgId);
     setOrgBranding(cached ? { accent: cached.accent, logo: cached.logo } : { accent: null, logo: null });
+    setOrgTitle(cached?.title ?? null);
     setBrandingReady(!!cached);
     (async () => {
       try {
@@ -355,11 +361,13 @@ export function AppShell() {
         const slug = mine.find((o) => o.id === orgId)?.slug;
         if (slug) {
           const b = await getOrgBySlug(slug);
+          setOrgTitle(b.name);
           writeBranding({
             orgId,
             slug,
             accent: b.theme_accent_color,
             logo: resolveAssetUrl(b.theme_logo_url),
+            title: b.name,
           });
         }
       } catch {
@@ -378,7 +386,10 @@ export function AppShell() {
   useEffect(() => {
     if (mode !== "nexus") return;
     getPlatformBranding()
-      .then((b) => writeBranding({ orgId: "platform", accent: b.accent, logo: resolveAssetUrl(b.logo) }))
+      .then((b) => {
+        setPlatformTitle(b.title ?? null);
+        writeBranding({ orgId: "platform", accent: b.accent, logo: resolveAssetUrl(b.logo), title: b.title ?? null });
+      })
       .catch(() => {});
   }, [mode]);
 
@@ -393,8 +404,14 @@ export function AppShell() {
   useEffect(
     () =>
       onBranding((b) => {
-        if (b.orgId === orgId) setOrgBranding({ accent: b.accent, logo: b.logo });
-        if (b.orgId === "platform") setPlatformBranding({ accent: b.accent, logo: b.logo });
+        if (b.orgId === orgId) {
+          setOrgBranding({ accent: b.accent, logo: b.logo });
+          if (b.title !== undefined) setOrgTitle(b.title ?? null);
+        }
+        if (b.orgId === "platform") {
+          setPlatformBranding({ accent: b.accent, logo: b.logo });
+          if (b.title !== undefined) setPlatformTitle(b.title ?? null);
+        }
         if (programId && b.orgId === programId) setProgramBranding({ accent: b.accent, logo: b.logo });
       }),
     [orgId, programId],
@@ -452,6 +469,18 @@ export function AppShell() {
   }, [programId, program, orgId]);
 
   const programName = program?.name ?? programMemberships.find((m) => m.program_id === programId)?.program_name ?? null;
+
+  // Browser tab (title + favicon) follows the current level.
+  const effectiveOrgName = orgTitle ?? orgName;
+  const tabTitle =
+    mode === "nexus"
+      ? platformTitle ?? "Nexus"
+      : programId
+        ? programName
+          ? `${programName} · ${effectiveOrgName}`
+          : effectiveOrgName
+        : effectiveOrgName;
+  useDocumentChrome(tabTitle, displayBranding.logo);
   // Effective feature switches (already clamped by the org's Nexus envelope
   // server-side). Until loaded, show everything to avoid a nav flash.
   const programFeatures: Record<string, boolean> = program?.features ?? {};
@@ -511,7 +540,7 @@ export function AppShell() {
     heading = "Nexus";
     items = [
       { to: "/orgs", label: "Organizations", icon: Building2 },
-      { to: "/team", label: "Team & Roles", icon: KeyRound },
+      { to: "/team", label: "People", icon: KeyRound },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
     ];
@@ -573,7 +602,7 @@ export function AppShell() {
     dashboard: "Dashboard", programs: "Programs", settings: "Settings", audit: "Audit",
     orgs: "Organizations", offerings: "Offerings", shells: "App Shells",
     registrations: "Registrations", groups: "Participants & Groups", community: "Community",
-    team: "Team & Roles", partners: "Partners", learning: "Learning Platform",
+    team: "People", partners: "Partners", learning: "Learning Platform",
   };
   const segments = pathname.split("/").filter(Boolean);
   const last = segments[segments.length - 1] ?? "";

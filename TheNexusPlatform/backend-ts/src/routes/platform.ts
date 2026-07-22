@@ -914,6 +914,21 @@ platformRouter.patch("/orgs/:org_id/theme", async (c) => {
   });
 });
 
+const orgNameSchema = z.object({ name: z.string().trim().min(1).max(120) });
+
+platformRouter.patch("/orgs/:org_id/name", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  const req = parseBody(orgNameSchema, await c.req.json());
+  await _requireOrgArea(user, orgId, "settings", "edit");
+  const org = await db.updateOrgName(orgId, req.name);
+  await db.recordAuditEvent("organization.renamed", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    metadata: { name: req.name },
+  });
+  return c.json({ id: org.id, name: org.name, slug: org.slug });
+});
+
 function _integrationResponse(r: Row): Row {
   return {
     id: r.id,
@@ -1624,9 +1639,26 @@ platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
 
 platformRouter.get("/platform/branding", async (c) => {
   // Public: the operator console shell (and login gate) needs it pre-auth.
-  if (!dbEnabled()) return c.json({ accent: null, logo: null });
+  if (!dbEnabled()) return c.json({ accent: null, logo: null, title: null });
   const b = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
-  return c.json({ accent: (b.accent as string) ?? null, logo: (b.logo as string) ?? null });
+  return c.json({
+    accent: (b.accent as string) ?? null,
+    logo: (b.logo as string) ?? null,
+    title: (b.title as string) ?? null,
+  });
+});
+
+const platformNameSchema = z.object({ title: z.string().trim().min(1).max(120) });
+
+platformRouter.patch("/admin/platform/name", async (c) => {
+  const user = await getCurrentUser(c);
+  await _requireNexusArea(user, "settings", "edit");
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(platformNameSchema, await c.req.json());
+  const cur = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
+  const next = { ...cur, title: req.title };
+  await db.setPlatformSetting("branding", next);
+  return c.json(next);
 });
 
 const platformThemeSchema = z.object({ accent_color: z.string().trim().min(1).max(32) });
@@ -1687,6 +1719,25 @@ platformRouter.patch("/programs/:program_id/categories", async (c) => {
   await db.recordAuditEvent("program.categories_updated", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
     metadata: { category: row.category, secondary_categories: row.secondary_categories },
+  });
+  return c.json(_programResponse(row));
+});
+
+const programNameSchema = z.object({ name: z.string().trim().min(1).max(120) });
+
+platformRouter.patch("/programs/:program_id/name", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  await _assertProgramConfigAccess(user, program.org_id, programId);
+  const req = parseBody(programNameSchema, await c.req.json());
+  const row = await db.updateProgramName(programId, req.name);
+  if (!row) throw new HttpError(404, "Program not found");
+  await db.recordAuditEvent("program.renamed", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { name: req.name },
   });
   return c.json(_programResponse(row));
 });

@@ -344,6 +344,9 @@ export const programRoles = pgTable("program_roles", {
   programId: uuid("program_id"),
   name: text("name").notNull(),
   perms: jsonb("perms").notNull().default({}),
+  /** Discord-style: when true, holding this role also places the person in a
+   * same-named group; when false the role never surfaces as a group. */
+  displayAsGroup: boolean("display_as_group").notNull().default(false),
   createdByUserId: uuid("created_by_user_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -375,6 +378,9 @@ export const groupMemberships = pgTable("group_memberships", {
   organizationId: uuid("organization_id").notNull(),
   groupId: uuid("group_id").notNull(),
   userId: uuid("user_id"),
+  /** Email-keyed placement (matches the People tab); set instead of userId when
+   * a person is placed in a group before they have an account. */
+  email: text("email"),
   role: text("role"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

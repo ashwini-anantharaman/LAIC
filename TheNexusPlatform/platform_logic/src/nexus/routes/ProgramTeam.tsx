@@ -27,16 +27,19 @@ import {
   deleteProgramRole,
   devLoginAs,
   inviteProgramMember,
+  getProgramGroupsModel,
   getProgramTeamSummary,
   listProgramPlatformGroup,
   listProgramRoles,
   listPrograms,
   removeMember,
   revokeInvitation,
+  setProgramMemberGroups,
   setProgramMemberRole,
   updateProgramRole,
   type AccessLevel,
   type PlatformGroupMember,
+  type ProgramGroupsModel,
   type ProgramMember,
   type ProgramRole,
   type RoleArea,
@@ -87,8 +90,10 @@ export function ProgramTeam() {
   const [roles, setRoles] = useState<ProgramRole[] | null>(null);
   const [members, setMembers] = useState<ProgramMember[] | null>(null);
   const [groups, setGroups] = useState<{ platform: string; role: string; count: number }[]>([]);
+  const [groupsModel, setGroupsModel] = useState<ProgramGroupsModel | null>(null);
   const [editing, setEditing] = useState<ProgramRole | "new" | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [managingGroups, setManagingGroups] = useState<ProgramMember | null>(null);
 
   useEffect(() => {
     listPrograms(orgId).then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null)).catch(() => {});
@@ -99,6 +104,7 @@ export function ProgramTeam() {
 
   const load = useCallback(() => {
     listProgramRoles(programId).then(setRoles).catch(() => setRoles([]));
+    getProgramGroupsModel(programId).then(setGroupsModel).catch(() => setGroupsModel(null));
     // Team core + per-platform-role group counts; group MEMBERS page in lazily
     // (a flat list won't scale to hundreds of learners).
     getProgramTeamSummary(programId)
@@ -169,6 +175,22 @@ export function ProgramTeam() {
       toast.error(e instanceof Error ? e.message : "Failed to assign role");
     }
   }
+
+  // A person's group chips: their role's name IF that role displays as a group,
+  // plus every explicit (placement) group they're in.
+  const groupNameById = new Map((groupsModel?.groups ?? []).map((g) => [g.id, g.name]));
+  function memberGroupChips(m: ProgramMember): { name: string; kind: "role" | "group" }[] {
+    const email = (m.email ?? "").toLowerCase();
+    const role = groupsModel?.roles.find((r) => r.id === m.role_id);
+    const chips: { name: string; kind: "role" | "group" }[] = [];
+    if (role?.display_as_group) chips.push({ name: role.name, kind: "role" });
+    for (const id of groupsModel?.placements[email] ?? []) {
+      const name = groupNameById.get(id);
+      if (name) chips.push({ name, kind: "group" });
+    }
+    return chips;
+  }
+  const hasPlacementGroups = (groupsModel?.groups.length ?? 0) > 0;
 
   return (
     <div>
@@ -258,6 +280,7 @@ export function ProgramTeam() {
                 <TableRow>
                   <TableHead>Person</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Groups</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -310,6 +333,32 @@ export function ProgramTeam() {
                               ))}
                             </SelectContent>
                           </Select>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {isAdmin ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-1">
+                            {memberGroupChips(m).map((c) => (
+                              <Pill key={`${c.kind}:${c.name}`} tone={c.kind === "role" ? "accent" : "neutral"}>
+                                {c.name}
+                              </Pill>
+                            ))}
+                            {hasPlacementGroups ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-1.5"
+                                onClick={() => setManagingGroups(m)}
+                                title="Edit group placement"
+                              >
+                                <Pencil className="size-3" />
+                              </Button>
+                            ) : memberGroupChips(m).length === 0 ? (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            ) : null}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell>
@@ -386,23 +435,114 @@ export function ProgramTeam() {
       <InviteMemberDialog
         programId={programId}
         roles={roles ?? []}
+        placementGroups={groupsModel?.groups ?? []}
         open={inviteOpen}
         onOpenChange={setInviteOpen}
         onInvited={load}
       />
+
+      {managingGroups ? (
+        <ManageGroupsDialog
+          programId={programId}
+          member={managingGroups}
+          allGroups={groupsModel?.groups ?? []}
+          current={groupsModel?.placements[(managingGroups.email ?? "").toLowerCase()] ?? []}
+          onClose={() => setManagingGroups(null)}
+          onSaved={() => {
+            setManagingGroups(null);
+            load();
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function ManageGroupsDialog({
+  programId,
+  member,
+  allGroups,
+  current,
+  onClose,
+  onSaved,
+}: {
+  programId: string;
+  member: ProgramMember;
+  allGroups: { id: string; name: string }[];
+  current: string[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(current));
+  const [busy, setBusy] = useState(false);
+
+  function toggle(id: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  async function save() {
+    if (!member.email) return;
+    setBusy(true);
+    try {
+      await setProgramMemberGroups(programId, member.email, [...selected]);
+      toast.success("Groups updated");
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update groups");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Groups · {member.display_name ?? member.email}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Place this person into any of the program's groups. Roles that display as their own
+            group are handled by the role itself.
+          </p>
+          {allGroups.length === 0 ? (
+            <EmptyState>No groups yet. Create groups under Participants &amp; Groups.</EmptyState>
+          ) : (
+            allGroups.map((g) => (
+              <label
+                key={g.id}
+                className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 cursor-pointer hover:bg-accent/40"
+              >
+                <Switch checked={selected.has(g.id)} onCheckedChange={() => toggle(g.id)} />
+                <span className="text-sm">{g.name}</span>
+              </label>
+            ))
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={busy}>{busy ? "Saving…" : "Save groups"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function InviteMemberDialog({
   programId,
   roles,
+  placementGroups,
   open,
   onOpenChange,
   onInvited,
 }: {
   programId: string;
   roles: ProgramRole[];
+  placementGroups: { id: string; name: string }[];
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onInvited: () => void;
@@ -410,6 +550,7 @@ function InviteMemberDialog({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState<string>("none");
+  const [groupIds, setGroupIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [invite, setInvite] = useState<Invitation | null>(null);
 
@@ -419,6 +560,7 @@ function InviteMemberDialog({
     setName("");
     setEmail("");
     setRoleId("none");
+    setGroupIds(new Set());
     setInvite(null);
   }
 
@@ -430,6 +572,7 @@ function InviteMemberDialog({
         email: email.trim(),
         display_name: name.trim() || undefined,
         role_id: roleId === "none" ? undefined : roleId,
+        group_ids: groupIds.size ? [...groupIds] : undefined,
       });
       setInvite(inv);
       onInvited();
@@ -506,6 +649,37 @@ function InviteMemberDialog({
                 </SelectContent>
               </Select>
             </div>
+            {placementGroups.length ? (
+              <div className="space-y-1.5">
+                <Label>Groups</Label>
+                <p className="text-xs text-muted-foreground -mt-1">Which group(s) this person belongs to.</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {placementGroups.map((g) => {
+                    const on = groupIds.has(g.id);
+                    return (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() =>
+                          setGroupIds((s) => {
+                            const next = new Set(s);
+                            next.has(g.id) ? next.delete(g.id) : next.add(g.id);
+                            return next;
+                          })
+                        }
+                        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                          on
+                            ? "border-primary bg-primary/10 text-foreground"
+                            : "border-border text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {g.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
         <DialogFooter>
@@ -549,6 +723,7 @@ function RoleBuilder({
     }
     return initial;
   });
+  const [displayAsGroup, setDisplayAsGroup] = useState(role?.display_as_group ?? false);
   const [busy, setBusy] = useState(false);
 
   // Only areas the program has enabled can be granted (defaults to all-on for
@@ -578,8 +753,8 @@ function RoleBuilder({
       Object.entries(perms).filter(([area]) => enabled[area as ProgramFeatureKey]),
     ) as RolePerms;
     try {
-      if (role) await updateProgramRole(role.id, { name: name.trim(), perms: cleanPerms });
-      else await createProgramRole(programId, { name: name.trim(), perms: cleanPerms });
+      if (role) await updateProgramRole(role.id, { name: name.trim(), perms: cleanPerms, display_as_group: displayAsGroup });
+      else await createProgramRole(programId, { name: name.trim(), perms: cleanPerms, display_as_group: displayAsGroup });
       toast.success(role ? "Role updated" : "Role created");
       onSaved();
     } catch (e) {
@@ -599,6 +774,16 @@ function RoleBuilder({
           <div className="space-y-1.5">
             <Label htmlFor="role-name">Role name</Label>
             <Input id="role-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Content Reviewer" />
+          </div>
+          <div className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
+            <Switch id="role-as-group" checked={displayAsGroup} onCheckedChange={setDisplayAsGroup} />
+            <div className="flex-1">
+              <Label htmlFor="role-as-group" className="cursor-pointer">Display role as its own group</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                On — holders of this role also form a group by that name. Off — the role stays
+                permissions-only and people are placed into groups you choose.
+              </p>
+            </div>
           </div>
           <div className="space-y-2">
             <Label>Access</Label>

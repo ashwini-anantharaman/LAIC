@@ -234,6 +234,18 @@ export function localUpdateOrgTheme(
   throw new HttpError(404, "Organization not found");
 }
 
+export function localUpdateOrgName(orgId: string, name: string): Row {
+  const orgs = _read("organizations");
+  for (const org of orgs) {
+    if (org.id === orgId) {
+      org.name = name;
+      _write("organizations", orgs);
+      return org;
+    }
+  }
+  throw new HttpError(404, "Organization not found");
+}
+
 /** Generic settings replace (used for capability envelope, etc.). */
 export function localSetOrgSettings(orgId: string, settings: Row): Row {
   const orgs = _read("organizations");

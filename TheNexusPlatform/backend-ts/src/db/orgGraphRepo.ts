@@ -25,7 +25,7 @@ type Row = Record<string, unknown>;
 // ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
 const programRoleRow = (r: typeof programRoles.$inferSelect): Row => ({
   id: r.id, organization_id: r.organizationId, program_id: r.programId,
-  name: r.name, perms: r.perms, created_at: r.createdAt,
+  name: r.name, perms: r.perms, display_as_group: r.displayAsGroup ?? false, created_at: r.createdAt,
 });
 
 export async function listProgramRoles(programId: string): Promise<Row[]> {
@@ -49,21 +49,30 @@ export async function createProgramRole(
   name: string,
   perms: Row,
   createdByUserId?: string | null,
+  displayAsGroup?: boolean,
 ): Promise<Row> {
   return scoped(async (tx) => {
     const [r] = await tx
       .insert(programRoles)
-      .values({ organizationId: orgId, programId, name, perms, createdByUserId: createdByUserId ?? null })
+      .values({
+        organizationId: orgId, programId, name, perms,
+        displayAsGroup: displayAsGroup ?? false,
+        createdByUserId: createdByUserId ?? null,
+      })
       .returning();
     return programRoleRow(r);
   });
 }
 
-export async function updateProgramRole(id: string, patch: { name?: string; perms?: Row }): Promise<Row | null> {
+export async function updateProgramRole(
+  id: string,
+  patch: { name?: string; perms?: Row; displayAsGroup?: boolean },
+): Promise<Row | null> {
   return asPrivileged(async (tx) => {
     const set: Row = {};
     if (patch.name != null) set.name = patch.name;
     if (patch.perms != null) set.perms = patch.perms;
+    if (patch.displayAsGroup != null) set.displayAsGroup = patch.displayAsGroup;
     if (Object.keys(set).length === 0) return getProgramRole(id);
     const [r] = await tx.update(programRoles).set(set).where(eq(programRoles.id, id)).returning();
     return r ? programRoleRow(r) : null;
@@ -930,6 +939,69 @@ export async function addGroupMember(groupId: string, orgId: string, opts: { use
 
 export async function removeGroupMember(memberId: string): Promise<void> {
   await scoped(async (tx) => { await tx.delete(groupMemberships).where(eq(groupMemberships.id, memberId)); });
+}
+
+// ── Email-keyed group placement (Groups vs Roles) ───────────────────────────
+// A person's *explicit* group placement is email-keyed so it survives from
+// invite → activation, exactly like role assignments. Scoped to one program's
+// own groups so setting placements never touches another program.
+
+/** Replace a person's explicit group placements within THIS program's groups. */
+export async function setPersonGroups(
+  orgId: string,
+  programId: string,
+  email: string,
+  groupIds: string[],
+): Promise<void> {
+  const key = email.trim().toLowerCase();
+  await scoped(async (tx) => {
+    const progGroups = await tx.select({ id: groups.id }).from(groups)
+      .where(and(eq(groups.organizationId, orgId), eq(groups.programId, programId)));
+    const allowed = new Set(progGroups.map((g) => g.id));
+    const wanted = [...new Set(groupIds)].filter((g) => allowed.has(g));
+    // Clear this person's placements across the program's groups, then re-add.
+    if (allowed.size) {
+      await tx.delete(groupMemberships).where(and(
+        inArray(groupMemberships.groupId, [...allowed]),
+        sql`lower(${groupMemberships.email}) = ${key}`,
+      ));
+    }
+    for (const gid of wanted) {
+      await tx.insert(groupMemberships)
+        .values({ organizationId: orgId, groupId: gid, email: key })
+        .onConflictDoNothing();
+    }
+  });
+}
+
+/**
+ * The People-tab groups model for a program: the real (placement) groups, the
+ * roles flagged display_as_group (which act as groups), and — keyed by email —
+ * who is placed where. Role-groups' membership is implicit (whoever holds the
+ * role), so the frontend unions role assignments in; this returns only the
+ * explicit placements plus the role→group flags.
+ */
+export async function listProgramGroupsModel(orgId: string, programId: string): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const realGroups = (await tx.select().from(groups)
+      .where(and(eq(groups.organizationId, orgId), eq(groups.programId, programId))))
+      .map((g) => ({ id: g.id, name: g.name, label: g.label ?? null }));
+    const groupIds = realGroups.map((g) => g.id);
+    const placementRows = groupIds.length
+      ? await tx.select({ groupId: groupMemberships.groupId, email: groupMemberships.email })
+          .from(groupMemberships)
+          .where(and(inArray(groupMemberships.groupId, groupIds), sql`${groupMemberships.email} is not null`))
+      : [];
+    const placements: Record<string, string[]> = {};
+    for (const p of placementRows) {
+      const e = (p.email ?? "").toLowerCase();
+      if (!e) continue;
+      (placements[e] ??= []).push(p.groupId);
+    }
+    const roles = (await tx.select().from(programRoles).where(eq(programRoles.programId, programId)))
+      .map((r) => ({ id: r.id, name: r.name, display_as_group: r.displayAsGroup ?? false }));
+    return { groups: realGroups, roles, placements };
+  });
 }
 
 /** {groupId} ∪ all descendant group ids (recursive, within the org). */

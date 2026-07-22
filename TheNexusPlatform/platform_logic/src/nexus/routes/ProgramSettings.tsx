@@ -8,6 +8,7 @@ import { useParams } from "react-router";
 
 import {
   listPrograms,
+  updateProgramName,
   updateProgramTheme,
   uploadProgramLogo,
 } from "@/services/api";
@@ -55,8 +56,14 @@ export function ProgramSettings() {
         title={`${programName} · Settings`}
         subtitle="This program's own theme and logo. Until customized, it inherits the organization's."
       />
-      <Section title="Theme">
+      <Section title="Branding">
         <ThemeEditor
+          name={programName}
+          nameLabel="Program name"
+          onSaveName={async (n) => {
+            await updateProgramName(programId, n);
+            setProgramName(n);
+          }}
           accent={accent}
           logoUrl={logo}
           onSaveAccent={async (hex) => {

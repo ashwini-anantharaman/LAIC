@@ -18,6 +18,8 @@ export interface CachedBranding {
   accent: string | null;
   /** Resolved (absolute) logo URL, ready for <img src>. */
   logo: string | null;
+  /** Display name/title for this level (drives the browser tab + brand slot). */
+  title?: string | null;
 }
 
 const EVENT = "nexus:branding";
@@ -33,10 +35,18 @@ export function readBranding(idOrSlug: string | null | undefined): CachedBrandin
 }
 
 export function writeBranding(b: CachedBranding): void {
-  const payload = JSON.stringify(b);
-  if (b.orgId) localStorage.setItem(key(b.orgId), payload);
-  if (b.slug) localStorage.setItem(key(b.slug), payload);
-  window.dispatchEvent(new CustomEvent(EVENT, { detail: b }));
+  // Merge with any existing entry so a PARTIAL write (e.g. a theme save that
+  // doesn't carry the title, or a rename that doesn't carry the logo) never
+  // clobbers a field another surface already set.
+  const existing = readBranding(b.orgId) ?? readBranding(b.slug) ?? null;
+  const merged: CachedBranding = {
+    ...b,
+    title: b.title !== undefined ? b.title : existing?.title ?? null,
+  };
+  const payload = JSON.stringify(merged);
+  if (merged.orgId) localStorage.setItem(key(merged.orgId), payload);
+  if (merged.slug) localStorage.setItem(key(merged.slug), payload);
+  window.dispatchEvent(new CustomEvent(EVENT, { detail: merged }));
 }
 
 /** Subscribe to branding writes (same tab). Returns the unsubscribe. */

@@ -367,6 +367,15 @@ export async function getPlatformSetting(key: string): Promise<Row | null> {
 export async function setPlatformSetting(key: string, value: Row): Promise<Row> {
   return tpg.setPlatformSetting(key, value);
 }
+export async function updateOrgName(orgId: string, name: string): Promise<Row> {
+  if (usePg()) return tpg.updateOrgName(orgId, name);
+  if (await useLocal()) return local.localUpdateOrgName(orgId, name);
+  const client = requireClient();
+  return _mutateOne(
+    client.from("organizations").update({ name }).eq("id", orgId).select("*"),
+    "Failed to rename organization",
+  );
+}
 export async function updateProgramCategories(
   programId: string,
   patch: { category?: string; secondaryCategories?: string[] },
@@ -378,6 +387,9 @@ export async function setProgramBranding(
   branding: { accent?: string | null; logo?: string | null } | null,
 ): Promise<Row | null> {
   return tpg.setProgramBranding(programId, branding);
+}
+export async function updateProgramName(programId: string, name: string): Promise<Row | null> {
+  return tpg.updateProgramName(programId, name);
 }
 
 // Org-defined program categories (DB-backed; routes guard dbEnabled).

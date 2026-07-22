@@ -278,20 +278,45 @@ export interface ProgramRole {
   program_id: string;
   name: string;
   perms: RolePerms;
+  /** Discord-style: when true, this role also acts as a group. */
+  display_as_group?: boolean;
   created_at?: string;
 }
 
 export async function listProgramRoles(programId: string): Promise<ProgramRole[]> {
   return request<ProgramRole[]>(`/api/programs/${programId}/roles`);
 }
-export async function createProgramRole(programId: string, payload: { name: string; perms: RolePerms }): Promise<ProgramRole> {
+export async function createProgramRole(
+  programId: string,
+  payload: { name: string; perms: RolePerms; display_as_group?: boolean },
+): Promise<ProgramRole> {
   return request<ProgramRole>(`/api/programs/${programId}/roles`, { method: "POST", body: JSON.stringify(payload) });
 }
-export async function updateProgramRole(roleId: string, patch: { name?: string; perms?: RolePerms }): Promise<ProgramRole> {
+export async function updateProgramRole(
+  roleId: string,
+  patch: { name?: string; perms?: RolePerms; display_as_group?: boolean },
+): Promise<ProgramRole> {
   return request<ProgramRole>(`/api/roles/${roleId}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
 export async function deleteProgramRole(roleId: string): Promise<void> {
   await request(`/api/roles/${roleId}`, { method: "DELETE" });
+}
+
+// ── Groups vs Roles: the People-tab groups model + placement ────────────────
+export interface ProgramGroupsModel {
+  groups: { id: string; name: string; label: string | null }[];
+  roles: { id: string; name: string; display_as_group: boolean }[];
+  /** email (lowercased) → explicit group ids they're placed in. */
+  placements: Record<string, string[]>;
+}
+export async function getProgramGroupsModel(programId: string): Promise<ProgramGroupsModel> {
+  return request<ProgramGroupsModel>(`/api/programs/${programId}/groups-model`);
+}
+export async function setProgramMemberGroups(programId: string, email: string, groupIds: string[]): Promise<void> {
+  await request(`/api/programs/${programId}/members/groups`, {
+    method: "PUT",
+    body: JSON.stringify({ email, group_ids: groupIds }),
+  });
 }
 
 // ── Dev-only test login (local only; backend gates it) ──────────────────────
@@ -513,6 +538,10 @@ export async function updateOrgTheme(
   });
 }
 
+export async function updateOrgName(orgId: string, name: string): Promise<{ id: string; name: string; slug: string }> {
+  return request(`/api/platform/orgs/${orgId}/name`, { method: "PATCH", body: JSON.stringify({ name }) });
+}
+
 export async function listIntegrations(orgId: string): Promise<Integration[]> {
   return request<Integration[]>(`/api/platform/orgs/${orgId}/integrations`);
 }
@@ -616,6 +645,7 @@ export async function removeNexusOperator(email: string): Promise<void> {
 export interface PlatformBranding {
   accent: string | null;
   logo: string | null;
+  title?: string | null;
 }
 
 export async function getPlatformBranding(): Promise<PlatformBranding> {
@@ -625,6 +655,12 @@ export async function updatePlatformTheme(accent: string): Promise<PlatformBrand
   return request<PlatformBranding>("/api/platform/admin/platform/theme", {
     method: "PATCH",
     body: JSON.stringify({ accent_color: accent }),
+  });
+}
+export async function updatePlatformName(title: string): Promise<PlatformBranding> {
+  return request<PlatformBranding>("/api/platform/admin/platform/name", {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
   });
 }
 export async function uploadPlatformLogo(file: File): Promise<{ logo_url: string }> {
@@ -642,6 +678,12 @@ export async function updateProgramTheme(
   return request(`/api/platform/programs/${programId}/theme`, {
     method: "PATCH",
     body: JSON.stringify({ accent_color: opts.accent, revert: opts.revert }),
+  });
+}
+export async function updateProgramName(programId: string, name: string): Promise<Program> {
+  return request<Program>(`/api/platform/programs/${programId}/name`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
   });
 }
 export async function updateProgramCategories(
@@ -947,7 +989,7 @@ export async function listProgramMembers(programId: string): Promise<ProgramMemb
 
 export async function inviteProgramMember(
   programId: string,
-  payload: { email: string; display_name?: string; role_id?: string },
+  payload: { email: string; display_name?: string; role_id?: string; group_ids?: string[] },
 ): Promise<Invitation> {
   return request<Invitation>(`/api/programs/${programId}/members`, {
     method: "POST",

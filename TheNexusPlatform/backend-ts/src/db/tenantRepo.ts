@@ -10,6 +10,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import * as localKeys from "../platformLocalStore";
+import { HttpError } from "../httpError";
 import { normalizeProgramFeatures, type ProgramFeatures } from "../schemas";
 import type { StageNode } from "../permissions";
 import { withUserContext, asPrivileged, type Tx } from "./context";
@@ -664,6 +665,23 @@ export async function updateOrgTheme(orgId: string, accentColor: string | null |
     settings.theme = theme;
     const [o] = await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId)).returning();
     return { id: o.id, name: o.name, slug: o.slug, owner_id: o.ownerId, settings: o.settings, created_at: o.createdAt };
+  });
+}
+
+/** Rename an organization (display name; slug is left untouched so links stay stable). */
+export async function updateOrgName(orgId: string, name: string): Promise<Row> {
+  return scoped(async (tx) => {
+    const [o] = await tx.update(organizations).set({ name }).where(eq(organizations.id, orgId)).returning();
+    if (!o) throw new HttpError(404, "Organization not found");
+    return { id: o.id, name: o.name, slug: o.slug, owner_id: o.ownerId, settings: o.settings, created_at: o.createdAt };
+  });
+}
+
+/** Rename a program (display name). */
+export async function updateProgramName(programId: string, name: string): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const [p] = await tx.update(programs).set({ name }).where(eq(programs.id, programId)).returning();
+    return p ? programRow(p) : null;
   });
 }
 

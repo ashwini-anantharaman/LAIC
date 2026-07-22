@@ -583,8 +583,16 @@ function _requireScopedRoleAdmin(user: PlatformUser, role: Row): void {
   _requireOfferingAdmin(user, role.organization_id as string, (role.program_id as string) ?? null);
 }
 
-const programRoleCreateSchema = z.object({ name: z.string().min(1), perms: _programRolePerms.default({}) });
-const programRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _programRolePerms.optional() });
+const programRoleCreateSchema = z.object({
+  name: z.string().min(1),
+  perms: _programRolePerms.default({}),
+  display_as_group: z.boolean().optional(),
+});
+const programRoleUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  perms: _programRolePerms.optional(),
+  display_as_group: z.boolean().optional(),
+});
 
 /**
  * A role may only grant access to areas the program has enabled (the org admin's
@@ -619,7 +627,7 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   // created_by is provenance only; skip it to avoid the demo-mode auth-id vs
   // profile-id mismatch (the FK targets profiles.id).
   const perms = _permsWithinFeatures(req.perms, program.features);
-  const row = await graph.createProgramRole(program.org_id, programId, req.name, perms);
+  const row = await graph.createProgramRole(program.org_id, programId, req.name, perms, null, req.display_as_group);
   await db.recordAuditEvent("program.role.created", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
     metadata: { name: req.name },
@@ -640,7 +648,7 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
     const program = await db.getProgram(existing.program_id as string);
     perms = _permsWithinFeatures(perms, program?.features);
   }
-  const row = await graph.updateProgramRole(roleId, { name: req.name, perms });
+  const row = await graph.updateProgramRole(roleId, { name: req.name, perms, displayAsGroup: req.display_as_group });
   await db.recordAuditEvent("program.role.updated", {
     orgId: existing.organization_id as string, actorUserId: user.id, scopeType: "program",
     scopeId: existing.program_id as string, metadata: { name: req.name ?? existing.name },
@@ -760,6 +768,8 @@ const inviteMemberSchema = z.object({
   email: z.string().email(),
   display_name: z.string().nullish(),
   role_id: z.string().nullish(),
+  /** Explicit group placement (real groups); role-groups are implicit. */
+  group_ids: z.array(z.string()).optional(),
 });
 
 offeringsRouter.post("/programs/:program_id/members", async (c) => {
@@ -778,6 +788,9 @@ offeringsRouter.post("/programs/:program_id/members", async (c) => {
   });
   if (req.role_id) {
     await graph.setProgramRoleAssignment(program.org_id, programId, req.email, req.role_id);
+  }
+  if (req.group_ids) {
+    await graph.setPersonGroups(program.org_id, programId, req.email, req.group_ids);
   }
   await db.recordAuditEvent("program.member.invited", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
@@ -803,6 +816,35 @@ offeringsRouter.put("/programs/:program_id/members/role", async (c) => {
     metadata: { email: req.email, role_id: req.role_id },
   });
   return c.json(row ?? { ok: true, cleared: true });
+});
+
+// ── Groups vs Roles: the People-tab groups model + explicit placement ───────
+offeringsRouter.get("/programs/:program_id/groups-model", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgPeopleMember(user, program.org_id);
+  return c.json(await graph.listProgramGroupsModel(program.org_id, programId));
+});
+
+const setMemberGroupsSchema = z.object({ email: z.string().email(), group_ids: z.array(z.string()) });
+
+offeringsRouter.put("/programs/:program_id/members/groups", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const req = parseBody(setMemberGroupsSchema, await c.req.json());
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOfferingPeopleAdmin(user, program.org_id, programId);
+  await graph.setPersonGroups(program.org_id, programId, req.email, req.group_ids);
+  await db.recordAuditEvent("program.member.groups_set", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { email: req.email, group_ids: req.group_ids },
+  });
+  return c.json({ ok: true });
 });
 
 // The signed-in member's own custom role in this program (drives the confined

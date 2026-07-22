@@ -9,6 +9,7 @@ import { ImageIcon, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
+import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { accentForMode, hexFromHue, hueOf } from "@/nexus/theme/accent";
 
@@ -22,6 +23,10 @@ export function ThemeEditor({
   onUploadLogo,
   onRevert,
   revertLabel,
+  name,
+  onSaveName,
+  nameLabel = "Display name",
+  namePlaceholder,
 }: {
   accent: string | null;
   logoUrl: string | null;
@@ -29,11 +34,20 @@ export function ThemeEditor({
   onUploadLogo: (file: File) => Promise<void>;
   onRevert?: () => Promise<void>;
   revertLabel?: string;
+  /** When provided (with onSaveName), an editable display-name field is shown. */
+  name?: string | null;
+  onSaveName?: (name: string) => Promise<void>;
+  nameLabel?: string;
+  namePlaceholder?: string;
 }) {
   const [hue, setHue] = useState(() => hueOf(accent ?? "#4f46e5"));
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [nameDraft, setNameDraft] = useState(name ?? "");
+  const [nameBusy, setNameBusy] = useState(false);
+  useEffect(() => setNameDraft(name ?? ""), [name]);
 
   useEffect(() => {
     setHue(hueOf(accent ?? "#4f46e5"));
@@ -41,6 +55,19 @@ export function ThemeEditor({
   }, [accent]);
 
   const hex = hexFromHue(hue);
+  const nameDirty = onSaveName != null && nameDraft.trim() !== "" && nameDraft.trim() !== (name ?? "");
+
+  async function saveName() {
+    setNameBusy(true);
+    try {
+      await onSaveName!(nameDraft.trim());
+      toast.success("Name saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save name");
+    } finally {
+      setNameBusy(false);
+    }
+  }
 
   async function save() {
     setBusy(true);
@@ -56,8 +83,28 @@ export function ThemeEditor({
   }
 
   return (
-    <div className="glass-card p-5 flex flex-wrap items-start gap-8">
-      <div className="space-y-2 min-w-64 flex-1">
+    <div className="space-y-4">
+      {onSaveName ? (
+        <div className="glass-card p-5 space-y-2 max-w-md">
+          <Label htmlFor="brand-name">{nameLabel}</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="brand-name"
+              value={nameDraft}
+              placeholder={namePlaceholder}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && nameDirty && !nameBusy) void saveName();
+              }}
+            />
+            <Button size="sm" onClick={saveName} disabled={nameBusy || !nameDirty}>
+              {nameBusy ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <div className="glass-card p-5 flex flex-wrap items-start gap-8">
+        <div className="space-y-2 min-w-64 flex-1">
         <Label htmlFor="hue">Accent color</Label>
         <p className="text-xs text-muted-foreground -mt-0.5">
           Pick a hue — the exact shade adapts to light and dark mode automatically.
@@ -152,6 +199,7 @@ export function ThemeEditor({
             }
           }}
         />
+        </div>
       </div>
     </div>
   );
