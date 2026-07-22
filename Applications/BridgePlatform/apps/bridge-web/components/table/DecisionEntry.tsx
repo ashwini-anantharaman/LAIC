@@ -155,20 +155,59 @@ export function DecisionEntry({
           </p>
         )}
         {event.trace.length > 0 && (
-          <ul className="max-h-40 space-y-0.5 overflow-y-auto text-neutral-500">
-            {event.trace.map((t, i) => {
-              const info = rules?.get(t.ruleId);
-              return (
-                <li key={i}>
-                  {t.matched ? "✓" : "·"}{" "}
-                  <span title={t.ruleId}>
-                    {info ? ruleLabel(info) : t.ruleId.split(".").pop()}
-                  </span>{" "}
-                  — {humanReason(t)}
-                </li>
-              );
-            })}
-          </ul>
+          <div className="overflow-hidden rounded-md border border-neutral-200">
+            <p className="border-b border-neutral-200 bg-neutral-100/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+              Rules considered ({event.trace.length})
+              <span className="ml-2 font-normal normal-case tracking-normal text-neutral-400">
+                click a rule to edit it
+              </span>
+            </p>
+            <ul className="max-h-44 divide-y divide-neutral-100 overflow-y-auto bg-white">
+              {event.trace.map((t, i) => {
+                const info = rules?.get(t.ruleId);
+                const traceItemId =
+                  info?.rule.provenance.itemId ?? t.ruleId.split(".")[0];
+                // Editing affordance: on a live board the fix-at-the-table
+                // overlay (pauses + re-pins on save); elsewhere the item editor.
+                const editHref = fixBase
+                  ? `${fixBase}?paused=${event.seq}&fix=${traceItemId}`
+                  : `/bridge/kb/${kbId}/items/${traceItemId}?mode=edit`;
+                return (
+                  <li
+                    key={i}
+                    className={
+                      t.matched
+                        ? "bg-emerald-50/70"
+                        : i % 2
+                          ? "bg-neutral-50/60"
+                          : ""
+                    }
+                  >
+                    <Link
+                      href={editHref}
+                      title={`Edit this rule (${t.ruleId})`}
+                      className="flex items-baseline gap-1.5 px-2 py-1 hover:bg-emerald-50"
+                    >
+                      <span
+                        aria-hidden
+                        className={`w-3 flex-none text-center ${t.matched ? "font-bold text-emerald-700" : "text-neutral-300"}`}
+                      >
+                        {t.matched ? "✓" : "·"}
+                      </span>
+                      <span
+                        className={`flex-none ${t.matched ? "font-medium text-neutral-800" : "text-neutral-600"}`}
+                      >
+                        {info ? ruleLabel(info) : t.ruleId.split(".").pop()}
+                      </span>
+                      <span className="min-w-0 flex-1 text-neutral-400">
+                        — {humanReason(t)}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
         <form
           action={flagDecisionAction}
