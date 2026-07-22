@@ -4,7 +4,7 @@
  * role (preview) or a real person (actual dev sign-in) to confirm everything
  * is stored and confining correctly.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ChevronRight, Copy, Eye, Layers, LayoutGrid, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,10 +25,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   createGroup,
   createProgramRole,
+  deleteGroup,
   deleteProgramRole,
   devLoginAs,
   inviteProgramMember,
   getProgramGroupsModel,
+  updateGroup,
   getProgramTeamSummary,
   listProgramPlatformGroup,
   listProgramRoles,
@@ -96,6 +98,15 @@ export function ProgramTeam() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [managingGroups, setManagingGroups] = useState<ProgramMember | null>(null);
   const [newGroupOpen, setNewGroupOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; parent_id: string | null } | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  function toggleNode(key: string) {
+    setExpandedGroups((s) => {
+      const next = new Set(s);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
   // People view: "grid" = flat table; "stack" = grouped by group (a person in
   // several groups appears under each — no primary). Mirrors the Programs page.
   const [view, setView] = useState<"grid" | "stack">(
@@ -203,10 +214,24 @@ export function ProgramTeam() {
   }
   const hasPlacementGroups = (groupsModel?.groups.length ?? 0) > 0;
 
-  async function addGroup(name: string) {
-    await createGroup(orgId, { program_id: programId, name });
+  async function addGroup(name: string, parentId: string | null) {
+    await createGroup(orgId, { program_id: programId, name, parent_group_id: parentId ?? undefined });
     toast.success(`Group "${name}" created`);
     load();
+  }
+  async function saveGroup(id: string, name: string, parentId: string | null) {
+    await updateGroup(id, { name, parent_group_id: parentId });
+    toast.success("Group updated");
+    load();
+  }
+  async function removeGroup(id: string, name: string) {
+    try {
+      await deleteGroup(id);
+      toast.success(`Group "${name}" deleted`);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete group");
+    }
   }
 
   // One People row, reused by both the flat grid and each stack section.
@@ -327,28 +352,82 @@ export function ProgramTeam() {
     </TableHeader>
   );
 
-  // Stack view buckets: each role that displays as a group, then each real
-  // group, then anyone in no group at all. A person appears under every group
-  // they belong to (no primary), so the same row can repeat across sections.
+  // ── Stack view: a collapsed, hierarchical tree, grouped by group ──────────
+  // Role-as-groups are flat top-level nodes; real groups form a parent/child
+  // forest (groups.parent_id). A person appears under every group they're
+  // directly placed in (no primary). Empty subtrees are hidden.
   const team = members ?? [];
-  const stackBuckets: { key: string; label: string; kind: "role" | "group" | "none"; members: ProgramMember[] }[] = [
-    ...(groupsModel?.roles ?? [])
-      .filter((r) => r.display_as_group)
-      .map((r) => ({
-        key: `role:${r.id}`,
-        label: r.name,
-        kind: "role" as const,
-        members: team.filter((m) => m.role_id === r.id),
-      })),
-    ...(groupsModel?.groups ?? []).map((g) => ({
-      key: `group:${g.id}`,
-      label: g.name,
-      kind: "group" as const,
-      members: team.filter((m) => (groupsModel?.placements[(m.email ?? "").toLowerCase()] ?? []).includes(g.id)),
-    })),
-  ];
+  const allGroups = groupsModel?.groups ?? [];
+  const childrenByParent = new Map<string | null, typeof allGroups>();
+  for (const g of allGroups) {
+    const p = g.parent_id ?? null;
+    childrenByParent.set(p, [...(childrenByParent.get(p) ?? []), g]);
+  }
+  const directMembersOf = (gid: string) =>
+    team.filter((m) => (groupsModel?.placements[(m.email ?? "").toLowerCase()] ?? []).includes(gid));
+  // Unique people in a group's whole subtree (direct + all descendants).
+  function subtreeEmails(gid: string): Set<string> {
+    const out = new Set<string>();
+    for (const m of directMembersOf(gid)) if (m.email) out.add(m.email.toLowerCase());
+    for (const child of childrenByParent.get(gid) ?? []) for (const e of subtreeEmails(child.id)) out.add(e);
+    return out;
+  }
+  const roleNodes = (groupsModel?.roles ?? [])
+    .filter((r) => r.display_as_group)
+    .map((r) => ({ id: r.id, name: r.name, members: team.filter((m) => m.role_id === r.id) }))
+    .filter((n) => n.members.length > 0);
+  const rootGroups = (childrenByParent.get(null) ?? []).filter((g) => subtreeEmails(g.id).size > 0);
   const ungrouped = team.filter((m) => memberGroupChips(m).length === 0);
-  if (ungrouped.length) stackBuckets.push({ key: "none", label: "No group", kind: "none", members: ungrouped });
+  const stackEmpty = roleNodes.length === 0 && rootGroups.length === 0 && ungrouped.length === 0;
+
+  // Recursive render of one real-group node: a collapsed disclosure row that,
+  // when expanded, shows its direct members then its child group nodes.
+  function renderGroupNode(g: { id: string; name: string }, depth: number): ReactNode {
+    const key = `group:${g.id}`;
+    const open = expandedGroups.has(key);
+    const direct = directMembersOf(g.id);
+    const kids = (childrenByParent.get(g.id) ?? []).filter((c) => subtreeEmails(c.id).size > 0);
+    const total = subtreeEmails(g.id).size;
+    return (
+      <div key={key} className="glass-card overflow-hidden" style={{ marginLeft: depth * 16 }}>
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <button
+            type="button"
+            onClick={() => toggleNode(key)}
+            className="flex flex-1 items-center gap-2 text-left"
+          >
+            <ChevronRight className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+            <span className="text-sm font-semibold text-foreground">{g.name}</span>
+            <span className="text-xs text-muted-foreground">{total} {total === 1 ? "person" : "people"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setEditingGroup({ id: g.id, name: g.name, parent_id: allGroups.find((x) => x.id === g.id)?.parent_id ?? null })
+            }
+            className="grid size-7 place-items-center rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+            title="Edit group"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+        </div>
+        {open ? (
+          <div className="border-t border-border">
+            {direct.length ? (
+              <Table>
+                {peopleTableHead}
+                <TableBody>{direct.map((m) => personRow(m, `${key}:`))}</TableBody>
+              </Table>
+            ) : null}
+            {kids.length ? <div className="space-y-2 p-2">{kids.map((c) => renderGroupNode(c, 0))}</div> : null}
+            {!direct.length && !kids.length ? (
+              <div className="px-4 py-3 text-xs text-muted-foreground">No one placed here yet.</div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -452,27 +531,71 @@ export function ProgramTeam() {
               <TableBody>{team.map((m) => personRow(m))}</TableBody>
             </Table>
           </div>
+        ) : stackEmpty ? (
+          <EmptyState>No groups have anyone in them yet. Create a group and place people into it.</EmptyState>
         ) : (
-          <div className="space-y-4">
-            {stackBuckets.map((b) => (
-              <div key={b.key} className="glass-card overflow-hidden">
-                <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-                  <span className="text-sm font-semibold text-foreground">{b.label}</span>
-                  {b.kind === "role" ? <Pill tone="accent">role</Pill> : null}
-                  <span className="text-xs text-muted-foreground">
-                    {b.members.length} {b.members.length === 1 ? "person" : "people"}
-                  </span>
+          <div className="space-y-2">
+            {/* Role-as-group nodes (flat, collapsible). */}
+            {roleNodes.map((n) => {
+              const key = `role:${n.id}`;
+              const open = expandedGroups.has(key);
+              return (
+                <div key={key} className="glass-card overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => toggleNode(key)}
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+                  >
+                    <ChevronRight className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+                    <span className="text-sm font-semibold text-foreground">{n.name}</span>
+                    <Pill tone="accent">role</Pill>
+                    <span className="text-xs text-muted-foreground">
+                      {n.members.length} {n.members.length === 1 ? "person" : "people"}
+                    </span>
+                  </button>
+                  {open ? (
+                    <div className="border-t border-border">
+                      <Table>
+                        {peopleTableHead}
+                        <TableBody>{n.members.map((m) => personRow(m, `${key}:`))}</TableBody>
+                      </Table>
+                    </div>
+                  ) : null}
                 </div>
-                {b.members.length ? (
-                  <Table>
-                    {peopleTableHead}
-                    <TableBody>{b.members.map((m) => personRow(m, `${b.key}:`))}</TableBody>
-                  </Table>
-                ) : (
-                  <div className="px-4 py-3 text-xs text-muted-foreground">No one in this group yet.</div>
-                )}
-              </div>
-            ))}
+              );
+            })}
+            {/* Real group forest (hierarchical, collapsible). */}
+            {rootGroups.map((g) => renderGroupNode(g, 0))}
+            {/* Anyone in no group at all. */}
+            {ungrouped.length ? (
+              (() => {
+                const key = "none";
+                const open = expandedGroups.has(key);
+                return (
+                  <div className="glass-card overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleNode(key)}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+                    >
+                      <ChevronRight className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+                      <span className="text-sm font-semibold text-muted-foreground">No group</span>
+                      <span className="text-xs text-muted-foreground">
+                        {ungrouped.length} {ungrouped.length === 1 ? "person" : "people"}
+                      </span>
+                    </button>
+                    {open ? (
+                      <div className="border-t border-border">
+                        <Table>
+                          {peopleTableHead}
+                          <TableBody>{ungrouped.map((m) => personRow(m, "none:"))}</TableBody>
+                        </Table>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()
+            ) : null}
           </div>
         )}
       </Section>
@@ -517,7 +640,28 @@ export function ProgramTeam() {
         onInvited={load}
       />
 
-      <NewGroupDialog open={newGroupOpen} onOpenChange={setNewGroupOpen} onCreate={addGroup} />
+      <NewGroupDialog
+        open={newGroupOpen}
+        onOpenChange={setNewGroupOpen}
+        allGroups={groupsModel?.groups ?? []}
+        onCreate={addGroup}
+      />
+
+      {editingGroup ? (
+        <EditGroupDialog
+          group={editingGroup}
+          allGroups={groupsModel?.groups ?? []}
+          onClose={() => setEditingGroup(null)}
+          onSave={async (name, parentId) => {
+            await saveGroup(editingGroup.id, name, parentId);
+            setEditingGroup(null);
+          }}
+          onDelete={async () => {
+            await removeGroup(editingGroup.id, editingGroup.name);
+            setEditingGroup(null);
+          }}
+        />
+      ) : null}
 
       {managingGroups ? (
         <ManageGroupsDialog
@@ -536,24 +680,58 @@ export function ProgramTeam() {
   );
 }
 
+function GroupParentSelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string | null;
+  options: { id: string; name: string }[];
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <Select value={value ?? "none"} onValueChange={(v) => onChange(v === "none" ? null : v)}>
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">No parent (top level)</SelectItem>
+        {options.map((g) => (
+          <SelectItem key={g.id} value={g.id}>
+            {g.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function NewGroupDialog({
   open,
   onOpenChange,
+  allGroups,
   onCreate,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onCreate: (name: string) => Promise<void>;
+  allGroups: { id: string; name: string }[];
+  onCreate: (name: string, parentId: string | null) => Promise<void>;
 }) {
   const [name, setName] = useState("");
+  const [parentId, setParentId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  function reset() {
+    setName("");
+    setParentId(null);
+  }
 
   async function submit() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      await onCreate(name.trim());
-      setName("");
+      await onCreate(name.trim(), parentId);
+      reset();
       onOpenChange(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create group");
@@ -563,29 +741,115 @@ function NewGroupDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) setName(""); }}>
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New group</DialogTitle>
         </DialogHeader>
-        <div className="space-y-1.5">
-          <Label htmlFor="group-name">Group name</Label>
-          <Input
-            id="group-name"
-            value={name}
-            autoFocus
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !busy && name.trim() && submit()}
-            placeholder="e.g. Cohort A"
-          />
-          <p className="text-xs text-muted-foreground">
-            Groups place people organizationally — separate from roles, which grant access. Assign
-            people to a group when you invite them or from the group column.
-          </p>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="group-name">Group name</Label>
+            <Input
+              id="group-name"
+              value={name}
+              autoFocus
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !busy && name.trim() && submit()}
+              placeholder="e.g. Bridge Squad"
+            />
+            <p className="text-xs text-muted-foreground">
+              Groups place people organizationally — separate from roles, which grant access.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Parent group</Label>
+            <GroupParentSelect value={parentId} options={allGroups} onChange={setParentId} />
+            <p className="text-xs text-muted-foreground">
+              Nest this group under another to build a hierarchy (e.g. "Littles" under "Bridge Squad").
+            </p>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={submit} disabled={busy || !name.trim()}>{busy ? "Creating…" : "Create group"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditGroupDialog({
+  group,
+  allGroups,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  group: { id: string; name: string; parent_id: string | null };
+  allGroups: { id: string; name: string; parent_id: string | null }[];
+  onClose: () => void;
+  onSave: (name: string, parentId: string | null) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
+  const [name, setName] = useState(group.name);
+  const [parentId, setParentId] = useState<string | null>(group.parent_id);
+  const [busy, setBusy] = useState(false);
+
+  // A group can't be its own parent, nor be parented under one of its own
+  // descendants (that would make a cycle).
+  const descendants = (() => {
+    const kids = new Map<string | null, string[]>();
+    for (const g of allGroups) kids.set(g.parent_id ?? null, [...(kids.get(g.parent_id ?? null) ?? []), g.id]);
+    const out = new Set<string>();
+    const walk = (id: string) => (kids.get(id) ?? []).forEach((c) => { out.add(c); walk(c); });
+    walk(group.id);
+    return out;
+  })();
+  const parentOptions = allGroups.filter((g) => g.id !== group.id && !descendants.has(g.id));
+
+  async function save() {
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      await onSave(name.trim(), parentId);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save group");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit group</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-group-name">Group name</Label>
+            <Input id="edit-group-name" value={name} autoFocus onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Parent group</Label>
+            <GroupParentSelect value={parentId} options={parentOptions} onChange={setParentId} />
+          </div>
+        </div>
+        <DialogFooter className="sm:justify-between">
+          <ConfirmButton
+            title={`Delete the "${group.name}" group?`}
+            description="People keep their membership; any subgroups move up to this group's parent."
+            actionLabel="Delete group"
+            onConfirm={onDelete}
+            buttonTitle="Delete group"
+          >
+            <span className="inline-flex items-center gap-1.5 text-sm text-red-600 dark:text-red-400">
+              <Trash2 className="size-3.5" /> Delete
+            </span>
+          </ConfirmButton>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button onClick={save} disabled={busy || !name.trim()}>{busy ? "Saving…" : "Save"}</Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

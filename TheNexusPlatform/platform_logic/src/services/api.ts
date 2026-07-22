@@ -304,7 +304,7 @@ export async function deleteProgramRole(roleId: string): Promise<void> {
 
 // ── Groups vs Roles: the People-tab groups model + placement ────────────────
 export interface ProgramGroupsModel {
-  groups: { id: string; name: string; label: string | null }[];
+  groups: { id: string; name: string; label: string | null; parent_id: string | null }[];
   roles: { id: string; name: string; display_as_group: boolean }[];
   /** email (lowercased) → explicit group ids they're placed in. */
   placements: Record<string, string[]>;
@@ -382,9 +382,18 @@ export async function listGroups(orgId: string, programId?: string): Promise<Gro
 }
 export async function createGroup(
   orgId: string,
-  payload: { program_id?: string; offering_id?: string; name: string; label?: string; parent_group_id?: string },
+  payload: { program_id?: string; offering_id?: string; name: string; label?: string; parent_group_id?: string | null },
 ): Promise<Group> {
   return request<Group>(`/api/platform/orgs/${orgId}/groups`, { method: "POST", body: JSON.stringify(payload) });
+}
+export async function updateGroup(
+  groupId: string,
+  patch: { name?: string; parent_group_id?: string | null },
+): Promise<Group> {
+  return request<Group>(`/api/platform/groups/${groupId}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+export async function deleteGroup(groupId: string): Promise<void> {
+  await request(`/api/platform/groups/${groupId}`, { method: "DELETE" });
 }
 export async function listGroupMembers(groupId: string): Promise<GroupMember[]> {
   return request<GroupMember[]>(`/api/platform/groups/${groupId}/members`);

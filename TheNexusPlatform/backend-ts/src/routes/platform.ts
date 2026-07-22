@@ -2353,6 +2353,20 @@ platformRouter.patch("/groups/:id", async (c) => {
   });
   return c.json(row);
 });
+platformRouter.delete("/groups/:id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const existing = await graph.getGroup(c.req.param("id"));
+  if (!existing) throw new HttpError(404, "Group not found");
+  _assertOrgAccess(user, existing.organization_id as string, true);
+  await graph.deleteGroup(c.req.param("id"));
+  await db.recordAuditEvent("group.deleted", {
+    orgId: existing.organization_id as string, actorUserId: user.id,
+    scopeType: "organization", scopeId: existing.organization_id as string,
+    targetType: "group", targetId: c.req.param("id"),
+  });
+  return c.json({ ok: true });
+});
 platformRouter.get("/groups/:id/members", async (c) => {
   const user = await getCurrentUser(c);
   _requireDb();

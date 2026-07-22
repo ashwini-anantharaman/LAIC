@@ -915,6 +915,18 @@ export async function updateGroup(id: string, patch: { name?: string; label?: st
   });
 }
 
+/** Delete a group: reparent its children onto its own parent (so descendants
+ * aren't orphaned), drop its memberships, then remove it. */
+export async function deleteGroup(id: string): Promise<void> {
+  await scoped(async (tx) => {
+    const cur = await tx.select({ parent: groups.parentGroupId }).from(groups).where(eq(groups.id, id)).limit(1);
+    const parent = cur[0]?.parent ?? null;
+    await tx.update(groups).set({ parentGroupId: parent }).where(eq(groups.parentGroupId, id));
+    await tx.delete(groupMemberships).where(eq(groupMemberships.groupId, id));
+    await tx.delete(groups).where(eq(groups.id, id));
+  });
+}
+
 export async function listGroupMembers(groupId: string): Promise<Row[]> {
   return scoped(async (tx) => {
     const rows = await tx.select().from(groupMemberships).where(eq(groupMemberships.groupId, groupId));
@@ -985,7 +997,7 @@ export async function listProgramGroupsModel(orgId: string, programId: string): 
   return asPrivileged(async (tx) => {
     const realGroups = (await tx.select().from(groups)
       .where(and(eq(groups.organizationId, orgId), eq(groups.programId, programId))))
-      .map((g) => ({ id: g.id, name: g.name, label: g.label ?? null }));
+      .map((g) => ({ id: g.id, name: g.name, label: g.label ?? null, parent_id: g.parentGroupId ?? null }));
     const groupIds = realGroups.map((g) => g.id);
     const placementRows = groupIds.length
       ? await tx.select({ groupId: groupMemberships.groupId, email: groupMemberships.email })
