@@ -18,6 +18,7 @@ import {
   organizations, offerings, organizationRelationships, programOrganizationAffiliations,
   programAffiliations, groups, groupMemberships, invitations, registrations, participants, profiles, programs,
   programRoles, programRoleAssignments, platformRoleAssignments, entitlements, orgMemberships, registeredApps, appConfigVersions,
+  appLaunchTokens,
 } from "./schema";
 
 type Row = Record<string, unknown>;
@@ -849,6 +850,163 @@ export async function publishConfigVersion(orgId: string, appId: string): Promis
 }
 
 /** The latest PUBLISHED config (what a runtime should serve), or null if never published. */
+/**
+ * A program row for ACCESS RESOLUTION (privileged). Students hold no
+ * membership, so under RLS they can't read the program row their standing is
+ * checked against — this fetches just the fields the resolver needs.
+ */
+export async function getProgramForAccess(programId: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select({ id: programs.id, orgId: programs.orgId, name: programs.name, metadataJson: programs.metadataJson })
+      .from(programs)
+      .where(eq(programs.id, programId))
+      .limit(1);
+    if (!r.length) return null;
+    return {
+      id: r[0].id,
+      org_id: r[0].orgId,
+      name: r[0].name,
+      features: ((r[0].metadataJson as Row | null)?.features as Row) ?? {},
+    };
+  });
+}
+
+/**
+ * Platform launch, end to end (privileged). The launch routes authorize the
+ * caller first (org member OR learner participant); the mechanics — find or
+ * lazily provision the program's platform app, backfill its launch URL, mint
+ * the single-use token — run privileged because students can't read app rows
+ * under RLS. Returns `created` so the route can audit first-time provisioning.
+ */
+export async function mintPlatformLaunch(opts: {
+  orgId: string;
+  programId: string;
+  appName: string;
+  slugPrefix: string;
+  launchUrl: string | null;
+  launcherAuthId: string;
+}): Promise<{ app: Row; rawToken: string; expiresAt: Date; created: boolean }> {
+  return asPrivileged(async (tx) => {
+    let created = false;
+    let appRow =
+      (
+        await tx
+          .select()
+          .from(registeredApps)
+          .where(
+            and(
+              eq(registeredApps.programId, opts.programId),
+              sql`${registeredApps.appSlug} like ${opts.slugPrefix + "%"}`,
+            ),
+          )
+          .limit(1)
+      )[0] ?? null;
+    if (!appRow) {
+      [appRow] = await tx
+        .insert(registeredApps)
+        .values({
+          organizationId: opts.orgId,
+          programId: opts.programId,
+          appName: opts.appName,
+          appSlug: `${opts.slugPrefix}-${opts.programId.slice(0, 8)}`,
+          launchUrl: opts.launchUrl,
+        })
+        .returning();
+      created = true;
+    } else if (!appRow.launchUrl && opts.launchUrl) {
+      // Backfill records provisioned before the env was configured.
+      [appRow] = await tx
+        .update(registeredApps)
+        .set({ launchUrl: opts.launchUrl })
+        .where(eq(registeredApps.id, appRow.id))
+        .returning();
+    }
+    const [rawToken, tokenHash] = localKeys.generateApiKey();
+    // The launcher may be identified by auth id — store their org profile id.
+    const profileId = await resolveProfileId(tx, opts.launcherAuthId, opts.orgId);
+    const expiresAt = new Date(Date.now() + 60_000);
+    await tx.insert(appLaunchTokens).values({
+      tokenHash,
+      registeredAppId: appRow.id,
+      userId: profileId ?? opts.launcherAuthId,
+      expiresAt,
+    });
+    return {
+      app: { id: appRow.id, app_slug: appRow.appSlug, app_name: appRow.appName, launch_url: appRow.launchUrl ?? null },
+      rawToken,
+      expiresAt,
+      created,
+    };
+  });
+}
+
+/**
+ * A student's standing, straight from the enrollment records (privileged:
+ * powers access resolution + app login). Students are NEVER org members —
+ * they exist only as registrations/participants, invisible to the console's
+ * people surfaces — so the platform door and the app's sign-in look here.
+ * Matched by the registration's email; learner-type, active only.
+ */
+export async function findLearnerParticipations(
+  email: string,
+  programId?: string | null,
+): Promise<Row[]> {
+  const key = email.trim().toLowerCase();
+  if (!key) return [];
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .select({
+        orgId: participants.organizationId,
+        programId: participants.programId,
+        userId: participants.userId,
+      })
+      .from(participants)
+      .innerJoin(registrations, eq(participants.registrationId, registrations.id))
+      .where(
+        and(
+          sql`lower(${registrations.email}) = ${key}`,
+          eq(participants.participantType, "learner"),
+          eq(participants.status, "active"),
+          ...(programId ? [eq(participants.programId, programId)] : []),
+        ),
+      );
+    return rows.map((r) => ({ organization_id: r.orgId, program_id: r.programId, user_id: r.userId }));
+  });
+}
+
+/**
+ * Delete a registered app (App Shell) and everything that exists only for it:
+ * published config versions and launch tokens go with it; offerings and
+ * registrations that POINT at it are detached, never deleted — they are the
+ * org's records, not the app's.
+ */
+export async function deleteRegisteredApp(appId: string): Promise<void> {
+  return scoped(async (tx) => {
+    await tx.delete(appConfigVersions).where(eq(appConfigVersions.registeredAppId, appId));
+    await tx.delete(appLaunchTokens).where(eq(appLaunchTokens.registeredAppId, appId));
+    await tx.update(offerings).set({ registeredAppId: null }).where(eq(offerings.registeredAppId, appId));
+    await tx.update(registrations).set({ registeredAppId: null }).where(eq(registrations.registeredAppId, appId));
+    await tx.delete(registeredApps).where(eq(registeredApps.id, appId));
+  });
+}
+
+/**
+ * An org's public identity (privileged: powers the pre-auth boot endpoint).
+ * Slug + name only — the pieces a student's phone needs to render the org's
+ * sign-in door before anyone is authenticated. Never settings or people.
+ */
+export async function getOrgPublicIdentity(orgId: string): Promise<{ slug: string; name: string } | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select({ slug: organizations.slug, name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+    return r.length ? { slug: r[0].slug, name: r[0].name } : null;
+  });
+}
+
 export async function getPublishedConfig(appId: string): Promise<Row | null> {
   return asPrivileged(async (tx) => {
     const r = await tx

@@ -1,10 +1,10 @@
 /**
  * Program workspace pages, all wired to the live API. Team & Roles lives in
- * ProgramTeam.tsx; the App Shell editor in ShellEditor.tsx.
+ * ProgramTeam.tsx; App Shells are designed in the App Shell Studio (card click).
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BookOpen, Check, Plus, Rocket, Waypoints, X } from "lucide-react";
+import { BookOpen, Check, Plus, Rocket, Trash2, Waypoints, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -25,6 +25,7 @@ import {
   createApp,
   createGroup,
   createOffering,
+  deleteApp,
   getOrgCapabilities,
   listAffiliatedPrograms,
   listApps,
@@ -53,6 +54,7 @@ import type {
 import { DEFAULT_PROGRAM_FEATURES } from "@/types/platform";
 import type { ProgramFeatureKey, ProgramFeatures } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Spinner, statusTone } from "@/nexus/ui/kit";
+import { openInStudio } from "@/services/studio";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useProgramAccess } from "@/nexus/access";
 
@@ -728,7 +730,6 @@ export function ProgramShells() {
   const { program, orgId, programId } = useProgram();
   const [apps, setApps] = useState<RegisteredApp[] | null>(null);
   const [open, setOpen] = useState(false);
-  const [newKey, setNewKey] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -741,9 +742,10 @@ export function ProgramShells() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      const app = await createApp(programId, { app_name: name.trim() });
-      setNewKey(app.api_key);
+      await createApp(programId, { app_name: name.trim() });
       setName("");
+      setOpen(false);
+      toast.success("App Shell created — click its card to design it in the Studio");
       load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create App Shell");
@@ -770,10 +772,19 @@ export function ProgramShells() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {apps.map((a) => (
-            <Link
+            <div
               key={a.id}
-              to={`/o/${orgId}/p/${programId}/shells/${a.id}`}
-              className="glass-card p-4 hover:border-foreground/20 transition-colors"
+              role="button"
+              tabIndex={0}
+              onClick={() => openInStudio(a, orgId, programId)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openInStudio(a, orgId, programId);
+                }
+              }}
+              className="glass-card cursor-pointer p-4 hover:border-foreground/20 transition-colors"
+              title="Open in the App Shell Studio with your current session"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -782,62 +793,55 @@ export function ProgramShells() {
                 </div>
                 <Pill tone={statusTone(a.status)}>{a.status}</Pill>
               </div>
-              <div className="mt-3 text-xs text-muted-foreground">Open editor →</div>
-            </Link>
+              <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                <span>Open in Studio ↗</span>
+                <div
+                  className="flex items-center gap-1"
+                  onClick={(e) => {
+                    // Actions in this corner must not also open the Studio.
+                    e.stopPropagation();
+                  }}
+                >
+                  <ConfirmButton
+                    title={`Delete "${a.app_name}"?`}
+                    description="Removes this App Shell from the organization's space, including its published config versions and launch tokens. Published links stop working immediately. Offerings and registrations that referenced it are kept, detached. This can't be undone."
+                    actionLabel="Delete App Shell"
+                    buttonTitle="Delete this App Shell"
+                    onConfirm={async () => {
+                      try {
+                        await deleteApp(a.id);
+                        toast.success(`"${a.app_name}" deleted`);
+                        load();
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Failed to delete App Shell");
+                      }
+                    }}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </ConfirmButton>
+                </div>
+              </div>
+            </div>
           ))}
         </div>
       )}
 
-      <Dialog
-        open={open}
-        onOpenChange={(v) => {
-          setOpen(v);
-          if (!v) setNewKey(null);
-        }}
-      >
+      <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New App Shell</DialogTitle>
           </DialogHeader>
-          {newKey ? (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                App created. This hook API key is shown <b>once</b> — copy it now; the app uses it to fetch
-                its sign-up fields and post registrations.
-              </p>
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
-                <code className="flex-1 truncate text-xs font-mono">{newKey}</code>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(newKey);
-                    toast.success("Copied");
-                  }}
-                >
-                  Copy
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              <Label htmlFor="app-name">App name</Label>
-              <Input id="app-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Brain Bee App" />
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="app-name">App name</Label>
+            <Input id="app-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Brain Bee App" />
+          </div>
           <DialogFooter>
-            {newKey ? (
-              <Button onClick={() => setOpen(false)}>Done</Button>
-            ) : (
-              <>
-                <Button variant="ghost" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={create} disabled={busy || !name.trim()}>
-                  {busy ? "Creating…" : "Create"}
-                </Button>
-              </>
-            )}
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={create} disabled={busy || !name.trim()}>
+              {busy ? "Creating…" : "Create"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

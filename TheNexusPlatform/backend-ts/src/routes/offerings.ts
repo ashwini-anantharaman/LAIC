@@ -45,6 +45,24 @@ function _requireOrgMember(user: PlatformUser, orgId: string): void {
   }
 }
 
+/**
+ * Members OR students. Students hold no memberships — their standing is an
+ * active learner participant record (the Registrations funnel) — so surfaces
+ * a student legitimately uses (the platform launch seams) check both.
+ */
+async function _requireOrgMemberOrLearner(
+  user: PlatformUser,
+  orgId: string,
+  programId: string | null,
+): Promise<void> {
+  if (user.role === "platform_admin" || user.memberships.some((m) => m.org_id === orgId)) return;
+  if (user.email) {
+    const parts = await graph.findLearnerParticipations(user.email, programId).catch(() => [] as Row[]);
+    if (parts.some((p) => p.organization_id === orgId)) return;
+  }
+  throw new HttpError(403, "Not a member of this organization");
+}
+
 // Phase 1 people isolation: endpoints that return or mutate PEOPLE (members,
 // invitations, registrations, role assignments) refuse the platform operator —
 // Nexus governs the org's boundary, never the people inside it. Content
@@ -324,6 +342,32 @@ offeringsRouter.patch("/apps/:app_id", async (c) => {
   return c.json(_appResponse(updated));
 });
 
+offeringsRouter.delete("/apps/:app_id", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const appId = c.req.param("app_id");
+  const app = await db.getRegisteredApp(appId);
+  if (!app) throw new HttpError(404, "App not found");
+  // An App Shell is the org's content, not its boundary — deleting one is the
+  // org's call. The platform operator is refused outright (people-isolation
+  // posture), same as the org's people surfaces.
+  if (user.role === "platform_admin") {
+    throw new HttpError(403, "Nexus operators cannot delete an organization's App Shells");
+  }
+  _requireOfferingAdmin(user, app.organization_id, app.program_id ?? null);
+  await graph.deleteRegisteredApp(appId);
+  await db.recordAuditEvent("registered_app.deleted", {
+    orgId: app.organization_id,
+    actorUserId: user.id,
+    scopeType: "program",
+    scopeId: app.program_id ?? app.organization_id,
+    targetType: "registered_app",
+    targetId: appId,
+    metadata: { app_name: app.app_name, app_slug: app.app_slug },
+  });
+  return c.json({ ok: true });
+});
+
 offeringsRouter.post("/apps/:app_id/rotate-key", async (c) => {
   const user = await getCurrentUser(c);
   const appId = c.req.param("app_id");
@@ -479,6 +523,10 @@ offeringsRouter.post("/offerings/:offering_id/registrations/admin-add", async (c
     addedByUserId: user.id,
     registrationId: row.id,
   });
+  // Directly-added = already approved: grant access now (learners only).
+  if (req.participant_type === "learner") {
+    await db.grantStudentAccess(row).catch((err) => console.error("admin-add: access grant failed", err));
+  }
   await db.recordAuditEvent("registration.admin_added", {
     orgId: offering.organization_id,
     actorUserId: user.id,
@@ -542,6 +590,18 @@ offeringsRouter.post("/groups/:group_id/participants/coach-add", async (c) => {
     email: req.email ?? null, name: req.name ?? null,
     offeringId: req.offering_id ?? null, participantType: (req.participant_type as string) ?? "learner",
   });
+  if (((req.participant_type as string) ?? "learner") === "learner" && req.email) {
+    await db
+      .grantStudentAccess({
+        organization_id: group.organization_id,
+        program_id: (group.program_id as string) ?? null,
+        email: req.email,
+        name: req.name ?? null,
+        user_id: null,
+        stage_node_id: null,
+      })
+      .catch((err) => console.error("coach-add: access grant failed", err));
+  }
   await db.recordAuditEvent("participant.coach_added", {
     orgId: group.organization_id as string, actorUserId: user.id, scopeType: "group", scopeId: groupId,
     targetType: "participant", targetId: row.id as string, metadata: { email: req.email ?? null },
@@ -559,6 +619,23 @@ offeringsRouter.post("/offerings/:offering_id/registrations/bulk-import", async 
   const req = (await c.req.json()) as { rows?: Array<{ email?: string; name?: string; age?: number; field_data?: Row }> };
   const rows = Array.isArray(req.rows) ? req.rows : [];
   const result = await graph.bulkImportRegistrations(offering.organization_id, offeringId, rows, user.id);
+  // Auto-approve offerings: imported rows are already active students — grant
+  // each one access (pending-review offerings grant at approval instead).
+  if (offering.approval_mode === "auto_approve") {
+    for (const r of rows) {
+      if (!r.email) continue;
+      await db
+        .grantStudentAccess({
+          organization_id: offering.organization_id,
+          program_id: offering.program_id ?? null,
+          email: r.email,
+          name: r.name ?? null,
+          user_id: null,
+          stage_node_id: null,
+        })
+        .catch((err) => console.error("bulk-import: access grant failed", err));
+    }
+  }
   await db.recordAuditEvent("registration.bulk_imported", {
     orgId: offering.organization_id, actorUserId: user.id, scopeType: "offering", scopeId: offeringId,
     metadata: { count: result.created },
@@ -861,7 +938,31 @@ offeringsRouter.post("/apps/:app_id/publish-version", async (c) => {
 // No auth: an app boots BEFORE anyone signs in, exactly like fetching a static
 // config file. Serves only the latest PUBLISHED snapshot (never the working
 // draft, never keys), adapted to the @laic/app-shell AppShellConfig contract.
-function _adaptShellConfig(app: Row, cfg: Row, version: number): Row {
+
+const CONTENT_PLATFORMS = ["learning", "bridge"];
+
+/**
+ * The content section (App Shell Studio, 2026-07): which platforms this app's
+ * launch cards connect to. Read from the Studio's dialect (`cfg.studio.content`)
+ * or a top-level `content` key; unknown platforms are dropped, shape is
+ * normalized so the runtime never sees a malformed connection.
+ */
+function _adaptContentSection(cfg: Row): Row | null {
+  const studio = (cfg.studio ?? {}) as Row;
+  const raw = (studio.content ?? cfg.content ?? null) as Row | null;
+  if (!raw || !Array.isArray(raw.connections)) return null;
+  const connections = (raw.connections as Row[])
+    .filter((c) => CONTENT_PLATFORMS.includes(String(c.platform)))
+    .map((c) => ({
+      platform: String(c.platform),
+      enabled: Boolean(c.enabled),
+      label: String(c.label ?? ""),
+      description: String(c.description ?? ""),
+    }));
+  return { sectionTitle: String(raw.sectionTitle ?? ""), connections };
+}
+
+function _adaptShellConfig(app: Row, cfg: Row, version: number, org?: { slug: string; name: string } | null): Row {
   const identity = (cfg.identity ?? {}) as Row;
   const branding = (cfg.branding ?? {}) as Row;
   const copy = (cfg.copy ?? {}) as Row;
@@ -893,6 +994,13 @@ function _adaptShellConfig(app: Row, cfg: Row, version: number): Row {
       offeringId: app.offering_id ?? undefined,
       defaultDomainId: "general",
     },
+    // The org's public door — what the Player needs for org-scoped login.
+    org: org ? { slug: org.slug, name: org.name } : null,
+    // Content section: the platform launch cards (null when none configured).
+    content: _adaptContentSection(cfg),
+    // The Studio's full config dialect, verbatim — the Player renders from
+    // this when present (branding/labels only; the record never holds keys).
+    studio: (cfg.studio as Row | undefined) ?? null,
     branding: {
       primaryColor: (branding.primaryColor as string) || "#4f46e5",
       accentColor: (branding.accentColor as string) || undefined,
@@ -963,7 +1071,8 @@ offeringsRouter.get("/apps/by-slug/:slug/boot-config", async (c) => {
   if (!app || app.status !== "active") throw new HttpError(404, "App not found");
   const published = await graph.getPublishedConfig(app.id as string);
   if (!published) throw new HttpError(404, "This app has no published configuration yet");
-  return c.json(_adaptShellConfig(app, published.config as Row, published.version as number));
+  const org = await graph.getOrgPublicIdentity(app.organization_id as string);
+  return c.json(_adaptShellConfig(app, published.config as Row, published.version as number, org));
 });
 
 // ── Learning Platform launch seam (Phase 5 — placeholder interior) ──────────
@@ -976,9 +1085,11 @@ offeringsRouter.post("/programs/:program_id/learning-platform/launch", async (c)
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const programId = c.req.param("program_id");
-  const program = await db.getProgram(programId);
+  // Students can't read program rows under RLS — fall back to the privileged
+  // access-check read (the guard below still decides whether they may launch).
+  const program = (await db.getProgram(programId)) ?? (await graph.getProgramForAccess(programId));
   if (!program) throw new HttpError(404, "Program not found");
-  _requireOrgMember(user, program.org_id);
+  await _requireOrgMemberOrLearner(user, program.org_id, programId);
   if (!normalizeProgramFeatures(program.features as Record<string, unknown>).learning) {
     throw new HttpError(403, "The Learning Platform is not enabled for this program");
   }
@@ -986,32 +1097,31 @@ offeringsRouter.post("/programs/:program_id/learning-platform/launch", async (c)
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
 
-  // Find-or-create the program's LP app record.
-  const apps = await db.listRegisteredApps(programId);
-  let lp = apps.find((a: Row) => a.app_slug?.startsWith("learning-platform"));
-  if (!lp) {
-    const [row] = await db.createRegisteredApp(program.org_id, programId, "Learning Platform", {
-      appSlug: `learning-platform-${programId.slice(0, 8)}`,
-    });
-    lp = row;
+  const launch = await graph.mintPlatformLaunch({
+    orgId: program.org_id as string,
+    programId,
+    appName: "Learning Platform",
+    slugPrefix: "learning-platform",
+    launchUrl: null,
+    launcherAuthId: user.id,
+  });
+  if (launch.created) {
     await db.recordAuditEvent("learning_platform.provisioned", {
       orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
-      targetType: "registered_app", targetId: lp.id,
+      targetType: "registered_app", targetId: launch.app.id as string,
     });
   }
-
-  const [tokenRow, rawToken] = await db.createLaunchToken(lp.id, user.id);
   const membership = user.memberships.find((m) => m.org_id === program.org_id) ?? null;
   return c.json({
-    app_slug: lp.app_slug,
-    launch_url: lp.launch_url ?? null,
-    launch_token: rawToken,
-    expires_at: tokenRow.expires_at,
+    app_slug: launch.app.app_slug,
+    launch_url: launch.app.launch_url ?? null,
+    launch_token: launch.rawToken,
+    expires_at: launch.expiresAt,
     context: {
       organization_id: program.org_id,
       program_id: programId,
       program_name: program.name,
-      role: membership?.role ?? user.role,
+      role: membership?.role ?? "student",
     },
   });
 });
@@ -1024,9 +1134,11 @@ offeringsRouter.post("/programs/:program_id/bridge-platform/launch", async (c) =
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const programId = c.req.param("program_id");
-  const program = await db.getProgram(programId);
+  // Students can't read program rows under RLS — fall back to the privileged
+  // access-check read (the guard below still decides whether they may launch).
+  const program = (await db.getProgram(programId)) ?? (await graph.getProgramForAccess(programId));
   if (!program) throw new HttpError(404, "Program not found");
-  _requireOrgMember(user, program.org_id);
+  await _requireOrgMemberOrLearner(user, program.org_id, programId);
   if (!normalizeProgramFeatures(program.features as Record<string, unknown>).bridge) {
     throw new HttpError(403, "The Bridge Platform is not enabled for this program");
   }
@@ -1036,36 +1148,31 @@ offeringsRouter.post("/programs/:program_id/bridge-platform/launch", async (c) =
   // launch_url — the console then hands off with a single-use launch token
   // instead of showing the placeholder pane.
   const bridgeBase = getSettings().bridgePlatformUrl;
-  const bridgeLaunchUrl = bridgeBase ? `${bridgeBase}/nexus/launch` : null;
-  const apps = await db.listRegisteredApps(programId);
-  let bridge = apps.find((a: Row) => a.app_slug?.startsWith("bridge-platform"));
-  if (!bridge) {
-    const [row] = await db.createRegisteredApp(program.org_id, programId, "Bridge Platform", {
-      appSlug: `bridge-platform-${programId.slice(0, 8)}`,
-      launchUrl: bridgeLaunchUrl,
-    });
-    bridge = row;
+  const launch = await graph.mintPlatformLaunch({
+    orgId: program.org_id as string,
+    programId,
+    appName: "Bridge Platform",
+    slugPrefix: "bridge-platform",
+    launchUrl: bridgeBase ? `${bridgeBase}/nexus/launch` : null,
+    launcherAuthId: user.id,
+  });
+  if (launch.created) {
     await db.recordAuditEvent("bridge_platform.provisioned", {
       orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
-      targetType: "registered_app", targetId: bridge.id,
+      targetType: "registered_app", targetId: launch.app.id as string,
     });
-  } else if (!bridge.launch_url && bridgeLaunchUrl) {
-    // Backfill records provisioned before the env was configured.
-    bridge = await db.updateRegisteredApp(bridge.id as string, { launch_url: bridgeLaunchUrl });
   }
-
-  const [tokenRow, rawToken] = await db.createLaunchToken(bridge.id, user.id);
   const membership = user.memberships.find((m) => m.org_id === program.org_id) ?? null;
   return c.json({
-    app_slug: bridge.app_slug,
-    launch_url: bridge.launch_url ?? null,
-    launch_token: rawToken,
-    expires_at: tokenRow.expires_at,
+    app_slug: launch.app.app_slug,
+    launch_url: launch.app.launch_url ?? null,
+    launch_token: launch.rawToken,
+    expires_at: launch.expiresAt,
     context: {
       organization_id: program.org_id,
       program_id: programId,
       program_name: program.name,
-      role: membership?.role ?? user.role,
+      role: membership?.role ?? "student",
     },
   });
 });

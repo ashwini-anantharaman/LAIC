@@ -69,6 +69,8 @@ export interface AuthUser {
   display_name?: string;
   role: string;
   access_token: string;
+  /** Student session (learner participant, no memberships) — apps only, never this console. */
+  participant_only?: boolean;
 }
 
 export interface MembershipSummary {

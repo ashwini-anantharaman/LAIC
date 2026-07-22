@@ -129,6 +129,11 @@ export async function login(email: string, password: string, orgSlug?: string): 
     method: "POST",
     body: JSON.stringify({ email, password, ...(orgSlug ? { org_slug: orgSlug } : {}) }),
   });
+  // Students (participant-only sessions) never enter this console — their
+  // world is the program's app. Refuse before the token is ever stored.
+  if (user.participant_only) {
+    throw new Error("This sign-in is for organization staff. Students sign in through their program's app.");
+  }
   setToken(user.access_token);
   return user;
 }
@@ -625,6 +630,11 @@ export async function updateApp(appId: string, patch: Partial<CreateAppInput & {
 
 export async function rotateAppKey(appId: string): Promise<RegisteredAppWithKey> {
   return request<RegisteredAppWithKey>(`/api/apps/${appId}/rotate-key`, { method: "POST" });
+}
+
+/** Delete an App Shell: its published versions and launch tokens go with it; offerings/registrations that pointed at it are detached, not deleted. */
+export async function deleteApp(appId: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/apps/${appId}`, { method: "DELETE" });
 }
 
 export async function revokeApp(appId: string): Promise<RegisteredApp> {

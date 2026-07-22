@@ -61,6 +61,27 @@ export interface HomeConfig {
   activeNavIndex: number;
 }
 
+/** A platform the app's content section can connect to. */
+export type ContentPlatform = "learning" | "bridge";
+
+/**
+ * One connected platform in the content section. In the published app this
+ * becomes a launch card: the learner taps it and enters that platform's
+ * learner view via the Nexus launch handoff (token → session). The prototype
+ * previews that flow with a mock platform screen.
+ */
+export interface ContentConnection {
+  platform: ContentPlatform;
+  enabled: boolean;
+  label: string;
+  description: string;
+}
+
+export interface ContentConfig {
+  sectionTitle: string;
+  connections: ContentConnection[];
+}
+
 export interface AppShellConfig {
   id: string;
   name: string;
@@ -81,6 +102,8 @@ export interface AppShellConfig {
   onboardingQuestions: OnboardingQuestion[];
   onboardingOptional: boolean;
   homeConfig: HomeConfig;
+  /** Optional so configs published before the content section still open. */
+  content?: ContentConfig;
 }
 
 /** A starting point for a brand-new app in the New-app picker. */
@@ -100,11 +123,12 @@ export interface Template {
   onboardingQuestions: OnboardingQuestion[];
   onboardingOptional: boolean;
   homeConfig: HomeConfig;
+  content?: ContentConfig;
   defaultInitials: string;
   defaultAppType: AppType;
 }
 
 /** Left-panel editor sections. */
-export type EditorTab = "identity" | "start" | "auth" | "onboarding" | "home";
-/** Preview stepper screens. */
-export type PreviewScreen = "start" | "signin" | "onboarding" | "home";
+export type EditorTab = "identity" | "start" | "auth" | "onboarding" | "home" | "content";
+/** Preview stepper screens ("platform" is reached from a content card, not the stepper). */
+export type PreviewScreen = "start" | "signin" | "onboarding" | "home" | "platform";

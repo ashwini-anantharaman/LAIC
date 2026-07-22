@@ -30,7 +30,6 @@ import {
   ProgramShells,
 } from "@/nexus/routes/program";
 import { ProgramTeam } from "@/nexus/routes/ProgramTeam";
-import { ShellEditor } from "@/nexus/routes/ShellEditor";
 import { LearningLaunch } from "@/nexus/routes/LearningLaunch";
 import { BridgeLaunch } from "@/nexus/routes/BridgeLaunch";
 import { Spinner } from "@/nexus/ui/kit";
@@ -102,7 +101,6 @@ function Routed() {
         <Route path="/o/:orgId/p/:programId" element={<ProgramOverview />} />
         <Route path="/o/:orgId/p/:programId/offerings" element={<ProgramOfferings />} />
         <Route path="/o/:orgId/p/:programId/shells" element={<ProgramShells />} />
-        <Route path="/o/:orgId/p/:programId/shells/:appId" element={<ShellEditor />} />
         <Route path="/o/:orgId/p/:programId/registrations" element={<ProgramRegistrations />} />
         <Route path="/o/:orgId/p/:programId/groups" element={<ProgramGroups />} />
         <Route path="/o/:orgId/p/:programId/community" element={<ProgramCommunity />} />

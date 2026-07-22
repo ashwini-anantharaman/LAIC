@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AppCategory, AppShellConfig, EditorTab, Template } from "../types";
 import { uid } from "../data/constants";
 import { clonePresets } from "../data/presets";
 import { templateFor } from "../data/templates";
+import { getAppConfig, loadSession, saveLink } from "../nexus/client";
+import { adoptHandoffSession, studioScope } from "../nexus/handoff";
+import { studioFromConsoleRecord, studioFromServerRecord } from "../nexus/dialect";
 import { Editor } from "./Editor";
 import { StudioPreview } from "./StudioPreview";
 import { NewAppPicker } from "./NewAppPicker";
@@ -34,17 +37,126 @@ function fromTemplate(t: Template): AppShellConfig {
       tiles: t.homeConfig.tiles.map((x) => ({ ...x })),
       navItems: t.homeConfig.navItems.map((n) => ({ ...n })),
     },
+    content: t.content && {
+      ...t.content,
+      connections: t.content.connections.map((c) => ({ ...c })),
+    },
   };
 }
 
+/**
+ * Workspace storage. Two kinds, deliberately separate:
+ *
+ *   • SCOPED (opened from the Nexus console for one app): each app has its
+ *     OWN workspace under `shell.studio.app.<appId>` — one config, no
+ *     presets, no other apps. Opening app A can never see or touch app B.
+ *   • SANDBOX (the Studio opened directly, no app): the local playground
+ *     with the demo presets, under `shell.studio.workspace`.
+ *
+ * Publishing to Nexus is the durable, versioned record; these are local
+ * working copies that survive refreshes.
+ */
+const SANDBOX_KEY = "shell.studio.workspace";
+const APP_WS_PREFIX = "shell.studio.app.";
+
+function validConfig(c: AppShellConfig | undefined): boolean {
+  return !!c && typeof c.id === "string" && Array.isArray(c.roles) && !!c.homeConfig;
+}
+
+function loadSandbox(): { configs: AppShellConfig[]; activeId: string } | null {
+  try {
+    const raw = localStorage.getItem(SANDBOX_KEY);
+    if (!raw) return null;
+    const w = JSON.parse(raw) as { configs?: AppShellConfig[]; activeId?: string };
+    if (!Array.isArray(w.configs) || w.configs.length === 0) return null;
+    return w.configs.every(validConfig) ? { configs: w.configs, activeId: w.activeId ?? w.configs[0].id } : null;
+  } catch {
+    return null;
+  }
+}
+
+function loadAppWorkspace(appId: string): AppShellConfig | null {
+  try {
+    const raw = localStorage.getItem(APP_WS_PREFIX + appId);
+    if (!raw) return null;
+    const c = JSON.parse(raw) as AppShellConfig;
+    return validConfig(c) ? c : null;
+  } catch {
+    return null;
+  }
+}
+
 export function Studio() {
-  const [configs, setConfigs] = useState<AppShellConfig[]>(() => clonePresets());
-  const [activeId, setActiveId] = useState(configs[0].id);
+  // Scoped to one app (console handoff / refreshed scoped tab) or sandbox.
+  const scope = useMemo(() => studioScope(), []);
+
+  const [configs, setConfigs] = useState<AppShellConfig[]>(() => {
+    if (scope) {
+      const local = loadAppWorkspace(scope.appId);
+      return local ? [local] : []; // empty → the import effect fills it
+    }
+    return loadSandbox()?.configs ?? clonePresets();
+  });
+  const [activeId, setActiveId] = useState(() => {
+    if (scope) return configs[0]?.id ?? "";
+    const w = loadSandbox();
+    return w && w.configs.some((c) => c.id === w.activeId) ? w.activeId : configs[0].id;
+  });
   const [tab, setTab] = useState<EditorTab>("identity");
   const [mode, setMode] = useState<Mode>("studio");
   const [showPublish, setShowPublish] = useState(false);
 
   const active = configs.find((c) => c.id === activeId) ?? configs[0];
+
+  // Persist the working copy on every change — into THIS app's workspace when
+  // scoped, into the sandbox otherwise.
+  useEffect(() => {
+    if (scope) {
+      if (configs[0]) localStorage.setItem(APP_WS_PREFIX + scope.appId, JSON.stringify(configs[0]));
+    } else {
+      localStorage.setItem(SANDBOX_KEY, JSON.stringify({ configs, activeId }));
+    }
+  }, [configs, activeId, scope]);
+
+  // Scoped boot: adopt the console's session, and if this app has no local
+  // working copy yet, import its stored config from the org's space (Studio
+  // dialect first, console dialect as best effort, fresh template last).
+  // THE LOCAL WORKING COPY ALWAYS WINS — the server copy never clobbers it.
+  useEffect(() => {
+    if (!scope) return;
+    let stale = false;
+    void (async () => {
+      const session = (await adoptHandoffSession()) ?? loadSession();
+      if (stale) return;
+      if (loadAppWorkspace(scope.appId)) return; // local copy wins; session adopted above
+      let imported: AppShellConfig | null = null;
+      if (session) {
+        try {
+          const record = (await getAppConfig(session, scope.appId)).config ?? {};
+          imported =
+            studioFromServerRecord(record) ??
+            studioFromConsoleRecord(record, { id: `nx-${scope.appId.slice(0, 8)}`, name: scope.appName });
+        } catch (err) {
+          console.error("Scoped Studio: could not read the app's config", err);
+        }
+      }
+      imported ??= { ...fromTemplate(templateFor("learning")), id: `nx-${scope.appId.slice(0, 8)}`, name: scope.appName };
+      saveLink(imported.id, {
+        appId: scope.appId,
+        appSlug: scope.appSlug,
+        programId: scope.programId,
+        orgId: scope.orgId,
+      });
+      if (!stale) {
+        setConfigs([imported]);
+        setActiveId(imported.id);
+      }
+    })();
+    return () => {
+      stale = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const update = (patch: Partial<AppShellConfig>) =>
     setConfigs((cs) => cs.map((c) => (c.id === activeId ? { ...c, ...patch } : c)));
@@ -70,12 +182,25 @@ export function Studio() {
     setMode("studio");
   };
 
+  // Scoped tab still importing: a quiet holding screen, never the sandbox.
+  if (scope && !active) {
+    return (
+      <div
+        className="flex h-screen flex-col items-center justify-center gap-3"
+        style={{ backgroundColor: "var(--studio-bg)", color: "rgba(255,255,255,0.4)" }}
+      >
+        <div className="h-2 w-2 animate-pulse rounded-full bg-white/40" />
+        <p className="text-xs">Opening {scope.appName}…</p>
+      </div>
+    );
+  }
+
   const headerBtn = "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden" style={{ backgroundColor: "var(--studio-bg)", color: "#e0e0f0" }}>
       {mode === "preview" && <PreviewMode config={active} onExit={() => setMode("studio")} key={active.id} />}
-      {showPublish && <PublishModal config={active} onClose={() => setShowPublish(false)} />}
+      {showPublish && <PublishModal config={active} scope={scope} onClose={() => setShowPublish(false)} />}
 
       {/* header */}
       <header
@@ -92,9 +217,19 @@ export function Studio() {
           <span className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.65)" }}>
             App Shell
           </span>
-          <span className="rounded px-1.5 py-0.5 font-mono text-[10px]" style={{ backgroundColor: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.25)" }}>
-            design tool
-          </span>
+          {scope ? (
+            <span
+              className="rounded px-1.5 py-0.5 font-mono text-[10px]"
+              style={{ backgroundColor: `${active.accentColor}1f`, color: active.accentColor }}
+              title={`This Studio is scoped to ${scope.appName} — other apps are not reachable here`}
+            >
+              {scope.appSlug || scope.appName}
+            </span>
+          ) : (
+            <span className="rounded px-1.5 py-0.5 font-mono text-[10px]" style={{ backgroundColor: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.25)" }}>
+              sandbox
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -106,17 +241,19 @@ export function Studio() {
               </span>
             </div>
           )}
-          <button
-            onClick={() => setMode(mode === "newapp" ? "studio" : "newapp")}
-            className={headerBtn}
-            style={{
-              backgroundColor: mode === "newapp" ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.07)",
-              color: mode === "newapp" ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.45)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            {mode === "newapp" ? "‹ Cancel" : "+ New app"}
-          </button>
+          {!scope && (
+            <button
+              onClick={() => setMode(mode === "newapp" ? "studio" : "newapp")}
+              className={headerBtn}
+              style={{
+                backgroundColor: mode === "newapp" ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.07)",
+                color: mode === "newapp" ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.45)",
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              {mode === "newapp" ? "‹ Cancel" : "+ New app"}
+            </button>
+          )}
           <button
             onClick={() => setMode("preview")}
             className={headerBtn}
@@ -134,7 +271,7 @@ export function Studio() {
         </div>
       </header>
 
-      {mode === "newapp" ? (
+      {mode === "newapp" && !scope ? (
         <NewAppPicker onPick={addFromTemplate} onCancel={() => setMode("studio")} />
       ) : (
         <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -142,6 +279,7 @@ export function Studio() {
             configs={configs}
             active={active}
             tab={tab}
+            scoped={!!scope}
             onTab={setTab}
             onSelect={setActiveId}
             onUpdate={update}

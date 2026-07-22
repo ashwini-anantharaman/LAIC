@@ -327,7 +327,21 @@ platformRouter.post("/auth/login", async (c) => {
     }
     const orgMemberships = user.memberships.filter((m) => m.org_id === org.id);
     if (orgMemberships.length === 0) {
-      throw new HttpError(403, "No account at this organization");
+      // Students hold no memberships — their standing is a learner participant
+      // record (the Registrations funnel). They may sign in through the org's
+      // door for THEIR APPS; the console refuses participant_only sessions.
+      const participations = user.email
+        ? await graph.findLearnerParticipations(user.email).catch(() => [] as Row[])
+        : [];
+      if (!participations.some((p) => p.organization_id === org.id)) {
+        throw new HttpError(403, "No account at this organization");
+      }
+      return c.json({
+        ..._authUserResponse({ ...user, memberships: [] }, session.access_token),
+        org_id: org.id,
+        org_slug: org.slug,
+        participant_only: true,
+      });
     }
     const scoped: PlatformUser = { ...user, memberships: orgMemberships };
     return c.json({

@@ -44,6 +44,13 @@ export const TEMPLATES: Template[] = [
       navItems: [{ label: "Home" }, { label: "Learn" }, { label: "Progress" }, { label: "Profile" }],
       activeNavIndex: 0,
     },
+    content: {
+      sectionTitle: "Your content",
+      connections: [
+        { platform: "learning", enabled: true, label: "My Courses", description: "Lessons, quizzes, and progress" },
+        { platform: "bridge", enabled: false, label: "Play Bridge", description: "Practice at the table" },
+      ],
+    },
     defaultInitials: "LN",
     defaultAppType: "learning",
   },
@@ -87,6 +94,13 @@ export const TEMPLATES: Template[] = [
       navItems: [{ label: "Home" }, { label: "Hands" }, { label: "Club" }, { label: "Profile" }],
       activeNavIndex: 0,
     },
+    content: {
+      sectionTitle: "Play & learn",
+      connections: [
+        { platform: "bridge", enabled: true, label: "Play Bridge", description: "Your table and your player" },
+        { platform: "learning", enabled: false, label: "Bridge Lessons", description: "Courses from your coach" },
+      ],
+    },
     defaultInitials: "BR",
     defaultAppType: "coaching",
   },
@@ -127,6 +141,13 @@ export const TEMPLATES: Template[] = [
       feedLabel: "Recent Activity",
       navItems: [{ label: "Home" }, { label: "Programs" }, { label: "Activity" }, { label: "Profile" }],
       activeNavIndex: 0,
+    },
+    content: {
+      sectionTitle: "Your content",
+      connections: [
+        { platform: "learning", enabled: false, label: "My Courses", description: "Lessons, quizzes, and progress" },
+        { platform: "bridge", enabled: false, label: "Play Bridge", description: "Practice at the table" },
+      ],
     },
     defaultInitials: "AC",
     defaultAppType: "community",

@@ -156,12 +156,19 @@ export async function resolvePlatformAccess(
   if (user.role === "platform_admin") {
     throw new HttpError(403, "Nexus operators cannot enter an organization's platforms");
   }
-  if (user.memberships.length === 0) {
+
+  // Students never hold memberships — they exist only as learner PARTICIPANTS
+  // (the Registrations funnel; invisible to the console's people surfaces).
+  // Their standing is looked up per-program in the loop below.
+  const participations = user.email
+    ? await graph.findLearnerParticipations(user.email, programId ?? null).catch(() => [] as Row[])
+    : [];
+  if (user.memberships.length === 0 && participations.length === 0) {
     throw new HttpError(403, "No organization membership");
   }
 
-  // Candidate programs: pinned, else program-scoped memberships, else (for
-  // org-level admins) every program of their org.
+  // Candidate programs: pinned, else program-scoped memberships and learner
+  // participations, else (for org-level admins) every program of their org.
   let candidates: string[];
   if (programId) {
     candidates = [programId];
@@ -169,6 +176,7 @@ export async function resolvePlatformAccess(
     candidates = user.memberships
       .filter((m) => m.program_id)
       .map((m) => m.program_id as string);
+    candidates.push(...participations.map((p) => p.program_id as string).filter(Boolean));
     if (candidates.length === 0) {
       const orgIds = [...new Set(user.memberships.map((m) => m.org_id))];
       for (const orgId of orgIds) {
@@ -182,14 +190,42 @@ export async function resolvePlatformAccess(
   let sawProgram = false;
   let featureDisabled = false;
   for (const pid of [...new Set(candidates)]) {
-    const program = await db.getProgram(pid);
+    // Students can't read program rows under RLS (no membership) — resolve
+    // their candidate programs through the privileged access-check read.
+    const program =
+      (await db.getProgram(pid)) ??
+      (participations.some((p) => p.program_id === pid) ? await graph.getProgramForAccess(pid) : null);
     if (!program) continue;
     sawProgram = true;
 
-    const membership = _orgMembership(user, program.org_id as string);
-    if (!membership) continue; // not this caller's org
-
     const features = normalizeProgramFeatures(program.features as Record<string, unknown>);
+
+    const membership = _orgMembership(user, program.org_id as string);
+    if (!membership) {
+      // Student path: an approved learner participant in this program grants
+      // learner-level entry — no membership, no role record, nothing visible
+      // in the console's people surfaces. That's the design, not a shortcut.
+      const part = participations.find(
+        (p) => p.program_id === pid && p.organization_id === program.org_id,
+      );
+      if (part) {
+        if (!features[area]) {
+          featureDisabled = true;
+          continue;
+        }
+        return {
+          profileId: (part.user_id as string | null) ?? user.id,
+          orgId: program.org_id as string,
+          programId: pid,
+          programName: (program.name as string) ?? "",
+          level: "view",
+          platformRole: null,
+          roleName: "Student",
+        };
+      }
+      continue; // not this caller's org
+    }
+
     if (!features[area]) {
       featureDisabled = true;
       continue;

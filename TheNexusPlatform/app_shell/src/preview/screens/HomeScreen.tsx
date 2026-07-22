@@ -1,10 +1,19 @@
-import type { AppShellConfig } from "../../types";
-import { interpolate } from "../../data/constants";
+import type { AppShellConfig, ContentConnection } from "../../types";
+import { PLATFORM_META, contentOf, interpolate } from "../../data/constants";
 
 const GLYPHS = ["◆", "◈", "▲", "●", "◇", "■", "☰", "❖"];
 
-export function HomeScreen({ config, role }: { config: AppShellConfig; role: string }) {
+export function HomeScreen({
+  config,
+  role,
+  onOpenPlatform,
+}: {
+  config: AppShellConfig;
+  role: string;
+  onOpenPlatform?: (conn: ContentConnection) => void;
+}) {
   const h = config.homeConfig;
+  const connected = contentOf(config).connections.filter((c) => c.enabled);
   const name = "Alex";
   const activeRole = role || config.roles[0]?.label || "Member";
 
@@ -25,6 +34,41 @@ export function HomeScreen({ config, role }: { config: AppShellConfig; role: str
       </div>
 
       <div className="flex-1 overflow-auto px-3 pb-1 pt-3">
+        {connected.length > 0 && (
+          <div className="mb-3">
+            <p className="mb-1.5 px-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400">
+              {contentOf(config).sectionTitle || "Your content"}
+            </p>
+            <div className="space-y-2">
+              {connected.map((conn) => {
+                const meta = PLATFORM_META[conn.platform];
+                return (
+                  <button
+                    key={conn.platform}
+                    onClick={() => onOpenPlatform?.(conn)}
+                    className="flex w-full items-center gap-3 rounded-xl border bg-white p-3 text-left shadow-sm transition-transform active:scale-[0.98]"
+                    style={{ borderColor: `${config.accentColor}30` }}
+                  >
+                    <div
+                      className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-xl text-base"
+                      style={{ backgroundColor: `${config.accentColor}18`, color: config.accentColor }}
+                    >
+                      {meta.glyph}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-semibold leading-tight text-gray-800">{conn.label || meta.name}</p>
+                      {conn.description && <p className="mt-0.5 text-[9px] leading-snug text-gray-400">{conn.description}</p>}
+                      <p className="mt-1 text-[8px] font-medium" style={{ color: config.accentColor }}>
+                        Opens {meta.name} ›
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {h.tiles.length > 0 && (
           <div className="mb-3 grid grid-cols-2 gap-2">
             {h.tiles.map((t, i) => (

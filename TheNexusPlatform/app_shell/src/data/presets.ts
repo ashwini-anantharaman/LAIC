@@ -45,6 +45,13 @@ export const PRESETS: AppShellConfig[] = [
       navItems: [{ label: "Home" }, { label: "Quizzes" }, { label: "Progress" }, { label: "Profile" }],
       activeNavIndex: 0,
     },
+    content: {
+      sectionTitle: "Your course",
+      connections: [
+        { platform: "learning", enabled: true, label: "Brain Bee Course", description: "Lessons, quizzes, and progress" },
+        { platform: "bridge", enabled: false, label: "Play Bridge", description: "Practice at the table" },
+      ],
+    },
   },
   {
     id: "mindai-bee",
@@ -86,6 +93,13 @@ export const PRESETS: AppShellConfig[] = [
       feedLabel: "Recent Matches",
       navItems: [{ label: "Home" }, { label: "Arena" }, { label: "Rankings" }, { label: "Profile" }],
       activeNavIndex: 0,
+    },
+    content: {
+      sectionTitle: "Prepare",
+      connections: [
+        { platform: "learning", enabled: true, label: "Challenge Prep", description: "Tutorials and practice questions" },
+        { platform: "bridge", enabled: false, label: "Play Bridge", description: "Practice at the table" },
+      ],
     },
   },
   {
@@ -129,6 +143,13 @@ export const PRESETS: AppShellConfig[] = [
       feedLabel: "Session History",
       navItems: [{ label: "Home" }, { label: "Hands" }, { label: "Club" }, { label: "Profile" }],
       activeNavIndex: 0,
+    },
+    content: {
+      sectionTitle: "Play & learn",
+      connections: [
+        { platform: "bridge", enabled: true, label: "Play Bridge", description: "Your table, your player, your coach's settings" },
+        { platform: "learning", enabled: true, label: "Bridge Lessons", description: "Courses from your coach" },
+      ],
     },
   },
 ];

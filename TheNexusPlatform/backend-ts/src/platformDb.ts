@@ -1406,20 +1406,65 @@ export async function listParticipants(
 }
 
 /** Mark a registration approved and create (or reuse) its participant record. */
+// ── Approval = access (the student funnel's one gate) ───────────────────────
+
+/**
+ * Link an approved/added registrant to their login. Students are NEVER org
+ * members and hold NO role records — they exist only in the Registrations
+ * funnel, and resolvePlatformAccess grants learner entry straight from their
+ * active participant row. All this does is identity linkage:
+ *
+ *   • find their login (the registration's user_id, else matched by email);
+ *     none yet → they stay "awaiting claim", link completes at claim
+ *   • ensure an org-scoped profile (the id platforms receive as nexusUserId)
+ *
+ * Returns the org-scoped profile id to stamp on the participant, or null.
+ */
+export async function grantStudentAccess(registration: Row): Promise<string | null> {
+  const orgId = registration.organization_id as string;
+  const programId = (registration.program_id as string | null) ?? null;
+  const email = String(registration.email ?? "").trim().toLowerCase();
+  if (!programId) return null; // program-less offering: nothing to grant into
+
+  let authId = (registration.user_id as string | null) ?? null;
+  if (!authId && email) {
+    const profile = await getProfileByEmail(email);
+    if (profile) authId = (profile.auth_user_id as string | undefined) ?? (profile.id as string);
+  }
+  if (!authId) return null; // awaiting claim
+
+  return ensureOrgProfile(authId, orgId, {
+    email: email || null,
+    role: "student",
+    displayName: (registration.name as string | null) ?? null,
+  });
+}
+
 export async function approveRegistration(
   registrationId: string,
   reviewerId: string | null,
 ): Promise<Row> {
   let registration = await getRegistration(registrationId);
   if (!registration) throw new HttpError(404, "Registration not found");
+  const wasApproved = registration.status === "approved";
   registration = await setRegistrationStatus(registrationId, "approved", reviewerId);
+  // Approval = access: link login + Student role + learner membership.
+  // Best-effort: a grant hiccup must not lose the approval itself. Re-approval
+  // re-runs the grant (idempotent repair) but never duplicates the participant.
+  let linkedUserId: string | null = (registration.user_id as string | null) ?? null;
+  try {
+    linkedUserId = (await grantStudentAccess(registration)) ?? linkedUserId;
+  } catch (err) {
+    console.error("approveRegistration: access grant failed", err);
+  }
+  if (wasApproved) return { registration, participant: null };
   const participant = await createParticipant(
     registration.organization_id,
     registration.offering_id,
     {
       programId: registration.program_id ?? null,
       stageNodeId: registration.stage_node_id ?? null,
-      userId: registration.user_id ?? null,
+      userId: linkedUserId,
       participantType: "learner",
       addedByUserId: reviewerId,
       registrationId: registration.id,

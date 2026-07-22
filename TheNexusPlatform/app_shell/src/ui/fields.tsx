@@ -110,15 +110,36 @@ export function Select<T extends string>({
 }
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  // Layout is inline flexbox on purpose: the knob sits INSIDE the track via
+  // justify-content, so it can never overlap the label regardless of how the
+  // utility classes compile.
   return (
-    <button type="button" onClick={() => onChange(!checked)} className="group flex cursor-pointer items-center gap-2.5">
+    <button type="button" onClick={() => onChange(!checked)} className="group flex cursor-pointer items-center" style={{ gap: 10 }}>
       <span
-        className="relative h-[18px] w-8 flex-shrink-0 rounded-full transition-colors"
-        style={{ backgroundColor: checked ? "rgba(255,255,255,0.30)" : "rgba(255,255,255,0.08)" }}
+        aria-hidden
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: checked ? "flex-end" : "flex-start",
+          width: 34,
+          height: 19,
+          padding: 2,
+          borderRadius: 999,
+          flexShrink: 0,
+          boxSizing: "border-box",
+          backgroundColor: checked ? "rgba(255,255,255,0.32)" : "rgba(255,255,255,0.09)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          transition: "background-color 150ms ease",
+        }}
       >
         <span
-          className="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow-sm transition-transform"
-          style={{ transform: checked ? "translateX(16px)" : "translateX(2px)" }}
+          style={{
+            width: 13,
+            height: 13,
+            borderRadius: 999,
+            backgroundColor: "#ffffff",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.35)",
+          }}
         />
       </span>
       <span className="text-xs transition-colors" style={{ color: checked ? "rgba(224,224,240,0.72)" : "rgba(224,224,240,0.4)" }}>

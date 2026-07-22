@@ -2,8 +2,19 @@ import { useMemo, useState } from "react";
 import type { AppShellConfig } from "../types";
 import { copyToClipboard, portableLink, publishToRegistry, shortLink } from "../share";
 import { APP_VERSION, bundleIdFor, downloadBuildPackage } from "../packaging";
+import type { HandoffScope } from "../nexus/handoff";
+import { NexusPublish } from "./NexusPublish";
 
-export function PublishModal({ config, onClose }: { config: AppShellConfig; onClose: () => void }) {
+export function PublishModal({
+  config,
+  scope,
+  onClose,
+}: {
+  config: AppShellConfig;
+  /** Set when this Studio is scoped to one registered app — publish is bound to it. */
+  scope?: HandoffScope | null;
+  onClose: () => void;
+}) {
   // Publishing = save to the registry (for the short link) and derive both links.
   const { short, portable } = useMemo(() => {
     publishToRegistry(config);
@@ -92,7 +103,8 @@ export function PublishModal({ config, onClose }: { config: AppShellConfig; onCl
           </p>
         </div>
 
-        <div className="space-y-3 px-5 py-4">
+        <div className="max-h-[70vh] space-y-3 overflow-y-auto px-5 py-4">
+          <NexusPublish config={config} bound={scope ?? undefined} />
           {linkRow(
             "portable",
             "Shareable link — any device",
