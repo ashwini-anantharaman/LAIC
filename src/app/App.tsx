@@ -67,17 +67,29 @@ export default function App() {
   const [creatorObjectType, setCreatorObjectTypeState] = useState<string>('lesson');
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
+  /** Only persist to localStorage after the library for this user has been loaded. */
+  const [libraryReady, setLibraryReady] = useState(false);
+
   const activeUserIdRef = useRef(activeUserId);
   const createdObjectsRef = useRef(createdObjects);
+  const hydrateGenRef = useRef(0);
   activeUserIdRef.current = activeUserId;
   createdObjectsRef.current = createdObjects;
 
   const hydrateForUser = useCallback(async (userId: string) => {
+    const gen = ++hydrateGenRef.current;
+    setLibraryReady(false);
+
     const local = isDemoCdUser(userId) ? loadDemoCdLibrary() : loadUserObjects(userId);
+    if (gen !== hydrateGenRef.current) return;
     setCreatedObjects(local);
+    // Local load is enough to start persisting again (don't wait on network).
+    setLibraryReady(true);
+
     if (!supabaseEnabled) return;
     try {
       const remote = objectsForUser(await listObjects(), userId);
+      if (gen !== hydrateGenRef.current) return;
       const claimedRemote = isDemoCdUser(userId)
         ? remote.map((o) => ({
             ...o,
@@ -87,17 +99,33 @@ export default function App() {
         : remote;
       const merged = mergeObjects(local, claimedRemote);
       setCreatedObjects(merged);
-      saveUserObjects(userId, merged);
+      if (merged.length > 0) saveUserObjects(userId, merged);
     } catch (err: any) {
       console.warn('[supabase] could not load objects:', err?.message || err);
     }
   }, []);
 
-  // Keep the active user's library written to localStorage whenever it changes.
+  // Persist only after hydrate — writing [] on login was wiping the demo library.
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn || !libraryReady) return;
+    if (createdObjects.length === 0) return;
     saveUserObjects(activeUserId, createdObjects);
-  }, [isLoggedIn, activeUserId, createdObjects]);
+  }, [isLoggedIn, activeUserId, createdObjects, libraryReady]);
+
+  // Flush on tab close / refresh so mid-session saves aren't lost.
+  useEffect(() => {
+    const flush = () => {
+      if (!isLoggedIn || !libraryReady) return;
+      if (createdObjectsRef.current.length === 0) return;
+      saveUserObjects(activeUserIdRef.current, createdObjectsRef.current);
+    };
+    window.addEventListener('beforeunload', flush);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('beforeunload', flush);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, [isLoggedIn, libraryReady]);
 
   // Restore last demo session on first load.
   useEffect(() => {
@@ -118,9 +146,9 @@ export default function App() {
   const login = useCallback((userId: string) => {
     const user = USERS.find(u => u.id === userId);
     if (!user) return;
+    setLibraryReady(false);
     setActiveUserId(userId);
     setRoleState(user.role);
-    // Email demo + all CDs land on Object Library (saved objects).
     setCurrentScreen(DEFAULT_SCREEN[user.role]);
     setReaderObjectId(null);
     setEditingObjectId(null);
@@ -130,9 +158,11 @@ export default function App() {
   }, [hydrateForUser]);
 
   const logout = useCallback(() => {
-    // Persist current user's objects before clearing session.
-    saveUserObjects(activeUserIdRef.current, createdObjectsRef.current);
+    const uid = activeUserIdRef.current;
+    const objs = createdObjectsRef.current;
+    if (objs.length > 0) saveUserObjects(uid, objs);
     writeSessionUserId(null);
+    setLibraryReady(false);
     setIsLoggedIn(false);
     setReaderObjectId(null);
     setEditingObjectId(null);
@@ -149,17 +179,21 @@ export default function App() {
     setRoleState(newRole);
     setCurrentScreen(DEFAULT_SCREEN[newRole]);
     setReaderObjectId(null);
-    // Prefer demo-cd when switching into content-developer so the email account's library sticks.
     const match =
       newRole === 'content-developer'
         ? USERS.find((u) => u.id === DEMO_CD_USER_ID) || USERS.find((u) => u.role === newRole)
         : USERS.find((u) => u.role === newRole);
     if (match) {
+      // Persist current library before switching identity.
+      if (libraryReady && createdObjectsRef.current.length > 0) {
+        saveUserObjects(activeUserIdRef.current, createdObjectsRef.current);
+      }
+      setLibraryReady(false);
       setActiveUserId(match.id);
       writeSessionUserId(match.id);
       void hydrateForUser(match.id);
     }
-  }, [hydrateForUser]);
+  }, [hydrateForUser, libraryReady]);
 
   const setProgram = useCallback((p: Program) => {
     setProgramState(p);
@@ -203,12 +237,17 @@ export default function App() {
         pipelineDraft: partial.pipelineDraft !== undefined ? partial.pipelineDraft : existing?.pipelineDraft,
       };
       const nextList = [obj, ...prev.filter(o => o.id !== id)];
-      saveUserObjects(ownerId, nextList);
+      const result = saveUserObjects(ownerId, nextList);
+      if (!result.ok) {
+        console.warn('[addObject] local persist failed:', result.error);
+      }
       if (supabaseEnabled) {
         saveObject(obj).catch(err => console.warn('[supabase] could not save object:', err?.message || err));
       }
       return nextList;
     });
+    // Ensure subsequent effect-based saves are allowed (e.g. first object after empty hydrate).
+    setLibraryReady(true);
     return id;
   }, []);
 
