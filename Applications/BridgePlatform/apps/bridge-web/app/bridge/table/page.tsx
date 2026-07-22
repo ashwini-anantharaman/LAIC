@@ -35,6 +35,10 @@ export default async function PlayPage() {
   const archived = new Set(kbs.filter((k) => k.archived).map((k) => k.kbId));
 
   // Unfinished boards this player started become the resume affordance.
+  // Opening a board mints a fresh session, so playing the same board twice
+  // leaves two active sittings with the same name — collapse to the most
+  // recent per board name (list is sorted newest-first, so keep the first).
+  const seenBoardNames = new Set<string>();
   const actives = recent
     .filter(
       (s) =>
@@ -43,6 +47,11 @@ export default async function PlayPage() {
         !archived.has(s.kbId),
     )
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .filter((s) => {
+      if (seenBoardNames.has(s.board.name)) return false;
+      seenBoardNames.add(s.board.name);
+      return true;
+    })
     .slice(0, 8);
 
   // Anything to deal at all? A live compile on any visible KB is the cheap
