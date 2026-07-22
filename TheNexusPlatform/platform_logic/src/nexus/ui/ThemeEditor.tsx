@@ -103,8 +103,8 @@ export function ThemeEditor({
           </div>
         </div>
       ) : null}
-      <div className="glass-card p-5 flex flex-wrap items-start gap-8">
-        <div className="space-y-2 min-w-64 flex-1">
+      <div className="glass-card p-5">
+        <div className="space-y-2">
         <Label htmlFor="hue">Accent color</Label>
         <p className="text-xs text-muted-foreground -mt-0.5">
           Pick a hue — the exact shade adapts to light and dark mode automatically.
@@ -160,10 +160,14 @@ export function ThemeEditor({
             </Button>
           ) : null}
         </div>
+        </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="glass-card p-5 space-y-2">
         <Label>Logo</Label>
+        <p className="text-xs text-muted-foreground -mt-0.5">
+          Shown in the sidebar and the browser tab. A square PNG or SVG works best.
+        </p>
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
@@ -199,7 +203,6 @@ export function ThemeEditor({
             }
           }}
         />
-        </div>
       </div>
     </div>
   );
