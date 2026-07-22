@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ChevronRight, Copy, Eye, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Copy, Eye, Layers, LayoutGrid, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/app/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
 import {
+  createGroup,
   createProgramRole,
   deleteProgramRole,
   devLoginAs,
@@ -94,6 +95,16 @@ export function ProgramTeam() {
   const [editing, setEditing] = useState<ProgramRole | "new" | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [managingGroups, setManagingGroups] = useState<ProgramMember | null>(null);
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
+  // People view: "grid" = flat table; "stack" = grouped by group (a person in
+  // several groups appears under each — no primary). Mirrors the Programs page.
+  const [view, setView] = useState<"grid" | "stack">(
+    () => (localStorage.getItem("nexus_people_view") as "grid" | "stack") || "grid",
+  );
+  function switchView(v: "grid" | "stack") {
+    setView(v);
+    localStorage.setItem("nexus_people_view", v);
+  }
 
   useEffect(() => {
     listPrograms(orgId).then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null)).catch(() => {});
@@ -192,6 +203,153 @@ export function ProgramTeam() {
   }
   const hasPlacementGroups = (groupsModel?.groups.length ?? 0) > 0;
 
+  async function addGroup(name: string) {
+    await createGroup(orgId, { program_id: programId, name });
+    toast.success(`Group "${name}" created`);
+    load();
+  }
+
+  // One People row, reused by both the flat grid and each stack section.
+  function personRow(m: ProgramMember, keyPrefix = "") {
+    const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
+    return (
+      <TableRow key={`${keyPrefix}${m.email ?? m.invitation_id ?? m.membership_id ?? ""}`}>
+        <TableCell>
+          <div className="font-medium text-foreground">{m.display_name ?? "—"}</div>
+          <div className="text-xs text-muted-foreground">{m.email}</div>
+        </TableCell>
+        <TableCell>
+          {isAdmin ? (
+            <div>
+              <Pill tone="accent">Admin</Pill>
+              <div className="text-[11px] text-muted-foreground mt-0.5">Program-level access</div>
+            </div>
+          ) : heldPlatform(m) ? (
+            (() => {
+              const held = heldPlatform(m)!;
+              const label = PLATFORM_LABELS[held.platform] ?? held.platform;
+              return (
+                <span
+                  className="text-sm text-muted-foreground"
+                  title={`Assigned inside the ${label} (People & Roles) — managed there, not here.`}
+                >
+                  {platformRoleLabel(held.role)}
+                  <span className="block text-[11px] text-muted-foreground/70">{label} · managed in platform</span>
+                </span>
+              );
+            })()
+          ) : (
+            <Select value={m.role_id ?? "none"} onValueChange={(v) => assignRole(m, v === "none" ? null : v)}>
+              <SelectTrigger className="h-8 w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No role</SelectItem>
+                {(roles ?? []).map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </TableCell>
+        <TableCell>
+          {isAdmin ? (
+            <span className="text-xs text-muted-foreground">—</span>
+          ) : (
+            <div className="flex flex-wrap items-center gap-1">
+              {memberGroupChips(m).map((c) => (
+                <Pill key={`${c.kind}:${c.name}`} tone={c.kind === "role" ? "accent" : "neutral"}>
+                  {c.name}
+                </Pill>
+              ))}
+              {hasPlacementGroups ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5"
+                  onClick={() => setManagingGroups(m)}
+                  title="Edit group placement"
+                >
+                  <Pencil className="size-3" />
+                </Button>
+              ) : memberGroupChips(m).length === 0 ? (
+                <span className="text-xs text-muted-foreground">—</span>
+              ) : null}
+            </div>
+          )}
+        </TableCell>
+        <TableCell>
+          <Pill tone={m.status === "active" ? "positive" : "warn"}>{m.status}</Pill>
+        </TableCell>
+        <TableCell className="text-right">
+          <div className="inline-flex items-center gap-1">
+            {DEV_ENABLED && m.email ? (
+              <Button size="sm" variant="ghost" onClick={() => testAsPerson(m)} title="Sign in as this person (dev)">
+                <Eye className="size-3.5" /> Test as
+              </Button>
+            ) : null}
+            {m.membership_id || m.invitation_id ? (
+              <ConfirmButton
+                title={
+                  m.status === "invited"
+                    ? `Withdraw the invitation for ${m.display_name ?? m.email}?`
+                    : `Remove ${m.display_name ?? m.email} from this program?`
+                }
+                description={
+                  m.status === "invited"
+                    ? "Their activation link stops working."
+                    : "They lose access to this program immediately."
+                }
+                actionLabel={m.status === "invited" ? "Withdraw" : "Remove"}
+                onConfirm={() => removePerson(m)}
+                buttonTitle={m.status === "invited" ? "Withdraw invitation" : "Remove from program"}
+              >
+                <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+              </ConfirmButton>
+            ) : null}
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  }
+
+  const peopleTableHead = (
+    <TableHeader>
+      <TableRow>
+        <TableHead>Person</TableHead>
+        <TableHead>Role</TableHead>
+        <TableHead>Groups</TableHead>
+        <TableHead>Status</TableHead>
+        <TableHead className="text-right">Actions</TableHead>
+      </TableRow>
+    </TableHeader>
+  );
+
+  // Stack view buckets: each role that displays as a group, then each real
+  // group, then anyone in no group at all. A person appears under every group
+  // they belong to (no primary), so the same row can repeat across sections.
+  const team = members ?? [];
+  const stackBuckets: { key: string; label: string; kind: "role" | "group" | "none"; members: ProgramMember[] }[] = [
+    ...(groupsModel?.roles ?? [])
+      .filter((r) => r.display_as_group)
+      .map((r) => ({
+        key: `role:${r.id}`,
+        label: r.name,
+        kind: "role" as const,
+        members: team.filter((m) => m.role_id === r.id),
+      })),
+    ...(groupsModel?.groups ?? []).map((g) => ({
+      key: `group:${g.id}`,
+      label: g.name,
+      kind: "group" as const,
+      members: team.filter((m) => (groupsModel?.placements[(m.email ?? "").toLowerCase()] ?? []).includes(g.id)),
+    })),
+  ];
+  const ungrouped = team.filter((m) => memberGroupChips(m).length === 0);
+  if (ungrouped.length) stackBuckets.push({ key: "none", label: "No group", kind: "none", members: ungrouped });
+
   return (
     <div>
       <PageHeader
@@ -264,139 +422,57 @@ export function ProgramTeam() {
       <Section
         title="People"
         action={
-          <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <Plus className="size-3.5" /> Invite member
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => switchView(view === "grid" ? "stack" : "grid")}
+              className="grid size-9 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              title={view === "grid" ? "Stack view (group by group)" : "Grid view (everyone)"}
+              aria-label="Switch people view"
+            >
+              {view === "grid" ? <Layers className="size-4" /> : <LayoutGrid className="size-4" />}
+            </button>
+            <Button size="sm" variant="outline" onClick={() => setNewGroupOpen(true)}>
+              <Plus className="size-3.5" /> New group
+            </Button>
+            <Button size="sm" onClick={() => setInviteOpen(true)}>
+              <Plus className="size-3.5" /> Invite member
+            </Button>
+          </div>
         }
       >
         {!members ? (
           <Spinner />
         ) : members.length === 0 ? (
           <EmptyState>No people in this program yet. Invite a member and give them a role.</EmptyState>
-        ) : (
+        ) : view === "grid" ? (
           <div className="glass-card overflow-hidden">
             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Person</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Groups</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members.map((m) => {
-                  const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
-                  return (
-                    <TableRow key={m.email ?? Math.random()}>
-                      <TableCell>
-                        <div className="font-medium text-foreground">{m.display_name ?? "—"}</div>
-                        <div className="text-xs text-muted-foreground">{m.email}</div>
-                      </TableCell>
-                      <TableCell>
-                        {isAdmin ? (
-                          <div>
-                            <Pill tone="accent">Admin</Pill>
-                            <div className="text-[11px] text-muted-foreground mt-0.5">Program-level access</div>
-                          </div>
-                        ) : heldPlatform(m) ? (
-                          // A platform role — assigned inside that platform, so
-                          // read-only here (no dropdown). Removal is via delete.
-                          (() => {
-                            const held = heldPlatform(m)!;
-                            const label = PLATFORM_LABELS[held.platform] ?? held.platform;
-                            return (
-                              <span
-                                className="text-sm text-muted-foreground"
-                                title={`Assigned inside the ${label} (People & Roles) — managed there, not here.`}
-                              >
-                                {platformRoleLabel(held.role)}
-                                <span className="block text-[11px] text-muted-foreground/70">{label} · managed in platform</span>
-                              </span>
-                            );
-                          })()
-                        ) : (
-                          <Select
-                            value={m.role_id ?? "none"}
-                            onValueChange={(v) => assignRole(m, v === "none" ? null : v)}
-                          >
-                            <SelectTrigger className="h-8 w-44">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No role</SelectItem>
-                              {(roles ?? []).map((r) => (
-                                <SelectItem key={r.id} value={r.id}>
-                                  {r.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {isAdmin ? (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-1">
-                            {memberGroupChips(m).map((c) => (
-                              <Pill key={`${c.kind}:${c.name}`} tone={c.kind === "role" ? "accent" : "neutral"}>
-                                {c.name}
-                              </Pill>
-                            ))}
-                            {hasPlacementGroups ? (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 px-1.5"
-                                onClick={() => setManagingGroups(m)}
-                                title="Edit group placement"
-                              >
-                                <Pencil className="size-3" />
-                              </Button>
-                            ) : memberGroupChips(m).length === 0 ? (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            ) : null}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Pill tone={m.status === "active" ? "positive" : "warn"}>{m.status}</Pill>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="inline-flex items-center gap-1">
-                          {DEV_ENABLED && m.email ? (
-                            <Button size="sm" variant="ghost" onClick={() => testAsPerson(m)} title="Sign in as this person (dev)">
-                              <Eye className="size-3.5" /> Test as
-                            </Button>
-                          ) : null}
-                          {m.membership_id || m.invitation_id ? (
-                            <ConfirmButton
-                              title={
-                                m.status === "invited"
-                                  ? `Withdraw the invitation for ${m.display_name ?? m.email}?`
-                                  : `Remove ${m.display_name ?? m.email} from this program?`
-                              }
-                              description={
-                                m.status === "invited"
-                                  ? "Their activation link stops working."
-                                  : "They lose access to this program immediately."
-                              }
-                              actionLabel={m.status === "invited" ? "Withdraw" : "Remove"}
-                              onConfirm={() => removePerson(m)}
-                              buttonTitle={m.status === "invited" ? "Withdraw invitation" : "Remove from program"}
-                            >
-                              <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
-                            </ConfirmButton>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
+              {peopleTableHead}
+              <TableBody>{team.map((m) => personRow(m))}</TableBody>
             </Table>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {stackBuckets.map((b) => (
+              <div key={b.key} className="glass-card overflow-hidden">
+                <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+                  <span className="text-sm font-semibold text-foreground">{b.label}</span>
+                  {b.kind === "role" ? <Pill tone="accent">role</Pill> : null}
+                  <span className="text-xs text-muted-foreground">
+                    {b.members.length} {b.members.length === 1 ? "person" : "people"}
+                  </span>
+                </div>
+                {b.members.length ? (
+                  <Table>
+                    {peopleTableHead}
+                    <TableBody>{b.members.map((m) => personRow(m, `${b.key}:`))}</TableBody>
+                  </Table>
+                ) : (
+                  <div className="px-4 py-3 text-xs text-muted-foreground">No one in this group yet.</div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </Section>
@@ -441,6 +517,8 @@ export function ProgramTeam() {
         onInvited={load}
       />
 
+      <NewGroupDialog open={newGroupOpen} onOpenChange={setNewGroupOpen} onCreate={addGroup} />
+
       {managingGroups ? (
         <ManageGroupsDialog
           programId={programId}
@@ -455,6 +533,62 @@ export function ProgramTeam() {
         />
       ) : null}
     </div>
+  );
+}
+
+function NewGroupDialog({
+  open,
+  onOpenChange,
+  onCreate,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onCreate: (name: string) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      await onCreate(name.trim());
+      setName("");
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create group");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) setName(""); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New group</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="group-name">Group name</Label>
+          <Input
+            id="group-name"
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !busy && name.trim() && submit()}
+            placeholder="e.g. Cohort A"
+          />
+          <p className="text-xs text-muted-foreground">
+            Groups place people organizationally — separate from roles, which grant access. Assign
+            people to a group when you invite them or from the group column.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={submit} disabled={busy || !name.trim()}>{busy ? "Creating…" : "Create group"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
