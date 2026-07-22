@@ -209,7 +209,9 @@ export function DecisionEntry({
           <input type="hidden" name="seq" value={event.seq} />
           {itemId && <input type="hidden" name="itemId" value={itemId} />}
           <label className="flex-1">
-            <span className="mb-0.5 block text-neutral-400">Flag this decision</span>
+            <span className="mb-0.5 block text-neutral-400">
+              Suggest a fix — lands in the KB&apos;s Suggestions queue
+            </span>
             <input
               name="text"
               placeholder="What looks wrong?"
@@ -220,7 +222,7 @@ export function DecisionEntry({
             type="submit"
             className="rounded border border-neutral-300 px-2 py-1 hover:border-emerald-400"
           >
-            Flag
+            Suggest
           </button>
         </form>
       </div>

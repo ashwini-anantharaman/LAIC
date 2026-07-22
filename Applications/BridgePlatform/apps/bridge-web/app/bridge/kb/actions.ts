@@ -299,13 +299,10 @@ export async function saveItemAction(formData: FormData): Promise<void> {
     version: saved.version,
   });
 
-  // "Save as new version" also freezes an immutable committed snapshot (and
-  // makes it the item's main version) right after the save.
-  const committedNumber =
-    String(formData.get("saveMode") ?? "") === "commit"
-      ? (await kbService().commitItemVersion(saved.itemId, context.nexusUserId, undefined))
-          .versionNumber
-      : undefined;
+  // Editor saves land on the working DRAFT only — committing a version is a
+  // separate, deliberate act (the Versions panel's "Save as new version"),
+  // and committed versions are never modified.
+  const committedNumber = undefined;
 
   revalidatePath(kbPath(kbId), "layout");
 

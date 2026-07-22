@@ -72,7 +72,7 @@ function itemRules(item: KnowledgeItem): { label: string; priority?: number }[] 
 }
 
 type View = "cards" | "list" | "table" | "priority";
-type Group = "kind" | "phase" | "status" | "when" | "none";
+type Group = "kind" | "phase" | "status" | "when" | "band" | "none";
 type Sort = "title" | "updated" | "rules";
 
 /** Does the item speak in this auction position? ("any"-role rules match all
@@ -112,7 +112,11 @@ export default async function ItemsPage({
   const view: View =
     sp.view === "list" || sp.view === "table" || sp.view === "priority" ? sp.view : "cards";
   const group: Group =
-    sp.group === "phase" || sp.group === "status" || sp.group === "when" || sp.group === "none"
+    sp.group === "phase" ||
+    sp.group === "status" ||
+    sp.group === "when" ||
+    sp.group === "band" ||
+    sp.group === "none"
       ? sp.group
       : "kind";
   const sort: Sort = sp.sort === "updated" || sp.sort === "rules" ? sp.sort : "title";
@@ -153,6 +157,20 @@ export default async function ItemsPage({
       label: WHEN_LABEL[w],
       items: filtered.filter((i) => whenOf(i) === w),
     }));
+  } else if (group === "band") {
+    // Precedence bands, in firing order; teaching prose (no band) last.
+    groups = [
+      ...[0, 1, 2, 9].map((b) => ({
+        id: `band-${b}`,
+        label: `${BAND_TEXT[b]!.name} (${BAND_TEXT[b]!.blurb})`,
+        items: filtered.filter((i) => bandOf(i.knowledgeType) === b),
+      })),
+      {
+        id: "band-none",
+        label: "teaching prose — never plays",
+        items: filtered.filter((i) => bandOf(i.knowledgeType) === null),
+      },
+    ];
   } else if (group === "none") {
     groups = [{ id: "all", label: "All knowledge", items: filtered }];
   } else {
@@ -266,44 +284,64 @@ export default async function ItemsPage({
           No executable rules match the current filters.
         </p>
       ) : (
-        priorityBands.map(({ band, items: bandItems }) => (
-          <section key={band} className="rounded-xl border border-neutral-200 bg-[var(--card)]">
-            <div className="border-b border-[var(--line)] px-4 py-2">
-              <h2 className="font-serif text-lg font-medium capitalize">
-                {BAND_TEXT[band]?.name ?? `band ${band}`}
-                <span className="ml-2 text-xs font-normal normal-case text-neutral-400">
-                  {BAND_TEXT[band]?.blurb}
-                </span>
-              </h2>
-            </div>
-            <ul className="divide-y divide-[var(--line)]">
-              {bandItems.map(({ item, rules }) => (
-                <li key={item.itemId} className="px-4 py-3">
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <Link
-                      href={itemHref(item)}
-                      className="font-serif text-[15px] font-medium hover:text-emerald-900"
-                    >
-                      {item.title}
-                    </Link>
-                    {kindChip(item)}
-                    <StatusBadge status={item.status} />
-                  </div>
-                  <ul className="mt-1.5 space-y-0.5">
-                    {rules.map((r, i) => (
-                      <li key={i} className="flex items-baseline gap-2 text-sm">
-                        <span className="w-14 flex-none font-mono text-xs text-neutral-400">
-                          {r.priority === undefined ? "—" : `p${r.priority}`}
+        <AccordionGroup
+          storageKey={`bridge.kb.${kbId}.priority.bands.v1`}
+          sectionIds={priorityBands.map(({ band }) => `band-${band}`)}
+        >
+          {priorityBands.map(({ band, items: bandItems }) => (
+            <AccordionSection
+              key={band}
+              id={`band-${band}`}
+              summary={
+                <>
+                  <span className="font-serif text-lg font-medium capitalize">
+                    {BAND_TEXT[band]?.name ?? `band ${band}`}
+                    <span className="ml-2 text-xs font-normal normal-case text-neutral-400">
+                      {BAND_TEXT[band]?.blurb}
+                    </span>
+                  </span>
+                  <span className="text-xs text-neutral-400">{bandItems.length}</span>
+                </>
+              }
+            >
+              <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
+                {bandItems.map(({ item, rules }) => (
+                  <li key={item.itemId} className="px-4 py-2.5">
+                    {/* Each item folds too — a fat item scans as one line. */}
+                    <details open>
+                      <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-2 [&::-webkit-details-marker]:hidden">
+                        <span aria-hidden className="text-[9px] text-neutral-400">
+                          ▾
                         </span>
-                        <span className="text-neutral-700">{r.label}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))
+                        <Link
+                          href={itemHref(item)}
+                          className="font-serif text-[15px] font-medium hover:text-emerald-900"
+                        >
+                          {item.title}
+                        </Link>
+                        {kindChip(item)}
+                        <StatusBadge status={item.status} />
+                        <span className="ml-auto text-xs text-neutral-400">
+                          {rules.length} rule{rules.length === 1 ? "" : "s"}
+                        </span>
+                      </summary>
+                      <ul className="mt-1.5 space-y-0.5 pl-4">
+                        {rules.map((r, i) => (
+                          <li key={i} className="flex items-baseline gap-2 text-sm">
+                            <span className="w-14 flex-none font-mono text-xs text-neutral-400">
+                              {r.priority === undefined ? "—" : `p${r.priority}`}
+                            </span>
+                            <span className="text-neutral-700">{r.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </li>
+                ))}
+              </ul>
+            </AccordionSection>
+          ))}
+        </AccordionGroup>
       )}
     </div>
   );
@@ -594,6 +632,7 @@ export default async function ItemsPage({
             { value: "phase", label: "Phase", href: qs({ group: "phase" }) },
             { value: "status", label: "Status", href: qs({ group: "status" }) },
             { value: "when", label: "When — auction position", href: qs({ group: "when" }) },
+            { value: "band", label: "Band — who outranks whom", href: qs({ group: "band" }) },
             { value: "none", label: "None", href: qs({ group: "none" }) },
           ]}
         />

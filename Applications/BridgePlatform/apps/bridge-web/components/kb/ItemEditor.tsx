@@ -1533,18 +1533,10 @@ export function ItemEditor({
             value="existing"
             className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
           >
-            {item ? "Update this version" : "Create knowledge item"}
+            {item ? "Save to current draft" : "Create knowledge item"}
           </button>
           {item && (
             <>
-              <button
-                type="submit"
-                name="saveMode"
-                value="commit"
-                className="rounded border border-neutral-300 px-4 py-1.5 text-sm hover:border-emerald-400"
-              >
-                Save as new version
-              </button>
               <button
                 type="submit"
                 name="saveAs"
@@ -1557,7 +1549,9 @@ export function ItemEditor({
           )}
         </div>
         <p className="mt-2 text-xs text-neutral-400">
-          Every save recompiles the knowledge base immediately.
+          Saves land on the item&apos;s current draft (and recompile the knowledge base
+          immediately) — committed versions are never modified. Freeze the draft with
+          &ldquo;Save as new version&rdquo; in the Versions panel.
         </p>
       </div>
     </form>

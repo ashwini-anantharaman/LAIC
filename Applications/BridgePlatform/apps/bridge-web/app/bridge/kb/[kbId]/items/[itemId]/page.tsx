@@ -9,6 +9,7 @@ import { kbStore } from "@/lib/kb";
 import {
   addEdgeAction,
   commitItemVersionAction,
+  createSuggestionAction,
   deleteItemVersionAction,
   removeEdgeAction,
   saveItemAction,
@@ -146,10 +147,10 @@ export default async function ItemPage({
           <StatusBadge status={item.status} />
           {dirty && (
             <span
-              title="Saved edits no committed version captures yet — use Save as new version."
+              title="This item has draft edits no committed version captures — Save as new version (Versions panel) to freeze them. Committed versions are never modified."
               className="inline-block rounded border border-amber-400 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-700"
             >
-              uncommitted changes
+              draft
             </span>
           )}
           {edit ? (
@@ -367,6 +368,35 @@ export default async function ItemPage({
 
         {!edit && (
         <section className="rounded-lg border border-neutral-200 p-4">
+          <h3 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
+            Suggest
+          </h3>
+          <form action={createSuggestionAction} className="flex items-end gap-2">
+            <input type="hidden" name="kbId" value={kbId} />
+            <input type="hidden" name="itemId" value={itemId} />
+            <label className="flex-1 text-xs">
+              <span className="mb-0.5 block text-neutral-500">
+                What should change about this item? Lands in the Suggestions queue.
+              </span>
+              <input
+                name="text"
+                required
+                placeholder="e.g. the range should be 14–16 here"
+                className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              className="rounded border border-neutral-300 px-2 py-1 text-sm hover:border-emerald-400"
+            >
+              Suggest
+            </button>
+          </form>
+        </section>
+        )}
+
+        {!edit && (
+        <section className="rounded-lg border border-neutral-200 p-4">
           <h3 className="mb-2 flex items-baseline text-sm font-medium uppercase tracking-wide text-neutral-500">
             Versions
             <Link
@@ -471,7 +501,7 @@ export default async function ItemPage({
               disabled={!dirty}
               className="rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
             >
-              Commit v{(versions[0]?.versionNumber ?? 0) + 1}
+              Save as new version (v{(versions[0]?.versionNumber ?? 0) + 1})
             </button>
           </form>
         </section>

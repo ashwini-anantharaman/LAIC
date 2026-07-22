@@ -69,7 +69,7 @@ test("edits the 1NT range — the KB recompiles to a new version", async ({ page
   // Items open in VIEW mode now — the typed editor is behind the Edit link.
   await page.getByRole("link", { name: "Edit", exact: true }).click();
   await page.locator('input[name="rule0:hcpMin"]').fill("14");
-  await page.getByRole("button", { name: "Update this version" }).click();
+  await page.getByRole("button", { name: "Save to current draft" }).click();
   await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
 
   const after = await page.getByText(/draft compile/).textContent();
@@ -98,7 +98,7 @@ test("flags and resolves a suggestion", async ({ page, context }) => {
   await page
     .getByLabel("Note")
     .fill("The 1NT range needs checking against the booklet.");
-  await page.getByRole("button", { name: "Flag" }).click();
+  await page.getByRole("button", { name: "Suggest" }).click();
   await expect(page.getByText("The 1NT range needs checking against the booklet.")).toBeVisible();
 
   await page.getByRole("button", { name: "Resolve" }).click();
@@ -134,7 +134,7 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
         ],
       }),
     );
-  await page.getByRole("button", { name: "Update this version" }).click();
+  await page.getByRole("button", { name: "Save to current draft" }).click();
 
   await expect(page.getByText(/latest edit doesn't compile/)).toBeVisible();
   await expect(page.getByText(/references unknown setting "does_not_exist"/)).toBeVisible();
@@ -145,7 +145,7 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
   await page.getByRole("link", { name: "Edit", exact: true }).click();
   await page.locator('input[name="rule0:hcpMin"]').fill("15");
   await page.locator('input[name="rule0:hcpMax"]').fill("17");
-  await page.getByRole("button", { name: "Update this version" }).click();
+  await page.getByRole("button", { name: "Save to current draft" }).click();
   await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
   await expect(page.getByText(/latest edit doesn't compile/)).not.toBeVisible();
 });
@@ -258,7 +258,7 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
     page.waitForResponse(
       (r) => r.request().method() === "POST" && r.url().includes("/bridge/table/"),
     ),
-    firstDecision.getByRole("button", { name: "Flag" }).click(),
+    firstDecision.getByRole("button", { name: "Suggest" }).click(),
   ]);
 
   // We act as South: pass.
@@ -362,7 +362,7 @@ test("deprecate an item from the editor (hidden from the default view, kept unde
   await page.getByText("1NT opening (copy)").click();
   await page.getByRole("link", { name: "Edit", exact: true }).click();
   await page.locator('select[name="status"]').selectOption("deprecated");
-  await page.getByRole("button", { name: "Update this version" }).click();
+  await page.getByRole("button", { name: "Save to current draft" }).click();
   await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
 
   // The default status filter hides deprecated items.
@@ -417,7 +417,7 @@ test("fix at the table: undo pauses, overlay edits the item, session re-pins", a
   await page.waitForURL(/fixMode=edit/);
 
   // Save without changes — still re-pins and returns to the paused board.
-  await page.getByRole("button", { name: "Update this version" }).click();
+  await page.getByRole("button", { name: "Save to current draft" }).click();
   await page.waitForURL(/fixed=1/);
   await expect(page.getByText(/this table now plays from the updated rules/)).toBeVisible();
   await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();

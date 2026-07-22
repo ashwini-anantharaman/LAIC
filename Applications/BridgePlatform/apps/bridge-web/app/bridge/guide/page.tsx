@@ -558,12 +558,13 @@ export default async function GuidePage() {
           <div className={card}>
             <h3 className="text-sm font-semibold">Knowledge items — commit &amp; restore</h3>
             <p className="mt-1 text-sm text-neutral-600">
-              Every save bumps the item&apos;s revision. <b>Commit version</b> (on the item page)
-              freezes an immutable numbered snapshot — v1, v2… — and marks it <b>main</b>.
-              &ldquo;Make main&rdquo; on an older version restores its content <i>without</i>{" "}
-              minting a new one; your next edit does. The item reads <i>uncommitted edits</i>{" "}
-              whenever the head has drifted past main. The main version and any version pinned by
-              a published release can&apos;t be deleted.
+              Every save lands on the item&apos;s working <b>draft</b> — the item wears a{" "}
+              <b>draft</b> chip until you freeze it with <b>Save as new version</b> (Versions
+              panel), which mints an immutable numbered snapshot — v1, v2… — and marks it{" "}
+              <b>main</b>. Committed versions are <i>never</i> modified: &ldquo;Make main&rdquo;
+              on an older version restores its content into the draft without touching the
+              snapshot. The main version and any version pinned by a published release
+              can&apos;t be deleted.
             </p>
             <p className="mt-2 text-sm text-neutral-600">
               Don&apos;t want to touch the original at all? <b>&ldquo;Save as a new knowledge

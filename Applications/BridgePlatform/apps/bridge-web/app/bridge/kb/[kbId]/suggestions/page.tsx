@@ -105,8 +105,9 @@ export default async function SuggestionsPage({
         <h2 className="mb-3 text-lg font-medium">Open ({open.length})</h2>
         {open.length === 0 ? (
           <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
-            Nothing flagged. Suggestions arrive from the table (&ldquo;flag this decision&rdquo;)
-            and from item annotations.
+            Nothing suggested yet. Suggestions arrive from the table (&ldquo;Suggest a
+            fix&rdquo; on any decision), from a knowledge item&apos;s Suggest box, and from
+            the form below.
           </p>
         ) : (
           <ul className="space-y-2">{open.map(row)}</ul>
@@ -133,7 +134,7 @@ export default async function SuggestionsPage({
             </select>
           </label>
           <button type="submit" className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
-            Flag
+            Suggest
           </button>
         </form>
       </section>
