@@ -11,7 +11,7 @@ const BAND: Partial<Record<KnowledgeType, number>> = {
   convention: 1,
   fallback_rule: 9,
 };
-function bandOf(type: KnowledgeType): number | null {
+export function bandOf(type: KnowledgeType): number | null {
   if (type === "concept" || type === "judgment_guideline") return null;
   return BAND[type] ?? 2;
 }

@@ -117,23 +117,15 @@ export function DecisionEntry({
                 {" "}
                 ·{" "}
                 <Link
-                  href={`/bridge/kb/${kbId}/items/${itemId}`}
-                  className="text-emerald-800 underline-offset-2 hover:underline"
+                  href={
+                    fixBase
+                      ? `${fixBase}?paused=${event.seq}&fix=${itemId}`
+                      : `/bridge/kb/${kbId}/items/${itemId}`
+                  }
+                  className="rounded bg-emerald-600 px-1.5 py-0.5 text-[11px] font-medium text-white hover:bg-emerald-700"
                 >
-                  open the knowledge item →
+                  fix at the table →
                 </Link>
-                {fixBase && (
-                  <>
-                    {" "}
-                    ·{" "}
-                    <Link
-                      href={`${fixBase}?paused=${event.seq}&fix=${itemId}`}
-                      className="font-medium text-emerald-800 underline-offset-2 hover:underline"
-                    >
-                      fix at the table →
-                    </Link>
-                  </>
-                )}
               </>
             )}
           </p>

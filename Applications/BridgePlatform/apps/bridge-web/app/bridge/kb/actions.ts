@@ -298,6 +298,15 @@ export async function saveItemAction(formData: FormData): Promise<void> {
     forkedFrom: saved.forkedFromItemId,
     version: saved.version,
   });
+
+  // "Save as new version" also freezes an immutable committed snapshot (and
+  // makes it the item's main version) right after the save.
+  const committedNumber =
+    String(formData.get("saveMode") ?? "") === "commit"
+      ? (await kbService().commitItemVersion(saved.itemId, context.nexusUserId, undefined))
+          .versionNumber
+      : undefined;
+
   revalidatePath(kbPath(kbId), "layout");
 
   // Fix-at-the-table flow: saving from the session overlay re-pins the
@@ -321,7 +330,35 @@ export async function saveItemAction(formData: FormData): Promise<void> {
     redirect(`${returnToRaw}${returnToRaw.includes("?") ? "&" : "?"}${flag}`);
   }
 
-  redirect(kbPath(kbId, `/items/${saved.itemId}?saved=1${fromSuffix}`));
+  const committedSuffix = committedNumber ? `&committed=${committedNumber}` : "";
+  redirect(kbPath(kbId, `/items/${saved.itemId}?saved=1${committedSuffix}${fromSuffix}`));
+}
+
+/**
+ * Flip a single item's trust status (draft → reviewed → approved, or
+ * deprecate). Status is a badge, never a play gate; deprecate is the reversible
+ * removal path for real KBs. Recompiles via setItemsStatus.
+ */
+export async function setItemStatusAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const itemId = String(formData.get("itemId"));
+  const status = String(formData.get("status"));
+  if (!["draft", "reviewed", "approved", "deprecated"].includes(status))
+    redirect(kbPath(kbId, `/items/${itemId}`));
+  const { changed } = await kbService().setItemsStatus(
+    kbId,
+    [itemId],
+    status as "draft" | "reviewed" | "approved" | "deprecated",
+    context.nexusUserId,
+  );
+  await audit(context, "kb.item.edit", "kb_item", itemId, {
+    kbId,
+    status,
+    changed: changed.length,
+  });
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, `/items/${itemId}?statusSet=${status}`));
 }
 
 export async function addEdgeAction(formData: FormData): Promise<void> {

@@ -1136,6 +1136,9 @@ export function ItemEditor({
               <option key={s}>{s}</option>
             ))}
           </select>
+          <span className="mt-0.5 block text-[11px] text-neutral-400">
+            Deprecated items stop compiling and drop out of the default view — reversibly.
+          </span>
         </label>
         <label className="text-sm">
           <span className={label}>Level tags (comma-separated, advisory)</span>
@@ -1522,34 +1525,41 @@ export function ItemEditor({
         </div>
       </details>
 
-      <p className="flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          name="saveAs"
-          value="existing"
-          className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
-        >
-          {item ? "Save (recompiles the KB)" : "Create knowledge item"}
-        </button>
-        {item && (
-          <>
-            <button
-              type="submit"
-              name="saveAs"
-              value="new"
-              className="rounded border border-neutral-300 px-4 py-1.5 text-sm hover:border-emerald-400"
-            >
-              Save as a new knowledge item
-            </button>
-            <span className="text-xs text-neutral-400">
-              — leaves &ldquo;{item.title}&rdquo; untouched
-            </span>
-          </>
-        )}
-        <span className="basis-full text-xs text-neutral-400">
-          A broken save can&apos;t reach the table — the last good compile keeps serving.
-        </span>
-      </p>
+      <div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            name="saveAs"
+            value="existing"
+            className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+          >
+            {item ? "Update this version" : "Create knowledge item"}
+          </button>
+          {item && (
+            <>
+              <button
+                type="submit"
+                name="saveMode"
+                value="commit"
+                className="rounded border border-neutral-300 px-4 py-1.5 text-sm hover:border-emerald-400"
+              >
+                Save as new version
+              </button>
+              <button
+                type="submit"
+                name="saveAs"
+                value="new"
+                className="rounded border border-neutral-300 px-4 py-1.5 text-sm hover:border-emerald-400"
+              >
+                Save as new knowledge item
+              </button>
+            </>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-neutral-400">
+          Every save recompiles the knowledge base immediately.
+        </p>
+      </div>
     </form>
   );
 }

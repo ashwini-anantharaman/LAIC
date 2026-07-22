@@ -69,7 +69,7 @@ test("edits the 1NT range — the KB recompiles to a new version", async ({ page
   // Items open in VIEW mode now — the typed editor is behind the Edit link.
   await page.getByRole("link", { name: "Edit", exact: true }).click();
   await page.locator('input[name="rule0:hcpMin"]').fill("14");
-  await page.getByRole("button", { name: /Save \(recompiles/ }).click();
+  await page.getByRole("button", { name: "Update this version" }).click();
   await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
 
   const after = await page.getByText(/draft compile/).textContent();
@@ -134,7 +134,7 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
         ],
       }),
     );
-  await page.getByRole("button", { name: /Save \(recompiles/ }).click();
+  await page.getByRole("button", { name: "Update this version" }).click();
 
   await expect(page.getByText(/latest edit doesn't compile/)).toBeVisible();
   await expect(page.getByText(/references unknown setting "does_not_exist"/)).toBeVisible();
@@ -145,7 +145,7 @@ test("broken JSON save keeps last-good serving and shows the banner", async ({
   await page.getByRole("link", { name: "Edit", exact: true }).click();
   await page.locator('input[name="rule0:hcpMin"]').fill("15");
   await page.locator('input[name="rule0:hcpMax"]').fill("17");
-  await page.getByRole("button", { name: /Save \(recompiles/ }).click();
+  await page.getByRole("button", { name: "Update this version" }).click();
   await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
   await expect(page.getByText(/latest edit doesn't compile/)).not.toBeVisible();
 });
@@ -262,7 +262,7 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
   ]);
 
   // We act as South: pass.
-  await page.getByRole("button", { name: "Pass", exact: true }).click();
+  await page.getByRole("button", { name: "P", exact: true }).click();
 
   await page.goto(`${kbUrl}/suggestions`);
   await expect(page.getByText("Passing here looks wrong to me.")).toBeVisible();
@@ -343,7 +343,7 @@ test("Save as a new knowledge item forks with lineage", async ({ page, context }
   await page.getByText("1NT opening", { exact: true }).click();
   // The fork button lives in the editor — enter edit mode first.
   await page.getByRole("link", { name: "Edit", exact: true }).click();
-  await page.getByRole("button", { name: "Save as a new knowledge item" }).click();
+  await page.getByRole("button", { name: "Save as new knowledge item" }).click();
 
   await expect(
     page.getByRole("heading", { name: "1NT opening (copy)" }),
@@ -351,22 +351,22 @@ test("Save as a new knowledge item forks with lineage", async ({ page, context }
   await expect(page.getByRole("link", { name: /forked from 1NT opening/ })).toBeVisible();
 });
 
-test("bulk deprecate from the Master tab (banner reports, deprecated view keeps it)", async ({
+test("deprecate an item from the editor (hidden from the default view, kept under deprecated)", async ({
   page,
   context,
 }) => {
   await signInAs(context, "user_reviewer_rhea");
+  // No mass actions in the knowledge view — deprecation is a per-item status
+  // change in the editor.
   await page.goto(`${kbUrl}/items?view=list`);
-  await expect(page.getByText("1NT opening (copy)")).toBeVisible();
+  await page.getByText("1NT opening (copy)").click();
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
+  await page.locator('select[name="status"]').selectOption("deprecated");
+  await page.getByRole("button", { name: "Update this version" }).click();
+  await expect(page.getByText(/Saved — the knowledge base recompiled/)).toBeVisible();
 
-  // Tick the fork, arm the two-step confirm, deprecate.
-  await page.getByLabel("Select 1NT opening (copy)").check();
-  await expect(page.getByText("1 selected")).toBeVisible();
-  await page.getByRole("button", { name: "Deprecate selected…" }).click();
-  await page.getByRole("button", { name: "Yes, deprecate" }).click();
-
-  await expect(page.getByText(/Deprecated 1 item/)).toBeVisible();
   // The default status filter hides deprecated items.
+  await page.goto(`${kbUrl}/items?view=list`);
   await expect(page.getByText("1NT opening (copy)")).toHaveCount(0);
   // The original survives untouched.
   await expect(page.getByText("1NT opening", { exact: true })).toBeVisible();
@@ -412,8 +412,12 @@ test("fix at the table: undo pauses, overlay edits the item, session re-pins", a
   await page.waitForURL(/fix=ki_/);
   await expect(page.getByText("Fixing at the table")).toBeVisible();
 
+  // The overlay opens read-only (the KB's item view); Edit reveals the editor.
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
+  await page.waitForURL(/fixMode=edit/);
+
   // Save without changes — still re-pins and returns to the paused board.
-  await page.getByRole("button", { name: "Save (recompiles the KB)" }).click();
+  await page.getByRole("button", { name: "Update this version" }).click();
   await page.waitForURL(/fixed=1/);
   await expect(page.getByText(/this table now plays from the updated rules/)).toBeVisible();
   await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();
@@ -485,7 +489,7 @@ test("curated SAYC template: install, complete sets, and a traced board", async 
   await expect(page.getByText(/Decisions \([1-9]/)).toBeVisible({ timeout: 20_000 });
   const first = page.locator("details").filter({ hasText: "#0" }).last();
   await first.locator("summary").click();
-  await expect(first.getByRole("link", { name: "open the knowledge item →" })).toBeVisible();
+  await expect(first.getByRole("link", { name: "fix at the table →" })).toBeVisible();
 });
 
 test("augmentation: source → draft copy → review board → discard", async ({

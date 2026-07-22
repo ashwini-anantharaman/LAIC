@@ -141,13 +141,26 @@ export default async function PlayPage() {
                 </details>
               )}
               {dealable && (
-                <form action={quickPlayAction}>
+                <form action={quickPlayAction} className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+                    Dealer
+                    <select
+                      name="dealer"
+                      defaultValue="N"
+                      className="rounded border border-neutral-300 px-1.5 py-1 text-sm"
+                    >
+                      <option value="N">N</option>
+                      <option value="E">E</option>
+                      <option value="S">S</option>
+                      <option value="W">W</option>
+                    </select>
+                  </label>
                   <button
                     type="submit"
                     className={
                       resumable
-                        ? "w-full rounded border border-neutral-300 px-4 py-2 text-sm hover:border-emerald-400"
-                        : "w-full rounded bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"
+                        ? "flex-1 rounded border border-neutral-300 px-4 py-2 text-sm hover:border-emerald-400"
+                        : "flex-1 rounded bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"
                     }
                   >
                     {resumable ? "Deal a fresh board" : "Quickplay"}

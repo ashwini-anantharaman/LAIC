@@ -69,6 +69,8 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
   const { pickDefaultSet, ensureHousePlayer } = await import("@/lib/arena");
   const store = kbStore();
   const preferredKbId = String(formData.get("kbId") ?? "").trim();
+  const dealerRaw = String(formData.get("dealer") ?? "N");
+  const dealer: Seat = (SEATS as string[]).includes(dealerRaw) ? (dealerRaw as Seat) : "N";
   const kbs = (await store.listKbs()).filter((k) => !k.archived);
   const ordered = preferredKbId
     ? [...kbs].sort((a) => (a.kbId === preferredKbId ? -1 : 0))
@@ -89,6 +91,7 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
       compiled,
       seats,
       seed: (Date.now() % 100_000) + 1,
+      dealer,
       createdBy: context.nexusUserId,
     });
     redirect(`/bridge/table/${record.sessionId}`);
@@ -108,7 +111,7 @@ export async function redealEditedAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   const sessionId = String(formData.get("sessionId"));
   const failBack: (message: string) => never = (message) =>
-    redirect(`/bridge/table/${sessionId}/edit?error=${encodeURIComponent(message)}`);
+    redirect(`/bridge/table/${sessionId}?editDeal=1&error=${encodeURIComponent(message)}`);
 
   const service = sessionService();
   const record = await service.requireSession(sessionId);

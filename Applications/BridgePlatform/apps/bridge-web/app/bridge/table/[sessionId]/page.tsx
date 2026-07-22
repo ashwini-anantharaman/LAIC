@@ -11,6 +11,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { saveItemAction } from "@/app/bridge/kb/actions";
 import { ItemEditor } from "@/components/kb/ItemEditor";
+import { ItemView } from "@/components/kb/ItemView";
+import { DealEditor } from "@/components/library/DealEditor";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { BiddingBox } from "@/components/table/BiddingBox";
 import { DecisionEntry } from "@/components/table/DecisionEntry";
@@ -23,6 +25,7 @@ import { buildRuleIndex } from "@/components/table/decisionText";
 import {
   newDealAction,
   playToEndAction,
+  redealEditedAction,
   rewindAction,
   saveToLibraryAction,
   swapSeatAction,
@@ -44,14 +47,16 @@ export default async function SessionPage({
     error?: string;
     paused?: string;
     fix?: string;
+    fixMode?: string;
     fixed?: string;
     fixError?: string;
+    editDeal?: string;
   }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { mode, hands: handsParam, saved, error, paused, fix, fixed, fixError } =
+  const { mode, hands: handsParam, saved, error, paused, fix, fixMode, fixed, fixError, editDeal } =
     await searchParams;
 
   let view;
@@ -431,7 +436,7 @@ export default async function SessionPage({
         )}
         {!learnerMode && (
           <Link
-            href={`/bridge/table/${sessionId}/edit`}
+            href={toggleHref({ editDeal: "1", paused })}
             className="rounded-full border border-neutral-300 px-3 py-1 text-neutral-600 hover:border-emerald-400"
             title="Change any cards, then deal the edited board to this table"
           >
@@ -651,8 +656,9 @@ export default async function SessionPage({
         )}
       </div>
 
-      {/* Fix-at-the-table: the real item editor in a drawer over the board.
-          Save re-pins this session to the fresh compile and returns paused. */}
+      {/* Fix-at-the-table: opens VIEW-first (the item as players read it) with
+          an Edit button; only fixMode=edit renders the real editor. Save
+          re-pins this session to the fresh compile and returns paused. */}
       {fixItem && (
         <div className="fixed inset-0 z-50">
           <Link
@@ -668,23 +674,106 @@ export default async function SessionPage({
                 </p>
                 <h2 className="font-serif text-xl font-medium">{fixItem.title}</h2>
                 <p className="mt-1 text-xs text-neutral-500">
-                  Saving updates this table immediately — decisions already made keep their
-                  original trace; the next step plays from the corrected rules.
+                  {fixMode === "edit"
+                    ? "Saving updates this table immediately — decisions already made keep their original trace; the next step plays from the corrected rules."
+                    : "The item as players read it — Edit to change it; saving updates this table immediately."}
+                </p>
+              </div>
+              <div className="flex flex-none items-center gap-2">
+                {fixMode !== "edit" && (
+                  <Link
+                    href={toggleHref({ paused, fix, fixMode: "edit" })}
+                    className="rounded-full bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+                  >
+                    Edit
+                  </Link>
+                )}
+                <Link
+                  href={overlayReturn}
+                  className="rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
+                >
+                  ✕ back to the board
+                </Link>
+              </div>
+            </div>
+            {fixMode === "edit" ? (
+              <ItemEditor
+                kbId={record.kbId}
+                item={fixItem}
+                action={saveItemAction}
+                hiddenFields={{ returnTo: overlayReturn, repinSessionId: sessionId }}
+              />
+            ) : (
+              <ItemView item={fixItem} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit-the-deal: centered, dimmed overlay over the board (replaces the
+          old /edit page). Redistribute unplayed cards, then continue on the
+          edited deal — played cards are locked to the seat that played them. */}
+      {editDeal && !learnerMode && (
+        <div className="fixed inset-0 z-50">
+          <Link
+            href={`/bridge/table/${sessionId}?paused=${Date.now()}`}
+            aria-label="Close the deal editor"
+            className="absolute inset-0 bg-black/50"
+          />
+          <div className="absolute left-1/2 top-1/2 max-h-[92vh] w-full max-w-5xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-[var(--background,#fff)] p-6 shadow-2xl">
+            <div className="mb-4 flex items-baseline justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-neutral-400">
+                  Edit the deal
+                </p>
+                <h2 className="font-serif text-xl font-medium">{record.board.name}</h2>
+                <p className="mt-1 max-w-xl text-xs text-neutral-500">
+                  Move any unplayed cards, then apply — the game continues right where it is, on
+                  the edited deal, with the same seats. Greyed cards were already played and
+                  can&apos;t move. Past calls and plays keep their original reasoning.
                 </p>
               </div>
               <Link
-                href={overlayReturn}
-                className="rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
+                href={`/bridge/table/${sessionId}?paused=${Date.now()}`}
+                className="flex-none rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
               >
                 ✕ back to the board
               </Link>
             </div>
-            <ItemEditor
-              kbId={record.kbId}
-              item={fixItem}
-              action={saveItemAction}
-              hiddenFields={{ returnTo: overlayReturn, repinSessionId: sessionId }}
-            />
+            {error && (
+              <p className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {error}
+              </p>
+            )}
+            <form action={redealEditedAction}>
+              <input type="hidden" name="sessionId" value={sessionId} />
+              <DealEditor
+                initialName={
+                  record.board.name.endsWith("(edited)")
+                    ? record.board.name
+                    : `${record.board.name} (edited)`
+                }
+                initialDealer={record.board.dealer}
+                initialVul={record.board.vul}
+                initialHands={state.hands}
+                locked={state.tricks.flatMap((t) =>
+                  t.plays.map((p) => ({ seat: p.seat, card: p.card })),
+                )}
+                submitLabel="Apply and continue"
+                footer={
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-2 text-sm text-neutral-600">
+                      <input type="checkbox" name="restart" />
+                      restart the board instead (fresh auction on the edited deal)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-neutral-600">
+                      <input type="checkbox" name="saveToLibrary" />
+                      also save the edited board to the library
+                    </label>
+                  </div>
+                }
+              />
+            </form>
           </div>
         </div>
       )}

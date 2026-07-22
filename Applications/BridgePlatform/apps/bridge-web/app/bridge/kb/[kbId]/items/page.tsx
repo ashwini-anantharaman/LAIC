@@ -1,10 +1,7 @@
 import type { KnowledgeItem, KnowledgePhase, KnowledgeType } from "@bridge/kb";
 import Link from "next/link";
-import { deprecateItemsAction } from "@/app/bridge/kb/actions";
 import { AccordionGroup, AccordionSection } from "@/components/kb/Accordion";
-import { bandLine, StatusBadge, TYPE_DESCRIPTION, TYPE_LABEL } from "@/components/kb/badges";
-import { BulkItemsForm } from "@/components/kb/BulkItemsForm";
-import { BulkResultBanner } from "@/components/kb/BulkResultBanner";
+import { bandLine, bandOf, BAND_TEXT, StatusBadge, TYPE_DESCRIPTION, TYPE_LABEL } from "@/components/kb/badges";
 import { SelectNav } from "@/components/kb/SelectNav";
 import { ViewerPrefs } from "@/components/kb/ViewerPrefs";
 import { kbStore } from "@/lib/kb";
@@ -59,7 +56,22 @@ function contentLabel(item: KnowledgeItem): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
-type View = "cards" | "list" | "table";
+/** Rule lines an item contributes, with their priority (for the Priority view).
+ *  Priorities only tie-break within a band; lower fires first. */
+function itemRules(item: KnowledgeItem): { label: string; priority?: number }[] {
+  const p = item.payload;
+  if (p.kind === "auction_rules" || p.kind === "forcing_rules")
+    return p.rules.map((r) => ({ label: r.label, priority: r.priority }));
+  if (p.kind === "play_rules")
+    return p.rules.map((r) => ({ label: r.behavior.replace(/_/g, " "), priority: r.priority }));
+  if (p.kind === "lead_rules")
+    return p.leads.map((l) => ({ label: `${l.style.replace(/_/g, " ")} vs ${l.versus}` }));
+  if (p.kind === "signals") return [{ label: "signal policy" }];
+  if (p.kind === "fallback") return [{ label: `fallback: ${p.fallback.behavior.replace(/_/g, " ")}` }];
+  return [];
+}
+
+type View = "cards" | "list" | "table" | "priority";
 type Group = "kind" | "phase" | "status" | "when" | "none";
 type Sort = "title" | "updated" | "rules";
 
@@ -92,16 +104,13 @@ export default async function ItemsPage({
     view?: string;
     group?: string;
     sort?: string;
-    bulkDeleted?: string;
-    bulkDeprecated?: string;
-    bulkBlocked?: string;
-    bulkSets?: string;
   }>;
 }>) {
   const { kbId } = await params;
   const sp = await searchParams;
-  const { q, type, phase, status, when, tag, bulkDeleted, bulkDeprecated, bulkBlocked, bulkSets } = sp;
-  const view: View = sp.view === "list" || sp.view === "table" ? sp.view : "cards";
+  const { q, type, phase, status, when, tag } = sp;
+  const view: View =
+    sp.view === "list" || sp.view === "table" || sp.view === "priority" ? sp.view : "cards";
   const group: Group =
     sp.group === "phase" || sp.group === "status" || sp.group === "when" || sp.group === "none"
       ? sp.group
@@ -222,6 +231,83 @@ export default async function ItemsPage({
     );
   };
 
+  // ---- priority view: bands → items → rules, in firing order ----------------
+  // The compiler orders every rule by band (×100k) then priority, first match
+  // wins. This lays that out: each band, the items whose type sits in it, and
+  // each item's rules with their priority (lower fires first).
+  const BAND_ORDER = [0, 1, 2, 9] as const;
+  const priorityBands = BAND_ORDER.map((band) => {
+    const bandItems = filtered
+      .filter((i) => bandOf(i.knowledgeType) === band && itemRules(i).length > 0)
+      .map((i) => ({
+        item: i,
+        rules: itemRules(i)
+          .slice()
+          .sort((a, b) => (a.priority ?? 1e9) - (b.priority ?? 1e9)),
+      }))
+      // Items with the lowest-priority rule first — approximates firing order.
+      .sort(
+        (a, b) =>
+          (a.rules[0]?.priority ?? 1e9) - (b.rules[0]?.priority ?? 1e9) ||
+          a.item.title.localeCompare(b.item.title),
+      );
+    return { band, items: bandItems };
+  }).filter((b) => b.items.length > 0);
+
+  const priority = (
+    <div className="space-y-6">
+      <p className="text-xs text-neutral-500">
+        The order the engine actually reads rules in: by <b>band</b> first, then by{" "}
+        <b>priority</b> within an item (lower fires first). The first rule whose context and
+        hand conditions match wins.
+      </p>
+      {priorityBands.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
+          No executable rules match the current filters.
+        </p>
+      ) : (
+        priorityBands.map(({ band, items: bandItems }) => (
+          <section key={band} className="rounded-xl border border-neutral-200 bg-[var(--card)]">
+            <div className="border-b border-[var(--line)] px-4 py-2">
+              <h2 className="font-serif text-lg font-medium capitalize">
+                {BAND_TEXT[band]?.name ?? `band ${band}`}
+                <span className="ml-2 text-xs font-normal normal-case text-neutral-400">
+                  {BAND_TEXT[band]?.blurb}
+                </span>
+              </h2>
+            </div>
+            <ul className="divide-y divide-[var(--line)]">
+              {bandItems.map(({ item, rules }) => (
+                <li key={item.itemId} className="px-4 py-3">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <Link
+                      href={itemHref(item)}
+                      className="font-serif text-[15px] font-medium hover:text-emerald-900"
+                    >
+                      {item.title}
+                    </Link>
+                    {kindChip(item)}
+                    <StatusBadge status={item.status} />
+                  </div>
+                  <ul className="mt-1.5 space-y-0.5">
+                    {rules.map((r, i) => (
+                      <li key={i} className="flex items-baseline gap-2 text-sm">
+                        <span className="w-14 flex-none font-mono text-xs text-neutral-400">
+                          {r.priority === undefined ? "—" : `p${r.priority}`}
+                        </span>
+                        <span className="text-neutral-700">{r.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
+      )}
+    </div>
+  );
+
   // ---- the three bodies ------------------------------------------------------
 
   const cards = (
@@ -280,75 +366,54 @@ export default async function ItemsPage({
     </AccordionGroup>
   );
 
-  const bulkProps = {
-    kbId,
-    returnTo,
-    action: deprecateItemsAction,
-    verb: "Deprecate",
-    warning:
-      "Deprecate the selected items? They stop compiling and are hidden from the default view — reversible from each item's Status.",
-  };
-
   const list = (
-    <BulkItemsForm {...bulkProps}>
-      <AccordionGroup
-        storageKey={`bridge.kb.${kbId}.master.groups.v1`}
-        sectionIds={groups.map((g) => g.id)}
-      >
-        {groups.map((g) => (
-          <AccordionSection
-            key={g.id}
-            id={g.id}
-            summary={
-              <>
-                <span className="font-serif text-lg font-medium capitalize">
-                  {g.label}
-                  {kindSuffix(g.id)}
-                </span>
-                <span className="text-xs text-neutral-400">{g.items.length}</span>
-              </>
-            }
-          >
-            <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
-              {g.items.map((item) => (
-                <li key={item.itemId} className="flex items-stretch">
-                  <label className="flex cursor-pointer items-center pl-4 pr-1">
-                    <input
-                      type="checkbox"
-                      name="itemIds"
-                      value={item.itemId}
-                      aria-label={`Select ${item.title}`}
-                      className="h-4 w-4 accent-emerald-700"
-                    />
-                  </label>
-                  <Link
-                    href={itemHref(item)}
-                    className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-3 hover:bg-neutral-50"
-                  >
-                    <span className="font-serif text-[15px] font-medium">{item.title}</span>
-                    <StatusBadge status={item.status} />
-                    {item.settings.length > 0 && (
-                      <span className="text-[10px] uppercase tracking-wide text-emerald-700">
-                        {item.settings.length} setting{item.settings.length > 1 ? "s" : ""}
-                      </span>
-                    )}
-                    <span className="ml-auto hidden max-w-md truncate text-xs text-neutral-400 sm:block">
-                      {item.humanReadableText}
+    <AccordionGroup
+      storageKey={`bridge.kb.${kbId}.master.groups.v1`}
+      sectionIds={groups.map((g) => g.id)}
+    >
+      {groups.map((g) => (
+        <AccordionSection
+          key={g.id}
+          id={g.id}
+          summary={
+            <>
+              <span className="font-serif text-lg font-medium capitalize">
+                {g.label}
+                {kindSuffix(g.id)}
+              </span>
+              <span className="text-xs text-neutral-400">{g.items.length}</span>
+            </>
+          }
+        >
+          <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
+            {g.items.map((item) => (
+              <li key={item.itemId} className="flex items-stretch">
+                <Link
+                  href={itemHref(item)}
+                  className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 hover:bg-neutral-50"
+                >
+                  <span className="font-serif text-[15px] font-medium">{item.title}</span>
+                  <StatusBadge status={item.status} />
+                  {item.settings.length > 0 && (
+                    <span className="text-[10px] uppercase tracking-wide text-emerald-700">
+                      {item.settings.length} setting{item.settings.length > 1 ? "s" : ""}
                     </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </AccordionSection>
-        ))}
-      </AccordionGroup>
-    </BulkItemsForm>
+                  )}
+                  <span className="ml-auto hidden max-w-md truncate text-xs text-neutral-400 sm:block">
+                    {item.humanReadableText}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </AccordionSection>
+      ))}
+    </AccordionGroup>
   );
 
   const th = "px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-neutral-500";
   const table = (
-    <BulkItemsForm {...bulkProps}>
-      <div className="space-y-6">
+    <div className="space-y-6">
         {groups.map((g) => (
           <section key={g.id}>
             {group !== "none" && (
@@ -362,7 +427,6 @@ export default async function ItemsPage({
               <table className="w-full text-sm">
                 <thead className="border-b border-neutral-200">
                   <tr>
-                    <th className={th} />
                     <th className={th}>
                       <Link href={qs({ sort: "title" })} className="hover:text-emerald-800">
                         Title {sort === "title" && "↑"}
@@ -387,15 +451,6 @@ export default async function ItemsPage({
                 <tbody className="divide-y divide-neutral-100">
                   {g.items.map((item) => (
                     <tr key={item.itemId} className="hover:bg-neutral-50">
-                      <td className="pl-3">
-                        <input
-                          type="checkbox"
-                          name="itemIds"
-                          value={item.itemId}
-                          aria-label={`Select ${item.title}`}
-                          className="h-4 w-4 accent-emerald-700"
-                        />
-                      </td>
                       <td className="px-3 py-2">
                         <Link
                           href={itemHref(item)}
@@ -423,8 +478,7 @@ export default async function ItemsPage({
             </div>
           </section>
         ))}
-      </div>
-    </BulkItemsForm>
+    </div>
   );
 
   const explicit = sp.view !== undefined || sp.group !== undefined || sp.sort !== undefined;
@@ -438,7 +492,6 @@ export default async function ItemsPage({
         sort={sort}
         explicit={explicit}
       />
-      <BulkResultBanner deleted={bulkDeleted} deprecated={bulkDeprecated} blocked={bulkBlocked} sets={bulkSets} />
 
       {/* Toolbar: search + facets (GET form) and view/group/sort (links). */}
       <form className="mb-3 flex flex-wrap items-end gap-3" method="GET">
@@ -530,6 +583,7 @@ export default async function ItemsPage({
             { value: "cards", label: "Cards", href: qs({ view: "cards" }) },
             { value: "list", label: "List", href: qs({ view: "list" }) },
             { value: "table", label: "Table", href: qs({ view: "table" }) },
+            { value: "priority", label: "Priority — firing order", href: qs({ view: "priority" }) },
           ]}
         />
         <SelectNav
@@ -562,6 +616,8 @@ export default async function ItemsPage({
           Nothing here yet — run extraction on a source, install a template, or author a
           knowledge item by hand.
         </p>
+      ) : view === "priority" ? (
+        priority
       ) : view === "cards" ? (
         cards
       ) : view === "table" ? (

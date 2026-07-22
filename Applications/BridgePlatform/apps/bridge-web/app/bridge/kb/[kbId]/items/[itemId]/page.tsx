@@ -13,6 +13,7 @@ import {
   removeEdgeAction,
   saveItemAction,
   setItemMainVersionAction,
+  setItemStatusAction,
 } from "../../../actions";
 
 const EDGE_LABEL: Record<EdgeType, string> = {
@@ -33,6 +34,7 @@ export default async function ItemPage({
   searchParams: Promise<{
     saved?: string;
     committed?: string;
+    statusSet?: string;
     madeMain?: string;
     versionDeleted?: string;
     versionError?: string;
@@ -42,7 +44,7 @@ export default async function ItemPage({
 }>) {
   const { kbId, itemId } = await params;
   const sp = await searchParams;
-  const { saved, committed, madeMain, versionDeleted, versionError } = sp;
+  const { saved, committed, statusSet, madeMain, versionDeleted, versionError } = sp;
   const edit = sp.mode === "edit";
   // Back link (R9): only honor a `from` that points back into this KB's
   // Master view — anything else falls back to the plain items list.
@@ -91,7 +93,7 @@ export default async function ItemPage({
             ← Back to Master
           </Link>{" "}
           / {item.itemId} · rev {item.version}
-          {item.mainVersion ? <> · main v{item.mainVersion}</> : <> · uncommitted</>}
+          {item.mainVersion && <> · main v{item.mainVersion}</>}
           {item.forkedFromItemId && (
             <>
               {" "}
@@ -117,6 +119,11 @@ export default async function ItemPage({
             snapshot, now the main version.
           </p>
         )}
+        {statusSet && (
+          <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            Status updated to <span className="font-medium">{statusSet}</span>.
+          </p>
+        )}
         {madeMain && (
           <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             <span className="font-medium">v{madeMain}</span> is now the main version —
@@ -137,6 +144,14 @@ export default async function ItemPage({
           <h2 className="text-2xl font-medium">{item.title}</h2>
           <TypeChip type={item.knowledgeType} />
           <StatusBadge status={item.status} />
+          {dirty && (
+            <span
+              title="Saved edits no committed version captures yet — use Save as new version."
+              className="inline-block rounded border border-amber-400 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-700"
+            >
+              uncommitted changes
+            </span>
+          )}
           {edit ? (
             <Link
               href={`${selfHref}${from ? `?from=${encodeURIComponent(from)}` : ""}`}
@@ -156,6 +171,37 @@ export default async function ItemPage({
         <p className="mb-2 mt-1 text-xs text-neutral-400">
           {bandLine(item.knowledgeType) ?? "teaching prose — never plays"}
         </p>
+        {!edit && (item.status === "draft" || item.status === "reviewed") && (
+          <div className="mb-4 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
+            <span className="text-xs text-neutral-500">
+              Status is a trust badge — it never gates play.
+            </span>
+            {item.status === "draft" && (
+              <form action={setItemStatusAction} className="inline">
+                <input type="hidden" name="kbId" value={kbId} />
+                <input type="hidden" name="itemId" value={itemId} />
+                <input type="hidden" name="status" value="reviewed" />
+                <button
+                  type="submit"
+                  className="rounded border border-neutral-300 px-2.5 py-1 text-xs hover:border-emerald-400 hover:text-emerald-800"
+                >
+                  Mark reviewed
+                </button>
+              </form>
+            )}
+            <form action={setItemStatusAction} className="inline">
+              <input type="hidden" name="kbId" value={kbId} />
+              <input type="hidden" name="itemId" value={itemId} />
+              <input type="hidden" name="status" value="approved" />
+              <button
+                type="submit"
+                className="rounded bg-emerald-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+              >
+                Approve
+              </button>
+            </form>
+          </div>
+        )}
         {(item.tags?.length ?? 0) > 0 && (
           <p className="mb-2 flex flex-wrap gap-1.5">
             {item.tags!.map((t) => (
@@ -235,6 +281,7 @@ export default async function ItemPage({
           )}
         </section>
 
+        {edit && (
         <section className="rounded-lg border border-neutral-200 p-4">
           <h3 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
             Relationships
@@ -316,7 +363,9 @@ export default async function ItemPage({
             </button>
           </form>
         </section>
+        )}
 
+        {!edit && (
         <section className="rounded-lg border border-neutral-200 p-4">
           <h3 className="mb-2 flex items-baseline text-sm font-medium uppercase tracking-wide text-neutral-500">
             Versions
@@ -336,26 +385,6 @@ export default async function ItemPage({
                 ? `The main version (highlighted) is what's in use. Click "Make main" on any version to switch — no new version is created.`
                 : "This item has never been committed."}
           </p>
-
-          <form action={commitItemVersionAction} className="mt-3 flex flex-wrap items-end gap-2 border-b border-[var(--line)] pb-3">
-            <input type="hidden" name="kbId" value={kbId} />
-            <input type="hidden" name="itemId" value={itemId} />
-            <label className="flex-1 text-xs">
-              <span className="mb-0.5 block text-neutral-500">Change note (optional)</span>
-              <input
-                name="changeNote"
-                placeholder="what changed in this version"
-                className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={!dirty}
-              className="rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
-            >
-              Commit v{(versions[0]?.versionNumber ?? 0) + 1}
-            </button>
-          </form>
 
           {versions.length === 0 ? (
             <p className="mt-3 text-sm text-neutral-500">No committed versions yet.</p>
@@ -424,7 +453,29 @@ export default async function ItemPage({
               })}
             </ul>
           )}
+
+          {/* Commit control lives at the bottom of the panel. */}
+          <form action={commitItemVersionAction} className="mt-3 flex flex-wrap items-end gap-2 border-t border-[var(--line)] pt-3">
+            <input type="hidden" name="kbId" value={kbId} />
+            <input type="hidden" name="itemId" value={itemId} />
+            <label className="flex-1 text-xs">
+              <span className="mb-0.5 block text-neutral-500">Change note (optional)</span>
+              <input
+                name="changeNote"
+                placeholder="what changed in this version"
+                className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={!dirty}
+              className="rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
+            >
+              Commit v{(versions[0]?.versionNumber ?? 0) + 1}
+            </button>
+          </form>
         </section>
+        )}
       </aside>
     </div>
   );

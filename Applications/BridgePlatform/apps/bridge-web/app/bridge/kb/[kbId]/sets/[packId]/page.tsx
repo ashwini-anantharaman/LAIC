@@ -1,12 +1,32 @@
-import { validatePlayerStatic, type KbPlayer } from "@bridge/kb";
+import { validatePlayerStatic, type KbPlayer, type KnowledgeItem } from "@bridge/kb";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ValidityBadge } from "@/components/kb/badges";
 import { SetItemPicker } from "@/components/kb/SetItemPicker";
 import { kbService, kbStore } from "@/lib/kb";
+import { whenRoles } from "@/lib/whenFacet";
 import { deletePackAction, restorePackVersionAction, savePackAction } from "../../../actions";
 
 const NOW = () => new Date().toISOString();
+
+/** Executable rules an item carries (0 = teaching prose) — mirrors the Master
+ *  viewer's ruleCount so the picker's "most rules" sort agrees with it. */
+function ruleCount(item: KnowledgeItem): number {
+  const p = item.payload;
+  switch (p.kind) {
+    case "auction_rules":
+    case "forcing_rules":
+    case "play_rules":
+      return p.rules.length;
+    case "lead_rules":
+      return p.leads.length;
+    case "signals":
+    case "fallback":
+      return 1;
+    default:
+      return 0;
+  }
+}
 
 /** One knowledge set: edit it, see whether it's complete (only if it's meant
  *  to be), see every player that uses it, and step through its history. */
@@ -32,10 +52,23 @@ export default async function SetDetailPage({
     kbService().packReferences(kbId, packId),
   ]);
   const base = `/bridge/kb/${kbId}`;
+  // Deprecated items already in this set stay pickable (with a muted badge);
+  // deprecated items outside it are hidden but their count is surfaced.
+  const hiddenDeprecatedCount = items.filter(
+    (i) => i.status === "deprecated" && !pack.itemIds.includes(i.itemId),
+  ).length;
   const pickerItems = items
     .filter((i) => i.status !== "deprecated" || pack.itemIds.includes(i.itemId))
     .sort((a, b) => a.title.localeCompare(b.title))
-    .map((i) => ({ itemId: i.itemId, title: i.title, knowledgeType: i.knowledgeType }));
+    .map((i) => ({
+      itemId: i.itemId,
+      title: i.title,
+      knowledgeType: i.knowledgeType,
+      roles: [...whenRoles(i)],
+      phase: i.phase,
+      ruleCount: ruleCount(i),
+      deprecated: i.status === "deprecated",
+    }));
 
   // Completeness checklist — only when the fellow says this set is meant to
   // be complete, and only against a compile that actually contains it.
@@ -143,6 +176,7 @@ export default async function SetDetailPage({
             currentPackId={packId}
             initialSelected={pack.itemIds}
             initialIncludeId={pack.extendsPackId}
+            hiddenDeprecatedCount={hiddenDeprecatedCount}
           />
         </fieldset>
 

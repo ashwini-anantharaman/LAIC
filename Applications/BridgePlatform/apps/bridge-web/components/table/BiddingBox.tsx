@@ -98,9 +98,9 @@ export function BiddingBox({
 
       {/* Always one tap: pass, double, redouble. */}
       <div className="grid grid-cols-4 gap-1 pt-0.5">
-        <div className="col-span-2">{specialCall("P", "Pass")}</div>
-        {specialCall("X", "Dbl")}
-        {specialCall("XX", "Rdbl")}
+        <div className="col-span-2">{specialCall("P", "P")}</div>
+        {specialCall("X", "X")}
+        {specialCall("XX", "XX")}
       </div>
     </div>
   );
