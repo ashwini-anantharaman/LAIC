@@ -1376,3 +1376,49 @@ export async function getRegisteredAppBySlug(slug: string): Promise<Row | null> 
     };
   });
 }
+
+// ── Learning Platform objects (backend proxy; Option B) ─────────────────────
+// The Learning app persisted learning_objects directly to its own Supabase via
+// the anon key. To keep org isolation (no public anon reads of shared prod), the
+// app now goes through Nexus: these run privileged (bypassing RLS) and scope
+// every read/write to the caller's org, resolved server-side from the session.
+
+export async function listLearningObjects(orgId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
+             description, estimated_time, blocks, tags, source_ids, pipeline_draft,
+             created_at::text as created_at, updated_at::text as updated_at
+      from learning_objects
+      where organization_id = ${orgId}
+      order by updated_at desc nulls last`);
+    return rows as unknown as Row[];
+  });
+}
+
+/** Insert-or-update one learning object, always stamped to the caller's org. */
+export async function upsertLearningObject(orgId: string, r: Row): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx.execute(sql`
+      insert into learning_objects
+        (id, organization_id, program_id, type, title, owner_id, owner_name, status, scope,
+         reuse_count, description, estimated_time, blocks, tags, source_ids, pipeline_draft,
+         created_at, updated_at)
+      values (
+        ${r.id}, ${orgId}, null, ${r.type}, ${r.title ?? ""}, ${r.owner_id ?? null},
+        ${r.owner_name ?? null}, ${r.status ?? "draft"}, ${r.scope ?? "bridge"},
+        ${r.reuse_count ?? 0}, ${r.description ?? ""}, ${r.estimated_time ?? ""},
+        ${JSON.stringify(r.blocks ?? [])}::jsonb, ${JSON.stringify(r.tags ?? [])}::jsonb,
+        ${JSON.stringify(r.source_ids ?? [])}::jsonb,
+        ${r.pipeline_draft != null ? JSON.stringify(r.pipeline_draft) : null}::jsonb,
+        coalesce(${r.created_at ?? null}::timestamptz, now()), now())
+      on conflict (id) do update set
+        title = excluded.title, type = excluded.type, owner_id = excluded.owner_id,
+        owner_name = excluded.owner_name, status = excluded.status, scope = excluded.scope,
+        reuse_count = excluded.reuse_count, description = excluded.description,
+        estimated_time = excluded.estimated_time, blocks = excluded.blocks,
+        tags = excluded.tags, source_ids = excluded.source_ids,
+        pipeline_draft = excluded.pipeline_draft, updated_at = now()
+      where learning_objects.organization_id = ${orgId}`);
+  });
+}

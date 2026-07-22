@@ -2103,7 +2103,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
 
   const onPickImage = async (id: string, file?: File) => {
     if (!file) return;
-    if (supabaseEnabled) {
+    if (supabaseEnabled()) {
       updatePart(id, { uploading: true, fileName: file.name });
       try {
         const url = await uploadImage(file);
@@ -2511,7 +2511,7 @@ export function ObjectCreator() {
   const removeMedia = (id: string) => setMedia(p => p.filter(m => m.id !== id));
   const pickImageAsset = async (id: string, file?: File) => {
     if (!file) return;
-    if (supabaseEnabled) {
+    if (supabaseEnabled()) {
       updateMedia(id, { uploading: true, fileName: file.name });
       try {
         const url = await uploadImage(file);

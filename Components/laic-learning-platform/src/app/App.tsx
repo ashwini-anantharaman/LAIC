@@ -97,7 +97,7 @@ export default function App() {
     // Local load is enough to start persisting again (don't wait on network).
     setLibraryReady(true);
 
-    if (!supabaseEnabled) return;
+    if (!supabaseEnabled()) return;
     try {
       const remote = objectsForUser(await listObjects(), userId);
       if (gen !== hydrateGenRef.current) return;
@@ -282,8 +282,8 @@ export default function App() {
       if (!result.ok) {
         console.warn('[addObject] local persist failed:', result.error);
       }
-      if (supabaseEnabled) {
-        saveObject(obj).catch(err => console.warn('[supabase] could not save object:', err?.message || err));
+      if (supabaseEnabled()) {
+        saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
       }
       return nextList;
     });

@@ -707,6 +707,30 @@ platformRouter.get("/learning/context", async (c) => {
   });
 });
 
+// Learning objects, proxied through Nexus (Option B): the browser no longer
+// hits Supabase directly, so org isolation is preserved. Both routes resolve
+// the caller's org server-side and scope to it.
+platformRouter.get("/learning/objects", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", c.req.query("program_id") ?? null);
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  return c.json(await graph.listLearningObjects(access.orgId));
+});
+
+platformRouter.put("/learning/objects", async (c) => {
+  const user = await getCurrentUser(c);
+  const body = (await c.req.json()) as Row;
+  const access = await resolvePlatformAccess(user, "learning", (body.program_id as string) ?? c.req.query("program_id") ?? null);
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  if (!body.id || !body.type) throw new HttpError(422, "id and type are required");
+  await graph.upsertLearningObject(access.orgId, body);
+  return c.json({ ok: true });
+});
+
 platformRouter.post("/orgs", async (c) => {
   const user = await getCurrentUser(c);
   const req = parseBody(createOrgSchema, await c.req.json());
