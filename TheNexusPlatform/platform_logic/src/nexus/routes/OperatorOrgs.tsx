@@ -71,10 +71,9 @@ export function OperatorOrgs() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 mb-8 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 mb-8 sm:max-w-md">
         <Stat label="Organizations" value={orgs.length} />
         <Stat label="Active" value={active} />
-        <Stat label="Isolation" value="OK" hint="tenant walls enforced" />
       </div>
 
       {orgs.length === 0 ? (

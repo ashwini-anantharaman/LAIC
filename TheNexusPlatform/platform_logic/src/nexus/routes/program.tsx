@@ -74,9 +74,9 @@ function Head({ program, subtitle, actions }: { program: Program | null; subtitl
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="glass-card px-5 py-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+    <div className="glass-card flex flex-col justify-center px-5 py-4">
+      <div className="text-4xl font-semibold leading-none tabular-nums tracking-tight">{value}</div>
+      <div className="mt-2 text-sm font-medium text-muted-foreground">{label}</div>
     </div>
   );
 }
