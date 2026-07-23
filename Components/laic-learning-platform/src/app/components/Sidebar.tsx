@@ -7,12 +7,25 @@ import {
 import { useApp } from '../App';
 import { USERS } from '../../lib/data';
 import type { Role } from '../../lib/types';
+import { navItemsForPerms } from '../../lib/learningAreas';
 
 interface NavItem {
   id: string;
   label: string;
   icon: React.ReactNode;
 }
+
+/** Icon per nav-item id, so the areas-driven nav (Nexus mode) can render. */
+const ICON_BY_ID: Record<string, React.ReactNode> = {
+  'cd-home': <Home size={16} />, 'cd-create': <PlusSquare size={16} />, 'cd-sources': <Database size={16} />,
+  'cd-library': <BookOpen size={16} />, 'cd-submissions': <SendHorizontal size={16} />,
+  'cd-versions': <GitBranch size={16} />, 'cd-analytics': <BarChart2 size={16} />,
+  'or-reviews': <ClipboardCheck size={16} />, 'cr-reviews': <ClipboardCheck size={16} />,
+  'admin-overview': <Shield size={16} />, 'admin-people': <Users size={16} />,
+  'admin-courses': <BookMarked size={16} />, 'admin-publishing': <GitBranch size={16} />,
+  'coach': <UserCheck size={16} />,
+  'student-dashboard': <Home size={16} />, 'student-courses': <GraduationCap size={16} />,
+};
 
 const NAV: Record<Role, NavItem[]> = {
   'content-developer': [
@@ -32,7 +45,7 @@ const NAV: Record<Role, NavItem[]> = {
   ],
   'administrator': [
     { id: 'admin-overview', label: 'Program Overview', icon: <Shield size={16} /> },
-    { id: 'admin-people', label: 'People & Roles', icon: <Users size={16} /> },
+    { id: 'admin-people', label: 'People', icon: <Users size={16} /> },
     { id: 'admin-courses', label: 'Courses & Assignments', icon: <BookMarked size={16} /> },
     { id: 'admin-publishing', label: 'Publishing & Governance', icon: <GitBranch size={16} /> },
   ],
@@ -58,8 +71,12 @@ const PROGRAM_COLORS: Record<string, string> = {
 };
 
 export function Sidebar() {
-  const { role, program, currentScreen, navigate, logout, activeUserId } = useApp();
-  const items = NAV[role] ?? [];
+  const { role, program, currentScreen, navigate, logout, activeUserId, nexusMode, learningPerms, learningIsAdmin } = useApp();
+  // Nexus mode: nav is computed from the person's granted AREAS (custom role);
+  // admins see everything. Demo mode keeps the fixed per-persona nav.
+  const items: NavItem[] = nexusMode
+    ? navItemsForPerms(learningPerms, learningIsAdmin).map((it) => ({ ...it, icon: ICON_BY_ID[it.id] ?? <Home size={16} /> }))
+    : NAV[role] ?? [];
   const user = USERS.find(u => u.id === activeUserId);
 
   return (

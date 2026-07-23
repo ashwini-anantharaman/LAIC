@@ -1,6 +1,6 @@
 /** Platform layer API routes for orgs, challenges, permissions, and join codes. */
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 
 import {
@@ -882,6 +882,11 @@ platformRouter.get("/learning/context", async (c) => {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   const mapped = LEARNING_ROLE_MAP[access.level];
+  // A person's custom Learning role (if assigned) carries per-area view/edit
+  // perms that gate the app's nav/screens. Admins get no custom role (they see
+  // everything); everyone else is confined to their role's granted areas.
+  const isAdmin = access.level === "admin";
+  const customRole = !isAdmin && user.email ? await graph.getLearningRoleForEmail(access.programId, user.email) : null;
   return c.json({
     nexusUserId: access.profileId,
     laicOrgId: access.orgId,
@@ -893,7 +898,88 @@ platformRouter.get("/learning/context", async (c) => {
     displayName: await _platformDisplayName(access.profileId, user),
     program_name: access.programName,
     role_name: access.roleName,
+    is_admin: isAdmin,
+    learning_role: customRole, // { role_id, role_name, perms } or null
   });
+});
+
+// Learning objects, proxied through Nexus (Option B): the browser no longer
+// hits Supabase directly, so org isolation is preserved. Both routes resolve
+// the caller's org server-side and scope to it.
+platformRouter.get("/learning/objects", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", c.req.query("program_id") ?? null);
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  return c.json(await graph.listLearningObjects(access.orgId));
+});
+
+platformRouter.put("/learning/objects", async (c) => {
+  const user = await getCurrentUser(c);
+  const body = (await c.req.json()) as Row;
+  const access = await resolvePlatformAccess(user, "learning", (body.program_id as string) ?? c.req.query("program_id") ?? null);
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  if (!body.id || !body.type) throw new HttpError(422, "id and type are required");
+  await graph.upsertLearningObject(access.orgId, body);
+  return c.json({ ok: true });
+});
+
+// ── Learning Platform custom roles (the learning app's own People tab) ──────
+const _learningPerms = z.record(z.string(), z.enum(["view", "edit"]));
+const learningRoleCreateSchema = z.object({ program_id: z.string(), name: z.string().min(1), perms: _learningPerms.default({}) });
+const learningRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _learningPerms.optional() });
+const learningAssignSchema = z.object({ program_id: z.string(), email: z.string().email(), role_id: z.string().nullable() });
+
+/** The caller must be a learning admin of the program. Returns the resolved access. */
+async function _learningAdmin(c: Context, programId: string) {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", programId);
+  if (access.level !== "admin") throw new HttpError(403, "Learning admin access required");
+  return access;
+}
+
+platformRouter.get("/learning/roles", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  const access = await _learningAdmin(c, pid);
+  return c.json(await graph.listLearningRoles(access.orgId, access.programId));
+});
+
+platformRouter.post("/learning/roles", async (c) => {
+  const req = parseBody(learningRoleCreateSchema, await c.req.json());
+  const access = await _learningAdmin(c, req.program_id);
+  return c.json(await graph.createLearningRole(access.orgId, access.programId, req.name, req.perms));
+});
+
+platformRouter.patch("/learning/roles/:id", async (c) => {
+  const body = parseBody(learningRoleUpdateSchema, await c.req.json());
+  const pid = c.req.query("program_id") ?? "";
+  await _learningAdmin(c, pid);
+  const row = await graph.updateLearningRole(c.req.param("id"), { name: body.name, perms: body.perms });
+  if (!row) throw new HttpError(404, "Role not found");
+  return c.json(row);
+});
+
+platformRouter.delete("/learning/roles/:id", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _learningAdmin(c, pid);
+  await graph.deleteLearningRole(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+platformRouter.get("/learning/roster", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  const access = await _learningAdmin(c, pid);
+  return c.json(await graph.listLearningPeople(access.orgId, access.programId));
+});
+
+platformRouter.put("/learning/assign", async (c) => {
+  const req = parseBody(learningAssignSchema, await c.req.json());
+  const access = await _learningAdmin(c, req.program_id);
+  await graph.setLearningRoleAssignment(access.orgId, access.programId, req.email, req.role_id);
+  return c.json({ ok: true });
 });
 
 platformRouter.post("/orgs", async (c) => {
@@ -1101,6 +1187,21 @@ platformRouter.patch("/orgs/:org_id/theme", async (c) => {
     theme_accent_color: theme.accent_color ?? null,
     theme_logo_url: theme.logo_url ?? null,
   });
+});
+
+const orgNameSchema = z.object({ name: z.string().trim().min(1).max(120) });
+
+platformRouter.patch("/orgs/:org_id/name", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  const req = parseBody(orgNameSchema, await c.req.json());
+  await _requireOrgArea(user, orgId, "settings", "edit");
+  const org = await db.updateOrgName(orgId, req.name);
+  await db.recordAuditEvent("organization.renamed", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    metadata: { name: req.name },
+  });
+  return c.json({ id: org.id, name: org.name, slug: org.slug });
 });
 
 function _integrationResponse(r: Row): Row {
@@ -1813,9 +1914,26 @@ platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
 
 platformRouter.get("/platform/branding", async (c) => {
   // Public: the operator console shell (and login gate) needs it pre-auth.
-  if (!dbEnabled()) return c.json({ accent: null, logo: null });
+  if (!dbEnabled()) return c.json({ accent: null, logo: null, title: null });
   const b = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
-  return c.json({ accent: (b.accent as string) ?? null, logo: (b.logo as string) ?? null });
+  return c.json({
+    accent: (b.accent as string) ?? null,
+    logo: (b.logo as string) ?? null,
+    title: (b.title as string) ?? null,
+  });
+});
+
+const platformNameSchema = z.object({ title: z.string().trim().min(1).max(120) });
+
+platformRouter.patch("/admin/platform/name", async (c) => {
+  const user = await getCurrentUser(c);
+  await _requireNexusArea(user, "settings", "edit");
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(platformNameSchema, await c.req.json());
+  const cur = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
+  const next = { ...cur, title: req.title };
+  await db.setPlatformSetting("branding", next);
+  return c.json(next);
 });
 
 const platformThemeSchema = z.object({ accent_color: z.string().trim().min(1).max(32) });
@@ -1878,6 +1996,25 @@ platformRouter.patch("/programs/:program_id/categories", async (c) => {
   await db.recordAuditEvent("program.categories_updated", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
     metadata: { category: row.category, secondary_categories: row.secondary_categories },
+  });
+  return c.json(_programResponse(row));
+});
+
+const programNameSchema = z.object({ name: z.string().trim().min(1).max(120) });
+
+platformRouter.patch("/programs/:program_id/name", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  await _assertProgramConfigAccess(user, program.org_id, programId);
+  const req = parseBody(programNameSchema, await c.req.json());
+  const row = await db.updateProgramName(programId, req.name);
+  if (!row) throw new HttpError(404, "Program not found");
+  await db.recordAuditEvent("program.renamed", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { name: req.name },
   });
   return c.json(_programResponse(row));
 });
@@ -2550,6 +2687,20 @@ platformRouter.patch("/groups/:id", async (c) => {
     visibility: body.visibility as string | undefined, parentGroupId: body.parent_group_id as string | null | undefined,
   });
   return c.json(row);
+});
+platformRouter.delete("/groups/:id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const existing = await graph.getGroup(c.req.param("id"));
+  if (!existing) throw new HttpError(404, "Group not found");
+  _assertOrgAccess(user, existing.organization_id as string, true);
+  await graph.deleteGroup(c.req.param("id"));
+  await db.recordAuditEvent("group.deleted", {
+    orgId: existing.organization_id as string, actorUserId: user.id,
+    scopeType: "organization", scopeId: existing.organization_id as string,
+    targetType: "group", targetId: c.req.param("id"),
+  });
+  return c.json({ ok: true });
 });
 platformRouter.get("/groups/:id/members", async (c) => {
   const user = await getCurrentUser(c);

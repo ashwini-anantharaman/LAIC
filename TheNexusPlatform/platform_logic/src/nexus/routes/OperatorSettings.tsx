@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import {
   getPlatformBranding,
+  updatePlatformName,
   updatePlatformTheme,
   uploadPlatformLogo,
 } from "@/services/api";
@@ -17,6 +18,7 @@ import { writeBranding } from "@/nexus/branding";
 export function OperatorSettings() {
   const [accent, setAccent] = useState<string | null>(null);
   const [logo, setLogo] = useState<string | null>(null);
+  const [title, setTitle] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -24,28 +26,40 @@ export function OperatorSettings() {
       .then((b) => {
         setAccent(b.accent);
         setLogo(b.logo);
+        setTitle(b.title ?? null);
       })
       .finally(() => setLoaded(true));
   }, []);
 
   if (!loaded) return <Spinner />;
 
+  const push = (a: string | null, l: string | null, t: string | null) =>
+    writeBranding({ orgId: "platform", accent: a, logo: resolveAssetUrl(l), title: t });
+
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Nexus's own theme and logo." />
-      <Section title="Theme">
+      <PageHeader title="Settings" subtitle="Nexus's own name, theme, and logo." />
+      <Section title="Branding">
         <ThemeEditor
+          name={title}
+          nameLabel="Platform name"
+          namePlaceholder="Nexus"
+          onSaveName={async (n) => {
+            await updatePlatformName(n);
+            setTitle(n);
+            push(accent, logo, n);
+          }}
           accent={accent}
           logoUrl={resolveAssetUrl(logo)}
           onSaveAccent={async (hex) => {
             await updatePlatformTheme(hex);
             setAccent(hex);
-            writeBranding({ orgId: "platform", accent: hex, logo: resolveAssetUrl(logo) });
+            push(hex, logo, title);
           }}
           onUploadLogo={async (file) => {
             const r = await uploadPlatformLogo(file);
             setLogo(r.logo_url);
-            writeBranding({ orgId: "platform", accent, logo: resolveAssetUrl(r.logo_url) });
+            push(accent, r.logo_url, title);
           }}
         />
       </Section>

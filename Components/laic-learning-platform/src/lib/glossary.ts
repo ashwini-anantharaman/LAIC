@@ -303,8 +303,8 @@ export function buildGlossary(opts: {
 
   for (const p of opts.parts || []) {
     if (p.type !== 'concept-card') continue;
-    const term = singularizeTerm(String(p.concept || p.label || ''));
-    const definition = cleanSpaces(String(p.plain || ''));
+    const term = singularizeTerm(String(p.concept || p.label || '').trim());
+    const definition = cleanSpaces(String(p.plain || '').trim());
     if (!term || !definition) continue;
     push({
       id: `cc-${p.id}`,
@@ -318,7 +318,7 @@ export function buildGlossary(opts: {
     if (b.type !== 'concept-card') continue;
     const c = b.content || {};
     const term = singularizeTerm(String(c.term || ''));
-    const definition = cleanSpaces(String(c.definition || ''));
+    const definition = cleanSpaces(String(c.oneSentenceMeaning || c.definition || ''));
     if (!term || !definition) continue;
     push({
       id: `cc-${b.id}`,

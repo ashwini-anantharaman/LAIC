@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, ChevronLeft, Sparkles, Loader2, Eye, Pencil } from 'lucide-react';
 import { useApp } from '../../App';
-import type { ConceptCardContent, ConceptCardViewKey, CreatorPipelineDraft } from '../../../lib/types';
+import type { ConceptCardContent, CreatorPipelineDraft } from '../../../lib/types';
 import type { GeneratedConceptCard } from '../../../lib/api';
 import { editConceptCard, errorMessage } from '../../../lib/api';
-import { ConceptCardView } from './LearnerReader';
+import { normalizeConceptCardContent } from '../../../lib/conceptCard';
+import { ConceptCardTemplate } from './ConceptCardTemplate';
 
 type Mode = 'edit' | 'preview';
 
@@ -13,31 +14,8 @@ const field: React.CSSProperties = {
 };
 const lbl: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 3, display: 'block' };
 
-function inferViews(c: GeneratedConceptCard | ConceptCardContent): ConceptCardViewKey[] {
-  if (Array.isArray(c.includedViews) && c.includedViews.length) return c.includedViews;
-  const v: ConceptCardViewKey[] = ['definition'];
-  if (c.analogy) v.push('analogy');
-  if (c.example) v.push('example');
-  if (c.visualSuggestion) v.push('visual');
-  if (c.misconception) v.push('misconception');
-  return v;
-}
-
-function toContent(c: GeneratedConceptCard | ConceptCardContent): ConceptCardContent {
-  const includedViews = inferViews(c);
-  const out: ConceptCardContent = {
-    term: c.term || '',
-    definition: c.definition || '',
-    voice: c.voice,
-    length: c.length,
-    includedViews,
-    citations: c.citations,
-  };
-  if (includedViews.includes('analogy')) out.analogy = c.analogy || '';
-  if (includedViews.includes('example')) out.example = c.example || '';
-  if (includedViews.includes('visual')) out.visualSuggestion = c.visualSuggestion || '';
-  if (includedViews.includes('misconception')) out.misconception = c.misconception || '';
-  return out;
+function toContent(c: GeneratedConceptCard | ConceptCardContent | null | undefined): ConceptCardContent {
+  return normalizeConceptCardContent(c as any);
 }
 
 function AskAiConcept({
@@ -50,14 +28,13 @@ function AskAiConcept({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const views = card.includedViews || ['definition'];
   const chips = [
-    views.includes('definition') ? 'Simplify the definition' : null,
-    views.includes('analogy') ? 'Improve the analogy' : null,
-    views.includes('misconception') ? 'Sharpen the misconception' : null,
-    views.includes('example') ? 'Make the example clearer' : null,
+    'Tighten the one-sentence meaning',
+    'Sharpen the example vs non-example',
+    'Improve the teach-back',
+    'Make key components clearer',
     'Match a tighter length',
-  ].filter(Boolean) as string[];
+  ];
 
   const run = async (instruction: string) => {
     const ins = instruction.trim();
@@ -101,6 +78,18 @@ function AskAiConcept({
   );
 }
 
+function Area({
+  label, value, onChange, rows = 2,
+}: { label: string; value: string; onChange: (v: string) => void; rows?: number }) {
+  return (
+    <div>
+      <label style={lbl}>{label}</label>
+      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows}
+        className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
+    </div>
+  );
+}
+
 export function ConceptCardEditor({
   typeId, title, scope, fv, card, initialId, initialStatus, pipelineDraft, onBack, onDone,
 }: {
@@ -119,9 +108,9 @@ export function ConceptCardEditor({
   const [docTitle, setDocTitle] = useState(title || 'Concept card');
   const [submitted, setSubmitted] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>('preview');
   const [aiOpen, setAiOpen] = useState(false);
-  const [local, setLocal] = useState<ConceptCardContent>(() => toContent(card || { term: '', definition: '' }));
+  const [local, setLocal] = useState<ConceptCardContent>(() => toContent(card));
   const [objectStatus, setObjectStatus] = useState(initialStatus || 'draft');
   const savedId = useRef<string | null>(initialId || null);
 
@@ -129,29 +118,20 @@ export function ConceptCardEditor({
   useEffect(() => { if (initialId) savedId.current = initialId; }, [initialId]);
   useEffect(() => { if (initialStatus) setObjectStatus(initialStatus); }, [initialStatus]);
 
-  const set = (patch: Partial<ConceptCardContent>) => setLocal((p) => ({ ...p, ...patch }));
+  const set = (patch: Partial<ConceptCardContent>) => setLocal((p) => normalizeConceptCardContent({ ...p, ...patch }));
 
   const briefChips = [
     fv?.aud || 'High school',
     fv?.lvl || 'Basic',
     fv?.voi || 'Plain & friendly',
     fv?.len || 'Standard',
-    ...(Array.isArray(fv?.incl) ? fv.incl : [fv?.incl].filter(Boolean)),
   ].filter(Boolean);
 
-  const views = local.includedViews?.length ? local.includedViews : inferViews(local);
-  const content: ConceptCardContent = {
-    term: local.term.trim(),
-    definition: local.definition.trim(),
-    example: views.includes('example') ? (local.example?.trim() || undefined) : undefined,
-    analogy: views.includes('analogy') ? (local.analogy?.trim() || undefined) : undefined,
-    visualSuggestion: views.includes('visual') ? (local.visualSuggestion?.trim() || undefined) : undefined,
-    misconception: views.includes('misconception') ? (local.misconception?.trim() || undefined) : undefined,
+  const content = normalizeConceptCardContent({
+    ...local,
     voice: local.voice || fv?.voi,
     length: local.length || fv?.len,
-    includedViews: views,
-    citations: local.citations,
-  };
+  });
 
   const save = (status: 'draft' | 'in-review') => {
     const block = { id: `blk-${Date.now()}`, type: 'concept-card' as const, content };
@@ -161,7 +141,7 @@ export function ConceptCardEditor({
       type: typeId,
       title: (docTitle || content.term || 'Concept card').trim(),
       status: keepStatus,
-      description: (fv?.concept as string)?.trim() || content.definition.slice(0, 140),
+      description: (fv?.concept as string)?.trim() || (content.oneSentenceMeaning || '').slice(0, 140),
       estimatedTime: '3 min',
       blocks: [block] as any,
       tags: briefChips,
@@ -222,19 +202,19 @@ export function ConceptCardEditor({
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-6 max-w-2xl mx-auto w-full">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-6 max-w-3xl mx-auto w-full">
         {mode === 'preview' ? (
           <>
             <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 14 }}>
-              Student preview · {content.voice || fv?.voi || 'Voice'} · {content.length || fv?.len || 'Standard'} length
+              Student preview · template sheet filled from your source
             </p>
-            <ConceptCardView content={content} />
+            <ConceptCardTemplate content={content} />
           </>
         ) : (
           <>
             <div className="flex items-center justify-between mb-3">
               <p style={{ fontSize: 12.5, color: '#6B7280', lineHeight: 1.5, flex: 1 }}>
-                Edit by hand or use <strong>Ask AI</strong>. Switch to Student preview to see the learner view.
+                Edit each template section, or use <strong>Ask AI</strong>. Preview shows the exact learner sheet.
               </p>
               <button onClick={() => setAiOpen((v) => !v)} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold"
                 style={{ color: '#D97706', background: aiOpen ? '#FEF3C7' : 'rgba(254,243,199,0.5)' }}>
@@ -244,47 +224,82 @@ export function ConceptCardEditor({
             {aiOpen && (
               <AskAiConcept card={content} onApply={(next) => setLocal(next)} onClose={() => setAiOpen(false)} />
             )}
-            <div className="space-y-3 rounded-2xl border p-4" style={{ background: 'rgba(255,255,255,0.88)', borderColor: 'rgba(0,0,0,0.08)' }}>
+            <div className="space-y-3 rounded-2xl border p-4 mb-4" style={{ background: 'rgba(255,255,255,0.88)', borderColor: 'rgba(0,0,0,0.08)' }}>
               <div>
-                <label style={lbl}>Term / concept</label>
+                <label style={lbl}>Concept</label>
                 <input value={local.term} onChange={(e) => set({ term: e.target.value })} className="w-full rounded-xl px-3 py-2" style={field} />
               </div>
-              {views.includes('definition') && (
-                <div>
-                  <label style={lbl}>Definition{content.citations?.definition ? ` · ${content.citations.definition}` : ''}</label>
-                  <textarea value={local.definition} onChange={(e) => set({ definition: e.target.value })} rows={3}
-                    className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
-                </div>
-              )}
-              {views.includes('analogy') && (
-                <div>
-                  <label style={lbl}>Everyday analogy{content.citations?.analogy ? ` · ${content.citations.analogy}` : ''}</label>
-                  <textarea value={local.analogy || ''} onChange={(e) => set({ analogy: e.target.value })} rows={2}
-                    className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
-                </div>
-              )}
-              {views.includes('example') && (
-                <div>
-                  <label style={lbl}>Worked example{content.citations?.example ? ` · ${content.citations.example}` : ''}</label>
-                  <textarea value={local.example || ''} onChange={(e) => set({ example: e.target.value })} rows={2}
-                    className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
-                </div>
-              )}
-              {views.includes('visual') && (
-                <div>
-                  <label style={lbl}>Visual suggestion{content.citations?.visual ? ` · ${content.citations.visual}` : ''}</label>
-                  <textarea value={local.visualSuggestion || ''} onChange={(e) => set({ visualSuggestion: e.target.value })} rows={2}
-                    className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
-                </div>
-              )}
-              {views.includes('misconception') && (
-                <div>
-                  <label style={lbl}>Common misconception{content.citations?.misconception ? ` · ${content.citations.misconception}` : ''}</label>
-                  <textarea value={local.misconception || ''} onChange={(e) => set({ misconception: e.target.value })} rows={2}
-                    className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
-                </div>
-              )}
+              {(content.categories || []).filter((c) => c.enabled !== false).map((cat) => {
+                if (cat.id === 'meaning') {
+                  return <Area key={cat.id} label={cat.label} value={local.oneSentenceMeaning || ''} onChange={(v) => set({ oneSentenceMeaning: v })} />;
+                }
+                if (cat.id === 'why') {
+                  return <Area key={cat.id} label={cat.label} value={local.whyItMatters || ''} onChange={(v) => set({ whyItMatters: v })} />;
+                }
+                if (cat.id === 'core') {
+                  return <Area key={cat.id} label={cat.label} value={local.coreIdea || ''} onChange={(v) => set({ coreIdea: v })} rows={3} />;
+                }
+                if (cat.id === 'components') {
+                  return (
+                    <Area
+                      key={cat.id}
+                      label={`${cat.label} (one per line)`}
+                      value={(local.keyComponents || []).join('\n')}
+                      onChange={(v) => set({ keyComponents: v.split('\n').map((s) => s.trim()).filter(Boolean) })}
+                      rows={3}
+                    />
+                  );
+                }
+                if (cat.id === 'example') {
+                  return <Area key={cat.id} label={cat.label} value={local.example || ''} onChange={(v) => set({ example: v })} />;
+                }
+                if (cat.id === 'nonExample') {
+                  return <Area key={cat.id} label={cat.label} value={local.nonExample || ''} onChange={(v) => set({ nonExample: v })} />;
+                }
+                if (cat.id === 'visual') {
+                  return (
+                    <div key={cat.id} className="space-y-2">
+                      <p style={lbl}>{cat.label}</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Area label="Choice" value={local.visualChoice || ''} onChange={(v) => set({ visualChoice: v })} rows={1} />
+                        <Area label="Best alternative" value={local.visualAlternative || ''} onChange={(v) => set({ visualAlternative: v })} rows={1} />
+                      </div>
+                      <Area label="Formula / caption" value={local.visualFormula || local.visualOrFormula || ''} onChange={(v) => set({ visualFormula: v, visualOrFormula: v })} />
+                    </div>
+                  );
+                }
+                if (cat.id === 'mistake') {
+                  return <Area key={cat.id} label={cat.label} value={local.commonMistake || ''} onChange={(v) => set({ commonMistake: v })} />;
+                }
+                if (cat.id === 'connection') {
+                  return <Area key={cat.id} label={cat.label} value={local.connection || ''} onChange={(v) => set({ connection: v })} />;
+                }
+                if (cat.id === 'recall') {
+                  return <Area key={cat.id} label={cat.label} value={local.recallQuestion || ''} onChange={(v) => set({ recallQuestion: v })} />;
+                }
+                if (cat.id === 'teachBack') {
+                  return <Area key={cat.id} label={cat.label} value={local.teachBack || ''} onChange={(v) => set({ teachBack: v })} rows={3} />;
+                }
+                // Custom category
+                const body = (local.extraSections || []).find((s) => s.id === cat.id)?.body || '';
+                return (
+                  <Area
+                    key={cat.id}
+                    label={`${cat.label} · custom`}
+                    value={body}
+                    onChange={(v) => {
+                      const rest = (local.extraSections || []).filter((s) => s.id !== cat.id);
+                      set({
+                        extraSections: [...rest, { id: cat.id, title: cat.label, body: v }],
+                      });
+                    }}
+                    rows={2}
+                  />
+                );
+              })}
             </div>
+            <p style={{ fontSize: 12, color: '#9AA3AF', marginBottom: 8 }}>Live sheet preview</p>
+            <ConceptCardTemplate content={content} />
           </>
         )}
       </div>

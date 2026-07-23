@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, BookOpen, Layers, Play, Pause } from 'lucide-react';
-import { motion } from 'motion/react';
+import { ArrowLeft, BookOpen, Layers, Play, Pause, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../../App';
 import { OBJECTS } from '../../../lib/data';
 import type {
@@ -14,8 +14,154 @@ import { buildGlossary, type GlossaryEntry } from '../../../lib/glossary';
 import { FlashcardStudy, type StudyCard } from './FlashcardStudy';
 import { AskAIChat } from './AskAIChat';
 import { SummaryView, ReflectionView, AssignmentView, DrillView } from './StructuredObjectEditors';
+import { ConceptCardTemplate } from './ConceptCardTemplate';
 
 export type QuizResolveStatus = 'correct' | 'revealed';
+
+function scrollToGlossaryBlock(blockId: string) {
+  const el = document.querySelector(`[data-block-id="${CSS.escape(blockId)}"]`);
+  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (el instanceof HTMLElement) {
+    el.style.outline = '2px solid #0B0F1A';
+    el.style.outlineOffset = '4px';
+    el.style.borderRadius = '12px';
+    window.setTimeout(() => {
+      el.style.outline = '';
+      el.style.outlineOffset = '';
+    }, 1600);
+  }
+}
+
+/** Right-edge glossary drawer — stays available while reading the tutorial. */
+export function GlossarySidebar({
+  open,
+  onOpenChange,
+  entries,
+  activeId,
+  onSelect,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  entries: GlossaryEntry[];
+  activeId?: string | null;
+  onSelect: (entry: GlossaryEntry) => void;
+}) {
+  if (!entries.length) return null;
+
+  return (
+    <>
+      {/* Persistent edge tab when closed */}
+      <AnimatePresence>
+        {!open && (
+          <motion.button
+            type="button"
+            key="glossary-tab"
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 12 }}
+            onClick={() => onOpenChange(true)}
+            className="fixed z-40 flex items-center gap-1.5 rounded-l-xl border border-r-0 px-2 py-3 shadow-md"
+            style={{
+              right: 0,
+              top: '42%',
+              background: 'rgba(255,255,255,0.96)',
+              borderColor: 'rgba(0,0,0,0.1)',
+              color: '#0B1220',
+              writingMode: 'vertical-rl',
+              textOrientation: 'mixed',
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+            }}
+            title="Open glossary"
+          >
+            <BookOpen size={13} style={{ transform: 'rotate(90deg)', marginBottom: 4 }} />
+            Glossary
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {open && (
+          <motion.button
+            type="button"
+            key="glossary-backdrop"
+            aria-label="Close glossary"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40"
+            style={{ background: 'rgba(15, 23, 42, 0.22)' }}
+            onClick={() => onOpenChange(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <motion.aside
+        initial={false}
+        animate={{ x: open ? 0 : '100%' }}
+        transition={{ type: 'spring', stiffness: 380, damping: 36 }}
+        className="fixed top-0 right-0 z-50 flex h-full flex-col border-l"
+        style={{
+          width: 'min(340px, 92vw)',
+          background: 'rgba(255,255,255,0.98)',
+          borderColor: 'rgba(0,0,0,0.08)',
+          boxShadow: open ? '-12px 0 40px -20px rgba(15,23,42,0.35)' : 'none',
+          pointerEvents: open ? 'auto' : 'none',
+        }}
+        aria-hidden={!open}
+      >
+        <div
+          className="flex items-center justify-between gap-2 px-4 py-3 border-b shrink-0"
+          style={{ borderColor: 'rgba(0,0,0,0.08)' }}
+        >
+          <div className="min-w-0">
+            <p style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>Glossary</p>
+            <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+              {entries.length} word{entries.length !== 1 ? 's' : ''} · tap to jump
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 hover:bg-black/5"
+            aria-label="Close glossary"
+          >
+            <X size={15} style={{ color: '#6B7280' }} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {entries.map((entry, i) => {
+            const active = activeId === entry.id;
+            const blurb = entry.definition.length > 90
+              ? `${entry.definition.slice(0, 90).trim()}…`
+              : entry.definition;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => onSelect(entry)}
+                className="w-full text-left px-4 py-3 transition-colors hover:bg-black/[0.03]"
+                style={{
+                  background: active ? 'rgba(11,15,26,0.05)' : 'transparent',
+                  borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.06)',
+                }}
+              >
+                <div className="flex items-baseline justify-between gap-2 mb-1">
+                  <span style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>{entry.term}</span>
+                  {entry.page != null && (
+                    <span style={{ fontSize: 11, color: '#9AA3AF' }}>p. {entry.page}</span>
+                  )}
+                </div>
+                <p style={{ fontSize: 12.5, color: '#4B5563', lineHeight: 1.45 }}>{blurb}</p>
+              </button>
+            );
+          })}
+        </div>
+      </motion.aside>
+    </>
+  );
+}
 
 function countQuizQuestionsInBlocks(blocks: Block[]): number {
   let n = 0;
@@ -249,83 +395,9 @@ function ViewBlock({ label, children, tone = 'green' }: { label: string; childre
   );
 }
 
-/** Learner + teacher-preview concept card — tabs follow Define Include, not leftover fields. */
+/** Learner + teacher-preview concept card — fixed pedagogical template sheet. */
 export function ConceptCardView({ content }: { content: ConceptCardContent }) {
-  type V = 'definition' | 'analogy' | 'example' | 'visual' | 'misconception';
-  const [view, setView] = useState<V>('definition');
-  const included = content.includedViews?.length
-    ? content.includedViews
-    : ([
-        content.definition ? 'definition' : null,
-        content.analogy ? 'analogy' : null,
-        content.example ? 'example' : null,
-        content.visualSuggestion ? 'visual' : null,
-        content.misconception ? 'misconception' : null,
-      ].filter(Boolean) as V[]);
-
-  const tabs: { id: V; label: string }[] = [
-    { id: 'definition', label: 'Definition' },
-    { id: 'analogy', label: 'Analogy' },
-    { id: 'example', label: 'Example' },
-    { id: 'visual', label: 'Visual' },
-    { id: 'misconception', label: 'Watch out' },
-  ].filter((t) => included.includes(t.id));
-
-  const active = tabs.some((t) => t.id === view) ? view : (tabs[0]?.id || 'definition');
-  const cite = (k: V) => content.citations?.[k];
-
-  const body = (text: string, citation?: string) => (
-    <>
-      <div>{text}</div>
-      {citation && (
-        <p style={{ fontSize: 11, color: '#9AA3AF', marginTop: 10 }}>Source: {citation}</p>
-      )}
-    </>
-  );
-
-  return (
-    <div className="space-y-3">
-      <div>
-        <p style={{ fontSize: 11, fontWeight: 600, color: '#059669', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>Concept</p>
-        <h2 style={{ fontSize: 20, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.3px', marginBottom: 4 }}>{content.term}</h2>
-        {(content.voice || content.length) && (
-          <p style={{ fontSize: 12, color: '#9AA3AF' }}>
-            {[content.voice, content.length ? `${content.length} length` : ''].filter(Boolean).join(' · ')}
-          </p>
-        )}
-      </div>
-      {tabs.length > 1 && (
-        <div className="flex flex-wrap gap-1.5">
-          {tabs.map((t) => (
-            <button key={t.id} type="button" onClick={() => setView(t.id)}
-              className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-              style={{
-                background: active === t.id ? '#0B0F1A' : 'rgba(255,255,255,0.85)',
-                color: active === t.id ? '#fff' : '#374151',
-                border: `1px solid ${active === t.id ? '#0B0F1A' : 'rgba(0,0,0,0.08)'}`,
-              }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {active === 'definition' && (
-        <ViewBlock label="Definition">{body(content.definition, cite('definition'))}</ViewBlock>
-      )}
-      {active === 'analogy' && (
-        <ViewBlock label="Everyday analogy" tone="blue">{body(content.analogy || '', cite('analogy'))}</ViewBlock>
-      )}
-      {active === 'example' && (
-        <ViewBlock label="Worked example" tone="amber">{body(content.example || '', cite('example'))}</ViewBlock>
-      )}
-      {active === 'visual' && (
-        <ViewBlock label="Visual suggestion" tone="blue">{body(content.visualSuggestion || '', cite('visual'))}</ViewBlock>
-      )}
-      {active === 'misconception' && (
-        <ViewBlock label="Common misconception" tone="rose">{body(content.misconception || '', cite('misconception'))}</ViewBlock>
-      )}
-    </div>
-  );
+  return <ConceptCardTemplate content={content} />;
 }
 
 function isQuestionCorrect(q: QuizContent['questions'][0], answer: unknown): boolean {
@@ -1123,6 +1195,7 @@ export function LearningBlocksPreview({
   cumulativePassMark,
   maxHints = 4,
   hintsEnabled = true,
+  glossary,
 }: {
   blocks: Block[];
   objectId?: string;
@@ -1130,23 +1203,44 @@ export function LearningBlocksPreview({
   cumulativePassMark?: number;
   maxHints?: number;
   hintsEnabled?: boolean;
+  /** When provided, shows a right-side glossary drawer over the preview. */
+  glossary?: GlossaryEntry[];
 }) {
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
+  const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
+
   if (!blocks.length) {
     return <p style={{ fontSize: 13.5, color: '#9AA3AF' }}>Nothing to preview yet — add or generate parts first.</p>;
   }
   const numbered = renumberBlockQuestionLabels(blocks) as Block[];
   const cumulative = typeof cumulativePassMark === 'number' && countQuizQuestionsInBlocks(numbered) > 0;
+  const entries = glossary || [];
+
+  const onSelect = (entry: GlossaryEntry) => {
+    setActiveGlossaryId(entry.id);
+    if (entry.blockId) scrollToGlossaryBlock(entry.blockId);
+  };
+
   return (
-    <div className="space-y-5">
-      <AssessedBlocks
-        blocks={numbered}
-        objectId={objectId}
-        cumulative={cumulative}
-        passMark={cumulativePassMark ?? 70}
-        maxHints={maxHints}
-        hintsEnabled={hintsEnabled}
+    <>
+      <div className="space-y-5">
+        <AssessedBlocks
+          blocks={numbered}
+          objectId={objectId}
+          cumulative={cumulative}
+          passMark={cumulativePassMark ?? 70}
+          maxHints={maxHints}
+          hintsEnabled={hintsEnabled}
+        />
+      </div>
+      <GlossarySidebar
+        open={glossaryOpen}
+        onOpenChange={setGlossaryOpen}
+        entries={entries}
+        activeId={activeGlossaryId}
+        onSelect={onSelect}
       />
-    </div>
+    </>
   );
 }
 
@@ -1154,7 +1248,7 @@ export function LearnerReader({ objectId }: { objectId: string }) {
   const { closeReader, createdObjects } = useApp();
   const obj = createdObjects.find(o => o.id === objectId) || OBJECTS.find(o => o.id === objectId);
   const [showAsk, setShowAsk] = useState(false);
-  const [showGlossary, setShowGlossary] = useState(false);
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
 
   if (!obj) return null;
@@ -1177,21 +1271,7 @@ export function LearnerReader({ objectId }: { objectId: string }) {
 
   const jumpToGlossaryPassage = (entry: GlossaryEntry) => {
     setActiveGlossaryId(entry.id);
-    setShowGlossary(false);
-    if (!entry.blockId) return;
-    requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-block-id="${CSS.escape(entry.blockId!)}"]`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      if (el instanceof HTMLElement) {
-        el.style.outline = '2px solid #0B0F1A';
-        el.style.outlineOffset = '4px';
-        el.style.borderRadius = '12px';
-        window.setTimeout(() => {
-          el.style.outline = '';
-          el.style.outlineOffset = '';
-        }, 1600);
-      }
-    });
+    if (entry.blockId) scrollToGlossaryBlock(entry.blockId);
   };
 
   return (
@@ -1200,7 +1280,7 @@ export function LearnerReader({ objectId }: { objectId: string }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: 0.4 }}
-      className="min-h-full"
+      className="min-h-full relative"
     >
       {/* Reader header */}
       <div
@@ -1220,13 +1300,13 @@ export function LearnerReader({ objectId }: { objectId: string }) {
         </div>
         {glossaryEntries.length > 0 && (
           <button
-            onClick={() => { setShowGlossary((v) => !v); setShowAsk(false); }}
+            onClick={() => { setGlossaryOpen(true); setShowAsk(false); }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
             style={{
-              background: showGlossary ? '#0B0F1A' : 'rgba(255,255,255,0.85)',
+              background: glossaryOpen ? '#0B0F1A' : 'rgba(255,255,255,0.85)',
               border: '1px solid rgba(255,255,255,0.9)',
               fontSize: 12, fontWeight: 600,
-              color: showGlossary ? '#fff' : '#374151',
+              color: glossaryOpen ? '#fff' : '#374151',
               boxShadow: '0 2px 8px -4px rgba(30,50,80,0.2)',
             }}
           >
@@ -1235,7 +1315,7 @@ export function LearnerReader({ objectId }: { objectId: string }) {
           </button>
         )}
         <button
-          onClick={() => { setShowAsk((v) => !v); setShowGlossary(false); }}
+          onClick={() => { setShowAsk((v) => !v); setGlossaryOpen(false); }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
           style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.9)', fontSize: 12, fontWeight: 600, color: '#059669', boxShadow: '0 2px 8px -4px rgba(30,50,80,0.2)' }}
         >
@@ -1244,89 +1324,56 @@ export function LearnerReader({ objectId }: { objectId: string }) {
         </button>
       </div>
 
-      {/* Content */}
+      {/* Content stays visible; glossary opens as a right sidebar */}
       <div className="px-5 py-6 max-w-xl mx-auto space-y-5">
-        {showGlossary ? (
-          <div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>Glossary</h2>
-            <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 14 }}>
-              Words from the passage. Tap one to jump back to where it appears.
-            </p>
-            <div
-              className="rounded-2xl border overflow-hidden"
-              style={{ borderColor: 'rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.95)' }}
-            >
-              {glossaryEntries.map((entry, i) => {
-                const active = activeGlossaryId === entry.id;
-                const blurb = entry.definition.length > 100
-                  ? `${entry.definition.slice(0, 100).trim()}…`
-                  : entry.definition;
-                return (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    onClick={() => jumpToGlossaryPassage(entry)}
-                    className="w-full text-left px-4 py-3"
-                    style={{
-                      background: active ? 'rgba(11,15,26,0.05)' : 'transparent',
-                      borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.06)',
-                    }}
-                  >
-                    <div className="flex items-baseline gap-3">
-                      <span style={{ fontSize: 14.5, fontWeight: 700, color: '#0B1220', minWidth: 110, flexShrink: 0 }}>
-                        {entry.term}
-                      </span>
-                      <span style={{ fontSize: 13, color: '#4B5563', lineHeight: 1.45 }}>{blurb}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
+          <div className="flex items-center gap-2 mb-1">
+            <BookOpen size={13} style={{ color: '#9AA3AF' }} />
+            <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 500 }}>
+              {obj.type === 'tutorial' ? 'Tutorial'
+                : obj.type === 'flashcard-set' ? 'Flashcard set'
+                  : obj.type === 'quiz' ? 'Quiz'
+                    : obj.type === 'concept-card' ? 'Concept card'
+                      : obj.type === 'summary' ? 'Summary'
+                        : obj.type === 'reflection' ? 'Reflection'
+                          : obj.type === 'assignment' ? 'Assignment'
+                            : obj.type === 'drill' ? 'Drill'
+                              : 'Lesson'}
+            </span>
           </div>
-        ) : (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
-              <div className="flex items-center gap-2 mb-1">
-                <BookOpen size={13} style={{ color: '#9AA3AF' }} />
-                <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 500 }}>
-                  {obj.type === 'tutorial' ? 'Tutorial'
-                    : obj.type === 'flashcard-set' ? 'Flashcard set'
-                      : obj.type === 'quiz' ? 'Quiz'
-                        : obj.type === 'concept-card' ? 'Concept card'
-                          : obj.type === 'summary' ? 'Summary'
-                            : obj.type === 'reflection' ? 'Reflection'
-                              : obj.type === 'assignment' ? 'Assignment'
-                                : obj.type === 'drill' ? 'Drill'
-                                  : 'Lesson'}
-                </span>
-              </div>
-              <h1 style={{ fontSize: 24, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.4px', lineHeight: 1.15, marginBottom: 6 }}>
-                {obj.title}
-              </h1>
-              <p style={{ fontSize: 13.5, color: '#6B7280', lineHeight: 1.6 }}>{obj.description}</p>
-            </motion.div>
+          <h1 style={{ fontSize: 24, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.4px', lineHeight: 1.15, marginBottom: 6 }}>
+            {obj.title}
+          </h1>
+          <p style={{ fontSize: 13.5, color: '#6B7280', lineHeight: 1.6 }}>{obj.description}</p>
+        </motion.div>
 
-            {obj.blocks.length > 0 ? (
-              <AssessedBlocks
-                blocks={numbered}
-                objectId={obj.id}
-                cumulative={useCumulative}
-                passMark={passMark}
-                maxHints={hintOpts.count}
-                hintsEnabled={hintOpts.enabled}
-                animate
-              />
-            ) : (
-              <div className="flex flex-col items-center py-12 text-center">
-                <Layers size={32} className="text-[#C4CBD4] mb-3" />
-                <p style={{ fontSize: 14, color: '#9AA3AF' }}>Content blocks coming soon.</p>
-              </div>
-            )}
-          </>
+        {obj.blocks.length > 0 ? (
+          <AssessedBlocks
+            blocks={numbered}
+            objectId={obj.id}
+            cumulative={useCumulative}
+            passMark={passMark}
+            maxHints={hintOpts.count}
+            hintsEnabled={hintOpts.enabled}
+            animate
+          />
+        ) : (
+          <div className="flex flex-col items-center py-12 text-center">
+            <Layers size={32} className="text-[#C4CBD4] mb-3" />
+            <p style={{ fontSize: 14, color: '#9AA3AF' }}>Content blocks coming soon.</p>
+          </div>
         )}
 
         <div className="h-8" />
       </div>
+
+      <GlossarySidebar
+        open={glossaryOpen}
+        onOpenChange={setGlossaryOpen}
+        entries={glossaryEntries}
+        activeId={activeGlossaryId}
+        onSelect={jumpToGlossaryPassage}
+      />
 
       <AskAIChat open={showAsk} onClose={() => setShowAsk(false)} obj={obj} />
     </motion.div>

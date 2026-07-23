@@ -371,6 +371,9 @@ export const programRoles = pgTable("program_roles", {
   programId: uuid("program_id"),
   name: text("name").notNull(),
   perms: jsonb("perms").notNull().default({}),
+  /** Discord-style: when true, holding this role also places the person in a
+   * same-named group; when false the role never surfaces as a group. */
+  displayAsGroup: boolean("display_as_group").notNull().default(false),
   createdByUserId: uuid("created_by_user_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -397,11 +400,34 @@ export const platformRoleAssignments = pgTable("platform_role_assignments", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Custom Learning-Platform roles (name + per-area view/edit perms) and their
+ * email-keyed assignments — the learning app's own People-tab role system. */
+export const learningRoles = pgTable("learning_roles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  name: text("name").notNull(),
+  perms: jsonb("perms").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const learningRoleAssignments = pgTable("learning_role_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  email: text("email").notNull(),
+  roleId: uuid("role_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const groupMemberships = pgTable("group_memberships", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull(),
   groupId: uuid("group_id").notNull(),
   userId: uuid("user_id"),
+  /** Email-keyed placement (matches the People tab); set instead of userId when
+   * a person is placed in a group before they have an account. */
+  email: text("email"),
   role: text("role"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

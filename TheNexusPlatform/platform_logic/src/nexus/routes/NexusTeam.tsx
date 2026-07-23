@@ -92,7 +92,7 @@ export function NexusTeam() {
   return (
     <div>
       <PageHeader
-        title="Team & Roles"
+        title="People"
         subtitle="Who operates Nexus, and what each operator role can see and do."
         actions={
           <Button onClick={() => setCreating(true)}>

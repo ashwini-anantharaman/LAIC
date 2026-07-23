@@ -19,6 +19,7 @@ import {
   programAffiliations, groups, groupMemberships, invitations, registrations, participants, profiles, programs,
   programRoles, programRoleAssignments, platformRoleAssignments, entitlements, orgMemberships, registeredApps, appConfigVersions,
   appLaunchTokens, gates,
+  learningRoles, learningRoleAssignments,
 } from "./schema";
 
 type Row = Record<string, unknown>;
@@ -26,7 +27,7 @@ type Row = Record<string, unknown>;
 // ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
 const programRoleRow = (r: typeof programRoles.$inferSelect): Row => ({
   id: r.id, organization_id: r.organizationId, program_id: r.programId,
-  name: r.name, perms: r.perms, created_at: r.createdAt,
+  name: r.name, perms: r.perms, display_as_group: r.displayAsGroup ?? false, created_at: r.createdAt,
 });
 
 export async function listProgramRoles(programId: string): Promise<Row[]> {
@@ -50,21 +51,30 @@ export async function createProgramRole(
   name: string,
   perms: Row,
   createdByUserId?: string | null,
+  displayAsGroup?: boolean,
 ): Promise<Row> {
   return scoped(async (tx) => {
     const [r] = await tx
       .insert(programRoles)
-      .values({ organizationId: orgId, programId, name, perms, createdByUserId: createdByUserId ?? null })
+      .values({
+        organizationId: orgId, programId, name, perms,
+        displayAsGroup: displayAsGroup ?? false,
+        createdByUserId: createdByUserId ?? null,
+      })
       .returning();
     return programRoleRow(r);
   });
 }
 
-export async function updateProgramRole(id: string, patch: { name?: string; perms?: Row }): Promise<Row | null> {
+export async function updateProgramRole(
+  id: string,
+  patch: { name?: string; perms?: Row; displayAsGroup?: boolean },
+): Promise<Row | null> {
   return asPrivileged(async (tx) => {
     const set: Row = {};
     if (patch.name != null) set.name = patch.name;
     if (patch.perms != null) set.perms = patch.perms;
+    if (patch.displayAsGroup != null) set.displayAsGroup = patch.displayAsGroup;
     if (Object.keys(set).length === 0) return getProgramRole(id);
     const [r] = await tx.update(programRoles).set(set).where(eq(programRoles.id, id)).returning();
     return r ? programRoleRow(r) : null;
@@ -907,6 +917,18 @@ export async function updateGroup(id: string, patch: { name?: string; label?: st
   });
 }
 
+/** Delete a group: reparent its children onto its own parent (so descendants
+ * aren't orphaned), drop its memberships, then remove it. */
+export async function deleteGroup(id: string): Promise<void> {
+  await scoped(async (tx) => {
+    const cur = await tx.select({ parent: groups.parentGroupId }).from(groups).where(eq(groups.id, id)).limit(1);
+    const parent = cur[0]?.parent ?? null;
+    await tx.update(groups).set({ parentGroupId: parent }).where(eq(groups.parentGroupId, id));
+    await tx.delete(groupMemberships).where(eq(groupMemberships.groupId, id));
+    await tx.delete(groups).where(eq(groups.id, id));
+  });
+}
+
 export async function listGroupMembers(groupId: string): Promise<Row[]> {
   return scoped(async (tx) => {
     const rows = await tx.select().from(groupMemberships).where(eq(groupMemberships.groupId, groupId));
@@ -931,6 +953,69 @@ export async function addGroupMember(groupId: string, orgId: string, opts: { use
 
 export async function removeGroupMember(memberId: string): Promise<void> {
   await scoped(async (tx) => { await tx.delete(groupMemberships).where(eq(groupMemberships.id, memberId)); });
+}
+
+// ── Email-keyed group placement (Groups vs Roles) ───────────────────────────
+// A person's *explicit* group placement is email-keyed so it survives from
+// invite → activation, exactly like role assignments. Scoped to one program's
+// own groups so setting placements never touches another program.
+
+/** Replace a person's explicit group placements within THIS program's groups. */
+export async function setPersonGroups(
+  orgId: string,
+  programId: string,
+  email: string,
+  groupIds: string[],
+): Promise<void> {
+  const key = email.trim().toLowerCase();
+  await scoped(async (tx) => {
+    const progGroups = await tx.select({ id: groups.id }).from(groups)
+      .where(and(eq(groups.organizationId, orgId), eq(groups.programId, programId)));
+    const allowed = new Set(progGroups.map((g) => g.id));
+    const wanted = [...new Set(groupIds)].filter((g) => allowed.has(g));
+    // Clear this person's placements across the program's groups, then re-add.
+    if (allowed.size) {
+      await tx.delete(groupMemberships).where(and(
+        inArray(groupMemberships.groupId, [...allowed]),
+        sql`lower(${groupMemberships.email}) = ${key}`,
+      ));
+    }
+    for (const gid of wanted) {
+      await tx.insert(groupMemberships)
+        .values({ organizationId: orgId, groupId: gid, email: key })
+        .onConflictDoNothing();
+    }
+  });
+}
+
+/**
+ * The People-tab groups model for a program: the real (placement) groups, the
+ * roles flagged display_as_group (which act as groups), and — keyed by email —
+ * who is placed where. Role-groups' membership is implicit (whoever holds the
+ * role), so the frontend unions role assignments in; this returns only the
+ * explicit placements plus the role→group flags.
+ */
+export async function listProgramGroupsModel(orgId: string, programId: string): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const realGroups = (await tx.select().from(groups)
+      .where(and(eq(groups.organizationId, orgId), eq(groups.programId, programId))))
+      .map((g) => ({ id: g.id, name: g.name, label: g.label ?? null, parent_id: g.parentGroupId ?? null }));
+    const groupIds = realGroups.map((g) => g.id);
+    const placementRows = groupIds.length
+      ? await tx.select({ groupId: groupMemberships.groupId, email: groupMemberships.email })
+          .from(groupMemberships)
+          .where(and(inArray(groupMemberships.groupId, groupIds), sql`${groupMemberships.email} is not null`))
+      : [];
+    const placements: Record<string, string[]> = {};
+    for (const p of placementRows) {
+      const e = (p.email ?? "").toLowerCase();
+      if (!e) continue;
+      (placements[e] ??= []).push(p.groupId);
+    }
+    const roles = (await tx.select().from(programRoles).where(eq(programRoles.programId, programId)))
+      .map((r) => ({ id: r.id, name: r.name, display_as_group: r.displayAsGroup ?? false }));
+    return { groups: realGroups, roles, placements };
+  });
 }
 
 /** {groupId} ∪ all descendant group ids (recursive, within the org). */
@@ -1578,5 +1663,150 @@ export async function getRegisteredAppBySlug(slug: string): Promise<Row | null> 
       id: a.id, organization_id: a.organizationId, program_id: a.programId, offering_id: a.offeringId,
       app_name: a.appName, app_slug: a.appSlug, status: a.status, launch_url: a.launchUrl,
     };
+  });
+}
+
+// ── Learning Platform objects (backend proxy; Option B) ─────────────────────
+// The Learning app persisted learning_objects directly to its own Supabase via
+// the anon key. To keep org isolation (no public anon reads of shared prod), the
+// app now goes through Nexus: these run privileged (bypassing RLS) and scope
+// every read/write to the caller's org, resolved server-side from the session.
+
+export async function listLearningObjects(orgId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
+             description, estimated_time, blocks, tags, source_ids, pipeline_draft,
+             created_at::text as created_at, updated_at::text as updated_at
+      from learning_objects
+      where organization_id = ${orgId}
+      order by updated_at desc nulls last`);
+    return rows as unknown as Row[];
+  });
+}
+
+/** Insert-or-update one learning object, always stamped to the caller's org. */
+export async function upsertLearningObject(orgId: string, r: Row): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx.execute(sql`
+      insert into learning_objects
+        (id, organization_id, program_id, type, title, owner_id, owner_name, status, scope,
+         reuse_count, description, estimated_time, blocks, tags, source_ids, pipeline_draft,
+         created_at, updated_at)
+      values (
+        ${r.id}, ${orgId}, null, ${r.type}, ${r.title ?? ""}, ${r.owner_id ?? null},
+        ${r.owner_name ?? null}, ${r.status ?? "draft"}, ${r.scope ?? "bridge"},
+        ${r.reuse_count ?? 0}, ${r.description ?? ""}, ${r.estimated_time ?? ""},
+        ${JSON.stringify(r.blocks ?? [])}::jsonb, ${JSON.stringify(r.tags ?? [])}::jsonb,
+        ${JSON.stringify(r.source_ids ?? [])}::jsonb,
+        ${r.pipeline_draft != null ? JSON.stringify(r.pipeline_draft) : null}::jsonb,
+        coalesce(${r.created_at ?? null}::timestamptz, now()), now())
+      on conflict (id) do update set
+        title = excluded.title, type = excluded.type, owner_id = excluded.owner_id,
+        owner_name = excluded.owner_name, status = excluded.status, scope = excluded.scope,
+        reuse_count = excluded.reuse_count, description = excluded.description,
+        estimated_time = excluded.estimated_time, blocks = excluded.blocks,
+        tags = excluded.tags, source_ids = excluded.source_ids,
+        pipeline_draft = excluded.pipeline_draft, updated_at = now()
+      where learning_objects.organization_id = ${orgId}`);
+  });
+}
+
+// ── Learning Platform custom roles (its own People tab) ─────────────────────
+// Name + per-area view/edit perms; email-keyed assignments. Same shape/flow as
+// program roles, but a separate table so the learning app owns its own areas.
+const learningRoleRow = (r: typeof learningRoles.$inferSelect): Row => ({
+  id: r.id, organization_id: r.organizationId, program_id: r.programId,
+  name: r.name, perms: r.perms, created_at: r.createdAt,
+});
+
+export async function listLearningRoles(orgId: string, programId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) =>
+    (await tx.select().from(learningRoles)
+      .where(and(eq(learningRoles.organizationId, orgId), eq(learningRoles.programId, programId))))
+      .map(learningRoleRow),
+  );
+}
+
+export async function createLearningRole(orgId: string, programId: string, name: string, perms: Row): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const [r] = await tx.insert(learningRoles)
+      .values({ organizationId: orgId, programId, name, perms }).returning();
+    return learningRoleRow(r);
+  });
+}
+
+export async function updateLearningRole(id: string, patch: { name?: string; perms?: Row }): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const set: Row = {};
+    if (patch.name != null) set.name = patch.name;
+    if (patch.perms != null) set.perms = patch.perms;
+    if (Object.keys(set).length === 0) {
+      const r = await tx.select().from(learningRoles).where(eq(learningRoles.id, id)).limit(1);
+      return r.length ? learningRoleRow(r[0]) : null;
+    }
+    const [r] = await tx.update(learningRoles).set(set).where(eq(learningRoles.id, id)).returning();
+    return r ? learningRoleRow(r) : null;
+  });
+}
+
+export async function deleteLearningRole(id: string): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx.delete(learningRoleAssignments).where(eq(learningRoleAssignments.roleId, id));
+    await tx.delete(learningRoles).where(eq(learningRoles.id, id));
+  });
+}
+
+/** Assign (or clear, roleId null) a person's learning role, email-keyed. */
+export async function setLearningRoleAssignment(
+  orgId: string, programId: string, email: string, roleId: string | null,
+): Promise<void> {
+  const key = email.trim().toLowerCase();
+  await asPrivileged(async (tx) => {
+    await tx.delete(learningRoleAssignments)
+      .where(and(eq(learningRoleAssignments.programId, programId), sql`lower(${learningRoleAssignments.email}) = ${key}`));
+    if (roleId) {
+      await tx.insert(learningRoleAssignments)
+        .values({ organizationId: orgId, programId, email: key, roleId });
+    }
+  });
+}
+
+/** The person's learning role (id, name, perms) for this program, or null. */
+export async function getLearningRoleForEmail(programId: string, email: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select({ roleId: learningRoleAssignments.roleId, name: learningRoles.name, perms: learningRoles.perms })
+      .from(learningRoleAssignments)
+      .leftJoin(learningRoles, eq(learningRoles.id, learningRoleAssignments.roleId))
+      .where(and(eq(learningRoleAssignments.programId, programId), sql`lower(${learningRoleAssignments.email}) = ${email.trim().toLowerCase()}`))
+      .limit(1);
+    if (!r.length) return null;
+    return { role_id: r[0].roleId, role_name: r[0].name ?? null, perms: r[0].perms ?? {} };
+  });
+}
+
+/** Program people with their assigned LEARNING role (for the People tab). */
+export async function listLearningPeople(orgId: string, programId: string): Promise<Row[]> {
+  const team = await listProgramMembers(orgId, programId);
+  return asPrivileged(async (tx) => {
+    const assigns = await tx
+      .select({ email: learningRoleAssignments.email, roleId: learningRoleAssignments.roleId, name: learningRoles.name })
+      .from(learningRoleAssignments)
+      .leftJoin(learningRoles, eq(learningRoles.id, learningRoleAssignments.roleId))
+      .where(eq(learningRoleAssignments.programId, programId));
+    const byEmail = new Map(assigns.map((a) => [(a.email ?? "").toLowerCase(), a]));
+    return team.map((m: Row) => {
+      const email = ((m.email as string | null) ?? "").toLowerCase();
+      const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
+      const a = byEmail.get(email);
+      return {
+        email: m.email, display_name: m.display_name, status: m.status,
+        role_id: isAdmin ? null : a?.roleId ?? null,
+        role_name: isAdmin ? null : a?.name ?? null,
+        is_admin: isAdmin,
+        membership_id: m.membership_id ?? null, invitation_id: m.invitation_id ?? null,
+      };
+    });
   });
 }

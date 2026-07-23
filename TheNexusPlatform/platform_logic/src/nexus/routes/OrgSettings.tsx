@@ -30,6 +30,7 @@ import {
   removeOrgCategory,
   renameOrgCategory,
   revokeInvitation,
+  updateOrgName,
   updateOrgTheme,
   uploadOrgLogo,
 } from "@/services/api";
@@ -50,6 +51,7 @@ export function OrgSettings() {
   const [accent, setAccent] = useState("#4f46e5");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [orgSlug, setOrgSlug] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
 
@@ -78,7 +80,9 @@ export function OrgSettings() {
     (async () => {
       try {
         const mine = await listMyOrgs();
-        const slug = mine.find((o) => o.id === orgId)?.slug;
+        const me = mine.find((o) => o.id === orgId);
+        if (me?.name) setOrgName(me.name);
+        const slug = me?.slug;
         if (!slug) return;
         setOrgSlug(slug);
         const b = await getOrgBySlug(slug);
@@ -106,19 +110,26 @@ export function OrgSettings() {
     <div>
       <PageHeader title="Settings" subtitle="Your organization's profile, theme, and people." />
 
-      <Section title="Theme">
+      <Section title="Branding">
         <ThemeEditor
+          name={orgName}
+          nameLabel="Organization name"
+          onSaveName={async (n) => {
+            await updateOrgName(orgId, n);
+            setOrgName(n);
+            writeBranding({ orgId, slug: orgSlug, accent, logo: resolveAssetUrl(logoUrl), title: n });
+          }}
           accent={accent}
           logoUrl={resolveAssetUrl(logoUrl)}
           onSaveAccent={async (hex) => {
             await updateOrgTheme(orgId, { accent_color: hex });
             setAccent(hex);
-            writeBranding({ orgId, slug: orgSlug, accent: hex, logo: resolveAssetUrl(logoUrl) });
+            writeBranding({ orgId, slug: orgSlug, accent: hex, logo: resolveAssetUrl(logoUrl), title: orgName });
           }}
           onUploadLogo={async (file) => {
             const r = await uploadOrgLogo(orgId, file);
             setLogoUrl(r.logo_url);
-            writeBranding({ orgId, slug: orgSlug, accent, logo: resolveAssetUrl(r.logo_url) });
+            writeBranding({ orgId, slug: orgSlug, accent, logo: resolveAssetUrl(r.logo_url), title: orgName });
           }}
         />
       </Section>

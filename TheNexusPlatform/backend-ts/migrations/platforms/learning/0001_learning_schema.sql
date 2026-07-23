@@ -33,6 +33,10 @@ create table if not exists learning_objects (
   updated_at timestamptz not null default now()
 );
 
+-- The app persists in-progress pipeline drafts here (supabase.ts toRow); added
+-- when the LAIC content was migrated in. Idempotent for replays.
+alter table learning_objects add column if not exists pipeline_draft jsonb;
+
 create index if not exists idx_learning_objects_org on learning_objects (organization_id, updated_at desc);
 create index if not exists idx_learning_objects_program on learning_objects (program_id);
 create index if not exists idx_learning_objects_owner on learning_objects (owner_id);

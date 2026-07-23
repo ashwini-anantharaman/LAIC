@@ -300,7 +300,17 @@ async function _grantLevel(
   }
   // Platform areas granted as a single "administrator" toggle — full access.
   if (level === "administrator") return { level: "admin" };
-  return level === "view" || level === "comment" || level === "edit" ? { level } : null;
+  if (level === "view" || level === "comment" || level === "edit") return { level };
+  // A custom Learning role (the learning app's own People tab) grants base
+  // access to the platform; its per-area perms then gate the app internally.
+  if (area === "learning" && user.email) {
+    const lr = await graph.getLearningRoleForEmail(pid, user.email).catch(() => null);
+    if (lr) {
+      const anyEdit = Object.values(((lr.perms as Row) ?? {})).includes("edit");
+      return { level: anyEdit ? "edit" : "view" };
+    }
+  }
+  return null;
 }
 
 async function _roleName(user: PlatformUser, programId: string): Promise<string | null> {

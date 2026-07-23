@@ -52,7 +52,13 @@ function blockToText(b: Block): string {
         ...(c.items || []).slice(0, 8).map((it: any, i: number) => `Item ${i + 1}: ${it.prompt} → ${it.answer}`),
       ].filter(Boolean).join('\n');
     case 'concept-card':
-      return [`Term: ${c.term || ''}`, `Definition: ${c.definition || ''}`, c.example ? `Example: ${c.example}` : ''].filter(Boolean).join('\n');
+      return [
+        `Term: ${c.term || ''}`,
+        c.oneSentenceMeaning || c.definition ? `Meaning: ${c.oneSentenceMeaning || c.definition}` : '',
+        c.coreIdea ? `Core idea: ${c.coreIdea}` : '',
+        c.example ? `Example: ${c.example}` : '',
+        c.teachBack ? `Teach-back: ${c.teachBack}` : '',
+      ].filter(Boolean).join('\n');
     case 'source-excerpt':
       return `Source: ${c.sourceTitle || ''}\n${c.excerpt || ''}`;
     case 'quiz':

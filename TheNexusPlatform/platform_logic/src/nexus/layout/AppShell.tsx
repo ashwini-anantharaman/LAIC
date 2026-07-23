@@ -25,6 +25,7 @@ import {
   Moon,
   Sun,
   LogOut,
+  Menu,
   Settings as SettingsIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -49,7 +50,8 @@ import { useDocumentTitle } from "@/nexus/useDocumentTitle";
 import { Spinner } from "@/nexus/ui/kit";
 import type { Program } from "@/types/platform";
 import { accentForMode } from "@/nexus/theme/accent";
-import { clearBranding, onBranding, readBranding, writeBranding } from "@/nexus/branding";
+import { clearBranding, onBranding, orgPortalPath, readBranding, writeBranding } from "@/nexus/branding";
+import { useDocumentChrome } from "@/nexus/useDocumentChrome";
 
 interface NavItem {
   to: string;
@@ -67,7 +69,7 @@ function orgNav(orgId: string): NavItem[] {
   return [
     { to: `${base}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `${base}/programs`, label: "Programs", icon: Boxes },
-    { to: `${base}/team`, label: "Team & Roles", icon: KeyRound },
+    { to: `${base}/team`, label: "People", icon: KeyRound },
     { to: `${base}/settings`, label: "Settings", icon: Settings },
     { to: `${base}/audit`, label: "Audit", icon: ScrollText },
   ];
@@ -83,7 +85,7 @@ function programNav(orgId: string, programId: string): NavItem[] {
     { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
-    { to: `${base}/team`, label: "Team & Roles", icon: KeyRound },
+    { to: `${base}/team`, label: "People", icon: KeyRound },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
     { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
   ];
@@ -100,7 +102,7 @@ function confinedProgramNav(orgId: string, programId: string, perms: Record<stri
   if (perms.bridge) items.push({ to: `${base}/bridge`, label: "Bridge Platform", icon: Waypoints });
   if (perms.appbuilder) items.push({ to: `${base}/shells`, label: "App Shells", icon: AppWindow });
   if (perms.community) items.push({ to: `${base}/community`, label: "Community", icon: MessagesSquare });
-  if (perms.teams) items.push({ to: `${base}/team`, label: "Team & Roles", icon: KeyRound });
+  if (perms.teams) items.push({ to: `${base}/team`, label: "People", icon: KeyRound });
   if (perms.partners) items.push({ to: `${base}/partners`, label: "Partners", icon: Handshake });
   return items;
 }
@@ -306,8 +308,9 @@ function DevPersonaSwitcher({ orgId, programId }: { orgId: string; programId?: s
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => {
+            const dest = orgPortalPath(orgId) ?? "/login";
             logout();
-            navigate("/login");
+            window.location.assign(dest);
           }}
         >
           Sign out
@@ -324,6 +327,10 @@ export function AppShell() {
   const { pathname } = useLocation();
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === "dark";
+  // Mobile: the sidebar collapses into a hamburger-toggled drawer. Closes on
+  // navigation so tapping a link dismisses it.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useEffect(() => setMobileNavOpen(false), [pathname]);
 
   const orgId = params.orgId ?? orgMemberships[0]?.org_id ?? programMemberships[0]?.org_id ?? "";
   const programId = params.programId;
@@ -343,6 +350,10 @@ export function AppShell() {
     const cached = readBranding(orgId);
     return cached ? { accent: cached.accent, logo: cached.logo } : { accent: null, logo: null };
   });
+  // Display titles for the browser tab (see useDocumentChrome), tracked
+  // separately from the paint branding so a live rename updates the tab.
+  const [orgTitle, setOrgTitle] = useState<string | null>(() => (orgId ? readBranding(orgId)?.title ?? null : null));
+  const [platformTitle, setPlatformTitle] = useState<string | null>(() => readBranding("platform")?.title ?? null);
   // "Ready" = we know the real branding (cache hit or fetch settled). Until
   // then the shell paints a neutral spinner — never the default palette, so
   // there is no flash of the wrong color even on a first visit.
@@ -355,6 +366,7 @@ export function AppShell() {
     }
     const cached = readBranding(orgId);
     setOrgBranding(cached ? { accent: cached.accent, logo: cached.logo } : { accent: null, logo: null });
+    setOrgTitle(cached?.title ?? null);
     setBrandingReady(!!cached);
     (async () => {
       try {
@@ -362,11 +374,13 @@ export function AppShell() {
         const slug = mine.find((o) => o.id === orgId)?.slug;
         if (slug) {
           const b = await getOrgBySlug(slug);
+          setOrgTitle(b.name);
           writeBranding({
             orgId,
             slug,
             accent: b.theme_accent_color,
             logo: resolveAssetUrl(b.theme_logo_url),
+            title: b.name,
           });
         }
       } catch {
@@ -385,7 +399,10 @@ export function AppShell() {
   useEffect(() => {
     if (mode !== "nexus") return;
     getPlatformBranding()
-      .then((b) => writeBranding({ orgId: "platform", accent: b.accent, logo: resolveAssetUrl(b.logo) }))
+      .then((b) => {
+        setPlatformTitle(b.title ?? null);
+        writeBranding({ orgId: "platform", accent: b.accent, logo: resolveAssetUrl(b.logo), title: b.title ?? null });
+      })
       .catch(() => {});
   }, [mode]);
 
@@ -400,8 +417,14 @@ export function AppShell() {
   useEffect(
     () =>
       onBranding((b) => {
-        if (b.orgId === orgId) setOrgBranding({ accent: b.accent, logo: b.logo });
-        if (b.orgId === "platform") setPlatformBranding({ accent: b.accent, logo: b.logo });
+        if (b.orgId === orgId) {
+          setOrgBranding({ accent: b.accent, logo: b.logo });
+          if (b.title !== undefined) setOrgTitle(b.title ?? null);
+        }
+        if (b.orgId === "platform") {
+          setPlatformBranding({ accent: b.accent, logo: b.logo });
+          if (b.title !== undefined) setPlatformTitle(b.title ?? null);
+        }
         if (programId && b.orgId === programId) setProgramBranding({ accent: b.accent, logo: b.logo });
       }),
     [orgId, programId],
@@ -459,6 +482,18 @@ export function AppShell() {
   }, [programId, program, orgId]);
 
   const programName = program?.name ?? programMemberships.find((m) => m.program_id === programId)?.program_name ?? null;
+
+  // Browser tab (title + favicon) follows the current level.
+  const effectiveOrgName = orgTitle ?? orgName;
+  const tabTitle =
+    mode === "nexus"
+      ? platformTitle ?? "Nexus"
+      : programId
+        ? programName
+          ? `${programName} · ${effectiveOrgName}`
+          : effectiveOrgName
+        : effectiveOrgName;
+  useDocumentChrome(tabTitle, displayBranding.logo);
   // Effective feature switches (already clamped by the org's Nexus envelope
   // server-side). Until loaded, show everything to avoid a nav flash.
   const programFeatures: Record<string, boolean> = program?.features ?? {};
@@ -518,7 +553,7 @@ export function AppShell() {
     heading = "Nexus";
     items = [
       { to: "/orgs", label: "Organizations", icon: Building2 },
-      { to: "/team", label: "Team & Roles", icon: KeyRound },
+      { to: "/team", label: "People", icon: KeyRound },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
     ];
@@ -580,7 +615,7 @@ export function AppShell() {
     dashboard: "Dashboard", programs: "Programs", settings: "Settings", audit: "Audit",
     orgs: "Organizations", offerings: "Offerings", shells: "App Shells",
     registrations: "Registrations", groups: "Participants & Groups", community: "Community",
-    team: "Team & Roles", partners: "Partners", learning: "Learning Platform",
+    team: "People", partners: "Partners", learning: "Learning Platform",
   };
   const segments = pathname.split("/").filter(Boolean);
   const last = segments[segments.length - 1] ?? "";
@@ -600,32 +635,58 @@ export function AppShell() {
     );
   }
 
+  const sidebarBody = (
+    <>
+      <div className="flex items-center gap-2.5 px-5 h-14 border-b border-sidebar-border">
+        {displayBranding.logo ? (
+          <img src={displayBranding.logo} alt="" className="size-7 rounded-md object-cover" />
+        ) : (
+          <div className="grid size-7 place-items-center rounded-md bg-sidebar-accent text-sidebar-foreground text-sm font-semibold">
+            {mode === "nexus" ? "N" : initials(orgName)}
+          </div>
+        )}
+        <span className="font-semibold tracking-tight truncate">{heading}</span>
+      </div>
+      {/* Tapping a link closes the mobile drawer (harmless on desktop). */}
+      <nav className="flex-1 overflow-y-auto p-3 space-y-1" onClick={() => setMobileNavOpen(false)}>
+        {backLink}
+        {items.map((it) => (
+          <NavLinkRow key={it.to} item={it} />
+        ))}
+      </nav>
+    </>
+  );
+
   return (
     <div
       className="flex h-screen text-foreground"
       style={accentVars(displayBranding.accent, dark)}
     >
-      <aside className="glass-sidebar flex w-60 shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground">
-        <div className="flex items-center gap-2.5 px-5 h-14 border-b border-sidebar-border">
-          {displayBranding.logo ? (
-            <img src={displayBranding.logo} alt="" className="size-7 rounded-md object-cover" />
-          ) : (
-            <div className="grid size-7 place-items-center rounded-md bg-sidebar-accent text-sidebar-foreground text-sm font-semibold">
-              {mode === "nexus" ? "N" : initials(orgName)}
-            </div>
-          )}
-          <span className="font-semibold tracking-tight truncate">{heading}</span>
-        </div>
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {backLink}
-          {items.map((it) => (
-            <NavLinkRow key={it.to} item={it} />
-          ))}
-        </nav>
+      {/* Static sidebar — desktop only. */}
+      <aside className="glass-sidebar hidden md:flex w-60 shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground">
+        {sidebarBody}
       </aside>
 
+      {/* Mobile drawer — a slide-in overlay of the same sidebar. */}
+      {mobileNavOpen ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileNavOpen(false)} />
+          <aside className="glass-sidebar absolute inset-y-0 left-0 flex w-64 max-w-[80%] flex-col border-r border-sidebar-border text-sidebar-foreground shadow-xl">
+            {sidebarBody}
+          </aside>
+        </div>
+      ) : null}
+
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="glass-bar flex h-14 shrink-0 items-center gap-3 border-b border-border px-6">
+        <header className="glass-bar flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 md:px-6">
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            className="md:hidden -ml-1 grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            aria-label="Open menu"
+          >
+            <Menu className="size-5" />
+          </button>
           <nav className="flex items-center gap-1.5 text-sm text-muted-foreground min-w-0">
             {crumbs.map((c, i) => (
               <span key={i} className="flex items-center gap-1.5 min-w-0">
@@ -646,8 +707,11 @@ export function AppShell() {
           <button
             type="button"
             onClick={() => {
+              const dest = mode === "nexus" ? "/login" : orgPortalPath(orgId) ?? "/login";
               logout();
-              navigate("/login");
+              // Hard nav: clearing the session makes RequireAuth want to bounce
+              // to /login, which would override an in-app navigate to the org gate.
+              window.location.assign(dest);
             }}
             className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
             title="Sign out"

@@ -463,6 +463,8 @@ export interface ConceptCardConfig {
   incl?: string | string[];
   analogy?: string;
   len?: string;
+  /** Sheet categories from Define (toggle / rename / custom). */
+  categories?: Array<{ id: string; label: string; enabled: boolean; builtin?: boolean; tone?: string }>;
 }
 
 export interface ConceptCardSourceUnit {
@@ -474,16 +476,32 @@ export interface ConceptCardSourceUnit {
 
 export interface GeneratedConceptCard {
   id: string;
+  /** Legacy alias — prefer oneSentenceMeaning. */
+  definition?: string;
   term: string;
-  definition: string;
+  oneSentenceMeaning?: string;
+  whyItMatters?: string;
+  coreIdea?: string;
+  keyComponents?: string[];
   example?: string;
+  nonExample?: string;
+  visualOrFormula?: string;
+  visualChoice?: string;
+  visualAlternative?: string;
+  visualFormula?: string;
+  commonMistake?: string;
+  connection?: string;
+  recallQuestion?: string;
+  teachBack?: string;
+  categories?: Array<{ id: string; label: string; enabled: boolean; builtin?: boolean; tone?: string }>;
+  extraSections?: Array<{ id: string; title: string; body: string }>;
   analogy?: string;
   visualSuggestion?: string;
   misconception?: string;
   voice?: string;
   length?: string;
   includedViews?: Array<'definition' | 'analogy' | 'example' | 'visual' | 'misconception'>;
-  citations?: Partial<Record<'definition' | 'analogy' | 'example' | 'visual' | 'misconception', string>>;
+  citations?: Partial<Record<string, string>>;
 }
 
 export type ConceptCardGenEvent =

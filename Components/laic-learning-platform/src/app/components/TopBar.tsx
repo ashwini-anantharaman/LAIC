@@ -35,7 +35,7 @@ const SCREEN_TITLES: Record<string, { title: string; sub: string }> = {
   'or-reviews': { title: 'Object Reviews', sub: 'Review queue' },
   'cr-reviews': { title: 'Course Reviews', sub: 'Review queue' },
   'admin-overview': { title: 'Program Overview', sub: 'Bridge configuration' },
-  'admin-people': { title: 'People & Roles', sub: 'Permissions & assignments' },
+  'admin-people': { title: 'People', sub: 'Invite and manage people' },
   'admin-courses': { title: 'Courses & Assignments', sub: 'Learner management' },
   'admin-publishing': { title: 'Publishing & Governance', sub: "What's live" },
   'coach': { title: 'Coach', sub: 'Learner roster' },

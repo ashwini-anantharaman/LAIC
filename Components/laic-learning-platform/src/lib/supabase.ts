@@ -1,35 +1,31 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+/**
+ * Learning-object persistence — now proxied through Nexus (Option B), NOT a
+ * direct Supabase client. The browser sends its Nexus session token and the
+ * backend scopes every read/write to the caller's org (RLS-safe, no public
+ * anon reads). Keeps the original function names/shapes so callers are
+ * unchanged except that `supabaseEnabled` is now a call (runtime: do we have a
+ * Nexus session?). The file name is kept to minimise churn.
+ */
 import type { LearningObject } from './types';
+import { nexusFetch, getToken, getProgramId } from './nexus';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-/** Null when the project isn't configured — callers must fall back gracefully. */
-export const supabase: SupabaseClient | null = url && anonKey ? createClient(url, anonKey) : null;
-export const supabaseEnabled = !!supabase;
-
-/** Public storage bucket that holds tutorial images. */
-const BUCKET = 'media';
-/** Table that persists saved learning objects (drafts, in-review, etc.). */
-const TABLE = 'learning_objects';
+/** Remote persistence is available when we have a Nexus session (post-launch). */
+export function supabaseEnabled(): boolean {
+  return !!getToken();
+}
 
 /**
- * Upload an image to Supabase Storage and return its public URL.
- * Throws if Supabase isn't configured or the upload fails — callers decide
- * whether to fall back (e.g. to an inline data URL).
+ * "Upload" an image. In the Nexus-proxied model there's no client storage
+ * bucket, so we inline the image as a data URL — matching how the migrated
+ * learning content already embeds its images. Dependency-free, always works.
  */
 export async function uploadImage(file: File): Promise<string> {
-  if (!supabase) throw new Error('Supabase is not configured');
-  const ext = (file.name.split('.').pop() || 'png').toLowerCase();
-  const path = `images/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
-    cacheControl: '3600',
-    upsert: false,
-    contentType: file.type || undefined,
+  return await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(new Error('Could not read image'));
+    r.readAsDataURL(file);
   });
-  if (error) throw error;
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return data.publicUrl;
 }
 
 /* ─── row <-> LearningObject mapping ─────────────────────────────── */
@@ -76,17 +72,22 @@ function fromRow(row: any): LearningObject {
   };
 }
 
-/** Insert or update a learning object. Best-effort — throws on failure. */
+/** Insert or update a learning object via Nexus. Throws on failure. */
 export async function saveObject(obj: LearningObject): Promise<void> {
-  if (!supabase) throw new Error('Supabase is not configured');
-  const { error } = await supabase.from(TABLE).upsert(toRow(obj), { onConflict: 'id' });
-  if (error) throw error;
+  const res = await nexusFetch('/api/platform/learning/objects', {
+    method: 'PUT',
+    body: JSON.stringify({ ...toRow(obj), program_id: getProgramId() }),
+  });
+  if (!res.ok) throw new Error(`Save failed (${res.status})`);
 }
 
-/** Fetch all saved learning objects, newest first. */
+/** Fetch all learning objects for the caller's org, newest first. */
 export async function listObjects(): Promise<LearningObject[]> {
-  if (!supabase) return [];
-  const { data, error } = await supabase.from(TABLE).select('*').order('updated_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map(fromRow);
+  if (!getToken()) return [];
+  const pid = getProgramId();
+  const qs = pid ? `?program_id=${encodeURIComponent(pid)}` : '';
+  const res = await nexusFetch(`/api/platform/learning/objects${qs}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (Array.isArray(data) ? data : []).map(fromRow);
 }

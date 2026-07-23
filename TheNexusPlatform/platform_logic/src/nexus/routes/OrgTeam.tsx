@@ -43,7 +43,7 @@ import { useSession } from "@/nexus/session";
 
 const ORG_AREAS: ScopedArea[] = [
   { key: "programs", label: "Programs", kind: "graded", hint: "edit = create/configure programs, assign program admins" },
-  { key: "team", label: "Team & Roles", kind: "graded", hint: "edit = invite/remove members, assign roles" },
+  { key: "team", label: "People", kind: "graded", hint: "edit = invite/remove members, assign roles" },
   { key: "settings", label: "Settings", kind: "graded", hint: "edit = theme, logo, categories" },
   { key: "audit", label: "Audit", kind: "toggle", grant: "view", hint: "read-only by nature" },
 ];
@@ -110,7 +110,7 @@ export function OrgTeam() {
   return (
     <div>
       <PageHeader
-        title="Team & Roles"
+        title="People"
         subtitle="Who runs this organization, and what each role can see and do."
         actions={
           <Button onClick={() => setCreating(true)}>

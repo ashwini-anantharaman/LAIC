@@ -16,6 +16,7 @@ import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { useSession } from "@/nexus/session";
 import { useDocumentTitle } from "@/nexus/useDocumentTitle";
 import { readBranding, writeBranding } from "@/nexus/branding";
+import { useDocumentChrome } from "@/nexus/useDocumentChrome";
 import { resolveAssetUrl } from "@/services/apiBase";
 
 export function OrgPortal() {
@@ -39,10 +40,12 @@ export function OrgPortal() {
     getOrgBySlug(slug)
       .then((b) => {
         setOrg(b);
-        writeBranding({ orgId: b.id, slug, accent: b.theme_accent_color, logo: resolveAssetUrl(b.theme_logo_url) });
+        writeBranding({ orgId: b.id, slug, accent: b.theme_accent_color, logo: resolveAssetUrl(b.theme_logo_url), title: b.name });
       })
       .catch(() => setNotFound(true));
   }, [slug]);
+
+  useDocumentChrome(org?.name, resolveAssetUrl(org?.theme_logo_url ?? null));
 
   useEffect(() => {
     if (!DEV_ENABLED) return;
