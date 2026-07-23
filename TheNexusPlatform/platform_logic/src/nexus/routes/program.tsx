@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BookOpen, Check, Plus, Rocket, Waypoints, X } from "lucide-react";
+import { BookOpen, Check, ExternalLink, Plus, Rocket, Waypoints, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -180,7 +180,7 @@ export function ProgramOverview() {
             hint={p.hint}
             busy={busy === p.key}
             canRemove={access.isAdmin}
-            onOpen={() => navigate(`/o/${orgId}/p/${programId}/${p.path}`)}
+            href={`${window.location.origin}/o/${orgId}/p/${programId}/${p.path}`}
             onRemove={() => setFeature(p.key, false)}
           />
         ))}
@@ -198,7 +198,7 @@ function PlatformCard({
   hint,
   busy,
   canRemove,
-  onOpen,
+  href,
   onRemove,
 }: {
   icon: React.ReactNode;
@@ -206,7 +206,7 @@ function PlatformCard({
   hint: string;
   busy: boolean;
   canRemove: boolean;
-  onOpen: () => void;
+  href: string;
   onRemove: () => void;
 }) {
   return (
@@ -223,13 +223,23 @@ function PlatformCard({
           {busy ? <span className="text-[10px]">…</span> : <X className="size-3.5" />}
         </ConfirmButton>
       ) : null}
-      <button type="button" onClick={onOpen} className="flex flex-1 items-center gap-4 text-left">
+      {/* Opens the platform in a new tab so the console stays put (no navigate
+          away + back-and-forth). A real link → cmd/middle-click work too. */}
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex flex-1 items-center gap-4 text-left"
+      >
         <div className="grid size-11 place-items-center rounded-xl bg-primary/10 text-foreground">{icon}</div>
-        <div className="min-w-0">
-          <div className="font-medium text-foreground">{title}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 font-medium text-foreground">
+            {title}
+            <ExternalLink className="size-3.5 text-muted-foreground" />
+          </div>
           <div className="text-xs text-muted-foreground">{hint}</div>
         </div>
-      </button>
+      </a>
     </div>
   );
 }
