@@ -49,7 +49,7 @@ export function OrgDashboard() {
         <Stat label="Courses" value={programs.reduce((n, p) => n + (p.course_count ?? 0), 0)} />
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr] items-start">
+      <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr] items-start [&>*]:min-w-0">
         <Section title="Programs">
           {programs.length === 0 ? (
             <EmptyState>No programs yet.</EmptyState>
@@ -83,7 +83,7 @@ export function OrgDashboard() {
               audit.map((a) => (
                 <div key={a.id} className="px-4 py-3">
                   <div className="text-sm text-foreground">{a.actor_name ?? "System"}</div>
-                  <div className="text-xs text-muted-foreground font-mono">{a.action}</div>
+                  <div className="text-xs text-muted-foreground font-mono break-all">{a.action}</div>
                 </div>
               ))
             )}

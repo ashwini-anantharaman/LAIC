@@ -247,6 +247,46 @@
   }
 }
 
+/* ── Responsive tables ───────────────────────────────────────────────────
+   On phones, a data table can't fit its columns, forcing an awkward
+   left/right scroll inside its card. Below md, reflow every shared table
+   (shadcn data-slot="table") into a stack of row-cards: the header hides and
+   each cell becomes a labelled line (via data-label). Desktop is untouched. */
+@media (max-width: 767px) {
+  [data-slot="table-container"] { overflow-x: visible; }
+  [data-slot="table"],
+  [data-slot="table"] tbody,
+  [data-slot="table"] tr,
+  [data-slot="table"] td {
+    display: block;
+    width: 100%;
+  }
+  [data-slot="table"] thead { display: none; }
+  [data-slot="table"] tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.85rem;
+    margin-bottom: 0.5rem;
+  }
+  [data-slot="table"] tr:last-child { margin-bottom: 0; }
+  [data-slot="table"] td {
+    padding: 0.3rem 0 !important;
+    text-align: left !important;
+    border: 0 !important;
+  }
+  [data-slot="table"] td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted-foreground);
+    margin-bottom: 2px;
+  }
+  /* An empty trailing cell (e.g. an actions column with nothing) collapses. */
+  [data-slot="table"] td:empty { display: none; }
+}
+
 /* Floating surfaces (dialogs, popovers, menus, selects) become the same
    liquid glass. They already paint bg-popover/bg-background; this layers the
    blur, specular edge, and hairline on top via their data-slot hooks. */

@@ -456,8 +456,8 @@ export function ProgramTeam() {
               );
               const holders = (members ?? []).filter((m) => m.role_id === r.id).length;
               return (
-                <div key={r.id} className="flex items-center gap-3 glass-card px-4 py-3">
-                  <div className="min-w-[140px]">
+                <div key={r.id} className="flex flex-wrap items-center gap-3 glass-card px-4 py-3">
+                  <div className="min-w-[120px]">
                     <div className="font-medium text-foreground">{r.name}</div>
                     <div className="text-xs text-muted-foreground">
                       {holders} member{holders !== 1 ? "s" : ""}
@@ -501,7 +501,7 @@ export function ProgramTeam() {
       <Section
         title="People"
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
               onClick={() => switchView(view === "grid" ? "stack" : "grid")}
