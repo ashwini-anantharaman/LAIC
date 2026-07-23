@@ -56,6 +56,9 @@ export interface Program {
   platforms?: Record<string, boolean> | null;
   /** Program's own branding; null = inherit the organization's. */
   branding?: { accent: string | null; logo: string | null } | null;
+  /** Access boundary: may org-level admins enter this program without explicit
+   *  program access? Absent/true = yes. */
+  admins_can_enter?: boolean;
 }
 
 export interface Integration {

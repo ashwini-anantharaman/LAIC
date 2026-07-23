@@ -229,15 +229,23 @@ async function _grantLevel(
 ): Promise<{ level: AreaGrantLevel; platformRole?: string } | null> {
   const orgId = program.org_id as string;
   const pid = program.id as string;
-  // Org owner/administrator (org-level, program_id null) or this program's
-  // reserved administrator → full access (§3.5 delegation).
-  const isAdmin = user.memberships.some(
-    (m) =>
-      m.org_id === orgId &&
-      ["owner", "administrator"].includes(m.role) &&
-      (!m.program_id || m.program_id === pid),
-  );
-  if (isAdmin) return { level: "admin" };
+  const isAdminRole = (m: Row) => m.org_id === orgId && ["owner", "administrator"].includes(m.role);
+  // This program's reserved administrator (program-scoped membership) is ALWAYS
+  // full — that is explicit, program-level access.
+  const programScopedAdmin = user.memberships.some((m) => isAdminRole(m) && m.program_id === pid);
+  if (programScopedAdmin) return { level: "admin" };
+  // An org-LEVEL admin/owner (program_id null) only gets blanket access into a
+  // program when the access boundary allows it: the org envelope
+  // (adminsEnterPrograms) AND the program's own toggle (admins_can_enter) must
+  // both be on. Otherwise they fall through to explicit role resolution below —
+  // so they can still enter a program they were explicitly granted a role in.
+  const orgLevelAdmin = user.memberships.some((m) => isAdminRole(m) && !m.program_id);
+  if (orgLevelAdmin) {
+    const caps = await db.getOrgCapabilities(orgId).catch(() => null);
+    const orgAllows = !caps || (caps.adminsEnterPrograms as boolean | undefined) !== false;
+    const programAllows = (program.admins_can_enter as boolean | undefined) !== false;
+    if (orgAllows && programAllows) return { level: "admin" };
+  }
 
   // Plain member: the custom role's area grant (Team & Roles). Role
   // assignments live in the DB layer only (501-free: absent in demo mode).

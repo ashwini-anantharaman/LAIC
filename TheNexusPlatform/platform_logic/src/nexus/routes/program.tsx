@@ -55,6 +55,7 @@ import type { ProgramFeatureKey, ProgramFeatures } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Spinner, statusTone } from "@/nexus/ui/kit";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useProgramAccess } from "@/nexus/access";
+import { useSession } from "@/nexus/session";
 
 /** Fetch the current program (no single-get endpoint; list + find). */
 function useProgram(): { program: Program | null; orgId: string; programId: string } {
@@ -106,6 +107,7 @@ export function ProgramOverview() {
   const { program, orgId, programId } = useProgram();
   const navigate = useNavigate();
   const access = useProgramAccess(programId);
+  const { programMemberships } = useSession();
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [caps, setCaps] = useState<OrgCapabilities | null>(null);
   const [features, setFeatures] = useState<ProgramFeatures>(DEFAULT_PROGRAM_FEATURES);
@@ -139,6 +141,21 @@ export function ProgramOverview() {
       setBusy(null);
     }
   }
+
+  // Access boundary: an org-level admin (no program-scoped membership here) is
+  // bounced out when the org envelope OR this program's toggle forbids entry.
+  // A program-scoped admin/member always has explicit access, so never bounced.
+  const hasProgramMembership = programMemberships.some((m) => m.program_id === programId);
+  const enterBlocked =
+    !hasProgramMembership &&
+    ((caps ? caps.adminsEnterPrograms === false : false) || (program ? program.admins_can_enter === false : false));
+  useEffect(() => {
+    if (access.loading || access.impersonating) return;
+    if (!caps || !program) return; // wait until toggles are known
+    if (access.isAdmin && enterBlocked) {
+      navigate(`/o/${orgId}/programs`, { replace: true });
+    }
+  }, [access.loading, access.isAdmin, access.impersonating, caps, program, enterBlocked, orgId, navigate]);
 
   // Confined viewers (members / role previews) never see a half-loaded page:
   // one spinner until we know whether to auto-launch or what cards to paint.

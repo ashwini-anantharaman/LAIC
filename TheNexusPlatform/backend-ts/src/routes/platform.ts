@@ -127,6 +127,7 @@ function _programResponse(row: Row): Row {
     platforms: row.platforms ?? null,
     secondary_categories: row.secondary_categories ?? [],
     branding: row.branding ?? null,
+    admins_can_enter: row.admins_can_enter !== false,
   };
 }
 
@@ -965,14 +966,14 @@ platformRouter.patch("/programs/:program_id/features", async (c) => {
   await _assertProgramConfigAccess(user, program.org_id, programId);
   const req = parseBody(programFeaturesUpdate, await c.req.json());
   const features = normalizeProgramFeatures(req.features);
-  const row = await db.updateProgramFeatures(programId, features);
+  const row = await db.updateProgramFeatures(programId, features, req.admins_can_enter);
   if (!row) throw new HttpError(404, "Program not found");
   await db.recordAuditEvent("program.features.updated", {
     orgId: program.org_id,
     actorUserId: user.id,
     scopeType: "program",
     scopeId: programId,
-    metadata: { features },
+    metadata: { features, admins_can_enter: req.admins_can_enter },
   });
   return c.json(_programResponse((await db.getProgram(programId)) ?? row));
 });
@@ -1702,6 +1703,8 @@ const capabilityPatchSchema = z.object({
   features: z.record(z.string(), z.boolean()).optional(),
   // Max programs the org may create; null = unlimited.
   programCapacity: z.number().int().min(1).nullable().optional(),
+  // May org-level admins enter the org's programs? (access boundary)
+  adminsEnterPrograms: z.boolean().optional(),
 });
 
 platformRouter.put("/orgs/:org_id/capabilities", async (c) => {

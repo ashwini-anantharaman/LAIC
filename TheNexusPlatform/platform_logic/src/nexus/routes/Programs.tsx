@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ChevronLeft, ChevronRight, Copy, Layers, LayoutGrid, Plus, SlidersHorizontal, Trash2, UserCog } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Layers, LayoutGrid, Lock, Plus, SlidersHorizontal, Trash2, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -93,6 +93,12 @@ export function Programs() {
     (k) => !caps || caps.features[k] !== false,
   );
 
+  // Access boundary: an org admin can open a program only when the org envelope
+  // AND the program's own toggle both allow it. When gated, the card keeps its
+  // management controls (admins, features) but the "open" affordance is removed.
+  const orgAllowsEnter = !caps || caps.adminsEnterPrograms !== false;
+  const canEnter = (p: Program) => orgAllowsEnter && p.admins_can_enter !== false;
+
   async function remove(p: Program) {
     try {
       await deleteProgram(p.id);
@@ -137,6 +143,7 @@ export function Programs() {
               key={p.id}
               orgId={orgId}
               program={p}
+              canEnter={canEnter(p)}
               onAssign={() => setAssigning(p)}
               onEditFeatures={() => setEditingFeatures(p)}
               onRemove={() => remove(p)}
@@ -161,6 +168,7 @@ export function Programs() {
                   key={p.id}
                   orgId={orgId}
                   program={p}
+                  canEnter={canEnter(p)}
                   onAssign={() => setAssigning(p)}
                   onEditFeatures={() => setEditingFeatures(p)}
                   onRemove={() => remove(p)}
@@ -241,12 +249,14 @@ function FeatureToggles({
 function ProgramCard({
   orgId,
   program: p,
+  canEnter,
   onAssign,
   onEditFeatures,
   onRemove,
 }: {
   orgId: string;
   program: Program;
+  canEnter: boolean;
   onAssign: () => void;
   onEditFeatures: () => void;
   onRemove: () => void;
@@ -270,10 +280,17 @@ function ProgramCard({
   return (
     <div className="glass-card p-4">
       <div className="flex items-start justify-between gap-2">
-        <Link to={`/o/${orgId}/p/${p.id}`} className="min-w-0 group">
-          <div className="font-medium text-foreground group-hover:underline truncate">{p.name}</div>
-          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{p.description}</div>
-        </Link>
+        {canEnter ? (
+          <Link to={`/o/${orgId}/p/${p.id}`} className="min-w-0 group">
+            <div className="font-medium text-foreground group-hover:underline truncate">{p.name}</div>
+            <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{p.description}</div>
+          </Link>
+        ) : (
+          <div className="min-w-0">
+            <div className="font-medium text-foreground truncate">{p.name}</div>
+            <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{p.description}</div>
+          </div>
+        )}
         <div className="flex shrink-0 items-center gap-1.5">
           <Pill tone="neutral">{p.category}</Pill>
           {(p.secondary_categories ?? []).slice(0, 2).map((c) => (
@@ -313,12 +330,21 @@ function ProgramCard({
             Features
           </button>
         </div>
-        <Link
-          to={`/o/${orgId}/p/${p.id}`}
-          className="inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline shrink-0"
-        >
-          Open <ChevronRight className="size-3.5" />
-        </Link>
+        {canEnter ? (
+          <Link
+            to={`/o/${orgId}/p/${p.id}`}
+            className="inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline shrink-0"
+          >
+            Open <ChevronRight className="size-3.5" />
+          </Link>
+        ) : (
+          <span
+            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground shrink-0"
+            title="This program is self-managed — you need explicit access to open it. You can still manage its admins and features here."
+          >
+            <Lock className="size-3.5" /> Restricted
+          </span>
+        )}
       </div>
     </div>
   );
@@ -742,6 +768,7 @@ function EditFeaturesDialog({
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
   const [primary, setPrimary] = useState<string>("");
   const [secondary, setSecondary] = useState<string[]>([]);
+  const [adminsCanEnter, setAdminsCanEnter] = useState(true);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -749,6 +776,7 @@ function EditFeaturesDialog({
       setFeatures({ ...DEFAULT_PROGRAM_FEATURES, ...(program.features ?? {}) });
       setPrimary(program.category);
       setSecondary(program.secondary_categories ?? []);
+      setAdminsCanEnter(program.admins_can_enter !== false);
     }
   }, [program]);
 
@@ -760,7 +788,7 @@ function EditFeaturesDialog({
     if (!program) return;
     setBusy(true);
     try {
-      await updateProgramFeatures(program.id, features);
+      await updateProgramFeatures(program.id, features, adminsCanEnter);
       if (primary !== program.category || JSON.stringify(secondary) !== JSON.stringify(program.secondary_categories ?? [])) {
         await updateProgramCategories(program.id, {
           category: primary,
@@ -828,6 +856,20 @@ function EditFeaturesDialog({
             the record, but the area stops being offered.
           </p>
           <FeatureToggles features={features} onChange={setFeatures} allowedKeys={allowedFeatureKeys} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Access</Label>
+          <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3">
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">Admins can enter this program</span>
+              <span className="block text-xs text-muted-foreground">
+                {adminsCanEnter
+                  ? "Org admins can open this program."
+                  : "Off — only people given explicit access to this program can open it. Org admins can still manage it from the Programs list."}
+              </span>
+            </span>
+            <Switch checked={adminsCanEnter} onCheckedChange={setAdminsCanEnter} disabled={busy} />
+          </label>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>

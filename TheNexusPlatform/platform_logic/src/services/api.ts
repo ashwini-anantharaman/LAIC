@@ -519,10 +519,13 @@ export async function createProgram(orgId: string, program: DraftProgramInput): 
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
+  adminsCanEnter?: boolean,
 ): Promise<Program> {
   return request<Program>(`/api/platform/programs/${programId}/features`, {
     method: "PATCH",
-    body: JSON.stringify({ features }),
+    body: JSON.stringify(
+      adminsCanEnter === undefined ? { features } : { features, admins_can_enter: adminsCanEnter },
+    ),
   });
 }
 
@@ -745,6 +748,8 @@ export interface OrgCapabilities {
   features: Record<string, boolean>;
   /** Max programs the org may create; null = unlimited. */
   programCapacity?: number | null;
+  /** May org-level admins enter the org's programs? Absent/true = yes. */
+  adminsEnterPrograms?: boolean;
 }
 
 export async function getOrgCapabilities(orgId: string): Promise<OrgCapabilities> {
