@@ -10,6 +10,7 @@ import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { saveItemAction } from "@/app/bridge/kb/actions";
+import { Dropdown } from "@/components/Dropdown";
 import { ItemEditor } from "@/components/kb/ItemEditor";
 import { ItemView } from "@/components/kb/ItemView";
 import { DealEditor } from "@/components/library/DealEditor";
@@ -354,7 +355,7 @@ export default async function SessionPage({
           </Link>
         )}
         {!learnerMode && (
-          <details className="relative">
+          <Dropdown className="relative">
             <summary
               className="cursor-pointer list-none rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
               aria-label="Save to library"
@@ -395,7 +396,7 @@ export default async function SessionPage({
                 Save
               </button>
             </form>
-          </details>
+          </Dropdown>
         )}
         {!learnerMode && aiToAct && (
           <form action={playToEndAction}>

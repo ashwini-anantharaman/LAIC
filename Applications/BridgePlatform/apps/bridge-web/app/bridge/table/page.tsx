@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ensureSeeds, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore, sessionService } from "@/lib/sessions";
+import { Dropdown } from "@/components/Dropdown";
 import { resumePlayEntryAction } from "../library/actions";
 import { quickPlayAction } from "./actions";
 
@@ -99,7 +100,7 @@ export default async function PlayPage() {
                 </Link>
               )}
               {actives.length > 1 && (
-                <details className="relative">
+                <Dropdown className="relative">
                   <summary className="block w-full cursor-pointer rounded bg-emerald-700 px-4 py-2 text-center text-sm font-medium text-white hover:bg-emerald-800">
                     Resume board ▾ ({actives.length} in progress)
                   </summary>
@@ -117,10 +118,10 @@ export default async function PlayPage() {
                       </Link>
                     ))}
                   </div>
-                </details>
+                </Dropdown>
               )}
               {plays.length > 0 && (
-                <details className="relative">
+                <Dropdown className="relative">
                   <summary className="block w-full cursor-pointer rounded border border-neutral-300 px-4 py-2 text-center text-sm hover:border-emerald-400">
                     Resume play ▾
                   </summary>
@@ -143,7 +144,7 @@ export default async function PlayPage() {
                       </form>
                     ))}
                   </div>
-                </details>
+                </Dropdown>
               )}
               {dealable && (
                 <form action={quickPlayAction} className="flex items-center gap-2">
