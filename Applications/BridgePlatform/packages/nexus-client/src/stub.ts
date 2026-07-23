@@ -145,6 +145,26 @@ export const STUB_USERS: StubUser[] = [
       accessLevel: "reviewer",
     },
   },
+  {
+    // The single shared account behind the mobile deployment: same
+    // fellow/reviewer reach as the fellows-testing account, so the phone UI
+    // can exercise the whole workspace.
+    devUserId: "user_mobile_demo",
+    displayName: "Mobile",
+    description: "Shared mobile-testing account.",
+    context: {
+      ...base,
+      nexusUserId: "user_mobile_demo",
+      roles: ["bridge_reviewer", "bridge_fellow"],
+      permissions: [
+        "bridge.session.create",
+        "bridge.session.play",
+        "bridge.knowledge.review",
+        "bridge.knowledge.edit",
+      ],
+      accessLevel: "reviewer",
+    },
+  },
 ];
 
 export function findStubUser(devUserId: string): StubUser | undefined {

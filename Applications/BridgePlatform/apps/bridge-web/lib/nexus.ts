@@ -28,6 +28,26 @@ export const isFellowDemo = cache(async (): Promise<boolean> => {
   }
 });
 
+/** The mobile deployment: same build, reached on a mobile demo host, it hides
+ *  the login and auto-signs the caller in as the shared "Mobile" account, then
+ *  routes to the /m/* phone UI. Host-gated exactly like the fellows demo — the
+ *  hosts default to any alias containing "nexus-bridge-mobile" and can be
+ *  overridden with MOBILE_SITE_HOSTS (comma-separated substrings). */
+export const MOBILE_DEMO_USER = "user_mobile_demo";
+
+export const isMobileSite = cache(async (): Promise<boolean> => {
+  const hosts = (process.env.MOBILE_SITE_HOSTS ?? "nexus-bridge-mobile")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  try {
+    const host = (await headers()).get("host") ?? "";
+    return hosts.some((h) => host.includes(h));
+  } catch {
+    return false;
+  }
+});
+
 export type NexusMode = "stub" | "http";
 
 export function nexusMode(): NexusMode {
@@ -66,11 +86,14 @@ export const getBridgeContext = cache(
   async (): Promise<NexusBridgeContext | null> => {
     if (nexusMode() === "stub") {
       // On the fellows-testing host, sign everyone in as the shared account —
-      // no cookie, no login screen.
+      // no cookie, no login screen. The mobile host does the same with its own
+      // shared account (fellow demo wins if a host somehow matched both).
       const cookieStore = await cookies();
       const devUserId = (await isFellowDemo())
         ? FELLOW_DEMO_USER
-        : cookieStore.get(DEV_USER_COOKIE)?.value;
+        : (await isMobileSite())
+          ? MOBILE_DEMO_USER
+          : cookieStore.get(DEV_USER_COOKIE)?.value;
       if (!devUserId) return null;
       try {
         const context = await createNexusClient({

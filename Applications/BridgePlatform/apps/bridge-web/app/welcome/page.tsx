@@ -2,9 +2,11 @@ import { roleLabel, STUB_USERS } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
 import { setDevUser } from "@/app/actions";
 import { LoginForm } from "@/components/LoginForm";
-import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
+import { getBridgeContext, isFellowDemo, isMobileSite, nexusMode } from "@/lib/nexus";
 
 export default async function WelcomePage() {
+  // The mobile host has its own auto-signed-in phone UI — never show the login.
+  if (await isMobileSite()) redirect("/m/play");
   const context = await getBridgeContext();
   // On the fellows-testing host everyone is auto-signed-in as "Fellow"; there
   // is no login, and Home is hidden — land straight on Play.

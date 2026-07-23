@@ -180,6 +180,8 @@ export async function playEntryAction(formData: FormData): Promise<void> {
   await ensureSeeds();
   await assertAiAllowed(context);
   const entryId = String(formData.get("entryId"));
+  // Additive, inert by default: mobile=1 opens the board in the /m/table chrome.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const entry = await libraryStore().getEntry(entryId);
   if (!entry?.hands) throw new Error("This entry has no deal to play");
 
@@ -201,7 +203,7 @@ export async function playEntryAction(formData: FormData): Promise<void> {
     kbId,
     fromLibrary: entryId,
   });
-  redirect(`/bridge/table/${record.sessionId}`);
+  redirect(`${tableBase}${record.sessionId}`);
 }
 
 /** Resume a saved play: replay its recorded calls & cards onto a fresh table
@@ -211,6 +213,8 @@ export async function resumePlayEntryAction(formData: FormData): Promise<void> {
   await ensureSeeds();
   await assertAiAllowed(context);
   const entryId = String(formData.get("entryId"));
+  // Additive, inert by default: mobile=1 opens the board in the /m/table chrome.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const entry = await libraryStore().getEntry(entryId);
   if (entry?.kind !== "play" || !entry.hands)
     throw new Error("This entry is not a saved play");
@@ -253,7 +257,7 @@ export async function resumePlayEntryAction(formData: FormData): Promise<void> {
     kbId,
     resumedFrom: entryId,
   });
-  redirect(`/bridge/table/${record.sessionId}`);
+  redirect(`${tableBase}${record.sessionId}`);
 }
 
 /** Start a saved table lineup on a fresh deal. */
@@ -262,6 +266,8 @@ export async function startTableEntryAction(formData: FormData): Promise<void> {
   await ensureSeeds();
   await assertAiAllowed(context);
   const entryId = String(formData.get("entryId"));
+  // Additive, inert by default: mobile=1 opens the board in the /m/table chrome.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const entry = await libraryStore().getEntry(entryId);
   if (entry?.kind !== "table" || !entry.kbId || !entry.seats)
     throw new Error("This entry is not a table lineup");
@@ -294,7 +300,7 @@ export async function startTableEntryAction(formData: FormData): Promise<void> {
     kbId: entry.kbId,
     fromTableEntry: entryId,
   });
-  redirect(`/bridge/table/${record.sessionId}`);
+  redirect(`${tableBase}${record.sessionId}`);
 }
 
 export async function deleteEntryAction(formData: FormData): Promise<void> {

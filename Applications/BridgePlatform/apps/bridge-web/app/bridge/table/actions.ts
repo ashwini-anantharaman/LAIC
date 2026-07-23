@@ -84,6 +84,9 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
 
   const { pickDefaultSet, ensureHousePlayer } = await import("@/lib/arena");
   const store = kbStore();
+  // Additive, inert by default: the mobile phone UI posts mobile=1 so the
+  // fresh board opens in the /m/table chrome instead of the desktop table.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const preferredKbId = String(formData.get("kbId") ?? "").trim();
   const dealerRaw = String(formData.get("dealer") ?? "N");
   const dealer: Seat = (SEATS as string[]).includes(dealerRaw) ? (dealerRaw as Seat) : "N";
@@ -110,9 +113,9 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
       dealer,
       createdBy: context.nexusUserId,
     });
-    redirect(`/bridge/table/${record.sessionId}`);
+    redirect(`${tableBase}${record.sessionId}`);
   }
-  redirect("/bridge/table");
+  redirect(tableBase === "/m/table/" ? "/m/play" : "/bridge/table");
 }
 
 /**
@@ -284,6 +287,9 @@ export async function playCardAction(formData: FormData): Promise<void> {
 export async function undoAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   const sessionId = String(formData.get("sessionId"));
+  // Additive, inert by default: the mobile felt UI posts mobile=1 so we return
+  // to the /m/table chrome instead of the desktop board.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   await sessionService().undo(sessionId);
   await audit(context, "session.undo", "kb_session", sessionId);
   revalidatePath(`/bridge/table/${sessionId}`);
@@ -291,7 +297,7 @@ export async function undoAction(formData: FormData): Promise<void> {
   // decision — auto-play would instantly redo it. Step ▸ resumes one beat
   // at a time. The token is unique per undo so AutoAdvance remounts paused
   // even when the previous pause was already resumed.
-  redirect(`/bridge/table/${sessionId}?paused=${Date.now()}`);
+  redirect(`${tableBase}${sessionId}?paused=${Date.now()}`);
 }
 
 /** Rewind the whole board to the deal — undo's big sibling. Comes back
@@ -299,10 +305,11 @@ export async function undoAction(formData: FormData): Promise<void> {
 export async function rewindAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   const sessionId = String(formData.get("sessionId"));
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   await sessionService().rewindToStart(sessionId);
   await audit(context, "session.undo", "kb_session", sessionId, { toStart: true });
   revalidatePath(`/bridge/table/${sessionId}`);
-  redirect(`/bridge/table/${sessionId}?paused=${Date.now()}`);
+  redirect(`${tableBase}${sessionId}?paused=${Date.now()}`);
 }
 
 /**
@@ -313,6 +320,7 @@ export async function rewindAction(formData: FormData): Promise<void> {
 export async function newDealAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   const sessionId = String(formData.get("sessionId"));
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const service = sessionService();
   const record = await service.requireSession(sessionId);
   const compiled = await service.compiledFor(record);
@@ -327,7 +335,7 @@ export async function newDealAction(formData: FormData): Promise<void> {
     kbId: record.kbId,
     newDealFrom: sessionId,
   });
-  redirect(`/bridge/table/${next.sessionId}`);
+  redirect(`${tableBase}${next.sessionId}`);
 }
 
 /**
@@ -384,6 +392,7 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
   const sessionId = String(formData.get("sessionId"));
   const kind = String(formData.get("kind")) as "deal" | "board" | "play" | "table";
   if (!["deal", "board", "play", "table"].includes(kind)) throw new Error("Pick what to save");
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
 
   const { record, state } = await sessionService().view(sessionId);
   const { seededDeal, resultLabel, scoreBoard } = await import("@bridge/engine");
@@ -444,7 +453,7 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
   } catch {
     // Most likely: bridge_kb_library missing (migration 0015 not applied).
     redirect(
-      `/bridge/table/${sessionId}?error=${encodeURIComponent(
+      `${tableBase}${sessionId}?error=${encodeURIComponent(
         "Couldn't save — the library isn't provisioned on this backend yet (migration 0015_library.sql).",
       )}`,
     );
@@ -453,7 +462,7 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
     sessionId,
     kind,
   });
-  redirect(`/bridge/table/${sessionId}?saved=${kind}`);
+  redirect(`${tableBase}${sessionId}?saved=${kind}`);
 }
 
 /** Flag a decision → a suggestion in the KB's queue (spec §7). */
