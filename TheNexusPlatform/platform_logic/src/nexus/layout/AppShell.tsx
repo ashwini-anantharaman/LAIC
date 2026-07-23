@@ -24,6 +24,7 @@ import {
   Moon,
   Sun,
   LogOut,
+  Menu,
   Settings as SettingsIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -323,6 +324,10 @@ export function AppShell() {
   const { pathname } = useLocation();
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === "dark";
+  // Mobile: the sidebar collapses into a hamburger-toggled drawer. Closes on
+  // navigation so tapping a link dismisses it.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useEffect(() => setMobileNavOpen(false), [pathname]);
 
   const orgId = params.orgId ?? orgMemberships[0]?.org_id ?? programMemberships[0]?.org_id ?? "";
   const programId = params.programId;
@@ -623,32 +628,58 @@ export function AppShell() {
     );
   }
 
+  const sidebarBody = (
+    <>
+      <div className="flex items-center gap-2.5 px-5 h-14 border-b border-sidebar-border">
+        {displayBranding.logo ? (
+          <img src={displayBranding.logo} alt="" className="size-7 rounded-md object-cover" />
+        ) : (
+          <div className="grid size-7 place-items-center rounded-md bg-sidebar-accent text-sidebar-foreground text-sm font-semibold">
+            {mode === "nexus" ? "N" : initials(orgName)}
+          </div>
+        )}
+        <span className="font-semibold tracking-tight truncate">{heading}</span>
+      </div>
+      {/* Tapping a link closes the mobile drawer (harmless on desktop). */}
+      <nav className="flex-1 overflow-y-auto p-3 space-y-1" onClick={() => setMobileNavOpen(false)}>
+        {backLink}
+        {items.map((it) => (
+          <NavLinkRow key={it.to} item={it} />
+        ))}
+      </nav>
+    </>
+  );
+
   return (
     <div
       className="flex h-screen text-foreground"
       style={accentVars(displayBranding.accent, dark)}
     >
-      <aside className="glass-sidebar flex w-60 shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground">
-        <div className="flex items-center gap-2.5 px-5 h-14 border-b border-sidebar-border">
-          {displayBranding.logo ? (
-            <img src={displayBranding.logo} alt="" className="size-7 rounded-md object-cover" />
-          ) : (
-            <div className="grid size-7 place-items-center rounded-md bg-sidebar-accent text-sidebar-foreground text-sm font-semibold">
-              {mode === "nexus" ? "N" : initials(orgName)}
-            </div>
-          )}
-          <span className="font-semibold tracking-tight truncate">{heading}</span>
-        </div>
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {backLink}
-          {items.map((it) => (
-            <NavLinkRow key={it.to} item={it} />
-          ))}
-        </nav>
+      {/* Static sidebar — desktop only. */}
+      <aside className="glass-sidebar hidden md:flex w-60 shrink-0 flex-col border-r border-sidebar-border text-sidebar-foreground">
+        {sidebarBody}
       </aside>
 
+      {/* Mobile drawer — a slide-in overlay of the same sidebar. */}
+      {mobileNavOpen ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileNavOpen(false)} />
+          <aside className="glass-sidebar absolute inset-y-0 left-0 flex w-64 max-w-[80%] flex-col border-r border-sidebar-border text-sidebar-foreground shadow-xl">
+            {sidebarBody}
+          </aside>
+        </div>
+      ) : null}
+
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="glass-bar flex h-14 shrink-0 items-center gap-3 border-b border-border px-6">
+        <header className="glass-bar flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 md:px-6">
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            className="md:hidden -ml-1 grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            aria-label="Open menu"
+          >
+            <Menu className="size-5" />
+          </button>
           <nav className="flex items-center gap-1.5 text-sm text-muted-foreground min-w-0">
             {crumbs.map((c, i) => (
               <span key={i} className="flex items-center gap-1.5 min-w-0">
