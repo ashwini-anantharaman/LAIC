@@ -1,0 +1,512 @@
+{
+  "$schema": "./laic-access-control.schema.json",
+  "schemaVersion": "1.0",
+  "documentType": "access_policy",
+  "id": "bridge-program-access-policy-example",
+  "name": "Bridge Program Access Policy Example",
+  "description": "Example showing one Bridge Program team model across the Bridge Platform and the Bridge Learning Platform, plus app-based participant signup.",
+  "rootOrganizationId": "life-in-ai-center",
+  "scopeRef": {
+    "type": "program",
+    "id": "bridge-program"
+  },
+  "platformInstances": [
+    {
+      "id": "bridge-core",
+      "name": "Bridge Platform",
+      "kind": "platform",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "catalogue": {
+        "catalogueId": "bridge-platform-access",
+        "version": "1.0"
+      },
+      "enabledCapabilityIds": [
+        "bridge.knowledge.read",
+        "bridge.knowledge.create",
+        "bridge.knowledge.edit",
+        "bridge.knowledge.review",
+        "bridge.knowledge.approve",
+        "bridge.knowledge.version",
+        "bridge.taxonomy.manage",
+        "bridge.relationship.manage",
+        "bridge.cp.read",
+        "bridge.cp.configure",
+        "bridge.cp.test",
+        "bridge.cp.review",
+        "bridge.cp.approve",
+        "bridge.cp.run",
+        "bridge.sandbox.read",
+        "bridge.sandbox.configure",
+        "bridge.sandbox.test",
+        "bridge.sandbox.approve",
+        "bridge.sandbox.run",
+        "bridge.deal.read",
+        "bridge.deal.create",
+        "bridge.deal.generate",
+        "bridge.deal_collection.manage",
+        "bridge.deal_collection.use",
+        "bridge.table.host",
+        "bridge.table.join",
+        "bridge.table.play",
+        "bridge.session.manage",
+        "bridge.session.review",
+        "bridge.analysis.view",
+        "bridge.decision_trace.view",
+        "bridge.convention_card.manage"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "bridge-learning",
+      "name": "Bridge Learning Platform",
+      "kind": "platform",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "catalogue": {
+        "catalogueId": "learning-platform-access",
+        "version": "1.0"
+      },
+      "enabledCapabilityIds": [
+        "learning.object.read",
+        "learning.object.create",
+        "learning.object.edit",
+        "learning.object.delete",
+        "learning.source.manage",
+        "learning.source.extract",
+        "learning.composition.create",
+        "learning.composition.edit",
+        "learning.review.submit",
+        "learning.review.comment",
+        "learning.review.object",
+        "learning.review.composition",
+        "learning.review.resolve",
+        "learning.publish.release",
+        "learning.publish.version",
+        "learning.publish.audience",
+        "learning.assignment.create",
+        "learning.cohort.configure",
+        "learning.progress.view",
+        "learning.runtime.use",
+        "learning.runtime.ai_tools",
+        "learning.repository.organize",
+        "learning.analytics.view"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "bridge-app",
+      "name": "Bridge Coaching and Playing App",
+      "kind": "application",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "catalogue": {
+        "catalogueId": "bridge-platform-access",
+        "version": "1.0"
+      },
+      "enabledCapabilityIds": [
+        "bridge.table.join",
+        "bridge.table.play",
+        "bridge.cp.run",
+        "bridge.sandbox.run",
+        "bridge.deal_collection.use",
+        "bridge.analysis.view"
+      ],
+      "status": "active"
+    }
+  ],
+  "teams": [
+    {
+      "id": "bridge-program-team",
+      "name": "Bridge Program Team",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "memberUserIds": [
+        "user.bridge.lead",
+        "user.bridge.expert.1",
+        "user.learning.lead",
+        "user.app.ops"
+      ]
+    },
+    {
+      "id": "bridge-knowledge-reviewers",
+      "name": "Bridge Knowledge Reviewers",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "memberUserIds": [
+        "user.bridge.expert.1",
+        "user.bridge.expert.2"
+      ]
+    },
+    {
+      "id": "bridge-learning-authors",
+      "name": "Bridge Learning Authors",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "memberUserIds": [
+        "user.learning.lead",
+        "user.learning.author.1"
+      ]
+    },
+    {
+      "id": "bridge-app-operations",
+      "name": "Bridge App Operations",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "memberUserIds": [
+        "user.app.ops"
+      ]
+    }
+  ],
+  "roles": [
+    {
+      "id": "bridge-program-admin",
+      "name": "Bridge Program Administrator",
+      "description": "Administers the Bridge Program and its provisioned platform instances.",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "systemCapabilityIds": [
+        "access.team.manage",
+        "access.role.manage",
+        "access.role.assign",
+        "access.direct_grant.manage",
+        "access.gate.manage",
+        "access.delegate"
+      ],
+      "grants": [
+        {
+          "platformInstanceId": "bridge-core",
+          "capabilityIds": [
+            "bridge.knowledge.read",
+            "bridge.knowledge.create",
+            "bridge.knowledge.edit",
+            "bridge.knowledge.review",
+            "bridge.knowledge.approve",
+            "bridge.knowledge.version",
+            "bridge.taxonomy.manage",
+            "bridge.relationship.manage",
+            "bridge.cp.read",
+            "bridge.cp.configure",
+            "bridge.cp.test",
+            "bridge.cp.review",
+            "bridge.cp.approve",
+            "bridge.sandbox.read",
+            "bridge.sandbox.configure",
+            "bridge.sandbox.test",
+            "bridge.sandbox.approve",
+            "bridge.deal.read",
+            "bridge.deal.create",
+            "bridge.deal.generate",
+            "bridge.deal_collection.manage",
+            "bridge.table.host",
+            "bridge.session.manage",
+            "bridge.session.review",
+            "bridge.analysis.view",
+            "bridge.convention_card.manage"
+          ]
+        },
+        {
+          "platformInstanceId": "bridge-learning",
+          "capabilityIds": [
+            "learning.object.read",
+            "learning.object.create",
+            "learning.object.edit",
+            "learning.source.manage",
+            "learning.source.extract",
+            "learning.composition.create",
+            "learning.composition.edit",
+            "learning.review.submit",
+            "learning.review.comment",
+            "learning.review.object",
+            "learning.review.composition",
+            "learning.review.resolve",
+            "learning.publish.release",
+            "learning.publish.version",
+            "learning.publish.audience",
+            "learning.assignment.create",
+            "learning.cohort.configure",
+            "learning.progress.view",
+            "learning.repository.organize",
+            "learning.analytics.view"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bridge-expert",
+      "name": "Bridge Expert",
+      "description": "Validates Bridge knowledge, CPs, Sandboxes, and test results.",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "systemCapabilityIds": [],
+      "grants": [
+        {
+          "platformInstanceId": "bridge-core",
+          "capabilityIds": [
+            "bridge.knowledge.read",
+            "bridge.knowledge.edit",
+            "bridge.knowledge.review",
+            "bridge.taxonomy.manage",
+            "bridge.relationship.manage",
+            "bridge.cp.read",
+            "bridge.cp.test",
+            "bridge.cp.review",
+            "bridge.sandbox.read",
+            "bridge.sandbox.test",
+            "bridge.deal.read",
+            "bridge.table.host",
+            "bridge.table.play",
+            "bridge.session.review",
+            "bridge.analysis.view",
+            "bridge.decision_trace.view"
+          ]
+        },
+        {
+          "platformInstanceId": "bridge-learning",
+          "capabilityIds": [
+            "learning.object.read",
+            "learning.review.comment"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bridge-learning-developer",
+      "name": "Bridge Learning Developer",
+      "description": "Creates and submits Bridge learning content.",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "systemCapabilityIds": [],
+      "grants": [
+        {
+          "platformInstanceId": "bridge-learning",
+          "capabilityIds": [
+            "learning.object.read",
+            "learning.object.create",
+            "learning.object.edit",
+            "learning.source.manage",
+            "learning.source.extract",
+            "learning.composition.create",
+            "learning.composition.edit",
+            "learning.review.submit",
+            "learning.review.comment",
+            "learning.runtime.use"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bridge-app-operator",
+      "name": "Bridge App Operator",
+      "description": "Manages participant onboarding and runs app sessions.",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "systemCapabilityIds": [
+        "access.gate.manage",
+        "access.member.assign_role"
+      ],
+      "grants": [
+        {
+          "platformInstanceId": "bridge-core",
+          "capabilityIds": [
+            "bridge.deal.read",
+            "bridge.deal_collection.use",
+            "bridge.table.host",
+            "bridge.table.join",
+            "bridge.table.play",
+            "bridge.session.manage",
+            "bridge.session.review",
+            "bridge.analysis.view"
+          ]
+        },
+        {
+          "platformInstanceId": "bridge-learning",
+          "capabilityIds": [
+            "learning.assignment.create",
+            "learning.progress.view",
+            "learning.runtime.use"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bridge-app-participant",
+      "name": "Bridge App Participant",
+      "description": "Default participant role created through the Bridge app signup gate.",
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "systemCapabilityIds": [],
+      "grants": [
+        {
+          "platformInstanceId": "bridge-app",
+          "capabilityIds": [
+            "bridge.table.join",
+            "bridge.table.play",
+            "bridge.cp.run",
+            "bridge.sandbox.run",
+            "bridge.deal_collection.use",
+            "bridge.analysis.view"
+          ],
+          "resourceConstraints": [
+            {
+              "resourceType": "bridge_deal_collection",
+              "filters": {
+                "access_tier": "included"
+              }
+            }
+          ]
+        },
+        {
+          "platformInstanceId": "bridge-learning",
+          "capabilityIds": [
+            "learning.runtime.use"
+          ]
+        }
+      ]
+    }
+  ],
+  "roleAssignments": [
+    {
+      "id": "assign.bridge.admin",
+      "subject": {
+        "kind": "user",
+        "id": "user.bridge.lead"
+      },
+      "roleIds": [
+        "bridge-program-admin"
+      ]
+    },
+    {
+      "id": "assign.bridge.experts",
+      "subject": {
+        "kind": "team",
+        "id": "bridge-knowledge-reviewers"
+      },
+      "roleIds": [
+        "bridge-expert"
+      ]
+    },
+    {
+      "id": "assign.bridge.learning",
+      "subject": {
+        "kind": "team",
+        "id": "bridge-learning-authors"
+      },
+      "roleIds": [
+        "bridge-learning-developer"
+      ]
+    },
+    {
+      "id": "assign.bridge.app.ops",
+      "subject": {
+        "kind": "team",
+        "id": "bridge-app-operations"
+      },
+      "roleIds": [
+        "bridge-app-operator"
+      ]
+    }
+  ],
+  "directGrants": [
+    {
+      "id": "grant.special.cp.approval",
+      "subject": {
+        "kind": "user",
+        "id": "user.bridge.expert.2"
+      },
+      "scopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "reason": "Temporary approval authority during CP validation.",
+      "grants": [
+        {
+          "platformInstanceId": "bridge-core",
+          "capabilityIds": [
+            "bridge.cp.approve"
+          ]
+        }
+      ]
+    }
+  ],
+  "delegations": [
+    {
+      "id": "delegate.app.onboarding",
+      "fromScopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "toScopeRef": {
+        "type": "team",
+        "id": "bridge-app-operations"
+      },
+      "delegateSubject": {
+        "kind": "team",
+        "id": "bridge-app-operations"
+      },
+      "systemCapabilityIds": [
+        "access.gate.manage",
+        "access.member.assign_role"
+      ],
+      "platformInstanceIds": [
+        "bridge-app",
+        "bridge-learning"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "bridge-app-signup",
+      "name": "Bridge App Signup",
+      "kind": "app_signup",
+      "applicationId": "bridge-app",
+      "targetScopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "membershipType": "program_participant",
+      "approvalMode": "automatic",
+      "defaultRoleIds": [
+        "bridge-app-participant"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "bridge-team-invite",
+      "name": "Bridge Program Team Invitation",
+      "kind": "invitation",
+      "targetScopeRef": {
+        "type": "program",
+        "id": "bridge-program"
+      },
+      "membershipType": "team_member",
+      "approvalMode": "invitation_only",
+      "defaultRoleIds": [],
+      "status": "active"
+    }
+  ]
+}

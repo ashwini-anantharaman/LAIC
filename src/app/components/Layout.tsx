@@ -20,6 +20,8 @@ import { ObjectReviews } from './screens/ObjectReviews';
 import { CourseReviews } from './screens/CourseReviews';
 import { AdminProgramOverview } from './screens/AdminProgramOverview';
 import { AdminPeopleRoles } from './screens/AdminPeopleRoles';
+import { PlatformAccessCatalogue } from './screens/PlatformAccessCatalogue';
+import { AccessDocScreen } from './screens/AccessDocScreen';
 import { AdminCoursesAssignments } from './screens/AdminCoursesAssignments';
 import { AdminPublishingGovernance } from './screens/AdminPublishingGovernance';
 import { CoachScreen } from './screens/CoachScreen';
@@ -47,6 +49,9 @@ function ScreenRouter() {
     case 'cr-reviews':  return <CourseReviews />;
     case 'admin-overview':   return <AdminProgramOverview />;
     case 'admin-people':     return <AdminPeopleRoles />;
+    case 'admin-access':     return <PlatformAccessCatalogue />;
+    case 'admin-access-manual': return <AccessDocScreen docId="access-manual" />;
+    case 'admin-sample-roles': return <AccessDocScreen docId="sample-roles" />;
     case 'admin-courses':    return <AdminCoursesAssignments />;
     case 'admin-publishing': return <AdminPublishingGovernance />;
     case 'coach':       return <CoachScreen />;

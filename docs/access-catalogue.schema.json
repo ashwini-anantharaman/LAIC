@@ -1,0 +1,168 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.platform/schemas/access-catalogue.schema.json",
+  "title": "LAIC Platform Access Catalogue",
+  "description": "Platform-owned inventory of what can be access-controlled. Hierarchy: Domain → Module → Capability | Sidebar surface. Programs bind roles against these ids.",
+  "type": "object",
+  "required": ["schemaVersion", "layer", "hierarchy", "objectTypes", "sampleRolePack"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Catalogue document version (e.g. 1.1).",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "layer": {
+      "type": "string",
+      "const": "platform",
+      "description": "Always platform — program policies are a separate document."
+    },
+    "hierarchy": {
+      "type": "object",
+      "required": ["domains"],
+      "additionalProperties": false,
+      "properties": {
+        "domains": {
+          "type": "array",
+          "description": "Top-level product areas.",
+          "items": { "$ref": "#/definitions/domain" }
+        }
+      }
+    },
+    "objectTypes": {
+      "type": "array",
+      "description": "Learning-object types available for type-restricted capabilities.",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "sampleRolePack": {
+      "type": "object",
+      "required": ["kind", "roles"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "sample_role_pack" },
+        "roles": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/sampleRole" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "domain": {
+      "type": "object",
+      "required": ["id", "label", "order", "modules"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "order": { "type": "integer", "minimum": 0 },
+        "modules": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/module" }
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "required": ["id", "label", "order", "capabilities", "sidebarSurfaces"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "order": { "type": "integer", "minimum": 0 },
+        "capabilities": {
+          "type": "array",
+          "description": "Nested capability tree for this module.",
+          "items": { "$ref": "#/definitions/capabilityNode" }
+        },
+        "sidebarSurfaces": {
+          "type": "array",
+          "description": "Sidebar nav items belonging to this module.",
+          "items": { "$ref": "#/definitions/sidebarSurface" }
+        }
+      }
+    },
+    "capabilityNode": {
+      "type": "object",
+      "required": ["id", "label", "children"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Stable capability key programs grant on roles."
+        },
+        "label": { "type": "string", "minLength": 1 },
+        "resourceScope": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "type": "string", "const": "learning_object" },
+            "typesOptional": {
+              "type": "boolean",
+              "description": "When true, roles may restrict this capability to a subset of objectTypes."
+            }
+          },
+          "required": ["kind", "typesOptional"]
+        },
+        "children": {
+          "type": "array",
+          "description": "Child capabilities nested under this one.",
+          "items": { "$ref": "#/definitions/capabilityNode" }
+        }
+      }
+    },
+    "sidebarSurface": {
+      "type": "object",
+      "required": ["id", "label", "group", "screen", "requiredCapabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable surface id (often matches screen)."
+        },
+        "label": { "type": "string", "minLength": 1 },
+        "group": {
+          "type": "string",
+          "enum": ["authoring", "review", "administration", "teaching", "learner"],
+          "description": "Nav chrome bucket in the app sidebar."
+        },
+        "screen": {
+          "type": "string",
+          "minLength": 1,
+          "description": "App screen id routed when the nav item is clicked."
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "description": "Any one of these capabilities unlocks the surface. Empty = always available in that area.",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "sampleRole": {
+      "type": "object",
+      "required": ["id", "name", "blurb", "capabilities", "sidebarSurfaces"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "blurb": { "type": "string" },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "uniqueItems": true
+        },
+        "sidebarSurfaces": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

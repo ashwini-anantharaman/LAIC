@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Home, PlusSquare, Database, BookOpen, SendHorizontal,
   GitBranch, BarChart2, ClipboardCheck, GraduationCap,
-  Users, BookMarked, Shield, UserCheck, LogOut, LayoutTemplate,
+  Users, BookMarked, Shield, UserCheck, LogOut, LayoutTemplate, KeyRound, FileText, BadgeCheck,
 } from 'lucide-react';
 import { useApp } from '../App';
 import { USERS } from '../../lib/data';
@@ -34,6 +34,9 @@ const NAV: Record<Role, NavItem[]> = {
   'administrator': [
     { id: 'admin-overview', label: 'Program Overview', icon: <Shield size={16} /> },
     { id: 'admin-people', label: 'People & Roles', icon: <Users size={16} /> },
+    { id: 'admin-access', label: 'Access Catalogue', icon: <KeyRound size={16} /> },
+    { id: 'admin-access-manual', label: 'Access Manual', icon: <FileText size={16} /> },
+    { id: 'admin-sample-roles', label: 'Sample Roles', icon: <BadgeCheck size={16} /> },
     { id: 'admin-courses', label: 'Courses & Assignments', icon: <BookMarked size={16} /> },
     { id: 'admin-publishing', label: 'Publishing & Governance', icon: <GitBranch size={16} /> },
   ],
