@@ -52,3 +52,13 @@ export {
   type SimulatedDeal,
   type SimulateOptions,
 } from "./decide/simulate";
+export {
+  analyzeSelfPlay,
+  outcomeAnomalies,
+  type AnalyzeOptions,
+  type ContinuationGap,
+  type OutcomeAnomaly,
+  type AnomalyKind,
+  type InsightsReport,
+  type DealOutcome,
+} from "./decide/insights";

@@ -599,3 +599,26 @@ test("item page: prev/next walk the filtered Master list", async ({ page, contex
   // Arrived with ?from=, so the reviewer position indicator renders.
   await expect(page.getByText(/\d+ of \d+/)).toBeVisible();
 });
+
+test("findings: the detectors run and report gaps/anomalies honestly", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto(`${kbUrl}/findings?deals=30`);
+  await expect(page.getByRole("heading", { name: "Findings" })).toBeVisible();
+  await expect(page.getByText("deals played")).toBeVisible();
+  await expect(page.getByText(/Missing continuations \(\d+\)/)).toBeVisible();
+  await expect(page.getByText(/Outcome anomalies \(\d+\)/)).toBeVisible();
+});
+
+test("source audit: page renders with the honest no-key notice", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto(`${kbUrl}/source-audit`);
+  await expect(page.getByRole("heading", { name: "Source-fidelity audit" })).toBeVisible();
+  // e2e servers strip ANTHROPIC_API_KEY — the audit must say so, not pretend.
+  await expect(page.getByText(/ANTHROPIC_API_KEY isn't configured/)).toBeVisible();
+});

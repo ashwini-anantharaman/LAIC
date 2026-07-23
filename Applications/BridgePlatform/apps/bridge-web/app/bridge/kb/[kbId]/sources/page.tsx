@@ -121,6 +121,16 @@ export default async function SourcesPage({
 
   return (
     <div className="space-y-8">
+      <p className="rounded border border-neutral-200 bg-[var(--card)] px-3 py-2 text-sm text-neutral-600">
+        Once items are extracted, run the{" "}
+        <Link
+          href={`${base}/source-audit`}
+          className="font-medium text-emerald-700 underline-offset-2 hover:underline"
+        >
+          source-fidelity audit →
+        </Link>{" "}
+        to check whether each item&apos;s compiled rules faithfully capture the source it cites.
+      </p>
       {uploadError && (
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--color-invalid)]">
           {uploadError}
