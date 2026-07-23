@@ -415,9 +415,9 @@ export async function renameOrgCategory(orgId: string, from: string, to: string)
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
-  adminsCanEnter?: boolean,
+  platformsOpen?: boolean,
 ): Promise<Row | null> {
-  if (usePg()) return tpg.updateProgramFeatures(programId, features, adminsCanEnter);
+  if (usePg()) return tpg.updateProgramFeatures(programId, features, platformsOpen);
   if (await useLocal()) return local.localUpdateProgramFeatures(programId, features);
   const client = requireClient();
   const existing = await getProgram(programId);
@@ -425,7 +425,7 @@ export async function updateProgramFeatures(
   const meta = {
     ...((existing.metadata_json as Row) ?? {}),
     features,
-    ...(adminsCanEnter === undefined ? {} : { admins_can_enter: adminsCanEnter }),
+    ...(platformsOpen === undefined ? {} : { platforms_open: platformsOpen }),
   };
   return _mutateOne(
     client.from("programs").update({ metadata_json: meta }).eq("id", programId).select("*"),

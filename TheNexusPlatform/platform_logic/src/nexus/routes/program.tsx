@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BookOpen, Check, ExternalLink, Plus, Rocket, Waypoints, X } from "lucide-react";
+import { BookOpen, Check, ExternalLink, Lock, Plus, Rocket, Waypoints, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -142,20 +142,23 @@ export function ProgramOverview() {
     }
   }
 
-  // Access boundary: an org-level admin (no program-scoped membership here) is
-  // bounced out when the org envelope OR this program's toggle forbids entry.
-  // A program-scoped admin/member always has explicit access, so never bounced.
+  // Nexus envelope: an ORG-level admin (no program-scoped membership here) is
+  // bounced out of the workspace when the org isn't allowed to open programs.
+  // Program-scoped people always keep workspace access.
   const hasProgramMembership = programMemberships.some((m) => m.program_id === programId);
-  const enterBlocked =
-    !hasProgramMembership &&
-    ((caps ? caps.adminsEnterPrograms === false : false) || (program ? program.admins_can_enter === false : false));
+  const enterBlocked = !hasProgramMembership && (caps ? caps.adminsEnterPrograms === false : false);
   useEffect(() => {
     if (access.loading || access.impersonating) return;
-    if (!caps || !program) return; // wait until toggles are known
+    if (!caps || !program) return; // wait until the envelope is known
     if (access.isAdmin && enterBlocked) {
       navigate(`/o/${orgId}/programs`, { replace: true });
     }
   }, [access.loading, access.isAdmin, access.impersonating, caps, program, enterBlocked, orgId, navigate]);
+
+  // Program platform lock: this program's OWN people (they have a program-scoped
+  // membership) can't open the platform runtimes when platforms_open is off.
+  // Org admins (no program membership) set the lock, so it never applies to them.
+  const platformsLocked = hasProgramMembership && program?.platforms_open === false;
 
   // Confined viewers (members / role previews) never see a half-loaded page:
   // one spinner until we know whether to auto-launch or what cards to paint.
@@ -173,10 +176,11 @@ export function ProgramOverview() {
   useEffect(() => {
     if (access.loading || access.isAdmin || access.impersonating) return;
     if (!caps || !program) return; // wait until the platform set is settled
+    if (platformsLocked) return; // don't fling a member into a locked platform
     if (soleActiveKey && !otherAreas) {
       navigate(`/o/${orgId}/p/${programId}/${soleActiveKey.path}`, { replace: true });
     }
-  }, [access.loading, access.isAdmin, access.impersonating, caps, program, soleActiveKey, otherAreas, orgId, programId, navigate]);
+  }, [access.loading, access.isAdmin, access.impersonating, caps, program, platformsLocked, soleActiveKey, otherAreas, orgId, programId, navigate]);
 
   if (confinedDeciding) return <Spinner />;
 
@@ -197,6 +201,7 @@ export function ProgramOverview() {
             hint={p.hint}
             busy={busy === p.key}
             canRemove={access.isAdmin}
+            locked={platformsLocked}
             href={`${window.location.origin}/o/${orgId}/p/${programId}/${p.path}`}
             onRemove={() => setFeature(p.key, false)}
           />
@@ -215,6 +220,7 @@ function PlatformCard({
   hint,
   busy,
   canRemove,
+  locked,
   href,
   onRemove,
 }: {
@@ -223,9 +229,29 @@ function PlatformCard({
   hint: string;
   busy: boolean;
   canRemove: boolean;
+  locked?: boolean;
   href: string;
   onRemove: () => void;
 }) {
+  // Platforms locked for this program's people: show the card but make it
+  // non-clickable, with a clear reason. (Org admins never see it locked.)
+  if (locked) {
+    return (
+      <div
+        className="relative flex items-center gap-4 glass-card p-5 opacity-70"
+        title="Opening platforms is turned off for this program. Ask an org admin to enable platform access."
+      >
+        <div className="grid size-11 place-items-center rounded-xl bg-muted text-muted-foreground">{icon}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 font-medium text-muted-foreground">
+            {title}
+            <Lock className="size-3.5" />
+          </div>
+          <div className="text-xs text-muted-foreground">Platform access is turned off for this program.</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="group relative flex items-center gap-4 glass-card p-5 hover:border-foreground/20 transition-colors">
       {canRemove ? (

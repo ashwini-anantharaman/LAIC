@@ -56,9 +56,10 @@ export interface Program {
   platforms?: Record<string, boolean> | null;
   /** Program's own branding; null = inherit the organization's. */
   branding?: { accent: string | null; logo: string | null } | null;
-  /** Access boundary: may org-level admins enter this program without explicit
-   *  program access? Absent/true = yes. */
-  admins_can_enter?: boolean;
+  /** Platform lock: may this program's own admins/members open the platform
+   *  runtimes (Learning, App Shell, Bridge)? Absent/true = yes. Org admins are
+   *  never restricted by this. */
+  platforms_open?: boolean;
 }
 
 export interface Integration {

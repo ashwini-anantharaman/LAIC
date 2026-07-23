@@ -82,10 +82,10 @@ export function normalizeProgramFeatures(input?: Record<string, unknown> | null)
 
 export const programFeaturesUpdate = z.object({
   features: programFeatures,
-  // Per-program access boundary: may org-level admins enter this program's
-  // workspace without explicit program access? Optional so callers that only
-  // touch feature toggles are unchanged.
-  admins_can_enter: z.boolean().optional(),
+  // Per-program platform lock: may this program's own admins/members open the
+  // platform runtimes (Learning, App Shell, Bridge)? Optional so callers that
+  // only touch feature toggles are unchanged.
+  platforms_open: z.boolean().optional(),
 });
 
 // ── Platform request schemas ────────────────────────────────────────────────

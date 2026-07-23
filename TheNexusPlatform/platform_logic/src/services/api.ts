@@ -519,12 +519,12 @@ export async function createProgram(orgId: string, program: DraftProgramInput): 
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
-  adminsCanEnter?: boolean,
+  platformsOpen?: boolean,
 ): Promise<Program> {
   return request<Program>(`/api/platform/programs/${programId}/features`, {
     method: "PATCH",
     body: JSON.stringify(
-      adminsCanEnter === undefined ? { features } : { features, admins_can_enter: adminsCanEnter },
+      platformsOpen === undefined ? { features } : { features, platforms_open: platformsOpen },
     ),
   });
 }

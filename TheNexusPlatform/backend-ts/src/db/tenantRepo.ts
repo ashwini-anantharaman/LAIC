@@ -40,9 +40,9 @@ const programRow = (p: typeof programs.$inferSelect): Row => ({
   features: normalizeProgramFeatures((p.metadataJson as Row)?.features as Row),
   secondary_categories: ((p.metadataJson as Row)?.secondary_categories as string[]) ?? [],
   branding: ((p.metadataJson as Row)?.branding as Row) ?? null,
-  // Whether an org-level admin may enter this program without explicit
-  // program-scoped access. On by default (matches the org envelope default).
-  admins_can_enter: ((p.metadataJson as Row)?.admins_can_enter as boolean | undefined) ?? true,
+  // Whether this program's own admins/members may open the platform runtimes
+  // (Learning, App Shell, Bridge). On by default; the org admin can lock it.
+  platforms_open: ((p.metadataJson as Row)?.platforms_open as boolean | undefined) ?? true,
   created_at: p.createdAt,
 });
 const stageRow = (s: typeof stageNodes.$inferSelect): Row => ({
@@ -153,11 +153,11 @@ export async function createProgram(orgId: string, name: string, category: strin
 }
 
 /** Replace a program's accessible-feature set (org-admin config). Optionally
- * updates the per-program access boundary (admins_can_enter) in the same write. */
+ * updates the per-program platform lock (platforms_open) in the same write. */
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
-  adminsCanEnter?: boolean,
+  platformsOpen?: boolean,
 ): Promise<Row | null> {
   return scoped(async (tx) => {
     const existing = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
@@ -165,7 +165,7 @@ export async function updateProgramFeatures(
     const meta = {
       ...(existing[0].metadataJson as Row),
       features,
-      ...(adminsCanEnter === undefined ? {} : { admins_can_enter: adminsCanEnter }),
+      ...(platformsOpen === undefined ? {} : { platforms_open: platformsOpen }),
     };
     const [p] = await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId)).returning();
     if (!p) return null;

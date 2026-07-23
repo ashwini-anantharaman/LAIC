@@ -93,11 +93,11 @@ export function Programs() {
     (k) => !caps || caps.features[k] !== false,
   );
 
-  // Access boundary: an org admin can open a program only when the org envelope
-  // AND the program's own toggle both allow it. When gated, the card keeps its
-  // management controls (admins, features) but the "open" affordance is removed.
-  const orgAllowsEnter = !caps || caps.adminsEnterPrograms !== false;
-  const canEnter = (p: Program) => orgAllowsEnter && p.admins_can_enter !== false;
+  // Nexus envelope: may org admins enter this org's programs at all? When off,
+  // program cards keep their management controls (admins, features) but the
+  // "open" affordance is removed. (The per-program platform lock is a separate
+  // concern handled inside the program workspace, not here.)
+  const canEnterProgram = !caps || caps.adminsEnterPrograms !== false;
 
   async function remove(p: Program) {
     try {
@@ -143,7 +143,7 @@ export function Programs() {
               key={p.id}
               orgId={orgId}
               program={p}
-              canEnter={canEnter(p)}
+              canEnter={canEnterProgram}
               onAssign={() => setAssigning(p)}
               onEditFeatures={() => setEditingFeatures(p)}
               onRemove={() => remove(p)}
@@ -168,7 +168,7 @@ export function Programs() {
                   key={p.id}
                   orgId={orgId}
                   program={p}
-                  canEnter={canEnter(p)}
+                  canEnter={canEnterProgram}
                   onAssign={() => setAssigning(p)}
                   onEditFeatures={() => setEditingFeatures(p)}
                   onRemove={() => remove(p)}
@@ -340,7 +340,7 @@ function ProgramCard({
         ) : (
           <span
             className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground shrink-0"
-            title="This program is self-managed — you need explicit access to open it. You can still manage its admins and features here."
+            title="Your organization isn't allowed to open programs from the admin console (a Nexus setting). You can still manage this program's admins and features here."
           >
             <Lock className="size-3.5" /> Restricted
           </span>
@@ -768,7 +768,7 @@ function EditFeaturesDialog({
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
   const [primary, setPrimary] = useState<string>("");
   const [secondary, setSecondary] = useState<string[]>([]);
-  const [adminsCanEnter, setAdminsCanEnter] = useState(true);
+  const [platformsOpen, setPlatformsOpen] = useState(true);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -776,7 +776,7 @@ function EditFeaturesDialog({
       setFeatures({ ...DEFAULT_PROGRAM_FEATURES, ...(program.features ?? {}) });
       setPrimary(program.category);
       setSecondary(program.secondary_categories ?? []);
-      setAdminsCanEnter(program.admins_can_enter !== false);
+      setPlatformsOpen(program.platforms_open !== false);
     }
   }, [program]);
 
@@ -788,7 +788,7 @@ function EditFeaturesDialog({
     if (!program) return;
     setBusy(true);
     try {
-      await updateProgramFeatures(program.id, features, adminsCanEnter);
+      await updateProgramFeatures(program.id, features, platformsOpen);
       if (primary !== program.category || JSON.stringify(secondary) !== JSON.stringify(program.secondary_categories ?? [])) {
         await updateProgramCategories(program.id, {
           category: primary,
@@ -858,17 +858,17 @@ function EditFeaturesDialog({
           <FeatureToggles features={features} onChange={setFeatures} allowedKeys={allowedFeatureKeys} />
         </div>
         <div className="space-y-1.5">
-          <Label>Access</Label>
+          <Label>Platform access</Label>
           <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3">
             <span className="min-w-0">
-              <span className="block text-sm font-medium text-foreground">Admins can enter this program</span>
+              <span className="block text-sm font-medium text-foreground">This program's people can open platforms</span>
               <span className="block text-xs text-muted-foreground">
-                {adminsCanEnter
-                  ? "Org admins can open this program."
-                  : "Off — only people given explicit access to this program can open it. Org admins can still manage it from the Programs list."}
+                {platformsOpen
+                  ? "This program's admins and members can open its Learning, App Shell, and Bridge platforms."
+                  : "Off — this program's admins and members can manage the program but can't open its platforms. (You, as an org admin, are unaffected.)"}
               </span>
             </span>
-            <Switch checked={adminsCanEnter} onCheckedChange={setAdminsCanEnter} disabled={busy} />
+            <Switch checked={platformsOpen} onCheckedChange={setPlatformsOpen} disabled={busy} />
           </label>
         </div>
         <DialogFooter>

@@ -127,7 +127,7 @@ function _programResponse(row: Row): Row {
     platforms: row.platforms ?? null,
     secondary_categories: row.secondary_categories ?? [],
     branding: row.branding ?? null,
-    admins_can_enter: row.admins_can_enter !== false,
+    platforms_open: row.platforms_open !== false,
   };
 }
 
@@ -966,14 +966,14 @@ platformRouter.patch("/programs/:program_id/features", async (c) => {
   await _assertProgramConfigAccess(user, program.org_id, programId);
   const req = parseBody(programFeaturesUpdate, await c.req.json());
   const features = normalizeProgramFeatures(req.features);
-  const row = await db.updateProgramFeatures(programId, features, req.admins_can_enter);
+  const row = await db.updateProgramFeatures(programId, features, req.platforms_open);
   if (!row) throw new HttpError(404, "Program not found");
   await db.recordAuditEvent("program.features.updated", {
     orgId: program.org_id,
     actorUserId: user.id,
     scopeType: "program",
     scopeId: programId,
-    metadata: { features, admins_can_enter: req.admins_can_enter },
+    metadata: { features, platforms_open: req.platforms_open },
   });
   return c.json(_programResponse((await db.getProgram(programId)) ?? row));
 });
