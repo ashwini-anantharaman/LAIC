@@ -44,6 +44,9 @@ export async function arenaPlayAction(formData: FormData): Promise<void> {
   const kbId = String(formData.get("kbId"));
   const packId = String(formData.get("packId"));
   const watch = formData.get("watch") === "1";
+  // Additive, inert by default: the mobile UI posts mobile=1 so the session
+  // opens in the /m/table chrome instead of the desktop table.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   await assertAiAllowed(context);
   await assertKbAllowed(context, kbId);
   const compiled = await kbService().liveCompile(kbId);
@@ -68,7 +71,7 @@ export async function arenaPlayAction(formData: FormData): Promise<void> {
     kbId,
     arena: pack.packId,
   });
-  redirect(`/bridge/table/${record.sessionId}`);
+  redirect(`${tableBase}${record.sessionId}`);
 }
 
 /**
@@ -211,6 +214,9 @@ export async function createSessionAction(formData: FormData): Promise<void> {
   await assertKbAllowed(context, kbId);
   const compiled = await kbService().liveCompile(kbId);
   if (!compiled) throw new Error("That knowledge base has no live compile yet");
+  // Additive, inert by default: the mobile UI posts mobile=1 so the session
+  // opens in the /m/table chrome instead of the desktop table.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
 
   const store = kbStore();
   const humanSeat = String(formData.get("humanSeat") ?? "") as Seat | "";
@@ -237,7 +243,7 @@ export async function createSessionAction(formData: FormData): Promise<void> {
     kbId,
     created: true,
   });
-  redirect(`/bridge/table/${record.sessionId}`);
+  redirect(`${tableBase}${record.sessionId}`);
 }
 
 export async function stepAction(formData: FormData): Promise<void> {

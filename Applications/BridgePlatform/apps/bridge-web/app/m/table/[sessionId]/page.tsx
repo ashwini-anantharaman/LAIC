@@ -461,10 +461,10 @@ export default async function MobileTablePage({
         .m-scroll::-webkit-scrollbar{width:0;height:0}
       `}</style>
 
-      {/* status header */}
+      {/* status header — clears the notch/status bar on real phones */}
       <div
         style={{
-          padding: "14px 14px 0",
+          padding: "calc(env(safe-area-inset-top, 0px) + 14px) 14px 0",
           display: "flex",
           alignItems: "center",
           gap: 8,
@@ -552,7 +552,7 @@ export default async function MobileTablePage({
           }}
         >
           Saved to the library.{" "}
-          <Link href={`/bridge/library?kind=${saved}`} style={{ color: "#fff", textDecoration: "underline" }}>
+          <Link href={`/m/library?kind=${saved}`} style={{ color: "#fff", textDecoration: "underline" }}>
             Open the {saved} shelf →
           </Link>
         </p>
@@ -633,16 +633,9 @@ export default async function MobileTablePage({
             </button>
           </form>
         )}
-        {!learnerMode && (
-          <Link
-            href={`/bridge/table/${sessionId}?editDeal=1`}
-            aria-label="Edit the deal"
-            title="Edit the deal"
-            style={FROSTED_PILL}
-          >
-            ✏️
-          </Link>
-        )}
+        {/* No ✏️ edit-deal pill on mobile: the mid-play deal editor is a desktop
+            overlay — deliberately kept out of the mobile flow rather than dumping
+            users into desktop chrome. */}
         {!learnerMode && (
           <Link
             href={mobileHref({ hands: showAll ? "mine" : "all" })}

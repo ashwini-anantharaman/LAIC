@@ -297,7 +297,7 @@ export default async function MobilePlayPage() {
         </p>
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           <Link
-            href="/bridge/library/tables/new"
+            href="/m/table/new"
             style={{
               ...outlineRow,
               font: `600 13px ${K}`,

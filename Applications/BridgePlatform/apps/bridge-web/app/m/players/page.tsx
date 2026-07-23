@@ -119,7 +119,7 @@ export default async function MobilePlayersPage({
               style={{
                 flex: "none",
                 border: `1px solid ${active ? "#205e63" : "#d3ccbb"}`,
-                background: active ? "#205e63" : "transparent",
+                background: active ? "#205e63" : "#fff",
                 color: active ? "#fff" : "#5e5749",
                 borderRadius: 20,
                 padding: "5px 12px",
@@ -210,12 +210,9 @@ export default async function MobilePlayersPage({
                     Watch 4
                   </button>
                 </form>
-                <Link
-                  href={`/bridge/kb/${p.kbId}/players/${p.playerId}`}
-                  style={{ ...actionBtn, textDecoration: "none", display: "inline-block" }}
-                >
-                  Edit
-                </Link>
+                {/* No Edit here: the player editor (packs, policies, validation,
+                    simulation) is a desktop workbench — deliberately kept out of
+                    the mobile flow rather than dumping users into desktop chrome. */}
               </div>
             </div>
           );

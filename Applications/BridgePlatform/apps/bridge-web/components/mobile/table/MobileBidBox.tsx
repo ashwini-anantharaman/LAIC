@@ -19,7 +19,7 @@ const isRed = (s: string) => s === "H" || s === "D";
 const PANEL: React.CSSProperties = {
   background: "rgba(250,248,242,.97)",
   borderRadius: "14px 14px 0 0",
-  padding: "10px 12px 20px",
+  padding: "10px 12px calc(env(safe-area-inset-bottom, 0px) + 20px)",
 };
 const LABEL: React.CSSProperties = {
   font: "600 10px var(--font-karla), sans-serif",

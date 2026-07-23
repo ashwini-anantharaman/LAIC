@@ -43,7 +43,7 @@ export function FeedSheet({
             WebkitBackdropFilter: "blur(8px)",
             backdropFilter: "blur(8px)",
             borderTop: "1px solid rgba(255,255,255,.12)",
-            padding: "9px 16px 20px",
+            padding: "9px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)",
             cursor: "pointer",
           }}
         >

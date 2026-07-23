@@ -61,5 +61,8 @@ export async function createTableEntryAction(formData: FormData): Promise<void> 
   }
   await audit(context, "profile.create", "kb_library", entry.entryId, { table: true, kbId });
   revalidatePath("/bridge/library");
+  // Additive, inert by default: the mobile table builder posts mobile=1 so the
+  // saved lineup lands on the mobile library's Tables shelf.
+  if (formData.get("mobile") === "1") redirect("/m/library?kind=table");
   redirect(`/bridge/library/${entry.entryId}`);
 }
