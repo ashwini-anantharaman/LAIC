@@ -875,6 +875,18 @@ offeringsRouter.get("/programs/:program_id/my-role", async (c) => {
       anyPlatformRole = true;
     }
   }
+  // A custom Learning role (the learning app's own People tab, stored in
+  // learning_role_assignments) also grants the Learning platform — surface it
+  // as perms.learning so Nexus shows the Learning card and auto-launches a
+  // learning-only member, just like a prebuilt assignment.
+  if (!perms.learning) {
+    const lr = await graph.getLearningRoleForEmail(programId, user.email).catch(() => null);
+    if (lr) {
+      const lp = (lr.perms as Record<string, string>) ?? {};
+      perms.learning = Object.values(lp).includes("edit") ? "edit" : "view";
+      anyPlatformRole = true;
+    }
+  }
   if (!role && !anyPlatformRole) return c.json(null);
   return c.json({
     role_id: role?.role_id ?? null,

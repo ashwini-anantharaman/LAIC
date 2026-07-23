@@ -7,7 +7,8 @@
  * → sign in) and assigned a role. Admins are Nexus territory: read-only here.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Users, Shield, Trash2, RefreshCw, Plus, Copy, X, Pencil, KeyRound } from 'lucide-react';
+import { Users, Shield, Trash2, RefreshCw, Plus, Copy, X, Pencil, KeyRound, Eye } from 'lucide-react';
+import { useApp } from '../../App';
 import {
   nexusFetch, getProgramId,
   listLearningRoles, createLearningRole, updateLearningRole, deleteLearningRole,
@@ -20,6 +21,7 @@ import {
 } from '../../../lib/learningAreas';
 
 export function AdminPeopleRoles() {
+  const { startRolePreview } = useApp();
   const programId = getProgramId();
   const [roles, setRoles] = useState<LearningRole[] | null>(null);
   const [people, setPeople] = useState<RosterPerson[] | null>(null);
@@ -112,6 +114,7 @@ export function AdminPeopleRoles() {
                     <span key={a.label} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{a.label} · {a.level}</span>
                   ))}
               </div>
+              <button type="button" onClick={() => startRolePreview(r.name, r.perms)} title="Test as this role" className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700"><Eye className="h-3.5 w-3.5" /> Test as</button>
               <button type="button" onClick={() => setEditingRole(r)} title="Edit role" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Pencil className="h-3.5 w-3.5" /></button>
               <button type="button" onClick={() => void removeRole(r)} title="Delete role" className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
