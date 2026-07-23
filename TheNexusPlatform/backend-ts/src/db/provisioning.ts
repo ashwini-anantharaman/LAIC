@@ -26,6 +26,12 @@ export interface ProvisionOrganizationInput {
   theme?: { primaryColor?: string; secondaryColor?: string; logoUrl?: string };
   /** Modules the org starts with. Defaults to nexus + learning. */
   defaultModules?: ModuleKey[];
+  /**
+   * Let the owner's credential belong to a second org (the one-account-per-org
+   * exception). The operator explicitly designating an existing account as owner
+   * is consent, analogous to accepting an invitation.
+   */
+  allowSecondOrg?: boolean;
 }
 
 export interface ProvisionResult {
@@ -92,6 +98,7 @@ export async function provisionOrganization(input: ProvisionOrganizationInput): 
       email: input.owner.email,
       role: "org_admin",
       displayName: input.owner.displayName ?? null,
+      allowSecondOrg: input.allowSecondOrg,
     });
 
     const storagePrefix = `orgs/${org.id}/`;

@@ -443,27 +443,32 @@ function ProvisionDialog({
         {result ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              {result.organization.name} is live. Share each activation link — they set their own
-              password on first sign-in.
+              {result.organization.name} is live. Each administrator is an active member now — share the
+              temporary password with any new accounts.
             </p>
-            {result.invitations.map((inv) => (
-              <div key={inv.invitation_id} className="rounded-lg border border-border p-3 space-y-1.5">
+            {result.admins.map((a) => (
+              <div key={a.email} className="rounded-lg border border-border p-3 space-y-1.5">
                 <div className="text-sm font-medium text-foreground">
-                  {inv.email} <span className="text-xs text-muted-foreground">· {inv.role}</span>
+                  {a.email} <span className="text-xs text-muted-foreground">· {a.role}</span>
                 </div>
-                <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
-                  <code className="flex-1 truncate text-xs font-mono">{inv.redeem_url}</code>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(inv.redeem_url);
-                      toast.success("Copied");
-                    }}
-                    className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"
-                  >
-                    <Copy className="size-3.5" />
-                  </button>
-                </div>
+                {a.created && a.temp_password ? (
+                  <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
+                    <span className="text-xs text-muted-foreground shrink-0">Temp password:</span>
+                    <code className="flex-1 truncate text-xs font-mono">{a.temp_password}</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(a.temp_password!);
+                        toast.success("Copied");
+                      }}
+                      className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"
+                    >
+                      <Copy className="size-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Signs in with their existing password.</p>
+                )}
               </div>
             ))}
           </div>

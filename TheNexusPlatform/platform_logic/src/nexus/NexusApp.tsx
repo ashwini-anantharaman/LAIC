@@ -27,6 +27,7 @@ import { OrgSettings } from "@/nexus/routes/OrgSettings";
 import { Programs } from "@/nexus/routes/Programs";
 import {
   ProgramCommunity,
+  ProgramGates,
   ProgramGroups,
   ProgramOfferings,
   ProgramOverview,
@@ -35,6 +36,7 @@ import {
   ProgramShells,
 } from "@/nexus/routes/program";
 import { ProgramTeam } from "@/nexus/routes/ProgramTeam";
+import { GatePage } from "@/nexus/routes/GatePage";
 import { LearningLaunch } from "@/nexus/routes/LearningLaunch";
 import { BridgeLaunch } from "@/nexus/routes/BridgeLaunch";
 import { Spinner } from "@/nexus/ui/kit";
@@ -43,15 +45,21 @@ import { SessionProvider, useSession } from "@/nexus/session";
 
 /** Send an authenticated user to the surface their mode allows. */
 function RootRedirect() {
-  const { loading, user, mode, orgMemberships, programMemberships } = useSession();
+  const { loading, user, mode, orgMemberships, programMemberships, activeOrgId } = useSession();
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace />;
   if (mode === "nexus") return <Navigate to="/orgs" replace />;
   if (mode === "org") {
-    const orgId = orgMemberships[0]?.org_id;
+    // Prefer the org this session was pinned to (the portal signed in through),
+    // so a multi-org account isn't dropped into an arbitrary first membership.
+    const pinned = activeOrgId && orgMemberships.some((m) => m.org_id === activeOrgId) ? activeOrgId : null;
+    const orgId = pinned ?? orgMemberships[0]?.org_id;
     return orgId ? <Navigate to={`/o/${orgId}/dashboard`} replace /> : <Login />;
   }
-  const m = programMemberships[0];
+  // Confined member: prefer a program in the pinned org (the portal signed in
+  // through) when this account belongs to programs across more than one org.
+  const m =
+    (activeOrgId && programMemberships.find((pm) => pm.org_id === activeOrgId)) || programMemberships[0];
   if (m?.program_id) return <MemberLanding orgId={m.org_id} programId={m.program_id} role={m.role} />;
   return <Navigate to="/login" replace />;
 }
@@ -109,6 +117,7 @@ function Routed() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/@/:slug" element={<OrgPortal />} />
+      <Route path="/@/:slug/:gateSlug" element={<GatePage />} />
       <Route path="/invite/:token" element={<AcceptInvite />} />
       {/* Full-screen launch surface — deliberately outside the AppShell chrome. */}
       <Route
@@ -151,6 +160,7 @@ function Routed() {
         <Route path="/o/:orgId/p/:programId/offerings" element={<ProgramOfferings />} />
         <Route path="/o/:orgId/p/:programId/shells" element={<ProgramShells />} />
         <Route path="/o/:orgId/p/:programId/registrations" element={<ProgramRegistrations />} />
+        <Route path="/o/:orgId/p/:programId/gates" element={<ProgramGates />} />
         <Route path="/o/:orgId/p/:programId/groups" element={<ProgramGroups />} />
         <Route path="/o/:orgId/p/:programId/community" element={<ProgramCommunity />} />
         <Route path="/o/:orgId/p/:programId/team" element={<ProgramTeam />} />

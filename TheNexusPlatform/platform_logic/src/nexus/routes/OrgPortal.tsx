@@ -14,12 +14,13 @@ import { Label } from "@/app/components/ui/label";
 import { devLoginAs, getDevPersonas, getOrgBySlug, type DevPersonaEntry, type OrgBranding } from "@/services/api";
 import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { useSession } from "@/nexus/session";
+import { useDocumentTitle } from "@/nexus/useDocumentTitle";
 import { readBranding, writeBranding } from "@/nexus/branding";
 import { resolveAssetUrl } from "@/services/apiBase";
 
 export function OrgPortal() {
   const { slug = "" } = useParams();
-  const { login, refresh } = useSession();
+  const { login, refresh, setActiveOrg } = useSession();
   const navigate = useNavigate();
 
   // First paint uses the cached accent (no flash); the fetch below refreshes
@@ -32,6 +33,7 @@ export function OrgPortal() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [devPersonas, setDevPersonas] = useState<DevPersonaEntry[]>([]);
+  useDocumentTitle(org?.name ?? null);
 
   useEffect(() => {
     getOrgBySlug(slug)
@@ -49,6 +51,27 @@ export function OrgPortal() {
       .catch(() => setDevPersonas([]));
   }, [slug]);
 
+  // Resolve THIS portal's org id, no matter the render timing — never fall back
+  // to an arbitrary membership. Uses the loaded org / slug cache when present,
+  // else fetches by slug so the landing is always deterministic.
+  async function resolveOrgId(): Promise<string | null> {
+    if (org?.id) return org.id;
+    if (cached?.orgId) return cached.orgId;
+    return await getOrgBySlug(slug)
+      .then((b) => b.id)
+      .catch(() => null);
+  }
+
+  // Pin the org this portal is for (so a multi-org account isn't dropped into
+  // the wrong one), then hand off to RootRedirect — the single place that routes
+  // by MODE. That keeps role-based access control intact: an org owner/admin
+  // lands on the org dashboard, but a program-scoped member is confined to their
+  // program (via MemberLanding + their role's perms), NOT the org dashboard.
+  async function landIn(oid: string | null) {
+    if (oid) setActiveOrg(oid);
+    navigate("/", { replace: true });
+  }
+
   async function signInAs(em: string, pw: string) {
     setBusy(true);
     setError(null);
@@ -56,7 +79,7 @@ export function OrgPortal() {
       // Org-scoped sign-in: this portal's slug binds the session to THIS org —
       // no account here means no entry, and operators are refused outright.
       await login(em.trim(), pw, slug);
-      navigate("/", { replace: true });
+      await landIn(await resolveOrgId());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed");
     } finally {
@@ -70,7 +93,7 @@ export function OrgPortal() {
     try {
       await devLoginAs(em, { slug });
       await refresh();
-      navigate("/", { replace: true });
+      await landIn(await resolveOrgId());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed");
     } finally {
@@ -105,7 +128,7 @@ export function OrgPortal() {
       <div className="w-full max-w-sm">
         <div className="mb-8 flex items-center gap-3">
           {org?.theme_logo_url ? (
-            <img src={org.theme_logo_url} alt="" className="size-9 rounded-lg object-cover" />
+            <img src={resolveAssetUrl(org.theme_logo_url) ?? undefined} alt="" className="size-9 rounded-lg object-cover" />
           ) : (
             <div
               className="grid size-9 place-items-center rounded-lg text-white text-base font-semibold"

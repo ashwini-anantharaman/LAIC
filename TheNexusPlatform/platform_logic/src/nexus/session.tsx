@@ -12,6 +12,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { clearToken, getMe, getToken, login as apiLogin } from "@/services/api";
+import { portalPath } from "@/nexus/orgResolver";
 import type { MembershipSummary, MeResponse } from "@/types/platform";
 
 export type SessionMode = "nexus" | "org" | "member";
@@ -32,6 +33,13 @@ export interface Session {
   orgMemberships: MembershipSummary[];
   /** Program-scoped memberships. */
   programMemberships: MembershipSummary[];
+  /**
+   * The org this session is operating inside — pinned by the portal (/@/slug)
+   * a multi-org account signed in through, so LAIC and SCU stay distinct. Null
+   * until resolved; callers fall back to the first membership.
+   */
+  activeOrgId: string | null;
+  setActiveOrg: (orgId: string | null) => void;
   login: (email: string, password: string, orgSlug?: string) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
@@ -55,10 +63,22 @@ function deriveMode(me: MeResponse | null): SessionMode | null {
 
 const Ctx = createContext<Session | null>(null);
 
+const ACTIVE_ORG_KEY = "nexus_active_org";
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<MeResponse | null>(null);
   const [impersonation, setImpersonation] = useState<Impersonation | null>(null);
+  const [activeOrgId, setActiveOrgIdState] = useState<string | null>(
+    () => (typeof localStorage !== "undefined" ? localStorage.getItem(ACTIVE_ORG_KEY) : null),
+  );
+
+  const setActiveOrg = useCallback((orgId: string | null) => {
+    setActiveOrgIdState(orgId);
+    if (typeof localStorage === "undefined") return;
+    if (orgId) localStorage.setItem(ACTIVE_ORG_KEY, orgId);
+    else localStorage.removeItem(ACTIVE_ORG_KEY);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!getToken()) {
@@ -80,16 +100,40 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
-  const login = useCallback(async (email: string, password: string, orgSlug?: string) => {
-    await apiLogin(email, password, orgSlug);
-    setUser(await getMe());
-  }, []);
+  const login = useCallback(
+    async (email: string, password: string, orgSlug?: string) => {
+      await apiLogin(email, password, orgSlug);
+      const me = await getMe();
+      setUser(me);
+      // Pin the org whose portal was used, so a multi-org account lands in that
+      // org (and not an arbitrary first membership). Prefer an org-level match.
+      if (orgSlug) {
+        const match =
+          me.memberships.find((m) => m.org_slug === orgSlug && !m.program_id) ??
+          me.memberships.find((m) => m.org_slug === orgSlug);
+        if (match) setActiveOrg(match.org_id);
+      }
+    },
+    [setActiveOrg],
+  );
 
   const logout = useCallback(() => {
+    // Send them back to the right door: an org member returns to the portal of
+    // the org they were signed into (the active one), a platform operator to the
+    // operator gate. Computed before clearing, then a hard redirect so the app
+    // re-inits cleanly.
+    const isOperator = user?.role === "platform_admin" || Boolean(user?.nexus_role);
+    const memberships = user?.memberships ?? [];
+    const orgSlug =
+      (activeOrgId ? memberships.find((m) => m.org_id === activeOrgId && m.org_slug)?.org_slug : null) ??
+      memberships.find((m) => m.org_slug)?.org_slug ??
+      null;
     clearToken();
+    setActiveOrg(null);
     setUser(null);
     setImpersonation(null);
-  }, []);
+    window.location.href = !isOperator && orgSlug ? portalPath(orgSlug) : "/login";
+  }, [user, activeOrgId, setActiveOrg]);
 
   const startImpersonation = useCallback((imp: Impersonation) => setImpersonation(imp), []);
   const stopImpersonation = useCallback(() => setImpersonation(null), []);
@@ -102,6 +146,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       mode: deriveMode(user),
       orgMemberships: memberships.filter((m) => !m.program_id),
       programMemberships: memberships.filter((m) => m.program_id),
+      activeOrgId,
+      setActiveOrg,
       login,
       logout,
       refresh,
@@ -109,7 +155,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       startImpersonation,
       stopImpersonation,
     };
-  }, [loading, user, login, logout, refresh, impersonation, startImpersonation, stopImpersonation]);
+  }, [loading, user, activeOrgId, setActiveOrg, login, logout, refresh, impersonation, startImpersonation, stopImpersonation]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

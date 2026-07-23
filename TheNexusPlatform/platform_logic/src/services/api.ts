@@ -241,22 +241,24 @@ export async function createOrganization(name: string): Promise<OrgSummary> {
   return request<OrgSummary>("/api/platform/orgs", { method: "POST", body: JSON.stringify({ name }) });
 }
 
-export interface ProvisionedInvite {
+export interface ProvisionedAdmin {
   email: string;
   role: string;
-  token: string;
-  invitation_id: string;
-  redeem_url: string;
+  /** True if a brand-new account was created for them (temp_password is set). */
+  created: boolean;
+  temp_password: string | null;
 }
 
 export interface ProvisionResult {
   organization: { id: string; name: string; slug: string; status: string };
-  invitations: ProvisionedInvite[];
+  admins: ProvisionedAdmin[];
 }
 
 /**
  * Operator: the full provisioning event — org + isolation boundary + default
- * entitlements + an activation invite per named administrator (first = owner).
+ * entitlements + an ACTIVE membership per named administrator (first = owner).
+ * No activation link: each admin is a member immediately, new accounts get a
+ * temporary password to hand off.
  */
 export async function provisionOrganization(
   name: string,
@@ -666,6 +668,23 @@ export async function uploadProgramLogo(programId: string, file: File): Promise<
   });
 }
 
+/** Upload a program's card cover image (≤4 MB). Returns its serving URL. */
+export async function uploadProgramCover(programId: string, file: File): Promise<{ cover_url: string }> {
+  const data = await fileToBase64(file);
+  return request<{ cover_url: string }>(`/api/platform/programs/${programId}/cover`, {
+    method: "POST",
+    body: JSON.stringify({ data, content_type: file.type }),
+  });
+}
+
+/** Clear a program's card cover, leaving its accent/logo intact. */
+export async function removeProgramCover(programId: string): Promise<void> {
+  await request(`/api/platform/programs/${programId}/theme`, {
+    method: "PATCH",
+    body: JSON.stringify({ remove_cover: true }),
+  });
+}
+
 // ── Audit log + Entitlements ─────────────────────────────────────────────────
 export async function listAuditEvents(orgId: string, limit = 50): Promise<AuditEvent[]> {
   return request<AuditEvent[]>(`/api/platform/orgs/${orgId}/audit?limit=${limit}`);
@@ -818,6 +837,93 @@ export async function rejectRegistration(registrationId: string): Promise<Regist
   return request<Registration>(`/api/registrations/${registrationId}/reject`, { method: "POST" });
 }
 
+/** Remove a participant — deactivates their participant row (revokes access immediately). */
+export async function removeRegistration(registrationId: string): Promise<Registration> {
+  return request<Registration>(`/api/registrations/${registrationId}/remove`, { method: "POST" });
+}
+
+/** The program's participant roster (program-level + offering-level registrations). */
+export async function listProgramRegistrations(programId: string): Promise<Registration[]> {
+  return request<Registration[]>(`/api/programs/${programId}/participant-registrations`);
+}
+
+// ── Gates: program entrance pages ───────────────────────────────────────────
+export type GateAudience = "participant" | "member";
+export interface Gate {
+  id: string;
+  organization_id: string;
+  program_id: string;
+  slug: string;
+  title: string | null;
+  subtitle: string | null;
+  audience: GateAudience;
+  /** Legacy single role; superseded by role_ids. */
+  role_id: string | null;
+  /** Roles a member gate offers at sign-up; the signer picks one. */
+  role_ids: string[];
+  allow_signin: boolean;
+  allow_signup: boolean;
+  approval_required: boolean;
+  landing: string | null;
+  config: Record<string, unknown>;
+  org_slug?: string | null;
+}
+export interface PublicGate extends Gate {
+  /** Offered roles resolved to {id,name}, in the gate's order (member gates). */
+  roles: { id: string; name: string }[];
+  org: { id: string; slug: string; name: string; theme_accent_color: string | null; theme_logo_url: string | null };
+  program_name: string | null;
+}
+export interface GateWrite {
+  slug?: string;
+  title?: string | null;
+  subtitle?: string | null;
+  audience?: GateAudience;
+  role_ids?: string[];
+  allow_signin?: boolean;
+  allow_signup?: boolean;
+  approval_required?: boolean;
+  landing?: string | null;
+}
+
+export async function listGates(programId: string): Promise<Gate[]> {
+  return request<Gate[]>(`/api/programs/${programId}/gates`);
+}
+export async function createGate(programId: string, payload: GateWrite): Promise<Gate> {
+  return request<Gate>(`/api/programs/${programId}/gates`, { method: "POST", body: JSON.stringify(payload) });
+}
+export async function updateGate(gateId: string, patch: GateWrite): Promise<Gate> {
+  return request<Gate>(`/api/gates/${gateId}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+export async function deleteGate(gateId: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/gates/${gateId}`, { method: "DELETE" });
+}
+
+/** Public pre-auth gate config (no session needed). */
+export async function getPublicGate(orgSlug: string, gateSlug: string): Promise<PublicGate> {
+  return request<PublicGate>(`/api/gates/by-path/${encodeURIComponent(orgSlug)}/${encodeURIComponent(gateSlug)}`);
+}
+export async function gateSignup(
+  gateId: string,
+  payload: { email: string; password: string; name?: string; role_id?: string },
+): Promise<{ access_token: string; pending: boolean; landing: string | null }> {
+  return request(`/api/platform/gates/${gateId}/signup`, { method: "POST", body: JSON.stringify(payload) });
+}
+export async function gateSignin(
+  gateId: string,
+  payload: { email: string; password: string },
+): Promise<{ access_token: string; landing: string | null }> {
+  return request(`/api/platform/gates/${gateId}/signin`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+/** Invite a participant into the PROGRAM (not an offering) — the access unit. */
+export async function inviteProgramParticipant(programId: string, payload: { email: string; name?: string }): Promise<Registration> {
+  return request<Registration>(`/api/programs/${programId}/participants`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export interface AdminAddRegistrationInput {
   email: string;
   name?: string;
@@ -883,12 +989,20 @@ export async function listProgramAdministrators(programId: string): Promise<Prog
   return request<ProgramAdministrator[]>(`/api/programs/${programId}/administrators`);
 }
 
+/** Inviting now enrolls immediately: the person is an active member with an account. */
+export interface MemberEnrollResult {
+  active: boolean;
+  email: string;
+  created: boolean;
+  temp_password: string | null;
+}
+
 export async function assignProgramAdministrator(
   programId: string,
   email: string,
   displayName?: string,
-): Promise<Invitation> {
-  return request<Invitation>(`/api/programs/${programId}/administrators`, {
+): Promise<MemberEnrollResult> {
+  return request<MemberEnrollResult>(`/api/programs/${programId}/administrators`, {
     method: "POST",
     body: JSON.stringify({ email, display_name: displayName || undefined }),
   });
@@ -958,8 +1072,8 @@ export async function listProgramMembers(programId: string): Promise<ProgramMemb
 export async function inviteProgramMember(
   programId: string,
   payload: { email: string; display_name?: string; role_id?: string },
-): Promise<Invitation> {
-  return request<Invitation>(`/api/programs/${programId}/members`, {
+): Promise<MemberEnrollResult> {
+  return request<MemberEnrollResult>(`/api/programs/${programId}/members`, {
     method: "POST",
     body: JSON.stringify(payload),
   });

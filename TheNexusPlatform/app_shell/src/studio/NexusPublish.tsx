@@ -10,7 +10,6 @@ import { useEffect, useState } from "react";
 import type { AppShellConfig } from "../types";
 import {
   DEFAULT_BASE_URL,
-  bootConfigUrl,
   clearSession,
   createApp,
   devLoginAs,
@@ -33,7 +32,7 @@ import {
 } from "../nexus/client";
 import { toServerRecord } from "../nexus/dialect";
 import type { HandoffScope } from "../nexus/handoff";
-import { copyToClipboard } from "../share";
+import { copyToClipboard, liveLink } from "../share";
 
 const CREATE = "__create__";
 
@@ -165,7 +164,7 @@ export function NexusPublish({
         const existing = (await getAppConfig(session, bound.appId)).config ?? {};
         await saveAppConfig(session, bound.appId, toServerRecord(config, existing));
         const v = await publishVersion(session, bound.appId);
-        setPublished({ version: v.version, url: bootConfigUrl(session.baseUrl, bound.appSlug) });
+        setPublished({ version: v.version, url: liveLink(bound.appSlug, session.baseUrl) });
         return;
       }
       if (!programId) return;
@@ -179,7 +178,7 @@ export function NexusPublish({
       await saveAppConfig(session, app.id, toServerRecord(config, existing));
       const v = await publishVersion(session, app.id);
       saveLink(config.id, { appId: app.id, appSlug: app.app_slug, programId, orgId });
-      setPublished({ version: v.version, url: bootConfigUrl(session.baseUrl, app.app_slug) });
+      setPublished({ version: v.version, url: liveLink(app.app_slug, session.baseUrl) });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -302,7 +301,7 @@ export function NexusPublish({
           {published && (
             <div className="rounded-lg px-2.5 py-2" style={{ backgroundColor: "#0f0f16", border: "1px solid rgba(255,255,255,0.06)" }}>
               <p className="mb-1 text-[10px] font-semibold" style={{ color: config.accentColor }}>
-                Published v{published.version} ✓ — boot config:
+                Published v{published.version} ✓ — your app link (students sign in here):
               </p>
               <div className="flex items-center gap-2">
                 <span className="flex-1 truncate font-mono text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }} title={published.url}>

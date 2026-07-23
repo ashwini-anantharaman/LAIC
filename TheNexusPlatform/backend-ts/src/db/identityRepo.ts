@@ -200,7 +200,7 @@ export async function loadUser(authUserId: string): Promise<{ profile: Row | nul
 export async function ensureOrgProfile(
   authUserId: string,
   orgId: string,
-  opts: { email?: string | null; role?: string; displayName?: string | null } = {},
+  opts: { email?: string | null; role?: string; displayName?: string | null; allowSecondOrg?: boolean } = {},
 ): Promise<string> {
   return asPrivileged((tx) => ensureOrgProfileTx(tx, authUserId, orgId, opts));
 }

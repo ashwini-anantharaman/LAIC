@@ -11,6 +11,7 @@ import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 
 import { useSession } from "@/nexus/session";
+import { useDocumentTitle } from "@/nexus/useDocumentTitle";
 import { DEV_ENABLED, OPERATOR_PERSONAS, type DevPersona } from "@/nexus/dev/personas";
 import { listDevOrgs } from "@/services/api";
 import { portalPath } from "@/nexus/orgResolver";
@@ -19,6 +20,7 @@ import { ChevronRight } from "lucide-react";
 export function Login() {
   const { login } = useSession();
   const navigate = useNavigate();
+  useDocumentTitle("Nexus");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

@@ -195,7 +195,7 @@ export async function createProfile(
 export async function ensureOrgProfile(
   authUserId: string,
   orgId: string,
-  opts: { email?: string | null; role?: string; displayName?: string | null } = {},
+  opts: { email?: string | null; role?: string; displayName?: string | null; allowSecondOrg?: boolean } = {},
 ): Promise<string> {
   if (usePg()) return pg.ensureOrgProfile(authUserId, orgId, opts);
   const p = await createProfile(authUserId, opts.email ?? "", opts.role ?? "student", opts.displayName ?? null);
@@ -375,7 +375,7 @@ export async function updateProgramCategories(
 }
 export async function setProgramBranding(
   programId: string,
-  branding: { accent?: string | null; logo?: string | null } | null,
+  branding: { accent?: string | null; logo?: string | null; cover?: string | null } | null,
 ): Promise<Row | null> {
   return tpg.setProgramBranding(programId, branding);
 }
@@ -1311,11 +1311,11 @@ export async function revokeApp(appId: string): Promise<Row> {
 
 export async function createRegistration(
   orgId: string,
-  offeringId: string,
+  offeringId: string | null,
   opts: local.RegistrationOptions = {},
 ): Promise<Row> {
   if (usePg()) return tpg.createRegistration(orgId, offeringId, opts);
-  if (await useLocal()) return local.localCreateRegistration(orgId, offeringId, opts);
+  if (await useLocal()) return local.localCreateRegistration(orgId, offeringId as string, opts);
   const client = requireClient();
   return _mutateOne(
     client
@@ -1426,6 +1426,25 @@ export async function createParticipant(
       .select("*"),
     "Failed to create participant",
   );
+}
+
+export async function removeRegistrationParticipants(registrationId: string): Promise<void> {
+  if (usePg()) return tpg.removeParticipantsByRegistration(registrationId);
+  // Demo/local mode: participant removal is a dev-only no-op.
+}
+
+export async function listRegistrationsByProgram(programId: string, status: string | null = null): Promise<Row[]> {
+  if (usePg()) return tpg.listRegistrationsByProgram(programId, status);
+  return [];
+}
+
+export async function createProgramParticipant(
+  orgId: string,
+  programId: string,
+  opts: local.ParticipantOptions = {},
+): Promise<Row> {
+  if (usePg()) return tpg.createProgramParticipant(orgId, programId, opts);
+  return { id: null };
 }
 
 export async function listParticipants(

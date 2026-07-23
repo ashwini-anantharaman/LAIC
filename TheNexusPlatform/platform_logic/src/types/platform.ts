@@ -54,8 +54,11 @@ export interface Program {
   instructor_count?: number;
   /** Per-program platform toggles; absent/true = enabled where the org allows it. */
   platforms?: Record<string, boolean> | null;
-  /** Program's own branding; null = inherit the organization's. */
-  branding?: { accent: string | null; logo: string | null } | null;
+  /**
+   * Program's own branding; null = inherit the organization's. `cover` is the
+   * card background image on the Programs page (distinct from `logo`).
+   */
+  branding?: { accent: string | null; logo: string | null; cover?: string | null } | null;
 }
 
 export interface Integration {
@@ -82,6 +85,7 @@ export interface MembershipSummary {
   id: string;
   org_id: string;
   org_name: string;
+  org_slug?: string | null;
   role: string;
   stage_node_id?: string;
   stage_name?: string;
@@ -277,7 +281,8 @@ export type RegistrationStatus =
   | "rejected"
   | "waitlisted"
   | "withdrawn"
-  | "directly_added";
+  | "directly_added"
+  | "removed";
 export type ParticipantType = "learner" | "coach" | "reviewer" | "advisor" | "volunteer" | "organizer" | "instructor";
 
 export interface SignupField {

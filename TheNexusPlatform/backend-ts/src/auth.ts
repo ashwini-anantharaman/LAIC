@@ -265,6 +265,31 @@ export async function getAuthenticatedApp(c: Context): Promise<AuthenticatedApp>
  * to a user_id at issuance, so a successful consume just mints that user a fresh
  * session. Replaces handing a long-lived platform session token in a URL.
  */
+/**
+ * Mint a real Supabase session (an access-token JWT) for a known user BY EMAIL,
+ * without their password — via an admin-generated magic link that an ephemeral
+ * client immediately verifies. Supabase mode only. Shared by the launch-token
+ * exchange and, in dev, the "test as" quick-login, so both produce a genuine
+ * JWT the rest of the app accepts (never a raw id).
+ */
+export async function mintSupabaseSession(email: string): Promise<string> {
+  const admin = requireAdminClient();
+  const { data: link, error: linkError } = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+  });
+  if (linkError || !link?.properties?.hashed_token) {
+    throw new HttpError(500, `Failed to mint session: ${linkError?.message ?? "no link"}`);
+  }
+  const ephemeral = createEphemeralClient();
+  const { data: verified, error: verifyError } = await ephemeral.auth.verifyOtp({
+    token_hash: link.properties.hashed_token,
+    type: "magiclink",
+  });
+  if (verifyError || !verified?.session) throw new HttpError(500, "Failed to mint session");
+  return verified.session.access_token;
+}
+
 export async function exchangeLaunchToken(rawToken: string): Promise<Row> {
   const consumed = await platformDb.consumeLaunchToken(rawToken);
   if (!consumed) throw new HttpError(401, "Invalid or expired launch token");
@@ -283,23 +308,7 @@ export async function exchangeLaunchToken(rawToken: string): Promise<Row> {
   const email = profile?.email;
   if (!email) throw new HttpError(500, "Could not resolve user for launch token");
   try {
-    const admin = requireAdminClient();
-    const { data: link, error: linkError } = await admin.auth.admin.generateLink({
-      type: "magiclink",
-      email,
-    });
-    if (linkError || !link?.properties?.hashed_token) {
-      throw new HttpError(500, `Failed to exchange launch token: ${linkError?.message ?? "no link"}`);
-    }
-    const ephemeral = createEphemeralClient();
-    const { data: verified, error: verifyError } = await ephemeral.auth.verifyOtp({
-      token_hash: link.properties.hashed_token,
-      type: "magiclink",
-    });
-    if (verifyError || !verified?.session) {
-      throw new HttpError(500, "Failed to mint session from launch token");
-    }
-    return { access_token: verified.session.access_token };
+    return { access_token: await mintSupabaseSession(email) };
   } catch (exc) {
     if (exc instanceof HttpError) throw exc;
     throw new HttpError(500, `Failed to exchange launch token: ${exc}`);

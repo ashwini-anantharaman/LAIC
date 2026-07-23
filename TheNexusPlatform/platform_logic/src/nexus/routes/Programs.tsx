@@ -4,9 +4,9 @@
  * admin names who runs a program without having to manage that program's
  * internal roles (that's the assigned admin's own job, done from Team & Roles).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ChevronLeft, ChevronRight, Copy, Layers, LayoutGrid, Plus, SlidersHorizontal, Trash2, UserCog } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, ImageIcon, Layers, LayoutGrid, Plus, SlidersHorizontal, Trash2, UserCog, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -30,14 +30,18 @@ import {
   listProgramAdministrators,
   listPrograms,
   removeMember,
+  removeProgramCover,
   revokeInvitation,
   updateProgramCategories,
   updateProgramFeatures,
+  uploadProgramCover,
+  type MemberEnrollResult,
   type OrgCapabilities,
   type ProgramAdministrator,
 } from "@/services/api";
 import type { Program, ProgramCategory, ProgramFeatures } from "@/types/platform";
 import { DEFAULT_PROGRAM_FEATURES, PROGRAM_FEATURES } from "@/types/platform";
+import { resolveAssetUrl } from "@/services/apiBase";
 import { EmptyState, PageHeader, Pill, Spinner } from "@/nexus/ui/kit";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 
@@ -252,6 +256,15 @@ function ProgramCard({
   onRemove: () => void;
 }) {
   const [admins, setAdmins] = useState<ProgramAdministrator[]>([]);
+  // Cover lives in the program's branding; keep it in local state so an
+  // upload/remove reflects instantly without reloading the whole list.
+  const [cover, setCover] = useState<string | null>(p.branding?.cover ?? null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const coverRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setCover(p.branding?.cover ?? null);
+  }, [p.branding?.cover]);
 
   useEffect(() => {
     listProgramAdministrators(p.id)
@@ -267,58 +280,140 @@ function ProgramCard({
         ? `${admin.display_name ?? admin.email}${admin.status === "invited" ? " · invited" : ""}`
         : `${admin.display_name ?? admin.email} +${admins.length - 1}`;
 
+  const coverUrl = cover ? resolveAssetUrl(cover) ?? cover : null;
+  // Over a photo we paint text light with a scrim; without one the card keeps
+  // the normal theme tokens (works in both light and dark mode).
+  const titleCls = coverUrl ? "text-white" : "text-foreground";
+  const descCls = coverUrl ? "text-white/80" : "text-muted-foreground";
+  const metaCls = coverUrl ? "text-white/85 hover:text-white" : "text-muted-foreground hover:text-foreground";
+  const openCls = coverUrl ? "text-white" : "text-foreground";
+
+  async function onPickCover(file: File) {
+    setCoverBusy(true);
+    try {
+      const r = await uploadProgramCover(p.id, file);
+      setCover(r.cover_url);
+      toast.success("Cover updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setCoverBusy(false);
+    }
+  }
+
+  async function clearCover() {
+    setCoverBusy(true);
+    try {
+      await removeProgramCover(p.id);
+      setCover(null);
+      toast.success("Cover removed");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove cover");
+    } finally {
+      setCoverBusy(false);
+    }
+  }
+
   return (
-    <div className="glass-card p-4">
-      <div className="flex items-start justify-between gap-2">
-        <Link to={`/o/${orgId}/p/${p.id}`} className="min-w-0 group">
-          <div className="font-medium text-foreground group-hover:underline truncate">{p.name}</div>
-          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{p.description}</div>
-        </Link>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Pill tone="neutral">{p.category}</Pill>
-          {(p.secondary_categories ?? []).slice(0, 2).map((c) => (
-            <span key={c} className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-              {c}
-            </span>
-          ))}
-          <ConfirmButton
-            title={`Remove the "${p.name}" program?`}
-            description="This deletes the program and everything inside it — offerings, app shells, registrations, groups, and roles. This can't be undone."
-            actionLabel="Remove program"
-            onConfirm={onRemove}
-            buttonTitle="Remove program"
-          >
-            <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
-          </ConfirmButton>
+    <div className={`glass-card relative overflow-hidden p-0 ${coverUrl ? "min-h-40" : ""}`}>
+      {coverUrl ? (
+        <>
+          <img src={coverUrl} alt="" className="pointer-events-none absolute inset-0 size-full object-cover" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/65 to-black/40" />
+        </>
+      ) : null}
+
+      <div className="relative flex h-full flex-col p-4">
+        <div className="flex items-start justify-between gap-2">
+          <Link to={`/o/${orgId}/p/${p.id}`} className="min-w-0 group">
+            <div className={`font-medium group-hover:underline truncate ${titleCls}`}>{p.name}</div>
+            <div className={`text-xs mt-0.5 line-clamp-2 ${descCls}`}>{p.description}</div>
+          </Link>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Pill tone="neutral">{p.category}</Pill>
+            {(p.secondary_categories ?? []).slice(0, 2).map((c) => (
+              <span
+                key={c}
+                className={
+                  coverUrl
+                    ? "rounded-full border border-white/40 px-2 py-0.5 text-[10px] text-white/90"
+                    : "rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground"
+                }
+              >
+                {c}
+              </span>
+            ))}
+            <ConfirmButton
+              title={`Remove the "${p.name}" program?`}
+              description="This deletes the program and everything inside it — offerings, app shells, registrations, groups, and roles. This can't be undone."
+              actionLabel="Remove program"
+              onConfirm={onRemove}
+              buttonTitle="Remove program"
+            >
+              <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+            </ConfirmButton>
+          </div>
         </div>
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-3">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors min-w-0"
-            onClick={onAssign}
-            title="Assign the program's administrators (delegation)"
+        <div className="mt-auto flex items-center justify-between gap-2 pt-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1.5 text-xs transition-colors min-w-0 ${metaCls}`}
+              onClick={onAssign}
+              title="Assign the program's administrators (delegation)"
+            >
+              <UserCog className="size-3.5 shrink-0" />
+              <span className="truncate">{adminLabel}</span>
+            </button>
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1.5 text-xs transition-colors shrink-0 ${metaCls}`}
+              onClick={onEditFeatures}
+              title="Choose which features are accessible in this program"
+            >
+              <SlidersHorizontal className="size-3.5" />
+              Features
+            </button>
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1.5 text-xs transition-colors shrink-0 disabled:opacity-50 ${metaCls}`}
+              onClick={() => coverRef.current?.click()}
+              disabled={coverBusy}
+              title="Upload a background image for this program"
+            >
+              <ImageIcon className="size-3.5" />
+              {coverBusy ? "…" : "Cover"}
+            </button>
+            {coverUrl ? (
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1 text-xs transition-colors shrink-0 disabled:opacity-50 ${metaCls}`}
+                onClick={clearCover}
+                disabled={coverBusy}
+                title="Remove the background image"
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : null}
+            <input
+              ref={coverRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void onPickCover(file);
+              }}
+            />
+          </div>
+          <Link
+            to={`/o/${orgId}/p/${p.id}`}
+            className={`inline-flex items-center gap-1 text-xs font-medium hover:underline shrink-0 ${openCls}`}
           >
-            <UserCog className="size-3.5 shrink-0" />
-            <span className="truncate">{adminLabel}</span>
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
-            onClick={onEditFeatures}
-            title="Choose which features are accessible in this program"
-          >
-            <SlidersHorizontal className="size-3.5" />
-            Features
-          </button>
+            Open <ChevronRight className="size-3.5" />
+          </Link>
         </div>
-        <Link
-          to={`/o/${orgId}/p/${p.id}`}
-          className="inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline shrink-0"
-        >
-          Open <ChevronRight className="size-3.5" />
-        </Link>
       </div>
     </div>
   );
@@ -329,7 +424,7 @@ function AssignAdminsDialog({ program, onClose }: { program: Program | null; onC
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
-  const [link, setLink] = useState<string | null>(null);
+  const [added, setAdded] = useState<MemberEnrollResult | null>(null);
 
   function load(programId: string) {
     listProgramAdministrators(programId)
@@ -343,7 +438,7 @@ function AssignAdminsDialog({ program, onClose }: { program: Program | null; onC
       setAdmins(null);
       setName("");
       setEmail("");
-      setLink(null);
+      setAdded(null);
     }
   }, [program]);
 
@@ -351,12 +446,12 @@ function AssignAdminsDialog({ program, onClose }: { program: Program | null; onC
     if (!program || !email.trim()) return;
     setBusy(true);
     try {
-      const inv = await assignProgramAdministrator(program.id, email.trim(), name.trim() || undefined);
-      setLink(inv.token ? `${window.location.origin}/invite/${inv.token}` : inv.redeem_url ?? null);
+      const res = await assignProgramAdministrator(program.id, email.trim(), name.trim() || undefined);
+      setAdded(res);
       setName("");
       setEmail("");
       load(program.id);
-      toast.success("Administrator assigned");
+      toast.success(`${res.email} is now an active administrator.`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to assign administrator");
     } finally {
@@ -438,20 +533,30 @@ function AssignAdminsDialog({ program, onClose }: { program: Program | null; onC
                 <Plus className="size-3.5" /> Add
               </Button>
             </div>
-            {link ? (
-              <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
-                <code className="flex-1 truncate text-xs font-mono">{link}</code>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(link);
-                    toast.success("Copied");
-                  }}
-                  className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"
-                  title="Copy link"
-                >
-                  <Copy className="size-3.5" />
-                </button>
+            {added ? (
+              <div className="rounded-md bg-muted/40 px-2.5 py-1.5 space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">{added.email}</span> is now an active administrator.
+                </p>
+                {added.created && added.temp_password ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground shrink-0">Temp password:</span>
+                    <code className="flex-1 truncate text-xs font-mono">{added.temp_password}</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(added.temp_password ?? "");
+                        toast.success("Copied");
+                      }}
+                      className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"
+                      title="Copy password"
+                    >
+                      <Copy className="size-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">They sign in with their existing password.</p>
+                )}
               </div>
             ) : null}
           </div>
@@ -472,7 +577,8 @@ interface AdminDraft {
 
 interface CreatedInvite {
   email: string;
-  link: string | null;
+  created: boolean;
+  temp_password: string | null;
 }
 
 function NewProgramDialog({
@@ -539,15 +645,12 @@ function NewProgramDialog({
         features,
       });
       // Assign each named administrator — same delegation the org provisioning
-      // flow uses; each gets an activation link.
+      // flow uses; each becomes an active administrator immediately.
       const created: CreatedInvite[] = [];
       for (const a of validAdmins) {
         try {
-          const inv = await assignProgramAdministrator(program.id, a.email.trim(), a.displayName.trim() || undefined);
-          created.push({
-            email: a.email.trim(),
-            link: inv.token ? `${window.location.origin}/invite/${inv.token}` : inv.redeem_url ?? null,
-          });
+          const res = await assignProgramAdministrator(program.id, a.email.trim(), a.displayName.trim() || undefined);
+          created.push({ email: res.email, created: res.created, temp_password: res.temp_password });
         } catch (e) {
           toast.error(`Couldn't assign ${a.email}: ${e instanceof Error ? e.message : "failed"}`);
         }
@@ -555,7 +658,7 @@ function NewProgramDialog({
       toast.success("Program created");
       onDone();
       if (created.length > 0) {
-        setInvites(created); // stay open to hand out the links
+        setInvites(created); // stay open to show sign-in details
       } else {
         onOpenChange(false);
         reset();
@@ -582,19 +685,20 @@ function NewProgramDialog({
         {invites ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Program created. Share each activation link — administrators set their own password on
-              first sign-in.
+              Program created. Each administrator is now active — share the temporary password with any
+              new accounts.
             </p>
             {invites.map((inv) => (
               <div key={inv.email} className="rounded-lg border border-border p-3 space-y-1.5">
                 <div className="text-sm font-medium text-foreground">{inv.email}</div>
-                {inv.link ? (
+                {inv.created && inv.temp_password ? (
                   <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
-                    <code className="flex-1 truncate text-xs font-mono">{inv.link}</code>
+                    <span className="text-xs text-muted-foreground shrink-0">Temp password:</span>
+                    <code className="flex-1 truncate text-xs font-mono">{inv.temp_password}</code>
                     <button
                       type="button"
                       onClick={() => {
-                        void navigator.clipboard?.writeText(inv.link!);
+                        void navigator.clipboard?.writeText(inv.temp_password!);
                         toast.success("Copied");
                       }}
                       className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"
@@ -602,7 +706,9 @@ function NewProgramDialog({
                       <Copy className="size-3.5" />
                     </button>
                   </div>
-                ) : null}
+                ) : (
+                  <p className="text-xs text-muted-foreground">Signs in with their existing password.</p>
+                )}
               </div>
             ))}
           </div>

@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/app/components/ui/dialog";
 import { Input } from "@/app/components/ui/input";
+import { Switch } from "@/app/components/ui/switch";
 import { Label } from "@/app/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
@@ -23,22 +24,32 @@ import {
   approveRegistration,
   closeOffering,
   createApp,
+  createGate,
   createGroup,
   createOffering,
   deleteApp,
+  deleteGate,
   getOrgCapabilities,
+  inviteProgramParticipant,
   listAffiliatedPrograms,
   listApps,
+  listGates,
   listGroups,
   listIntegrations,
   listOfferings,
   listPrograms,
   listProgramOrgAffiliations,
+  listProgramRegistrations,
+  listProgramRoles,
   listRegistrations,
   publishOffering,
   rejectRegistration,
+  removeRegistration,
   updateProgramFeatures,
+  type Gate,
+  type GateAudience,
   type OrgCapabilities,
+  type ProgramRole,
 } from "@/services/api";
 import type {
   AffiliatedProgram,
@@ -409,48 +420,86 @@ function NewOfferingDialog({
 export function ProgramRegistrations() {
   const { program, programId } = useProgram();
   const [rows, setRows] = useState<Registration[] | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [invEmail, setInvEmail] = useState("");
+  const [invName, setInvName] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!programId) return;
-    const offs = await listOfferings(programId).catch(() => [] as Offering[]);
-    const all = await Promise.all(offs.map((o) => listRegistrations(o.id).catch(() => [] as Registration[])));
-    setRows(all.flat());
+    setRows(await listProgramRegistrations(programId).catch(() => [] as Registration[]));
   }, [programId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  async function act(id: string, kind: "approve" | "reject") {
+  async function act(id: string, kind: "approve" | "reject" | "remove") {
     try {
-      await (kind === "approve" ? approveRegistration(id) : rejectRegistration(id));
-      toast.success(kind === "approve" ? "Approved — participant created" : "Rejected");
+      if (kind === "approve") await approveRegistration(id);
+      else if (kind === "reject") await rejectRegistration(id);
+      else await removeRegistration(id);
+      toast.success(
+        kind === "approve" ? "Approved — participant has access" : kind === "reject" ? "Rejected" : "Removed — access revoked",
+      );
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Action failed");
     }
   }
 
+  async function invite() {
+    if (!invEmail.trim()) return;
+    setBusy(true);
+    try {
+      await inviteProgramParticipant(programId, { email: invEmail.trim(), name: invName.trim() || undefined });
+      toast.success("Participant added to the program — access is active once they sign in");
+      setInviteOpen(false);
+      setInvEmail("");
+      setInvName("");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to add participant");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // A row is a live participant (removable) once it's past the pending/declined
+  // states. Pending signups use approve/reject instead.
+  const isActive = (s: string) => !["pending_review", "rejected", "removed"].includes(s);
+  // This is the CURRENT roster — terminal states (removed/rejected) drop off the
+  // view. The records stay in the DB for audit; re-invite adds a fresh row.
+  const shown = rows ? rows.filter((r) => !["removed", "rejected"].includes(r.status)) : null;
+
   return (
     <div>
-      <Head program={program} subtitle="Signups arriving via the app hook, invites, or admin add." />
-      {!rows ? (
+      <Head
+        program={program}
+        subtitle="Students in this program — from the app, or added here. Staff go through Team & Roles."
+        actions={
+          <Button onClick={() => setInviteOpen(true)} disabled={!programId}>
+            <Plus className="size-4" /> Invite participant
+          </Button>
+        }
+      />
+      {!shown ? (
         <Spinner />
-      ) : rows.length === 0 ? (
-        <EmptyState>No registrations yet.</EmptyState>
+      ) : shown.length === 0 ? (
+        <EmptyState>No participants yet. Invite one, or wait for app signups.</EmptyState>
       ) : (
         <div className="glass-card overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Registrant</TableHead>
+                <TableHead>Participant</TableHead>
                 <TableHead>Source</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r) => (
+              {shown.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>
                     <div className="font-medium text-foreground">{r.name ?? r.email ?? "—"}</div>
@@ -470,8 +519,18 @@ export function ProgramRegistrations() {
                           <X className="size-3.5" />
                         </Button>
                       </div>
+                    ) : isActive(r.status) ? (
+                      <ConfirmButton
+                        title={`Remove ${r.name ?? r.email ?? "this participant"}?`}
+                        description="Revokes their access to this program's platforms immediately. Their record stays for audit; re-invite to restore. This can't be undone with one click."
+                        actionLabel="Remove participant"
+                        buttonTitle="Remove participant (revoke access)"
+                        onConfirm={() => act(r.id, "remove")}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </ConfirmButton>
                     ) : (
-                      <span className="text-xs text-muted-foreground">participant created</span>
+                      <span className="text-xs text-muted-foreground">{r.status.replace(/_/g, " ")}</span>
                     )}
                   </TableCell>
                 </TableRow>
@@ -480,6 +539,245 @@ export function ProgramRegistrations() {
           </Table>
         </div>
       )}
+
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Invite participant to {program?.name ?? "this program"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="inv-email">Email</Label>
+              <Input id="inv-email" type="email" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} placeholder="student@example.org" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="inv-name">Name (optional)</Label>
+              <Input id="inv-name" value={invName} onChange={(e) => setInvName(e.target.value)} placeholder="Full name" />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Adds the student to the <strong>program</strong> with learner access to its platforms. They reach it by
+              signing into the app with this email — a "set your password" link for brand-new students is coming with
+              the claim flow.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setInviteOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={invite} disabled={busy || !invEmail.trim()}>
+              {busy ? "Adding…" : "Add participant"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+export function ProgramGates() {
+  const { program, programId } = useProgram();
+  const [gates, setGates] = useState<Gate[] | null>(null);
+  const [roles, setRoles] = useState<ProgramRole[]>([]);
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [audience, setAudience] = useState<GateAudience>("participant");
+  const [roleIds, setRoleIds] = useState<string[]>([]);
+  const [allowSignin, setAllowSignin] = useState(true);
+  const [allowSignup, setAllowSignup] = useState(true);
+  const [approval, setApproval] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    if (!programId) return;
+    listGates(programId).then(setGates).catch(() => setGates([]));
+    listProgramRoles(programId).then(setRoles).catch(() => setRoles([]));
+  }, [programId]);
+  useEffect(() => load(), [load]);
+
+  function gateUrl(g: Gate): string {
+    return `${window.location.origin}/@/${g.org_slug ?? ""}/${g.slug}`;
+  }
+
+  async function create() {
+    if (!title.trim()) return;
+    setBusy(true);
+    try {
+      await createGate(programId, {
+        title: title.trim(),
+        audience,
+        role_ids: audience === "member" ? roleIds : [],
+        // Participant gates are sign-up only — students sign in through the app.
+        allow_signin: audience === "member" ? allowSignin : false,
+        allow_signup: allowSignup,
+        approval_required: approval,
+      });
+      toast.success("Gate created");
+      setOpen(false);
+      setTitle("");
+      setRoleIds([]);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create gate");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <Head
+        program={program}
+        subtitle="Sign-up / sign-in pages for this program, each at its own URL."
+        actions={
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="size-4" /> Add a gate
+          </Button>
+        }
+      />
+      {!gates ? (
+        <Spinner />
+      ) : gates.length === 0 ? (
+        <EmptyState>No gates yet. Add one to give this program its own sign-in / sign-up page at its own URL.</EmptyState>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {gates.map((g) => (
+            <div key={g.id} className="glass-card p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium text-foreground truncate">{g.title || g.slug}</div>
+                  {g.subtitle ? <div className="text-xs text-muted-foreground truncate">{g.subtitle}</div> : null}
+                </div>
+                <ConfirmButton
+                  title={`Delete gate "${g.title || g.slug}"?`}
+                  description="The page at this URL stops working. People already admitted keep their access."
+                  actionLabel="Delete gate"
+                  buttonTitle="Delete gate"
+                  onConfirm={async () => {
+                    try {
+                      await deleteGate(g.id);
+                      toast.success("Gate deleted");
+                      load();
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Failed to delete gate");
+                    }
+                  }}
+                >
+                  <Trash2 className="size-3.5" />
+                </ConfirmButton>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <Pill tone={g.audience === "member" ? "warn" : "neutral"}>
+                  {g.audience === "member" ? "team members" : "participants"}
+                </Pill>
+                {g.allow_signin ? <Pill tone="positive">sign-in</Pill> : null}
+                {g.allow_signup ? <Pill tone="positive">sign-up</Pill> : null}
+                {g.approval_required ? <Pill tone="warn">approval</Pill> : null}
+              </div>
+              <button
+                onClick={() => {
+                  void navigator.clipboard?.writeText(gateUrl(g));
+                  toast.success("Gate URL copied");
+                }}
+                className="mt-3 w-full truncate rounded-md bg-secondary px-2.5 py-1.5 text-left font-mono text-xs text-secondary-foreground hover:opacity-80"
+                title={gateUrl(g)}
+              >
+                {gateUrl(g)}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add a gate to {program?.name ?? "this program"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="gate-title">Title</Label>
+              <Input id="gate-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Bridge Team" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>This gate is for</Label>
+              <Select value={audience} onValueChange={(v) => setAudience(v as GateAudience)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="participant">Participants (students → Registrations)</SelectItem>
+                  <SelectItem value="member">Team members (staff → Team &amp; Roles)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {audience === "member" ? (
+              <div className="space-y-1.5">
+                <Label>Roles people can join as</Label>
+                {roles.length === 0 ? (
+                  <p className="rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">
+                    No roles yet — create one in Team &amp; Roles first.
+                  </p>
+                ) : (
+                  <>
+                    <div className="rounded-lg border border-border divide-y divide-border">
+                      {roles.map((r) => {
+                        const checked = roleIds.includes(r.id);
+                        return (
+                          <label key={r.id} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-accent/40">
+                            <input
+                              type="checkbox"
+                              className="size-4 accent-[var(--primary)]"
+                              checked={checked}
+                              onChange={(e) =>
+                                setRoleIds((cur) => (e.target.checked ? [...cur, r.id] : cur.filter((id) => id !== r.id)))
+                              }
+                            />
+                            <span className="text-foreground">{r.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {roleIds.length > 1
+                        ? "People choose one of these roles when they sign up."
+                        : roleIds.length === 1
+                          ? "Everyone who joins gets this role."
+                          : "Pick one or more roles to offer at sign-up."}
+                    </p>
+                  </>
+                )}
+              </div>
+            ) : null}
+            {/* Members can sign in at the gate (it's their door). Students sign
+                in through the app, so a participant gate is sign-up only. */}
+            {audience === "member" ? (
+              <label className="flex items-center gap-2 text-sm">
+                <Switch checked={allowSignin} onCheckedChange={setAllowSignin} /> Allow sign-in
+              </label>
+            ) : null}
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={allowSignup} onCheckedChange={setAllowSignup} /> Allow sign-up
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={approval} onCheckedChange={setApproval} /> Require approval for sign-ups
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Creates a page at <span className="font-mono">/@/&lt;org&gt;/&lt;title&gt;</span> where people join this
+              program. {audience === "member"
+                ? "People who enter become staff members with the chosen role (Team & Roles)."
+                : "Students sign up here, then sign in through the app — they become learner participants (Registrations)."}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={create} disabled={busy || !title.trim()}>
+              {busy ? "Creating…" : "Create gate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

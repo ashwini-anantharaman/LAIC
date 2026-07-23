@@ -76,7 +76,11 @@ export function portableLink(config: AppShellConfig): string {
 export type PlayerTarget =
   | { mode: "none" }
   | { mode: "config"; config: AppShellConfig }
-  | { mode: "missing"; id: string };
+  | { mode: "missing"; id: string }
+  // A LIVE published app: boot its config from Nexus by slug, authenticate a
+  // real student, run the real app. `api` is the Nexus API base (optional; the
+  // Player falls back to its default when absent).
+  | { mode: "live"; slug: string; api: string | null };
 
 export function resolvePlayerTarget(): PlayerTarget {
   // A native build bakes the app in as a global (see docs/native-build.md);
@@ -89,12 +93,24 @@ export function resolvePlayerTarget(): PlayerTarget {
     const config = decodeConfig(location.hash.slice("#config=".length));
     if (config) return { mode: "config", config };
   }
-  const id = new URLSearchParams(location.search).get("app");
+  const params = new URLSearchParams(location.search);
+  // Live app: `?live=<slug>&api=<baseUrl>` — the real, backend-backed runtime.
+  const liveSlug = params.get("live");
+  if (liveSlug) return { mode: "live", slug: liveSlug, api: params.get("api") };
+  const id = params.get("app");
   if (id) {
     const config = loadFromRegistry(id);
     return config ? { mode: "config", config } : { mode: "missing", id };
   }
   return { mode: "none" };
+}
+
+/** The link that opens a published app LIVE (real boot + auth). */
+export function liveLink(slug: string, apiBaseUrl: string): string {
+  const u = new URL(baseUrl());
+  u.searchParams.set("live", slug);
+  u.searchParams.set("api", apiBaseUrl.replace(/\/+$/, ""));
+  return u.toString();
 }
 
 /* ---- clipboard with a legacy fallback ---- */

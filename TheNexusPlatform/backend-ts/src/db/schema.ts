@@ -185,6 +185,31 @@ export const appConfigVersions = pgTable("app_config_versions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Gates: program-level (later platform-level) sign-up/sign-in pages, each at
+// /@/<org-slug>/<slug>. The entrance to a program — access is still resolved
+// from participation + role (migration 0029).
+export const gates = pgTable("gates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  slug: text("slug").notNull(),
+  title: text("title"),
+  subtitle: text("subtitle"),
+  // 'participant' (students → Registrations) or 'member' (staff → Team & Roles).
+  audience: text("audience").notNull().default("participant"),
+  roleId: uuid("role_id"), // legacy single role; superseded by roleIds
+  // Program roles a member gate offers at sign-up; the signer picks one. Empty
+  // for participant gates (and member gates that assign no role).
+  roleIds: jsonb("role_ids").notNull().default([]),
+  allowSignin: boolean("allow_signin").notNull().default(true),
+  allowSignup: boolean("allow_signup").notNull().default(false),
+  approvalRequired: boolean("approval_required").notNull().default(false),
+  landing: text("landing"),
+  config: jsonb("config").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const offerings = pgTable("offerings", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull(),
@@ -215,7 +240,8 @@ export const registrations = pgTable("registrations", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull(),
   programId: uuid("program_id"),
-  offeringId: uuid("offering_id").notNull(),
+  // Nullable: a participant joins the PROGRAM; offering is optional (migration 0025).
+  offeringId: uuid("offering_id"),
   stageNodeId: uuid("stage_node_id"),
   registeredAppId: uuid("registered_app_id"),
   registrationSource: text("registration_source").notNull().default("app_hook"),
@@ -236,7 +262,8 @@ export const participants = pgTable("participants", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull(),
   programId: uuid("program_id"),
-  offeringId: uuid("offering_id").notNull(),
+  // Nullable: a participant joins the PROGRAM; offering is optional (migration 0025).
+  offeringId: uuid("offering_id"),
   stageNodeId: uuid("stage_node_id"),
   userId: uuid("user_id"),
   participantType: text("participant_type").notNull().default("learner"),

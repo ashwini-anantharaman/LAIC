@@ -18,7 +18,7 @@ import {
   organizations, offerings, organizationRelationships, programOrganizationAffiliations,
   programAffiliations, groups, groupMemberships, invitations, registrations, participants, profiles, programs,
   programRoles, programRoleAssignments, platformRoleAssignments, entitlements, orgMemberships, registeredApps, appConfigVersions,
-  appLaunchTokens,
+  appLaunchTokens, gates,
 } from "./schema";
 
 type Row = Record<string, unknown>;
@@ -1269,6 +1269,136 @@ export async function publishConfigVersion(orgId: string, appId: string): Promis
 }
 
 /** The latest PUBLISHED config (what a runtime should serve), or null if never published. */
+// ── Gates (program entrance pages) ──────────────────────────────────────────
+// All privileged: the public gate page renders PRE-AUTH (no user context), so
+// reads can't run under RLS; admin CRUD is authorized at the route layer.
+// The roles a gate offers at sign-up: the explicit list, or the legacy single
+// role as a one-element fallback. One helper so every reader agrees.
+const gateRoleIds = (g: typeof gates.$inferSelect): string[] => {
+  const list = Array.isArray(g.roleIds) ? (g.roleIds as string[]).filter(Boolean) : [];
+  if (list.length) return list;
+  return g.roleId ? [g.roleId] : [];
+};
+
+const gateRow = (g: typeof gates.$inferSelect): Row => ({
+  id: g.id, organization_id: g.organizationId, program_id: g.programId, slug: g.slug,
+  title: g.title, subtitle: g.subtitle, audience: g.audience,
+  role_id: g.roleId, role_ids: gateRoleIds(g),
+  allow_signin: g.allowSignin, allow_signup: g.allowSignup,
+  approval_required: g.approvalRequired, landing: g.landing, config: g.config, created_at: g.createdAt,
+});
+
+export async function listGates(programId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.select().from(gates).where(eq(gates.programId, programId)).orderBy(desc(gates.createdAt));
+    if (!rows.length) return [];
+    const org = await tx.select({ slug: organizations.slug }).from(organizations).where(eq(organizations.id, rows[0].organizationId)).limit(1);
+    const orgSlug = org.length ? org[0].slug : null;
+    return rows.map((g) => ({ ...gateRow(g), org_slug: orgSlug }));
+  });
+}
+
+export async function getGate(id: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx.select().from(gates).where(eq(gates.id, id)).limit(1);
+    return r.length ? gateRow(r[0]) : null;
+  });
+}
+
+export async function createGate(
+  orgId: string,
+  programId: string,
+  opts: { slug: string; title?: string | null; subtitle?: string | null; audience?: string; roleId?: string | null; roleIds?: string[]; allowSignin?: boolean; allowSignup?: boolean; approvalRequired?: boolean; landing?: string | null; config?: Row },
+): Promise<Row> {
+  const roleIds = (opts.roleIds ?? (opts.roleId ? [opts.roleId] : [])).filter(Boolean);
+  return asPrivileged(async (tx) => {
+    const [g] = await tx.insert(gates).values({
+      organizationId: orgId, programId, slug: opts.slug,
+      title: opts.title ?? null, subtitle: opts.subtitle ?? null,
+      audience: opts.audience === "member" ? "member" : "participant",
+      // Keep the legacy single column populated (first role) for any reader that
+      // still looks at role_id.
+      roleId: roleIds[0] ?? null, roleIds,
+      allowSignin: opts.allowSignin ?? true, allowSignup: opts.allowSignup ?? false,
+      approvalRequired: opts.approvalRequired ?? false, landing: opts.landing ?? null,
+      config: opts.config ?? {},
+    }).returning();
+    return gateRow(g);
+  });
+}
+
+export async function updateGate(id: string, patch: Row): Promise<Row | null> {
+  const set: Row = { updatedAt: new Date() };
+  if (patch.slug !== undefined) set.slug = patch.slug;
+  if (patch.title !== undefined) set.title = patch.title;
+  if (patch.subtitle !== undefined) set.subtitle = patch.subtitle;
+  if (patch.audience !== undefined) set.audience = patch.audience === "member" ? "member" : "participant";
+  if (patch.role_ids !== undefined) {
+    const roleIds = (Array.isArray(patch.role_ids) ? patch.role_ids : []).filter(Boolean);
+    set.roleIds = roleIds;
+    set.roleId = roleIds[0] ?? null; // keep legacy column in sync
+  } else if (patch.role_id !== undefined) {
+    set.roleId = patch.role_id;
+    set.roleIds = patch.role_id ? [patch.role_id] : [];
+  }
+  if (patch.allow_signin !== undefined) set.allowSignin = patch.allow_signin;
+  if (patch.allow_signup !== undefined) set.allowSignup = patch.allow_signup;
+  if (patch.approval_required !== undefined) set.approvalRequired = patch.approval_required;
+  if (patch.landing !== undefined) set.landing = patch.landing;
+  if (patch.config !== undefined) set.config = patch.config;
+  return asPrivileged(async (tx) => {
+    const [g] = await tx.update(gates).set(set).where(eq(gates.id, id)).returning();
+    return g ? gateRow(g) : null;
+  });
+}
+
+export async function deleteGate(id: string): Promise<void> {
+  return asPrivileged(async (tx) => {
+    await tx.delete(gates).where(eq(gates.id, id));
+  });
+}
+
+/**
+ * Resolve a gate by its public path (org slug + gate slug) for the PRE-AUTH
+ * render. Returns the gate plus the org's public branding and the program name
+ * — everything the page needs, and nothing private.
+ */
+export async function getPublicGate(orgSlug: string, gateSlug: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const orgs = await tx.select().from(organizations).where(eq(organizations.slug, orgSlug)).limit(1);
+    if (!orgs.length) return null;
+    const org = orgs[0];
+    const r = await tx.select().from(gates)
+      .where(and(eq(gates.organizationId, org.id), eq(gates.slug, gateSlug))).limit(1);
+    if (!r.length) return null;
+    const g = r[0];
+    const prog = await tx.select().from(programs).where(eq(programs.id, g.programId)).limit(1);
+    const theme = (((org.settings ?? {}) as Row).theme ?? {}) as Row;
+    // Resolve the offered roles' names so the page can render a picker. Ordered
+    // to match the gate's role list, not the query's arbitrary order.
+    const roleIds = gateRoleIds(g);
+    let roles: Array<{ id: string; name: string }> = [];
+    if (roleIds.length) {
+      const rows = await tx
+        .select({ id: programRoles.id, name: programRoles.name })
+        .from(programRoles)
+        .where(inArray(programRoles.id, roleIds));
+      const byId = new Map(rows.map((x) => [x.id, x.name ?? ""]));
+      roles = roleIds.filter((id) => byId.has(id)).map((id) => ({ id, name: byId.get(id) ?? "" }));
+    }
+    return {
+      ...gateRow(g),
+      roles,
+      org: {
+        id: org.id, slug: org.slug, name: org.name,
+        theme_accent_color: (theme.accent_color as string) ?? null,
+        theme_logo_url: (theme.logo_url as string) ?? null,
+      },
+      program_name: prog.length ? prog[0].name : null,
+    };
+  });
+}
+
 /**
  * A program row for ACCESS RESOLUTION (privileged). Students hold no
  * membership, so under RLS they can't read the program row their standing is

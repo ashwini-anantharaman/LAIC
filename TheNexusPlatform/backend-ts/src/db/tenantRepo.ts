@@ -7,7 +7,7 @@
  */
 import { randomInt, randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import * as localKeys from "../platformLocalStore";
 import { normalizeProgramFeatures, type ProgramFeatures } from "../schemas";
@@ -417,7 +417,7 @@ export async function revokeApp(appId: string): Promise<Row> {
 }
 
 // ── Registrations ─────────────────────────────────────────────────────────
-export async function createRegistration(orgId: string, offeringId: string, opts: localKeys.RegistrationOptions = {}): Promise<Row> {
+export async function createRegistration(orgId: string, offeringId: string | null, opts: localKeys.RegistrationOptions = {}): Promise<Row> {
   return scoped(async (tx) => {
     const userId = await resolveProfileId(tx, (opts.userId as string) ?? null, orgId);
     const createdBy = await resolveProfileId(tx, (opts.createdByUserId as string) ?? null, orgId);
@@ -444,6 +444,14 @@ export async function getRegistration(registrationId: string): Promise<Row | nul
 export async function listRegistrations(offeringId: string, status: string | null = null): Promise<Row[]> {
   return scoped(async (tx) => {
     const where = status ? and(eq(registrations.offeringId, offeringId), eq(registrations.status, status)) : eq(registrations.offeringId, offeringId);
+    return (await tx.select().from(registrations).where(where).orderBy(desc(registrations.createdAt))).map(regRow);
+  });
+}
+
+/** All registrations for a PROGRAM — the program's participant roster (both program-level and offering-level). */
+export async function listRegistrationsByProgram(programId: string, status: string | null = null): Promise<Row[]> {
+  return scoped(async (tx) => {
+    const where = status ? and(eq(registrations.programId, programId), eq(registrations.status, status)) : eq(registrations.programId, programId);
     return (await tx.select().from(registrations).where(where).orderBy(desc(registrations.createdAt))).map(regRow);
   });
 }
@@ -483,6 +491,42 @@ export async function listParticipants(offeringId: string, status: string | null
   return scoped(async (tx) => {
     const where = status ? and(eq(participants.offeringId, offeringId), eq(participants.status, status)) : eq(participants.offeringId, offeringId);
     return (await tx.select().from(participants).where(where)).map(partRow);
+  });
+}
+
+/**
+ * Program-level participant (offering_id null) — a student joining the PROGRAM,
+ * which is what grants platform access. Dedups by program + user + type so a
+ * re-invite doesn't stack rows.
+ */
+export async function createProgramParticipant(orgId: string, programId: string, opts: localKeys.ParticipantOptions = {}): Promise<Row> {
+  return scoped(async (tx) => {
+    const type = (opts.participantType as string) ?? "learner";
+    const userId = await resolveProfileId(tx, (opts.userId as string) ?? null, orgId);
+    const addedBy = await resolveProfileId(tx, (opts.addedByUserId as string) ?? null, orgId);
+    if (userId) {
+      const existing = await tx.select().from(participants)
+        .where(and(eq(participants.programId, programId), eq(participants.userId, userId), eq(participants.participantType, type), isNull(participants.offeringId))).limit(1);
+      if (existing.length) return partRow(existing[0]);
+    }
+    const [p] = await tx.insert(participants).values({
+      organizationId: orgId, programId, offeringId: null,
+      userId, participantType: type, status: (opts.status as string) ?? "active",
+      addedByUserId: addedBy, registrationId: (opts.registrationId as string) ?? null,
+    }).returning();
+    return partRow(p);
+  });
+}
+
+/**
+ * Deactivate every participant row for a registration (student removal). Access
+ * is derived from the ACTIVE participant row, so flipping status to 'removed'
+ * revokes platform access on the next check — no membership to unwind. Covers
+ * duplicate rows from re-approval.
+ */
+export async function removeParticipantsByRegistration(registrationId: string): Promise<void> {
+  return scoped(async (tx) => {
+    await tx.update(participants).set({ status: "removed" }).where(eq(participants.registrationId, registrationId));
   });
 }
 
@@ -774,10 +818,14 @@ export async function updateProgramCategories(
   });
 }
 
-/** Program branding (accent/logo) in metadata_json.branding; null clears (revert). */
+/**
+ * Program branding (accent/logo/cover) in metadata_json.branding; null clears
+ * (revert). `cover` is the card background image on the Programs page — distinct
+ * from `logo`, which paints the shell/sidebar.
+ */
 export async function setProgramBranding(
   programId: string,
-  branding: { accent?: string | null; logo?: string | null } | null,
+  branding: { accent?: string | null; logo?: string | null; cover?: string | null } | null,
 ): Promise<Row | null> {
   return scoped(async (tx) => {
     const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
@@ -790,6 +838,7 @@ export async function setProgramBranding(
       meta.branding = {
         accent: branding.accent !== undefined ? branding.accent : (cur.accent ?? null),
         logo: branding.logo !== undefined ? branding.logo : (cur.logo ?? null),
+        cover: branding.cover !== undefined ? branding.cover : (cur.cover ?? null),
       };
     }
     await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId));

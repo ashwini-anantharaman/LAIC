@@ -7,7 +7,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { getCurrentUser, type PlatformUser } from "../auth";
+import { createAuthUser, getCurrentUser, type PlatformUser } from "../auth";
 import { getSettings } from "../config";
 import { HttpError } from "../httpError";
 import * as db from "../platformDb";
@@ -558,6 +558,30 @@ offeringsRouter.post("/registrations/:registration_id/approve", async (c) => {
   return c.json(_registrationResponse(result.registration));
 });
 
+// Remove a participant: deactivate their participant row(s) — access is
+// derived from the active row, so this revokes it immediately — and mark the
+// registration removed. Distinct from reject (which declines a pending signup);
+// remove revokes an already-active student.
+offeringsRouter.post("/registrations/:registration_id/remove", async (c) => {
+  const user = await getCurrentUser(c);
+  const registrationId = c.req.param("registration_id");
+  const reg = await db.getRegistration(registrationId);
+  if (!reg) throw new HttpError(404, "Registration not found");
+  _requireOfferingPeopleAdmin(user, reg.organization_id, reg.program_id ?? null);
+  await db.removeRegistrationParticipants(registrationId);
+  const updated = await db.setRegistrationStatus(registrationId, "removed", user.id);
+  await db.recordAuditEvent("registration.removed", {
+    orgId: reg.organization_id,
+    actorUserId: user.id,
+    scopeType: "offering",
+    scopeId: reg.offering_id,
+    targetType: "registration",
+    targetId: registrationId,
+    metadata: { name: reg.name ?? null, email: reg.email ?? null },
+  });
+  return c.json(_registrationResponse(updated));
+});
+
 offeringsRouter.post("/registrations/:registration_id/reject", async (c) => {
   const user = await getCurrentUser(c);
   const registrationId = c.req.param("registration_id");
@@ -578,6 +602,137 @@ offeringsRouter.post("/registrations/:registration_id/reject", async (c) => {
 });
 
 // ── Slice 11: coach-add + bulk import ──────────────────────────────────────
+// ── Program-level participants ──────────────────────────────────────────────
+// Students join the PROGRAM — that's the access unit (resolvePlatformAccess
+// keys on program_id). These create/list program-scoped participants
+// (offering_id null); the offering admin-add above stays as optional finer-
+// grained course enrollment.
+const programInviteSchema = z.object({ email: z.string().email(), name: z.string().nullish() });
+
+offeringsRouter.get("/programs/:program_id/participant-registrations", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOfferingPeopleAdmin(user, program.org_id, programId);
+  return c.json((await db.listRegistrationsByProgram(programId)).map(_registrationResponse));
+});
+
+offeringsRouter.post("/programs/:program_id/participants", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id");
+  const req = parseBody(programInviteSchema, await c.req.json());
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOfferingPeopleAdmin(user, program.org_id, programId);
+  const reg = await db.createRegistration(program.org_id, null, {
+    programId,
+    registrationSource: "admin_add",
+    email: req.email,
+    name: req.name ?? null,
+    userId: null,
+    status: "directly_added",
+    createdByUserId: user.id,
+  });
+  await db.createProgramParticipant(program.org_id, programId, {
+    userId: reg.user_id ?? null,
+    participantType: "learner",
+    addedByUserId: user.id,
+    registrationId: reg.id,
+  });
+  await db.grantStudentAccess(reg).catch((err) => console.error("program invite: grant failed", err));
+  await db.recordAuditEvent("program.participant_invited", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    targetType: "registration", targetId: reg.id, metadata: { email: req.email },
+  });
+  return c.json(_registrationResponse(reg));
+});
+
+// ── Gates: program entrance pages at /@/<org-slug>/<gate-slug> ──────────────
+const _gateSlugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+const gateWriteSchema = z.object({
+  slug: z.string().optional(),
+  title: z.string().nullish(),
+  subtitle: z.string().nullish(),
+  audience: z.enum(["participant", "member"]).optional(),
+  role_id: z.string().nullish(),
+  role_ids: z.array(z.string()).optional(),
+  allow_signin: z.boolean().optional(),
+  allow_signup: z.boolean().optional(),
+  approval_required: z.boolean().optional(),
+  landing: z.string().nullish(),
+});
+
+offeringsRouter.get("/programs/:program_id/gates", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOfferingPeopleAdmin(user, program.org_id, programId);
+  return c.json(await graph.listGates(programId));
+});
+
+offeringsRouter.post("/programs/:program_id/gates", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id");
+  const req = parseBody(gateWriteSchema, await c.req.json());
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOfferingPeopleAdmin(user, program.org_id, programId);
+  const slug = _gateSlugify(req.slug || req.title || "gate") || "gate";
+  try {
+    const gate = await graph.createGate(program.org_id, programId, {
+      slug, title: req.title ?? null, subtitle: req.subtitle ?? null,
+      audience: req.audience, roleId: req.role_id ?? null, roleIds: req.role_ids,
+      allowSignin: req.allow_signin, allowSignup: req.allow_signup,
+      approvalRequired: req.approval_required, landing: req.landing ?? null,
+    });
+    await db.recordAuditEvent("gate.created", {
+      orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+      targetType: "gate", targetId: gate.id as string, metadata: { slug },
+    });
+    return c.json(gate);
+  } catch (e) {
+    if (String(e).includes("gates_org_slug_idx") || String(e).toLowerCase().includes("duplicate")) {
+      throw new HttpError(409, `A gate with the address "${slug}" already exists in this organization`);
+    }
+    throw e;
+  }
+});
+
+offeringsRouter.patch("/gates/:gate_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const gateId = c.req.param("gate_id");
+  const patch = parsePatch(gateWriteSchema, await c.req.json()) as Row;
+  const gate = await graph.getGate(gateId);
+  if (!gate) throw new HttpError(404, "Gate not found");
+  _requireOfferingPeopleAdmin(user, gate.organization_id as string, gate.program_id as string);
+  if (typeof patch.slug === "string") patch.slug = _gateSlugify(patch.slug);
+  return c.json(await graph.updateGate(gateId, patch));
+});
+
+offeringsRouter.delete("/gates/:gate_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const gateId = c.req.param("gate_id");
+  const gate = await graph.getGate(gateId);
+  if (!gate) throw new HttpError(404, "Gate not found");
+  _requireOfferingPeopleAdmin(user, gate.organization_id as string, gate.program_id as string);
+  await graph.deleteGate(gateId);
+  await db.recordAuditEvent("gate.deleted", {
+    orgId: gate.organization_id as string, actorUserId: user.id, scopeType: "program",
+    scopeId: gate.program_id as string, targetType: "gate", targetId: gateId, metadata: {},
+  });
+  return c.json({ ok: true });
+});
+
+// Public pre-auth render config for a gate (like boot-config). No auth.
+offeringsRouter.get("/gates/by-path/:org_slug/:gate_slug", async (c) => {
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const gate = await graph.getPublicGate(c.req.param("org_slug"), c.req.param("gate_slug"));
+  if (!gate) throw new HttpError(404, "Gate not found");
+  return c.json(gate);
+});
+
 offeringsRouter.post("/groups/:group_id/participants/coach-add", async (c) => {
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
@@ -773,6 +928,38 @@ offeringsRouter.get("/programs/:program_id/administrators", async (c) => {
 
 const assignAdminSchema = z.object({ email: z.string().email(), display_name: z.string().nullish() });
 
+// Invite = immediate membership (no pending/accept step). The person becomes an
+// active member of the program right away, with an account created if they
+// didn't have one. A new account gets a shared dev password (returned so the
+// admin can pass it along) until the real reset flow lands.
+const DEFAULT_MEMBER_PASSWORD = "NexusDev2026!";
+async function _enrollActiveMember(
+  orgId: string,
+  programId: string,
+  opts: { email: string; displayName?: string | null; membershipRole: string; roleId?: string | null },
+): Promise<{ email: string; created: boolean }> {
+  const email = opts.email.trim().toLowerCase();
+  const existing = await db.getProfileByEmail(email);
+  let authId: string;
+  let created = false;
+  if (existing) {
+    authId = (existing.auth_user_id as string) ?? (existing.id as string);
+  } else {
+    authId = (await createAuthUser(email, DEFAULT_MEMBER_PASSWORD)).id as string;
+    created = true;
+  }
+  const profileId = await db.ensureOrgProfile(authId, orgId, { email, role: "teacher", displayName: opts.displayName ?? null });
+  const members = await db.listMembers(orgId).catch(() => [] as Row[]);
+  const already = members.some(
+    (m) => m.profile_id === profileId && ((m.program_id as string | null) ?? null) === programId,
+  );
+  if (!already) await db.addMembership(orgId, profileId, opts.membershipRole, null, "edit", programId);
+  if (opts.roleId) {
+    await graph.setProgramRoleAssignment(orgId, programId, email, opts.roleId).catch((e) => console.error("enroll role:", e));
+  }
+  return { email, created };
+}
+
 offeringsRouter.post("/programs/:program_id/administrators", async (c) => {
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
@@ -783,18 +970,14 @@ offeringsRouter.post("/programs/:program_id/administrators", async (c) => {
   // Org-altitude action: requires org-level access (owner/administrator),
   // NOT program-scoped access — this is how the org assigns a program's admin.
   _requireOfferingPeopleAdmin(user, program.org_id, null);
-  const { invitation, token } = await graph.createInvitation(program.org_id, user.id, {
-    email: req.email,
-    displayName: req.display_name ?? null,
-    role: "administrator",
-    programId,
+  const result = await _enrollActiveMember(program.org_id, programId, {
+    email: req.email, displayName: req.display_name ?? null, membershipRole: "administrator",
   });
   await db.recordAuditEvent("program.administrator.assigned", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
     metadata: { email: req.email },
   });
-  const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
-  return c.json({ ...invitation, token, redeem_url: base ? `${base}/invite/${token}` : `/invite/${token}` });
+  return c.json({ active: true, email: result.email, created: result.created, temp_password: result.created ? DEFAULT_MEMBER_PASSWORD : null });
 });
 
 // ── Program members + custom-role assignment (§3.5 Team & Roles: People) ────
@@ -847,21 +1030,14 @@ offeringsRouter.post("/programs/:program_id/members", async (c) => {
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
   _requireOfferingPeopleAdmin(user, program.org_id, programId);
-  const { invitation, token } = await graph.createInvitation(program.org_id, user.id, {
-    email: req.email,
-    displayName: req.display_name ?? null,
-    role: "instructor",
-    programId,
+  const result = await _enrollActiveMember(program.org_id, programId, {
+    email: req.email, displayName: req.display_name ?? null, membershipRole: "instructor", roleId: req.role_id ?? null,
   });
-  if (req.role_id) {
-    await graph.setProgramRoleAssignment(program.org_id, programId, req.email, req.role_id);
-  }
-  await db.recordAuditEvent("program.member.invited", {
+  await db.recordAuditEvent("program.member.added", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
     metadata: { email: req.email, role_id: req.role_id ?? null },
   });
-  const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
-  return c.json({ ...invitation, token, redeem_url: base ? `${base}/invite/${token}` : `/invite/${token}` });
+  return c.json({ active: true, email: result.email, created: result.created, temp_password: result.created ? DEFAULT_MEMBER_PASSWORD : null });
 });
 
 const setMemberRoleSchema = z.object({ email: z.string().email(), role_id: z.string().nullable() });

@@ -29,6 +29,9 @@ export interface PlayerSession {
   email: string;
   displayName: string;
   role: string;
+  /** True when this is a learner-participant session (the student model) — the
+   *  only kind this app admits. Staff sessions are turned away at sign-in. */
+  participantOnly: boolean;
 }
 
 const sessionKey = (slug: string) => `shell.player.session.${slug}`;
@@ -93,17 +96,30 @@ export async function loginStudent(
   email: string,
   password: string,
 ): Promise<PlayerSession> {
-  const r = await api<{ access_token: string; email: string; display_name: string | null; role: string }>(
-    baseUrl,
-    "/api/platform/auth/login",
-    { method: "POST", body: { email, password, org_slug: orgSlug } },
-  );
+  const r = await api<{
+    access_token: string;
+    email: string;
+    display_name: string | null;
+    role: string;
+    participant_only?: boolean;
+  }>(baseUrl, "/api/platform/auth/login", { method: "POST", body: { email, password, org_slug: orgSlug } });
   return {
     token: r.access_token,
     email: r.email,
     displayName: r.display_name || r.email.split("@")[0],
     role: r.role,
+    participantOnly: !!r.participant_only,
   };
+}
+
+/** Cheap token-validity probe used to resume a stored session on reload. */
+export async function validateToken(baseUrl: string, token: string): Promise<boolean> {
+  try {
+    await fetchMe(baseUrl, token);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export interface Me {

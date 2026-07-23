@@ -13,6 +13,7 @@ import {
   AppWindow,
   UserPlus,
   Users,
+  DoorOpen,
   MessagesSquare,
   KeyRound,
   Handshake,
@@ -44,6 +45,7 @@ import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
 import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
+import { useDocumentTitle } from "@/nexus/useDocumentTitle";
 import { Spinner } from "@/nexus/ui/kit";
 import type { Program } from "@/types/platform";
 import { accentForMode } from "@/nexus/theme/accent";
@@ -78,6 +80,7 @@ function programNav(orgId: string, programId: string): NavItem[] {
     { to: `${base}/offerings`, label: "Offerings", icon: Package },
     { to: `${base}/shells`, label: "App Shells", icon: AppWindow },
     { to: `${base}/registrations`, label: "Registrations", icon: UserPlus },
+    { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
     { to: `${base}/team`, label: "Team & Roles", icon: KeyRound },
@@ -326,6 +329,10 @@ export function AppShell() {
   const programId = params.programId;
   const allMemberships = [...orgMemberships, ...programMemberships];
   const orgName = allMemberships.find((m) => m.org_id === orgId)?.org_name ?? "Organization";
+
+  // Tab title tracks context: "Nexus" in the operator console, the org's name
+  // inside an org's space.
+  useDocumentTitle(mode === "nexus" ? "Nexus" : orgName);
 
   // Org branding (§6.4): the org's accent recolors primary actions inside its
   // space, and its logo takes the brand slot. Nexus operator pages stay neutral.

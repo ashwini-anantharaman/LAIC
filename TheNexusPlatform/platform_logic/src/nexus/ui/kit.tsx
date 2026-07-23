@@ -104,6 +104,7 @@ export function statusTone(status?: string): Tone {
       return "warn";
     case "rejected":
     case "revoked":
+    case "removed":
     case "closed":
       return "danger";
     default:
