@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Database, GitBranch, ClipboardCheck, PlusSquare, ArrowRight, GraduationCap, BarChart2 } from 'lucide-react';
+import { BookOpen, Database, GitBranch, ClipboardCheck, PlusSquare, ArrowRight, GraduationCap, LayoutTemplate } from 'lucide-react';
 import { motion } from 'motion/react';
 import { OBJECTS } from '../../../lib/data';
 import { useApp } from '../../App';
@@ -21,6 +21,7 @@ export function CDHome() {
 
   const actionCards = [
     { id: 'cd-create',      icon: <PlusSquare size={20} />,     label: 'Create a learning object', desc: 'Start the Sources → Define → Build pipeline', color: '#0B0F1A' },
+    { id: 'cd-templates',   icon: <LayoutTemplate size={20} />, label: 'Template Library',         desc: 'Recommended & custom templates for every object', color: '#0EA5E9' },
     { id: 'cd-wizard',      icon: <GraduationCap size={20} />,  label: 'Build a course',            desc: 'Assemble objects into a structured course', color: '#1D4ED8' },
     { id: 'cd-sources',     icon: <Database size={20} />,       label: 'Bring in sources',          desc: 'Manage collections and per-object pools', color: '#7C3AED' },
     { id: 'cd-library',     icon: <BookOpen size={20} />,       label: 'Object Library',            desc: `${myObjects.length} objects in this program`, color: '#059669' },

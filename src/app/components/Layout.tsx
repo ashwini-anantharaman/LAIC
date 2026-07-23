@@ -10,6 +10,7 @@ import { CDHome } from './screens/CDHome';
 import { CDCreate } from './screens/CDCreate';
 import { CDSources } from './screens/CDSources';
 import { ObjectLibrary } from './screens/ObjectLibrary';
+import { TemplateLibrary } from './screens/TemplateLibrary';
 import { MySubmissions } from './screens/MySubmissions';
 import { VersionsPublishing } from './screens/VersionsPublishing';
 import { AuthorAnalytics } from './screens/AuthorAnalytics';
@@ -34,6 +35,7 @@ function ScreenRouter() {
       return <StudentDashboard />;
     case 'cd-home':     return <CDHome />;
     case 'cd-create':   return <CDCreate />;
+    case 'cd-templates': return <TemplateLibrary />;
     case 'cd-sources':  return <CDSources />;
     case 'cd-library':  return <ObjectLibrary />;
     case 'cd-submissions': return <MySubmissions />;

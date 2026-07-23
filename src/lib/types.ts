@@ -342,6 +342,38 @@ export interface VideoEmbedContent {
   caption?: string;
 }
 
+/** Timed caption chunk for video-script transcript panel. */
+export interface VideoScriptTranscriptSegment {
+  id: string;
+  start: number;
+  end?: number;
+  text: string;
+}
+
+/** Interactive pause point with a question (Edpuzzle-style). */
+export interface VideoScriptCheckpoint {
+  id: string;
+  /** Pause the video at this time (seconds). */
+  time: number;
+  question: QuestionContent;
+}
+
+/** Interactive video lesson: video + checkpoints + optional transcript/chat. */
+export interface VideoScriptContent {
+  provider: 'youtube';
+  videoUrl: string;
+  videoId: string;
+  title?: string;
+  transcript: VideoScriptTranscriptSegment[];
+  checkpoints: VideoScriptCheckpoint[];
+  /** Show clickable transcript beside the video for learners. */
+  showTranscript?: boolean;
+  /** Show Ask-AI chatbot grounded on the video transcript. */
+  enableChat?: boolean;
+  /** Learner must submit an answer before playback continues. */
+  requireAnswer?: boolean;
+}
+
 export interface SummaryContent {
   shape: string;
   length?: string;
@@ -418,6 +450,7 @@ export type BlockContent =
   | SourceExcerptContent
   | ImageContent
   | VideoEmbedContent
+  | VideoScriptContent
   | SummaryContent
   | ReflectionContent
   | AssignmentContent
@@ -439,6 +472,7 @@ export interface Block {
     | 'drill'
     | 'image'
     | 'video-embed'
+    | 'video-script'
     | 'bridge-play'
     | 'bidding-sequence';
   content: BlockContent;

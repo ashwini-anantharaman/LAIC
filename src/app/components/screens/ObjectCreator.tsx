@@ -12,16 +12,16 @@ import { SOURCES, OBJECTS } from '../../../lib/data';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../lib/pdf';
 import {
   suggestTutorialHighlights, suggestTutorialMarkupFlags, generateTutorial, generateFlashcards, generateQuiz, generateConceptCard, suggestConceptIntents,
-  generateStructuredObject, ingestYoutube, ingestWeb, editTutorialBlock, errorMessage,
+  generateStructuredObject, generateVideoScript, ingestYoutube, ingestWeb, editTutorialBlock, errorMessage,
   type GeneratedPart, type TutorialGenEvent, type GeneratedCard, type FlashcardGenEvent,
   type GeneratedQuizQuestion, type QuizGenEvent, type GeneratedConceptCard, type ConceptCardGenEvent,
-  type StructuredObjectKind, type StructuredGenEvent,
+  type StructuredObjectKind, type StructuredGenEvent, type VideoScriptGenEvent, type YtTranscriptSegment,
 } from '../../../lib/api';
 import { supabaseEnabled, uploadImage } from '../../../lib/supabase';
 import type {
   Block, CreatorPipelineDraft, ObjectStatus, ClusteredKnowledgeBase, ContentUnit,
   TutorialSectionPlan, TutorialTemplate, ObjectSelection, EditAction, MarkupFlag,
-  SummaryContent, ReflectionContent, AssignmentContent, DrillContent,
+  SummaryContent, ReflectionContent, AssignmentContent, DrillContent, VideoScriptContent,
 } from '../../../lib/types';
 import { MarkupFlagReview, highlightsFromFlag } from './MarkupFlagReview';
 import { getTutorialTemplate, DEFAULT_TUTORIAL_TEMPLATE_ID } from '../../../lib/tutorialTemplates';
@@ -48,10 +48,16 @@ import { FlashcardEditor } from './FlashcardStudy';
 import { QuizEditor } from './QuizEditor';
 import { ConceptCardEditor } from './ConceptCardEditor';
 import { SummaryEditor, ReflectionEditor, AssignmentEditor, DrillEditor } from './StructuredObjectEditors';
+import { VideoScriptEditor } from './VideoScriptEditor';
 import { TutorialExtractPanel } from './TutorialExtractPanel';
 import { TutorialTemplatePicker } from './TutorialTemplatePicker';
+import { ObjectTemplatePicker } from './ObjectTemplatePicker';
 import { LearningBlocksPreview } from './LearnerReader';
 import { AssistantPanel, AssistantOpenButton } from './AssistantPanel';
+import {
+  getObjectTemplate,
+  type TemplateObjectType,
+} from '../../../lib/objectTemplates';
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 
@@ -263,7 +269,7 @@ const NOUNS: Record<string, string> = {
   lesson: 'lesson', tutorial: 'tutorial', quiz: 'quiz',
   'flashcard-set': 'flashcard set', 'concept-card': 'concept card',
   summary: 'summary', reflection: 'reflection', scenario: 'scenario',
-  assignment: 'assignment', drill: 'drill',
+  assignment: 'assignment', drill: 'drill', 'video-script': 'video script',
 };
 
 /* ─── field system ────────────────────────────────────────────── */
@@ -449,6 +455,20 @@ const CFG: Record<string, GDef[]> = {
       { id: 'timed', label: 'Timed', type: 'bool', default: false },
       { id: 'rep', label: 'Repeat until mastery', type: 'bool', default: false },
       { id: 'ni', label: 'Number of items', type: 'num', min: 5, max: 30, default: 15 },
+    ]},
+  ],
+  'video-script': [
+    { title: 'Intent', note: 'Paste a YouTube video in Sources. Define how the interactive lesson should behave.', fields: [
+      { id: 'obj', label: 'Learning objective', type: 'area', hint: 'After watching with checkpoints, the learner can…' },
+      { id: 'aud', label: 'Audience', type: 'pick', options: AUD, default: 'High school' },
+      { id: 'lvl', label: 'Level', type: 'pick', options: LVL, default: 'Basic' },
+    ]},
+    { title: 'Checkpoints', note: 'The video pauses at each checkpoint until the learner answers.', fields: [
+      { id: 'ncp', label: 'Number of checkpoints', type: 'num', min: 1, max: 12, default: 4 },
+    ]},
+    { title: 'Learner tools', note: 'Shown beside the video in student preview.', fields: [
+      { id: 'showTranscript', label: 'Transcript available (jump to any point)', type: 'bool', default: true },
+      { id: 'enableChat', label: 'AI chatbot available (answers about the video)', type: 'bool', default: true },
     ]},
   ],
 };
@@ -651,6 +671,7 @@ function TutorialSource(props: any) {
     promptText, setPromptText, showMedia, imagesOnly,
     media, addImage, addImagesFromFiles, addVideo, updateMedia, removeMedia, pickImageAsset,
     showManualWrite,
+    objectNoun = 'object',
   } = props;
   const inputRef = useRef<HTMLInputElement>(null);
   const bulkImageRef = useRef<HTMLInputElement>(null);
@@ -787,7 +808,7 @@ function TutorialSource(props: any) {
       {mode === 'prompt' && (
         <>
           <textarea value={promptText} onChange={(e) => setPromptText(e.target.value)} rows={7}
-            placeholder="Describe what this tutorial should teach, e.g. 'A beginner tutorial on how contract bridge bidding works, covering opening bids, responses, and basic conventions.'"
+            placeholder={`Describe what this ${objectNoun} should teach, e.g. 'A beginner ${objectNoun} on how contract bridge bidding works, covering opening bids, responses, and basic conventions.'`}
             className="w-full rounded-2xl px-3 py-2.5 resize-y"
             style={{ fontSize: 13, lineHeight: 1.6, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }} />
           <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>
@@ -801,7 +822,7 @@ function TutorialSource(props: any) {
         <div className="rounded-2xl p-4 border" style={{ background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.08)' }}>
           <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220', marginBottom: 6 }}>Hand-write from a template</p>
           <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
-            Next you’ll pick a pedagogical template and section count in Define. We open a blank tutorial shaped like that template — headings, explanations, examples, and checks — for you to fill in. No AI draft.
+            Next you’ll pick a pedagogical template and section count in Define. We open a blank {objectNoun} shaped like that template — headings, explanations, examples, and checks — for you to fill in. No AI draft.
           </p>
         </div>
       )}
@@ -816,7 +837,7 @@ function TutorialSource(props: any) {
         <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 12, lineHeight: 1.5 }}>
           {imagesOnly
             ? 'Upload one or many pictures. With Image → label in Define, each upload becomes a card: image on one side, and a Claude vision description (tied to your PDF + Define) on the other.'
-            : 'Upload several images at once, or add YouTube clips. They preview here and appear — with captions — in the generated tutorial.'}
+            : `Upload several images at once, or add YouTube clips. They preview here and can appear — with captions — in the generated ${objectNoun}.`}
         </p>
 
         <input
@@ -1518,9 +1539,10 @@ function ConceptCategoryEditor({
 function S4({
   typeId, title, setTitle, scope, setScope, fv, setF, srcCount, extCount, hlCount,
   intentSuggestions, suggestingIntents, suggestIntentError, onSuggestIntents,
-  onPickTutorialTemplate, clusterCount, writeMyself,
+  onPickTutorialTemplate, onPickObjectTemplate, clusterCount, writeMyself,
 }: any) {
   const groups = CFG[typeId] || [];
+  const showObjectTemplatePicker = typeId !== 'tutorial' && typeof onPickObjectTemplate === 'function';
   const blueprint = (() => {
     const chips: string[] = [];
     groups.forEach((g: GDef) => g.fields.forEach((f: FDef) => {
@@ -1539,7 +1561,7 @@ function S4({
       const more = cats.length > 4 ? ` +${cats.length - 4} more` : '';
       return `Concept card sheet with ${cats.length} categor${cats.length === 1 ? 'y' : 'ies'}${names ? `: ${names}${more}` : ''}. Drawing on ${srcCount} source${srcCount !== 1 ? 's' : ''}${extCount > 0 ? ` · ${extCount} extract${extCount !== 1 ? 's' : ''}` : ''}.`;
     }
-    const clusterBit = typeId === 'tutorial' && clusterCount > 0 ? ` · ${clusterCount} cluster${clusterCount !== 1 ? 's' : ''}` : '';
+    const clusterBit = clusterCount > 0 ? ` · ${clusterCount} cluster${clusterCount !== 1 ? 's' : ''}` : '';
     return `${tpl ? `${tpl} · ` : ''}Drawing on ${srcCount} source${srcCount !== 1 ? 's' : ''}${extCount > 0 ? ` · ${extCount} extract${extCount !== 1 ? 's' : ''}` : ''}${clusterBit}${chips.length > 0 ? ' · ' + chips.slice(0, 3).join(' · ') : ''}. Everything editable after generating.`;
   })();
 
@@ -1622,6 +1644,13 @@ function S4({
             <TutorialTemplatePicker
               value={fv.templateId || DEFAULT_TUTORIAL_TEMPLATE_ID}
               onChange={onPickTutorialTemplate}
+            />
+          )}
+          {showObjectTemplatePicker && gi === 0 && (
+            <ObjectTemplatePicker
+              objectType={typeId}
+              value={fv.templateId}
+              onChange={onPickObjectTemplate}
             />
           )}
           {g.fields.map((f: FDef) => {
@@ -2425,7 +2454,10 @@ function GeneratingView({ progress, parts, onCancel, noun = 'tutorial' }: { prog
 /* ─── main component ──────────────────────────────────────────── */
 
 export function ObjectCreator() {
-  const { navigate, creatorObjectType, editingObjectId, clearEditingObject, createdObjects } = useApp();
+  const {
+    navigate, creatorObjectType, editingObjectId, clearEditingObject, createdObjects,
+    pendingTemplateId, setPendingTemplateId,
+  } = useApp();
   const typeId = creatorObjectType || 'lesson';
   const isTutorial = typeId === 'tutorial';
   const isFlashcard = typeId === 'flashcard-set';
@@ -2435,9 +2467,27 @@ export function ObjectCreator() {
   const isReflection = typeId === 'reflection';
   const isAssignment = typeId === 'assignment';
   const isDrill = typeId === 'drill';
+  const isVideoScript = typeId === 'video-script';
   const isStructured = isSummary || isReflection || isAssignment || isDrill;
-  // Types that use the real Sources → Mark up → Extract → Define → Generate pipeline.
-  const usesPipeline = isTutorial || isFlashcard || isQuiz || isConceptCard || isStructured;
+  const typeNoun = NOUNS[typeId] || typeId;
+  // All authorable learning objects use the real Sources → Mark up → Extract → Define pipeline
+  // (same PDF / web / YouTube ingest + clustered Extract as tutorials).
+  const usesPipeline = [
+    'tutorial', 'flashcard-set', 'quiz', 'concept-card',
+    'summary', 'reflection', 'assignment', 'drill',
+    'lesson', 'scenario', 'video-script',
+  ].includes(typeId);
+  const clusterOutcome =
+    isTutorial ? 'Each cluster becomes one tutorial section.'
+      : isQuiz ? 'Each cluster becomes a topic for quiz questions.'
+        : isFlashcard ? 'Each cluster becomes a group of related cards.'
+          : isConceptCard ? 'Clusters focus the card on one core idea and its related facets.'
+            : isSummary ? 'Clusters become the key takeaways to condense.'
+              : isReflection ? 'Clusters become themes for reflection prompts.'
+                : isAssignment ? 'Clusters become topics the assignment should cover.'
+                  : isDrill ? 'Clusters become skills or items to drill.'
+                    : isVideoScript ? 'Clusters become topics for video checkpoint questions.'
+                      : `Each cluster groups related material for this ${typeNoun}.`;
 
   const [step, setStep] = useState(1);
   const [reached, setReached] = useState(1);
@@ -2462,7 +2512,9 @@ export function ObjectCreator() {
       ? { templateId: DEFAULT_TUTORIAL_TEMPLATE_ID, ...getTutorialTemplate(DEFAULT_TUTORIAL_TEMPLATE_ID).knobDefaults }
       : typeId === 'concept-card'
         ? { categories: DEFAULT_CONCEPT_CATEGORIES.map((c) => ({ ...c })), len: 'Standard' }
-        : {}
+        : typeId === 'video-script'
+          ? { ncp: 4, showTranscript: true, enableChat: true, aud: 'High school', lvl: 'Basic' }
+          : {}
   ));
   const setF = (id: string, v: any) => setFvState(p => ({ ...p, [id]: v }));
 
@@ -2473,6 +2525,28 @@ export function ObjectCreator() {
       ...t.knobDefaults,
     }));
   };
+
+  const pickObjectTemplate = (t: { id: string; knobDefaults: Record<string, any> }) => {
+    setFvState((p) => ({
+      ...p,
+      templateId: t.id,
+      ...t.knobDefaults,
+    }));
+  };
+
+  // Apply template chosen from Template Library once when opening the creator.
+  const pendingApplied = useRef(false);
+  useEffect(() => {
+    if (!pendingTemplateId || pendingApplied.current || editingObjectId) return;
+    pendingApplied.current = true;
+    if (typeId === 'tutorial') {
+      pickTutorialTemplate(getTutorialTemplate(pendingTemplateId));
+    } else {
+      const t = getObjectTemplate(pendingTemplateId, typeId as TemplateObjectType);
+      if (t) pickObjectTemplate(t);
+    }
+    setPendingTemplateId(null);
+  }, [pendingTemplateId, typeId, editingObjectId, setPendingTemplateId]);
 
   const syncExtractsFromUnits = (units: ContentUnit[]) => {
     setExtracts(units.map((u) => ({
@@ -2487,9 +2561,15 @@ export function ObjectCreator() {
 
   // Tutorial Step 1 — source can be a PDF, pasted text, a YouTube link, or a prompt.
   // PDF: attach File in Sources; parse into `doc` only when entering Mark up.
-  const [srcMode, setSrcMode] = useState<'pdf' | 'text' | 'youtube' | 'web' | 'prompt' | 'manual'>('pdf');
+  // Video scripts default to YouTube so the interactive player has a video URL.
+  const [srcMode, setSrcMode] = useState<'pdf' | 'text' | 'youtube' | 'web' | 'prompt' | 'manual'>(
+    typeId === 'video-script' ? 'youtube' : 'pdf',
+  );
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [doc, setDoc] = useState<ParsedDoc | null>(null);
+  const [ytSegments, setYtSegments] = useState<YtTranscriptSegment[]>([]);
+  const [ytVideoId, setYtVideoId] = useState('');
+  const [ytVideoTitle, setYtVideoTitle] = useState('');
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [parseProgress, setParseProgress] = useState<string | null>(null);
@@ -2611,6 +2691,7 @@ export function ObjectCreator() {
   const [genQuestions, setGenQuestions] = useState<GeneratedQuizQuestion[]>([]);
   const [genConceptCard, setGenConceptCard] = useState<GeneratedConceptCard | null>(null);
   const [genStructured, setGenStructured] = useState<SummaryContent | ReflectionContent | AssignmentContent | DrillContent | null>(null);
+  const [genVideoScript, setGenVideoScript] = useState<VideoScriptContent | null>(null);
   const [quizMeta, setQuizMeta] = useState<{ passMark?: number; showExplanations?: string; adaptive?: boolean }>({});
   const [genError, setGenError] = useState<string | null>(null);
   const genAbort = useRef<AbortController | null>(null);
@@ -2689,6 +2770,9 @@ export function ObjectCreator() {
       autoFlagScannedFor.current = null;
       setKnowledgeBase(null);
       if (!title && out.title) setTitle(out.title);
+      setYtSegments(out.segments || []);
+      setYtVideoId(out.videoId || parseYtId(ytUrl.trim()));
+      setYtVideoTitle(out.title || '');
       setDoc({ fileName: out.title || 'YouTube transcript', pageCount: 1, sentences: (out.sentences || []).map((t) => ({ text: t, page: 1 })) });
     } catch (e) {
       setYtError(errorMessage(e, 'Could not fetch that transcript.'));
@@ -2822,6 +2906,22 @@ export function ObjectCreator() {
     } else if (obj.type === 'summary' || obj.type === 'reflection' || obj.type === 'assignment' || obj.type === 'drill') {
       const blk = (obj.blocks || []).find(b => b.type === obj.type);
       if (blk?.content) setGenStructured(blk.content as any);
+      setShowEditor(true);
+    } else if (obj.type === 'video-script') {
+      const blk = (obj.blocks || []).find(b => b.type === 'video-script');
+      if (blk?.content) {
+        const c = blk.content as VideoScriptContent;
+        setGenVideoScript(c);
+        if (c.videoUrl) setYtUrl(c.videoUrl);
+        if (c.videoId) setYtVideoId(c.videoId);
+        if (c.transcript?.length) setYtSegments(c.transcript as YtTranscriptSegment[]);
+        setFvState((p) => ({
+          ...p,
+          showTranscript: c.showTranscript !== false,
+          enableChat: c.enableChat !== false,
+          ncp: c.checkpoints?.length || p.ncp || 4,
+        }));
+      }
       setShowEditor(true);
     } else {
       setGenParts(blocksToParts(obj.blocks) as any);
@@ -2995,6 +3095,15 @@ export function ObjectCreator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConceptCard, step, extracts.length, highlights.length]);
 
+  /** Source-backed objects should Pull & cluster before Generate (prompt/manual skip Extract). */
+  const ensureExtractReady = (): boolean => {
+    if (srcMode === 'prompt' || srcMode === 'manual') return true;
+    const hasUnits = (knowledgeBase?.units?.length || 0) > 0 || extracts.some((e: any) => String(e.text || '').trim());
+    if (hasUnits) return true;
+    setGenError('Build clusters in Extract first (Pull & cluster), then continue in Define.');
+    return false;
+  };
+
   // Tutorial generation: stream real parts from the backend LLM.
   const runGenerate = async () => {
     const templateId = fv.templateId || DEFAULT_TUTORIAL_TEMPLATE_ID;
@@ -3103,6 +3212,7 @@ export function ObjectCreator() {
   };
 
   const runGenerateFlashcards = async () => {
+    if (!ensureExtractReady()) return;
     const ctrl = new AbortController();
     genAbort.current = ctrl;
     setGenError(null);
@@ -3141,6 +3251,8 @@ export function ObjectCreator() {
         extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
         prompt: srcMode === 'prompt' ? promptText : undefined,
         images: uploadedImages,
+        knowledgeBase: knowledgeBase || undefined,
+        shapeIntent: shapeIntent || undefined,
       };
       const collected: GeneratedCard[] = [];
       for await (const ev of generateFlashcards(payload, ctrl.signal) as AsyncGenerator<FlashcardGenEvent>) {
@@ -3167,6 +3279,7 @@ export function ObjectCreator() {
   };
 
   const runGenerateQuiz = async () => {
+    if (!ensureExtractReady()) return;
     const ctrl = new AbortController();
     genAbort.current = ctrl;
     setGenError(null);
@@ -3195,6 +3308,8 @@ export function ObjectCreator() {
         config,
         extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
         prompt: srcMode === 'prompt' ? promptText : undefined,
+        knowledgeBase: knowledgeBase || undefined,
+        shapeIntent: shapeIntent || undefined,
       };
       const collected: GeneratedQuizQuestion[] = [];
       for await (const ev of generateQuiz(payload, ctrl.signal) as AsyncGenerator<QuizGenEvent>) {
@@ -3226,6 +3341,7 @@ export function ObjectCreator() {
   };
 
   const runGenerateConceptCard = async () => {
+    if (!ensureExtractReady()) return;
     const ctrl = new AbortController();
     genAbort.current = ctrl;
     setGenError(null);
@@ -3255,6 +3371,8 @@ export function ObjectCreator() {
         extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
         markupUnits: markup,
         prompt: srcMode === 'prompt' ? promptText : undefined,
+        knowledgeBase: knowledgeBase || undefined,
+        shapeIntent: shapeIntent || undefined,
       };
       let card: GeneratedConceptCard | null = null;
       for await (const ev of generateConceptCard(payload, ctrl.signal) as AsyncGenerator<ConceptCardGenEvent>) {
@@ -3316,6 +3434,7 @@ export function ObjectCreator() {
   };
 
   const runGenerateStructured = async () => {
+    if (!ensureExtractReady()) return;
     const kind = typeId as StructuredObjectKind;
     const ctrl = new AbortController();
     genAbort.current = ctrl;
@@ -3329,6 +3448,8 @@ export function ObjectCreator() {
         config: structuredConfig(),
         extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
         prompt: srcMode === 'prompt' ? promptText : undefined,
+        knowledgeBase: knowledgeBase || undefined,
+        shapeIntent: shapeIntent || undefined,
       };
       let content: any = null;
       for await (const ev of generateStructuredObject(kind, payload, ctrl.signal) as AsyncGenerator<StructuredGenEvent<any>>) {
@@ -3357,6 +3478,70 @@ export function ObjectCreator() {
     setShowEditor(true);
   };
 
+  const runGenerateVideoScript = async () => {
+    const videoUrl = ytUrl.trim();
+    if (!videoUrl && srcMode !== 'prompt') {
+      setGenError('Add a YouTube video in Sources first.');
+      return;
+    }
+    if (srcMode !== 'prompt' && !ensureExtractReady()) return;
+    const ctrl = new AbortController();
+    genAbort.current = ctrl;
+    setGenError(null);
+    setGenVideoScript(null);
+    setGenProgress('Starting…');
+    setGenerating(true);
+    try {
+      const config = {
+        obj: fv.obj || title,
+        aud: fv.aud ?? 'High school',
+        lvl: fv.lvl ?? 'Basic',
+        ncp: typeof fv.ncp === 'number' ? fv.ncp : 4,
+        showTranscript: fv.showTranscript !== false,
+        enableChat: fv.enableChat !== false,
+        requireAnswer: true,
+      };
+      const payload = {
+        title,
+        config,
+        extracts: extracts.map((e: any) => ({ kind: e.kind, text: e.text, from: e.from })),
+        prompt: srcMode === 'prompt' ? promptText : undefined,
+        videoUrl: videoUrl || undefined,
+        videoId: ytVideoId || parseYtId(videoUrl) || undefined,
+        videoTitle: ytVideoTitle || undefined,
+        transcriptSegments: ytSegments.length ? ytSegments : undefined,
+        knowledgeBase: knowledgeBase || undefined,
+        shapeIntent: shapeIntent || undefined,
+      };
+      let content: VideoScriptContent | null = null;
+      for await (const ev of generateVideoScript(payload, ctrl.signal) as AsyncGenerator<VideoScriptGenEvent>) {
+        if (ev.type === 'progress') setGenProgress(ev.message);
+        else if (ev.type === 'result') { content = ev.content; setGenVideoScript(ev.content); }
+        else if (ev.type === 'error') throw new Error(ev.message);
+        else if (ev.type === 'done') break;
+      }
+      if (!content?.videoId || !content.checkpoints?.length) {
+        throw new Error('No video script was generated.');
+      }
+      // Apply Define toggles in case the server omitted them.
+      content = {
+        ...content,
+        showTranscript: config.showTranscript,
+        enableChat: config.enableChat,
+        requireAnswer: true,
+      };
+      setGenVideoScript(content);
+      setGenerating(false);
+      setShowEditor(true);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') { setGenerating(false); return; }
+      setGenError(errorMessage(e, 'Generation failed.'));
+      setGenerating(false);
+    } finally {
+      genAbort.current = null;
+    }
+  };
+
   const advance = () => {
     if (step >= 4) {
       if (isTutorial && srcMode === 'manual') { openManualTutorialEditor(); return; }
@@ -3365,6 +3550,7 @@ export function ObjectCreator() {
       if (isQuiz) { runGenerateQuiz(); return; }
       if (isConceptCard) { runGenerateConceptCard(); return; }
       if (isStructured) { runGenerateStructured(); return; }
+      if (isVideoScript) { runGenerateVideoScript(); return; }
       setShowEditor(true);
       return;
     }
@@ -3425,6 +3611,11 @@ export function ObjectCreator() {
         initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
         onBack={backToPipeline} onDone={() => navigate('cd-library')} />
     );
+    if (isVideoScript) return (
+      <VideoScriptEditor typeId={typeId} title={title} scope={scope} fv={fv} content={genVideoScript}
+        initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
+        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+    );
     return (
       <ObjEditor typeId={typeId} title={title} scope={scope} fv={fv}
         generatedParts={isTutorial ? assembleParts() : (editObjectId ? genParts : undefined)}
@@ -3437,16 +3628,18 @@ export function ObjectCreator() {
   }
 
   const structuredNoun = isSummary ? 'summary' : isReflection ? 'reflection' : isAssignment ? 'assignment' : isDrill ? 'drill' : 'tutorial';
-  const hasDraft = genParts.length > 0 || genCards.length > 0 || genQuestions.length > 0 || !!genConceptCard || !!genStructured;
+  const hasDraft = genParts.length > 0 || genCards.length > 0 || genQuestions.length > 0 || !!genConceptCard || !!genStructured || !!genVideoScript;
 
   if (usesPipeline && generating) return (
     <GeneratingView
       progress={genProgress}
-      noun={isFlashcard ? 'flashcards' : isQuiz ? 'quiz' : isConceptCard ? 'concept card' : isStructured ? structuredNoun : 'tutorial'}
+      noun={isFlashcard ? 'flashcards' : isQuiz ? 'quiz' : isConceptCard ? 'concept card' : isVideoScript ? 'video script' : isStructured ? structuredNoun : 'tutorial'}
       parts={isFlashcard
         ? genCards.map(c => ({ id: c.id, type: 'card', label: c.front }))
         : isQuiz
           ? genQuestions.map(q => ({ id: q.id, type: 'question', label: q.question }))
+          : isVideoScript && genVideoScript
+            ? genVideoScript.checkpoints.map((c) => ({ id: c.id, type: 'checkpoint', label: c.question.question }))
           : isConceptCard && genConceptCard
             ? [{ id: genConceptCard.id, type: 'concept-card', label: genConceptCard.term || 'Concept card' }]
             : isStructured && genStructured
@@ -3527,8 +3720,9 @@ export function ObjectCreator() {
                   ytUrl={ytUrl} setYtUrl={setYtUrl} ytLoading={ytLoading} ytError={ytError} onFetchYoutube={handleFetchYoutube}
                   webUrl={webUrl} setWebUrl={setWebUrl} webLoading={webLoading} webError={webError} onFetchWeb={handleFetchWeb}
                   promptText={promptText} setPromptText={setPromptText}
-                  showMedia={isTutorial || isFlashcard} imagesOnly={isFlashcard}
+                  showMedia={!isVideoScript} imagesOnly={isFlashcard}
                   showManualWrite={isTutorial}
+                  objectNoun={typeNoun}
                   media={media} addImage={addImageAsset} addImagesFromFiles={addImagesFromFiles}
                   addVideo={addVideoAsset} updateMedia={updateMedia} removeMedia={removeMedia} pickImageAsset={pickImageAsset} />
               : <S1 selected={sel} setSelected={setSel} roles={roles} setRoles={setRoles} urlRefs={urlRefs} setUrlRefs={setUrlRefs} />)}
@@ -3549,7 +3743,7 @@ export function ObjectCreator() {
                 scanningFlags={scanningFlags} flagError={flagError}
               />
             )}
-            {step === 3 && (isTutorial
+            {step === 3 && (usesPipeline
               ? (
                 <TutorialExtractPanel
                   markHighlights={highlights}
@@ -3558,17 +3752,20 @@ export function ObjectCreator() {
                   setKnowledgeBase={setKnowledgeBase}
                   shapeIntent={shapeIntent}
                   setShapeIntent={setShapeIntent}
-                  objective={fv.obj}
-                  topic={fv.topic || title}
+                  objective={fv.obj || fv.verify || fv.mem || fv.what || fv.skill || fv.goal}
+                  topic={fv.topic || fv.concept || title}
                   syncExtracts={syncExtractsFromUnits}
+                  typeNoun={typeNoun}
+                  clusterOutcome={clusterOutcome}
                 />
               )
-              : <S3 extracts={extracts} setExtracts={setExtracts} markHighlights={highlights} docTitle={docTitle} typeNoun={NOUNS[typeId] || typeId} />)}
+              : <S3 extracts={extracts} setExtracts={setExtracts} markHighlights={highlights} docTitle={docTitle} typeNoun={typeNoun} />)}
             {step === 4 && (
               <S4 typeId={typeId} title={title} setTitle={setTitle} scope={scope} setScope={setScope} fv={fv} setF={setF}
                 srcCount={usesPipeline ? ((doc || pdfFile) ? 1 : 0) : sel.length} extCount={extracts.length} hlCount={highlights.length}
-                clusterCount={isTutorial ? (knowledgeBase?.clusters?.length || 0) : 0}
+                clusterCount={knowledgeBase?.clusters?.length || 0}
                 onPickTutorialTemplate={isTutorial ? pickTutorialTemplate : undefined}
+                onPickObjectTemplate={!isTutorial && usesPipeline ? pickObjectTemplate : undefined}
                 writeMyself={isTutorial && srcMode === 'manual'}
                 intentSuggestions={isConceptCard ? intentSuggestions : undefined}
                 suggestingIntents={isConceptCard ? suggestingIntents : undefined}

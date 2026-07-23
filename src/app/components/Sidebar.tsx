@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Home, PlusSquare, Database, BookOpen, SendHorizontal,
   GitBranch, BarChart2, ClipboardCheck, GraduationCap,
-  Users, BookMarked, Shield, UserCheck, ChevronRight, LogOut,
+  Users, BookMarked, Shield, UserCheck, LogOut, LayoutTemplate,
 } from 'lucide-react';
 import { useApp } from '../App';
 import { USERS } from '../../lib/data';
@@ -18,6 +18,7 @@ const NAV: Record<Role, NavItem[]> = {
   'content-developer': [
     { id: 'cd-home', label: 'Home', icon: <Home size={16} /> },
     { id: 'cd-create', label: 'Create', icon: <PlusSquare size={16} /> },
+    { id: 'cd-templates', label: 'Template Library', icon: <LayoutTemplate size={16} /> },
     { id: 'cd-sources', label: 'Sources', icon: <Database size={16} /> },
     { id: 'cd-library', label: 'Object Library', icon: <BookOpen size={16} /> },
     { id: 'cd-submissions', label: 'My Submissions', icon: <SendHorizontal size={16} /> },

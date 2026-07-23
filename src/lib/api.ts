@@ -8,6 +8,7 @@ import type {
   AssistantMessage,
   ProposedEdit,
   MarkupFlag,
+  VideoScriptContent,
 } from './types';
 
 /* ────────────────────────────────────────────────────────────────
@@ -343,12 +344,20 @@ export function suggestTutorialMarkupFlags(
   }).then((r) => ({ flags: r.flags ?? [], summary: r.summary || '' }));
 }
 
+/** Timed caption chunk from YouTube ingest. */
+export interface YtTranscriptSegment {
+  id: string;
+  start: number;
+  end?: number;
+  text: string;
+}
+
 /** POST /api/tutorials/ingest-youtube — server fetches the video transcript. */
 export function ingestYoutube(
   url: string,
   signal?: AbortSignal,
-): Promise<{ title: string; sentences: string[] }> {
-  return apiFetch<{ title: string; sentences: string[] }>('/api/tutorials/ingest-youtube', {
+): Promise<{ title: string; sentences: string[]; videoId?: string; segments?: YtTranscriptSegment[] }> {
+  return apiFetch<{ title: string; sentences: string[]; videoId?: string; segments?: YtTranscriptSegment[] }>('/api/tutorials/ingest-youtube', {
     method: 'POST',
     body: { url },
     signal,
@@ -540,6 +549,8 @@ export function generateConceptCard(
     /** Full source — only used if nothing was marked up. */
     sourceUnits?: ConceptCardSourceUnit[];
     prompt?: string;
+    knowledgeBase?: ClusteredKnowledgeBase | null;
+    shapeIntent?: string;
   },
   signal?: AbortSignal,
 ): AsyncGenerator<ConceptCardGenEvent, void, unknown> {
@@ -588,6 +599,8 @@ export function generateStructuredObject<T = Record<string, unknown>>(
     config: Record<string, unknown>;
     extracts: TutorialExtract[];
     prompt?: string;
+    knowledgeBase?: ClusteredKnowledgeBase | null;
+    shapeIntent?: string;
   },
   signal?: AbortSignal,
 ): AsyncGenerator<StructuredGenEvent<T>, void, unknown> {
@@ -661,6 +674,8 @@ export function generateQuiz(
     config: QuizConfig;
     extracts: TutorialExtract[];
     prompt?: string;
+    knowledgeBase?: ClusteredKnowledgeBase | null;
+    shapeIntent?: string;
   },
   signal?: AbortSignal,
 ): AsyncGenerator<QuizGenEvent, void, unknown> {
@@ -675,7 +690,7 @@ export function generateQuiz(
 
 export interface FlashcardConfig {
   mem?: string; aud?: string; lvl?: string;
-  cc?: string; pull?: string; dir?: string;
+  cc?: string | string[]; pull?: string | string[]; dir?: string;
   hooks?: boolean; nc?: number;
 }
 
@@ -710,10 +725,43 @@ export function generateFlashcards(
     extracts: TutorialExtract[];
     prompt?: string;
     images?: { id: string; caption?: string; url: string }[];
+    knowledgeBase?: ClusteredKnowledgeBase | null;
+    shapeIntent?: string;
   },
   signal?: AbortSignal,
 ): AsyncGenerator<FlashcardGenEvent, void, unknown> {
   return apiStream<FlashcardGenEvent>('/api/flashcards/generate', {
+    method: 'POST',
+    body: payload,
+    signal,
+  });
+}
+
+/* ─── Video scripts (Edpuzzle-style) ───────────────────────────── */
+
+export type VideoScriptGenEvent =
+  | { type: 'progress'; message: string }
+  | { type: 'result'; content: VideoScriptContent }
+  | { type: 'done'; count?: number }
+  | { type: 'error'; code?: string; message: string };
+
+/** POST /api/video-scripts/generate — checkpoints + questions from transcript. */
+export function generateVideoScript(
+  payload: {
+    title: string;
+    config: Record<string, unknown>;
+    extracts: TutorialExtract[];
+    prompt?: string;
+    videoUrl?: string;
+    videoId?: string;
+    videoTitle?: string;
+    transcriptSegments?: YtTranscriptSegment[];
+    knowledgeBase?: ClusteredKnowledgeBase | null;
+    shapeIntent?: string;
+  },
+  signal?: AbortSignal,
+): AsyncGenerator<VideoScriptGenEvent, void, unknown> {
+  return apiStream<VideoScriptGenEvent>('/api/video-scripts/generate', {
     method: 'POST',
     body: payload,
     signal,
@@ -740,6 +788,29 @@ export function askAboutObject(
     body: payload,
     signal,
   }).then((r) => r.reply);
+}
+
+/** Video-script Ask AI — reply plus clickable source timestamps (seconds). */
+export function askAboutVideo(
+  payload: {
+    title: string;
+    context: string;
+    message: string;
+    currentTime?: number;
+    history?: { role: 'user' | 'assistant'; content: string }[];
+  },
+  signal?: AbortSignal,
+): Promise<{ reply: string; timestamps: number[] }> {
+  return apiFetch<{ reply: string; timestamps?: number[] }>('/api/ask', {
+    method: 'POST',
+    body: { ...payload, videoAsk: true },
+    signal,
+  }).then((r) => ({
+    reply: r.reply || '',
+    timestamps: Array.isArray(r.timestamps)
+      ? r.timestamps.map((t) => Number(t)).filter((t) => Number.isFinite(t) && t >= 0)
+      : [],
+  }));
 }
 
 /* ─── Course-dev Object Assistant ──────────────────────────────── */
