@@ -18,12 +18,12 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-10">
+    <div className="mb-6 flex flex-col gap-3 sm:mb-10 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="min-w-0">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">{title}</h1>
         {subtitle ? <p className="mt-2 text-[15px] text-muted-foreground">{subtitle}</p> : null}
       </div>
-      {actions ? <div className="flex items-center gap-2 shrink-0">{actions}</div> : null}
+      {actions ? <div className="flex flex-wrap items-center gap-2 sm:shrink-0">{actions}</div> : null}
     </div>
   );
 }
@@ -53,7 +53,7 @@ export function Section({
   return (
     <section className={cn("mb-12", className)}>
       {title || action ? (
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           {title ? <h2 className="text-lg font-semibold tracking-tight text-foreground">{title}</h2> : <span />}
           {action}
         </div>
