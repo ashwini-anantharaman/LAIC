@@ -132,8 +132,11 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
 export async function redealEditedAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   const sessionId = String(formData.get("sessionId"));
+  // Additive, inert by default: the mobile deal editor posts mobile=1 so both
+  // the error round-trip and the fork land back in the /m/table chrome.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const failBack: (message: string) => never = (message) =>
-    redirect(`/bridge/table/${sessionId}?editDeal=1&error=${encodeURIComponent(message)}`);
+    redirect(`${tableBase}${sessionId}?editDeal=1&error=${encodeURIComponent(message)}`);
 
   const service = sessionService();
   const record = await service.requireSession(sessionId);
@@ -203,7 +206,7 @@ export async function redealEditedAction(formData: FormData): Promise<void> {
     kbId: record.kbId,
     editedFrom: sessionId,
   });
-  redirect(`/bridge/table/${next.sessionId}`);
+  redirect(`${tableBase}${next.sessionId}`);
 }
 
 export async function createSessionAction(formData: FormData): Promise<void> {

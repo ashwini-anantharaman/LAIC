@@ -22,10 +22,16 @@ import { buildRuleIndex } from "@/components/table/decisionText";
 import { FeedSheet } from "@/components/mobile/table/FeedSheet";
 import { MobileAutoAdvance } from "@/components/mobile/table/MobileAutoAdvance";
 import { MobileBidBox } from "@/components/mobile/table/MobileBidBox";
+import { MobileDealEditor } from "@/components/mobile/table/MobileDealEditor";
 import { MobileDecisionCard } from "@/components/mobile/table/MobileDecisionCard";
+import { MobileFixView } from "@/components/mobile/table/MobileFixView";
+import { MobileItemEditor } from "@/components/mobile/table/MobileItemEditor";
+import { MobileSheetShell } from "@/components/mobile/table/MobileSheetShell";
 import { SaveSheet } from "@/components/mobile/table/SaveSheet";
+import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
+import { saveItemAction } from "@/app/bridge/kb/actions";
 import {
   newDealAction,
   playCardAction,
@@ -69,12 +75,28 @@ export default async function MobileTablePage({
     saved?: string;
     error?: string;
     paused?: string;
+    fix?: string;
+    fixMode?: string;
+    fixed?: string;
+    fixError?: string;
+    editDeal?: string;
   }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { mode, hands: handsParam, saved, error, paused } = await searchParams;
+  const {
+    mode,
+    hands: handsParam,
+    saved,
+    error,
+    paused,
+    fix,
+    fixMode,
+    fixed,
+    fixError,
+    editDeal,
+  } = await searchParams;
 
   let view;
   try {
@@ -111,6 +133,11 @@ export default async function MobileTablePage({
     .catch(() => undefined);
   const ruleIndex = compiled ? buildRuleIndex(compiled) : undefined;
   const logicEvents = record.events.filter(isLogicEvent);
+
+  // Fix-at-the-table overlay (fellows only, like desktop): ?fix=<itemId>
+  // opens view-first; &fixMode=edit swaps in the phone editor whose save
+  // re-pins THIS session to the fresh compile and comes back paused.
+  const fixItem = fix && !learnerMode ? await kbStore().getItem(fix).catch(() => null) : null;
 
   const seatLabel = (seat: Seat) => {
     const config = record.seats[seat];
@@ -557,7 +584,7 @@ export default async function MobileTablePage({
           </Link>
         </p>
       )}
-      {error && (
+      {error && !editDeal && (
         <p
           style={{
             margin: "8px 14px 0",
@@ -569,6 +596,36 @@ export default async function MobileTablePage({
           }}
         >
           {error}
+        </p>
+      )}
+      {fixed && (
+        <p
+          style={{
+            margin: "8px 14px 0",
+            borderRadius: 8,
+            background: "rgba(37,110,66,.9)",
+            color: "#fff",
+            padding: "8px 12px",
+            font: `500 12px ${FONT_KARLA}`,
+          }}
+        >
+          Fixed — the knowledge base recompiled and this table now plays from the new rules. It
+          is paused; use ▶ to watch the fix take effect.
+        </p>
+      )}
+      {fixError && (
+        <p
+          style={{
+            margin: "8px 14px 0",
+            borderRadius: 8,
+            background: "rgba(161,98,7,.92)",
+            color: "#fff",
+            padding: "8px 12px",
+            font: `500 12px ${FONT_KARLA}`,
+          }}
+        >
+          Saved, but the knowledge base no longer compiles ({fixError}) — this table keeps
+          playing from the last good rules until the item is fixed.
         </p>
       )}
 
@@ -633,9 +690,16 @@ export default async function MobileTablePage({
             </button>
           </form>
         )}
-        {/* No ✏️ edit-deal pill on mobile: the mid-play deal editor is a desktop
-            overlay — deliberately kept out of the mobile flow rather than dumping
-            users into desktop chrome. */}
+        {!learnerMode && (
+          <Link
+            href={mobileHref({ editDeal: "1", paused })}
+            aria-label="Edit the deal"
+            title="Edit the deal — change any cards, then deal the edited board to this table"
+            style={FROSTED_PILL}
+          >
+            ✏️
+          </Link>
+        )}
         {!learnerMode && (
           <Link
             href={mobileHref({ hands: showAll ? "mine" : "all" })}
@@ -964,10 +1028,105 @@ export default async function MobileTablePage({
                   mySeat={mySeat}
                   rules={ruleIndex}
                   defaults={compiled?.defaults}
+                  mode={learnerMode && isFellow ? "learner" : undefined}
                 />
               ))
           )}
         </FeedSheet>
+      )}
+
+      {/* Fix-at-the-table (mobile): view-first — the item as players read it —
+          with a teal Edit that swaps in the phone editor. Save posts the SAME
+          saveItemAction contract as desktop with returnTo=/m/table/{id}?paused
+          + repinSessionId, so save → recompile → re-pin → back here, paused. */}
+      {fixItem && (
+        <MobileSheetShell
+          closeHref={mobileHref({ paused: paused ?? String(Date.now()) })}
+          closeLabel="Close the fix editor"
+          eyebrow="Fixing at the table"
+          title={fixItem.title}
+          subtitle={
+            fixMode === "edit"
+              ? "Saving updates this table immediately — decisions already made keep their original trace; the next step plays from the corrected rules."
+              : "The item as players read it — Edit to change it; saving updates this table immediately."
+          }
+          headerAction={
+            fixMode !== "edit" ? (
+              <Link
+                href={mobileHref({ paused, fix, fixMode: "edit" })}
+                aria-label="Edit this knowledge item"
+                style={{
+                  border: "none",
+                  background: "#205e63",
+                  borderRadius: 8,
+                  padding: "6px 14px",
+                  font: `600 11px ${FONT_KARLA}`,
+                  color: "#fff",
+                  textDecoration: "none",
+                }}
+              >
+                Edit
+              </Link>
+            ) : undefined
+          }
+        >
+          {fixMode === "edit" ? (
+            <MobileItemEditor
+              kbId={record.kbId}
+              item={fixItem}
+              action={saveItemAction}
+              hiddenFields={{
+                returnTo: mobileHref({ paused: paused ?? String(Date.now()) }),
+                repinSessionId: sessionId,
+              }}
+            />
+          ) : (
+            <MobileFixView item={fixItem} />
+          )}
+        </MobileSheetShell>
+      )}
+
+      {/* Edit-the-deal (mobile): the phone deal editor over the felt. Posts
+          the SAME redealEditedAction contract as the desktop overlay (+mobile=1
+          so the fork lands back on /m/table). */}
+      {editDeal && !learnerMode && (
+        <MobileSheetShell
+          closeHref={mobileHref({ paused: paused ?? String(Date.now()) })}
+          closeLabel="Close the deal editor"
+          eyebrow="Edit the deal"
+          title={record.board.name}
+          subtitle="Move any unplayed cards, then apply — the game continues right where it is, on the edited deal, with the same seats. Past calls and plays keep their original reasoning."
+        >
+          {error && (
+            <p
+              style={{
+                margin: "0 0 12px",
+                borderRadius: 10,
+                background: "#f6e2df",
+                border: "1px solid #e4b8b1",
+                color: "#8a2d23",
+                padding: "9px 12px",
+                font: `500 12px ${FONT_KARLA}`,
+              }}
+            >
+              {error}
+            </p>
+          )}
+          <MobileDealEditor
+            sessionId={sessionId}
+            initialName={
+              record.board.name.endsWith("(edited)")
+                ? record.board.name
+                : `${record.board.name} (edited)`
+            }
+            initialDealer={record.board.dealer}
+            initialVul={record.board.vul}
+            initialHands={state.hands}
+            locked={state.tricks.flatMap((t) =>
+              t.plays.map((p) => ({ seat: p.seat, card: p.card })),
+            )}
+          />
+        </MobileSheetShell>
       )}
     </div>
   );

@@ -61,10 +61,12 @@ export default async function MobileHomePage() {
           immediately.
         </p>
         <p style={{ margin: 0 }}>
-          Jump into <b style={bold}>Play</b> — pick a knowledge set and the house
-          players are provisioned for you. <b style={bold}>Players</b> collects
-          everyone&apos;s configured players; the <b style={bold}>Library</b>{" "}
-          keeps the deals, boards, lineups and plays worth returning to.
+          Jump into <b style={bold}>Play</b> — pick a knowledge set and the
+          house players are provisioned for you. <b style={bold}>Players</b>
+          {/* explicit space: the compiler eats the plain-space seam here */}
+          {" collects everyone's configured players"}; the{" "}
+          <b style={bold}>Library</b> keeps the deals, boards, lineups and plays
+          worth returning to.
         </p>
       </div>
       <Link

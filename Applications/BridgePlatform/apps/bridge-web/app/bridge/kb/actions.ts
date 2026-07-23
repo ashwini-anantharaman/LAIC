@@ -311,7 +311,8 @@ export async function saveItemAction(formData: FormData): Promise<void> {
   // returns to the board instead of the item page.
   const repinSessionId = String(formData.get("repinSessionId") ?? "");
   const returnToRaw = String(formData.get("returnTo") ?? "");
-  if (returnToRaw.startsWith("/bridge/")) {
+  // The mobile felt posts a /m/table returnTo — same repin-and-return flow.
+  if (returnToRaw.startsWith("/bridge/") || returnToRaw.startsWith("/m/")) {
     let flag = "fixed=1";
     if (repinSessionId) {
       const kb = await kbService().getKb(kbId);
@@ -323,6 +324,7 @@ export async function saveItemAction(formData: FormData): Promise<void> {
         if (compiled) await sessionService().repinCompile(repinSessionId, compiled);
       }
       revalidatePath(`/bridge/table/${repinSessionId}`);
+      revalidatePath(`/m/table/${repinSessionId}`);
     }
     redirect(`${returnToRaw}${returnToRaw.includes("?") ? "&" : "?"}${flag}`);
   }

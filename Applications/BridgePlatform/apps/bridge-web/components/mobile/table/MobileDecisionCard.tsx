@@ -4,8 +4,9 @@
 // footer, the Held facts line, fallback/floor tags), restyled for the felt
 // sheet. Server-only (the phrasing helpers read the pinned compile). Expand is
 // a native <details> so no client state is needed; the Suggest form posts the
-// real flagDecisionAction (+mobile=1) and "Fix at table →" links to the DESKTOP
-// overlay so the fix editor opens with full functionality.
+// real flagDecisionAction (+mobile=1) and "Fix at table →" links to the
+// MOBILE fix overlay (/m/table/{id}?paused={seq}&fix={itemId}) — the phone
+// flow never dumps users into desktop chrome; trace rows link the same way.
 
 import type { SettingValue } from "@bridge/config";
 import { callLabel, rankLabel, type LogicEvent, type Seat, type Suit } from "@bridge/events";
@@ -27,6 +28,7 @@ export function MobileDecisionCard({
   mySeat,
   rules,
   defaults,
+  mode,
 }: Readonly<{
   event: LogicEvent;
   sessionId: string;
@@ -34,6 +36,8 @@ export function MobileDecisionCard({
   mySeat?: Seat;
   rules?: Map<string, RuleInfo>;
   defaults?: Record<string, SettingValue>;
+  /** mode=learner passthrough, consistent with the page's mobileHref links. */
+  mode?: string;
 }>) {
   const chosen =
     event.category === "bid-logic-event"
@@ -71,7 +75,10 @@ export function MobileDecisionCard({
         : ["matched", "#256e42", "#e3efe7"];
 
   const badgeBg = floor ? "#8a2d23" : event.seat === mySeat ? "#205e63" : "#1f5058";
-  const fixHref = `/bridge/table/${sessionId}?paused=${event.seq}&fix=${itemId}`;
+  const modeSuffix = mode ? `&mode=${encodeURIComponent(mode)}` : "";
+  const mobileFixHref = (fixItemId: string) =>
+    `/m/table/${sessionId}?paused=${event.seq}&fix=${fixItemId}${modeSuffix}`;
+  const fixHref = itemId ? mobileFixHref(itemId) : undefined;
 
   return (
     <details
@@ -214,14 +221,16 @@ export function MobileDecisionCard({
             >
               Rules considered ({event.trace.length})
             </div>
+            {/* Each row links to the MOBILE fix overlay for its rule's item. */}
             {event.trace.map((t, i) => {
               const info = rules?.get(t.ruleId);
-              const traceItemId = info?.rule.provenance.itemId ?? t.ruleId.split(".")[0];
+              const traceItemId = info?.rule.provenance.itemId ?? t.ruleId.split(".")[0] ?? t.ruleId;
               return (
                 <Link
                   key={i}
-                  href={`/bridge/table/${sessionId}?paused=${event.seq}&fix=${traceItemId}`}
+                  href={mobileFixHref(traceItemId)}
                   title={`Edit this rule (${t.ruleId})`}
+                  aria-label={`Open the rule ${info ? ruleLabel(info) : t.ruleId} in the fix editor`}
                   style={{
                     display: "flex",
                     gap: 6,
@@ -293,7 +302,8 @@ export function MobileDecisionCard({
           </p>
         )}
 
-        {/* Suggest a fix (inline note → flagDecisionAction) + Fix at table. */}
+        {/* Suggest a fix (inline note → flagDecisionAction) + Fix at table
+            (the MOBILE fix overlay — view-first, then the phone editor). */}
         <div style={{ display: "flex", gap: 7, marginTop: 10, alignItems: "flex-start" }}>
           <form
             action={flagDecisionAction}
@@ -331,9 +341,10 @@ export function MobileDecisionCard({
               🚩 Suggest
             </button>
           </form>
-          {itemId && (
+          {fixHref && (
             <Link
               href={fixHref}
+              aria-label="Fix this rule at the table"
               style={{
                 flex: 1,
                 textAlign: "center",
