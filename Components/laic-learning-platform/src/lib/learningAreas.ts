@@ -17,7 +17,7 @@
  */
 export type AreaLevel = 'view' | 'edit';
 
-export interface Surface { id: string; label: string }
+export interface Surface { id: string; label: string; requiresEdit?: boolean }
 export interface AccessNode {
   id: string;
   label: string;
@@ -82,8 +82,8 @@ export const LEARNING_MANIFEST: AccessManifest = {
       id: 'authoring', label: 'Authoring', hint: 'Create objects, sources, and the library',
       surfaces: [
         { id: 'cd-home', label: 'Home' },
-        { id: 'cd-create', label: 'Create' },
-        { id: 'cd-sources', label: 'Sources' },
+        { id: 'cd-create', label: 'Create', requiresEdit: true },
+        { id: 'cd-sources', label: 'Sources', requiresEdit: true },
         { id: 'cd-library', label: 'Object Library' },
         { id: 'cd-submissions', label: 'My Submissions' },
       ],
@@ -190,7 +190,11 @@ export function navItemsForPerms(perms: Record<string, AreaLevel> | null, isAdmi
   const out: { id: string; label: string }[] = [];
   for (const s of ORDERED_SURFACES) {
     const nodeId = SURFACE_TO_NODE.get(s.id)!;
-    if (effectiveLevel(perms, isAdmin, nodeId) !== 'none') out.push({ id: s.id, label: s.label });
+    const lvl = effectiveLevel(perms, isAdmin, nodeId);
+    if (lvl === 'none') continue;
+    // Edit-only screens (e.g. Create, Sources) stay hidden for a view grant.
+    if (s.requiresEdit && lvl !== 'edit') continue;
+    out.push({ id: s.id, label: s.label });
   }
   if (isAdmin) out.push(...LEARNING_MANIFEST.adminSurfaces.map((s) => ({ id: s.id, label: s.label })));
   return out;
@@ -201,6 +205,16 @@ export function canEditScreen(screenId: string, perms: Record<string, AreaLevel>
   if (isAdmin) return true;
   const nodeId = SURFACE_TO_NODE.get(screenId);
   return !!nodeId && effectiveLevel(perms, isAdmin, nodeId) === 'edit';
+}
+
+/** True when the current screen belongs to an editable area the person only has
+ * "view" on — the app should show a read-only banner (and, eventually, disable
+ * edit controls). Inherently view-only areas (e.g. the learner view) don't count. */
+export function isScreenReadOnly(screenId: string, perms: Record<string, AreaLevel> | null, isAdmin: boolean): boolean {
+  if (isAdmin) return false;
+  const nodeId = SURFACE_TO_NODE.get(screenId);
+  const node = nodeId ? NODE_BY_ID.get(nodeId) : undefined;
+  return !!node && isEditable(node) && effectiveLevel(perms, isAdmin, nodeId!) === 'view';
 }
 
 /** Expand a role's node→level map into the capability set the app enforces. */

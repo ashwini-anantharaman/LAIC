@@ -38,6 +38,10 @@ export interface AppState {
   previewName: string | null;
   startRolePreview: (name: string, perms: Record<string, AreaLevel>) => void;
   stopRolePreview: () => void;
+  /** Identity from the Nexus launch (null in standalone demo mode). */
+  nexusProgramName: string | null;
+  nexusUserName: string | null;
+  nexusUserRole: string | null;
   readerObjectId: string | null;
   creatorObjectType: string;
   createdObjects: LearningObject[];
@@ -90,6 +94,9 @@ export default function App() {
   const [learningIsAdmin, setLearningIsAdmin] = useState(false);
   const [previewPerms, setPreviewPerms] = useState<Record<string, AreaLevel> | null>(null);
   const [previewName, setPreviewName] = useState<string | null>(null);
+  const [nexusProgramName, setNexusProgramName] = useState<string | null>(null);
+  const [nexusUserName, setNexusUserName] = useState<string | null>(null);
+  const [nexusUserRole, setNexusUserRole] = useState<string | null>(null);
   /** Gate first paint until we know whether this is a Nexus launch. */
   const [booting, setBooting] = useState(true);
 
@@ -167,6 +174,9 @@ export default function App() {
         setNexusMode(true);
         setLearningIsAdmin(isAdmin);
         setLearningPerms(perms);
+        setNexusProgramName(ctx.program_name ?? null);
+        setNexusUserName(ctx.displayName ?? null);
+        setNexusUserRole(isAdmin ? 'Administrator' : (ctx.learning_role?.role_name ?? ctx.role_name ?? 'Member'));
         setActiveUserId(uid);
         setRoleState(r);
         // Land on the first screen the person's granted areas expose (admins:
@@ -345,6 +355,7 @@ export default function App() {
     learningPerms: previewing ? previewPerms : learningPerms,
     learningIsAdmin: previewing ? false : learningIsAdmin,
     previewName, startRolePreview, stopRolePreview,
+    nexusProgramName, nexusUserName, nexusUserRole,
     readerObjectId, creatorObjectType, createdObjects, editingObjectId,
     navigate, login, logout,
     setRole, setProgram, openReader, closeReader, setCreatorObjectType, addObject,
