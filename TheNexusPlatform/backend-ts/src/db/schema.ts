@@ -325,7 +325,8 @@ export const identities = pgTable("identities", {
 
 export const groups = pgTable("groups", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").notNull(),
+  // org_id null = a NEXUS (platform) group; program_id null = org-level.
+  organizationId: uuid("organization_id"),
   programId: uuid("program_id"),
   offeringId: uuid("offering_id"),
   name: text("name").notNull(),
@@ -347,6 +348,8 @@ export const programRoles = pgTable("program_roles", {
   /** Discord-style: when true, holding this role also places the person in a
    * same-named group; when false the role never surfaces as a group. */
   displayAsGroup: boolean("display_as_group").notNull().default(false),
+  /** Optional parent group — lets a role nest inside the group hierarchy. */
+  parentGroupId: uuid("parent_group_id"),
   createdByUserId: uuid("created_by_user_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -395,7 +398,8 @@ export const learningRoleAssignments = pgTable("learning_role_assignments", {
 
 export const groupMemberships = pgTable("group_memberships", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").notNull(),
+  // Null for nexus (platform) group placements.
+  organizationId: uuid("organization_id"),
   groupId: uuid("group_id").notNull(),
   userId: uuid("user_id"),
   /** Email-keyed placement (matches the People tab); set instead of userId when

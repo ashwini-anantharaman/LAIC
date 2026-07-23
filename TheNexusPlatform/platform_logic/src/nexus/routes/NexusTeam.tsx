@@ -5,7 +5,7 @@
  * Managed by full operators only. The org people walls are untouched — this
  * is strictly about who runs Nexus.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Copy, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,8 +22,6 @@ import { Label } from "@/app/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
 import {
-  createNexusScopedRole,
-  deleteProgramRole,
   inviteNexusOperator,
   listNexusScopedRoles,
   listNexusTeam,
@@ -32,40 +30,25 @@ import {
   type NexusOperator,
   type ScopedRole,
 } from "@/services/api";
-import { EmptyState, PageHeader, Pill, Section, Spinner } from "@/nexus/ui/kit";
+import { EmptyState, Pill, Spinner } from "@/nexus/ui/kit";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
-import { ScopedRoleDialog, type ScopedArea } from "@/nexus/ui/ScopedRoleDialog";
+import { PeoplePage } from "@/nexus/people/PeoplePage";
+import { RolesAndGroups } from "@/nexus/people/RolesAndGroups";
+import { nexusRgAdapter } from "@/nexus/people/adapters";
 import { useSession } from "@/nexus/session";
-
-const NEXUS_AREAS: ScopedArea[] = [
-  { key: "organizations", label: "Organizations", kind: "graded", hint: "edit = provision + the org Edit dialog" },
-  { key: "audit", label: "Platform audit", kind: "toggle", grant: "view", hint: "read-only by nature" },
-  { key: "settings", label: "Settings", kind: "toggle", grant: "edit", hint: "Nexus's own theme and logo" },
-];
-const areaLabel = (k: string) => NEXUS_AREAS.find((a) => a.key === k)?.label ?? k;
 
 export function NexusTeam() {
   const { user } = useSession();
   const [roles, setRoles] = useState<ScopedRole[] | null>(null);
   const [team, setTeam] = useState<NexusOperator[] | null>(null);
-  const [creating, setCreating] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const rg = useMemo(() => nexusRgAdapter(), []);
 
   const load = useCallback(() => {
     listNexusScopedRoles().then(setRoles).catch(() => setRoles([]));
     listNexusTeam().then(setTeam).catch(() => setTeam([]));
   }, []);
   useEffect(() => load(), [load]);
-
-  async function removeRole(r: ScopedRole) {
-    try {
-      await deleteProgramRole(r.id);
-      toast.success(`Deleted "${r.name}"`);
-      load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete role");
-    }
-  }
 
   async function assignRole(p: NexusOperator, roleId: string | null) {
     if (!p.email) return;
@@ -89,71 +72,11 @@ export function NexusTeam() {
     }
   }
 
-  return (
-    <div>
-      <PageHeader
-        title="People"
-        subtitle="Who operates Nexus, and what each operator role can see and do."
-        actions={
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Create role
-          </Button>
-        }
-      />
-
-      <Section title="Roles">
-        {!roles ? (
-          <Spinner />
-        ) : roles.length === 0 ? (
-          <EmptyState>No operator roles yet — full operators see everything by default.</EmptyState>
-        ) : (
-          <div className="space-y-2">
-            {roles.map((r) => {
-              const holders = (team ?? []).filter((p) => p.role_id === r.id).length;
-              return (
-                <div key={r.id} className="flex items-center gap-3 glass-card px-4 py-3">
-                  <div className="min-w-[140px]">
-                    <div className="font-medium text-foreground">{r.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {holders} operator{holders !== 1 ? "s" : ""}
-                    </div>
-                  </div>
-                  <div className="flex flex-1 flex-wrap gap-1.5">
-                    {Object.entries(r.perms).map(([a, lvl]) => (
-                      <Pill key={a} tone="neutral">
-                        {areaLabel(a)} · {lvl}
-                      </Pill>
-                    ))}
-                  </div>
-                  <ConfirmButton
-                    title={`Delete the "${r.name}" role?`}
-                    description="Operators assigned to it lose the role's access."
-                    actionLabel="Delete"
-                    onConfirm={() => removeRole(r)}
-                    buttonTitle="Delete role"
-                  >
-                    <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
-                  </ConfirmButton>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Section>
-
-      <Section
-        title="Operators"
-        action={
-          <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <Plus className="size-3.5" /> Invite operator
-          </Button>
-        }
-      >
-        {!team ? (
-          <Spinner />
-        ) : (
-          <div className="glass-card overflow-hidden">
-            <Table>
+  const peopleContent = !team ? (
+    <Spinner />
+  ) : (
+    <div className="glass-card overflow-hidden">
+      <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Operator</TableHead>
@@ -220,24 +143,22 @@ export function NexusTeam() {
               </TableBody>
             </Table>
           </div>
-        )}
-      </Section>
+  );
 
-      {creating ? (
-        <ScopedRoleDialog
-          title="Create operator role"
-          areas={NEXUS_AREAS}
-          onClose={() => setCreating(false)}
-          onSave={async (name, perms) => {
-            await createNexusScopedRole({ name, perms });
-            toast.success("Role created");
-            load();
-          }}
-        />
-      ) : null}
-
+  return (
+    <>
+      <PeoplePage
+        subtitle="Who operates Nexus, and what each operator role can see and do."
+        actions={
+          <Button size="sm" onClick={() => setInviteOpen(true)}>
+            <Plus className="size-3.5" /> Invite operator
+          </Button>
+        }
+        people={peopleContent}
+        rolesGroups={<RolesAndGroups adapter={rg} />}
+      />
       <NexusInviteDialog roles={roles ?? []} open={inviteOpen} onOpenChange={setInviteOpen} onDone={load} />
-    </div>
+    </>
   );
 }
 

@@ -4,7 +4,7 @@
  * view/edit; Audit as a view toggle). People = org-LEVEL only — admins and
  * custom-role members; programs own their own rosters (§Q3).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { Copy, Eye, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,8 +23,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
 import {
   createInvitation,
-  createOrgScopedRole,
-  deleteProgramRole,
   devLoginAs,
   inviteOrgTeamMember,
   listOrgScopedRoles,
@@ -35,19 +33,13 @@ import {
   type ScopedRole,
   type TeamPerson,
 } from "@/services/api";
-import { EmptyState, PageHeader, Pill, Section, Spinner } from "@/nexus/ui/kit";
+import { EmptyState, Pill, Spinner } from "@/nexus/ui/kit";
 import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
-import { ScopedRoleDialog, type ScopedArea } from "@/nexus/ui/ScopedRoleDialog";
+import { PeoplePage } from "@/nexus/people/PeoplePage";
+import { RolesAndGroups } from "@/nexus/people/RolesAndGroups";
+import { orgRgAdapter } from "@/nexus/people/adapters";
 import { useSession } from "@/nexus/session";
-
-const ORG_AREAS: ScopedArea[] = [
-  { key: "programs", label: "Programs", kind: "graded", hint: "edit = create/configure programs, assign program admins" },
-  { key: "team", label: "People", kind: "graded", hint: "edit = invite/remove members, assign roles" },
-  { key: "settings", label: "Settings", kind: "graded", hint: "edit = theme, logo, categories" },
-  { key: "audit", label: "Audit", kind: "toggle", grant: "view", hint: "read-only by nature" },
-];
-const areaLabel = (k: string) => ORG_AREAS.find((a) => a.key === k)?.label ?? k;
 
 export function OrgTeam() {
   const { orgId = "" } = useParams();
@@ -55,24 +47,14 @@ export function OrgTeam() {
   const { refresh } = useSession();
   const [roles, setRoles] = useState<ScopedRole[] | null>(null);
   const [team, setTeam] = useState<TeamPerson[] | null>(null);
-  const [creating, setCreating] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const rg = useMemo(() => orgRgAdapter(orgId), [orgId]);
 
   const load = useCallback(() => {
     listOrgScopedRoles(orgId).then(setRoles).catch(() => setRoles([]));
     listOrgTeam(orgId).then(setTeam).catch(() => setTeam([]));
   }, [orgId]);
   useEffect(() => load(), [load]);
-
-  async function removeRole(r: ScopedRole) {
-    try {
-      await deleteProgramRole(r.id);
-      toast.success(`Deleted "${r.name}"`);
-      load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete role");
-    }
-  }
 
   async function assignRole(p: TeamPerson, roleId: string | null) {
     if (!p.email) return;
@@ -107,77 +89,13 @@ export function OrgTeam() {
     }
   }
 
-  return (
-    <div>
-      <PageHeader
-        title="People"
-        subtitle="Who runs this organization, and what each role can see and do."
-        actions={
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Create role
-          </Button>
-        }
-      />
-
-      <Section title="Roles">
-        {!roles ? (
-          <Spinner />
-        ) : roles.length === 0 ? (
-          <EmptyState>No org roles yet. Create one, then assign people to it below.</EmptyState>
-        ) : (
-          <div className="space-y-2">
-            {roles.map((r) => {
-              const holders = (team ?? []).filter((p) => p.role_id === r.id).length;
-              return (
-                <div key={r.id} className="flex items-center gap-3 glass-card px-4 py-3">
-                  <div className="min-w-[140px]">
-                    <div className="font-medium text-foreground">{r.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {holders} member{holders !== 1 ? "s" : ""}
-                    </div>
-                  </div>
-                  <div className="flex flex-1 flex-wrap gap-1.5">
-                    {Object.keys(r.perms).length ? (
-                      Object.entries(r.perms).map(([a, lvl]) => (
-                        <Pill key={a} tone="neutral">
-                          {areaLabel(a)} · {lvl}
-                        </Pill>
-                      ))
-                    ) : (
-                      <span className="text-xs text-muted-foreground">no areas</span>
-                    )}
-                  </div>
-                  <ConfirmButton
-                    title={`Delete the "${r.name}" role?`}
-                    description="Members assigned to it keep their membership but lose the role's access."
-                    actionLabel="Delete"
-                    onConfirm={() => removeRole(r)}
-                    buttonTitle="Delete role"
-                  >
-                    <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
-                  </ConfirmButton>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Section>
-
-      <Section
-        title="People"
-        action={
-          <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <Plus className="size-3.5" /> Invite
-          </Button>
-        }
-      >
-        {!team ? (
-          <Spinner />
-        ) : team.length === 0 ? (
-          <EmptyState>No org-level people yet.</EmptyState>
-        ) : (
-          <div className="glass-card overflow-hidden">
-            <Table>
+  const peopleContent = !team ? (
+    <Spinner />
+  ) : team.length === 0 ? (
+    <EmptyState>No org-level people yet.</EmptyState>
+  ) : (
+    <div className="glass-card overflow-hidden">
+      <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Person</TableHead>
@@ -257,24 +175,22 @@ export function OrgTeam() {
               </TableBody>
             </Table>
           </div>
-        )}
-      </Section>
+  );
 
-      {creating ? (
-        <ScopedRoleDialog
-          title="Create org role"
-          areas={ORG_AREAS}
-          onClose={() => setCreating(false)}
-          onSave={async (name, perms) => {
-            await createOrgScopedRole(orgId, { name, perms });
-            toast.success("Role created");
-            load();
-          }}
-        />
-      ) : null}
-
+  return (
+    <>
+      <PeoplePage
+        subtitle="Who runs this organization, and what each role can see and do."
+        actions={
+          <Button size="sm" onClick={() => setInviteOpen(true)}>
+            <Plus className="size-3.5" /> Invite
+          </Button>
+        }
+        people={peopleContent}
+        rolesGroups={<RolesAndGroups adapter={rg} />}
+      />
       <OrgInviteDialog orgId={orgId} roles={roles ?? []} open={inviteOpen} onOpenChange={setInviteOpen} onDone={load} />
-    </div>
+    </>
   );
 }
 
