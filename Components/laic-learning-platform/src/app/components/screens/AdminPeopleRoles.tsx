@@ -14,7 +14,10 @@ import {
   listLearningRoster, assignLearningRole,
   type LearningRole, type RosterPerson,
 } from '../../../lib/nexus';
-import { LEARNING_AREAS, type AreaLevel } from '../../../lib/learningAreas';
+import {
+  LEARNING_MANIFEST, isEditable, effectiveLevel, cascadeSet, cascadeClear, grantedTopAreas,
+  type AreaLevel, type AccessNode,
+} from '../../../lib/learningAreas';
 
 export function AdminPeopleRoles() {
   const programId = getProgramId();
@@ -104,9 +107,9 @@ export function AdminPeopleRoles() {
             <div key={r.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white/80 px-4 py-3">
               <div className="min-w-[130px] font-medium text-slate-800">{r.name}</div>
               <div className="flex flex-1 flex-wrap gap-1.5">
-                {Object.keys(r.perms).length === 0 ? <span className="text-xs text-slate-400">no areas</span> :
-                  LEARNING_AREAS.filter((a) => r.perms[a.key]).map((a) => (
-                    <span key={a.key} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{a.label} · {r.perms[a.key]}</span>
+                {grantedTopAreas(r.perms).length === 0 ? <span className="text-xs text-slate-400">no areas</span> :
+                  grantedTopAreas(r.perms).map((a) => (
+                    <span key={a.label} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{a.label} · {a.level}</span>
                   ))}
               </div>
               <button type="button" onClick={() => setEditingRole(r)} title="Edit role" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Pencil className="h-3.5 w-3.5" /></button>
@@ -187,10 +190,47 @@ function RoleBuilder({ role, onClose, onSaved }: { role: LearningRole | null; on
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  function toggle(key: string, on: boolean) {
-    setPerms((p) => { const n = { ...p }; if (on) n[key] = n[key] ?? 'view'; else delete n[key]; return n; });
+  // One node row + its children, recursively. Checking a parent cascades to its
+  // subtree; picking "edit" cascades edit down where each child supports it.
+  function renderNode(node: AccessNode, depth: number): React.ReactNode {
+    const lvl = effectiveLevel(perms, false, node.id);
+    const on = lvl !== 'none';
+    const editable = isEditable(node);
+    return (
+      <div key={node.id}>
+        <div className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2" style={{ marginLeft: depth * 16 }}>
+          <input
+            type="checkbox"
+            checked={on}
+            className="h-4 w-4"
+            onChange={(e) => setPerms((p) => (e.target.checked ? cascadeSet(p, node.id, 'view') : cascadeClear(p, node.id)))}
+          />
+          <div className="flex-1">
+            <div className="text-sm text-slate-800">{node.label}</div>
+            {node.hint ? <div className="text-[11px] text-slate-400">{node.hint}</div> : null}
+          </div>
+          <div className="flex overflow-hidden rounded-lg border border-slate-300 text-xs">
+            {(['view', 'edit'] as AreaLevel[]).map((l) => {
+              const disabled = !on || (l === 'edit' && !editable);
+              return (
+                <button
+                  key={l}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setPerms((p) => cascadeSet(p, node.id, l))}
+                  title={l === 'edit' && !editable ? 'This area is view-only' : undefined}
+                  className={`px-2.5 py-1 capitalize ${lvl === l ? 'bg-slate-800 text-white' : 'bg-white text-slate-500'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                >
+                  {l}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {node.children?.length ? <div className="mt-1.5 space-y-1.5">{node.children.map((c) => renderNode(c, depth + 1))}</div> : null}
+      </div>
+    );
   }
-  function setLevel(key: string, level: AreaLevel) { setPerms((p) => ({ ...p, [key]: level })); }
 
   async function save() {
     if (!name.trim()) return;
@@ -217,26 +257,9 @@ function RoleBuilder({ role, onClose, onSaved }: { role: LearningRole | null; on
           </div>
           <div>
             <div className="mb-1 text-xs font-medium text-slate-600">Access</div>
-            <p className="mb-2 text-xs text-slate-500">Turn on an area, then pick view or edit. Only granted areas appear for this role.</p>
-            <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
-              {LEARNING_AREAS.map((a) => {
-                const on = !!perms[a.key];
-                return (
-                  <div key={a.key} className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
-                    <input type="checkbox" checked={on} onChange={(e) => toggle(a.key, e.target.checked)} className="h-4 w-4" />
-                    <div className="flex-1">
-                      <div className="text-sm text-slate-800">{a.label}</div>
-                      <div className="text-[11px] text-slate-400">{a.hint}</div>
-                    </div>
-                    <div className="flex overflow-hidden rounded-lg border border-slate-300 text-xs">
-                      {(['view', 'edit'] as AreaLevel[]).map((lvl) => (
-                        <button key={lvl} type="button" disabled={!on} onClick={() => setLevel(a.key, lvl)}
-                          className={`px-2.5 py-1 capitalize ${perms[a.key] === lvl ? 'bg-slate-800 text-white' : 'bg-white text-slate-500'} ${!on ? 'opacity-40' : ''}`}>{lvl}</button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+            <p className="mb-2 text-xs text-slate-500">Turn on an area, then pick view or edit. Sub-areas nest under their tab — granting a tab cascades to everything below it. Only granted areas appear for this role.</p>
+            <div className="max-h-80 space-y-1.5 overflow-y-auto pr-1">
+              {LEARNING_MANIFEST.accessTree.map((n) => renderNode(n, 0))}
             </div>
           </div>
           {err ? <p className="text-sm text-red-600">{err}</p> : null}
