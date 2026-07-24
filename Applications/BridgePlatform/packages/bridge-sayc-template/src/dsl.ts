@@ -14,6 +14,8 @@ import type {
   KnowledgeType,
   NumParam,
   PlayRuleSpec,
+  RuleAsk,
+  RuleShows,
   SettingSpec,
   Strain,
   SuitRef,
@@ -88,6 +90,46 @@ export const ptricks = (min?: NumParam, max?: NumParam): HandCondition => ({
 });
 
 // ---------------------------------------------------------------------------
+// Partnership conditions (Pillar A): read the inference pass's enriched facts,
+// so rules reason about the COMBINED hands rather than one hand in isolation.
+// ---------------------------------------------------------------------------
+
+/** Partner's calls have SHOWN this HCP range (promised floor/ceiling). */
+export const partnerHcp = (min?: NumParam, max?: NumParam): HandCondition => ({
+  partnerShownHcp: { ...(min !== undefined && { min }), ...(max !== undefined && { max }) },
+});
+/** Partner has SHOWN at least (min) / at most (max) cards in the suit. */
+export const partnerLen = (suit: SuitRef, min?: NumParam, max?: NumParam): HandCondition => ({
+  partnerShownLength: { suit, ...(min !== undefined && { min }), ...(max !== undefined && { max }) },
+});
+/** My HCP + partner's shown bound (min uses partner's floor, max the ceiling). */
+export const combHcp = (min?: NumParam, max?: NumParam): HandCondition => ({
+  combinedHcp: { ...(min !== undefined && { min }), ...(max !== undefined && { max }) },
+});
+/** Combined keycards for the agreed suit (needs an agreed suit + decoded ask). */
+export const combKc = (min?: NumParam, max?: NumParam): HandCondition => ({
+  combinedKeycards: { ...(min !== undefined && { min }), ...(max !== undefined && { max }) },
+});
+/** Keycards the partnership is MISSING (5 − combined) — the sign-off test. */
+export const kcMissing = (min?: NumParam, max?: NumParam): HandCondition => ({
+  keycardsMissing: { ...(min !== undefined && { min }), ...(max !== undefined && { max }) },
+});
+/** A trump fit is established (my holding + partner's shown length ≥ minCombined). */
+export const fit = (
+  suit?: SuitRef | "any" | "any_major",
+  minCombined?: NumParam,
+): HandCondition => ({
+  fitEstablished: {
+    ...(suit !== undefined && { suit }),
+    ...(minCombined !== undefined && { minCombined }),
+  },
+});
+/** Delayed support: I HOLD min+ cards in the suit but have not yet SHOWN them. */
+export const unshown = (suit: SuitRef, min: NumParam): HandCondition => ({
+  unshownSupport: { suit, min },
+});
+
+// ---------------------------------------------------------------------------
 // Call patterns & contexts
 // ---------------------------------------------------------------------------
 
@@ -159,7 +201,30 @@ export const rule = (
   conditions: HandCondition,
   action: AuctionAction,
   priority: number,
-): AuctionRuleSpec => ({ key, label, context, conditions, action, priority });
+  meta: { shows?: RuleShows; ask?: RuleAsk } = {},
+): AuctionRuleSpec => ({
+  key,
+  label,
+  context,
+  conditions,
+  action,
+  priority,
+  ...(meta.shows && { shows: meta.shows }),
+  ...(meta.ask && { ask: meta.ask }),
+});
+
+/**
+ * What a bid SHOWS (Pillar A meaning metadata) — attached to a rule so the
+ * partnership-inference pass attributes it to the call. Plain numbers only
+ * ($setting-free): the meaning must resolve without a player's dials.
+ */
+export const shows = (s: RuleShows): RuleShows => s;
+
+/**
+ * Declare a bid an ASK and give each of partner's responses a machine meaning
+ * (keycards/kings the inference decodes into the combined-keycard arithmetic).
+ */
+export const ask = (id: string, responses: RuleAsk["responses"]): RuleAsk => ({ id, responses });
 
 /** A forcing situation: in this context, PASS is not an available call. */
 export const forcing = (

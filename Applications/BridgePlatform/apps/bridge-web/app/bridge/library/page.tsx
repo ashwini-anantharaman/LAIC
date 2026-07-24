@@ -22,7 +22,7 @@ const SHELVES: { kind: LibraryKind; label: string; hint: string; reserved?: bool
   { kind: "board", label: "Boards", hint: "deal + dealer + vulnerability" },
   { kind: "table", label: "Tables", hint: "a saved seat lineup" },
   { kind: "play", label: "Plays", hint: "board + calls + cards, as recorded" },
-  { kind: "drill", label: "Drills", hint: "reserved", reserved: true },
+  { kind: "drill", label: "Drills", hint: "bidding regression checks, run per knowledge base" },
   { kind: "puzzle", label: "Puzzles", hint: "reserved", reserved: true },
 ];
 
@@ -180,6 +180,15 @@ export default async function LibraryPage({
                       Start · fresh deal
                     </button>
                   </form>
+                ) : e.kind === "drill" ? (
+                  e.kbId && (
+                    <Link
+                      href={`/bridge/kb/${e.kbId}/drills`}
+                      className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+                    >
+                      Run
+                    </Link>
+                  )
                 ) : (
                   e.hands && (
                     <form action={e.kind === "play" ? resumePlayEntryAction : playEntryAction}>

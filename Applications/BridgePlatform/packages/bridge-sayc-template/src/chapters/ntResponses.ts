@@ -628,7 +628,7 @@ export const NT_RESPONSES: TemplateItem[] = [
       rule(
         "k04",
         "0 or 4 kings",
-        ctx("any", { ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        ctx("any", { opening: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
         any({ kings: { max: 0 } }, { kings: { min: 4 } }),
         bid(5, "D"),
         17,
@@ -636,7 +636,7 @@ export const NT_RESPONSES: TemplateItem[] = [
       rule(
         "k1",
         "One king",
-        ctx("any", { ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        ctx("any", { opening: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
         { kings: { min: 1, max: 1 } },
         bid(5, "H"),
         18,
@@ -644,7 +644,7 @@ export const NT_RESPONSES: TemplateItem[] = [
       rule(
         "k2",
         "Two kings",
-        ctx("any", { ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        ctx("any", { opening: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
         { kings: { min: 2, max: 2 } },
         bid(5, "S"),
         19,
@@ -652,7 +652,7 @@ export const NT_RESPONSES: TemplateItem[] = [
       rule(
         "k3",
         "Three kings",
-        ctx("any", { ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
+        ctx("any", { opening: NT_OPENING, ownLast: bidAt({ level: 4 }), partnerLast: is("5C") }),
         { kings: { min: 3, max: 3 } },
         bid(5, "N"),
         20,

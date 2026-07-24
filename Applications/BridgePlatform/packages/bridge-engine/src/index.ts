@@ -43,6 +43,12 @@ export {
   type KbDeciderOptions,
   type KbPlayerConfig,
 } from "./decide/decider";
+export {
+  inferPartnership,
+  type PartnershipInference,
+  type ShownState,
+  type InferenceSurface,
+} from "./decide/inference";
 export { mulberry32, seedFrom } from "./decide/rng";
 export {
   seededDeal,

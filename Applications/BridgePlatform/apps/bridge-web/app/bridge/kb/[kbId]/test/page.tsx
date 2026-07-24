@@ -173,6 +173,20 @@ export default async function KbTestPage({
                     .join("; ")}
                 </p>
               )}
+
+              <p className="mt-3 text-xs">
+                <Link
+                  href={`${base}/auction-rules?${new URLSearchParams({
+                    auction: auctionInput,
+                    hand: handInput,
+                    dealer,
+                    vul,
+                  }).toString()}`}
+                  className="font-medium text-emerald-700 underline-offset-4 hover:underline"
+                >
+                  see every rule at this point →
+                </Link>
+              </p>
             </div>
 
             {decision.trace.length > 0 && (

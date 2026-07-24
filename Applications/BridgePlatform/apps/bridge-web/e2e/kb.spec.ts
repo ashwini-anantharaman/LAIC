@@ -492,6 +492,39 @@ test("curated SAYC template: install, complete sets, and a traced board", async 
   await expect(first.getByRole("link", { name: "fix at the table →" })).toBeVisible();
 });
 
+test("B2F3 curriculum collections: one click drafts three chained sets (idempotent)", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  // Fresh curated KB so the classifier has real SAYC items to bucket.
+  await page.goto("/bridge/kb");
+  const name = `B2F3 e2e ${Date.now().toString(36)}`;
+  const installSection = page
+    .locator("section")
+    .filter({ hasText: "Start from the curated SAYC template" });
+  await installSection.getByRole("textbox").fill(name);
+  await installSection.getByRole("button", { name: "Install curated SAYC" }).click();
+  await expect(page.getByRole("heading", { name })).toBeVisible({ timeout: 30_000 });
+  const b2f3KbUrl = page.url();
+
+  await page.goto(`${b2f3KbUrl}/sets`);
+  await page.getByRole("button", { name: "Create B2F3 collections (draft)" }).click();
+  await page.waitForURL(/\/sets\?b2f3created=1/);
+  await expect(page.getByText("B2F3 collections drafted.")).toBeVisible();
+
+  // The three chained sets are listed (the banner links each, exact names).
+  await expect(page.getByRole("link", { name: "B2F3 Beginner", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "B2F3 Advanced Beginner", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "B2F3 Intermediate", exact: true })).toBeVisible();
+
+  // Idempotent: re-running regenerates the SAME three sets (never duplicates).
+  await page.getByRole("button", { name: "Regenerate B2F3 collections (draft)" }).click();
+  await page.waitForURL(/\/sets\?b2f3created=1/);
+  await expect(page.getByRole("link", { name: "B2F3 Intermediate", exact: true })).toHaveCount(1);
+});
+
 test("augmentation: source → draft copy → review board → discard", async ({
   page,
   context,
@@ -651,4 +684,30 @@ test("BBO view: the skin toggles on and preserves the table", async ({ page, con
   await expect(page.getByText("Rules considered", { exact: false }).first())
     .toBeVisible({ timeout: 10_000 })
     .catch(() => {}); // decisions rail only present after a decision — non-fatal
+});
+
+test("auction rules explorer: lists the rules at a decision point", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto(`${kbUrl}/auction-rules?auction=${encodeURIComponent("1C P")}&dealer=N&vul=none`);
+  await expect(
+    page.getByRole("heading", { name: "Auction rules at a decision point" }),
+  ).toBeVisible();
+  // The partnership panel always renders once an auction is submitted.
+  await expect(page.getByText(/Partnership so far/)).toBeVisible();
+  // Either matching rules or the honest "no rule matches" message — both mention
+  // the context. The count heading is always present after a submit.
+  await expect(page.getByText(/match this context/)).toBeVisible();
+});
+
+test("drills: the runner renders and seeds the expert cases", async ({ page, context }) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto(`${kbUrl}/drills`);
+  await expect(page.getByRole("heading", { name: "Drills", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Seed expert drills" }).click();
+  // The seed action redirects with a flash, and the seeded drills appear in the table.
+  await expect(page.getByText(/Seeded \d+ expert drill|already seeded/)).toBeVisible();
+  await expect(page.getByText(/\[expert\]/).first()).toBeVisible();
 });

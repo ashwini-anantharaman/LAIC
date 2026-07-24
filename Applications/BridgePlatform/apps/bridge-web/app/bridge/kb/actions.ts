@@ -14,6 +14,7 @@ import { fileToText, uploadDocument } from "@/lib/documents";
 import { createClaudeExtractor, extractionAvailable } from "@/lib/extraction";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { parseCommon, parsePayload, parseSettings } from "@/lib/itemForm";
+import { B2F3_COLLECTIONS, draftB2f3Collections } from "@/lib/b2f3";
 
 const kbPath = (kbId: string, rest = "") => `/bridge/kb/${kbId}${rest}`;
 
@@ -424,6 +425,86 @@ export async function savePackAction(formData: FormData): Promise<void> {
   await audit(context, "kb.pack.save", "kb_pack", pack.packId, { kbId, version });
   revalidatePath(kbPath(kbId), "layout");
   redirect(kbPath(kbId, `/sets/${pack.packId}?saved=1`));
+}
+
+/**
+ * Draft the three B2F3 CURRICULUM COLLECTIONS (Pillar E). A deterministic
+ * classifier (lib/b2f3) reads every item's own content and buckets it into
+ * Beginner / Advanced Beginner / Intermediate; this action materializes those
+ * buckets as three chained knowledge sets (Advanced Beginner includes
+ * Beginner; Intermediate includes Advanced Beginner) and adds matching ladder
+ * levels to the KB. IDEMPOTENT: the sets are matched by name, so re-running
+ * regenerates the SAME three sets (never duplicates). Fellows then adjust
+ * membership in the ordinary set builder — every save is version-snapshotted,
+ * so a regenerate is recoverable. Drafts from standard teaching progressions;
+ * no syllabus document exists (owner decision).
+ */
+export async function createB2F3CollectionsAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  await ensureSeeds();
+  const kbId = String(formData.get("kbId"));
+  try {
+    const [kb, items, existing] = await Promise.all([
+      kbService().getKb(kbId),
+      kbStore().listItemsForKb(kbId),
+      kbStore().listPacksForKb(kbId),
+    ]);
+    const draft = draftB2f3Collections(items);
+
+    // Ladder levels on the KB (idempotent — merge by levelId, never duplicate).
+    const knownLevelIds = new Set(kb.levels.map((l) => l.levelId));
+    const addedLevels = B2F3_COLLECTIONS.filter((c) => !knownLevelIds.has(c.levelId)).map((c) => ({
+      levelId: c.levelId,
+      name: c.name,
+      ordinal: c.ordinal,
+    }));
+    if (addedLevels.length) {
+      await kbStore().putKb({
+        ...kb,
+        levels: [...kb.levels, ...addedLevels],
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    // Create/update the three packs IN LADDER ORDER so each Includes the one
+    // below it. savePack matches by packId; reuse the existing pack of that
+    // name to keep re-runs idempotent.
+    const idByName = new Map(existing.map((p) => [p.name, p.packId]));
+    const packIdByLevel = new Map<string, string>();
+    let created = 0;
+    for (const bucket of draft.buckets) {
+      const def = bucket.def;
+      const extendsPackId = def.extendsLevel ? packIdByLevel.get(def.extendsLevel) : undefined;
+      const saved = await kbService().savePack({
+        packId: idByName.get(def.name),
+        kbId,
+        name: def.name,
+        description: def.description,
+        extendsPackId,
+        levelId: def.levelId,
+        ordinal: def.ordinal,
+        itemIds: bucket.itemIds,
+        intendedComplete: true,
+        createdBy: context.nexusUserId,
+      });
+      packIdByLevel.set(def.level, saved.packId);
+      if (!idByName.has(def.name)) created += 1;
+    }
+
+    await audit(context, "kb.pack.save", "kb_pack", kbId, {
+      kbId,
+      b2f3: true,
+      created,
+      updated: draft.buckets.length - created,
+      counts: Object.fromEntries(draft.buckets.map((b) => [b.def.level, b.itemIds.length])),
+      outOfScope: draft.outOfScopeItemIds.length,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not create the B2F3 collections.";
+    redirect(kbPath(kbId, `/sets?error=${encodeURIComponent(message)}`));
+  }
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, "/sets?b2f3created=1"));
 }
 
 export async function restorePackVersionAction(formData: FormData): Promise<void> {
