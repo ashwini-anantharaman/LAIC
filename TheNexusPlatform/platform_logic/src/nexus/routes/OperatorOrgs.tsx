@@ -33,7 +33,7 @@ import {
 import { PROGRAM_FEATURES } from "@/types/platform";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { Switch } from "@/app/components/ui/switch";
-import { EmptyState, PageHeader, Pill, Spinner, Stat, statusTone } from "@/nexus/ui/kit";
+import { EmptyState, PageHeader, Pill, Spinner, StatPill, statusTone } from "@/nexus/ui/kit";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -71,9 +71,9 @@ export function OperatorOrgs() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 mb-8 sm:max-w-md">
-        <Stat label="Organizations" value={orgs.length} />
-        <Stat label="Active" value={active} />
+      <div className="mb-8 flex flex-wrap gap-2">
+        <StatPill label="Organizations" value={orgs.length} />
+        <StatPill label="Active" value={active} />
       </div>
 
       {orgs.length === 0 ? (
