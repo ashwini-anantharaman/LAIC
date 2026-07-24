@@ -40,3 +40,15 @@ test("mobile screens render real data", async ({ page, context }) => {
   await page.goto("/m/guide");
   await expect(page.getByText("How it fits together")).toBeVisible();
 });
+
+test("mobile BBO view toggles on and stays through a step", async ({ page, context }) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto("/m/play");
+  await page.getByRole("button", { name: /Deal a fresh board|Quickplay/ }).click();
+  await page.waitForURL(/\/m\/table\/bs_/);
+  await page.getByRole("link", { name: "Switch to BBO view" }).click();
+  await page.waitForURL(/skin=bbo/);
+  await expect(page.getByRole("link", { name: "Switch to platform view" })).toBeVisible();
+  // The felt renders the BBO auction header letters.
+  await expect(page.getByText("W", { exact: true }).first()).toBeVisible();
+});

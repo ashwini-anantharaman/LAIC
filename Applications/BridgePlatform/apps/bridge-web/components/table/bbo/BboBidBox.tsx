@@ -25,9 +25,9 @@ const whiteBtn: React.CSSProperties = {
   border: "1px solid #8a8a6a",
   borderRadius: 6,
   padding: "clamp(4px, 0.8cqw, 9px) 0",
-  width: "clamp(36px, 6cqw, 60px)",
+  width: "clamp(30px, 6cqw, 60px)",
   fontWeight: 700,
-  fontSize: "clamp(15px, 2.6cqw, 26px)",
+  fontSize: "clamp(13px, 2.6cqw, 26px)",
   cursor: "pointer",
   lineHeight: 1.1,
 };
@@ -67,7 +67,7 @@ export function BboBidBox({
           "Pass",
           {
             ...whiteBtn,
-            width: "clamp(72px, 12.5cqw, 124px)",
+            width: "clamp(58px, 12.5cqw, 124px)",
             background: "#1E7B32",
             color: "#fff",
             border: "1px solid #155A24",

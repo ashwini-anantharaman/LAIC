@@ -19,6 +19,7 @@ import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { buildRuleIndex } from "@/components/table/decisionText";
+import { BboTable } from "@/components/table/bbo/BboTable";
 import { FeedSheet } from "@/components/mobile/table/FeedSheet";
 import { MobileAutoAdvance } from "@/components/mobile/table/MobileAutoAdvance";
 import { MobileBidBox } from "@/components/mobile/table/MobileBidBox";
@@ -80,6 +81,7 @@ export default async function MobileTablePage({
     fixed?: string;
     fixError?: string;
     editDeal?: string;
+    skin?: string;
   }>;
 }>) {
   const context = await getBridgeContext();
@@ -96,7 +98,11 @@ export default async function MobileTablePage({
     fixed,
     fixError,
     editDeal,
+    skin,
   } = await searchParams;
+  // ?skin=bbo swaps the felt for the BBO replica (same fluid components the
+  // desktop BBO view uses — they size in container units, so they fit phones).
+  const bbo = skin === "bbo";
 
   let view;
   try {
@@ -156,9 +162,64 @@ export default async function MobileTablePage({
   const mobileHref = (extra: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
     if (learnerMode && isFellow) q.set("mode", "learner");
+    if (bbo) q.set("skin", "bbo");
     for (const [k, v] of Object.entries(extra)) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/m/table/${sessionId}?${s}` : `/m/table/${sessionId}`;
+  };
+
+  // BBO-view nameplate (mobile): the grey bar + teal seat badge, gold when
+  // the seat is to act. No swap dropdown on the phone.
+  const mobileBboPlate = (seat: Seat) => {
+    const acting = seat === actingSeat && state.phase !== "complete";
+    return (
+      <p
+        style={{
+          display: "flex",
+          width: "100%",
+          alignItems: "center",
+          gap: 5,
+          padding: "2px 3px",
+          margin: 0,
+          background: acting ? "#FFC933" : "#D6D6D6",
+          color: "#000",
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 12,
+        }}
+      >
+        <span
+          style={{
+            display: "flex",
+            width: 16,
+            height: 16,
+            flex: "none",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#1F5E63",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: 11,
+          }}
+        >
+          {seat}
+        </span>
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            minWidth: 0,
+            maxWidth: 60,
+            flex: "1 1 auto",
+          }}
+        >
+          {seatLabel(seat)}
+        </span>
+        {seat === dummy && state.phase === "play" && (
+          <span style={{ fontSize: 8, textTransform: "uppercase", opacity: 0.7 }}>· dummy</span>
+        )}
+      </p>
+    );
   };
 
   // ---- card / hand rendering helpers (felt design) ------------------------
@@ -218,6 +279,7 @@ export default async function MobileTablePage({
                   <input type="hidden" name="suit" value={card.suit} />
                   <input type="hidden" name="rank" value={card.rank} />
                   <input type="hidden" name="mobile" value="1" />
+                  {bbo && <input type="hidden" name="skin" value="bbo" />}
                   <button
                     type="submit"
                     aria-label={`Play ${rankLabel(card.rank)}${GLYPH[card.suit]}`}
@@ -332,6 +394,7 @@ export default async function MobileTablePage({
                       <input type="hidden" name="suit" value={card.suit} />
                       <input type="hidden" name="rank" value={card.rank} />
                       <input type="hidden" name="mobile" value="1" />
+                  {bbo && <input type="hidden" name="skin" value="bbo" />}
                       <button
                         type="submit"
                         aria-label={`Play ${rankLabel(card.rank)}${GLYPH[card.suit]}`}
@@ -478,8 +541,9 @@ export default async function MobileTablePage({
         minHeight: "100dvh",
         display: "flex",
         flexDirection: "column",
-        background:
-          "radial-gradient(130% 118% at 50% 30%,#2f6b6f 0%,#1c4b50 55%,#0c2426 100%)",
+        background: bbo
+          ? "#217A21"
+          : "radial-gradient(130% 118% at 50% 30%,#2f6b6f 0%,#1c4b50 55%,#0c2426 100%)",
         fontFamily: FONT_KARLA,
       }}
     >
@@ -657,6 +721,7 @@ export default async function MobileTablePage({
           <form action={playToEndAction} style={{ flex: "none" }}>
             <input type="hidden" name="sessionId" value={sessionId} />
             <input type="hidden" name="mobile" value="1" />
+                  {bbo && <input type="hidden" name="skin" value="bbo" />}
             <button type="submit" aria-label="Play to end" title="Play to end" style={FROSTED_PILL}>
               ⏭
             </button>
@@ -665,6 +730,7 @@ export default async function MobileTablePage({
         <form action={undoAction} style={{ flex: "none" }}>
           <input type="hidden" name="sessionId" value={sessionId} />
           <input type="hidden" name="mobile" value="1" />
+                  {bbo && <input type="hidden" name="skin" value="bbo" />}
           <button type="submit" aria-label="Undo the last decision" title="Undo" style={FROSTED_PILL}>
             ↩
           </button>
@@ -672,6 +738,7 @@ export default async function MobileTablePage({
         <form action={rewindAction} style={{ flex: "none" }}>
           <input type="hidden" name="sessionId" value={sessionId} />
           <input type="hidden" name="mobile" value="1" />
+                  {bbo && <input type="hidden" name="skin" value="bbo" />}
           <button
             type="submit"
             disabled={record.events.length === 0}
@@ -690,6 +757,7 @@ export default async function MobileTablePage({
           <form action={newDealAction} style={{ flex: "none" }}>
             <input type="hidden" name="sessionId" value={sessionId} />
             <input type="hidden" name="mobile" value="1" />
+                  {bbo && <input type="hidden" name="skin" value="bbo" />}
             <button type="submit" aria-label="New deal" title="New deal — same lineup" style={FROSTED_PILL}>
               🎲
             </button>
@@ -720,10 +788,33 @@ export default async function MobileTablePage({
             👁 {showAll ? "hide" : "all"}
           </Link>
         )}
-        {!learnerMode && <SaveSheet sessionId={sessionId} boardName={record.board.name} />}
+        {!learnerMode && <SaveSheet sessionId={sessionId} boardName={record.board.name} bbo={bbo} />}
+        <Link
+          href={(() => {
+            const q = new URLSearchParams();
+            if (learnerMode && isFellow) q.set("mode", "learner");
+            if (!bbo) q.set("skin", "bbo");
+            if (paused) q.set("paused", paused);
+            const qs = q.toString();
+            return qs ? `/m/table/${sessionId}?${qs}` : `/m/table/${sessionId}`;
+          })()}
+          aria-label={bbo ? "Switch to platform view" : "Switch to BBO view"}
+          title={bbo ? "Platform view — the standard felt" : "BBO view — the classic Bridge Base Online table"}
+          style={FROSTED_PILL}
+        >
+          🃏 {bbo ? "classic" : "bbo"}
+        </Link>
         {isFellow && (
           <Link
-            href={learnerMode ? `/m/table/${sessionId}` : `/m/table/${sessionId}?mode=learner`}
+            href={
+              learnerMode
+                ? bbo
+                  ? `/m/table/${sessionId}?skin=bbo`
+                  : `/m/table/${sessionId}`
+                : bbo
+                  ? `/m/table/${sessionId}?mode=learner&skin=bbo`
+                  : `/m/table/${sessionId}?mode=learner`
+            }
             aria-label={learnerMode ? "Switch to verification view" : "Switch to learner view"}
             title={learnerMode ? "Verification view" : "Learner view"}
             style={FROSTED_PILL}
@@ -733,6 +824,28 @@ export default async function MobileTablePage({
         )}
       </div>
 
+      {bbo ? (
+        <div className="m-scroll" style={{ flex: 1, overflowY: "auto", padding: "4px 8px 8px" }}>
+          <BboTable
+            sessionId={sessionId}
+            state={state}
+            score={score}
+            visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
+            legalNow={legalNow ? [...legalNow] : null}
+            callsNow={callsNow ? [...callsNow] : null}
+            myTurn={myTurn}
+            mySeat={mySeat}
+            dummy={dummy}
+            actingSeat={actingSeat}
+            actingIsHuman={actingIsHuman}
+            dealer={record.board.dealer}
+            auctionRows={auctionRows as never}
+            plate={mobileBboPlate}
+            lobbyHref="/m/play"
+          />
+        </div>
+      ) : (
+      <>
       {/* felt */}
       <div
         style={{
@@ -1001,6 +1114,9 @@ export default async function MobileTablePage({
         )}
       </div>
 
+      </>
+      )}
+
       {/* decisions feed (hidden entirely in learner mode, like desktop) */}
       {!learnerMode && (
         <FeedSheet
@@ -1119,6 +1235,7 @@ export default async function MobileTablePage({
           )}
           <MobileDealEditor
             sessionId={sessionId}
+            bbo={bbo}
             initialName={
               record.board.name.endsWith("(edited)")
                 ? record.board.name

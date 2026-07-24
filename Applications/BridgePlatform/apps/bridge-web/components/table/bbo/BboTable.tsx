@@ -37,7 +37,7 @@ const SANS = { fontFamily: "Arial, Helvetica, sans-serif" } as const;
 /** A BBO card face: white, rank over suit in the top-left, adjacent layout.
  *  Sized in container-query units so the whole table scales fluidly. */
 function Face({ card, big }: Readonly<{ card: Card; big: boolean }>) {
-  const w = big ? "clamp(34px, 6.4cqw, 64px)" : "clamp(24px, 4.4cqw, 44px)";
+  const w = big ? "clamp(25px, 6.4cqw, 64px)" : "clamp(19px, 4.4cqw, 44px)";
   return (
     <span
       className="relative block border border-neutral-500 bg-white first:rounded-l-[4px] last:rounded-r-[4px]"
@@ -49,11 +49,11 @@ function Face({ card, big }: Readonly<{ card: Card; big: boolean }>) {
       >
         <span
           className="font-bold tabular-nums"
-          style={{ fontSize: big ? "clamp(15px, 3cqw, 30px)" : "clamp(12px, 2.1cqw, 21px)" }}
+          style={{ fontSize: big ? "clamp(12px, 3cqw, 30px)" : "clamp(10px, 2.1cqw, 21px)" }}
         >
           {rankLabel(card.rank)}
         </span>
-        <span style={{ fontSize: big ? "clamp(13px, 2.7cqw, 27px)" : "clamp(10px, 1.9cqw, 19px)" }}>
+        <span style={{ fontSize: big ? "clamp(11px, 2.7cqw, 27px)" : "clamp(9px, 1.9cqw, 19px)" }}>
           {GLYPH[card.suit]}
         </span>
       </span>
@@ -108,7 +108,7 @@ function Diagram({ hand }: Readonly<{ hand: Card[] }>) {
   return (
     <div
       className="rounded-[3px] border border-neutral-400 bg-white px-2 py-1 leading-tight shadow-md"
-      style={{ fontSize: "clamp(12px, 1.9cqw, 18px)" }}
+      style={{ fontSize: "clamp(10.5px, 1.9cqw, 18px)" }}
     >
       {(["S", "H", "C", "D"] as Suit[]).map((suit) => {
         const ranks = hand
@@ -147,8 +147,8 @@ function Backs({ count }: Readonly<{ count: number }>) {
           aria-hidden
           className="block"
           style={{
-            width: "clamp(9px, 1.9cqw, 20px)",
-            height: "clamp(42px, 9cqw, 92px)",
+            width: "clamp(6.5px, 1.9cqw, 20px)",
+            height: "clamp(34px, 9cqw, 92px)",
             background: BACK_TEAL,
             borderLeft: i > 0 ? "1.5px solid rgba(255,255,255,.9)" : undefined,
           }}
@@ -160,6 +160,7 @@ function Backs({ count }: Readonly<{ count: number }>) {
 
 export function BboTable({
   sessionId,
+  lobbyHref = "/bridge/table",
   state,
   score,
   visible,
@@ -188,6 +189,8 @@ export function BboTable({
   dealer: Seat;
   auctionRows: readonly (readonly (AuctionCall | null)[])[];
   plate: (seat: Seat) => ReactNode;
+  /** Where "Play another" goes — the mobile shell passes /m/play. */
+  lobbyHref?: string;
 }>) {
   // A hand block: the horizontal hand with its name bar UNDERNEATH (BBO).
   const seatBlock = (seat: Seat) => {
@@ -246,7 +249,7 @@ export function BboTable({
   const auctionPanel = (
     <div
       className="rounded-[4px] px-3 pb-3 shadow-lg"
-      style={{ background: PANEL, width: "clamp(224px, 37cqw, 420px)" }}
+      style={{ background: PANEL, width: "clamp(156px, 37cqw, 420px)" }}
     >
       <div className="grid grid-cols-4 rounded-t-[4px] bg-white px-1 text-center">
         {(["W", "N", "E", "S"] as Seat[]).map((s) => (
@@ -255,7 +258,7 @@ export function BboTable({
             className="py-0.5 font-bold leading-tight"
             style={{
               color: isVulnerable(state.vul, s) ? RED : "#000",
-              fontSize: "clamp(18px, 3.4cqw, 34px)",
+              fontSize: "clamp(15px, 3.4cqw, 34px)",
             }}
           >
             {s}
@@ -281,7 +284,7 @@ export function BboTable({
                   style={{
                     background: CHIP,
                     color: rc ? RED : "#000",
-                    fontSize: "clamp(14px, 2.5cqw, 25px)",
+                    fontSize: "clamp(12px, 2.5cqw, 25px)",
                   }}
                 >
                   {entry.call === "P" ? "Pass" : callLabel(entry.call)}
@@ -303,7 +306,7 @@ export function BboTable({
   const trickArea = (
     <div
       className="relative mx-auto"
-      style={{ width: "clamp(150px, 26cqw, 280px)", height: "clamp(150px, 26cqw, 280px)" }}
+      style={{ width: "clamp(118px, 26cqw, 280px)", height: "clamp(118px, 26cqw, 280px)" }}
     >
       {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
         const pos =
@@ -324,7 +327,7 @@ export function BboTable({
                 className={`block rounded-[4px] border border-dashed ${
                   seat === state.turn ? "border-[#FFC933]" : "border-white/40"
                 }`}
-                style={{ width: "clamp(24px, 4.4cqw, 44px)", aspectRatio: "6 / 10.6" }}
+                style={{ width: "clamp(19px, 4.4cqw, 44px)", aspectRatio: "6 / 10.6" }}
               />
             )}
           </div>
@@ -363,7 +366,7 @@ export function BboTable({
         className="relative flex flex-col justify-between rounded-lg shadow-md"
         style={{
           background: FELT,
-          minHeight: "clamp(420px, 76cqw, 820px)",
+          minHeight: "clamp(380px, 76cqw, 820px)",
           padding: "clamp(12px, 2.2cqw, 26px) clamp(12px, 2.6cqw, 30px) clamp(10px, 1.8cqw, 20px)",
         }}
       >
@@ -374,7 +377,7 @@ export function BboTable({
         <div className="flex justify-center">{seatBlock("N")}</div>
 
         {/* West · center · East — every hand horizontal, like BBO. */}
-        <div className="my-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <div className="my-3 grid grid-cols-[1fr_auto_1fr] items-center gap-[clamp(4px,1cqw,14px)]">
           <div className="justify-self-start">{seatBlock("W")}</div>
           <div className="flex items-center justify-center">{center}</div>
           <div className="justify-self-end">{seatBlock("E")}</div>
@@ -408,7 +411,7 @@ export function BboTable({
         {state.phase === "complete" && (
           <p className="text-sm text-neutral-600">
             Board complete.{" "}
-            <Link href="/bridge/table" className="text-[#1034A6] underline-offset-4 hover:underline">
+            <Link href={lobbyHref} className="text-[#1034A6] underline-offset-4 hover:underline">
               Play another →
             </Link>
           </p>
