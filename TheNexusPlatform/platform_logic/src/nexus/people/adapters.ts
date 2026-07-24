@@ -14,7 +14,7 @@ import {
   type ScopedRole, type ProgramRole,
 } from "@/services/api";
 import type { RgAdapter, RgArea, RgRole, CatalogueForBuilder } from "./RolesAndGroups";
-import { getCatalogue, type CapabilityCatalogueDocument } from "@/nexus/access/catalogue";
+import { getCatalogue, getOrgCatalogue, getProgramCatalogue, type CapabilityCatalogueDocument } from "@/nexus/access/catalogue";
 
 const toRgRole = (r: ProgramRole | ScopedRole): RgRole => {
   const perms = (r.perms as Record<string, unknown>) ?? {};
@@ -47,10 +47,11 @@ function toBuilder(doc: CapabilityCatalogueDocument): CatalogueForBuilder {
   };
 }
 
-/** Load + shape the given providers' catalogues (skips any that fail to load). */
-function catalogueLoader(providerIds: string[]): () => Promise<CatalogueForBuilder[]> {
+/** Load + shape the given catalogues (skips any that fail to load). Each loader
+ *  fetches one catalogue — an instance-scoped one (org/program) or a global one. */
+function catalogueLoader(loaders: Array<() => Promise<CapabilityCatalogueDocument>>): () => Promise<CatalogueForBuilder[]> {
   return async () => {
-    const docs = await Promise.all(providerIds.map((id) => getCatalogue(id).catch(() => null)));
+    const docs = await Promise.all(loaders.map((load) => load().catch(() => null)));
     return docs.filter((d): d is CapabilityCatalogueDocument => !!d).map(toBuilder).filter((b) => b.groups.length > 0);
   };
 }
@@ -83,8 +84,13 @@ export function programRgAdapter(
         ? { key, label: PROGRAM_AREA_LABELS[key] ?? key, kind: "admin" }
         : { key, label: PROGRAM_AREA_LABELS[key] ?? key, kind: "graded", levels: ["view", "comment", "edit"] },
     ),
-    // A program role can grant program-console capabilities + the platforms it opens.
-    loadCatalogues: catalogueLoader(["program-console", "learning", "bridge"]),
+    // A program role grants THIS program's console capabilities + the platforms it
+    // opens (learning/bridge inventory is platform-global).
+    loadCatalogues: catalogueLoader([
+      () => getProgramCatalogue(programId),
+      () => getCatalogue("learning"),
+      () => getCatalogue("bridge"),
+    ]),
   };
 }
 
@@ -105,7 +111,7 @@ export function orgRgAdapter(orgId: string): RgAdapter {
       { key: "settings", label: "Settings", kind: "graded", levels: ["view", "edit"] },
       { key: "audit", label: "Audit", kind: "toggle", grant: "view" },
     ],
-    loadCatalogues: catalogueLoader(["org-console"]),
+    loadCatalogues: catalogueLoader([() => getOrgCatalogue(orgId)]),
   };
 }
 
@@ -125,6 +131,6 @@ export function nexusRgAdapter(): RgAdapter {
       { key: "audit", label: "Platform audit", kind: "toggle", grant: "view" },
       { key: "settings", label: "Settings", kind: "toggle", grant: "edit" },
     ],
-    loadCatalogues: catalogueLoader(["nexus-console"]),
+    loadCatalogues: catalogueLoader([() => getCatalogue("nexus-console")]),
   };
 }

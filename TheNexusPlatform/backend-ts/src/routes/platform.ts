@@ -2181,6 +2181,79 @@ platformRouter.delete("/catalogues/:provider_id", async (c) => {
   return c.json(await catalogue.resetCatalogue(id));
 });
 
+// ── Per-instance catalogues — each org/program carries its OWN customization of
+// its console catalogue, seeded from the shipped default and falling back to it
+// until edited. Read: any authed caller (the level's role builder needs it).
+// Write: the level admin — org owner (Super Admin) for the org catalogue,
+// program admin for the program catalogue; platform operators may edit any.
+function _validCatalogueBody(body: unknown, providerId: ProviderId): CapabilityCatalogueDocument {
+  const doc = body as CapabilityCatalogueDocument;
+  if (doc?.documentType !== "capability_catalogue" || !Array.isArray(doc.capabilities) || !Array.isArray(doc.groups)) {
+    throw new HttpError(422, "Not a valid catalogue document");
+  }
+  if (doc.provider?.id !== providerId) throw new HttpError(422, `provider.id must equal "${providerId}"`);
+  return doc;
+}
+function _requireOrgOwner(user: PlatformUser, orgId: string): void {
+  if (user.role === "platform_admin") return;
+  const isOwner = user.memberships.some((m) => m.org_id === orgId && m.role === "owner" && !m.program_id);
+  if (!isOwner) throw new HttpError(403, "Only the organization owner (Super Admin) can edit the access catalogue");
+}
+
+platformRouter.get("/orgs/:org_id/catalogue", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  return c.json(await catalogue.getCatalogue("org-console", c.req.param("org_id")));
+});
+platformRouter.put("/orgs/:org_id/catalogue", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _requireOrgOwner(user, orgId);
+  const doc = _validCatalogueBody(await c.req.json(), "org-console");
+  const saved = await catalogue.saveCatalogue("org-console", doc, orgId);
+  await db.recordAuditEvent("organization.catalogue_updated", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { provider: "org-console" },
+  });
+  return c.json(saved);
+});
+platformRouter.delete("/orgs/:org_id/catalogue", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _requireOrgOwner(user, orgId);
+  return c.json(await catalogue.resetCatalogue("org-console", orgId));
+});
+
+platformRouter.get("/programs/:program_id/catalogue", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  return c.json(await catalogue.getCatalogue("program-console", c.req.param("program_id")));
+});
+platformRouter.put("/programs/:program_id/catalogue", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const programId = c.req.param("program_id");
+  const prog = await db.getProgram(programId);
+  if (!prog) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, prog.org_id as string, programId);
+  const doc = _validCatalogueBody(await c.req.json(), "program-console");
+  const saved = await catalogue.saveCatalogue("program-console", doc, programId);
+  await db.recordAuditEvent("program.catalogue_updated", {
+    orgId: prog.org_id as string, actorUserId: user.id, scopeType: "program", scopeId: programId, metadata: { provider: "program-console" },
+  });
+  return c.json(saved);
+});
+platformRouter.delete("/programs/:program_id/catalogue", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const programId = c.req.param("program_id");
+  const prog = await db.getProgram(programId);
+  if (!prog) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, prog.org_id as string, programId);
+  return c.json(await catalogue.resetCatalogue("program-console", programId));
+});
+
 const programThemeSchema = z.object({
   accent_color: z.string().trim().min(1).max(32).nullish(),
   /** true clears the program's branding entirely (revert to the org's). */
@@ -2402,10 +2475,10 @@ const scopedRoleSchema = z.object({
 async function _permsWithCapabilities(
   perms: Record<string, unknown>,
   capabilities: string[] | undefined,
-  providers: ProviderId[],
+  refs: catalogue.CatalogueRef[],
 ): Promise<Record<string, unknown>> {
   if (capabilities === undefined) return perms;
-  return { ...perms, capabilities: await catalogue.validGrantsAcross(providers, capabilities) };
+  return { ...perms, capabilities: await catalogue.validGrantsAcross(refs, capabilities) };
 }
 
 platformRouter.get("/orgs/:org_id/roles", async (c) => {
@@ -2422,7 +2495,7 @@ platformRouter.post("/orgs/:org_id/roles", async (c) => {
   const orgId = c.req.param("org_id");
   await _requireOrgArea(user, orgId, "team", "edit");
   const req = parseBody(scopedRoleSchema, await c.req.json());
-  const row = await graph.createOrgRole(orgId, req.name, await _permsWithCapabilities(req.perms, req.capabilities, ["org-console"]), req.display_as_group, req.parent_group_id);
+  const row = await graph.createOrgRole(orgId, req.name, await _permsWithCapabilities(req.perms, req.capabilities, [{ providerId: "org-console", instanceId: orgId }]), req.display_as_group, req.parent_group_id);
   await db.recordAuditEvent("organization.role.created", {
     orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { name: req.name },
   });
@@ -2783,7 +2856,7 @@ platformRouter.post("/admin/nexus/roles", async (c) => {
   _requirePlatformAdmin(user);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(scopedRoleSchema, await c.req.json());
-  return c.json(await graph.createNexusRole(req.name, await _permsWithCapabilities(req.perms, req.capabilities, ["nexus-console"]), req.display_as_group, req.parent_group_id));
+  return c.json(await graph.createNexusRole(req.name, await _permsWithCapabilities(req.perms, req.capabilities, [{ providerId: "nexus-console" }]), req.display_as_group, req.parent_group_id));
 });
 
 platformRouter.get("/admin/nexus/team", async (c) => {

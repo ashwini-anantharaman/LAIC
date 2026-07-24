@@ -20,6 +20,7 @@ import { OperatorOrgs } from "@/nexus/routes/OperatorOrgs";
 import { OperatorSettings } from "@/nexus/routes/OperatorSettings";
 import { NexusTeam } from "@/nexus/routes/NexusTeam";
 import { AccessCatalogue } from "@/nexus/access/AccessCatalogue";
+import { OrgAccessCatalogue, ProgramAccessCatalogue } from "@/nexus/access/InstanceAccessCatalogue";
 import { OperatorGates } from "@/nexus/routes/OperatorGates";
 import { OrgTeam } from "@/nexus/routes/OrgTeam";
 import { OrgGates } from "@/nexus/routes/OrgGates";
@@ -162,6 +163,7 @@ function Routed() {
         <Route path="/o/:orgId/settings" element={<OrgSettings />} />
         <Route path="/o/:orgId/audit" element={<OrgAudit />} />
         <Route path="/o/:orgId/team" element={<OrgTeam />} />
+        <Route path="/o/:orgId/access-catalogue" element={<OrgAccessCatalogue />} />
         <Route path="/o/:orgId/gates" element={<OrgGates />} />
         {/* Program workspace */}
         <Route path="/o/:orgId/p/:programId" element={<ProgramOverview />} />
@@ -172,6 +174,7 @@ function Routed() {
         <Route path="/o/:orgId/p/:programId/groups" element={<ProgramGroups />} />
         <Route path="/o/:orgId/p/:programId/community" element={<ProgramCommunity />} />
         <Route path="/o/:orgId/p/:programId/team" element={<ProgramTeam />} />
+        <Route path="/o/:orgId/p/:programId/access-catalogue" element={<ProgramAccessCatalogue />} />
         <Route path="/o/:orgId/p/:programId/partners" element={<ProgramPartners />} />
         <Route path="/o/:orgId/p/:programId/settings" element={<ProgramSettings />} />
       </Route>

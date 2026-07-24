@@ -13,9 +13,8 @@ import { HttpError } from "../httpError";
 import * as db from "../platformDb";
 import { dbEnabled } from "../db/client";
 import * as graph from "../db/orgGraphRepo";
-import { validGrantsAcross } from "../accessCatalogue/store";
+import { validGrantsAcross, type CatalogueRef } from "../accessCatalogue/store";
 import { requireCapability } from "../accessCatalogue/enforce";
-import type { ProviderId } from "../accessCatalogue/types";
 import { isOfferingAdmin } from "../permissions";
 import { BRIDGE_PREBUILT_ROLES } from "../platformAccess";
 import {
@@ -880,7 +879,10 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   // profile-id mismatch (the FK targets profiles.id).
   const perms = _permsWithinFeatures(req.perms, program.features);
   const validCaps = req.capabilities !== undefined
-    ? await validGrantsAcross(["program-console", "learning", "bridge"], req.capabilities)
+    ? await validGrantsAcross(
+        [{ providerId: "program-console", instanceId: programId }, { providerId: "learning" }, { providerId: "bridge" }],
+        req.capabilities,
+      )
     : undefined;
   const finalPerms: Record<string, unknown> =
     validCaps !== undefined ? { ...perms, capabilities: validCaps } : perms;
@@ -911,12 +913,12 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
   }
   // Fold fine-grained capabilities into perms without wiping the area perms.
   if (req.capabilities !== undefined) {
-    const providers: ProviderId[] = existing.program_id
-      ? ["program-console", "learning", "bridge"]
+    const refs: CatalogueRef[] = existing.program_id
+      ? [{ providerId: "program-console", instanceId: existing.program_id as string }, { providerId: "learning" }, { providerId: "bridge" }]
       : existing.organization_id
-        ? ["org-console"]
-        : ["nexus-console"];
-    const validCaps = await validGrantsAcross(providers, req.capabilities);
+        ? [{ providerId: "org-console", instanceId: existing.organization_id as string }]
+        : [{ providerId: "nexus-console" }];
+    const validCaps = await validGrantsAcross(refs, req.capabilities);
     const base = (perms ?? (existing.perms as Record<string, unknown>) ?? {}) as Record<string, unknown>;
     perms = { ...base, capabilities: validCaps };
   }

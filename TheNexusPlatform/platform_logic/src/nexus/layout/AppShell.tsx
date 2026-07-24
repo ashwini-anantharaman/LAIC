@@ -63,7 +63,7 @@ interface NavItem {
 
 // Org nav — each item names the org-role area that gates it (null = always).
 const ORG_NAV_AREAS: Record<string, string | null> = {
-  dashboard: null, programs: "programs", team: "team", gates: "team", settings: "settings", audit: "audit",
+  dashboard: null, programs: "programs", team: "team", "access-catalogue": "team", gates: "team", settings: "settings", audit: "audit",
 };
 function orgNav(orgId: string): NavItem[] {
   const base = `/o/${orgId}`;
@@ -71,6 +71,7 @@ function orgNav(orgId: string): NavItem[] {
     { to: `${base}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `${base}/programs`, label: "Programs", icon: Boxes },
     { to: `${base}/team`, label: "People", icon: KeyRound },
+    { to: `${base}/access-catalogue`, label: "Access Catalogue", icon: ListTree },
     { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/settings`, label: "Settings", icon: Settings },
     { to: `${base}/audit`, label: "Audit", icon: ScrollText },
@@ -88,6 +89,7 @@ function programNav(orgId: string, programId: string): NavItem[] {
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
     { to: `${base}/team`, label: "People", icon: KeyRound },
+    { to: `${base}/access-catalogue`, label: "Access Catalogue", icon: ListTree },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
     { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
   ];
@@ -538,7 +540,7 @@ export function AppShell() {
   // Which program feature gates each program-nav segment. Segments not listed
   // (overview, offerings, registrations, groups) are always available.
   const NAV_FEATURE: Record<string, string> = {
-    shells: "appbuilder", community: "community", team: "teams",
+    shells: "appbuilder", community: "community", team: "teams", "access-catalogue": "teams",
     partners: "partners", learning: "learning", bridge: "bridge",
   };
   const navKey = (to: string) => to.split("/").pop() ?? "";
@@ -631,6 +633,7 @@ export function AppShell() {
     orgs: "Organizations", offerings: "Offerings", shells: "App Shells",
     registrations: "Registrations", groups: "Participants & Groups", community: "Community",
     team: "People", partners: "Partners", learning: "Learning Platform",
+    "access-catalogue": "Access Catalogue",
   };
   const segments = pathname.split("/").filter(Boolean);
   const last = segments[segments.length - 1] ?? "";

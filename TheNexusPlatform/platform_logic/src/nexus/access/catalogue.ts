@@ -87,3 +87,24 @@ export function saveCatalogue(providerId: string, doc: CapabilityCatalogueDocume
 export function resetCatalogue(providerId: string): Promise<CapabilityCatalogueDocument> {
   return request<CapabilityCatalogueDocument>(`/api/platform/catalogues/${providerId}`, { method: "DELETE" });
 }
+
+// ── Per-instance catalogues — an org's / program's own customization of its
+// console catalogue (falls back to the shipped default until edited). ──────────
+export function getOrgCatalogue(orgId: string): Promise<CapabilityCatalogueDocument> {
+  return request<CapabilityCatalogueDocument>(`/api/platform/orgs/${orgId}/catalogue`);
+}
+export function saveOrgCatalogue(orgId: string, doc: CapabilityCatalogueDocument): Promise<CapabilityCatalogueDocument> {
+  return request<CapabilityCatalogueDocument>(`/api/platform/orgs/${orgId}/catalogue`, { method: "PUT", body: JSON.stringify(doc) });
+}
+export function resetOrgCatalogue(orgId: string): Promise<CapabilityCatalogueDocument> {
+  return request<CapabilityCatalogueDocument>(`/api/platform/orgs/${orgId}/catalogue`, { method: "DELETE" });
+}
+export function getProgramCatalogue(programId: string): Promise<CapabilityCatalogueDocument> {
+  return request<CapabilityCatalogueDocument>(`/api/platform/programs/${programId}/catalogue`);
+}
+export function saveProgramCatalogue(programId: string, doc: CapabilityCatalogueDocument): Promise<CapabilityCatalogueDocument> {
+  return request<CapabilityCatalogueDocument>(`/api/platform/programs/${programId}/catalogue`, { method: "PUT", body: JSON.stringify(doc) });
+}
+export function resetProgramCatalogue(programId: string): Promise<CapabilityCatalogueDocument> {
+  return request<CapabilityCatalogueDocument>(`/api/platform/programs/${programId}/catalogue`, { method: "DELETE" });
+}

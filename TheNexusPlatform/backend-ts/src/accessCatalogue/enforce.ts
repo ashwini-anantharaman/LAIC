@@ -58,9 +58,16 @@ async function grantedCapabilityIds(user: PlatformUser, scope: CatalogueScope): 
   return scope.programId ? capsOf(await graph.getProgramRoleForEmail(scope.programId, user.email).catch(() => null)) : [];
 }
 
+/** The instance id (org/program) a scope's catalogue is keyed by, if any. */
+function instanceFor(scope: CatalogueScope): string | null {
+  if (scope.providerId === "org-console") return scope.orgId ?? null;
+  if (scope.providerId === "program-console") return scope.programId ?? null;
+  return null; // nexus-console / learning / bridge are global
+}
+
 /** The caller's effective capability set for a provider scope. */
 export async function capabilitiesFor(user: PlatformUser, scope: CatalogueScope): Promise<Set<string>> {
-  const doc = await getCatalogue(scope.providerId);
+  const doc = await getCatalogue(scope.providerId, instanceFor(scope));
   if (isStructuralTier(user, scope)) return resolveCapabilities(doc, [], { structuralTier: true });
   return resolveCapabilities(doc, await grantedCapabilityIds(user, scope));
 }

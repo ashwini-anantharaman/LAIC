@@ -37,7 +37,24 @@ const SURFACE_KINDS: UiSurfaceKind[] = ["navigation", "screen", "component", "ac
 const RESERVED: (ReservedTier | "none")[] = ["none", "owner", "full_operator", "program_admin"];
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
-export function AccessCatalogue() {
+/**
+ * An instance-scoped catalogue source. When supplied, the editor drops the
+ * provider selector and edits exactly this one catalogue (an org's or program's
+ * own customization). When absent, the editor runs in Nexus multi-provider mode.
+ */
+export interface CatalogueSource {
+  title?: string;
+  subtitle?: string;
+  load: () => Promise<CapabilityCatalogueDocument>;
+  save: (doc: CapabilityCatalogueDocument) => Promise<CapabilityCatalogueDocument>;
+  reset: () => Promise<CapabilityCatalogueDocument>;
+  /** false → read-only (hide Save / Reset). Defaults to editable. */
+  canEdit?: boolean;
+}
+
+export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
+  const multi = !source;
+  const canEdit = source ? source.canEdit !== false : true;
   const [providers, setProviders] = useState<CatalogueListEntry[]>([]);
   const [providerId, setProviderId] = useState<string>("nexus-console");
   const [doc, setDoc] = useState<CapabilityCatalogueDocument | null>(null);
@@ -47,25 +64,29 @@ export function AccessCatalogue() {
   const [capEdit, setCapEdit] = useState<Capability | "new" | null>(null);
   const [surfEdit, setSurfEdit] = useState<UiSurface | "new" | null>(null);
 
-  useEffect(() => { listCatalogues().then(setProviders).catch(() => setProviders([])); }, []);
-  const load = useCallback((id: string) => {
+  useEffect(() => { if (multi) listCatalogues().then(setProviders).catch(() => setProviders([])); }, [multi]);
+  const load = useCallback(() => {
     setDoc(null); setDirty(false);
-    getCatalogue(id).then(setDoc).catch(() => toast.error("Failed to load catalogue"));
-  }, []);
-  useEffect(() => load(providerId), [providerId, load]);
+    (source ? source.load() : getCatalogue(providerId)).then(setDoc).catch(() => toast.error("Failed to load catalogue"));
+  }, [source, providerId]);
+  useEffect(() => load(), [load]);
 
   const patch = useCallback((next: CapabilityCatalogueDocument) => { setDoc(next); setDirty(true); }, []);
 
   async function save() {
     if (!doc) return;
     setBusy(true);
-    try { await saveCatalogue(providerId, doc); setDirty(false); toast.success("Catalogue saved"); listCatalogues().then(setProviders).catch(() => {}); }
+    try {
+      await (source ? source.save(doc) : saveCatalogue(providerId, doc));
+      setDirty(false); toast.success("Catalogue saved");
+      if (multi) listCatalogues().then(setProviders).catch(() => {});
+    }
     catch (e) { toast.error(e instanceof Error ? e.message : "Save failed"); }
     finally { setBusy(false); }
   }
   async function reset() {
     setBusy(true);
-    try { const d = await resetCatalogue(providerId); setDoc(d); setDirty(false); toast.success("Reset to shipped defaults"); }
+    try { const d = await (source ? source.reset() : resetCatalogue(providerId)); setDoc(d); setDirty(false); toast.success("Reset to shipped defaults"); }
     catch (e) { toast.error(e instanceof Error ? e.message : "Reset failed"); }
     finally { setBusy(false); }
   }
@@ -139,20 +160,26 @@ export function AccessCatalogue() {
   return (
     <div>
       <PageHeader
-        title="Access Catalogue"
-        subtitle="The platform inventory of what can be permission-controlled. Roles bind against these ids."
+        title={source?.title ?? "Access Catalogue"}
+        subtitle={source?.subtitle ?? "The platform inventory of what can be permission-controlled. Roles bind against these ids."}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={providerId} onValueChange={setProviderId}>
-              <SelectTrigger className="h-9 w-52"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {providers.map((p) => (
-                  <SelectItem key={p.providerId} value={p.providerId}>{p.name}{p.customized ? " ·edited" : ""}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm" onClick={reset} disabled={busy || !doc}><RotateCcw className="size-3.5" /> Reset defaults</Button>
-            <Button size="sm" onClick={save} disabled={busy || !doc || !dirty}><Save className="size-3.5" /> {busy ? "Saving…" : "Save catalogue"}</Button>
+            {multi ? (
+              <Select value={providerId} onValueChange={setProviderId}>
+                <SelectTrigger className="h-9 w-52"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {providers.map((p) => (
+                    <SelectItem key={p.providerId} value={p.providerId}>{p.name}{p.customized ? " ·edited" : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
+            {canEdit ? (
+              <>
+                <Button variant="outline" size="sm" onClick={reset} disabled={busy || !doc}><RotateCcw className="size-3.5" /> Reset defaults</Button>
+                <Button size="sm" onClick={save} disabled={busy || !doc || !dirty}><Save className="size-3.5" /> {busy ? "Saving…" : "Save catalogue"}</Button>
+              </>
+            ) : null}
           </div>
         }
       />
