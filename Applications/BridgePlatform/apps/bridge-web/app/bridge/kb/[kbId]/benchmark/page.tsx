@@ -12,7 +12,8 @@ import type { SettingValue } from "@bridge/config";
 import { callLabel } from "@bridge/events";
 import type { KbBenchmarkDivergence, KbBenchmarkRun } from "@bridge/kb";
 import { becauseClause, buildRuleIndex } from "@/components/table/decisionText";
-import { benAvailable, DEFAULT_BATCH, MAX_BATCH } from "@/lib/benchmark";
+import { redirect } from "next/navigation";
+import { benAvailable, benchmarkEnabled, DEFAULT_BATCH, MAX_BATCH } from "@/lib/benchmark";
 import { kbService, kbStore } from "@/lib/kb";
 import { dealFindingBoardAction } from "../findings/actions";
 import { createSuggestionAction } from "../../actions";
@@ -47,8 +48,11 @@ export default async function BenchmarkPage({
   searchParams: Promise<Search>;
 }>) {
   const { kbId } = await params;
-  const { run: runId, batched } = await searchParams;
   const base = `/bridge/kb/${kbId}`;
+  // The BEN benchmark is parked (undecided) — hidden unless BRIDGE_BENCHMARK=1.
+  // A stale URL lands back on the KB overview rather than the tab.
+  if (!benchmarkEnabled()) redirect(base);
+  const { run: runId, batched } = await searchParams;
   const store = kbStore();
 
   // Benchmark storage may not be migrated yet on this backend (0018) — the

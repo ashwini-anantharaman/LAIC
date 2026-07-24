@@ -2,6 +2,7 @@ import { canAccessAdminArea } from "@bridge/nexus-client";
 import { playerIsValid, validatePlayerStatic } from "@bridge/kb";
 import { notFound, redirect } from "next/navigation";
 import { TabLink } from "@/components/kb/TabLink";
+import { benchmarkEnabled } from "@/lib/benchmark";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";
@@ -126,7 +127,7 @@ export default async function KbLayout({
           <TabLink href={`${base}/coverage`} label="Coverage" />
           <TabLink href={`${base}/findings`} label="Findings" />
           <TabLink href={`${base}/source-audit`} label="Source audit" />
-          <TabLink href={`${base}/benchmark`} label="Benchmark" />
+          {benchmarkEnabled() && <TabLink href={`${base}/benchmark`} label="Benchmark" />}
           <TabLink href={`${base}/sets`} label="Knowledge sets" />
           <TabLink href={`${base}/sources`} label="Sources" />
           <TabLink href={`${base}/versions`} label="Versions" />

@@ -49,6 +49,16 @@ export function benAvailable(): boolean {
   return Boolean(process.env.BEN_ENDPOINT);
 }
 
+/**
+ * Whether the Benchmark feature is surfaced at all. Off by default — the whole
+ * BEN comparison is parked (undecided) so the tab and route stay hidden until
+ * BRIDGE_BENCHMARK=1 is set. All the store/loop/UI code stays intact behind
+ * this one flag, so re-enabling is a single env change, no rebuild of logic.
+ */
+export function benchmarkEnabled(): boolean {
+  return process.env.BRIDGE_BENCHMARK === "1";
+}
+
 /** Batch size the UI offers (default) and its hard cap. One click = one batch;
  *  ~0.1–2 s per BEN bid keeps a 25-deal batch well under the 300 s limit. */
 export const DEFAULT_BATCH = 25;

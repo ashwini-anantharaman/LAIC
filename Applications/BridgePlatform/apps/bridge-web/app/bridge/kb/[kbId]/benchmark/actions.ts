@@ -14,6 +14,7 @@ import { requireAdminContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import {
   benAvailable,
+  benchmarkEnabled,
   createBenClient,
   DEFAULT_BATCH,
   MAX_BATCH,
@@ -31,6 +32,8 @@ const clampInt = (value: FormDataEntryValue | null, fallback: number, min: numbe
 
 export async function createBenchmarkRunAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
+  if (!benchmarkEnabled())
+    redirect(`/bridge/kb/${String(formData.get("kbId"))}`);
   await ensureSeeds();
   const kbId = String(formData.get("kbId"));
 
@@ -69,6 +72,8 @@ export async function createBenchmarkRunAction(formData: FormData): Promise<void
 
 export async function runBenchmarkBatchAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
+  if (!benchmarkEnabled())
+    redirect(`/bridge/kb/${String(formData.get("kbId"))}`);
   await ensureSeeds();
   const kbId = String(formData.get("kbId"));
   const runId = String(formData.get("runId"));
@@ -107,6 +112,8 @@ export async function runBenchmarkBatchAction(formData: FormData): Promise<void>
 
 export async function markSystemDifferenceAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.review");
+  if (!benchmarkEnabled())
+    redirect(`/bridge/kb/${String(formData.get("kbId"))}`);
   const kbId = String(formData.get("kbId"));
   const signature = String(formData.get("signature"));
   const note = String(formData.get("note") ?? "").trim() || undefined;
