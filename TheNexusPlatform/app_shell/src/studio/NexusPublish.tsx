@@ -15,6 +15,7 @@ import {
   devLoginAs,
   getAppConfig,
   listApps,
+  listGates,
   listMyOrgs,
   listPrograms,
   loadLinks,
@@ -26,6 +27,7 @@ import {
   saveSession,
   slugify,
   type NexusApp,
+  type NexusGate,
   type NexusOrg,
   type NexusProgram,
   type NexusSession,
@@ -73,6 +75,10 @@ export function NexusPublish({
   const [apps, setApps] = useState<NexusApp[]>([]);
   const [appId, setAppId] = useState("");
   const [newSlug, setNewSlug] = useState(() => slugify(config.name));
+  // The program's participant sign-up gates + the one chosen for this app's
+  // "Create an account" link ("" = auto-use the program's sign-up gate).
+  const [gates, setGates] = useState<NexusGate[]>([]);
+  const [signupGateSlug, setSignupGateSlug] = useState(config.signupGateSlug ?? "");
 
   const [published, setPublished] = useState<{ version: number; url: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -121,6 +127,7 @@ export function NexusPublish({
         const pid = link?.programId && ps.some((p) => p.id === link.programId) ? link.programId : (ps[0]?.id ?? "");
         setProgramId(pid);
         if (!pid) return;
+        void loadGatesFor(pid);
         const as = await listApps(session, pid);
         if (stale) return;
         setApps(as);
@@ -139,11 +146,21 @@ export function NexusPublish({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, config.id]);
 
+  async function loadGatesFor(pid: string) {
+    if (!session) return;
+    try {
+      setGates(await listGates(session, pid));
+    } catch {
+      setGates([]);
+    }
+  }
+
   async function pickProgram(pid: string) {
     if (!session) return;
     setProgramId(pid);
     setApps([]);
     setAppId(CREATE);
+    void loadGatesFor(pid);
     try {
       const as = await listApps(session, pid);
       setApps(as);
@@ -153,16 +170,22 @@ export function NexusPublish({
     }
   }
 
+  // Only participant gates that accept sign-up can be a "Create an account" target.
+  const signupGates = gates.filter((g) => g.audience === "participant" && g.allow_signup);
+
   async function publish() {
     if (!session) return;
     setBusy(true);
     setError(null);
     setPublished(null);
+    // Bound Studio: the sign-up gate was chosen in the Auth tab (on the config).
+    // Unbound: it's chosen by the Publish dropdown here.
+    const configToPublish = bound ? config : { ...config, signupGateSlug: signupGateSlug || undefined };
     try {
       if (bound) {
         // Scoped Studio: the target is fixed — save + publish, nothing to pick.
         const existing = (await getAppConfig(session, bound.appId)).config ?? {};
-        await saveAppConfig(session, bound.appId, toServerRecord(config, existing));
+        await saveAppConfig(session, bound.appId, toServerRecord(configToPublish, existing));
         const v = await publishVersion(session, bound.appId);
         setPublished({ version: v.version, url: liveLink(bound.appSlug, session.baseUrl) });
         return;
@@ -175,7 +198,7 @@ export function NexusPublish({
         setAppId(app.id);
       }
       const existing = (await getAppConfig(session, app.id)).config ?? {};
-      await saveAppConfig(session, app.id, toServerRecord(config, existing));
+      await saveAppConfig(session, app.id, toServerRecord(configToPublish, existing));
       const v = await publishVersion(session, app.id);
       saveLink(config.id, { appId: app.id, appSlug: app.app_slug, programId, orgId });
       setPublished({ version: v.version, url: liveLink(app.app_slug, session.baseUrl) });
@@ -288,6 +311,18 @@ export function NexusPublish({
                   <input value={newSlug} onChange={(e) => setNewSlug(slugify(e.target.value))} className={`${inputCls} font-mono`} style={inputStyle} />
                 </div>
               )}
+              <div>
+                <Label>Sign-up gate ("Create an account")</Label>
+                {select(signupGateSlug, setSignupGateSlug, [
+                  { value: "", label: "None — hide “Create an account”" },
+                  ...signupGates.map((g) => ({ value: g.slug, label: g.title || g.slug })),
+                ])}
+                <p className="mt-1 text-[9px]" style={{ color: "rgba(255,255,255,0.25)" }}>
+                  {signupGates.length
+                    ? "Which gate the app's “Create an account” opens. “None” hides the link."
+                    : "This program has no participant sign-up gate — create one in the console (Gates) to enable “Create an account”."}
+                </p>
+              </div>
             </>
           )}
           <button

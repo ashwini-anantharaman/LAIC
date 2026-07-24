@@ -570,29 +570,91 @@ platformRouter.post("/gates/:gate_id/signup", async (c) => {
     authId = (await createAuthUser(email, password)).id as string;
   } catch (err) {
     if (err instanceof HttpError && err.status === 409) {
-      authId = (await signInUser(email, password)).id as string;
+      // Email already has an account. The correct password admits them; a wrong
+      // one gets a clear message (not a confusing "invalid credentials" on a
+      // sign-UP form).
+      try {
+        authId = (await signInUser(email, password)).id as string;
+      } catch {
+        throw new HttpError(409, "An account with this email already exists. Sign in through the app, or use a different email.");
+      }
     } else {
       throw err;
     }
   }
 
-  if (gate.audience === "member") {
-    // Internal member gate → a program membership + (chosen) role, so the person
-    // lands in Team & Roles as staff, NOT in Registrations. The gate offers a
-    // set of roles; the signer picks one. Validate the pick against the offer so
-    // nobody can grant themselves a role the gate didn't advertise.
-    const offered = Array.isArray(gate.role_ids) ? (gate.role_ids as string[]) : [];
+  // The gate offers a set of roles; the signer picks one. Validate the pick so
+  // nobody grants themselves a role the gate didn't advertise. (Shared by member
+  // and org-member gates.)
+  const offeredRoleIds = Array.isArray(gate.role_ids) ? (gate.role_ids as string[]) : [];
+  function _chosenGateRole(): string | null {
     const requested = typeof body.role_id === "string" && body.role_id ? body.role_id : null;
-    let chosenRole: string | null;
     if (requested) {
-      if (!offered.includes(requested)) throw new HttpError(400, "That role isn't offered by this gate");
-      chosenRole = requested;
-    } else {
-      // No pick sent: fine only when the gate offers exactly one (or none).
-      if (offered.length > 1) throw new HttpError(400, "Please choose a role to sign up as");
-      chosenRole = offered[0] ?? null;
+      if (!offeredRoleIds.includes(requested)) throw new HttpError(400, "That role isn't offered by this gate");
+      return requested;
     }
+    if (offeredRoleIds.length > 1) throw new HttpError(400, "Please choose a role to sign up as");
+    return offeredRoleIds[0] ?? null;
+  }
+
+  if (gate.level === "nexus") {
+    // Operator gate → a confined nexus operator, but ALWAYS approval-gated: we
+    // create the account and QUEUE a request, we do NOT assign the nexus role
+    // here. A platform_admin approves it, which is the only path to operator
+    // access — a public gate can never mint an operator directly. The base
+    // profile is low-privilege (never platform_admin); the confined role is
+    // applied on approval.
+    const chosenRole = _chosenGateRole();
+    await db.createProfile(authId, email, "student", name).catch(() => {});
+    await graph.createGateMemberRequest({ gateId: gate.id as string, level: "nexus", email, displayName: name, roleId: chosenRole });
+    await db.recordAuditEvent("nexus_gate.request_raised", {
+      scopeType: "platform", scopeId: null, targetType: "gate", targetId: gate.id as string,
+      metadata: { email, role_id: chosenRole },
+    });
+    // No session: the person has no operator access until approved, so signing
+    // them in would land them nowhere. The page shows a "pending approval" note.
+    return c.json({ pending: true, landing: gate.landing ?? null });
+  }
+
+  if (gate.level === "organization") {
+    // Org member gate → an ORG-LEVEL membership (program_id null) + (chosen) org
+    // role. Base membership is low-privilege "instructor"; the real permissions
+    // come from the org role. Writes run privileged (public gate).
+    const chosenRole = _chosenGateRole();
+    // Ensure the identity exists either way (so the person can be found at
+    // approval time), but grant nothing yet when approval is required.
     const profileId = await db.ensureOrgProfile(authId, orgId, { email, role: "teacher", displayName: name });
+    if (gate.approval_required) {
+      await graph.createGateMemberRequest({ gateId: gate.id as string, level: "organization", email, displayName: name, roleId: chosenRole });
+      await db.recordAuditEvent("org_gate.request_raised", {
+        orgId, scopeType: "organization", scopeId: orgId, targetType: "gate", targetId: gate.id as string,
+        metadata: { email, role_id: chosenRole },
+      });
+      return c.json({ pending: true, landing: gate.landing ?? null });
+    }
+    const members = await db.listMembers(orgId).catch(() => [] as Row[]);
+    const alreadyOrgMember = members.some((m) => m.profile_id === profileId && !m.program_id);
+    if (!alreadyOrgMember) await db.addMembership(orgId, profileId, "instructor", null, "edit", null);
+    if (chosenRole) {
+      await graph.setOrgRoleAssignment(orgId, email, chosenRole, true).catch((e) => console.error("org gate role:", e));
+    }
+    await db.recordAuditEvent("org_gate.member_joined", {
+      orgId, scopeType: "organization", scopeId: orgId, targetType: "gate", targetId: gate.id as string,
+      metadata: { email, role_id: chosenRole },
+    });
+  } else if (gate.audience === "member") {
+    // Internal member gate → a program membership + (chosen) role, so the person
+    // lands in Team & Roles as staff, NOT in Registrations.
+    const chosenRole = _chosenGateRole();
+    const profileId = await db.ensureOrgProfile(authId, orgId, { email, role: "teacher", displayName: name });
+    if (gate.approval_required) {
+      await graph.createGateMemberRequest({ gateId: gate.id as string, level: "program", email, displayName: name, roleId: chosenRole });
+      await db.recordAuditEvent("gate.request_raised", {
+        orgId, scopeType: "program", scopeId: programId, targetType: "gate", targetId: gate.id as string,
+        metadata: { email, role_id: chosenRole },
+      });
+      return c.json({ pending: true, landing: gate.landing ?? null });
+    }
     const members = await db.listMembers(orgId).catch(() => [] as Row[]);
     const alreadyMember = members.some(
       (m) => m.profile_id === profileId && ((m.program_id as string | null) ?? null) === programId,
@@ -608,23 +670,32 @@ platformRouter.post("/gates/:gate_id/signup", async (c) => {
   } else {
     // Participant gate → a learner participant (Registrations), approval-gated.
     await db.ensureOrgProfile(authId, orgId, { email, role: "student", displayName: name });
-    const reg = await db.createRegistration(orgId, null, {
-      programId, registrationSource: "gate_signup", email, name, userId: authId,
-      status: gate.approval_required ? "pending_review" : "directly_added",
-    });
-    if (!gate.approval_required) {
-      await db.createProgramParticipant(orgId, programId, {
-        userId: authId, participantType: "learner", registrationId: reg.id,
+    // Idempotent: if they're already a participant of this program, don't create
+    // a duplicate registration — just admit them (a re-submitted sign-up, or a
+    // returning student, shouldn't pile up rows or error).
+    const existing = await graph.findLearnerParticipations(email, programId).catch(() => [] as Row[]);
+    if (existing.length === 0) {
+      // PUBLIC gate: run privileged (bypass RLS). The caller may be anonymous or
+      // carry an unrelated user's token; the gate authorizes the sign-up, not the
+      // caller's identity — otherwise the registration INSERT fails RLS.
+      const reg = await db.createRegistration(orgId, null, {
+        programId, registrationSource: "gate_signup", email, name, userId: authId,
+        status: gate.approval_required ? "pending_review" : "directly_added",
+      }, true);
+      if (!gate.approval_required) {
+        await db.createProgramParticipant(orgId, programId, {
+          userId: authId, participantType: "learner", registrationId: reg.id,
+        }, true);
+        await db.grantStudentAccess(reg).catch((e) => console.error("gate signup grant:", e));
+      }
+      await db.recordAuditEvent("gate.signup", {
+        orgId, scopeType: "program", scopeId: programId, targetType: "gate", targetId: gate.id as string,
+        metadata: { email, approval: gate.approval_required },
       });
-      await db.grantStudentAccess(reg).catch((e) => console.error("gate signup grant:", e));
-    }
-    await db.recordAuditEvent("gate.signup", {
-      orgId, scopeType: "program", scopeId: programId, targetType: "gate", targetId: gate.id as string,
-      metadata: { email, approval: gate.approval_required },
-    });
-    if (gate.approval_required) {
-      const session = await signInUser(email, password);
-      return c.json({ access_token: session.access_token, pending: true, landing: gate.landing ?? null });
+      if (gate.approval_required) {
+        const session = await signInUser(email, password);
+        return c.json({ access_token: session.access_token, pending: true, landing: gate.landing ?? null });
+      }
     }
   }
 
@@ -650,7 +721,13 @@ platformRouter.post("/gates/:gate_id/signin", async (c) => {
   const orgId = gate.organization_id as string;
   const programId = gate.program_id as string;
   let belongs = false;
-  if (gate.audience === "member") {
+  if (gate.level === "nexus") {
+    // Operator gate: the account belongs only once a platform_admin has approved
+    // its request — i.e. it now holds a nexus role (or is a full platform_admin).
+    const u = await loadPlatformUser(session.id as string, email);
+    const nx = await graph.getNexusRoleForEmail(email).catch(() => null);
+    belongs = u.role === "platform_admin" || !!nx;
+  } else if (gate.audience === "member") {
     const u = await loadPlatformUser(session.id as string, email);
     belongs = u.memberships.some(
       (m) =>
@@ -662,6 +739,12 @@ platformRouter.post("/gates/:gate_id/signin", async (c) => {
     belongs = parts.length > 0;
   }
   if (!belongs) {
+    if (gate.level === "nexus") {
+      throw new HttpError(
+        403,
+        `This account hasn't been approved as an operator yet. A platform administrator must approve your request${gate.allow_signup ? ", or you can request access below" : ""}.`,
+      );
+    }
     throw new HttpError(
       403,
       `That account isn't part of this program yet. Ask an administrator to add you${gate.allow_signup ? ", or create an account below" : ""}.`,
@@ -2224,6 +2307,294 @@ platformRouter.get("/orgs/:org_id/my-role", async (c) => {
   _assertOrgAccess(user, orgId);
   if (!user.email) return c.json(null);
   return c.json(await graph.getOrgRoleForEmail(orgId, user.email));
+});
+
+// ── Org-level gates (org-scoped staff onboarding; members only) ─────────────
+const _gateSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+const orgGateWriteSchema = z.object({
+  title: z.string().nullish(),
+  subtitle: z.string().nullish(),
+  role_ids: z.array(z.string()).optional(),
+  allow_signin: z.boolean().optional(),
+  allow_signup: z.boolean().optional(),
+  approval_required: z.boolean().optional(),
+  landing: z.string().nullish(),
+});
+
+platformRouter.get("/orgs/:org_id/gates", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "view");
+  return c.json(await graph.listGatesForOrg(orgId));
+});
+
+platformRouter.post("/orgs/:org_id/gates", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "edit");
+  const req = parseBody(orgGateWriteSchema, await c.req.json());
+  const slug = _gateSlug(req.title || "gate") || "gate";
+  try {
+    const gate = await graph.createGate(orgId, null, {
+      level: "organization", slug, title: req.title ?? null, subtitle: req.subtitle ?? null,
+      audience: "member", roleIds: req.role_ids,
+      allowSignin: req.allow_signin, allowSignup: req.allow_signup,
+      approvalRequired: req.approval_required, landing: req.landing ?? null,
+    });
+    await db.recordAuditEvent("org_gate.created", {
+      orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+      targetType: "gate", targetId: gate.id as string, metadata: { slug },
+    });
+    return c.json(gate);
+  } catch (e) {
+    if (String(e).includes("gates_org_slug_idx") || String(e).toLowerCase().includes("duplicate")) {
+      throw new HttpError(409, `A gate with the address "${slug}" already exists in this organization`);
+    }
+    throw e;
+  }
+});
+
+// ── Member-gate approval queue (org + program) ──────────────────────────────
+// When an org/program MEMBER gate is approval-gated, sign-up queues a request
+// instead of admitting. Approving applies the same membership + role the gate
+// would have granted immediately. (Participants keep their own approval flow in
+// Registrations; nexus gates have their own queue above.)
+async function _applyGateMemberApproval(gate: Row, reqRow: Row): Promise<void> {
+  const email = reqRow.email as string;
+  const prof = await db.getProfileByEmail(email);
+  const authId = (prof?.auth_user_id as string | undefined) ?? (prof?.id as string | undefined);
+  if (!authId) throw new HttpError(404, "No account found for this request");
+  const orgId = gate.organization_id as string;
+  const profileId = await db.ensureOrgProfile(authId, orgId, {
+    email, role: "teacher", displayName: (reqRow.display_name as string | null) ?? null,
+  });
+  const members = await db.listMembers(orgId).catch(() => [] as Row[]);
+  if (gate.level === "organization") {
+    if (!members.some((m) => m.profile_id === profileId && !m.program_id)) {
+      await db.addMembership(orgId, profileId, "instructor", null, "edit", null);
+    }
+    if (reqRow.role_id) await graph.setOrgRoleAssignment(orgId, email, reqRow.role_id as string, true);
+  } else {
+    const programId = gate.program_id as string;
+    if (!members.some((m) => m.profile_id === profileId && ((m.program_id as string | null) ?? null) === programId)) {
+      await db.addMembership(orgId, profileId, "instructor", null, "edit", programId);
+    }
+    if (reqRow.role_id) await graph.setProgramRoleAssignment(orgId, programId, email, reqRow.role_id as string);
+  }
+}
+
+/** Load a pending request and its gate, asserting the gate lives in the scope
+ * named on the path (so an org/program admin can't action another's queue). */
+async function _loadScopedRequest(id: string, scope: { orgId?: string; programId?: string }): Promise<{ gate: Row; reqRow: Row }> {
+  const reqRow = await graph.getGateMemberRequest(id);
+  if (!reqRow || reqRow.status !== "pending") throw new HttpError(404, "No pending request");
+  const gate = await graph.getGate(reqRow.gate_id as string);
+  if (!gate) throw new HttpError(404, "Gate not found");
+  if (scope.orgId && gate.organization_id !== scope.orgId) throw new HttpError(404, "No pending request");
+  if (scope.programId && gate.program_id !== scope.programId) throw new HttpError(404, "No pending request");
+  return { gate, reqRow };
+}
+
+platformRouter.get("/orgs/:org_id/gate-requests", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "view");
+  return c.json(await graph.listGateRequestsForOrg(orgId, c.req.query("status") || "pending"));
+});
+
+platformRouter.post("/orgs/:org_id/gate-requests/:id/approve", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "edit");
+  const { gate, reqRow } = await _loadScopedRequest(c.req.param("id"), { orgId });
+  await _applyGateMemberApproval(gate, reqRow);
+  await graph.decideGateMemberRequest(reqRow.id as string, "approved", user.id ?? null);
+  await db.recordAuditEvent("org_gate.request_approved", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    targetType: "gate_request", targetId: reqRow.id as string, metadata: { email: reqRow.email, role_id: reqRow.role_id },
+  });
+  return c.json({ ok: true });
+});
+
+platformRouter.post("/orgs/:org_id/gate-requests/:id/reject", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "edit");
+  const { reqRow } = await _loadScopedRequest(c.req.param("id"), { orgId });
+  await graph.decideGateMemberRequest(reqRow.id as string, "rejected", user.id ?? null);
+  await db.recordAuditEvent("org_gate.request_rejected", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    targetType: "gate_request", targetId: reqRow.id as string, metadata: { email: reqRow.email },
+  });
+  return c.json({ ok: true });
+});
+
+platformRouter.get("/programs/:program_id/gate-requests", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const prog = await graph.getProgramForAccess(programId);
+  if (!prog) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, prog.org_id as string, programId);
+  return c.json(await graph.listGateRequestsForProgram(programId, c.req.query("status") || "pending"));
+});
+
+platformRouter.post("/programs/:program_id/gate-requests/:id/approve", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const prog = await graph.getProgramForAccess(programId);
+  if (!prog) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, prog.org_id as string, programId);
+  const { gate, reqRow } = await _loadScopedRequest(c.req.param("id"), { programId });
+  await _applyGateMemberApproval(gate, reqRow);
+  await graph.decideGateMemberRequest(reqRow.id as string, "approved", user.id ?? null);
+  await db.recordAuditEvent("gate.request_approved", {
+    orgId: prog.org_id as string, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    targetType: "gate_request", targetId: reqRow.id as string, metadata: { email: reqRow.email, role_id: reqRow.role_id },
+  });
+  return c.json({ ok: true });
+});
+
+platformRouter.post("/programs/:program_id/gate-requests/:id/reject", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const prog = await graph.getProgramForAccess(programId);
+  if (!prog) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, prog.org_id as string, programId);
+  const { reqRow } = await _loadScopedRequest(c.req.param("id"), { programId });
+  await graph.decideGateMemberRequest(reqRow.id as string, "rejected", user.id ?? null);
+  await db.recordAuditEvent("gate.request_rejected", {
+    orgId: prog.org_id as string, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    targetType: "gate_request", targetId: reqRow.id as string, metadata: { email: reqRow.email },
+  });
+  return c.json({ ok: true });
+});
+
+// ── Nexus (operator) gates ──────────────────────────────────────────────────
+// Platform-altitude self-sign-up pages at /op/<slug>. Two guardrails are
+// STRUCTURAL, not optional: admission is ALWAYS approval-gated, and the offered
+// roles must be confined nexus roles (never full platform_admin). A public gate
+// therefore cannot mint an operator — it can only queue a request a real
+// platform_admin must approve.
+const nexusGateWriteSchema = z.object({
+  title: z.string().nullish(),
+  subtitle: z.string().nullish(),
+  role_ids: z.array(z.string()).optional(),
+  allow_signin: z.boolean().optional(),
+  allow_signup: z.boolean().optional(),
+  landing: z.string().nullish(),
+});
+
+platformRouter.get("/admin/nexus/gates", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  return c.json(await graph.listNexusGates());
+});
+
+platformRouter.post("/admin/nexus/gates", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(nexusGateWriteSchema, await c.req.json());
+  // Only confined nexus roles may be offered — reject anything that isn't one of
+  // the platform-scope roles (there is no platform_admin among them).
+  const nexusRoleIds = new Set((await graph.listNexusRoles()).map((r) => r.id as string));
+  const roleIds = (req.role_ids ?? []).filter((id) => nexusRoleIds.has(id));
+  if ((req.role_ids ?? []).some((id) => !nexusRoleIds.has(id))) {
+    throw new HttpError(400, "Operator gates may only offer confined nexus roles");
+  }
+  const slug = _gateSlug(req.title || "operator") || "operator";
+  try {
+    const gate = await graph.createGate(null, null, {
+      level: "nexus", slug, title: req.title ?? null, subtitle: req.subtitle ?? null,
+      audience: "member", roleIds,
+      allowSignin: req.allow_signin, allowSignup: req.allow_signup,
+      approvalRequired: true, landing: req.landing ?? null, // mandatory approval
+    });
+    await db.recordAuditEvent("nexus_gate.created", {
+      actorUserId: user.id, scopeType: "platform", scopeId: null,
+      targetType: "gate", targetId: gate.id as string, metadata: { slug },
+    });
+    return c.json(gate);
+  } catch (e) {
+    if (String(e).toLowerCase().includes("duplicate") || String(e).includes("slug")) {
+      throw new HttpError(409, `An operator gate with the address "${slug}" already exists`);
+    }
+    throw e;
+  }
+});
+
+platformRouter.delete("/admin/nexus/gates/:gate_id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const gate = await graph.getGate(c.req.param("gate_id"));
+  if (!gate || gate.level !== "nexus") throw new HttpError(404, "Operator gate not found");
+  await graph.deleteGate(gate.id as string);
+  await db.recordAuditEvent("nexus_gate.deleted", {
+    actorUserId: user.id, scopeType: "platform", scopeId: null, targetType: "gate", targetId: gate.id as string,
+  });
+  return c.json({ ok: true });
+});
+
+// Public pre-auth fetch for the /op/<slug> operator sign-up page.
+platformRouter.get("/nexus/gates/by-slug/:slug", async (c) => {
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const gate = await graph.getPublicNexusGate(c.req.param("slug"));
+  if (!gate) throw new HttpError(404, "Gate not found");
+  return c.json(gate);
+});
+
+// The approval queue: pending operator-gate requests, and approve/reject.
+platformRouter.get("/admin/nexus/gate-requests", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const status = c.req.query("status") || "pending";
+  return c.json(await graph.listNexusGateRequests(status));
+});
+
+platformRouter.post("/admin/nexus/gate-requests/:id/approve", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const reqRow = await graph.getGateMemberRequest(c.req.param("id"));
+  if (!reqRow || reqRow.status !== "pending") throw new HttpError(404, "No pending request");
+  // Applying the role IS the grant. Confined role only — the request can only
+  // carry a role the gate offered, and gate creation already walled those to
+  // nexus roles, so approval can never produce a platform_admin.
+  if (reqRow.role_id) {
+    await graph.setNexusRoleAssignment(reqRow.email as string, reqRow.role_id as string);
+  }
+  await graph.decideGateMemberRequest(reqRow.id as string, "approved", user.id ?? null);
+  await db.recordAuditEvent("nexus_gate.request_approved", {
+    actorUserId: user.id, scopeType: "platform", scopeId: null,
+    targetType: "gate_request", targetId: reqRow.id as string,
+    metadata: { email: reqRow.email, role_id: reqRow.role_id },
+  });
+  return c.json({ ok: true });
+});
+
+platformRouter.post("/admin/nexus/gate-requests/:id/reject", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const reqRow = await graph.getGateMemberRequest(c.req.param("id"));
+  if (!reqRow || reqRow.status !== "pending") throw new HttpError(404, "No pending request");
+  await graph.decideGateMemberRequest(reqRow.id as string, "rejected", user.id ?? null);
+  await db.recordAuditEvent("nexus_gate.request_rejected", {
+    actorUserId: user.id, scopeType: "platform", scopeId: null,
+    targetType: "gate_request", targetId: reqRow.id as string, metadata: { email: reqRow.email },
+  });
+  return c.json({ ok: true });
 });
 
 // ── Team & Roles: NEXUS altitude (full operators only manage it) ────────────

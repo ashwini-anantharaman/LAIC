@@ -62,7 +62,7 @@ interface NavItem {
 
 // Org nav — each item names the org-role area that gates it (null = always).
 const ORG_NAV_AREAS: Record<string, string | null> = {
-  dashboard: null, programs: "programs", team: "team", settings: "settings", audit: "audit",
+  dashboard: null, programs: "programs", team: "team", gates: "team", settings: "settings", audit: "audit",
 };
 function orgNav(orgId: string): NavItem[] {
   const base = `/o/${orgId}`;
@@ -70,6 +70,7 @@ function orgNav(orgId: string): NavItem[] {
     { to: `${base}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `${base}/programs`, label: "Programs", icon: Boxes },
     { to: `${base}/team`, label: "People", icon: KeyRound },
+    { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/settings`, label: "Settings", icon: Settings },
     { to: `${base}/audit`, label: "Audit", icon: ScrollText },
   ];
@@ -554,15 +555,16 @@ export function AppShell() {
     items = [
       { to: "/orgs", label: "Organizations", icon: Building2 },
       { to: "/team", label: "People", icon: KeyRound },
+      { to: "/nexus-gates", label: "Gates", icon: DoorOpen },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
     ];
     // A confined operator (custom platform-scope role) sees only granted areas;
-    // the Team tab is full-operator territory.
+    // the Team and Gates tabs are full-operator territory.
     if (user?.role !== "platform_admin") {
       const perms = user?.nexus_role?.perms ?? {};
       const NEXUS_NAV_AREAS: Record<string, string | null> = {
-        orgs: "organizations", team: "__admin__", audit: "audit", settings: "settings",
+        orgs: "organizations", team: "__admin__", "nexus-gates": "__admin__", audit: "audit", settings: "settings",
       };
       items = items.filter((it) => {
         const area = NEXUS_NAV_AREAS[navKey(it.to)];

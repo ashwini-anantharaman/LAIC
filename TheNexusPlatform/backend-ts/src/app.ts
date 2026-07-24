@@ -110,7 +110,11 @@ export function createApp(): Hono {
       return c.json({ detail: err.detail }, err.status as 400);
     }
     console.error(err);
-    return c.json({ detail: "Internal Server Error" }, 500);
+    // In local/dev (no Supabase configured) surface the real message so failures
+    // are debuggable; production keeps the opaque message (no internal leakage).
+    const devMode = !getSettings().supabaseEnabled;
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ detail: devMode ? `Internal Server Error: ${msg}` : "Internal Server Error" }, 500);
   });
 
   // Keep the FastAPI envelope on unknown routes too (Hono defaults to text).

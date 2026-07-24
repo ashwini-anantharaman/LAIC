@@ -1325,8 +1325,9 @@ export async function createRegistration(
   orgId: string,
   offeringId: string | null,
   opts: local.RegistrationOptions = {},
+  privileged = false,
 ): Promise<Row> {
-  if (usePg()) return tpg.createRegistration(orgId, offeringId, opts);
+  if (usePg()) return tpg.createRegistration(orgId, offeringId, opts, privileged);
   if (await useLocal()) return local.localCreateRegistration(orgId, offeringId as string, opts);
   const client = requireClient();
   return _mutateOne(
@@ -1454,8 +1455,9 @@ export async function createProgramParticipant(
   orgId: string,
   programId: string,
   opts: local.ParticipantOptions = {},
+  privileged = false,
 ): Promise<Row> {
-  if (usePg()) return tpg.createProgramParticipant(orgId, programId, opts);
+  if (usePg()) return tpg.createProgramParticipant(orgId, programId, opts, privileged);
   return { id: null };
 }
 

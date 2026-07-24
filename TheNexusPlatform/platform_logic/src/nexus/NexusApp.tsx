@@ -19,7 +19,9 @@ import { OperatorAudit } from "@/nexus/routes/OperatorAudit";
 import { OperatorOrgs } from "@/nexus/routes/OperatorOrgs";
 import { OperatorSettings } from "@/nexus/routes/OperatorSettings";
 import { NexusTeam } from "@/nexus/routes/NexusTeam";
+import { OperatorGates } from "@/nexus/routes/OperatorGates";
 import { OrgTeam } from "@/nexus/routes/OrgTeam";
+import { OrgGates } from "@/nexus/routes/OrgGates";
 import { ProgramSettings } from "@/nexus/routes/ProgramSettings";
 import { OrgAudit } from "@/nexus/routes/OrgAudit";
 import { OrgDashboard } from "@/nexus/routes/OrgDashboard";
@@ -118,6 +120,8 @@ function Routed() {
       <Route path="/login" element={<Login />} />
       <Route path="/@/:slug" element={<OrgPortal />} />
       <Route path="/@/:slug/:gateSlug" element={<GatePage />} />
+      {/* Nexus (operator) gate — no org slug; GatePage resolves it as nexus. */}
+      <Route path="/op/:gateSlug" element={<GatePage />} />
       <Route path="/invite/:token" element={<AcceptInvite />} />
       {/* Full-screen launch surface — deliberately outside the AppShell chrome. */}
       <Route
@@ -149,12 +153,14 @@ function Routed() {
         <Route path="/audit" element={<OperatorAudit />} />
         <Route path="/settings" element={<OperatorSettings />} />
         <Route path="/team" element={<NexusTeam />} />
+        <Route path="/nexus-gates" element={<OperatorGates />} />
         {/* Org space */}
         <Route path="/o/:orgId/dashboard" element={<OrgDashboard />} />
         <Route path="/o/:orgId/programs" element={<Programs />} />
         <Route path="/o/:orgId/settings" element={<OrgSettings />} />
         <Route path="/o/:orgId/audit" element={<OrgAudit />} />
         <Route path="/o/:orgId/team" element={<OrgTeam />} />
+        <Route path="/o/:orgId/gates" element={<OrgGates />} />
         {/* Program workspace */}
         <Route path="/o/:orgId/p/:programId" element={<ProgramOverview />} />
         <Route path="/o/:orgId/p/:programId/offerings" element={<ProgramOfferings />} />

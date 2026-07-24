@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { AppShellConfig } from "../../types";
 
 const REG_HINT: Record<AppShellConfig["registrationPath"], { cta: string; note: string }> = {
@@ -7,21 +8,44 @@ const REG_HINT: Record<AppShellConfig["registrationPath"], { cta: string; note: 
   bulk: { cta: "", note: "Contact your administrator to be added to this app" },
 };
 
+/**
+ * The designed sign-in screen. In the Studio preview it's a mock (onContinue
+ * just advances). In the LIVE player, passing `live` wires the email/password
+ * form to real authentication — same pixels, real behavior.
+ */
+export interface SignInLive {
+  onSubmit: (email: string, password: string) => void;
+  onCreateAccount?: () => void;
+  busy?: boolean;
+  error?: string | null;
+}
+
 export function SignInScreen({
   config,
   role,
   onBack,
   onContinue,
+  live,
 }: {
   config: AppShellConfig;
   role: string;
   onBack: () => void;
   onContinue: () => void;
+  live?: SignInLive;
 }) {
   const t = config.authToggles;
   const anyAuth = t.googleSSO || t.emailPassword || t.magicLink;
   const hint = REG_HINT[config.registrationPath];
   const accentBtn = { background: config.accentColor, color: config.accentForeground };
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  // Advance the mock, or run the real sign-in when wired.
+  const submit = () => (live ? live.onSubmit(email.trim(), password) : onContinue());
+  const createAccount = () => (live?.onCreateAccount ? live.onCreateAccount() : onContinue());
+  // In the LIVE app, only offer "create an account" when it actually opens a
+  // sign-up gate — otherwise it would dead-end into onboarding unauthenticated.
+  // The preview always shows it (it's a mock).
+  const showCreateCta = Boolean(hint.cta) && (!live || Boolean(live.onCreateAccount));
 
   return (
     <div className="flex h-full flex-col px-5 pb-6 pt-3">
@@ -61,16 +85,28 @@ export function SignInScreen({
               </div>
             )}
             <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="username"
               className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 placeholder-gray-300 outline-none"
               placeholder="Email address"
             />
             <input
               type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 placeholder-gray-300 outline-none"
               placeholder="Password"
             />
-            <button onClick={onContinue} className="mt-1 w-full rounded-xl py-2.5 text-xs font-semibold" style={accentBtn}>
-              Continue
+            {live?.error ? <p className="text-[10px] leading-relaxed text-red-600">{live.error}</p> : null}
+            <button
+              onClick={submit}
+              disabled={live?.busy}
+              className="mt-1 w-full rounded-xl py-2.5 text-xs font-semibold disabled:opacity-60"
+              style={accentBtn}
+            >
+              {live?.busy ? "Signing in…" : "Continue"}
             </button>
           </>
         )}
@@ -78,8 +114,8 @@ export function SignInScreen({
       </div>
 
       <div className="mt-3 border-t border-gray-100 pt-3">
-        {hint.cta ? (
-          <button onClick={onContinue} className="w-full text-center text-[10px]" style={{ color: config.accentColor }}>
+        {showCreateCta ? (
+          <button onClick={createAccount} className="w-full text-center text-[10px]" style={{ color: config.accentColor }}>
             {hint.cta} →
           </button>
         ) : (

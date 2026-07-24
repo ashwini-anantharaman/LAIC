@@ -36,3 +36,11 @@ export function safeProgramId(raw: string | null | undefined): string | null {
   if (!raw) return null;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw) ? raw : null;
 }
+
+/**
+ * Set when Bridge was launched EMBEDDED inside a host app (the mobile App
+ * Shell iframe passes `?embedded=1`). The host owns the session and its own
+ * exit control, so Bridge hides its own "Sign out" to avoid a confusing
+ * half-signed-out state.
+ */
+export const NEXUS_EMBEDDED_COOKIE = "bridge_nexus_embedded";

@@ -19,6 +19,9 @@ export interface BootConfig {
   } | null;
   /** Full Studio config when the app was published from the Studio. */
   studio: AppShellConfig | null;
+  /** "Create an account" target — the Studio's URL, else the program's
+   *  auto-resolved participant sign-up gate. Null when there's no sign-up gate. */
+  signupGateUrl?: string | null;
   identity: { displayName: string; shortName: string };
   branding: { primaryColor: string; textColor?: string; markGlyph?: string };
   copy: { welcomeTitle: string; welcomeSubtitle?: string };
@@ -120,6 +123,31 @@ export async function validateToken(baseUrl: string, token: string): Promise<boo
   } catch {
     return false;
   }
+}
+
+/** This student's per-app data. `enrolled` is false when they aren't a
+ *  participant of the app's program (the app then shows a "not enrolled" note). */
+export interface AppUserData {
+  enrolled: boolean;
+  onboarding_completed: boolean;
+  answers: Record<string, unknown>;
+}
+
+export function getMyData(baseUrl: string, slug: string, token: string): Promise<AppUserData> {
+  return api<AppUserData>(baseUrl, `/api/apps/${encodeURIComponent(slug)}/me/data`, { token });
+}
+
+export function putMyData(
+  baseUrl: string,
+  slug: string,
+  token: string,
+  body: { answers: Record<string, unknown>; onboarding_completed: boolean },
+): Promise<AppUserData> {
+  return api<AppUserData>(baseUrl, `/api/apps/${encodeURIComponent(slug)}/me/data`, {
+    method: "PUT",
+    token,
+    body,
+  });
 }
 
 export interface Me {

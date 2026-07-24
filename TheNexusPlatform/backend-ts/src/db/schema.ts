@@ -190,8 +190,13 @@ export const appConfigVersions = pgTable("app_config_versions", {
 // from participation + role (migration 0029).
 export const gates = pgTable("gates", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").notNull(),
-  programId: uuid("program_id").notNull(),
+  // Null for nexus (operator) gates, which admit to the platform altitude and
+  // belong to no organization.
+  organizationId: uuid("organization_id"),
+  // Null for org-level gates (org-scoped, no program) and nexus gates.
+  programId: uuid("program_id"),
+  // 'program' | 'organization' | 'nexus' — which altitude this gate admits to.
+  level: text("level").notNull().default("program"),
   slug: text("slug").notNull(),
   title: text("title"),
   subtitle: text("subtitle"),
@@ -206,6 +211,36 @@ export const gates = pgTable("gates", {
   approvalRequired: boolean("approval_required").notNull().default(false),
   landing: text("landing"),
   config: jsonb("config").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A pending membership request from an approval-gated gate (mandatory for nexus
+// gates). Approving applies the offered role; until then the person has an
+// account but no access at the gate's altitude.
+export const gateMemberRequests = pgTable("gate_member_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gateId: uuid("gate_id").notNull(),
+  level: text("level").notNull().default("nexus"),
+  email: text("email").notNull(),
+  displayName: text("display_name"),
+  roleId: uuid("role_id"),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  decidedBy: uuid("decided_by"),
+});
+
+// Per-user data for a published App Shell app (Phase 2) — a student's onboarding
+// answers + completion, keyed by the auth credential.
+export const appUserData = pgTable("app_user_data", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  registeredAppId: uuid("registered_app_id").notNull(),
+  programId: uuid("program_id"),
+  userId: uuid("user_id").notNull(),
+  onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
+  answers: jsonb("answers").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

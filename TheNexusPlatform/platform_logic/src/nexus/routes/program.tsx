@@ -39,6 +39,9 @@ import {
   listOfferings,
   listPrograms,
   listProgramOrgAffiliations,
+  listProgramGateRequests,
+  approveProgramGateRequest,
+  rejectProgramGateRequest,
   listProgramRegistrations,
   listProgramRoles,
   listRegistrations,
@@ -48,6 +51,7 @@ import {
   updateProgramFeatures,
   type Gate,
   type GateAudience,
+  type GateRequest,
   type OrgCapabilities,
   type ProgramRole,
 } from "@/services/api";
@@ -64,7 +68,7 @@ import type {
 } from "@/types/platform";
 import { DEFAULT_PROGRAM_FEATURES } from "@/types/platform";
 import type { ProgramFeatureKey, ProgramFeatures } from "@/types/platform";
-import { EmptyState, PageHeader, Pill, Spinner, statusTone } from "@/nexus/ui/kit";
+import { EmptyState, PageHeader, Pill, Section, Spinner, statusTone } from "@/nexus/ui/kit";
 import { openInStudio } from "@/services/studio";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useProgramAccess } from "@/nexus/access";
@@ -577,6 +581,7 @@ export function ProgramRegistrations() {
 export function ProgramGates() {
   const { program, programId } = useProgram();
   const [gates, setGates] = useState<Gate[] | null>(null);
+  const [requests, setRequests] = useState<GateRequest[] | null>(null);
   const [roles, setRoles] = useState<ProgramRole[]>([]);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -590,12 +595,25 @@ export function ProgramGates() {
   const load = useCallback(() => {
     if (!programId) return;
     listGates(programId).then(setGates).catch(() => setGates([]));
+    // Member-gate requests only; participants are approved in Registrations.
+    listProgramGateRequests(programId).then(setRequests).catch(() => setRequests([]));
     listProgramRoles(programId).then(setRoles).catch(() => setRoles([]));
   }, [programId]);
   useEffect(() => load(), [load]);
 
   function gateUrl(g: Gate): string {
     return `${window.location.origin}/@/${g.org_slug ?? ""}/${g.slug}`;
+  }
+
+  async function decide(r: GateRequest, approve: boolean) {
+    try {
+      if (approve) await approveProgramGateRequest(programId, r.id);
+      else await rejectProgramGateRequest(programId, r.id);
+      toast.success(approve ? `Approved ${r.email}` : `Rejected ${r.email}`);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
   }
 
   async function create() {
@@ -634,6 +652,32 @@ export function ProgramGates() {
           </Button>
         }
       />
+      {requests && requests.length > 0 ? (
+        <Section title="Waiting for approval">
+          <div className="glass-card divide-y divide-border">
+            {requests.map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-foreground truncate">{r.display_name || r.email}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {r.email}
+                    {r.role_name ? <> · role: <span className="text-foreground">{r.role_name}</span></> : " · no role"}
+                    {r.gate_title ? <> · via {r.gate_title}</> : null}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => decide(r, false)} title="Reject">
+                    <X className="size-4" /> Reject
+                  </Button>
+                  <Button size="sm" onClick={() => decide(r, true)} title="Approve">
+                    <Check className="size-4" /> Approve
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      ) : null}
       {!gates ? (
         <Spinner />
       ) : gates.length === 0 ? (

@@ -418,8 +418,13 @@ export async function revokeApp(appId: string): Promise<Row> {
 }
 
 // ── Registrations ─────────────────────────────────────────────────────────
-export async function createRegistration(orgId: string, offeringId: string | null, opts: localKeys.RegistrationOptions = {}): Promise<Row> {
-  return scoped(async (tx) => {
+export async function createRegistration(orgId: string, offeringId: string | null, opts: localKeys.RegistrationOptions = {}, privileged = false): Promise<Row> {
+  // `privileged` forces an RLS bypass — used by PUBLIC gate sign-up, where the
+  // caller may be anonymous OR carry an unrelated user's token; the GATE (not
+  // the caller's identity) authorizes the insert. Authenticated routes leave it
+  // false so RLS still scopes them to the acting user.
+  const run = privileged ? asPrivileged : scoped;
+  return run(async (tx) => {
     const userId = await resolveProfileId(tx, (opts.userId as string) ?? null, orgId);
     const createdBy = await resolveProfileId(tx, (opts.createdByUserId as string) ?? null, orgId);
     const [r] = await tx.insert(registrations).values({
@@ -500,8 +505,10 @@ export async function listParticipants(offeringId: string, status: string | null
  * which is what grants platform access. Dedups by program + user + type so a
  * re-invite doesn't stack rows.
  */
-export async function createProgramParticipant(orgId: string, programId: string, opts: localKeys.ParticipantOptions = {}): Promise<Row> {
-  return scoped(async (tx) => {
+export async function createProgramParticipant(orgId: string, programId: string, opts: localKeys.ParticipantOptions = {}, privileged = false): Promise<Row> {
+  // See createRegistration: `privileged` bypasses RLS for public gate sign-up.
+  const run = privileged ? asPrivileged : scoped;
+  return run(async (tx) => {
     const type = (opts.participantType as string) ?? "learner";
     const userId = await resolveProfileId(tx, (opts.userId as string) ?? null, orgId);
     const addedBy = await resolveProfileId(tx, (opts.addedByUserId as string) ?? null, orgId);

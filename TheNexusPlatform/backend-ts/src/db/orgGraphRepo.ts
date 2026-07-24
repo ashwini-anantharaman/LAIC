@@ -18,7 +18,7 @@ import {
   organizations, offerings, organizationRelationships, programOrganizationAffiliations,
   programAffiliations, groups, groupMemberships, invitations, registrations, participants, profiles, programs,
   programRoles, programRoleAssignments, platformRoleAssignments, entitlements, orgMemberships, registeredApps, appConfigVersions,
-  appLaunchTokens, gates,
+  appLaunchTokens, gates, gateMemberRequests, appUserData,
   learningRoles, learningRoleAssignments,
 } from "./schema";
 
@@ -121,8 +121,11 @@ export async function createNexusRole(name: string, perms: Row): Promise<Row> {
   });
 }
 
-export async function setOrgRoleAssignment(orgId: string, email: string, roleId: string | null): Promise<void> {
-  return scoped(async (tx) => {
+export async function setOrgRoleAssignment(orgId: string, email: string, roleId: string | null, privileged = false): Promise<void> {
+  // `privileged` bypasses RLS — used by PUBLIC org gate sign-up (the caller may
+  // carry an unrelated token; the gate authorizes, not the caller's identity).
+  const run = privileged ? asPrivileged : scoped;
+  return run(async (tx) => {
     const key = email.trim().toLowerCase();
     await tx.delete(programRoleAssignments)
       .where(and(eq(programRoleAssignments.organizationId, orgId), isNull(programRoleAssignments.programId), eq(programRoleAssignments.email, key)));
@@ -1366,7 +1369,7 @@ const gateRoleIds = (g: typeof gates.$inferSelect): string[] => {
 };
 
 const gateRow = (g: typeof gates.$inferSelect): Row => ({
-  id: g.id, organization_id: g.organizationId, program_id: g.programId, slug: g.slug,
+  id: g.id, organization_id: g.organizationId, program_id: g.programId, level: g.level, slug: g.slug,
   title: g.title, subtitle: g.subtitle, audience: g.audience,
   role_id: g.roleId, role_ids: gateRoleIds(g),
   allow_signin: g.allowSignin, allow_signup: g.allowSignup,
@@ -1377,8 +1380,25 @@ export async function listGates(programId: string): Promise<Row[]> {
   return asPrivileged(async (tx) => {
     const rows = await tx.select().from(gates).where(eq(gates.programId, programId)).orderBy(desc(gates.createdAt));
     if (!rows.length) return [];
-    const org = await tx.select({ slug: organizations.slug }).from(organizations).where(eq(organizations.id, rows[0].organizationId)).limit(1);
+    const orgId = rows[0].organizationId;
+    const org = orgId
+      ? await tx.select({ slug: organizations.slug }).from(organizations).where(eq(organizations.id, orgId)).limit(1)
+      : [];
     const orgSlug = org.length ? org[0].slug : null;
+    return rows.map((g) => ({ ...gateRow(g), org_slug: orgSlug }));
+  });
+}
+
+/** Org-LEVEL gates for an org (program-less staff-onboarding gates). */
+export async function listGatesForOrg(orgId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const org = await tx.select({ slug: organizations.slug }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
+    const orgSlug = org.length ? org[0].slug : null;
+    const rows = await tx
+      .select()
+      .from(gates)
+      .where(and(eq(gates.organizationId, orgId), eq(gates.level, "organization")))
+      .orderBy(desc(gates.createdAt));
     return rows.map((g) => ({ ...gateRow(g), org_slug: orgSlug }));
   });
 }
@@ -1391,14 +1411,15 @@ export async function getGate(id: string): Promise<Row | null> {
 }
 
 export async function createGate(
-  orgId: string,
-  programId: string,
-  opts: { slug: string; title?: string | null; subtitle?: string | null; audience?: string; roleId?: string | null; roleIds?: string[]; allowSignin?: boolean; allowSignup?: boolean; approvalRequired?: boolean; landing?: string | null; config?: Row },
+  orgId: string | null,
+  programId: string | null,
+  opts: { level?: string; slug: string; title?: string | null; subtitle?: string | null; audience?: string; roleId?: string | null; roleIds?: string[]; allowSignin?: boolean; allowSignup?: boolean; approvalRequired?: boolean; landing?: string | null; config?: Row },
 ): Promise<Row> {
   const roleIds = (opts.roleIds ?? (opts.roleId ? [opts.roleId] : [])).filter(Boolean);
+  const level = opts.level === "organization" ? "organization" : opts.level === "nexus" ? "nexus" : "program";
   return asPrivileged(async (tx) => {
     const [g] = await tx.insert(gates).values({
-      organizationId: orgId, programId, slug: opts.slug,
+      organizationId: orgId ?? null, programId: programId ?? null, level, slug: opts.slug,
       title: opts.title ?? null, subtitle: opts.subtitle ?? null,
       audience: opts.audience === "member" ? "member" : "participant",
       // Keep the legacy single column populated (first role) for any reader that
@@ -1457,7 +1478,10 @@ export async function getPublicGate(orgSlug: string, gateSlug: string): Promise<
       .where(and(eq(gates.organizationId, org.id), eq(gates.slug, gateSlug))).limit(1);
     if (!r.length) return null;
     const g = r[0];
-    const prog = await tx.select().from(programs).where(eq(programs.id, g.programId)).limit(1);
+    // Org-level gates have no program.
+    const prog = g.programId
+      ? await tx.select().from(programs).where(eq(programs.id, g.programId)).limit(1)
+      : [];
     const theme = (((org.settings ?? {}) as Row).theme ?? {}) as Row;
     // Resolve the offered roles' names so the page can render a picker. Ordered
     // to match the gate's role list, not the query's arbitrary order.
@@ -1481,6 +1505,132 @@ export async function getPublicGate(orgSlug: string, gateSlug: string): Promise<
       },
       program_name: prog.length ? prog[0].name : null,
     };
+  });
+}
+
+/** Nexus (operator) gates — platform-altitude, no org/program. Privileged. */
+export async function listNexusGates(): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.select().from(gates).where(eq(gates.level, "nexus")).orderBy(desc(gates.createdAt));
+    return rows.map((g) => gateRow(g));
+  });
+}
+
+/**
+ * Resolve a nexus gate by its public slug for the PRE-AUTH operator sign-up
+ * page (/op/<slug>). Shaped like getPublicGate — same PublicGate contract — but
+ * branded with the platform, since operator gates have no organization.
+ */
+export async function getPublicNexusGate(gateSlug: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx.select().from(gates)
+      .where(and(eq(gates.level, "nexus"), eq(gates.slug, gateSlug))).limit(1);
+    if (!r.length) return null;
+    const g = r[0];
+    const roleIds = gateRoleIds(g);
+    let roles: Array<{ id: string; name: string }> = [];
+    if (roleIds.length) {
+      const rows = await tx
+        .select({ id: programRoles.id, name: programRoles.name })
+        .from(programRoles)
+        .where(inArray(programRoles.id, roleIds));
+      const byId = new Map(rows.map((x) => [x.id, x.name ?? ""]));
+      roles = roleIds.filter((id) => byId.has(id)).map((id) => ({ id, name: byId.get(id) ?? "" }));
+    }
+    // No organization → the page renders platform branding (the frontend fills
+    // the platform name); we still return an `org`-shaped block so the shared
+    // GatePage renderer needs no special-casing.
+    return {
+      ...gateRow(g),
+      roles,
+      org: { id: null, slug: null, name: null, theme_accent_color: null, theme_logo_url: null },
+      program_name: null,
+    };
+  });
+}
+
+// ── Gate member requests (approval queue) ───────────────────────────────────
+const gateRequestRow = (r: typeof gateMemberRequests.$inferSelect): Row => ({
+  id: r.id, gate_id: r.gateId, level: r.level, email: r.email, display_name: r.displayName,
+  role_id: r.roleId, status: r.status, created_at: r.createdAt, decided_at: r.decidedAt, decided_by: r.decidedBy,
+});
+
+/** Raise a pending request. Idempotent per (gate, email): a re-submit refreshes
+ * the existing pending row rather than piling up duplicates. Privileged (the
+ * caller is the public gate, not an authorized operator). */
+export async function createGateMemberRequest(
+  opts: { gateId: string; level?: string; email: string; displayName?: string | null; roleId?: string | null },
+): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const key = opts.email.trim().toLowerCase();
+    const existing = await tx.select().from(gateMemberRequests)
+      .where(and(eq(gateMemberRequests.gateId, opts.gateId), eq(gateMemberRequests.email, key), eq(gateMemberRequests.status, "pending")))
+      .limit(1);
+    if (existing.length) {
+      const [u] = await tx.update(gateMemberRequests)
+        .set({ displayName: opts.displayName ?? existing[0].displayName, roleId: opts.roleId ?? existing[0].roleId })
+        .where(eq(gateMemberRequests.id, existing[0].id)).returning();
+      return gateRequestRow(u);
+    }
+    const [r] = await tx.insert(gateMemberRequests).values({
+      gateId: opts.gateId, level: opts.level ?? "nexus", email: key,
+      displayName: opts.displayName ?? null, roleId: opts.roleId ?? null,
+    }).returning();
+    return gateRequestRow(r);
+  });
+}
+
+/** The approval queue for gates matching a filter, each row carrying its gate
+ * title and resolved role name. Privileged (the route walls it per altitude). */
+async function _listGateRequests(where: ReturnType<typeof and>): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .select({ r: gateMemberRequests, gateTitle: gates.title, gateSlug: gates.slug, roleName: programRoles.name })
+      .from(gateMemberRequests)
+      .leftJoin(gates, eq(gates.id, gateMemberRequests.gateId))
+      .leftJoin(programRoles, eq(programRoles.id, gateMemberRequests.roleId))
+      .where(where)
+      .orderBy(desc(gateMemberRequests.createdAt));
+    return rows.map((x) => ({
+      ...gateRequestRow(x.r), gate_title: x.gateTitle ?? null, gate_slug: x.gateSlug ?? null, role_name: x.roleName ?? null,
+    }));
+  });
+}
+
+export async function listNexusGateRequests(status = "pending"): Promise<Row[]> {
+  return _listGateRequests(and(eq(gateMemberRequests.level, "nexus"), eq(gateMemberRequests.status, status)));
+}
+
+/** Pending requests raised by an org's member gates (joined via the gate). */
+export async function listGateRequestsForOrg(orgId: string, status = "pending"): Promise<Row[]> {
+  return _listGateRequests(
+    and(eq(gateMemberRequests.level, "organization"), eq(gateMemberRequests.status, status), eq(gates.organizationId, orgId)),
+  );
+}
+
+/** Pending requests raised by a program's member gates (joined via the gate). */
+export async function listGateRequestsForProgram(programId: string, status = "pending"): Promise<Row[]> {
+  return _listGateRequests(
+    and(eq(gateMemberRequests.level, "program"), eq(gateMemberRequests.status, status), eq(gates.programId, programId)),
+  );
+}
+
+export async function getGateMemberRequest(id: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx.select().from(gateMemberRequests).where(eq(gateMemberRequests.id, id)).limit(1);
+    return r.length ? gateRequestRow(r[0]) : null;
+  });
+}
+
+/** Record a decision. The caller applies the role grant on approval — this only
+ * marks the row so an approved request can't be actioned twice. Privileged. */
+export async function decideGateMemberRequest(id: string, status: "approved" | "rejected", decidedBy: string | null): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const [r] = await tx.update(gateMemberRequests)
+      .set({ status, decidedAt: new Date(), decidedBy })
+      .where(and(eq(gateMemberRequests.id, id), eq(gateMemberRequests.status, "pending")))
+      .returning();
+    return r ? gateRequestRow(r) : null;
   });
 }
 
@@ -1663,6 +1813,51 @@ export async function getRegisteredAppBySlug(slug: string): Promise<Row | null> 
       id: a.id, organization_id: a.organizationId, program_id: a.programId, offering_id: a.offeringId,
       app_name: a.appName, app_slug: a.appSlug, status: a.status, launch_url: a.launchUrl,
     };
+  });
+}
+
+// ── App Shell per-user data (Phase 2) ───────────────────────────────────────
+// A published app's per-student state (onboarding answers + completion), keyed
+// by the auth credential. Privileged: students have no membership, so access is
+// gated at the route by verified program participation, not RLS.
+export async function getAppUserData(registeredAppId: string, userId: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select()
+      .from(appUserData)
+      .where(and(eq(appUserData.registeredAppId, registeredAppId), eq(appUserData.userId, userId)))
+      .limit(1);
+    if (!r.length) return null;
+    const d = r[0];
+    return { onboarding_completed: d.onboardingCompleted, answers: d.answers ?? {} };
+  });
+}
+
+export async function upsertAppUserData(opts: {
+  registeredAppId: string;
+  userId: string;
+  orgId: string;
+  programId: string | null;
+  answers: Row;
+  onboardingCompleted: boolean;
+}): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const [d] = await tx
+      .insert(appUserData)
+      .values({
+        registeredAppId: opts.registeredAppId,
+        userId: opts.userId,
+        organizationId: opts.orgId,
+        programId: opts.programId,
+        answers: opts.answers,
+        onboardingCompleted: opts.onboardingCompleted,
+      })
+      .onConflictDoUpdate({
+        target: [appUserData.registeredAppId, appUserData.userId],
+        set: { answers: opts.answers, onboardingCompleted: opts.onboardingCompleted, updatedAt: new Date() },
+      })
+      .returning();
+    return { onboarding_completed: d.onboardingCompleted, answers: d.answers ?? {} };
   });
 }
 

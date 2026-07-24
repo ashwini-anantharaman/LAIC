@@ -900,10 +900,13 @@ export async function listProgramRegistrations(programId: string): Promise<Regis
 
 // ── Gates: program entrance pages ───────────────────────────────────────────
 export type GateAudience = "participant" | "member";
+export type GateLevel = "program" | "organization" | "nexus";
 export interface Gate {
   id: string;
-  organization_id: string;
-  program_id: string;
+  organization_id: string | null;
+  program_id: string | null;
+  /** program (org+program), organization (org-scoped staff), or nexus (operator). */
+  level: GateLevel;
   slug: string;
   title: string | null;
   subtitle: string | null;
@@ -922,7 +925,9 @@ export interface Gate {
 export interface PublicGate extends Gate {
   /** Offered roles resolved to {id,name}, in the gate's order (member gates). */
   roles: { id: string; name: string }[];
-  org: { id: string; slug: string; name: string; theme_accent_color: string | null; theme_logo_url: string | null };
+  /** All fields null for a nexus (operator) gate — it has no org; the page then
+   * renders platform branding instead. */
+  org: { id: string | null; slug: string | null; name: string | null; theme_accent_color: string | null; theme_logo_url: string | null };
   program_name: string | null;
 }
 export interface GateWrite {
@@ -950,6 +955,92 @@ export async function deleteGate(gateId: string): Promise<void> {
   await request<{ ok: boolean }>(`/api/gates/${gateId}`, { method: "DELETE" });
 }
 
+// ── Org-level gates (org-scoped staff onboarding; members only) ─────────────
+export interface OrgGateWrite {
+  title?: string | null;
+  subtitle?: string | null;
+  role_ids?: string[];
+  allow_signin?: boolean;
+  allow_signup?: boolean;
+  approval_required?: boolean;
+  landing?: string | null;
+}
+export async function listOrgGates(orgId: string): Promise<Gate[]> {
+  return request<Gate[]>(`/api/platform/orgs/${orgId}/gates`);
+}
+export async function createOrgGate(orgId: string, payload: OrgGateWrite): Promise<Gate> {
+  return request<Gate>(`/api/platform/orgs/${orgId}/gates`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+// ── Nexus (operator) gates — platform altitude, mandatory approval ──────────
+// Admission is ALWAYS approval-gated and offered roles are confined nexus roles
+// only (enforced server-side): a public gate can never mint an operator, only
+// queue a request for a platform_admin to approve.
+export interface NexusGateWrite {
+  title?: string | null;
+  subtitle?: string | null;
+  role_ids?: string[];
+  allow_signin?: boolean;
+  allow_signup?: boolean;
+  landing?: string | null;
+}
+export interface GateRequest {
+  id: string;
+  gate_id: string;
+  level: string;
+  email: string;
+  display_name: string | null;
+  role_id: string | null;
+  role_name: string | null;
+  status: "pending" | "approved" | "rejected";
+  gate_title: string | null;
+  gate_slug: string | null;
+  created_at: string;
+}
+export async function listNexusGates(): Promise<Gate[]> {
+  return request<Gate[]>("/api/platform/admin/nexus/gates");
+}
+export async function createNexusGate(payload: NexusGateWrite): Promise<Gate> {
+  return request<Gate>("/api/platform/admin/nexus/gates", { method: "POST", body: JSON.stringify(payload) });
+}
+export async function deleteNexusGate(gateId: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/platform/admin/nexus/gates/${gateId}`, { method: "DELETE" });
+}
+export async function getPublicNexusGate(slug: string): Promise<PublicGate> {
+  return request<PublicGate>(`/api/platform/nexus/gates/by-slug/${encodeURIComponent(slug)}`);
+}
+export async function listNexusGateRequests(status = "pending"): Promise<GateRequest[]> {
+  return request<GateRequest[]>(`/api/platform/admin/nexus/gate-requests?status=${encodeURIComponent(status)}`);
+}
+export async function approveNexusGateRequest(id: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/platform/admin/nexus/gate-requests/${id}/approve`, { method: "POST" });
+}
+export async function rejectNexusGateRequest(id: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/platform/admin/nexus/gate-requests/${id}/reject`, { method: "POST" });
+}
+
+// Member-gate approval queues at the org and program altitudes. Same GateRequest
+// shape as the operator queue; approving applies the membership + role the gate
+// would have granted immediately.
+export async function listOrgGateRequests(orgId: string, status = "pending"): Promise<GateRequest[]> {
+  return request<GateRequest[]>(`/api/platform/orgs/${orgId}/gate-requests?status=${encodeURIComponent(status)}`);
+}
+export async function approveOrgGateRequest(orgId: string, id: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/platform/orgs/${orgId}/gate-requests/${id}/approve`, { method: "POST" });
+}
+export async function rejectOrgGateRequest(orgId: string, id: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/platform/orgs/${orgId}/gate-requests/${id}/reject`, { method: "POST" });
+}
+export async function listProgramGateRequests(programId: string, status = "pending"): Promise<GateRequest[]> {
+  return request<GateRequest[]>(`/api/platform/programs/${programId}/gate-requests?status=${encodeURIComponent(status)}`);
+}
+export async function approveProgramGateRequest(programId: string, id: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/platform/programs/${programId}/gate-requests/${id}/approve`, { method: "POST" });
+}
+export async function rejectProgramGateRequest(programId: string, id: string): Promise<void> {
+  await request<{ ok: boolean }>(`/api/platform/programs/${programId}/gate-requests/${id}/reject`, { method: "POST" });
+}
+
 /** Public pre-auth gate config (no session needed). */
 export async function getPublicGate(orgSlug: string, gateSlug: string): Promise<PublicGate> {
   return request<PublicGate>(`/api/gates/by-path/${encodeURIComponent(orgSlug)}/${encodeURIComponent(gateSlug)}`);
@@ -957,7 +1048,9 @@ export async function getPublicGate(orgSlug: string, gateSlug: string): Promise<
 export async function gateSignup(
   gateId: string,
   payload: { email: string; password: string; name?: string; role_id?: string },
-): Promise<{ access_token: string; pending: boolean; landing: string | null }> {
+): Promise<{ access_token?: string; pending: boolean; landing: string | null }> {
+  // access_token is omitted when the gate is approval-gated (e.g. every nexus
+  // gate) — there is no session until an operator approves the request.
   return request(`/api/platform/gates/${gateId}/signup`, { method: "POST", body: JSON.stringify(payload) });
 }
 export async function gateSignin(

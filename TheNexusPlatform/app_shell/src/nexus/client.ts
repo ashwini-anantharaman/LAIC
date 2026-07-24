@@ -27,6 +27,9 @@ export interface NexusOrg {
 export interface NexusProgram {
   id: string;
   name: string;
+  /** Program feature switches (console). A content tile whose platform is off
+   *  here would 403 at launch, so the Studio warns before you publish it. */
+  features?: Record<string, boolean>;
 }
 
 export interface NexusApp {
@@ -148,6 +151,19 @@ export function listPrograms(s: NexusSession, orgId: string): Promise<NexusProgr
 }
 export function listApps(s: NexusSession, programId: string): Promise<NexusApp[]> {
   return api<NexusApp[]>(s.baseUrl, `/api/programs/${programId}/apps`, { token: s.token });
+}
+
+/** A program's entry gates — the Studio offers the participant sign-up ones as
+ *  the app's "Create an account" target. */
+export interface NexusGate {
+  id: string;
+  slug: string;
+  title: string | null;
+  audience: "participant" | "member";
+  allow_signup: boolean;
+}
+export function listGates(s: NexusSession, programId: string): Promise<NexusGate[]> {
+  return api<NexusGate[]>(s.baseUrl, `/api/programs/${programId}/gates`, { token: s.token });
 }
 
 /* ---- publish path ---- */

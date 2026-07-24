@@ -58,7 +58,15 @@ async function _requireOrgMemberOrLearner(
   if (user.role === "platform_admin" || user.memberships.some((m) => m.org_id === orgId)) return;
   if (user.email) {
     const parts = await graph.findLearnerParticipations(user.email, programId).catch(() => [] as Row[]);
-    if (parts.some((p) => p.organization_id === orgId)) return;
+    // A program-scoped active learner participation authorizes the launch: the
+    // participation is already filtered to THIS program (which belongs to this
+    // org), so being its learner IS org standing. This MUST agree with the
+    // app's own enrollment check (getMyData uses the same participation lookup);
+    // an extra `organization_id === orgId` re-check here can disagree with it
+    // (stale/mismatched participant.organization_id) and wrongly 403 a student
+    // the app already let in. Fall back to the org match only when no program
+    // scopes the request.
+    if (programId ? parts.length > 0 : parts.some((p) => p.organization_id === orgId)) return;
   }
   throw new HttpError(403, "Not a member of this organization");
 }
@@ -1331,7 +1339,93 @@ offeringsRouter.get("/apps/by-slug/:slug/boot-config", async (c) => {
   const published = await graph.getPublishedConfig(app.id as string);
   if (!published) throw new HttpError(404, "This app has no published configuration yet");
   const org = await graph.getOrgPublicIdentity(app.organization_id as string);
-  return c.json(_adaptShellConfig(app, published.config as Row, published.version as number, org));
+  const adapted = _adaptShellConfig(app, published.config as Row, published.version as number, org);
+  // "Create an account" target: the Studio's explicit URL wins; otherwise auto-
+  // resolve the program's participant sign-up gate so the link works without the
+  // author pasting a URL. Null when the program has no public sign-up gate.
+  const studio = adapted.studio as Row | null;
+  const explicitUrl = (studio?.signupGateUrl as string | undefined) || null; // legacy manual override
+  const chosenSlug = (studio?.signupGateSlug as string | undefined) || null; // gate picked in the Studio
+  let signupGateUrl: string | null = explicitUrl;
+  const programId = app.program_id as string | null;
+  // Only an EXPLICITLY chosen gate is used — no auto-pick. No choice → no link.
+  if (!signupGateUrl && chosenSlug && programId && org?.slug) {
+    const gates = await graph.listGates(programId).catch(() => [] as Row[]);
+    const gate = gates.find((g) => g.slug === chosenSlug && g.allow_signup);
+    if (gate) {
+      const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
+      signupGateUrl = `${base}/@/${org.slug}/${gate.slug}`;
+    }
+  }
+  return c.json({ ...adapted, signupGateUrl });
+});
+
+// ── App Shell per-user data (Phase 2): a student's onboarding answers ────────
+// The published app reads/writes ITS OWN data for the signed-in student. Access
+// is gated on active participation in the app's PROGRAM (not just the org), so a
+// participant of a different program in the same org can't enter this app.
+const appUserDataSchema = z.object({
+  answers: z.record(z.string(), z.any()).default({}),
+  onboarding_completed: z.boolean().optional(),
+});
+
+/** The onboarding questions the app published (for required-answer validation). */
+function _onboardingQuestions(cfg: Row): Array<{ prompt?: string; required?: boolean }> {
+  const studio = (cfg.studio ?? {}) as Row;
+  const fromStudio = studio.onboardingQuestions as Array<Row> | undefined;
+  const fromRecord = cfg.onboarding as Array<Row> | undefined;
+  return (fromStudio ?? fromRecord ?? []) as Array<{ prompt?: string; required?: boolean }>;
+}
+
+offeringsRouter.get("/apps/:slug/me/data", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const app = await graph.getRegisteredAppBySlug(c.req.param("slug"));
+  if (!app || app.status !== "active") throw new HttpError(404, "App not found");
+  const programId = (app.program_id as string | null) ?? null;
+  // Enrolled? Active participant of THIS program. (200 with enrolled:false so
+  // the app can show a clean "not enrolled" screen rather than an error.)
+  const parts = programId && user.email ? await graph.findLearnerParticipations(user.email, programId).catch(() => []) : [];
+  if (!parts.length) return c.json({ enrolled: false, onboarding_completed: false, answers: {} });
+  const data = await graph.getAppUserData(app.id as string, user.id);
+  return c.json({
+    enrolled: true,
+    onboarding_completed: Boolean(data?.onboarding_completed),
+    answers: (data?.answers as Row) ?? {},
+  });
+});
+
+offeringsRouter.put("/apps/:slug/me/data", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const app = await graph.getRegisteredAppBySlug(c.req.param("slug"));
+  if (!app || app.status !== "active") throw new HttpError(404, "App not found");
+  const programId = (app.program_id as string | null) ?? null;
+  const parts = programId && user.email ? await graph.findLearnerParticipations(user.email, programId).catch(() => []) : [];
+  if (!parts.length) throw new HttpError(403, "You're not enrolled in this program.");
+
+  const req = parseBody(appUserDataSchema, await c.req.json());
+  const completing = req.onboarding_completed ?? false;
+  // When marking onboarding complete, every REQUIRED question must be answered.
+  if (completing) {
+    const published = await graph.getPublishedConfig(app.id as string);
+    const questions = published ? _onboardingQuestions(published.config as Row) : [];
+    const missing = questions.some((q, i) => {
+      if (!q.required) return false;
+      const v = (req.answers as Row)[String(i)];
+      return v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
+    });
+    if (missing) throw new HttpError(400, "Please answer all required questions.");
+  }
+  const saved = await graph.upsertAppUserData({
+    registeredAppId: app.id as string,
+    userId: user.id,
+    orgId: app.organization_id as string,
+    programId,
+    answers: req.answers as Row,
+    onboardingCompleted: completing,
+  });
+  return c.json({ enrolled: true, ...saved });
 });
 
 // ── Learning Platform launch seam (Phase 5 — placeholder interior) ──────────

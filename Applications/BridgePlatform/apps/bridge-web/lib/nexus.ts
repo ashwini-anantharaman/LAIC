@@ -6,12 +6,19 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { createSupabaseServerClient } from "./supabase-server";
 
-import { NEXUS_PROGRAM_COOKIE, NEXUS_TOKEN_COOKIE } from "./nexusToken";
+import { NEXUS_EMBEDDED_COOKIE, NEXUS_PROGRAM_COOKIE, NEXUS_TOKEN_COOKIE } from "./nexusToken";
 
 export const DEV_USER_COOKIE = "bridge_dev_user";
 export { NEXUS_TOKEN_COOKIE };
 
 export type NexusMode = "stub" | "http";
+
+/** True when Bridge is running embedded inside a host app (the App Shell
+ *  iframe). The host provides the exit control, so Bridge hides its own. */
+export async function isEmbeddedLaunch(): Promise<boolean> {
+  const cookieStore = await cookies();
+  return cookieStore.get(NEXUS_EMBEDDED_COOKIE)?.value === "1";
+}
 
 export function nexusMode(): NexusMode {
   const mode = process.env.NEXUS_CLIENT_MODE ?? "stub";

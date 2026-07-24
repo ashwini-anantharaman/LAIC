@@ -3,7 +3,7 @@ import type { AppCategory, AppShellConfig, EditorTab, Template } from "../types"
 import { uid } from "../data/constants";
 import { clonePresets } from "../data/presets";
 import { templateFor } from "../data/templates";
-import { getAppConfig, loadSession, saveLink } from "../nexus/client";
+import { getAppConfig, listGates, listPrograms, loadSession, saveLink, type NexusGate } from "../nexus/client";
 import { adoptHandoffSession, studioScope } from "../nexus/handoff";
 import { studioFromConsoleRecord, studioFromServerRecord } from "../nexus/dialect";
 import { Editor } from "./Editor";
@@ -105,6 +105,14 @@ export function Studio() {
   const [tab, setTab] = useState<EditorTab>("identity");
   const [mode, setMode] = useState<Mode>("studio");
   const [showPublish, setShowPublish] = useState(false);
+  // When bound to an app, the program's participant sign-up gates — offered in
+  // the Auth tab so you pick the "Create an account" gate right there. Undefined
+  // until loaded (or when unbound: no program context → picked at Publish).
+  const [signupGates, setSignupGates] = useState<NexusGate[] | undefined>(undefined);
+  // The bound program's feature switches — a content tile whose platform is off
+  // would 403 at launch, so the Content tab warns before you publish it.
+  // Undefined until loaded / when unbound.
+  const [programFeatures, setProgramFeatures] = useState<Record<string, boolean> | undefined>(undefined);
 
   const active = configs.find((c) => c.id === activeId) ?? configs[0];
 
@@ -128,6 +136,24 @@ export function Studio() {
     void (async () => {
       const session = (await adoptHandoffSession()) ?? loadSession();
       if (stale) return;
+      // The program's participant sign-up gates power the Auth-tab picker.
+      if (session && scope.programId) {
+        listGates(session, scope.programId)
+          .then((gs) => {
+            if (!stale) setSignupGates(gs.filter((g) => g.audience === "participant" && g.allow_signup));
+          })
+          .catch(() => {
+            if (!stale) setSignupGates([]);
+          });
+        // The bound program's feature switches gate the Content tab's tiles.
+        listPrograms(session, scope.orgId)
+          .then((ps) => {
+            if (!stale) setProgramFeatures(ps.find((p) => p.id === scope.programId)?.features ?? {});
+          })
+          .catch(() => {
+            if (!stale) setProgramFeatures(undefined);
+          });
+      }
       if (loadAppWorkspace(scope.appId)) return; // local copy wins; session adopted above
       let imported: AppShellConfig | null = null;
       if (session) {
@@ -280,6 +306,8 @@ export function Studio() {
             active={active}
             tab={tab}
             scoped={!!scope}
+            signupGates={signupGates}
+            programFeatures={programFeatures}
             onTab={setTab}
             onSelect={setActiveId}
             onUpdate={update}

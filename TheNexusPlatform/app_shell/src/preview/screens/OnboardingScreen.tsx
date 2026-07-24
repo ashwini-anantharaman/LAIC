@@ -89,25 +89,34 @@ function Field({
   );
 }
 
+export type OnboardingAnswers = Record<number, string | string[]>;
+
 export function OnboardingScreen({
   config,
   onBack,
   onDone,
+  initial,
+  busy,
+  error,
 }: {
   config: AppShellConfig;
   onBack: () => void;
-  onDone: () => void;
+  /** Receives the collected answers (the preview ignores them; the live app saves them). */
+  onDone: (answers: OnboardingAnswers) => void;
+  initial?: OnboardingAnswers;
+  busy?: boolean;
+  error?: string | null;
 }) {
   const questions = config.onboardingQuestions;
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string | string[]>>({});
+  const [answers, setAnswers] = useState<OnboardingAnswers>(initial ?? {});
 
   if (questions.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
         <p className="text-sm font-semibold text-gray-800">No onboarding questions</p>
         <p className="text-[11px] text-gray-400">Add questions in the Onboarding tab, or continue straight to home.</p>
-        <button onClick={onDone} className="rounded-xl px-4 py-2 text-xs font-semibold" style={{ background: config.accentColor, color: config.accentForeground }}>
+        <button onClick={() => onDone(answers)} className="rounded-xl px-4 py-2 text-xs font-semibold" style={{ background: config.accentColor, color: config.accentForeground }}>
           Continue
         </button>
       </div>
@@ -144,16 +153,17 @@ export function OnboardingScreen({
         <Field q={q} value={val} accent={config.accentColor} onChange={(v) => setAnswers((a) => ({ ...a, [step]: v }))} />
       </div>
 
+      {error ? <p className="mt-2 text-[10px] leading-relaxed text-red-600">{error}</p> : null}
       <button
-        onClick={() => (last ? onDone() : setStep((s) => s + 1))}
-        disabled={!canContinue}
+        onClick={() => (last ? onDone(answers) : setStep((s) => s + 1))}
+        disabled={!canContinue || busy}
         className="mt-3 w-full rounded-xl py-2.5 text-xs font-semibold transition-opacity"
-        style={{ background: config.accentColor, color: config.accentForeground, opacity: canContinue ? 1 : 0.35 }}
+        style={{ background: config.accentColor, color: config.accentForeground, opacity: canContinue && !busy ? 1 : 0.35 }}
       >
-        {last ? "Continue" : "Next"}
+        {last ? (busy ? "Saving…" : "Continue") : "Next"}
       </button>
       {config.onboardingOptional && (
-        <button onClick={onDone} className="mt-2 w-full text-center text-[10px] text-gray-400">
+        <button onClick={() => onDone(answers)} className="mt-2 w-full text-center text-[10px] text-gray-400">
           Skip for now
         </button>
       )}

@@ -104,6 +104,14 @@ export interface AppShellConfig {
   homeConfig: HomeConfig;
   /** Optional so configs published before the content section still open. */
   content?: ContentConfig;
+  /**
+   * Which program sign-up gate powers "Create an account". Chosen in Publish
+   * from the program's participant gates (stored as the gate's slug). Empty =
+   * auto-use the program's participant sign-up gate. `signupGateUrl` is the
+   * legacy explicit-URL override, still honored if present.
+   */
+  signupGateSlug?: string;
+  signupGateUrl?: string;
 }
 
 /** A starting point for a brand-new app in the New-app picker. */

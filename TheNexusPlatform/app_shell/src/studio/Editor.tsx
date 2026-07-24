@@ -1,4 +1,5 @@
 import type { AppShellConfig, EditorTab } from "../types";
+import type { NexusGate } from "../nexus/client";
 import { EDITOR_TABS } from "../data/constants";
 import { PRESET_IDS } from "../data/presets";
 import { IdentityTab } from "./tabs/IdentityTab";
@@ -14,6 +15,10 @@ interface EditorProps {
   tab: EditorTab;
   /** Scoped to one app (console launch): no switcher, no other apps. */
   scoped?: boolean;
+  /** The bound program's participant sign-up gates (Auth-tab gate picker). */
+  signupGates?: NexusGate[];
+  /** The bound program's feature switches (Content-tab tile gating). */
+  programFeatures?: Record<string, boolean>;
   onTab: (t: EditorTab) => void;
   onSelect: (id: string) => void;
   onUpdate: (patch: Partial<AppShellConfig>) => void;
@@ -21,7 +26,7 @@ interface EditorProps {
   onDelete: (id: string) => void;
 }
 
-export function Editor({ configs, active, tab, scoped, onTab, onSelect, onUpdate, onDuplicate, onDelete }: EditorProps) {
+export function Editor({ configs, active, tab, scoped, signupGates, programFeatures, onTab, onSelect, onUpdate, onDuplicate, onDelete }: EditorProps) {
   const isPreset = (id: string) => (PRESET_IDS as readonly string[]).includes(id);
 
   return (
@@ -83,10 +88,10 @@ export function Editor({ configs, active, tab, scoped, onTab, onSelect, onUpdate
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {tab === "identity" && <IdentityTab config={active} update={onUpdate} />}
         {tab === "start" && <StartTab config={active} update={onUpdate} />}
-        {tab === "auth" && <AuthTab config={active} update={onUpdate} />}
+        {tab === "auth" && <AuthTab config={active} update={onUpdate} signupGates={signupGates} />}
         {tab === "onboarding" && <OnboardingTab config={active} update={onUpdate} />}
         {tab === "home" && <HomeTab config={active} update={onUpdate} />}
-        {tab === "content" && <ContentTab config={active} update={onUpdate} />}
+        {tab === "content" && <ContentTab config={active} update={onUpdate} programFeatures={programFeatures} />}
       </div>
     </div>
   );

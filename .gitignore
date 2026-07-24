@@ -72,3 +72,6 @@ Components/Generalizable Coach/domains/bridge/knowledge/*.pdf
 # Vercel project link (bridge-platform deploy)
 .vercel
 .env*
+
+# Playwright MCP test artifacts
+.playwright-mcp/

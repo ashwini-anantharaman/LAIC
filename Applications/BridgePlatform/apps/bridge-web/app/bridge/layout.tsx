@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { clearDevUser, signOutNexus } from "@/app/actions";
 import { NavLink } from "@/components/NavLink";
 import { navForContext } from "@/lib/nav";
-import { getBridgeContext, nexusMode } from "@/lib/nexus";
+import { getBridgeContext, isEmbeddedLaunch, nexusMode } from "@/lib/nexus";
 
 /**
  * Bridge app shell: all bridge routes live under /bridge/* so the app slots
@@ -15,6 +15,12 @@ export default async function BridgeShellLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+
+  // Embedded in a host app? The host owns the session + its own exit control,
+  // so we hide Bridge's "Sign out" (signing out here would leave a confusing
+  // half-signed-out state inside the host).
+  const embedded = await isEmbeddedLaunch();
+  const showSignOut = nexusMode() === "http" && !embedded;
 
   const displayName =
     // Real name from the Nexus context (http mode); stub roster in dev.
@@ -45,7 +51,7 @@ export default async function BridgeShellLayout({
         {/* Exit controls must exist on every screen size — nobody gets
             trapped in the platform. Identity details stay desktop-only. */}
         <div className="flex items-center gap-2 border-t border-[var(--line)] px-4 py-2 md:hidden">
-          {nexusMode() === "http" && (
+          {showSignOut && (
             <form action={signOutNexus}>
               <button type="submit" className="text-xs font-medium text-neutral-600 underline-offset-2 hover:underline">
                 Sign out
@@ -54,7 +60,7 @@ export default async function BridgeShellLayout({
           )}
         </div>
         <div className="hidden space-y-1 border-t border-[var(--line)] p-4 text-sm md:block">
-          {nexusMode() === "http" && (
+          {showSignOut && (
             <form action={signOutNexus} className="mb-2">
               <button
                 type="submit"

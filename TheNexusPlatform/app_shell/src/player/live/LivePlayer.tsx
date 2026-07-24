@@ -1,26 +1,41 @@
 /**
- * The LIVE published app — the real thing, not the design mock. It boots its
- * config from Nexus by slug, authenticates a real student (the org's
- * participant), and runs the app. Phase 1: boot + sign-in + student gate + a
- * basic home. Onboarding + profile land in later phases.
+ * The LIVE published app. It renders the EXACT screens designed in the Studio
+ * (the same components the preview uses), driven by real behavior: it boots the
+ * published config from Nexus, authenticates a real student, runs onboarding
+ * (saved to Postgres), and shows the designed home. "Published == what you
+ * designed" — same pixels, real backend.
  */
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 
+import { contentOf } from "../../data/constants";
+import type { AppShellConfig, ContentConnection, PreviewScreen } from "../../types";
+import { StartScreen } from "../../preview/screens/StartScreen";
+import { SignInScreen } from "../../preview/screens/SignInScreen";
+import { OnboardingScreen, type OnboardingAnswers } from "../../preview/screens/OnboardingScreen";
+import { HomeScreen } from "../../preview/screens/HomeScreen";
+import { PlatformScreen } from "../../preview/screens/PlatformScreen";
 import { DEFAULT_BASE_URL } from "../../nexus/client";
 import {
   clearPlayerSession,
   fetchBootConfig,
+  getMyData,
+  launchBridge,
   loadPlayerSession,
   loginStudent,
+  putMyData,
   savePlayerSession,
   validateToken,
   type BootConfig,
   type PlayerSession,
 } from "./api";
 
-type Phase = "booting" | "error" | "signin" | "app";
+type Phase = "booting" | "error" | "ready";
 
-/** Mobile-width column on a dark backdrop — same frame as the mock Player. */
+const numKeys = (a: Record<string, unknown>): OnboardingAnswers =>
+  Object.fromEntries(Object.entries(a).map(([k, v]) => [Number(k), v as string | string[]]));
+const strKeys = (a: OnboardingAnswers): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(a).map(([k, v]) => [String(k), v]));
+
 function Frame({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-[100dvh] w-full justify-center bg-[#0b0f1a]">
@@ -31,36 +46,41 @@ function Frame({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Centered({ children }: { children: React.ReactNode }) {
-  return <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">{children}</div>;
-}
-
-function Brand({ boot, size = 44 }: { boot: BootConfig; size?: number }) {
-  const accent = boot.branding.primaryColor || "#4f46e5";
-  const logoUrl = boot.studio?.logoUrl;
-  const glyph = boot.studio?.logoInitials || boot.branding.markGlyph || (boot.identity.displayName || "A").slice(0, 1).toUpperCase();
-  if (logoUrl) {
-    return <img src={logoUrl} alt="" className="rounded-2xl object-cover" style={{ width: size, height: size }} />;
-  }
-  return (
-    <div
-      className="grid place-items-center rounded-2xl font-bold text-white"
-      style={{ width: size, height: size, background: accent, fontSize: size * 0.4 }}
-    >
-      {glyph}
-    </div>
-  );
-}
-
 export function LivePlayer({ slug, api }: { slug: string; api: string | null }) {
   const baseUrl = (api || DEFAULT_BASE_URL).replace(/\/+$/, "");
   const [phase, setPhase] = useState<Phase>("booting");
   const [boot, setBoot] = useState<BootConfig | null>(null);
-  const [session, setSession] = useState<PlayerSession | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
-  // Boot: fetch the published config, then resume a stored session if its token
-  // still validates. A dead/rejected token drops to sign-in.
+  // Runtime state for the designed screens.
+  const [screen, setScreen] = useState<PreviewScreen>("start");
+  const [role, setRole] = useState("");
+  const [session, setSession] = useState<PlayerSession | null>(null);
+  const [answers, setAnswers] = useState<OnboardingAnswers>({});
+  const [openConnection, setOpenConnection] = useState<ContentConnection | null>(null);
+
+  const [signInBusy, setSignInBusy] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
+  const [obBusy, setObBusy] = useState(false);
+  const [obError, setObError] = useState<string | null>(null);
+  const [launching, setLaunching] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  // When set, a connected platform (Bridge) is loaded IN-APP via an iframe —
+  // the student stays inside the app frame instead of navigating away.
+  const [embed, setEmbed] = useState<{ url: string; label: string } | null>(null);
+
+  const config: AppShellConfig | null = boot?.studio ?? null;
+  // "Create an account" target: top-level (Studio URL or the program's
+  // auto-resolved sign-up gate), falling back to the studio config field.
+  const signupGateUrl = boot?.signupGateUrl || boot?.studio?.signupGateUrl || null;
+
+  function landingScreen(b: BootConfig, onboardingDone: boolean): PreviewScreen {
+    const questions = b.studio?.onboardingQuestions ?? [];
+    return !onboardingDone && questions.length > 0 ? "onboarding" : "home";
+  }
+
+  // Boot: fetch the published config, resume a stored session if its token still
+  // validates and it's still an enrolled participant.
   useEffect(() => {
     let live = true;
     (async () => {
@@ -70,13 +90,17 @@ export function LivePlayer({ slug, api }: { slug: string; api: string | null }) 
         setBoot(b);
         const stored = loadPlayerSession(slug);
         if (stored && (await validateToken(baseUrl, stored.token))) {
-          if (!live) return;
-          setSession(stored);
-          setPhase("app");
-          return;
+          const data = await getMyData(baseUrl, slug, stored.token).catch(() => null);
+          if (live && data?.enrolled) {
+            setSession(stored);
+            setAnswers(numKeys(data.answers ?? {}));
+            setScreen(landingScreen(b, data.onboarding_completed));
+            setPhase("ready");
+            return;
+          }
+          clearPlayerSession(slug);
         }
-        if (stored) clearPlayerSession(slug);
-        if (live) setPhase("signin");
+        if (live) setPhase("ready");
       } catch (e) {
         if (live) {
           setBootError(e instanceof Error ? e.message : "Couldn't load this app.");
@@ -87,201 +111,210 @@ export function LivePlayer({ slug, api }: { slug: string; api: string | null }) 
     return () => {
       live = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl, slug]);
 
-  // Tab title + theme color follow the app's identity.
   useEffect(() => {
-    if (!boot) return;
-    document.title = boot.identity.displayName || "App";
+    if (boot) document.title = boot.identity.displayName || "App";
   }, [boot]);
+
+  async function handleSignIn(email: string, password: string) {
+    if (!boot || !email || !password) return;
+    setSignInBusy(true);
+    setSignInError(null);
+    try {
+      if (!boot.org) throw new Error("This app isn't linked to an organization yet.");
+      const s = await loginStudent(baseUrl, boot.org.slug, email, password);
+      if (!s.participantOnly) throw new Error("This app is for students. Staff sign in through the Nexus console.");
+      const data = await getMyData(baseUrl, slug, s.token);
+      if (!data.enrolled) throw new Error("You're not enrolled in this program yet. Ask your organization to add you.");
+      savePlayerSession(slug, s);
+      setSession(s);
+      setAnswers(numKeys(data.answers ?? {}));
+      setScreen(landingScreen(boot, data.onboarding_completed));
+    } catch (err) {
+      setSignInError(err instanceof Error ? err.message : "Sign-in failed");
+    } finally {
+      setSignInBusy(false);
+    }
+  }
+
+  async function handleOnboardingDone(a: OnboardingAnswers) {
+    if (!session) return;
+    setObBusy(true);
+    setObError(null);
+    try {
+      const saved = await putMyData(baseUrl, slug, session.token, {
+        answers: strKeys(a),
+        onboarding_completed: true,
+      });
+      setAnswers(numKeys(saved.answers ?? strKeys(a)));
+      setScreen("home");
+    } catch (err) {
+      setObError(err instanceof Error ? err.message : "Couldn't save your answers");
+    } finally {
+      setObBusy(false);
+    }
+  }
+
+  // Tapping a content tile. A Bridge connection launches the REAL Bridge
+  // platform: mint a single-use ticket, then redirect the browser there (Bridge
+  // exchanges the token for a session). Other platforms still use the preview.
+  async function handleOpenPlatform(conn: ContentConnection) {
+    if (conn.platform !== "bridge") {
+      setOpenConnection(conn);
+      setScreen("platform");
+      return;
+    }
+    if (!session || !boot) return;
+    setLaunching(true);
+    setLaunchError(null);
+    try {
+      const url = await launchBridge(baseUrl, session.token, boot.programContext.programId, window.location.href);
+      // Load Bridge IN-APP (iframe) rather than navigating away. `embedded=1`
+      // tells Bridge it's hosted here, so it hides its own sign-out (the app
+      // owns the session + exit).
+      const embedUrl = `${url}${url.includes("?") ? "&" : "?"}embedded=1`;
+      setEmbed({ url: embedUrl, label: conn.label || "Bridge" });
+    } catch (e) {
+      setLaunchError(e instanceof Error ? e.message : "Couldn't open the Bridge Platform.");
+    } finally {
+      setLaunching(false);
+    }
+  }
+
+  function signOut() {
+    clearPlayerSession(slug);
+    setSession(null);
+    setAnswers({});
+    setRole("");
+    setSignInError(null);
+    setScreen("start");
+  }
 
   if (phase === "booting") {
     return (
       <Frame>
-        <Centered>
+        <div className="flex h-full items-center justify-center">
           <div className="size-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-        </Centered>
+        </div>
       </Frame>
     );
   }
-  if (phase === "error" || !boot) {
+  if (phase === "error" || !boot || !config) {
     return (
       <Frame>
-        <Centered>
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
           <div className="grid size-11 place-items-center rounded-2xl bg-gray-200 text-lg text-gray-500">!</div>
           <h1 className="text-base font-bold text-gray-900">This app isn't available</h1>
-          <p className="max-w-xs text-xs leading-relaxed text-gray-500">{bootError}</p>
-        </Centered>
+          <p className="max-w-xs text-xs leading-relaxed text-gray-500">
+            {bootError ?? "This app was published without a full design."}
+          </p>
+        </div>
       </Frame>
     );
   }
-  if (phase === "signin" || !session) {
+
+  const platformConnection = openConnection ?? contentOf(config).connections.find((c) => c.enabled) ?? null;
+
+  // In-app platform view: Bridge (or any connected platform) loaded inside the
+  // app frame via an iframe. The student stays in the app; a Back returns home.
+  if (embed) {
     return (
       <Frame>
-        <LiveSignIn
-          boot={boot}
-          baseUrl={baseUrl}
-          onSignedIn={(s) => {
-            savePlayerSession(slug, s);
-            setSession(s);
-            setPhase("app");
-          }}
-        />
+        <div className="flex h-full flex-col bg-white">
+          <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2.5">
+            <button
+              onClick={() => setEmbed(null)}
+              className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800"
+            >
+              ‹ Back
+            </button>
+            <span className="flex-1 truncate text-center text-sm font-semibold text-gray-900">{embed.label}</span>
+            <span className="w-10" />
+          </div>
+          <iframe src={embed.url} title={embed.label} className="min-h-0 w-full flex-1 border-0" />
+        </div>
       </Frame>
     );
   }
+
   return (
     <Frame>
-      <LiveHome
-        boot={boot}
-        session={session}
-        onSignOut={() => {
-          clearPlayerSession(slug);
-          setSession(null);
-          setPhase("signin");
-        }}
-      />
-    </Frame>
-  );
-}
-
-function LiveSignIn({
-  boot,
-  baseUrl,
-  onSignedIn,
-}: {
-  boot: BootConfig;
-  baseUrl: string;
-  onSignedIn: (s: PlayerSession) => void;
-}) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const accent = boot.branding.primaryColor || "#4f46e5";
-  const welcome = boot.studio?.welcomeTitle || boot.copy.welcomeTitle || `Sign in to ${boot.identity.displayName}`;
-  const subtitle = boot.studio?.welcomeSubtitle || boot.copy.welcomeSubtitle || "";
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      if (!boot.org) throw new Error("This app isn't linked to an organization yet — ask your program admin.");
-      const s = await loginStudent(baseUrl, boot.org.slug, email.trim(), password);
-      // The student app admits ONLY learner-participant sessions. Staff (org/
-      // program admins) have a place in the Nexus console, not here.
-      if (!s.participantOnly) {
-        throw new Error("This app is for students. Staff sign in through the Nexus console.");
-      }
-      onSignedIn(s);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const inputCls =
-    "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 placeholder-gray-400 outline-none focus:border-gray-400";
-
-  return (
-    <div className="flex h-full flex-col px-6 pb-8 pt-14">
-      <div className="mb-8 flex flex-col items-center gap-3 text-center">
-        <Brand boot={boot} />
-        <div>
-          <h1 className="text-lg font-bold text-gray-900">{welcome}</h1>
-          {subtitle ? <p className="mt-1 text-xs leading-relaxed text-gray-500">{subtitle}</p> : null}
+      <div className="flex h-full flex-col bg-[#f8f8fb]">
+        <div className="relative flex items-center justify-between px-5 pb-0.5 pt-3">
+          <span className="text-[9px] font-bold text-gray-500">9:41</span>
+          <span className="text-[9px] font-semibold text-gray-500">{config.name}</span>
+          {session ? (
+            <button onClick={signOut} className="text-[9px] font-semibold text-gray-400 hover:text-gray-600" title="Sign out">
+              Sign out
+            </button>
+          ) : (
+            <span className="text-[9px] text-gray-500">•••</span>
+          )}
         </div>
-      </div>
 
-      <form onSubmit={submit} className="space-y-2.5">
-        <input
-          type="email"
-          autoComplete="username"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className={inputCls}
-          placeholder="Email address"
-          required
-        />
-        <input
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className={inputCls}
-          placeholder="Password"
-          required
-        />
-        {error ? <p className="text-xs leading-relaxed text-red-600">{error}</p> : null}
-        <button
-          type="submit"
-          disabled={busy}
-          className="mt-1 w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-          style={{ background: accent }}
-        >
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
-
-      <p className="mt-auto pt-6 text-center text-[10px] leading-relaxed text-gray-400">
-        {boot.org?.name ?? "Your organization"} · sign in with the account you registered.
-      </p>
-    </div>
-  );
-}
-
-function LiveHome({
-  boot,
-  session,
-  onSignOut,
-}: {
-  boot: BootConfig;
-  session: PlayerSession;
-  onSignOut: () => void;
-}) {
-  const accent = boot.branding.primaryColor || "#4f46e5";
-  const home = boot.studio?.homeConfig;
-  const greeting = home?.greeting || `Welcome, ${session.displayName}`;
-  const subtitle = home?.subtitle || "";
-
-  return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-gray-100 px-5 py-3.5">
-        <Brand boot={boot} size={30} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold text-gray-900">{boot.identity.displayName}</div>
-          <div className="truncate text-[10px] text-gray-400">{session.email}</div>
-        </div>
-        <button
-          onClick={onSignOut}
-          className="rounded-lg border border-gray-200 px-2.5 py-1 text-[10px] font-medium text-gray-500 hover:bg-gray-50"
-        >
-          Sign out
-        </button>
-      </header>
-
-      <div className="flex-1 overflow-y-auto px-5 py-6">
-        <h1 className="text-xl font-bold text-gray-900">{greeting}</h1>
-        {subtitle ? <p className="mt-1 text-sm text-gray-500">{subtitle}</p> : null}
-
-        {home?.tiles?.length ? (
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            {home.tiles.map((tile, i) => (
-              <div key={i} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                <div className="mb-2 size-8 rounded-lg" style={{ background: `${accent}22` }} />
-                <div className="text-sm font-semibold text-gray-800">{tile.label}</div>
-                {tile.description ? <div className="mt-0.5 text-[11px] leading-snug text-gray-400">{tile.description}</div> : null}
-              </div>
+        <div className="min-h-0 flex-1">
+          {screen === "start" && (
+            <StartScreen
+              config={config}
+              onPickRole={(r) => {
+                setRole(r);
+                setScreen("signin");
+              }}
+            />
+          )}
+          {screen === "signin" && (
+            <SignInScreen
+              config={config}
+              role={role}
+              onBack={() => setScreen("start")}
+              onContinue={() => setScreen("onboarding")}
+              live={{
+                onSubmit: handleSignIn,
+                busy: signInBusy,
+                error: signInError,
+                onCreateAccount: signupGateUrl
+                  ? () => {
+                      window.location.href = signupGateUrl;
+                    }
+                  : undefined,
+              }}
+            />
+          )}
+          {screen === "onboarding" && (
+            <OnboardingScreen
+              config={config}
+              initial={answers}
+              busy={obBusy}
+              error={obError}
+              onBack={() => setScreen(session ? "home" : "signin")}
+              onDone={handleOnboardingDone}
+            />
+          )}
+          {screen === "home" && <HomeScreen config={config} role={role} onOpenPlatform={handleOpenPlatform} />}
+          {screen === "platform" &&
+            (platformConnection ? (
+              <PlatformScreen config={config} connection={platformConnection} role={role} onBack={() => setScreen("home")} />
+            ) : (
+              <HomeScreen config={config} role={role} />
             ))}
+        </div>
+
+        {launching ? (
+          <div className="absolute inset-0 z-10 grid place-items-center bg-white/70">
+            <div className="size-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
           </div>
-        ) : (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 bg-white/50 p-6 text-center text-xs text-gray-400">
-            You're signed in. Your program's content will appear here.
-          </div>
-        )}
+        ) : null}
+        {launchError ? (
+          <button
+            onClick={() => setLaunchError(null)}
+            className="absolute inset-x-3 bottom-3 z-10 rounded-lg bg-red-600 px-3 py-2 text-left text-xs text-white shadow-lg"
+          >
+            {launchError} <span className="opacity-70">(tap to dismiss)</span>
+          </button>
+        ) : null}
       </div>
-    </div>
+    </Frame>
   );
 }

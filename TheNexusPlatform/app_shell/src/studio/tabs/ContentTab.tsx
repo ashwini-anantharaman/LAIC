@@ -10,14 +10,23 @@ import { GroupTitle, Label, Row, TextInput } from "../../ui/fields";
 export function ContentTab({
   config,
   update,
+  programFeatures,
 }: {
   config: AppShellConfig;
   update: (patch: Partial<AppShellConfig>) => void;
+  /** The bound program's feature switches. A connection whose platform is off
+   *  here would 403 at launch ("… not enabled for this program"), so we warn
+   *  and block enabling it. Undefined (unbound Studio) = don't gate. */
+  programFeatures?: Record<string, boolean>;
 }) {
   const content = contentOf(config);
   const setContent = (patch: Partial<typeof content>) => update({ content: { ...content, ...patch } });
   const patchConnection = (i: number, patch: Partial<ContentConnection>) =>
     setContent({ connections: content.connections.map((c, idx) => (idx === i ? { ...c, ...patch } : c)) });
+  // A platform is launchable only if the bound program has its feature on. When
+  // features aren't loaded (unbound Studio), don't gate — Publish still picks
+  // the program later.
+  const featureOn = (platform: string): boolean => !programFeatures || programFeatures[platform] !== false;
 
   return (
     <>
@@ -31,6 +40,7 @@ export function ContentTab({
       <div className="space-y-2">
         {content.connections.map((conn, i) => {
           const meta = PLATFORM_META[conn.platform];
+          const enabledOnProgram = featureOn(conn.platform);
           return (
             <Row key={conn.platform}>
               <div className="flex items-center justify-between gap-2">
@@ -46,8 +56,10 @@ export function ContentTab({
                   </span>
                 </div>
                 <button
-                  onClick={() => patchConnection(i, { enabled: !conn.enabled })}
-                  className="flex-shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-colors"
+                  onClick={() => enabledOnProgram && patchConnection(i, { enabled: !conn.enabled })}
+                  disabled={!enabledOnProgram && !conn.enabled}
+                  title={enabledOnProgram ? undefined : `${meta.name} is turned off for this program in the console`}
+                  className="flex-shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                   style={
                     conn.enabled
                       ? { backgroundColor: `${config.accentColor}25`, color: config.accentColor, border: "1px solid transparent" }
@@ -57,6 +69,12 @@ export function ContentTab({
                   {conn.enabled ? "Connected ✓" : "Connect"}
                 </button>
               </div>
+              {!enabledOnProgram && (
+                <p className="mt-1.5 text-[9px] leading-relaxed" style={{ color: "#f59e0b" }}>
+                  {meta.name} is turned off for this program in the console, so this card would fail to open.
+                  {conn.enabled ? " Turn it on in the program's settings, or disable this card." : " Enable it on the program first."}
+                </p>
+              )}
               {conn.enabled && (
                 <>
                   <div>

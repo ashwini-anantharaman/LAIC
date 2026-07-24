@@ -11,13 +11,16 @@ import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
-import { getPublicGate, gateSignin, gateSignup, setToken, type PublicGate } from "@/services/api";
+import { getPlatformBranding, getPublicGate, getPublicNexusGate, gateSignin, gateSignup, setToken, type PublicGate } from "@/services/api";
 import { useDocumentTitle } from "@/nexus/useDocumentTitle";
 import { resolveAssetUrl } from "@/services/apiBase";
 
 export function GatePage() {
   const { slug: orgSlug, gateSlug } = useParams();
+  // No org slug → this is a nexus (operator) gate mounted at /op/<slug>.
+  const isNexus = !orgSlug;
   const [gate, setGate] = useState<PublicGate | null>(null);
+  const [platformName, setPlatformName] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
@@ -27,11 +30,12 @@ export function GatePage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
-  useDocumentTitle(gate?.org.name ?? null);
+  useDocumentTitle(gate?.org.name ?? platformName);
 
   useEffect(() => {
-    if (!orgSlug || !gateSlug) return;
-    getPublicGate(orgSlug, gateSlug)
+    if (!gateSlug) return;
+    const fetchGate = isNexus ? getPublicNexusGate(gateSlug) : getPublicGate(orgSlug as string, gateSlug);
+    fetchGate
       .then((g) => {
         setGate(g);
         // Students sign IN through the app, not the gate — a participant gate is
@@ -41,7 +45,9 @@ export function GatePage() {
         if (g.roles?.length === 1) setRoleId(g.roles[0].id);
       })
       .catch(() => setNotFound(true));
-  }, [orgSlug, gateSlug]);
+    // Operator gates have no org branding — fall back to the platform's name.
+    if (isNexus) getPlatformBranding().then((b) => setPlatformName(b.title ?? null)).catch(() => {});
+  }, [orgSlug, gateSlug, isNexus]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -66,9 +72,10 @@ export function GatePage() {
           setDone("Thanks — your request was submitted and is awaiting approval. You'll be able to sign in once it's approved.");
           return;
         }
-        if (gate.audience === "member") {
+        if (gate.audience === "member" && r.access_token) {
           // Staff: the gate IS their door — sign them into the console, which
-          // routes to the section their role belongs to.
+          // routes to the section their role belongs to. (Approval-gated gates
+          // return no token and are handled by the `r.pending` branch above.)
           setToken(r.access_token);
           window.location.href = "/";
         } else {
@@ -111,7 +118,11 @@ export function GatePage() {
 
   const accent = gate.org.theme_accent_color || undefined;
   const logoUrl = resolveAssetUrl(gate.org.theme_logo_url);
-  const glyph = (gate.org.name ?? "•").slice(0, 1).toUpperCase();
+  // Operator gates have no org — brand with the platform name and a neutral
+  // "Operator access" subline instead of a program name.
+  const brandName = gate.org.name ?? platformName ?? (isNexus ? "Operator access" : "");
+  const subline = isNexus ? "Operator access" : gate.program_name;
+  const glyph = (brandName || "•").slice(0, 1).toUpperCase();
   // Only member gates offer the sign-in/sign-up toggle; participant gates are
   // sign-up only (students sign in through the app).
   const both = gate.audience === "member" && gate.allow_signin && gate.allow_signup;
@@ -131,8 +142,8 @@ export function GatePage() {
             </div>
           )}
           <div className="min-w-0">
-            <div className="font-semibold truncate">{gate.org.name}</div>
-            <div className="text-xs text-muted-foreground font-mono truncate">{gate.program_name}</div>
+            <div className="font-semibold truncate">{brandName}</div>
+            <div className="text-xs text-muted-foreground font-mono truncate">{subline}</div>
           </div>
         </div>
 

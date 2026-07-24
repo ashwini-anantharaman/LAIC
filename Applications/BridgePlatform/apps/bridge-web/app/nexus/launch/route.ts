@@ -14,7 +14,7 @@
  */
 import { NextResponse } from "next/server";
 
-import { NEXUS_PROGRAM_COOKIE, NEXUS_RETURN_COOKIE, NEXUS_TOKEN_COOKIE, safeProgramId, safeReturnUrl } from "../../../lib/nexusToken";
+import { NEXUS_EMBEDDED_COOKIE, NEXUS_PROGRAM_COOKIE, NEXUS_RETURN_COOKIE, NEXUS_TOKEN_COOKIE, safeProgramId, safeReturnUrl } from "../../../lib/nexusToken";
 
 export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
@@ -61,5 +61,12 @@ export async function GET(request: Request): Promise<NextResponse> {
   // The launching program scopes /bridge/context for multi-program people.
   const programId = safeProgramId(url.searchParams.get("program_id"));
   if (programId) response.cookies.set(NEXUS_PROGRAM_COOKIE, programId, cookieOpts);
+  // Embedded launch (host-app iframe): remember it so the shell hides its own
+  // sign-out. A normal launch clears the flag.
+  if (url.searchParams.get("embedded") === "1") {
+    response.cookies.set(NEXUS_EMBEDDED_COOKIE, "1", cookieOpts);
+  } else {
+    response.cookies.set(NEXUS_EMBEDDED_COOKIE, "", { ...cookieOpts, maxAge: 0 });
+  }
   return response;
 }
