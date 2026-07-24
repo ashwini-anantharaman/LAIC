@@ -1493,7 +1493,9 @@ offeringsRouter.post("/programs/:program_id/learning-platform/launch", async (c)
   const membership = user.memberships.find((m) => m.org_id === program.org_id) ?? null;
   return c.json({
     app_slug: launch.app.app_slug,
-    launch_url: launch.app.launch_url ?? null,
+    // Current env's LEARNING_PLATFORM_URL is authoritative (see Bridge note);
+    // a stored launch_url can be stale across dev/prod.
+    launch_url: learningBase || (launch.app.launch_url ?? null),
     launch_token: launch.rawToken,
     expires_at: launch.expiresAt,
     context: {
@@ -1544,7 +1546,10 @@ offeringsRouter.post("/programs/:program_id/bridge-platform/launch", async (c) =
   const membership = user.memberships.find((m) => m.org_id === program.org_id) ?? null;
   return c.json({
     app_slug: launch.app.app_slug,
-    launch_url: launch.app.launch_url ?? null,
+    // The current env's BRIDGE_PLATFORM_URL is authoritative for where the launch
+    // lands — a stored launch_url can be stale (e.g. a prod Vercel URL provisioned
+    // earlier while you now run Bridge locally). Fall back to stored only if unset.
+    launch_url: bridgeBase ? `${bridgeBase}/nexus/launch` : (launch.app.launch_url ?? null),
     launch_token: launch.rawToken,
     expires_at: launch.expiresAt,
     context: {

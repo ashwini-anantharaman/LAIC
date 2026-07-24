@@ -48,7 +48,11 @@ export interface AppLink {
   orgId: string;
 }
 
-export const DEFAULT_BASE_URL = "http://localhost:8000";
+// The backend the Studio connects to by default (and the `api` baked into
+// published live-player links). Env-driven so a deployed build points at the
+// deployed API; falls back to local dev. Set VITE_API_URL in Vercel.
+export const DEFAULT_BASE_URL =
+  (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") || "http://localhost:8000";
 
 /* ---- persistence ---- */
 const SESSION_KEY = "shell.nexus.session";
