@@ -133,22 +133,49 @@ export function groupsSorted(catalogue: CapabilityCatalogueDocument): CatalogueG
 
 export function capabilitiesInGroup(catalogue: CapabilityCatalogueDocument, groupId: string): Capability[] {
   const group = catalogue.groups.find((g) => g.id === groupId);
-  if (!group?.capabilityIds?.length) {
-    return catalogue.capabilities.filter((c) => c.group === groupId);
+  const byField = catalogue.capabilities.filter((c) => c.group === groupId);
+  if (!group?.capabilityIds?.length) return byField;
+
+  const seen = new Set<string>();
+  const out: Capability[] = [];
+  for (const id of group.capabilityIds) {
+    const c = catalogue.capabilities.find((x) => x.id === id);
+    if (c && !seen.has(c.id)) {
+      seen.add(c.id);
+      out.push(c);
+    }
   }
-  return group.capabilityIds
-    .map((id) => catalogue.capabilities.find((c) => c.id === id))
-    .filter((c): c is Capability => !!c);
+  // Include caps that only declare group=… (e.g. after a group move).
+  for (const c of byField) {
+    if (!seen.has(c.id)) {
+      seen.add(c.id);
+      out.push(c);
+    }
+  }
+  return out;
 }
 
 export function surfacesInGroup(catalogue: CapabilityCatalogueDocument, groupId: string): UiSurface[] {
   const group = catalogue.groups.find((g) => g.id === groupId);
-  if (!group?.uiSurfaceIds?.length) {
-    return catalogue.uiSurfaces.filter((s) => s.group === groupId);
+  const byField = catalogue.uiSurfaces.filter((s) => s.group === groupId);
+  if (!group?.uiSurfaceIds?.length) return byField;
+
+  const seen = new Set<string>();
+  const out: UiSurface[] = [];
+  for (const id of group.uiSurfaceIds) {
+    const s = catalogue.uiSurfaces.find((x) => x.id === id);
+    if (s && !seen.has(s.id)) {
+      seen.add(s.id);
+      out.push(s);
+    }
   }
-  return group.uiSurfaceIds
-    .map((id) => catalogue.uiSurfaces.find((s) => s.id === id))
-    .filter((s): s is UiSurface => !!s);
+  for (const s of byField) {
+    if (!seen.has(s.id)) {
+      seen.add(s.id);
+      out.push(s);
+    }
+  }
+  return out;
 }
 
 export function slugifyId(label: string, prefix = ''): string {

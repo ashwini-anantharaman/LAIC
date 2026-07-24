@@ -471,12 +471,21 @@ export function PlatformAccessCatalogue() {
 
   const upsertGroup = (g: CatalogueGroup) => {
     const exists = catalogue.groups.some((x) => x.id === g.id);
-    patch({
-      ...catalogue,
-      groups: exists
-        ? catalogue.groups.map((x) => (x.id === g.id ? { ...x, ...g, capabilityIds: x.capabilityIds, uiSurfaceIds: x.uiSurfaceIds } : x))
-        : [...catalogue.groups, g],
-    });
+    const nextGroups = exists
+      ? catalogue.groups.map((x) => (
+        x.id === g.id
+          ? { ...x, ...g, capabilityIds: x.capabilityIds || [], uiSurfaceIds: x.uiSurfaceIds || [] }
+          : x
+      ))
+      : [...catalogue.groups, { ...g, capabilityIds: g.capabilityIds || [], uiSurfaceIds: g.uiSurfaceIds || [] }];
+    patch({ ...catalogue, groups: nextGroups });
+    if (!exists) {
+      setOpenGroups((prev) => {
+        const n = new Set(prev);
+        n.add(g.id);
+        return n;
+      });
+    }
     setGroupModal({ open: false, initial: null });
     fireToast(exists ? 'Group updated' : 'Group added');
   };
@@ -486,15 +495,53 @@ export function PlatformAccessCatalogue() {
       fireToast('Keep at least one group');
       return;
     }
-    const fallback = catalogue.groups.find((g) => g.id !== id)?.id;
-    if (!fallback) return;
+    const victim = catalogue.groups.find((g) => g.id === id);
+    const fallback = catalogue.groups.find((g) => g.id !== id);
+    if (!victim || !fallback) return;
+
+    const moveCapIds = [
+      ...new Set([
+        ...(victim.capabilityIds || []),
+        ...catalogue.capabilities.filter((c) => c.group === id).map((c) => c.id),
+      ]),
+    ];
+    const moveSurfaceIds = [
+      ...new Set([
+        ...(victim.uiSurfaceIds || []),
+        ...catalogue.uiSurfaces.filter((s) => s.group === id).map((s) => s.id),
+      ]),
+    ];
+    const confirmMsg = moveCapIds.length || moveSurfaceIds.length
+      ? `Delete group “${victim.label}”? Its ${moveCapIds.length} capabilities and ${moveSurfaceIds.length} UI surfaces will move to “${fallback.label}”.`
+      : `Delete empty group “${victim.label}”?`;
+    if (!window.confirm(confirmMsg)) return;
+
     patch({
       ...catalogue,
-      groups: catalogue.groups.filter((g) => g.id !== id),
-      capabilities: catalogue.capabilities.map((c) => (c.group === id ? { ...c, group: fallback } : c)),
-      uiSurfaces: catalogue.uiSurfaces.map((s) => (s.group === id ? { ...s, group: fallback } : s)),
+      groups: catalogue.groups
+        .filter((g) => g.id !== id)
+        .map((g) => {
+          if (g.id !== fallback.id) return g;
+          return {
+            ...g,
+            capabilityIds: [...new Set([...(g.capabilityIds || []), ...moveCapIds])],
+            uiSurfaceIds: [...new Set([...(g.uiSurfaceIds || []), ...moveSurfaceIds])],
+          };
+        }),
+      capabilities: catalogue.capabilities.map((c) =>
+        (c.group === id || moveCapIds.includes(c.id) ? { ...c, group: fallback.id } : c),
+      ),
+      uiSurfaces: catalogue.uiSurfaces.map((s) =>
+        (s.group === id || moveSurfaceIds.includes(s.id) ? { ...s, group: fallback.id } : s),
+      ),
     });
-    fireToast('Group removed');
+    setOpenGroups((prev) => {
+      const n = new Set(prev);
+      n.delete(id);
+      n.add(fallback.id);
+      return n;
+    });
+    fireToast(`Deleted “${victim.label}”`);
   };
 
   const upsertCapability = (c: Capability) => {
@@ -619,7 +666,7 @@ export function PlatformAccessCatalogue() {
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <p style={{ fontSize: 13, color: '#6B7280' }}>
-              Catalogue groups organize the role UI. Capabilities are the enforcement keys; UI surfaces are optional.
+              Add, edit, or delete groups. Deleting a group moves its capabilities and UI surfaces into another group.
             </p>
             <div className="flex gap-2 flex-wrap">
               <button type="button" onClick={() => setOpenGroups(new Set(catalogue.groups.map((g) => g.id)))} className="px-3 py-1.5 rounded-full text-[12px] font-semibold" style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}>Expand all</button>
@@ -649,9 +696,25 @@ export function PlatformAccessCatalogue() {
                     <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>{caps.length} capabilities · {surfaces.length} UI surfaces</p>
                   </div>
                 </button>
-                <div className="flex items-center gap-1 pr-4">
-                  <button type="button" onClick={() => setGroupModal({ open: true, initial: g })} className="px-2.5 py-1.5 rounded-full text-[11px] font-semibold" style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}>Edit</button>
-                  <button type="button" onClick={() => removeGroup(g.id)} className="p-1.5 rounded-full" aria-label="Delete group"><Trash2 size={13} style={{ color: '#EF4444' }} /></button>
+                <div className="flex items-center gap-1.5 pr-4 shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setGroupModal({ open: true, initial: g }); }}
+                    className="px-2.5 py-1.5 rounded-full text-[11px] font-semibold"
+                    style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); removeGroup(g.id); }}
+                    disabled={catalogue.groups.length <= 1}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-semibold disabled:opacity-40"
+                    style={{ background: 'rgba(239,68,68,0.08)', color: '#B91C1C' }}
+                    title={catalogue.groups.length <= 1 ? 'Keep at least one group' : 'Delete group'}
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
                 </div>
                 </div>
                 {open && (

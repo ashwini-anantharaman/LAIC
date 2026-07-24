@@ -65,7 +65,7 @@ Administrator → **Access Catalogue**
 
 | Tab | Edits |
 |---|---|
-| Groups | Hierarchy tree of groups → capabilities & UI surfaces |
+| Groups | Add / edit / delete groups; tree of capabilities & UI surfaces (delete rehomes items) |
 | Capabilities | Atomic keys, resource types, constraint flag |
 | UI surfaces | navigation / screen / component / action |
 | Resource types | Constraint field definitions |
