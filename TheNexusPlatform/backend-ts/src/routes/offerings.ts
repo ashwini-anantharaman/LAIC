@@ -828,12 +828,16 @@ const programRoleCreateSchema = z.object({
   perms: _programRolePerms.default({}),
   display_as_group: z.boolean().optional(),
   parent_group_id: z.string().uuid().nullable().optional(),
+  // Fine-grained capability ids from the Access Catalogue (additive; stored in
+  // perms.capabilities). Coarse area perms above are untouched.
+  capabilities: z.array(z.string()).optional(),
 });
 const programRoleUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   perms: _programRolePerms.optional(),
   display_as_group: z.boolean().optional(),
   parent_group_id: z.string().uuid().nullable().optional(),
+  capabilities: z.array(z.string()).optional(),
 });
 
 /**
@@ -869,8 +873,10 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   // created_by is provenance only; skip it to avoid the demo-mode auth-id vs
   // profile-id mismatch (the FK targets profiles.id).
   const perms = _permsWithinFeatures(req.perms, program.features);
+  const finalPerms: Record<string, unknown> =
+    req.capabilities !== undefined ? { ...perms, capabilities: req.capabilities } : perms;
   const row = await graph.createProgramRole(
-    program.org_id, programId, req.name, perms, null, req.display_as_group, req.parent_group_id,
+    program.org_id, programId, req.name, finalPerms, null, req.display_as_group, req.parent_group_id,
   );
   await db.recordAuditEvent("program.role.created", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
@@ -887,12 +893,17 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
   const existing = await graph.getProgramRole(roleId);
   if (!existing) throw new HttpError(404, "Role not found");
   _requireScopedRoleAdmin(user, existing);
-  let perms = req.perms;
+  let perms: Record<string, unknown> | undefined = req.perms;
   // Only program-scoped roles are clamped to program features; org/nexus roles
   // use a different (free-form) permission vocabulary and must pass through.
   if (perms !== undefined && existing.program_id) {
     const program = await db.getProgram(existing.program_id as string);
     perms = _permsWithinFeatures(perms, program?.features);
+  }
+  // Fold fine-grained capabilities into perms without wiping the area perms.
+  if (req.capabilities !== undefined) {
+    const base = (perms ?? (existing.perms as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+    perms = { ...base, capabilities: req.capabilities };
   }
   const row = await graph.updateProgramRole(roleId, {
     name: req.name, perms, displayAsGroup: req.display_as_group, parentGroupId: req.parent_group_id,

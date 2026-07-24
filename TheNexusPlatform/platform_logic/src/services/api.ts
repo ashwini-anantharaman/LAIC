@@ -303,13 +303,13 @@ export async function listProgramRoles(programId: string): Promise<ProgramRole[]
 }
 export async function createProgramRole(
   programId: string,
-  payload: { name: string; perms: RolePerms; display_as_group?: boolean; parent_group_id?: string | null },
+  payload: { name: string; perms: RolePerms; display_as_group?: boolean; parent_group_id?: string | null; capabilities?: string[] },
 ): Promise<ProgramRole> {
   return request<ProgramRole>(`/api/programs/${programId}/roles`, { method: "POST", body: JSON.stringify(payload) });
 }
 export async function updateProgramRole(
   roleId: string,
-  patch: { name?: string; perms?: RolePerms; display_as_group?: boolean; parent_group_id?: string | null },
+  patch: { name?: string; perms?: RolePerms; display_as_group?: boolean; parent_group_id?: string | null; capabilities?: string[] },
 ): Promise<ProgramRole> {
   return request<ProgramRole>(`/api/roles/${roleId}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
@@ -668,7 +668,7 @@ export async function listOrgScopedRoles(orgId: string): Promise<ScopedRole[]> {
 }
 export async function createOrgScopedRole(
   orgId: string,
-  payload: { name: string; perms: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null },
+  payload: { name: string; perms: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null; capabilities?: string[] },
 ): Promise<ScopedRole> {
   return request<ScopedRole>(`/api/platform/orgs/${orgId}/roles`, { method: "POST", body: JSON.stringify(payload) });
 }
@@ -703,7 +703,7 @@ export async function listNexusScopedRoles(): Promise<ScopedRole[]> {
   return request<ScopedRole[]>("/api/platform/admin/nexus/roles");
 }
 export async function createNexusScopedRole(
-  payload: { name: string; perms: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null },
+  payload: { name: string; perms: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null; capabilities?: string[] },
 ): Promise<ScopedRole> {
   return request<ScopedRole>("/api/platform/admin/nexus/roles", { method: "POST", body: JSON.stringify(payload) });
 }

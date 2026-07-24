@@ -2378,7 +2378,13 @@ const scopedRoleSchema = z.object({
   perms: z.record(z.string(), z.string()),
   display_as_group: z.boolean().optional(),
   parent_group_id: z.string().uuid().nullable().optional(),
+  // Fine-grained capability ids from the Access Catalogue (folded into perms).
+  capabilities: z.array(z.string()).optional(),
 });
+/** Merge fine-grained capability ids into a role's perms blob (additive). */
+function _permsWithCapabilities(perms: Record<string, unknown>, capabilities?: string[]): Record<string, unknown> {
+  return capabilities !== undefined ? { ...perms, capabilities } : perms;
+}
 
 platformRouter.get("/orgs/:org_id/roles", async (c) => {
   const user = await getCurrentUser(c);
@@ -2394,7 +2400,7 @@ platformRouter.post("/orgs/:org_id/roles", async (c) => {
   const orgId = c.req.param("org_id");
   await _requireOrgArea(user, orgId, "team", "edit");
   const req = parseBody(scopedRoleSchema, await c.req.json());
-  const row = await graph.createOrgRole(orgId, req.name, req.perms, req.display_as_group, req.parent_group_id);
+  const row = await graph.createOrgRole(orgId, req.name, _permsWithCapabilities(req.perms, req.capabilities), req.display_as_group, req.parent_group_id);
   await db.recordAuditEvent("organization.role.created", {
     orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { name: req.name },
   });
@@ -2755,7 +2761,7 @@ platformRouter.post("/admin/nexus/roles", async (c) => {
   _requirePlatformAdmin(user);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(scopedRoleSchema, await c.req.json());
-  return c.json(await graph.createNexusRole(req.name, req.perms, req.display_as_group, req.parent_group_id));
+  return c.json(await graph.createNexusRole(req.name, _permsWithCapabilities(req.perms, req.capabilities), req.display_as_group, req.parent_group_id));
 });
 
 platformRouter.get("/admin/nexus/team", async (c) => {

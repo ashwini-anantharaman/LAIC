@@ -13,15 +13,47 @@ import {
   createNexusGroup, updateNexusGroup, deleteNexusGroup,
   type ScopedRole, type ProgramRole,
 } from "@/services/api";
-import type { RgAdapter, RgArea, RgRole } from "./RolesAndGroups";
+import type { RgAdapter, RgArea, RgRole, CatalogueForBuilder } from "./RolesAndGroups";
+import { getCatalogue, type CapabilityCatalogueDocument } from "@/nexus/access/catalogue";
 
-const toRgRole = (r: ProgramRole | ScopedRole): RgRole => ({
-  id: r.id,
-  name: r.name,
-  perms: (r.perms as Record<string, string>) ?? {},
-  display_as_group: r.display_as_group ?? false,
-  parent_group_id: r.parent_group_id ?? null,
-});
+const toRgRole = (r: ProgramRole | ScopedRole): RgRole => {
+  const perms = (r.perms as Record<string, unknown>) ?? {};
+  return {
+    id: r.id,
+    name: r.name,
+    perms: perms as Record<string, string>,
+    display_as_group: r.display_as_group ?? false,
+    parent_group_id: r.parent_group_id ?? null,
+    capabilities: Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [],
+  };
+};
+
+/** Shape a catalogue into the builder's grantable-capabilities-by-group view
+ *  (reserved capabilities excluded). */
+function toBuilder(doc: CapabilityCatalogueDocument): CatalogueForBuilder {
+  const byGroup = new Map<string, { id: string; label: string }[]>();
+  for (const c of doc.capabilities) {
+    if (c.reserved) continue;
+    if (!byGroup.has(c.group)) byGroup.set(c.group, []);
+    byGroup.get(c.group)!.push({ id: c.id, label: c.label });
+  }
+  return {
+    id: doc.id,
+    name: doc.name,
+    groups: [...doc.groups]
+      .sort((a, b) => a.order - b.order)
+      .map((g) => ({ id: g.id, label: g.label, capabilities: byGroup.get(g.id) ?? [] }))
+      .filter((g) => g.capabilities.length > 0),
+  };
+}
+
+/** Load + shape the given providers' catalogues (skips any that fail to load). */
+function catalogueLoader(providerIds: string[]): () => Promise<CatalogueForBuilder[]> {
+  return async () => {
+    const docs = await Promise.all(providerIds.map((id) => getCatalogue(id).catch(() => null)));
+    return docs.filter((d): d is CapabilityCatalogueDocument => !!d).map(toBuilder).filter((b) => b.groups.length > 0);
+  };
+}
 
 // ── Program ─────────────────────────────────────────────────────────────────
 const PROGRAM_AREA_LABELS: Record<string, string> = {
@@ -51,6 +83,8 @@ export function programRgAdapter(
         ? { key, label: PROGRAM_AREA_LABELS[key] ?? key, kind: "admin" }
         : { key, label: PROGRAM_AREA_LABELS[key] ?? key, kind: "graded", levels: ["view", "comment", "edit"] },
     ),
+    // A program role can grant program-console capabilities + the platforms it opens.
+    loadCatalogues: catalogueLoader(["program-console", "learning", "bridge"]),
   };
 }
 
@@ -59,7 +93,7 @@ export function orgRgAdapter(orgId: string): RgAdapter {
   return {
     loadRoles: async () => (await listOrgScopedRoles(orgId)).map(toRgRole),
     loadGroups: async () => (await getOrgGroupsModel(orgId)).groups.map((g) => ({ id: g.id, name: g.name, parent_id: g.parent_id })),
-    createRole: (i) => createOrgScopedRole(orgId, { name: i.name, perms: i.perms, display_as_group: i.display_as_group, parent_group_id: i.parent_group_id }).then(() => undefined),
+    createRole: (i) => createOrgScopedRole(orgId, { name: i.name, perms: i.perms, display_as_group: i.display_as_group, parent_group_id: i.parent_group_id, capabilities: i.capabilities }).then(() => undefined),
     updateRole: (id, patch) => updateProgramRole(id, patch).then(() => undefined),
     deleteRole: (id) => deleteProgramRole(id),
     createGroup: (i) => createGroup(orgId, { name: i.name, parent_group_id: i.parent_group_id }).then(() => undefined),
@@ -71,6 +105,7 @@ export function orgRgAdapter(orgId: string): RgAdapter {
       { key: "settings", label: "Settings", kind: "graded", levels: ["view", "edit"] },
       { key: "audit", label: "Audit", kind: "toggle", grant: "view" },
     ],
+    loadCatalogues: catalogueLoader(["org-console"]),
   };
 }
 
@@ -79,7 +114,7 @@ export function nexusRgAdapter(): RgAdapter {
   return {
     loadRoles: async () => (await listNexusScopedRoles()).map(toRgRole),
     loadGroups: async () => (await getNexusGroupsModel()).groups.map((g) => ({ id: g.id, name: g.name, parent_id: g.parent_id })),
-    createRole: (i) => createNexusScopedRole({ name: i.name, perms: i.perms, display_as_group: i.display_as_group, parent_group_id: i.parent_group_id }).then(() => undefined),
+    createRole: (i) => createNexusScopedRole({ name: i.name, perms: i.perms, display_as_group: i.display_as_group, parent_group_id: i.parent_group_id, capabilities: i.capabilities }).then(() => undefined),
     updateRole: (id, patch) => updateProgramRole(id, patch).then(() => undefined),
     deleteRole: (id) => deleteProgramRole(id),
     createGroup: (i) => createNexusGroup({ name: i.name, parent_group_id: i.parent_group_id }).then(() => undefined),
@@ -90,5 +125,6 @@ export function nexusRgAdapter(): RgAdapter {
       { key: "audit", label: "Platform audit", kind: "toggle", grant: "view" },
       { key: "settings", label: "Settings", kind: "toggle", grant: "edit" },
     ],
+    loadCatalogues: catalogueLoader(["nexus-console"]),
   };
 }
