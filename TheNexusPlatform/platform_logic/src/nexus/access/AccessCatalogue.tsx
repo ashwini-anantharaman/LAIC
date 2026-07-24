@@ -6,7 +6,7 @@
  * bridge. See ACCESS_CATALOGUE_DESIGN.md.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, FileJson, KeyRound, LayoutList, Plus, RotateCcw, Save, Shield, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, FileJson, KeyRound, LayoutList, Plus, RotateCcw, Save, Shield, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -63,6 +63,9 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
   const [busy, setBusy] = useState(false);
   const [capEdit, setCapEdit] = useState<Capability | "new" | null>(null);
   const [surfEdit, setSurfEdit] = useState<UiSurface | "new" | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (id: string) =>
+    setExpandedGroups((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   useEffect(() => { if (multi) listCatalogues().then(setProviders).catch(() => setProviders([])); }, [multi]);
   const load = useCallback(() => {
@@ -209,16 +212,68 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
           {tab === "groups" && (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">Groups organize the role UI. Each holds capabilities (enforcement keys) and surfaces (nav items).</p>
-              {groupsSorted.map((g) => (
-                <div key={g.id} className="glass-card flex items-center gap-3 px-4 py-3">
-                  <Input value={g.label} onChange={(e) => renameGroup(g.id, e.target.value)} className="h-8 max-w-xs" />
-                  <span className="font-mono text-xs text-muted-foreground">{g.id}</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{(g.capabilityIds ?? []).length} caps · {(g.uiSurfaceIds ?? []).length} surfaces</span>
-                  <ConfirmButton title={`Remove group "${g.label}"?`} description="Its capabilities/surfaces move to another group." actionLabel="Remove" onConfirm={() => removeGroup(g.id)} buttonTitle="Remove group">
-                    <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
-                  </ConfirmButton>
-                </div>
-              ))}
+              {groupsSorted.map((g) => {
+                const caps = capsByGroup(g.id);
+                const surfs = surfsByGroup(g.id);
+                const open = expandedGroups.has(g.id);
+                return (
+                  <div key={g.id} className="glass-card overflow-hidden">
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(g.id)}
+                        className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                        title={open ? "Hide capabilities & surfaces" : "Show capabilities & surfaces"}
+                        aria-expanded={open}
+                      >
+                        {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                      </button>
+                      <Input value={g.label} onChange={(e) => renameGroup(g.id, e.target.value)} className="h-8 max-w-xs" />
+                      <span className="font-mono text-xs text-muted-foreground">{g.id}</span>
+                      <span className="ml-auto text-xs text-muted-foreground">{caps.length} caps · {surfs.length} surfaces</span>
+                      <ConfirmButton title={`Remove group "${g.label}"?`} description="Its capabilities/surfaces move to another group." actionLabel="Remove" onConfirm={() => removeGroup(g.id)} buttonTitle="Remove group">
+                        <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                      </ConfirmButton>
+                    </div>
+                    {open ? (
+                      <div className="space-y-3 border-t border-border bg-muted/20 px-4 py-3 pl-13">
+                        <div>
+                          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            <KeyRound className="size-3" /> Capabilities
+                          </div>
+                          {caps.length ? (
+                            <div className="flex flex-col gap-1">
+                              {caps.map((c) => (
+                                <div key={c.id} className="flex items-center gap-2 text-sm">
+                                  <span className="text-foreground">{c.label}</span>
+                                  <span className="font-mono text-xs text-muted-foreground">{c.id}</span>
+                                  {c.reserved ? <Pill tone="accent">reserved · {c.reserved}</Pill> : null}
+                                </div>
+                              ))}
+                            </div>
+                          ) : <p className="text-xs text-muted-foreground">None in this group.</p>}
+                        </div>
+                        <div>
+                          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            <LayoutList className="size-3" /> Surfaces
+                          </div>
+                          {surfs.length ? (
+                            <div className="flex flex-col gap-1">
+                              {surfs.map((s) => (
+                                <div key={s.id} className="flex items-center gap-2 text-sm">
+                                  <span className="text-foreground">{s.label}</span>
+                                  <span className="font-mono text-xs text-muted-foreground">{s.id}</span>
+                                  <Pill tone="neutral">{s.kind}</Pill>
+                                </div>
+                              ))}
+                            </div>
+                          ) : <p className="text-xs text-muted-foreground">None in this group.</p>}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
               <AddInline placeholder="New group label" onAdd={addGroup} />
             </div>
           )}
