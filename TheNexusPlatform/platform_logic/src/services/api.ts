@@ -395,6 +395,7 @@ export interface OrgBranding {
   slug: string;
   theme_accent_color: string | null;
   theme_logo_url: string | null;
+  theme_favicon_url?: string | null;
 }
 
 /** Orgs the signed-in user belongs to (id/name/slug/role). */
@@ -616,6 +617,15 @@ export async function uploadOrgLogo(orgId: string, file: File): Promise<{ logo_u
   });
 }
 
+/** Upload the org's favicon (≤1 MB image) — the browser-tab icon. */
+export async function uploadOrgFavicon(orgId: string, file: File): Promise<{ favicon_url: string }> {
+  const data = await fileToBase64(file);
+  return request<{ favicon_url: string }>(`/api/platform/orgs/${orgId}/favicon`, {
+    method: "POST",
+    body: JSON.stringify({ data, content_type: file.type }),
+  });
+}
+
 async function fileToBase64(file: File): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -708,6 +718,7 @@ export async function removeNexusOperator(email: string): Promise<void> {
 export interface PlatformBranding {
   accent: string | null;
   logo: string | null;
+  favicon?: string | null;
   title?: string | null;
 }
 
@@ -733,11 +744,18 @@ export async function uploadPlatformLogo(file: File): Promise<{ logo_url: string
     body: JSON.stringify({ data, content_type: file.type }),
   });
 }
+export async function uploadPlatformFavicon(file: File): Promise<{ favicon_url: string }> {
+  const data = await fileToBase64(file);
+  return request<{ favicon_url: string }>("/api/platform/admin/platform/favicon", {
+    method: "POST",
+    body: JSON.stringify({ data, content_type: file.type }),
+  });
+}
 
 export async function updateProgramTheme(
   programId: string,
   opts: { accent?: string; revert?: boolean },
-): Promise<{ branding: { accent: string | null; logo: string | null } | null }> {
+): Promise<{ branding: { accent: string | null; logo: string | null; favicon?: string | null } | null }> {
   return request(`/api/platform/programs/${programId}/theme`, {
     method: "PATCH",
     body: JSON.stringify({ accent_color: opts.accent, revert: opts.revert }),
@@ -761,6 +779,15 @@ export async function updateProgramCategories(
 export async function uploadProgramLogo(programId: string, file: File): Promise<{ logo_url: string }> {
   const data = await fileToBase64(file);
   return request<{ logo_url: string }>(`/api/platform/programs/${programId}/logo`, {
+    method: "POST",
+    body: JSON.stringify({ data, content_type: file.type }),
+  });
+}
+
+/** Upload a program's favicon (≤1 MB image) — the browser-tab icon. */
+export async function uploadProgramFavicon(programId: string, file: File): Promise<{ favicon_url: string }> {
+  const data = await fileToBase64(file);
+  return request<{ favicon_url: string }>(`/api/platform/programs/${programId}/favicon`, {
     method: "POST",
     body: JSON.stringify({ data, content_type: file.type }),
   });

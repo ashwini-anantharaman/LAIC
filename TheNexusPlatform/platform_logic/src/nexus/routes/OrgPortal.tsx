@@ -40,12 +40,12 @@ export function OrgPortal() {
     getOrgBySlug(slug)
       .then((b) => {
         setOrg(b);
-        writeBranding({ orgId: b.id, slug, accent: b.theme_accent_color, logo: resolveAssetUrl(b.theme_logo_url), title: b.name });
+        writeBranding({ orgId: b.id, slug, accent: b.theme_accent_color, logo: resolveAssetUrl(b.theme_logo_url), favicon: resolveAssetUrl(b.theme_favicon_url ?? null), title: b.name });
       })
       .catch(() => setNotFound(true));
   }, [slug]);
 
-  useDocumentChrome(org?.name, resolveAssetUrl(org?.theme_logo_url ?? null));
+  useDocumentChrome(org?.name, resolveAssetUrl(org?.theme_favicon_url ?? org?.theme_logo_url ?? null));
 
   useEffect(() => {
     if (!DEV_ENABLED) return;

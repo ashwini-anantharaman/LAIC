@@ -1270,6 +1270,7 @@ platformRouter.patch("/orgs/:org_id/theme", async (c) => {
     owner_id: org.owner_id ?? null,
     theme_accent_color: theme.accent_color ?? null,
     theme_logo_url: theme.logo_url ?? null,
+    theme_favicon_url: theme.favicon_url ?? null,
   });
 });
 
@@ -1417,6 +1418,7 @@ platformRouter.get("/orgs/by-slug/:slug", async (c) => {
     slug: org.slug,
     theme_accent_color: theme.accent_color ?? null,
     theme_logo_url: theme.logo_url ?? org.logo_url ?? null,
+    theme_favicon_url: theme.favicon_url ?? null,
   });
 });
 
@@ -2032,6 +2034,7 @@ platformRouter.get("/platform/branding", async (c) => {
   return c.json({
     accent: (b.accent as string) ?? null,
     logo: (b.logo as string) ?? null,
+    favicon: (b.favicon as string) ?? null,
     title: (b.title as string) ?? null,
   });
 });
@@ -2078,6 +2081,24 @@ platformRouter.post("/admin/platform/logo", async (c) => {
   const cur = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
   await db.setPlatformSetting("branding", { ...cur, logo: url });
   return c.json({ logo_url: url });
+});
+
+platformRouter.post("/admin/platform/favicon", async (c) => {
+  const user = await getCurrentUser(c);
+  await _requireNexusArea(user, "settings", "edit");
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const body = (await c.req.json()) as { data?: string; content_type?: string };
+  const ext = _LOGO_EXT[body.content_type ?? ""];
+  if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
+  const buf = Buffer.from(body.data, "base64");
+  if (buf.length === 0) throw new HttpError(422, "Empty upload");
+  if (buf.length > _MAX_LOGO_BYTES) throw new HttpError(413, "Favicon exceeds the 1 MB limit");
+  const key = `platform/favicon.${ext}`;
+  await getStorage().put(key, buf, body.content_type as string);
+  const url = await getStorage().url(key);
+  const cur = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
+  await db.setPlatformSetting("branding", { ...cur, favicon: url });
+  return c.json({ favicon_url: url });
 });
 
 const programThemeSchema = z.object({
@@ -2173,6 +2194,31 @@ platformRouter.post("/programs/:program_id/logo", async (c) => {
     metadata: { key, bytes: buf.length },
   });
   return c.json({ logo_url: url });
+});
+
+// Program favicon — the browser-tab icon (separate from the sidebar logo).
+platformRouter.post("/programs/:program_id/favicon", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  await _assertProgramConfigAccess(user, program.org_id, programId);
+  const body = (await c.req.json()) as { data?: string; content_type?: string };
+  const ext = _LOGO_EXT[body.content_type ?? ""];
+  if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
+  const buf = Buffer.from(body.data, "base64");
+  if (buf.length === 0) throw new HttpError(422, "Empty upload");
+  if (buf.length > _MAX_LOGO_BYTES) throw new HttpError(413, "Favicon exceeds the 1 MB limit");
+  const key = orgKey(program.org_id, `programs/${programId}/favicon.${ext}`);
+  await getStorage().put(key, buf, body.content_type as string);
+  const url = await getStorage().url(key);
+  await db.setProgramBranding(programId, { favicon: url });
+  await db.recordAuditEvent("program.favicon_uploaded", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { key, bytes: buf.length },
+  });
+  return c.json({ favicon_url: url });
 });
 
 // Program card cover (the background image on the Programs page). Larger cap
@@ -3285,6 +3331,28 @@ platformRouter.post("/orgs/:org_id/logo", async (c) => {
     orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { key, bytes: buf.length },
   });
   return c.json({ logo_url: url });
+});
+
+// Org favicon — separate from the logo (shown in the browser tab, not the sidebar).
+platformRouter.post("/orgs/:org_id/favicon", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "settings", "edit");
+  const body = (await c.req.json()) as { data?: string; content_type?: string };
+  const ext = _LOGO_EXT[body.content_type ?? ""];
+  if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
+  const buf = Buffer.from(body.data, "base64");
+  if (buf.length === 0) throw new HttpError(422, "Empty upload");
+  if (buf.length > _MAX_LOGO_BYTES) throw new HttpError(413, "Favicon exceeds the 1 MB limit");
+
+  const key = orgKey(orgId, `favicon.${ext}`);
+  await getStorage().put(key, buf, body.content_type as string);
+  const url = await getStorage().url(key);
+  await db.updateOrgTheme(orgId, null, null, url);
+  await db.recordAuditEvent("organization.favicon_uploaded", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { key, bytes: buf.length },
+  });
+  return c.json({ favicon_url: url });
 });
 
 // Serve locally-stored objects (FS adapter dev mode). Public — logos are org page assets.

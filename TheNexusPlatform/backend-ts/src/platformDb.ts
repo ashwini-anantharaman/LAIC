@@ -262,8 +262,9 @@ export async function updateOrgTheme(
   orgId: string,
   accentColor: string | null | undefined,
   logoUrl: string | null | undefined,
+  faviconUrl?: string | null | undefined,
 ): Promise<Row> {
-  if (usePg()) return tpg.updateOrgTheme(orgId, accentColor, logoUrl);
+  if (usePg()) return tpg.updateOrgTheme(orgId, accentColor, logoUrl, faviconUrl);
   if (await useLocal()) return local.localUpdateOrgTheme(orgId, accentColor, logoUrl);
   const client = requireClient();
   const org = await getOrganization(orgId);
@@ -272,6 +273,7 @@ export async function updateOrgTheme(
   const theme = { ...(settings.theme ?? {}) };
   if (accentColor != null) theme.accent_color = accentColor;
   if (logoUrl != null) theme.logo_url = logoUrl;
+  if (faviconUrl != null) theme.favicon_url = faviconUrl;
   settings.theme = theme;
   return _mutateOne(
     client.from("organizations").update({ settings }).eq("id", orgId).select("*"),
@@ -389,7 +391,7 @@ export async function updateProgramCategories(
 }
 export async function setProgramBranding(
   programId: string,
-  branding: { accent?: string | null; logo?: string | null; cover?: string | null } | null,
+  branding: { accent?: string | null; logo?: string | null; cover?: string | null; favicon?: string | null } | null,
 ): Promise<Row | null> {
   return tpg.setProgramBranding(programId, branding);
 }

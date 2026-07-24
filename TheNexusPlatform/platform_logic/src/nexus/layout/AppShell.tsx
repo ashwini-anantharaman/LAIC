@@ -381,6 +381,7 @@ export function AppShell() {
             slug,
             accent: b.theme_accent_color,
             logo: resolveAssetUrl(b.theme_logo_url),
+            favicon: resolveAssetUrl(b.theme_favicon_url ?? null),
             title: b.name,
           });
         }
@@ -402,7 +403,7 @@ export function AppShell() {
     getPlatformBranding()
       .then((b) => {
         setPlatformTitle(b.title ?? null);
-        writeBranding({ orgId: "platform", accent: b.accent, logo: resolveAssetUrl(b.logo), title: b.title ?? null });
+        writeBranding({ orgId: "platform", accent: b.accent, logo: resolveAssetUrl(b.logo), favicon: resolveAssetUrl(b.favicon ?? null), title: b.title ?? null });
       })
       .catch(() => {});
   }, [mode]);
@@ -468,13 +469,14 @@ export function AppShell() {
     // Reconcile once the program row arrives: cache its branding, or clear a
     // stale override if it reverted to the org's.
     if (!programId || !program) return;
-    const b = (program as Program & { branding?: { accent: string | null; logo: string | null } | null }).branding;
-    if (b && (b.accent || b.logo)) {
+    const b = (program as Program & { branding?: { accent: string | null; logo: string | null; favicon?: string | null } | null }).branding;
+    if (b && (b.accent || b.logo || b.favicon)) {
       const org = readBranding(orgId);
       writeBranding({
         orgId: programId,
         accent: b.accent ?? org?.accent ?? null,
         logo: b.logo ? resolveAssetUrl(b.logo) : org?.logo ?? null,
+        favicon: b.favicon ? resolveAssetUrl(b.favicon) : org?.favicon ?? null,
       });
     } else {
       clearBranding(programId);
@@ -494,7 +496,16 @@ export function AppShell() {
           ? `${programName} · ${effectiveOrgName}`
           : effectiveOrgName
         : effectiveOrgName;
-  useDocumentChrome(tabTitle, displayBranding.logo);
+  // The browser-tab icon uses the active level's favicon, falling back to its
+  // logo. Read from the cache at render — a branding write re-renders the shell
+  // (via onBranding → state), so this stays live.
+  const activeFavicon =
+    (mode === "nexus"
+      ? readBranding("platform")
+      : programId && programBranding
+        ? readBranding(programId)
+        : readBranding(orgId))?.favicon ?? null;
+  useDocumentChrome(tabTitle, activeFavicon ?? displayBranding.logo);
   // Effective feature switches (already clamped by the org's Nexus envelope
   // server-side). Until loaded, show everything to avoid a nav flash.
   const programFeatures: Record<string, boolean> = program?.features ?? {};

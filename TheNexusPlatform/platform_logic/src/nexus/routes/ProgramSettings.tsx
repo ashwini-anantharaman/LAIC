@@ -10,6 +10,7 @@ import {
   listPrograms,
   updateProgramName,
   updateProgramTheme,
+  uploadProgramFavicon,
   uploadProgramLogo,
 } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
@@ -19,7 +20,8 @@ import { ThemeEditor } from "@/nexus/ui/ThemeEditor";
 
 export function ProgramSettings() {
   const { orgId = "", programId = "" } = useParams();
-  const [branding, setBranding] = useState<{ accent: string | null; logo: string | null } | null | undefined>(undefined);
+  type Brand = { accent: string | null; logo: string | null; favicon?: string | null };
+  const [branding, setBranding] = useState<Brand | null | undefined>(undefined);
   const [programName, setProgramName] = useState<string>("Program");
 
   useEffect(() => {
@@ -38,8 +40,9 @@ export function ProgramSettings() {
   const orgB = readBranding(orgId);
   const accent = branding?.accent ?? orgB?.accent ?? null;
   const logo = branding?.logo ? resolveAssetUrl(branding.logo) : orgB?.logo ?? null;
+  const favicon = branding?.favicon ? resolveAssetUrl(branding.favicon) : orgB?.favicon ?? null;
 
-  function broadcast(next: { accent: string | null; logo: string | null } | null) {
+  function broadcast(next: Brand | null) {
     setBranding(next);
     // The shell resolves program → org, so writing the program key (or
     // clearing it) repaints the sidebar immediately.
@@ -47,6 +50,7 @@ export function ProgramSettings() {
       orgId: programId,
       accent: next?.accent ?? orgB?.accent ?? null,
       logo: (next?.logo ? resolveAssetUrl(next.logo) : null) ?? orgB?.logo ?? null,
+      favicon: (next?.favicon ? resolveAssetUrl(next.favicon) : null) ?? orgB?.favicon ?? null,
     });
   }
 
@@ -66,13 +70,18 @@ export function ProgramSettings() {
           }}
           accent={accent}
           logoUrl={logo}
+          faviconUrl={favicon}
           onSaveAccent={async (hex) => {
             const r = await updateProgramTheme(programId, { accent: hex });
-            broadcast(r.branding ?? { accent: hex, logo: branding?.logo ?? null });
+            broadcast(r.branding ?? { accent: hex, logo: branding?.logo ?? null, favicon: branding?.favicon ?? null });
           }}
           onUploadLogo={async (file) => {
             const r = await uploadProgramLogo(programId, file);
-            broadcast({ accent: branding?.accent ?? null, logo: r.logo_url });
+            broadcast({ accent: branding?.accent ?? null, logo: r.logo_url, favicon: branding?.favicon ?? null });
+          }}
+          onUploadFavicon={async (file) => {
+            const r = await uploadProgramFavicon(programId, file);
+            broadcast({ accent: branding?.accent ?? null, logo: branding?.logo ?? null, favicon: r.favicon_url });
           }}
           onRevert={async () => {
             await updateProgramTheme(programId, { revert: true });

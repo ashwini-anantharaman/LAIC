@@ -19,8 +19,10 @@ const HUE_GRADIENT =
 export function ThemeEditor({
   accent,
   logoUrl,
+  faviconUrl,
   onSaveAccent,
   onUploadLogo,
+  onUploadFavicon,
   onRevert,
   revertLabel,
   name,
@@ -30,8 +32,12 @@ export function ThemeEditor({
 }: {
   accent: string | null;
   logoUrl: string | null;
+  /** The browser-tab icon (separate from the sidebar logo). */
+  faviconUrl?: string | null;
   onSaveAccent: (hex: string) => Promise<void>;
   onUploadLogo: (file: File) => Promise<void>;
+  /** When provided, a second "Favicon" upload is shown. */
+  onUploadFavicon?: (file: File) => Promise<void>;
   onRevert?: () => Promise<void>;
   revertLabel?: string;
   /** When provided (with onSaveName), an editable display-name field is shown. */
@@ -43,7 +49,6 @@ export function ThemeEditor({
   const [hue, setHue] = useState(() => hueOf(accent ?? "#4f46e5"));
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const [nameDraft, setNameDraft] = useState(name ?? "");
   const [nameBusy, setNameBusy] = useState(false);
@@ -163,47 +168,80 @@ export function ThemeEditor({
         </div>
       </div>
 
-      <div className="glass-card p-5 space-y-2">
-        <Label>Logo</Label>
-        <p className="text-xs text-muted-foreground -mt-0.5">
-          Shown in the sidebar and the browser tab. A square PNG or SVG works best.
-        </p>
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          className="group relative grid size-28 place-items-center overflow-hidden rounded-2xl border border-border bg-background/40 hover:border-foreground/30 transition-colors"
-          title="Upload logo"
-        >
-          {logoUrl ? (
-            <img src={logoUrl} alt="" className="size-full object-contain p-2" />
-          ) : (
-            <ImageIcon className="size-8 text-muted-foreground/60" />
-          )}
-          <span className="absolute inset-x-0 bottom-0 bg-background/80 py-1 text-center text-[10px] font-medium text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-            {logoUrl ? "Replace" : "Upload"}
-          </span>
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/svg+xml"
-          className="hidden"
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (!file) return;
-            setBusy(true);
-            try {
-              await onUploadLogo(file);
-              toast.success("Logo uploaded");
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Upload failed");
-            } finally {
-              setBusy(false);
-            }
-          }}
+      <div className="flex flex-wrap gap-4">
+        <ImageUpload
+          label="Logo"
+          hint="Shown in the sidebar. A square PNG or SVG works best."
+          url={logoUrl}
+          onUpload={onUploadLogo}
         />
+        {onUploadFavicon ? (
+          <ImageUpload
+            label="Favicon"
+            hint="Shown in the browser tab. A small square PNG or SVG works best."
+            url={faviconUrl ?? null}
+            onUpload={onUploadFavicon}
+          />
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+/** One labelled image drop target — used for both the logo and the favicon. */
+function ImageUpload({
+  label,
+  hint,
+  url,
+  onUpload,
+}: {
+  label: string;
+  hint: string;
+  url: string | null;
+  onUpload: (file: File) => Promise<void>;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="glass-card p-5 space-y-2 flex-1 min-w-[220px]">
+      <Label>{label}</Label>
+      <p className="text-xs text-muted-foreground -mt-0.5">{hint}</p>
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={busy}
+        className="group relative grid size-28 place-items-center overflow-hidden rounded-2xl border border-border bg-background/40 hover:border-foreground/30 transition-colors disabled:opacity-50"
+        title={`Upload ${label.toLowerCase()}`}
+      >
+        {url ? (
+          <img src={url} alt="" className="size-full object-contain p-2" />
+        ) : (
+          <ImageIcon className="size-8 text-muted-foreground/60" />
+        )}
+        <span className="absolute inset-x-0 bottom-0 bg-background/80 py-1 text-center text-[10px] font-medium text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+          {url ? "Replace" : "Upload"}
+        </span>
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          setBusy(true);
+          try {
+            await onUpload(file);
+            toast.success(`${label} uploaded`);
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Upload failed");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
     </div>
   );
 }

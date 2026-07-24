@@ -35,6 +35,7 @@ import {
   setOrgAccess,
   updateOrgName,
   updateOrgTheme,
+  uploadOrgFavicon,
   uploadOrgLogo,
   type OrgCapabilities,
 } from "@/services/api";
@@ -54,6 +55,7 @@ export function OrgSettings() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [accent, setAccent] = useState("#4f46e5");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [faviconUrl, setFaviconUrl] = useState<string | null>(null);
   const [orgSlug, setOrgSlug] = useState<string | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +94,7 @@ export function OrgSettings() {
         const b = await getOrgBySlug(slug);
         if (b.theme_accent_color) setAccent(b.theme_accent_color);
         if (b.theme_logo_url) setLogoUrl(b.theme_logo_url);
+        if (b.theme_favicon_url) setFaviconUrl(b.theme_favicon_url);
       } catch {
         /* defaults stay */
       }
@@ -125,6 +128,7 @@ export function OrgSettings() {
           }}
           accent={accent}
           logoUrl={resolveAssetUrl(logoUrl)}
+          faviconUrl={resolveAssetUrl(faviconUrl)}
           onSaveAccent={async (hex) => {
             await updateOrgTheme(orgId, { accent_color: hex });
             setAccent(hex);
@@ -134,6 +138,11 @@ export function OrgSettings() {
             const r = await uploadOrgLogo(orgId, file);
             setLogoUrl(r.logo_url);
             writeBranding({ orgId, slug: orgSlug, accent, logo: resolveAssetUrl(r.logo_url), title: orgName });
+          }}
+          onUploadFavicon={async (file) => {
+            const r = await uploadOrgFavicon(orgId, file);
+            setFaviconUrl(r.favicon_url);
+            writeBranding({ orgId, slug: orgSlug, accent, logo: resolveAssetUrl(logoUrl), favicon: resolveAssetUrl(r.favicon_url), title: orgName });
           }}
         />
       </Section>
