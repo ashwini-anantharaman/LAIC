@@ -22,6 +22,8 @@ import { provisionOrganization } from "../db/provisioning";
 import * as graph from "../db/orgGraphRepo";
 import { getStorage, orgKey } from "../storage";
 import { slugify } from "../platformLocalStore";
+import * as catalogue from "../accessCatalogue/store";
+import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
 import { isOfferingAdmin } from "../permissions";
 import {
   canViewStage,
@@ -2110,6 +2112,36 @@ platformRouter.post("/admin/platform/favicon", async (c) => {
   const cur = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
   await db.setPlatformSetting("branding", { ...cur, favicon: url });
   return c.json({ favicon_url: url });
+});
+
+// ── Central Access Catalogue — one document per provider (nexus-console,
+// org-console, program-console, learning, bridge). Read: any authenticated
+// caller (the role builders + resolver need it). Write: platform operators only
+// (the platform owns the inventory). See ACCESS_CATALOGUE_DESIGN.md.
+platformRouter.get("/catalogues", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  return c.json(await catalogue.listCatalogues());
+});
+platformRouter.get("/catalogues/:provider_id", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  const id = c.req.param("provider_id");
+  if (!catalogue.isProviderId(id)) throw new HttpError(404, "Unknown catalogue provider");
+  return c.json(await catalogue.getCatalogue(id));
+});
+platformRouter.put("/catalogues/:provider_id", async (c) => {
+  const user = await getCurrentUser(c);
+  await _requireNexusArea(user, "settings", "edit");
+  _requireDb();
+  const id = c.req.param("provider_id");
+  if (!catalogue.isProviderId(id)) throw new HttpError(404, "Unknown catalogue provider");
+  const doc = (await c.req.json()) as CapabilityCatalogueDocument;
+  if (doc?.documentType !== "capability_catalogue" || !Array.isArray(doc.capabilities) || !Array.isArray(doc.groups)) {
+    throw new HttpError(422, "Not a valid catalogue document");
+  }
+  if (doc.provider?.id !== id) throw new HttpError(422, `provider.id must equal "${id}"`);
+  return c.json(await catalogue.saveCatalogue(id, doc));
 });
 
 const programThemeSchema = z.object({
