@@ -2,3 +2,5 @@ tests
 scripts
 migrations
 dbg.mts
+src
+api/index.ts

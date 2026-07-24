@@ -8,6 +8,7 @@
     "node": "22.x"
   },
   "scripts": {
+    "build:fn": "esbuild api/index.ts --bundle --platform=node --format=esm --packages=external --outfile=api/index.mjs",
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
