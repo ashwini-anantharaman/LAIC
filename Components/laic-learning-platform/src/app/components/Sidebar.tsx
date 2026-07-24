@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Home, PlusSquare, Database, BookOpen, SendHorizontal,
   GitBranch, BarChart2, ClipboardCheck, GraduationCap,
-  Users, BookMarked, Shield, UserCheck, ChevronRight, LogOut, LayoutTemplate,
+  Users, BookMarked, Shield, UserCheck, ChevronRight, LogOut, LayoutTemplate, ListTree,
 } from 'lucide-react';
 import { useApp } from '../App';
 import { USERS } from '../../lib/data';
@@ -23,6 +23,7 @@ const ICON_BY_ID: Record<string, React.ReactNode> = {
   'or-reviews': <ClipboardCheck size={16} />, 'cr-reviews': <ClipboardCheck size={16} />,
   'admin-overview': <Shield size={16} />, 'admin-people': <Users size={16} />,
   'admin-courses': <BookMarked size={16} />, 'admin-publishing': <GitBranch size={16} />,
+  'admin-access-catalogue': <ListTree size={16} />,
   'coach': <UserCheck size={16} />,
   'student-dashboard': <Home size={16} />, 'student-courses': <GraduationCap size={16} />,
 };
@@ -49,6 +50,7 @@ const NAV: Record<Role, NavItem[]> = {
     { id: 'admin-people', label: 'People', icon: <Users size={16} /> },
     { id: 'admin-courses', label: 'Courses & Assignments', icon: <BookMarked size={16} /> },
     { id: 'admin-publishing', label: 'Publishing & Governance', icon: <GitBranch size={16} /> },
+    { id: 'admin-access-catalogue', label: 'Access Catalogue', icon: <ListTree size={16} /> },
   ],
   'coach': [
     { id: 'coach', label: 'Coach', icon: <UserCheck size={16} /> },

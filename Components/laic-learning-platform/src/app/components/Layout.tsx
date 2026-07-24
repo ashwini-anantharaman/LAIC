@@ -36,6 +36,7 @@ import { AdminProgramOverview } from './screens/AdminProgramOverview';
 import { AdminPeopleRoles } from './screens/AdminPeopleRoles';
 import { AdminCoursesAssignments } from './screens/AdminCoursesAssignments';
 import { AdminPublishingGovernance } from './screens/AdminPublishingGovernance';
+import { AccessCatalogueScreen } from './screens/AccessCatalogueScreen';
 import { CoachScreen } from './screens/CoachScreen';
 
 function ScreenRouter() {
@@ -63,6 +64,7 @@ function ScreenRouter() {
     case 'admin-people':     return <AdminPeopleRoles />;
     case 'admin-courses':    return <AdminCoursesAssignments />;
     case 'admin-publishing': return <AdminPublishingGovernance />;
+    case 'admin-access-catalogue': return <AccessCatalogueScreen />;
     case 'coach':       return <CoachScreen />;
     default:
       return (
