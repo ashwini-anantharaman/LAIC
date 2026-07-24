@@ -24,6 +24,7 @@ import { getStorage, orgKey } from "../storage";
 import { slugify } from "../platformLocalStore";
 import * as catalogue from "../accessCatalogue/store";
 import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
+import { resolveCapabilities, surfacesForCapabilities } from "../accessCatalogue/resolver";
 import { isOfferingAdmin } from "../permissions";
 import {
   canViewStage,
@@ -2129,6 +2130,18 @@ platformRouter.get("/catalogues/:provider_id", async (c) => {
   const id = c.req.param("provider_id");
   if (!catalogue.isProviderId(id)) throw new HttpError(404, "Unknown catalogue provider");
   return c.json(await catalogue.getCatalogue(id));
+});
+// Preview: given capability ids (?capabilities=a,b), the validated set + the
+// surfaces they unlock. The role builder + enforcement use the same expansion.
+platformRouter.get("/catalogues/:provider_id/resolve", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  const id = c.req.param("provider_id");
+  if (!catalogue.isProviderId(id)) throw new HttpError(404, "Unknown catalogue provider");
+  const doc = await catalogue.getCatalogue(id);
+  const ids = (c.req.query("capabilities") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const caps = resolveCapabilities(doc, ids);
+  return c.json({ capabilities: [...caps], surfaces: surfacesForCapabilities(doc, caps) });
 });
 platformRouter.put("/catalogues/:provider_id", async (c) => {
   const user = await getCurrentUser(c);
