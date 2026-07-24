@@ -20,6 +20,7 @@ import {
   Rocket,
   Waypoints,
   ScrollText,
+  ListTree,
   ChevronRight,
   ChevronLeft,
   Moon,
@@ -566,6 +567,7 @@ export function AppShell() {
     items = [
       { to: "/orgs", label: "Organizations", icon: Building2 },
       { to: "/team", label: "People", icon: KeyRound },
+      { to: "/access-catalogue", label: "Access Catalogue", icon: ListTree },
       { to: "/nexus-gates", label: "Gates", icon: DoorOpen },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
@@ -575,7 +577,7 @@ export function AppShell() {
     if (user?.role !== "platform_admin") {
       const perms = user?.nexus_role?.perms ?? {};
       const NEXUS_NAV_AREAS: Record<string, string | null> = {
-        orgs: "organizations", team: "__admin__", "nexus-gates": "__admin__", audit: "audit", settings: "settings",
+        orgs: "organizations", team: "__admin__", "access-catalogue": "__admin__", "nexus-gates": "__admin__", audit: "audit", settings: "settings",
       };
       items = items.filter((it) => {
         const area = NEXUS_NAV_AREAS[navKey(it.to)];

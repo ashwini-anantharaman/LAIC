@@ -19,6 +19,7 @@ import { OperatorAudit } from "@/nexus/routes/OperatorAudit";
 import { OperatorOrgs } from "@/nexus/routes/OperatorOrgs";
 import { OperatorSettings } from "@/nexus/routes/OperatorSettings";
 import { NexusTeam } from "@/nexus/routes/NexusTeam";
+import { AccessCatalogue } from "@/nexus/access/AccessCatalogue";
 import { OperatorGates } from "@/nexus/routes/OperatorGates";
 import { OrgTeam } from "@/nexus/routes/OrgTeam";
 import { OrgGates } from "@/nexus/routes/OrgGates";
@@ -153,6 +154,7 @@ function Routed() {
         <Route path="/audit" element={<OperatorAudit />} />
         <Route path="/settings" element={<OperatorSettings />} />
         <Route path="/team" element={<NexusTeam />} />
+        <Route path="/access-catalogue" element={<AccessCatalogue />} />
         <Route path="/nexus-gates" element={<OperatorGates />} />
         {/* Org space */}
         <Route path="/o/:orgId/dashboard" element={<OrgDashboard />} />

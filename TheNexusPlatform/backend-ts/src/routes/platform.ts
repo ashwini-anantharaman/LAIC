@@ -2143,6 +2143,14 @@ platformRouter.put("/catalogues/:provider_id", async (c) => {
   if (doc.provider?.id !== id) throw new HttpError(422, `provider.id must equal "${id}"`);
   return c.json(await catalogue.saveCatalogue(id, doc));
 });
+platformRouter.delete("/catalogues/:provider_id", async (c) => {
+  const user = await getCurrentUser(c);
+  await _requireNexusArea(user, "settings", "edit");
+  _requireDb();
+  const id = c.req.param("provider_id");
+  if (!catalogue.isProviderId(id)) throw new HttpError(404, "Unknown catalogue provider");
+  return c.json(await catalogue.resetCatalogue(id));
+});
 
 const programThemeSchema = z.object({
   accent_color: z.string().trim().min(1).max(32).nullish(),
