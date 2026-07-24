@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, RotateCcw, Sparkles, LayoutTemplate } from 'lucide-react';
+import { Plus, Pencil, Trash2, RotateCcw, Sparkles, LayoutTemplate, ArrowLeft, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useApp } from '../../App';
 import type { TutorialTemplate } from '../../../lib/types';
@@ -33,6 +33,7 @@ export function TemplateLibrary() {
   const [editingObject, setEditingObject] = useState<ObjectTemplate | null | 'new'>(null);
 
   const refresh = () => setTick((n) => n + 1);
+  const isFocusing = editingTutorial !== null || editingObject !== null;
 
   const items: ListItem[] = useMemo(() => {
     void tick;
@@ -66,10 +67,77 @@ export function TemplateLibrary() {
     refresh();
   };
 
+  const openItem = (item: ListItem) => {
+    if (item.kind === 'tutorial') setEditingTutorial(item.t);
+    else setEditingObject(item.t);
+  };
+
   const startCreate = () => {
     if (typeFilter === 'tutorial') setEditingTutorial('new');
     else setEditingObject('new');
   };
+
+  const closeFocus = () => {
+    setEditingTutorial(null);
+    setEditingObject(null);
+  };
+
+  const focusTitle = (() => {
+    if (editingTutorial === 'new' || editingObject === 'new') {
+      return `New ${TEMPLATE_TYPE_LABELS[typeFilter]} template`;
+    }
+    if (editingTutorial && editingTutorial !== 'new') return editingTutorial.name;
+    if (editingObject && editingObject !== 'new') return editingObject.name;
+    return 'Template';
+  })();
+
+  /* ── Focused editor: hide library chrome ─────────────────────── */
+  if (isFocusing) {
+    return (
+      <div className="px-6 py-6 w-full max-w-3xl mx-auto">
+        <button
+          type="button"
+          onClick={closeFocus}
+          className="inline-flex items-center gap-1.5 mb-5 px-3 py-1.5 rounded-full transition-colors hover:bg-white/70"
+          style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}
+        >
+          <ArrowLeft size={15} />
+          Back to library
+        </button>
+
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-4"
+        >
+          <p style={{ fontSize: 12, fontWeight: 600, color: '#9AA3AF', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 4 }}>
+            {TEMPLATE_TYPE_LABELS[typeFilter]}
+          </p>
+          <h2 style={{ fontSize: 20, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.3px' }}>
+            {focusTitle}
+          </h2>
+        </motion.div>
+
+        {typeFilter === 'tutorial' && editingTutorial !== null && (
+          <TutorialTemplateEditor
+            key={editingTutorial === 'new' ? 'new' : editingTutorial.id}
+            initial={editingTutorial === 'new' ? null : editingTutorial}
+            onSave={() => { refresh(); closeFocus(); }}
+            onCancel={closeFocus}
+          />
+        )}
+        {typeFilter !== 'tutorial' && editingObject !== null && (
+          <ObjectTemplateEditor
+            key={editingObject === 'new' ? 'new' : editingObject.id}
+            objectType={typeFilter}
+            initial={editingObject === 'new' ? null : editingObject}
+            onSave={() => { refresh(); closeFocus(); }}
+            onCancel={closeFocus}
+          />
+        )}
+      </div>
+    );
+  }
 
   const renderCard = (item: ListItem, i: number) => {
     const id = item.t.id;
@@ -89,8 +157,17 @@ export function TemplateLibrary() {
         key={`${item.kind}-${id}`}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: i * 0.03 }}
-        className="rounded-[22px] p-4 flex flex-col"
+        transition={{ delay: Math.min(i, 8) * 0.03 }}
+        role="button"
+        tabIndex={0}
+        onClick={() => openItem(item)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openItem(item);
+          }
+        }}
+        className="rounded-[22px] p-4 flex flex-col text-left cursor-pointer transition-shadow hover:shadow-[0_8px_24px_-8px_rgba(30,50,80,0.18)]"
         style={{
           background: 'white',
           boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)',
@@ -129,7 +206,7 @@ export function TemplateLibrary() {
         <p style={{ fontSize: 12.5, color: '#6B7280', lineHeight: 1.5, flex: 1, marginBottom: 14 }}>
           {description || (pureCustom ? 'Your custom template' : 'Pedagogical template for this object type.')}
         </p>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             onClick={() => useTemplate(typeFilter, id)}
@@ -140,10 +217,7 @@ export function TemplateLibrary() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (isTutorial) setEditingTutorial(item.t);
-              else setEditingObject(item.t);
-            }}
+            onClick={() => openItem(item)}
             className="flex items-center gap-1 px-3 py-1.5 rounded-full border"
             style={{ fontSize: 12, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}
           >
@@ -173,9 +247,8 @@ export function TemplateLibrary() {
           <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.3px', marginBottom: 4 }}>
             Template Library
           </h2>
-          <p style={{ fontSize: 13.5, color: '#6B7280', maxWidth: 520, lineHeight: 1.5 }}>
-            Recommended pedagogical templates for every learning object — and your custom ones.
-            Use a template to start creating, or edit and save new shapes for your team.
+          <p style={{ fontSize: 13.5, color: '#6B7280', maxWidth: 480, lineHeight: 1.5 }}>
+            Pick an object type, then use or edit a template. Opening a template focuses the editor.
           </p>
         </div>
         <button
@@ -188,56 +261,40 @@ export function TemplateLibrary() {
         </button>
       </div>
 
-      {/* Type tabs */}
-      <div className="flex gap-1.5 overflow-x-auto pb-2 mb-5">
-        {TEMPLATE_OBJECT_TYPES.map((type) => {
-          const on = typeFilter === type;
-          return (
-            <button
-              key={type}
-              type="button"
-              onClick={() => {
-                setTypeFilter(type);
-                setEditingTutorial(null);
-                setEditingObject(null);
-              }}
-              className="px-3.5 py-1.5 rounded-full shrink-0 transition-all"
-              style={{
-                fontSize: 12.5,
-                fontWeight: on ? 650 : 500,
-                background: on ? '#0B0F1A' : 'rgba(255,255,255,0.75)',
-                color: on ? '#fff' : '#374151',
-                border: on ? '1.5px solid #0B0F1A' : '1.5px solid rgba(0,0,0,0.08)',
-              }}
-            >
-              {TEMPLATE_TYPE_LABELS[type]}
-            </button>
-          );
-        })}
+      {/* Object type dropdown */}
+      <div className="mb-6 max-w-sm">
+        <label style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: 6 }}>
+          Learning object
+        </label>
+        <div className="relative">
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as TemplateObjectType)}
+            className="w-full appearance-none rounded-2xl pl-4 pr-10 py-3"
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: '#0B1220',
+              background: 'white',
+              border: '1px solid rgba(0,0,0,0.08)',
+              boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)',
+              outline: 'none',
+            }}
+          >
+            {TEMPLATE_OBJECT_TYPES.map((type) => (
+              <option key={type} value={type}>{TEMPLATE_TYPE_LABELS[type]}</option>
+            ))}
+          </select>
+          <ChevronDown
+            size={16}
+            className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2"
+            style={{ color: '#9AA3AF' }}
+          />
+        </div>
       </div>
 
-      {/* Editors */}
-      {typeFilter === 'tutorial' && editingTutorial !== null && (
-        <TutorialTemplateEditor
-          key={editingTutorial === 'new' ? 'new' : editingTutorial.id}
-          initial={editingTutorial === 'new' ? null : editingTutorial}
-          onSave={() => { refresh(); setEditingTutorial(null); }}
-          onCancel={() => setEditingTutorial(null)}
-        />
-      )}
-      {typeFilter !== 'tutorial' && editingObject !== null && (
-        <ObjectTemplateEditor
-          key={editingObject === 'new' ? 'new' : editingObject.id}
-          objectType={typeFilter}
-          initial={editingObject === 'new' ? null : editingObject}
-          onSave={() => { refresh(); setEditingObject(null); }}
-          onCancel={() => setEditingObject(null)}
-        />
-      )}
-
-      {/* Recommended */}
       <p style={{ fontSize: 12, fontWeight: 700, color: '#6B7280', letterSpacing: '.05em', marginBottom: 10 }}>
-        RECOMMENDED · {TEMPLATE_TYPE_LABELS[typeFilter].toUpperCase()}
+        RECOMMENDED
       </p>
       {recommended.length === 0 ? (
         <p style={{ fontSize: 13, color: '#9AA3AF', marginBottom: 24 }}>No recommended templates yet for this type.</p>
@@ -247,7 +304,6 @@ export function TemplateLibrary() {
         </div>
       )}
 
-      {/* Custom */}
       <p style={{ fontSize: 12, fontWeight: 700, color: '#6B7280', letterSpacing: '.05em', marginBottom: 10 }}>
         YOUR CUSTOM TEMPLATES
       </p>

@@ -13,6 +13,15 @@ import {
   remoteObjectsForDemoCd,
   DEMO_CD_USER_ID,
 } from '../lib/demoAuth';
+import {
+  canAccessScreen,
+  defaultScreenForCapabilities,
+  getPolicyRole,
+  inferShellRole,
+  isPolicyUserId,
+  policyRoleIdFromUserId,
+} from '../lib/roleAccess';
+import { roleCapabilityIds as policyRoleCaps } from '../lib/accessPolicy';
 import { LoginPortal } from './components/LoginPortal';
 import { Layout } from './components/Layout';
 
@@ -22,6 +31,10 @@ export interface AppState {
   currentScreen: string;
   activeUserId: string;
   isLoggedIn: boolean;
+  /** When set, session is a fake login for an access_policy role (capability-gated). */
+  policyRoleId: string | null;
+  policyRoleName: string | null;
+  grantedCapabilities: string[];
   readerObjectId: string | null;
   creatorObjectType: string;
   createdObjects: LearningObject[];
@@ -41,6 +54,7 @@ export interface AppState {
   addObject: (partial: Partial<LearningObject> & { type: ObjectType; title: string }) => string;
   openEditor: (objectId: string) => void;
   clearEditingObject: () => void;
+  hasCapability: (capabilityId: string) => boolean;
 }
 
 export const AppContext = createContext<AppState>({} as AppState);
@@ -66,6 +80,9 @@ export default function App() {
   const [role, setRoleState] = useState<Role>('student');
   const [program, setProgramState] = useState<Program>('bridge');
   const [currentScreen, setCurrentScreen] = useState('student-dashboard');
+  const [policyRoleId, setPolicyRoleId] = useState<string | null>(null);
+  const [policyRoleName, setPolicyRoleName] = useState<string | null>(null);
+  const [grantedCapabilities, setGrantedCapabilities] = useState<string[]>([]);
   const [readerObjectId, setReaderObjectId] = useState<string | null>(null);
   const [creatorObjectType, setCreatorObjectTypeState] = useState<string>('lesson');
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
@@ -131,27 +148,61 @@ export default function App() {
     };
   }, [isLoggedIn, libraryReady]);
 
+  const applyPolicySession = useCallback((userId: string) => {
+    const roleId = policyRoleIdFromUserId(userId);
+    const policyRole = roleId ? getPolicyRole(roleId) : null;
+    if (!policyRole) return false;
+    const caps = policyRoleCaps(policyRole);
+    setLibraryReady(false);
+    setActiveUserId(userId);
+    setPolicyRoleId(policyRole.id);
+    setPolicyRoleName(policyRole.name);
+    setGrantedCapabilities(caps);
+    setRoleState(inferShellRole(caps));
+    setCurrentScreen(defaultScreenForCapabilities(caps));
+    setReaderObjectId(null);
+    setEditingObjectId(null);
+    setIsLoggedIn(true);
+    writeSessionUserId(userId);
+    void hydrateForUser(userId);
+    return true;
+  }, [hydrateForUser]);
+
   // Restore last demo session on first load.
   useEffect(() => {
     const uid = readSessionUserId();
     if (!uid) return;
+    if (isPolicyUserId(uid)) {
+      if (!applyPolicySession(uid)) writeSessionUserId(null);
+      return;
+    }
     const user = USERS.find((u) => u.id === uid);
     if (!user) {
       writeSessionUserId(null);
       return;
     }
     setActiveUserId(uid);
+    setPolicyRoleId(null);
+    setPolicyRoleName(null);
+    setGrantedCapabilities([]);
     setRoleState(user.role);
     setCurrentScreen(DEFAULT_SCREEN[user.role]);
     setIsLoggedIn(true);
     void hydrateForUser(uid);
-  }, [hydrateForUser]);
+  }, [hydrateForUser, applyPolicySession]);
 
   const login = useCallback((userId: string) => {
+    if (isPolicyUserId(userId)) {
+      if (!applyPolicySession(userId)) return;
+      return;
+    }
     const user = USERS.find(u => u.id === userId);
     if (!user) return;
     setLibraryReady(false);
     setActiveUserId(userId);
+    setPolicyRoleId(null);
+    setPolicyRoleName(null);
+    setGrantedCapabilities([]);
     setRoleState(user.role);
     setCurrentScreen(DEFAULT_SCREEN[user.role]);
     setReaderObjectId(null);
@@ -159,45 +210,39 @@ export default function App() {
     setIsLoggedIn(true);
     writeSessionUserId(userId);
     void hydrateForUser(userId);
-  }, [hydrateForUser]);
+  }, [hydrateForUser, applyPolicySession]);
 
   const logout = useCallback(() => {
     const uid = activeUserIdRef.current;
     const objs = createdObjectsRef.current;
-    if (objs.length > 0) saveUserObjects(uid, objs);
+    if (objs.length > 0 && !isPolicyUserId(uid)) saveUserObjects(uid, objs);
     writeSessionUserId(null);
     setLibraryReady(false);
     setIsLoggedIn(false);
+    setPolicyRoleId(null);
+    setPolicyRoleName(null);
+    setGrantedCapabilities([]);
     setReaderObjectId(null);
     setEditingObjectId(null);
     setCreatedObjects([]);
   }, []);
 
   const navigate = useCallback((screen: string) => {
+    if (policyRoleId && grantedCapabilities.length >= 0) {
+      if (!canAccessScreen(grantedCapabilities, screen)) {
+        setCurrentScreen(defaultScreenForCapabilities(grantedCapabilities));
+        setReaderObjectId(null);
+        return;
+      }
+    }
     setCurrentScreen(screen);
     setReaderObjectId(null);
     if (screen !== 'cd-creator') setEditingObjectId(null);
-  }, []);
+  }, [policyRoleId, grantedCapabilities]);
 
-  const setRole = useCallback((newRole: Role) => {
-    setRoleState(newRole);
-    setCurrentScreen(DEFAULT_SCREEN[newRole]);
-    setReaderObjectId(null);
-    const match =
-      newRole === 'content-developer'
-        ? USERS.find((u) => u.id === DEMO_CD_USER_ID) || USERS.find((u) => u.role === newRole)
-        : USERS.find((u) => u.role === newRole);
-    if (match) {
-      // Persist current library before switching identity.
-      if (libraryReady && createdObjectsRef.current.length > 0) {
-        saveUserObjects(activeUserIdRef.current, createdObjectsRef.current);
-      }
-      setLibraryReady(false);
-      setActiveUserId(match.id);
-      writeSessionUserId(match.id);
-      void hydrateForUser(match.id);
-    }
-  }, [hydrateForUser, libraryReady]);
+  const setRole = useCallback((_newRole: Role) => {
+    // Role is fixed by the signed-in account. Sign out and sign in as another demo account to switch.
+  }, []);
 
   const setProgram = useCallback((p: Program) => {
     setProgramState(p);
@@ -224,6 +269,8 @@ export default function App() {
     const user = USERS.find(u => u.id === ownerId);
     const now = new Date().toISOString().slice(0, 10);
     const id = partial.id || `obj-new-${Date.now()}`;
+    const ownerName = user?.name
+      || (isPolicyUserId(ownerId) ? (policyRoleName || 'Policy role') : 'You');
     setCreatedObjects(prev => {
       const existing = prev.find(o => o.id === id);
       const obj: LearningObject = {
@@ -231,7 +278,7 @@ export default function App() {
         type: partial.type,
         title: partial.title || 'Untitled',
         ownerId: existing?.ownerId || ownerId,
-        ownerName: existing?.ownerName || user?.name || 'You',
+        ownerName: existing?.ownerName || ownerName,
         status: partial.status || 'draft',
         scope: partial.scope || existing?.scope || 'bridge',
         reuseCount: partial.reuseCount ?? existing?.reuseCount ?? 0,
@@ -257,28 +304,35 @@ export default function App() {
     // Ensure subsequent effect-based saves are allowed (e.g. first object after empty hydrate).
     setLibraryReady(true);
     return id;
-  }, []);
+  }, [policyRoleName]);
 
   const openEditor = useCallback((objectId: string) => {
+    if (policyRoleId && !canAccessScreen(grantedCapabilities, 'cd-creator')) return;
     const fromCreated = createdObjects.find(o => o.id === objectId);
     const obj = fromCreated || OBJECTS.find(o => o.id === objectId);
     if (obj) setCreatorObjectTypeState(obj.type);
     setEditingObjectId(objectId);
     setReaderObjectId(null);
     setCurrentScreen('cd-creator');
-  }, [createdObjects]);
+  }, [createdObjects, policyRoleId, grantedCapabilities]);
 
   const clearEditingObject = useCallback(() => {
     setEditingObjectId(null);
   }, []);
 
+  const hasCapability = useCallback((capabilityId: string) => {
+    if (!policyRoleId) return true; // built-in persona logins are not capability-gated
+    return grantedCapabilities.includes(capabilityId);
+  }, [policyRoleId, grantedCapabilities]);
+
   const ctx: AppState = {
     role, program, currentScreen, activeUserId, isLoggedIn,
+    policyRoleId, policyRoleName, grantedCapabilities,
     readerObjectId, creatorObjectType, createdObjects, editingObjectId, pendingTemplateId,
     navigate, login, logout,
     setRole, setProgram, openReader, closeReader, setCreatorObjectType,
     setPendingTemplateId: setPendingTemplateIdCb,
-    addObject, openEditor, clearEditingObject,
+    addObject, openEditor, clearEditingObject, hasCapability,
   };
 
   return (

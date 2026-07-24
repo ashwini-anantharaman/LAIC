@@ -18,10 +18,11 @@ import {
   createDefaultCatalogue,
   groupsSorted,
   loadCatalogue,
-  saveCatalogue,
   slugifyId,
   surfacesInGroup,
+  type CatalogueGroup,
 } from '../../../lib/accessControlCatalogue';
+import { saveCatalogueAndSyncRoles } from '../../../lib/accessPolicy';
 
 type TabId = 'groups' | 'capabilities' | 'surfaces' | 'resources' | 'samples' | 'json' | 'schema';
 
@@ -61,6 +62,75 @@ function CapToggle({ id, label, on, onToggle }: { id: string; label: string; on:
       {on && <Check size={10} />}
       {label}
     </button>
+  );
+}
+
+/* ─── Group modal ──────────────────────────────────────────────── */
+
+function GroupModal({
+  initial, catalogue, onSave, onClose,
+}: {
+  initial: CatalogueGroup | null;
+  catalogue: CapabilityCatalogueDocument;
+  onSave: (g: CatalogueGroup) => void;
+  onClose: () => void;
+}) {
+  const [label, setLabel] = useState(initial?.label || '');
+  const [id, setId] = useState(initial?.id || '');
+  const [description, setDescription] = useState(initial?.description || '');
+  const [order, setOrder] = useState(initial?.order ?? (catalogue.groups.length + 1) * 10);
+  const idTaken = !initial && catalogue.groups.some((g) => g.id === id);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(11,18,32,0.5)', backdropFilter: 'blur(4px)' }}>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md rounded-[28px] overflow-hidden flex flex-col bg-white" style={{ boxShadow: '0 24px 64px -16px rgba(30,50,80,0.3)' }}>
+        <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>{initial ? `Edit “${initial.label}”` : 'New group'}</h3>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Groups organize capabilities and UI surfaces in the catalogue.</p>
+          </div>
+          <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Label</p>
+            <input value={label} onChange={(e) => { setLabel(e.target.value); if (!initial) setId(slugifyId(e.target.value)); }} className="w-full rounded-xl px-3 py-2" style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none' }} />
+          </div>
+          <div>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Id</p>
+            <input value={id} disabled={!!initial} onChange={(e) => setId(e.target.value)} className="w-full rounded-xl px-3 py-2 font-mono" style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.1)', outline: 'none', opacity: initial ? 0.7 : 1 }} />
+            {idTaken && <p style={{ fontSize: 12, color: '#B91C1C', marginTop: 4 }}>Id already exists</p>}
+          </div>
+          <div>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Description</p>
+            <input value={description} onChange={(e) => setDescription(e.target.value)} className="w-full rounded-xl px-3 py-2" style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none' }} />
+          </div>
+          <div>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Order</p>
+            <input type="number" value={order} onChange={(e) => setOrder(Number(e.target.value) || 0)} className="w-28 rounded-xl px-3 py-2" style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none' }} />
+          </div>
+        </div>
+        <div className="flex gap-2 p-4 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-full" style={{ background: 'rgba(0,0,0,0.05)', fontSize: 13, fontWeight: 600, color: '#374151' }}>Cancel</button>
+          <button
+            type="button"
+            disabled={!label.trim() || !id.trim() || idTaken}
+            onClick={() => onSave({
+              id: id.trim(),
+              label: label.trim(),
+              description: description.trim() || undefined,
+              order,
+              capabilityIds: initial?.capabilityIds || [],
+              uiSurfaceIds: initial?.uiSurfaceIds || [],
+            })}
+            className="flex-1 py-2.5 rounded-full text-white disabled:opacity-40"
+            style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}
+          >
+            Save group
+          </button>
+        </div>
+      </motion.div>
+    </div>
   );
 }
 
@@ -359,6 +429,7 @@ export function PlatformAccessCatalogue() {
   const [dirty, setDirty] = useState(false);
   const [toast, setToast] = useState('');
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(catalogue.groups.map((g) => g.id)));
+  const [groupModal, setGroupModal] = useState<{ open: boolean; initial: CatalogueGroup | null }>({ open: false, initial: null });
   const [capModal, setCapModal] = useState<{ open: boolean; initial: Capability | null }>({ open: false, initial: null });
   const [surfaceModal, setSurfaceModal] = useState<{ open: boolean; initial: UiSurface | null }>({ open: false, initial: null });
   const [roleModal, setRoleModal] = useState<SampleRoleTemplate | null>(null);
@@ -366,13 +437,17 @@ export function PlatformAccessCatalogue() {
   const fireToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2200); };
   const patch = (next: CapabilityCatalogueDocument) => { setCatalogue(next); setDirty(true); };
 
-  const handleSave = () => { saveCatalogue(catalogue); setDirty(false); fireToast('Catalogue saved'); };
+  const persist = (doc: CapabilityCatalogueDocument, toastMsg: string) => {
+    const policy = saveCatalogueAndSyncRoles(doc);
+    setDirty(false);
+    fireToast(`${toastMsg} · ${policy.roles.length} role${policy.roles.length === 1 ? '' : 's'} synced`);
+  };
+
+  const handleSave = () => persist(catalogue, 'Catalogue saved');
   const handleReset = () => {
     const fresh = createDefaultCatalogue();
     setCatalogue(fresh);
-    saveCatalogue(fresh);
-    setDirty(false);
-    fireToast('Reset to learning-platform-access v1');
+    persist(fresh, 'Reset to learning-platform-access v1');
   };
   const handleCopyJson = async () => {
     await navigator.clipboard.writeText(JSON.stringify(catalogueToExportJson(catalogue), null, 2));
@@ -387,14 +462,40 @@ export function PlatformAccessCatalogue() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
-        saveCatalogue(catalogue);
-        setDirty(false);
-        fireToast('Catalogue saved');
+        persist(catalogue, 'Catalogue saved');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [catalogue]);
+
+  const upsertGroup = (g: CatalogueGroup) => {
+    const exists = catalogue.groups.some((x) => x.id === g.id);
+    patch({
+      ...catalogue,
+      groups: exists
+        ? catalogue.groups.map((x) => (x.id === g.id ? { ...x, ...g, capabilityIds: x.capabilityIds, uiSurfaceIds: x.uiSurfaceIds } : x))
+        : [...catalogue.groups, g],
+    });
+    setGroupModal({ open: false, initial: null });
+    fireToast(exists ? 'Group updated' : 'Group added');
+  };
+
+  const removeGroup = (id: string) => {
+    if (catalogue.groups.length <= 1) {
+      fireToast('Keep at least one group');
+      return;
+    }
+    const fallback = catalogue.groups.find((g) => g.id !== id)?.id;
+    if (!fallback) return;
+    patch({
+      ...catalogue,
+      groups: catalogue.groups.filter((g) => g.id !== id),
+      capabilities: catalogue.capabilities.map((c) => (c.group === id ? { ...c, group: fallback } : c)),
+      uiSurfaces: catalogue.uiSurfaces.map((s) => (s.group === id ? { ...s, group: fallback } : s)),
+    });
+    fireToast('Group removed');
+  };
 
   const upsertCapability = (c: Capability) => {
     const exists = catalogue.capabilities.some((x) => x.id === c.id);
@@ -520,9 +621,12 @@ export function PlatformAccessCatalogue() {
             <p style={{ fontSize: 13, color: '#6B7280' }}>
               Catalogue groups organize the role UI. Capabilities are the enforcement keys; UI surfaces are optional.
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button type="button" onClick={() => setOpenGroups(new Set(catalogue.groups.map((g) => g.id)))} className="px-3 py-1.5 rounded-full text-[12px] font-semibold" style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}>Expand all</button>
               <button type="button" onClick={() => setOpenGroups(new Set())} className="px-3 py-1.5 rounded-full text-[12px] font-semibold" style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}>Collapse all</button>
+              <button type="button" onClick={() => setGroupModal({ open: true, initial: null })} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-semibold text-white" style={{ background: '#0B0F1A' }}>
+                <Plus size={12} /> Add group
+              </button>
             </div>
           </div>
           {groupsSorted(catalogue).map((g) => {
@@ -531,8 +635,9 @@ export function PlatformAccessCatalogue() {
             const surfaces = surfacesInGroup(catalogue, g.id);
             return (
               <div key={g.id} className="rounded-[24px] overflow-hidden" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
+                <div className="flex items-stretch">
                 <button type="button" onClick={() => setOpenGroups((prev) => { const n = new Set(prev); n.has(g.id) ? n.delete(g.id) : n.add(g.id); return n; })}
-                  className="w-full px-5 py-4 flex items-start gap-3 text-left hover:bg-black/[0.015]">
+                  className="flex-1 px-5 py-4 flex items-start gap-3 text-left hover:bg-black/[0.015]">
                   <span className="mt-0.5 text-[#9AA3AF]">{open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -544,6 +649,11 @@ export function PlatformAccessCatalogue() {
                     <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>{caps.length} capabilities · {surfaces.length} UI surfaces</p>
                   </div>
                 </button>
+                <div className="flex items-center gap-1 pr-4">
+                  <button type="button" onClick={() => setGroupModal({ open: true, initial: g })} className="px-2.5 py-1.5 rounded-full text-[11px] font-semibold" style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}>Edit</button>
+                  <button type="button" onClick={() => removeGroup(g.id)} className="p-1.5 rounded-full" aria-label="Delete group"><Trash2 size={13} style={{ color: '#EF4444' }} /></button>
+                </div>
+                </div>
                 {open && (
                   <div className="px-5 pb-4 space-y-4 border-t" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
                     <div className="pt-3">
@@ -690,7 +800,24 @@ export function PlatformAccessCatalogue() {
 
       {tab === 'samples' && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
-          <p style={{ fontSize: 13, color: '#6B7280' }}>Optional templates. Live Bridge roles are in access_policy documents (People & Roles / Nexus).</p>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <p style={{ fontSize: 13, color: '#6B7280', maxWidth: 520 }}>
+              Sample role templates. On <strong>Save catalogue</strong>, these upsert into the live Bridge Learning access policy (People & Roles).
+            </p>
+            <button
+              type="button"
+              onClick={() => setRoleModal({
+                id: `learning-role-${Date.now().toString(36)}`,
+                name: 'New sample role',
+                description: '',
+                grants: [{ platformInstanceId: 'placeholder-learning-instance', capabilityIds: [] }],
+              })}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white shrink-0"
+              style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}
+            >
+              <Plus size={13} /> Add sample role
+            </button>
+          </div>
           <div className="grid md:grid-cols-2 gap-3">
             {samples.map((r) => {
               const grant = r.grants[0];
@@ -750,11 +877,29 @@ export function PlatformAccessCatalogue() {
       )}
 
       <AnimatePresence>
+        {groupModal.open && (
+          <GroupModal
+            initial={groupModal.initial}
+            catalogue={catalogue}
+            onClose={() => setGroupModal({ open: false, initial: null })}
+            onSave={upsertGroup}
+          />
+        )}
         {capModal.open && (
-          <CapabilityModal initial={capModal.initial} catalogue={catalogue} onClose={() => setCapModal({ open: false, initial: null })} onSave={upsertCapability} />
+          <CapabilityModal
+            initial={capModal.initial}
+            catalogue={catalogue}
+            onClose={() => setCapModal({ open: false, initial: null })}
+            onSave={(c) => { upsertCapability(c); setCapModal({ open: false, initial: null }); }}
+          />
         )}
         {surfaceModal.open && (
-          <SurfaceModal initial={surfaceModal.initial} catalogue={catalogue} onClose={() => setSurfaceModal({ open: false, initial: null })} onSave={upsertSurface} />
+          <SurfaceModal
+            initial={surfaceModal.initial}
+            catalogue={catalogue}
+            onClose={() => setSurfaceModal({ open: false, initial: null })}
+            onSave={(s) => { upsertSurface(s); setSurfaceModal({ open: false, initial: null }); }}
+          />
         )}
         {roleModal && (
           <SampleRoleModal
@@ -762,11 +907,15 @@ export function PlatformAccessCatalogue() {
             catalogue={catalogue}
             onClose={() => setRoleModal(null)}
             onSave={(r) => {
+              const exists = samples.some((x) => x.id === r.id);
               patch({
                 ...catalogue,
-                sampleRoleTemplates: samples.map((x) => (x.id === r.id ? r : x)),
+                sampleRoleTemplates: exists
+                  ? samples.map((x) => (x.id === r.id ? r : x))
+                  : [...samples, r],
               });
-              fireToast('Sample role updated');
+              setRoleModal(null);
+              fireToast(exists ? 'Sample role updated' : 'Sample role added');
             }}
           />
         )}

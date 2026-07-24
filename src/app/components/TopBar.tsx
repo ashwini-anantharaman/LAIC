@@ -13,11 +13,6 @@ const ROLE_LABELS: Record<Role, string> = {
   'student': 'Student',
 };
 
-const ALL_ROLES: Role[] = [
-  'content-developer', 'object-reviewer', 'course-reviewer',
-  'administrator', 'coach', 'student',
-];
-
 const PROGRAMS: { id: Program; label: string }[] = [
   { id: 'bridge', label: 'Bridge' },
   { id: 'brain-bee', label: 'Brain Bee' },
@@ -68,11 +63,17 @@ function GlassPill({ children, onClick }: { children: React.ReactNode; onClick?:
 }
 
 export function TopBar() {
-  const { role, program, currentScreen, setRole, setProgram } = useApp();
-  const [showRoles, setShowRoles] = useState(false);
+  const { role, program, currentScreen, setProgram, activeUserId, policyRoleId, policyRoleName, grantedCapabilities } = useApp();
   const [showPrograms, setShowPrograms] = useState(false);
+  const user = USERS.find(u => u.id === activeUserId);
 
   const info = SCREEN_TITLES[currentScreen] ?? { title: currentScreen, sub: '' };
+  const roleLabel = policyRoleId
+    ? (policyRoleName || 'Custom role')
+    : ROLE_LABELS[role];
+  const roleTitle = policyRoleId
+    ? `${policyRoleName || 'Custom role'} · ${grantedCapabilities.length} capabilities`
+    : (user ? `${user.name} · sign out to change role` : 'Signed-in role');
 
   return (
     <header
@@ -89,7 +90,7 @@ export function TopBar() {
       <div className="flex items-center gap-2">
         {/* Program switcher */}
         <div className="relative">
-          <GlassPill onClick={() => { setShowPrograms(v => !v); setShowRoles(false); }}>
+          <GlassPill onClick={() => setShowPrograms(v => !v)}>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
             {PROGRAMS.find(p => p.id === program)?.label}
             <ChevronDown size={11} className="text-[#9AA3AF]" />
@@ -113,38 +114,22 @@ export function TopBar() {
           )}
         </div>
 
-        {/* Role switcher */}
-        <div className="relative">
-          <GlassPill onClick={() => { setShowRoles(v => !v); setShowPrograms(false); }}>
-            {ROLE_LABELS[role]}
-            <ChevronDown size={11} className="text-[#9AA3AF]" />
-          </GlassPill>
-          {showRoles && (
-            <div
-              className="absolute right-0 top-full mt-1.5 rounded-2xl overflow-hidden z-50 min-w-[180px] py-1"
-              style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.8)', boxShadow: '0 8px 32px -8px rgba(30,50,80,0.18)' }}
-            >
-              {ALL_ROLES.map(r => {
-                const u = USERS.find(u => u.role === r);
-                return (
-                  <button
-                    key={r}
-                    onClick={() => { setRole(r); setShowRoles(false); }}
-                    className="w-full flex items-center gap-2.5 text-left px-4 py-2 transition-colors hover:bg-black/5"
-                    style={{ fontSize: 13, color: '#0B1220' }}
-                  >
-                    <div className="w-6 h-6 rounded-full bg-[#0B0F1A] text-white flex items-center justify-center shrink-0" style={{ fontSize: 9, fontWeight: 700 }}>
-                      {u?.initials}
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: role === r ? 600 : 400 }}>{u?.name}</div>
-                      <div style={{ fontSize: 11, color: '#9AA3AF' }}>{ROLE_LABELS[r]}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+        {/* Current role only — switch roles by signing out and signing in as another account */}
+        <div
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+          style={{
+            background: policyRoleId ? 'rgba(5,150,105,0.12)' : 'rgba(255,255,255,0.55)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            border: policyRoleId ? '1px solid rgba(5,150,105,0.3)' : '1px solid rgba(255,255,255,0.7)',
+            fontSize: 12.5,
+            fontWeight: 500,
+            color: policyRoleId ? '#047857' : '#0B1220',
+            maxWidth: 220,
+          }}
+          title={roleTitle}
+        >
+          <span className="truncate">{roleLabel}</span>
         </div>
 
         {/* ⌘K button */}

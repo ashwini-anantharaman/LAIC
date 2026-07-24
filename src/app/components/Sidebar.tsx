@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Home, PlusSquare, Database, BookOpen, SendHorizontal,
   GitBranch, BarChart2, ClipboardCheck, GraduationCap,
@@ -7,6 +7,7 @@ import {
 import { useApp } from '../App';
 import { USERS } from '../../lib/data';
 import type { Role } from '../../lib/types';
+import { navItemsForCapabilities } from '../../lib/roleAccess';
 
 interface NavItem {
   id: string;
@@ -49,6 +50,29 @@ const NAV: Record<Role, NavItem[]> = {
   ],
 };
 
+const SCREEN_ICONS: Record<string, React.ReactNode> = {
+  'cd-home': <Home size={16} />,
+  'cd-create': <PlusSquare size={16} />,
+  'cd-templates': <LayoutTemplate size={16} />,
+  'cd-sources': <Database size={16} />,
+  'cd-library': <BookOpen size={16} />,
+  'cd-submissions': <SendHorizontal size={16} />,
+  'cd-versions': <GitBranch size={16} />,
+  'cd-analytics': <BarChart2 size={16} />,
+  'or-reviews': <ClipboardCheck size={16} />,
+  'cr-reviews': <ClipboardCheck size={16} />,
+  'admin-overview': <Shield size={16} />,
+  'admin-people': <Users size={16} />,
+  'admin-access': <KeyRound size={16} />,
+  'admin-access-manual': <FileText size={16} />,
+  'admin-sample-roles': <BadgeCheck size={16} />,
+  'admin-courses': <BookMarked size={16} />,
+  'admin-publishing': <GitBranch size={16} />,
+  'coach': <UserCheck size={16} />,
+  'student-dashboard': <Home size={16} />,
+  'student-courses': <GraduationCap size={16} />,
+};
+
 const PROGRAM_LABELS: Record<string, string> = {
   bridge: 'Bridge',
   'brain-bee': 'Brain Bee',
@@ -62,9 +86,27 @@ const PROGRAM_COLORS: Record<string, string> = {
 };
 
 export function Sidebar() {
-  const { role, program, currentScreen, navigate, logout, activeUserId } = useApp();
-  const items = NAV[role] ?? [];
+  const {
+    role, program, currentScreen, navigate, logout, activeUserId,
+    policyRoleId, policyRoleName, grantedCapabilities,
+  } = useApp();
+
+  const items: NavItem[] = useMemo(() => {
+    if (policyRoleId) {
+      return navItemsForCapabilities(grantedCapabilities).map((item) => ({
+        id: item.id,
+        label: item.label,
+        icon: SCREEN_ICONS[item.id] || <Shield size={16} />,
+      }));
+    }
+    return NAV[role] ?? [];
+  }, [policyRoleId, grantedCapabilities, role]);
+
   const user = USERS.find(u => u.id === activeUserId);
+  const displayName = policyRoleName || user?.name || 'User';
+  const displayInitials = policyRoleId
+    ? (policyRoleName || 'R').slice(0, 2).toUpperCase()
+    : (user?.initials || '?');
 
   return (
     <aside
@@ -76,7 +118,6 @@ export function Sidebar() {
         borderRight: '1px solid rgba(255,255,255,0.6)',
       }}
     >
-      {/* Wordmark + program chip */}
       <div className="px-5 pt-6 pb-4">
         <div className="flex items-center gap-2 mb-3">
           <div
@@ -92,15 +133,25 @@ export function Sidebar() {
         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide ${PROGRAM_COLORS[program] || 'bg-slate-100 text-slate-700'}`}>
           {PROGRAM_LABELS[program] || program}
         </span>
+        {policyRoleId && (
+          <p style={{ fontSize: 11, color: '#047857', marginTop: 8, fontWeight: 600 }}>
+            Capability-gated · {grantedCapabilities.length} caps
+          </p>
+        )}
       </div>
 
-      {/* Nav items */}
       <nav className="flex-1 px-3 py-2 space-y-0.5 overflow-y-auto">
+        {items.length === 0 && policyRoleId && (
+          <p className="px-3 py-2" style={{ fontSize: 12.5, color: '#9AA3AF' }}>
+            No screens unlocked for this role’s capabilities.
+          </p>
+        )}
         {items.map(item => {
           const active = currentScreen === item.id;
           return (
             <button
               key={item.id}
+              type="button"
               onClick={() => navigate(item.id)}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all ${
                 active
@@ -116,27 +167,30 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* User chip + logout */}
       <div className="px-3 pb-5 pt-2 border-t border-white/40">
-        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/60">
+        <div className="flex items-center gap-2.5 px-2 mb-2">
           <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-white shrink-0"
-            style={{ background: '#0B0F1A', fontSize: 11, fontWeight: 700 }}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-white shrink-0"
+            style={{ background: policyRoleId ? '#059669' : '#0B0F1A', fontSize: 10, fontWeight: 700 }}
           >
-            {user?.initials ?? '??'}
+            {displayInitials}
           </div>
-          <div className="flex-1 min-w-0">
-            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#0B1220' }} className="truncate">{user?.name ?? 'User'}</p>
-            <p style={{ fontSize: 11, color: '#9AA3AF' }} className="truncate capitalize">{role.replace(/-/g, ' ')}</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate" style={{ fontSize: 12.5, fontWeight: 600, color: '#0B1220' }}>{displayName}</p>
+            <p style={{ fontSize: 11, color: '#9AA3AF' }}>
+              {policyRoleId ? 'Custom role' : 'Bridge'}
+            </p>
           </div>
-          <button
-            onClick={logout}
-            className="text-[#9AA3AF] hover:text-[#0B1220] transition-colors shrink-0"
-            title="Log out"
-          >
-            <LogOut size={14} />
-          </button>
         </div>
+        <button
+          type="button"
+          onClick={logout}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[#6B7280] hover:bg-white/60 hover:text-[#0B1220] transition-all"
+          style={{ fontSize: 13 }}
+        >
+          <LogOut size={15} />
+          Sign out
+        </button>
       </div>
     </aside>
   );

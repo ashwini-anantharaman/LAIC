@@ -73,7 +73,7 @@ Administrator → **Access Catalogue**
 | Export JSON | Live catalogue document |
 | JSON Schema | Full LAIC schema (catalogue + access_policy) |
 
-Edits update Export JSON immediately. **Save catalogue** persists locally. **Reset v1 defaults** reloads `learning-platform-access-catalogue.v1.json`.
+Edits update Export JSON immediately. **Save catalogue** persists the full `capability_catalogue` JSON locally and **syncs sample role templates into the Bridge Learning `access_policy`** (People & Roles). Custom policy roles are preserved; deleted catalogue capabilities are pruned from grants. **Reset v1 defaults** reloads `learning-platform-access-catalogue.v1.json` and re-syncs roles.
 
 ---
 

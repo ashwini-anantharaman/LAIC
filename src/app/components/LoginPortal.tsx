@@ -1,41 +1,39 @@
 import React, { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useApp } from '../App';
-import { USERS } from '../../lib/data';
-import { authenticateDemo } from '../../lib/demoAuth';
-import type { Role } from '../../lib/types';
-
-const ROLE_DISPLAY: Record<Role, string> = {
-  'content-developer': 'Content Developer',
-  'object-reviewer': 'Object Reviewer',
-  'course-reviewer': 'Course Reviewer',
-  'administrator': 'Administrator',
-  'coach': 'Coach',
-  'student': 'Student',
-};
-
-const FEATURED = ['demo-cd', 'sam', 'riya'];
+import { DEMO_ACCOUNTS, authenticateDemo } from '../../lib/demoAuth';
+import {
+  authenticatePolicyDemo,
+  listPolicyDemoAccounts,
+} from '../../lib/roleAccess';
 
 export function LoginPortal() {
   const { login } = useApp();
-  const [showAll, setShowAll] = useState(false);
   const [email, setEmail] = useState('1@gmail.com');
   const [password, setPassword] = useState('123456');
   const [error, setError] = useState<string | null>(null);
 
-  const featured = USERS.filter(u => FEATURED.includes(u.id));
-  const rest = USERS.filter(u => !FEATURED.includes(u.id));
-  const displayed = showAll ? [...featured, ...rest] : featured;
+  const customRoleAccounts = listPolicyDemoAccounts({ customOnly: true });
 
   const signInWithForm = () => {
     setError(null);
+    const policyHit = authenticatePolicyDemo(email, password);
+    if (policyHit) {
+      login(policyHit.userId);
+      return;
+    }
     const userId = authenticateDemo(email, password);
     if (!userId) {
-      setError('Invalid email or password. Use the Course Dev demo: 1@gmail.com / 123456');
+      setError('Invalid email or password. Use one of the demo accounts listed below.');
       return;
     }
     login(userId);
+  };
+
+  const fillAccount = (accountEmail: string, accountPassword: string) => {
+    setEmail(accountEmail);
+    setPassword(accountPassword);
+    setError(null);
   };
 
   return (
@@ -55,7 +53,6 @@ export function LoginPortal() {
           padding: '36px 32px 32px',
         }}
       >
-        {/* Wordmark */}
         <div className="mb-6">
           <div className="flex items-center gap-2.5 mb-2">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white" style={{ background: '#0B0F1A' }}>
@@ -67,11 +64,10 @@ export function LoginPortal() {
             </div>
           </div>
           <p style={{ fontSize: 13, color: '#6B7280', lineHeight: 1.5, marginTop: 8 }}>
-            Authoring and delivery for the Bridge program.
+            Sign in with a role account. Custom roles only unlock the capabilities you granted.
           </p>
         </div>
 
-        {/* Email + password */}
         <div className="space-y-2.5 mb-2">
           <input
             type="email"
@@ -104,10 +100,7 @@ export function LoginPortal() {
             autoComplete="current-password"
           />
         </div>
-        <p style={{ fontSize: 11.5, color: '#9AA3AF', marginBottom: 10, lineHeight: 1.45 }}>
-          Course-dev demo: <span style={{ color: '#6B7280', fontWeight: 600 }}>1@gmail.com</span> / <span style={{ color: '#6B7280', fontWeight: 600 }}>123456</span>
-          {' '}· your objects are saved to this account
-        </p>
+
         {error && (
           <p style={{ fontSize: 12, color: '#B91C1C', marginBottom: 10, lineHeight: 1.4 }}>{error}</p>
         )}
@@ -115,59 +108,68 @@ export function LoginPortal() {
         <button
           type="button"
           onClick={signInWithForm}
-          className="w-full py-3 rounded-full text-white transition-all hover:opacity-90 active:scale-[0.98] mb-6"
+          className="w-full py-3 rounded-full text-white transition-all hover:opacity-90 active:scale-[0.98] mb-5"
           style={{ background: '#0B0F1A', fontSize: 14, fontWeight: 600 }}
         >
           Sign in
         </button>
 
-        {/* Divider */}
-        <div className="flex items-center gap-3 mb-4">
+        {customRoleAccounts.length > 0 && (
+          <>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1 h-px" style={{ background: 'rgba(0,0,0,0.08)' }} />
+              <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 500 }}>Your custom roles</span>
+              <div className="flex-1 h-px" style={{ background: 'rgba(0,0,0,0.08)' }} />
+            </div>
+            <div className="space-y-1.5 max-h-[200px] overflow-y-auto mb-4">
+              {customRoleAccounts.map((account) => (
+                <button
+                  key={account.userId}
+                  type="button"
+                  onClick={() => fillAccount(account.email, account.password)}
+                  className="w-full text-left px-3.5 py-2.5 rounded-2xl transition-all hover:bg-white/60"
+                  style={{
+                    background: 'rgba(5,150,105,0.08)',
+                    border: '1px solid rgba(5,150,105,0.22)',
+                  }}
+                >
+                  <p style={{ fontSize: 13, fontWeight: 600, color: '#0B1220' }}>{account.label}</p>
+                  <p style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
+                    {account.email} · {account.password}
+                  </p>
+                  <p style={{ fontSize: 11, color: '#047857', marginTop: 3 }}>
+                    {account.capabilityIds.length} capacit{account.capabilityIds.length === 1 ? 'y' : 'ies'} · fake login
+                  </p>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="flex items-center gap-3 mb-3">
           <div className="flex-1 h-px" style={{ background: 'rgba(0,0,0,0.08)' }} />
-          <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 500 }}>Or pick a demo persona</span>
+          <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 500 }}>Built-in demo accounts</span>
           <div className="flex-1 h-px" style={{ background: 'rgba(0,0,0,0.08)' }} />
         </div>
 
-        {/* Persona rows */}
-        <div className="space-y-1.5">
-          {displayed.map(user => (
-            <motion.button
-              key={user.id}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => login(user.id)}
-              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-left transition-all hover:bg-white/60"
+        <div className="space-y-1.5 max-h-[220px] overflow-y-auto">
+          {DEMO_ACCOUNTS.map((account) => (
+            <button
+              key={account.userId}
+              type="button"
+              onClick={() => fillAccount(account.email, account.password)}
+              className="w-full text-left px-3.5 py-2.5 rounded-2xl transition-all hover:bg-white/60"
               style={{
                 background: 'rgba(255,255,255,0.45)',
                 border: '1px solid rgba(255,255,255,0.65)',
               }}
             >
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-white shrink-0"
-                style={{ background: '#0B0F1A', fontSize: 11, fontWeight: 700 }}
-              >
-                {user.initials}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p style={{ fontSize: 13, fontWeight: 600, color: '#0B1220' }}>{user.name}</p>
-                <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>
-                  Bridge · {ROLE_DISPLAY[user.role]}
-                  {user.id === 'demo-cd' ? ' · saved library' : ''}
-                </p>
-              </div>
-              <ChevronRight size={14} className="text-[#C4CBD4] shrink-0" />
-            </motion.button>
-          ))}
-
-          {!showAll && (
-            <button
-              onClick={() => setShowAll(true)}
-              className="w-full py-2 text-center transition-colors hover:text-[#0B1220]"
-              style={{ fontSize: 12.5, color: '#9AA3AF', fontWeight: 500 }}
-            >
-              All roles ↓
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#0B1220' }}>{account.label}</p>
+              <p style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
+                {account.email} · {account.password}
+              </p>
             </button>
-          )}
+          ))}
         </div>
       </motion.div>
     </div>
