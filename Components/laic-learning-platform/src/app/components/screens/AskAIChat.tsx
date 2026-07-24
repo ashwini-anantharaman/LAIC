@@ -75,6 +75,19 @@ function blockToText(b: Block): string {
       return `Image${c.caption ? `: ${c.caption}` : ''}${c.url ? `\nURL: ${c.url}` : ''}`;
     case 'video-embed':
       return `YouTube clip${c.caption ? `: ${c.caption}` : ''}\nURL: ${c.url || ''}${c.start != null ? `\nStart: ${c.start}s` : ''}${c.end != null ? ` End: ${c.end}s` : ''}`;
+    case 'video-script':
+      return [
+        `Interactive video: ${c.videoUrl || ''}`,
+        Array.isArray(c.transcript) && c.transcript.length
+          ? `Transcript:\n${c.transcript.map((s: any) => `[${Math.floor(s.start || 0)}s] ${s.text}`).join('\n')}`
+          : '',
+        Array.isArray(c.checkpoints) && c.checkpoints.length
+          ? `Checkpoints:\n${c.checkpoints.map((cp: any, i: number) => {
+            const q = cp.question || {};
+            return `#${i + 1} @ ${cp.time}s — ${q.question}\nOptions: ${(q.options || []).join(' | ')}\nAnswer: ${(q.options || [])[q.correct ?? 0] || ''}`;
+          }).join('\n\n')}`
+          : '',
+      ].filter(Boolean).join('\n\n');
     case 'bridge-play':
       return `${c.title || ''}\n${c.description || ''}\nAnswer: ${c.correctAnswer || ''}\n${c.explanation || ''}`;
     case 'bidding-sequence':

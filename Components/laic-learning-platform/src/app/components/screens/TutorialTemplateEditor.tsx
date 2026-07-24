@@ -1,19 +1,37 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react';
 import type {
   AssessmentPlacement,
-  SectionBlockRecipeItem,
+  AtomicBlockType,
+  EmbeddedObjectItem,
+  EmbeddableObjectType,
+  ObjectType,
+  RecipeItem,
   SectionConnectionRule,
-  SectionRecipeBlockType,
   TutorialTemplate,
+  VersionPin,
 } from '../../../lib/types';
 import {
   ASSESSMENT_OPTIONS,
+  ATOMIC_BLOCK_OPTIONS,
   CONNECTION_OPTIONS,
-  RECIPE_BLOCK_OPTIONS,
+  EMBEDDED_OBJECT_OPTIONS,
+  SOURCE_MODE_OPTIONS,
   blankCustomTemplateDraft,
+  deriveMediaSlots,
+  embedTypeToLibraryTypes,
+  isContentBearing,
+  isKnowledgeCheckStyle,
+  listEmbeddableLibraryObjects,
+  makeAtomicItem,
+  makeEmbeddedItem,
+  needsLibraryPin,
   saveCustomTutorialTemplate,
+  toFlatSectionBlockRecipe,
+  versionPinResolves,
+  type LibraryObjectChoice,
 } from '../../../lib/tutorialTemplates';
+import { useApp } from '../../App';
 
 interface Props {
   initial?: TutorialTemplate | null;
@@ -28,15 +46,240 @@ const field: React.CSSProperties = {
   outline: 'none',
 };
 
+const LIBRARY_TYPE_FILTERS: { type: ObjectType | 'all'; label: string }[] = [
+  { type: 'all', label: 'All types' },
+  { type: 'tutorial', label: 'Tutorials' },
+  { type: 'lesson', label: 'Lessons' },
+  { type: 'quiz', label: 'Quizzes' },
+  { type: 'flashcard-set', label: 'Flashcard sets' },
+  { type: 'concept-card', label: 'Concept cards' },
+  { type: 'scenario', label: 'Scenarios' },
+  { type: 'assignment', label: 'Assignments' },
+  { type: 'reflection', label: 'Reflections' },
+  { type: 'summary', label: 'Summaries' },
+  { type: 'drill', label: 'Drills' },
+  { type: 'video-script', label: 'Video scripts' },
+];
+
+function cloneRecipe(recipe: RecipeItem[]): RecipeItem[] {
+  return recipe.map((item) => {
+    if (item.kind === 'atomic') {
+      return {
+        ...item,
+        preferKinds: item.preferKinds ? [...item.preferKinds] : undefined,
+        media: item.media ? { ...item.media } : undefined,
+      };
+    }
+    return {
+      ...item,
+      versionPin: item.versionPin ? { ...item.versionPin } : undefined,
+    };
+  });
+}
+
+function atomicLabel(type: AtomicBlockType): string {
+  return ATOMIC_BLOCK_OPTIONS.find((o) => o.type === type)?.label || type;
+}
+
+function embeddedLabel(type: EmbeddableObjectType): string {
+  return EMBEDDED_OBJECT_OPTIONS.find((o) => o.type === type)?.label || type;
+}
+
+function LibraryPickerModal({
+  open,
+  onClose,
+  library,
+  libraryStatus,
+  libraryEmptyCopy,
+  slotObjectType,
+  initialObjectId,
+  initialVersionId,
+  onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  library: LibraryObjectChoice[];
+  libraryStatus: 'idle' | 'loading' | 'empty' | 'error';
+  libraryEmptyCopy: string;
+  slotObjectType: EmbeddableObjectType;
+  initialObjectId?: string;
+  initialVersionId?: string;
+  onConfirm: (objectId: string, versionId: string, title: string) => void;
+}) {
+  const lockedTypes = embedTypeToLibraryTypes(slotObjectType);
+  const [typeFilter, setTypeFilter] = useState<ObjectType | 'all'>(lockedTypes?.[0] ?? 'all');
+  const [objectId, setObjectId] = useState(initialObjectId || '');
+  const [versionId, setVersionId] = useState(initialVersionId || '');
+
+  useEffect(() => {
+    if (!open) return;
+    setTypeFilter(lockedTypes?.[0] ?? 'all');
+    setObjectId(initialObjectId || '');
+    setVersionId(initialVersionId || '');
+  }, [open, slotObjectType, initialObjectId, initialVersionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filtered = useMemo(() => {
+    let rows = library;
+    if (lockedTypes) {
+      rows = rows.filter((o) => lockedTypes.includes(o.type));
+    } else if (typeFilter !== 'all') {
+      rows = rows.filter((o) => o.type === typeFilter);
+    }
+    return rows;
+  }, [library, lockedTypes, typeFilter]);
+
+  const selected = filtered.find((o) => o.id === objectId) || library.find((o) => o.id === objectId);
+
+  useEffect(() => {
+    if (!objectId) return;
+    if (filtered.some((o) => o.id === objectId)) return;
+    setObjectId('');
+    setVersionId('');
+  }, [filtered, objectId]);
+
+  if (!open) return null;
+
+  const typeLocked = !!lockedTypes;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(15,23,42,0.45)' }}
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border p-4 shadow-lg"
+        style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.1)' }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Pick from Object Library"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>Pick from Object Library</p>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>
+              Choose a learning object and pin a version.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 rounded-lg" aria-label="Close">
+            <X size={15} style={{ color: '#6B7280' }} />
+          </button>
+        </div>
+
+        <label style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
+          Object type
+        </label>
+        <select
+          value={typeLocked ? (lockedTypes![0]) : typeFilter}
+          disabled={typeLocked}
+          onChange={(e) => {
+            const next = e.target.value as ObjectType | 'all';
+            setTypeFilter(next);
+            setObjectId('');
+            setVersionId('');
+          }}
+          className="w-full rounded-xl px-3 py-2 mb-3"
+          style={field}
+        >
+          {(typeLocked
+            ? LIBRARY_TYPE_FILTERS.filter((t) => t.type === lockedTypes![0])
+            : LIBRARY_TYPE_FILTERS
+          ).map((t) => (
+            <option key={t.type} value={t.type}>{t.label}</option>
+          ))}
+        </select>
+
+        <label style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
+          Learning object
+        </label>
+        {libraryStatus === 'loading' ? (
+          <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 12 }}>Loading Object Library…</p>
+        ) : filtered.length === 0 ? (
+          <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 12 }}>
+            {library.length === 0
+              ? libraryEmptyCopy
+              : 'No objects of this type in the library yet.'}
+          </p>
+        ) : (
+          <select
+            value={objectId}
+            onChange={(e) => {
+              const id = e.target.value;
+              setObjectId(id);
+              const obj = filtered.find((o) => o.id === id);
+              const vid = obj?.versions.find((v) => v.isLive)?.versionId
+                || obj?.versions[0]?.versionId
+                || '';
+              setVersionId(vid);
+            }}
+            className="w-full rounded-xl px-3 py-2 mb-3"
+            style={field}
+          >
+            <option value="">Select object…</option>
+            {filtered.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.title} · {o.status}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <label style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
+          Version pin
+        </label>
+        <select
+          value={versionId}
+          disabled={!selected}
+          onChange={(e) => setVersionId(e.target.value)}
+          className="w-full rounded-xl px-3 py-2 mb-4"
+          style={field}
+        >
+          <option value="">Select version…</option>
+          {(selected?.versions || []).map((v) => (
+            <option key={v.versionId} value={v.versionId}>
+              v{v.versionNumber}{v.isLive ? ' (live)' : ''} — {v.status}
+            </option>
+          ))}
+        </select>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={!objectId || !versionId}
+            onClick={() => {
+              if (!objectId || !versionId || !selected) return;
+              onConfirm(objectId, versionId, selected.title);
+            }}
+            className="px-4 py-2 rounded-full text-white disabled:opacity-40"
+            style={{ background: '#059669', fontSize: 13, fontWeight: 600 }}
+          >
+            Use this object
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-full border"
+            style={{ fontSize: 13, color: '#6B7280', borderColor: 'rgba(0,0,0,0.1)' }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
+  const { createdObjects } = useApp();
   const seed = initial
     ? {
         name: initial.name,
         description: initial.description,
         sectionConnection: initial.sectionConnection,
         assessmentPlacement: initial.assessmentPlacement,
-        sectionBlockRecipe: [...initial.sectionBlockRecipe],
-        mediaSlots: [...(initial.mediaSlots || [])],
+        recipe: cloneRecipe(initial.recipe?.length ? initial.recipe : []),
         knobDefaults: { ...initial.knobDefaults },
       }
     : blankCustomTemplateDraft();
@@ -45,11 +288,36 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
   const [description, setDescription] = useState(seed.description);
   const [sectionConnection, setSectionConnection] = useState<SectionConnectionRule>(seed.sectionConnection);
   const [assessmentPlacement, setAssessmentPlacement] = useState<AssessmentPlacement>(seed.assessmentPlacement);
-  const [recipe, setRecipe] = useState<SectionBlockRecipeItem[]>(seed.sectionBlockRecipe);
-  const [secs, setSecs] = useState(seed.knobDefaults.secs ?? 3);
+  const [recipe, setRecipe] = useState<RecipeItem[]>(seed.recipe);
+  const [secs, setSecs] = useState(seed.knobDefaults.secs ?? 6);
   const [end, setEnd] = useState(seed.knobDefaults.end || 'Recap only');
-  const [chks, setChks] = useState(seed.knobDefaults.chks ?? 1);
+  const [chks, setChks] = useState(seed.knobDefaults.chks ?? 2);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [library, setLibrary] = useState<LibraryObjectChoice[]>([]);
+  const [libraryStatus, setLibraryStatus] = useState<'idle' | 'loading' | 'empty' | 'error'>('idle');
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [pickerForId, setPickerForId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLibraryStatus('loading');
+    listEmbeddableLibraryObjects({ extraObjects: createdObjects })
+      .then((rows) => {
+        if (cancelled) return;
+        setLibrary(rows);
+        setLibraryStatus(rows.length ? 'idle' : 'empty');
+        setLibraryError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLibrary([]);
+        setLibraryStatus('error');
+        setLibraryError(err instanceof Error ? err.message : 'Object Library unavailable');
+      });
+    return () => { cancelled = true; };
+  }, [createdObjects]);
 
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir;
@@ -65,40 +333,128 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
     setRecipe((prev) => prev.filter((_, idx) => idx !== i));
   };
 
-  const addBlock = (type: SectionRecipeBlockType) => {
-    setRecipe((prev) => [...prev, { type, required: type !== 'media' && type !== 'source-excerpt' }]);
+  const addAtomic = (type: AtomicBlockType) => {
+    setRecipe((prev) => [...prev, makeAtomicItem(type)]);
+  };
+
+  const addEmbedded = (type: EmbeddableObjectType) => {
+    const item = makeEmbeddedItem(type);
+    setRecipe((prev) => [...prev, item]);
+    if (item.sourceMode === 'pick_from_library') openPicker(item.id);
+  };
+
+  const patchEmbedded = (id: string, patch: Partial<EmbeddedObjectItem>) => {
+    setRecipe((prev) => prev.map((item) => {
+      if (item.kind !== 'embedded' || item.id !== id) return item;
+      const next: EmbeddedObjectItem = { ...item, ...patch };
+      if (patch.objectType === 'reused-from-library' && !patch.sourceMode) {
+        next.sourceMode = 'pick_from_library';
+      }
+      if (patch.sourceMode === 'generate' || patch.sourceMode === 'prompt_on_author') {
+        next.versionPin = undefined;
+        next.libraryTitle = undefined;
+      }
+      return next;
+    }));
+  };
+
+  const setPinFromLibrary = (itemId: string, objectId: string, versionId: string, title?: string) => {
+    const obj = library.find((o) => o.id === objectId);
+    const pin: VersionPin | undefined =
+      objectId && versionId ? { objectId, versionId } : undefined;
+    patchEmbedded(itemId, {
+      versionPin: pin,
+      libraryTitle: title || obj?.title,
+    });
+  };
+
+  const openPicker = (itemId: string) => setPickerForId(itemId);
+
+  const setSourceMode = (itemId: string, mode: EmbeddedObjectItem['sourceMode']) => {
+    patchEmbedded(itemId, { sourceMode: mode });
+    if (mode === 'pick_from_library') openPicker(itemId);
+  };
+
+  const validate = (): { ok: boolean; error: string | null; warning: string | null; rows: Record<string, string> } => {
+    const rows: Record<string, string> = {};
+    if (!name.trim()) {
+      return { ok: false, error: 'Give the template a name.', warning: null, rows };
+    }
+    if (!recipe.length) {
+      return { ok: false, error: 'Add at least one item to the section recipe.', warning: null, rows };
+    }
+    if (!recipe.some(isContentBearing)) {
+      return {
+        ok: false,
+        error: 'Include at least one content-bearing item (not only a section heading).',
+        warning: null,
+        rows,
+      };
+    }
+
+    for (const item of recipe) {
+      if (item.kind !== 'embedded') continue;
+      if (!item.required) continue;
+      if (!item.sourceMode) {
+        rows[item.id] = 'Required embedded slots need a source mode.';
+        continue;
+      }
+      if (needsLibraryPin(item)) {
+        if (!item.versionPin?.objectId || !item.versionPin?.versionId) {
+          rows[item.id] = 'Pick a library object and pin a version, or change the source mode.';
+        } else if (libraryStatus === 'empty' || libraryStatus === 'error') {
+          rows[item.id] = 'Object Library is unavailable — required pick slots cannot be resolved yet.';
+        } else if (!versionPinResolves(item.versionPin, library)) {
+          rows[item.id] = 'Pinned object or version no longer resolves (dangling reference).';
+        }
+      }
+    }
+
+    if (Object.keys(rows).length) {
+      return {
+        ok: false,
+        error: 'Fix required embedded-object settings before saving.',
+        warning: null,
+        rows,
+      };
+    }
+
+    let warn: string | null = null;
+    const hasCheck = recipe.some(isKnowledgeCheckStyle);
+    if (
+      (assessmentPlacement === 'after_each_section' || assessmentPlacement === 'checkpoints_after_each')
+      && !hasCheck
+    ) {
+      warn = 'Assessment expects a per-section check — add an embedded Quiz or a Try-it block.';
+    } else if (assessmentPlacement === 'none' && hasCheck) {
+      warn = 'Assessment is None, but the recipe still includes a Quiz or Try-it check.';
+    }
+
+    return { ok: true, error: null, warning: warn, rows };
   };
 
   const handleSave = () => {
-    if (!name.trim()) {
-      setError('Give the template a name.');
+    const result = validate();
+    setRowErrors(result.rows);
+    setWarning(result.warning);
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
-    if (!recipe.length) {
-      setError('Add at least one block to the section recipe.');
-      return;
-    }
-    if (!recipe.some((r) => r.type !== 'media')) {
-      setError('Include at least one content block (not only media).');
-      return;
-    }
-    const mediaSlots = recipe
-      .map((r, i) => ({ r, i }))
-      .filter(({ r }) => r.type === 'media')
-      .map(({ i }, n) => ({
-        id: `media-${n + 1}`,
-        kind: 'either' as const,
-        afterRecipeIndex: i,
-        hint: 'Optional media for this section',
-      }));
+    setError(null);
 
+    const mediaSlots = deriveMediaSlots(recipe);
+    const sectionBlockRecipe = toFlatSectionBlockRecipe(recipe);
+
+    // TODO: persistence should move to backend/API (RAG/schema); reusing existing save boundary only — do not expand localStorage surface.
     const saved = saveCustomTutorialTemplate({
       id: initial?.id,
       name: name.trim(),
       description: description.trim(),
       sectionConnection,
       assessmentPlacement,
-      sectionBlockRecipe: recipe,
+      recipe,
+      sectionBlockRecipe,
       mediaSlots,
       knobDefaults: {
         secs,
@@ -108,11 +464,25 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
         end,
         chks,
         excpts: 0,
-        wex: recipe.some((r) => r.type === 'worked-example'),
+        wex: recipe.some((r) => r.kind === 'atomic' && r.blockType === 'worked-example'),
       },
     });
     onSave(saved);
   };
+
+  useEffect(() => {
+    const hasCheck = recipe.some(isKnowledgeCheckStyle);
+    if (
+      (assessmentPlacement === 'after_each_section' || assessmentPlacement === 'checkpoints_after_each')
+      && !hasCheck
+    ) {
+      setWarning('Assessment expects a per-section check — add an embedded Quiz or a Try-it block.');
+    } else if (assessmentPlacement === 'none' && hasCheck) {
+      setWarning('Assessment is None, but the recipe still includes a Quiz or Try-it check.');
+    } else {
+      setWarning(null);
+    }
+  }, [assessmentPlacement, recipe]);
 
   const pill = (on: boolean): React.CSSProperties => ({
     fontSize: 12,
@@ -121,6 +491,23 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
     color: on ? '#fff' : '#374151',
     borderColor: on ? '#0B0F1A' : 'rgba(0,0,0,0.1)',
   });
+
+  const chipStyle: React.CSSProperties = {
+    fontSize: 11.5,
+    color: '#374151',
+    borderColor: 'rgba(0,0,0,0.1)',
+    background: 'rgba(255,255,255,0.9)',
+  };
+
+  const libraryEmptyCopy = libraryStatus === 'error'
+    ? (libraryError || 'Object Library unavailable.')
+    : libraryStatus === 'loading'
+      ? 'Loading Object Library…'
+      : 'No objects in the Object Library yet.';
+
+  const pickerItem = pickerForId
+    ? recipe.find((r): r is EmbeddedObjectItem => r.kind === 'embedded' && r.id === pickerForId)
+    : null;
 
   return (
     <div className="rounded-2xl border p-4 mb-3" style={{ background: 'rgba(255,255,255,0.95)', borderColor: 'rgba(0,0,0,0.1)' }}>
@@ -228,45 +615,239 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
         </div>
       </div>
 
-      <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 6 }}>
+      <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 4 }}>
         Per-section recipe (order = teaching order)
       </p>
+      <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 8 }}>
+        Atomic blocks are written inline; embedded objects nest whole learning objects in the section.
+      </p>
+
+      {warning && (
+        <p
+          className="mb-2 px-3 py-2 rounded-xl"
+          style={{ fontSize: 12.5, color: '#92400E', background: '#FFFBEB', border: '1px solid rgba(217,119,6,0.25)' }}
+        >
+          {warning}
+        </p>
+      )}
+
       <div className="space-y-1.5 mb-3">
         {recipe.map((item, i) => {
-          const label = RECIPE_BLOCK_OPTIONS.find((o) => o.type === item.type)?.label || item.type;
+          if (item.kind === 'atomic') {
+            const isMedia = item.blockType === 'media';
+            return (
+              <div
+                key={item.id}
+                className="rounded-xl border overflow-hidden"
+                style={{ background: 'rgba(249,250,251,0.95)', borderColor: 'rgba(0,0,0,0.08)' }}
+              >
+                <div className="flex items-center gap-2 px-3 py-2" style={{ borderLeft: '3px solid #94A3B8' }}>
+                  <span style={{ fontSize: 11, color: '#9AA3AF', fontFamily: 'monospace', width: 18 }}>{i + 1}</span>
+                  <span
+                    className="px-1.5 py-0.5 rounded"
+                    style={{ fontSize: 10, fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#6B7280', background: 'rgba(0,0,0,0.04)' }}
+                  >
+                    Block
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#0B1220', flex: 1 }}>
+                    {atomicLabel(item.blockType)}
+                  </span>
+                  {isMedia && (
+                    <span style={{ fontSize: 11, color: '#9AA3AF' }}>Optional</span>
+                  )}
+                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="p-1 disabled:opacity-30">
+                    <ChevronUp size={14} style={{ color: '#6B7280' }} />
+                  </button>
+                  <button type="button" onClick={() => move(i, 1)} disabled={i === recipe.length - 1} className="p-1 disabled:opacity-30">
+                    <ChevronDown size={14} style={{ color: '#6B7280' }} />
+                  </button>
+                  <button type="button" onClick={() => removeAt(i)} className="p-1">
+                    <Trash2 size={13} style={{ color: '#EF4444' }} />
+                  </button>
+                </div>
+                {isMedia && (
+                  <p className="px-3 pb-2" style={{ fontSize: 12, color: '#9AA3AF', paddingLeft: 44 }}>
+                    Optional — skip if no matching media; never blocks generation.
+                  </p>
+                )}
+              </div>
+            );
+          }
+
+          const showPin = needsLibraryPin(item);
+          const rowErr = rowErrors[item.id];
+          const pinned = item.versionPin
+            ? library.find((o) => o.id === item.versionPin?.objectId)
+            : null;
+          const pinnedVersion = pinned?.versions.find((v) => v.versionId === item.versionPin?.versionId);
+
           return (
             <div
-              key={`${item.type}-${i}`}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl border"
+              key={item.id}
+              className="rounded-xl border overflow-hidden"
               style={{ background: 'rgba(249,250,251,0.95)', borderColor: 'rgba(0,0,0,0.08)' }}
             >
-              <span style={{ fontSize: 11, color: '#9AA3AF', fontFamily: 'monospace', width: 18 }}>{i + 1}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#0B1220', flex: 1 }}>{label}</span>
-              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="p-1 disabled:opacity-30">
-                <ChevronUp size={14} style={{ color: '#6B7280' }} />
-              </button>
-              <button type="button" onClick={() => move(i, 1)} disabled={i === recipe.length - 1} className="p-1 disabled:opacity-30">
-                <ChevronDown size={14} style={{ color: '#6B7280' }} />
-              </button>
-              <button type="button" onClick={() => removeAt(i)} className="p-1">
-                <Trash2 size={13} style={{ color: '#EF4444' }} />
-              </button>
+              <div className="flex items-center gap-2 px-3 py-2" style={{ borderLeft: '3px solid #059669' }}>
+                <span style={{ fontSize: 11, color: '#9AA3AF', fontFamily: 'monospace', width: 18 }}>{i + 1}</span>
+                <span
+                  className="px-1.5 py-0.5 rounded"
+                  style={{ fontSize: 10, fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#047857', background: 'rgba(5,150,105,0.08)' }}
+                >
+                  Embedded object
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#0B1220', flex: 1 }}>
+                  {embeddedLabel(item.objectType)}
+                </span>
+                <button type="button" onClick={() => move(i, -1)} disabled={i === 0} className="p-1 disabled:opacity-30">
+                  <ChevronUp size={14} style={{ color: '#6B7280' }} />
+                </button>
+                <button type="button" onClick={() => move(i, 1)} disabled={i === recipe.length - 1} className="p-1 disabled:opacity-30">
+                  <ChevronDown size={14} style={{ color: '#6B7280' }} />
+                </button>
+                <button type="button" onClick={() => removeAt(i)} className="p-1">
+                  <Trash2 size={13} style={{ color: '#EF4444' }} />
+                </button>
+              </div>
+
+              <div className="px-3 pb-3 space-y-2.5" style={{ paddingLeft: 14, borderLeft: '3px solid #059669', marginLeft: 0 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
+                    Object type
+                  </label>
+                  <select
+                    value={item.objectType}
+                    onChange={(e) => patchEmbedded(item.id, { objectType: e.target.value as EmbeddableObjectType })}
+                    className="w-full rounded-xl px-3 py-2"
+                    style={field}
+                  >
+                    {EMBEDDED_OBJECT_OPTIONS.map((o) => (
+                      <option key={o.type} value={o.type}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: '#9AA3AF', marginBottom: 4 }}>Source mode</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SOURCE_MODE_OPTIONS.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => setSourceMode(item.id, o.id)}
+                        className="px-2.5 py-1 rounded-full border"
+                        style={pill(item.sourceMode === o.id)}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: '#9AA3AF', marginBottom: 4 }}>Slot</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {([true, false] as const).map((req) => (
+                      <button
+                        key={String(req)}
+                        type="button"
+                        onClick={() => patchEmbedded(item.id, { required: req })}
+                        className="px-2.5 py-1 rounded-full border"
+                        style={pill(item.required === req)}
+                      >
+                        {req ? 'Required' : 'Optional'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {showPin && (
+                  <div className="space-y-2">
+                    <label style={{ fontSize: 11, fontWeight: 600, color: '#9AA3AF', display: 'block' }}>
+                      Library object + version pin
+                    </label>
+                    {item.versionPin && (item.libraryTitle || pinned) ? (
+                      <div
+                        className="rounded-xl px-3 py-2"
+                        style={{ background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(0,0,0,0.08)' }}
+                      >
+                        <p style={{ fontSize: 13, fontWeight: 600, color: '#0B1220' }}>
+                          {item.libraryTitle || pinned?.title}
+                        </p>
+                        <p style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+                          {(pinned?.type || 'object')}
+                          {pinnedVersion
+                            ? ` · pinned v${pinnedVersion.versionNumber}${pinnedVersion.isLive ? ' (live)' : ''}`
+                            : ' · version pinned'}
+                        </p>
+                      </div>
+                    ) : (
+                      <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>
+                        No object selected yet.
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openPicker(item.id)}
+                      className="px-3 py-1.5 rounded-full border"
+                      style={{ fontSize: 12, fontWeight: 600, color: '#047857', borderColor: 'rgba(5,150,105,0.35)', background: 'rgba(5,150,105,0.06)' }}
+                    >
+                      {item.versionPin ? 'Change library object…' : 'Browse Object Library…'}
+                    </button>
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
+                    Authoring note
+                  </label>
+                  <input
+                    value={item.authoringNote || ''}
+                    onChange={(e) => patchEmbedded(item.id, { authoringNote: e.target.value })}
+                    placeholder="e.g. quiz should test only this section's concept"
+                    className="w-full rounded-xl px-3 py-2"
+                    style={field}
+                  />
+                </div>
+
+                {rowErr && (
+                  <p style={{ fontSize: 12, color: '#B91C1C' }}>{rowErr}</p>
+                )}
+              </div>
             </div>
           );
         })}
+
         {recipe.length === 0 && (
-          <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>No blocks yet — add from the list below.</p>
+          <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>
+            No items yet — add a block or an embedded object below.
+          </p>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        {RECIPE_BLOCK_OPTIONS.map((o) => (
+      <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 6 }}>Add block</p>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {ATOMIC_BLOCK_OPTIONS.map((o) => (
           <button
             key={o.type}
             type="button"
-            onClick={() => addBlock(o.type)}
+            onClick={() => addAtomic(o.type)}
             className="flex items-center gap-1 px-2.5 py-1 rounded-full border"
-            style={{ fontSize: 11.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.9)' }}
+            style={chipStyle}
+          >
+            <Plus size={11} />{o.label}
+          </button>
+        ))}
+      </div>
+
+      <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 6 }}>Add embedded object</p>
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {EMBEDDED_OBJECT_OPTIONS.map((o) => (
+          <button
+            key={o.type}
+            type="button"
+            onClick={() => addEmbedded(o.type)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-full border"
+            style={chipStyle}
           >
             <Plus size={11} />{o.label}
           </button>
@@ -295,6 +876,23 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
           Cancel
         </button>
       </div>
+
+      {pickerItem && (
+        <LibraryPickerModal
+          open={!!pickerForId}
+          onClose={() => setPickerForId(null)}
+          library={library}
+          libraryStatus={libraryStatus}
+          libraryEmptyCopy={libraryEmptyCopy}
+          slotObjectType={pickerItem.objectType}
+          initialObjectId={pickerItem.versionPin?.objectId}
+          initialVersionId={pickerItem.versionPin?.versionId}
+          onConfirm={(objectId, versionId, title) => {
+            setPinFromLibrary(pickerItem.id, objectId, versionId, title);
+            setPickerForId(null);
+          }}
+        />
+      )}
     </div>
   );
 }

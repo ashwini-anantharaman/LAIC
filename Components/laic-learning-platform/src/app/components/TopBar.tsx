@@ -27,6 +27,7 @@ const PROGRAMS: { id: Program; label: string }[] = [
 const SCREEN_TITLES: Record<string, { title: string; sub: string }> = {
   'cd-home': { title: 'Home', sub: 'Content Developer workspace' },
   'cd-create': { title: 'Create', sub: 'New learning object' },
+  'cd-templates': { title: 'Template Library', sub: 'Recommended & custom templates' },
   'cd-sources': { title: 'Sources', sub: 'Source library' },
   'cd-library': { title: 'Object Library', sub: 'Bridge program' },
   'cd-submissions': { title: 'My Submissions', sub: 'Review history' },

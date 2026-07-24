@@ -83,6 +83,7 @@ export const LEARNING_MANIFEST: AccessManifest = {
       surfaces: [
         { id: 'cd-home', label: 'Home' },
         { id: 'cd-create', label: 'Create', requiresEdit: true },
+        { id: 'cd-templates', label: 'Template Library', requiresEdit: true },
         { id: 'cd-sources', label: 'Sources', requiresEdit: true },
         { id: 'cd-library', label: 'Object Library' },
         { id: 'cd-submissions', label: 'My Submissions' },

@@ -33,6 +33,7 @@ const TYPE_GROUPS: { type: ObjectType | 'course'; label: string }[] = [
   { type: 'scenario', label: 'Scenarios' },
   { type: 'assignment', label: 'Assignments' },
   { type: 'drill', label: 'Drills' },
+  { type: 'video-script', label: 'Video scripts' },
 ];
 
 export function ObjectLibrary() {
