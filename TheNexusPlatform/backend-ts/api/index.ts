@@ -15,10 +15,14 @@
  *     BRIDGE_PLATFORM_URL, LEARNING_PLATFORM_URL, FRONTEND_ORIGIN.
  *   - NEXUS_ENABLE_DEV_LOGIN must be UNSET (never in a deployed env).
  */
-import { handle } from "hono/vercel";
+import { handle } from "@hono/node-server/vercel";
 
 import { createApp } from "../src/app";
 
-export const config = { runtime: "nodejs" };
-
+// Use the Node-server Vercel adapter (not `hono/vercel`, which is the Next.js
+// route-handler adapter): this is a standalone `@vercel/node` function with a
+// default export, so it receives Node req/res and this adapter bridges them to
+// Hono's fetch handler. Vercel's Node runtime otherwise auto-parses the request
+// body and breaks that bridge — NODEJS_HELPERS=0 (set on the project env)
+// disables it so POST/PUT bodies reach the routes intact.
 export default handle(createApp());

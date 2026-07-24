@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Life in AI Center / Nexus Platform API (TypeScript / Hono port of the FastAPI backend)",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
