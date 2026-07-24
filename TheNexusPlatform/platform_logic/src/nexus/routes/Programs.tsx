@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ChevronLeft, ChevronRight, Copy, ImageIcon, Layers, LayoutGrid, Plus, SlidersHorizontal, Trash2, UserCog, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, ImageIcon, Layers, LayoutGrid, Lock, Plus, SlidersHorizontal, Trash2, UserCog, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -97,6 +97,12 @@ export function Programs() {
     (k) => !caps || caps.features[k] !== false,
   );
 
+  // Nexus envelope: may org admins enter this org's programs at all? When off,
+  // program cards keep their management controls (admins, features) but the
+  // "open" affordance is removed. (The per-program platform lock is a separate
+  // concern handled inside the program workspace, not here.)
+  const canEnterProgram = !caps || caps.adminsEnterPrograms !== false;
+
   async function remove(p: Program) {
     try {
       await deleteProgram(p.id);
@@ -141,6 +147,7 @@ export function Programs() {
               key={p.id}
               orgId={orgId}
               program={p}
+              canEnter={canEnterProgram}
               onAssign={() => setAssigning(p)}
               onEditFeatures={() => setEditingFeatures(p)}
               onRemove={() => remove(p)}
@@ -165,6 +172,7 @@ export function Programs() {
                   key={p.id}
                   orgId={orgId}
                   program={p}
+                  canEnter={canEnterProgram}
                   onAssign={() => setAssigning(p)}
                   onEditFeatures={() => setEditingFeatures(p)}
                   onRemove={() => remove(p)}
@@ -245,12 +253,14 @@ function FeatureToggles({
 function ProgramCard({
   orgId,
   program: p,
+  canEnter,
   onAssign,
   onEditFeatures,
   onRemove,
 }: {
   orgId: string;
   program: Program;
+  canEnter: boolean;
   onAssign: () => void;
   onEditFeatures: () => void;
   onRemove: () => void;
@@ -325,10 +335,17 @@ function ProgramCard({
 
       <div className="relative flex h-full flex-col p-4">
         <div className="flex items-start justify-between gap-2">
-          <Link to={`/o/${orgId}/p/${p.id}`} className="min-w-0 group">
-            <div className={`font-medium group-hover:underline truncate ${titleCls}`}>{p.name}</div>
-            <div className={`text-xs mt-0.5 line-clamp-2 ${descCls}`}>{p.description}</div>
-          </Link>
+          {canEnter ? (
+            <Link to={`/o/${orgId}/p/${p.id}`} className="min-w-0 group">
+              <div className={`font-medium group-hover:underline truncate ${titleCls}`}>{p.name}</div>
+              <div className={`text-xs mt-0.5 line-clamp-2 ${descCls}`}>{p.description}</div>
+            </Link>
+          ) : (
+            <div className="min-w-0">
+              <div className={`font-medium truncate ${titleCls}`}>{p.name}</div>
+              <div className={`text-xs mt-0.5 line-clamp-2 ${descCls}`}>{p.description}</div>
+            </div>
+          )}
           <div className="flex shrink-0 items-center gap-1.5">
             <Pill tone="neutral">{p.category}</Pill>
             {(p.secondary_categories ?? []).slice(0, 2).map((c) => (
@@ -407,12 +424,21 @@ function ProgramCard({
               }}
             />
           </div>
-          <Link
-            to={`/o/${orgId}/p/${p.id}`}
-            className={`inline-flex items-center gap-1 text-xs font-medium hover:underline shrink-0 ${openCls}`}
-          >
-            Open <ChevronRight className="size-3.5" />
-          </Link>
+          {canEnter ? (
+            <Link
+              to={`/o/${orgId}/p/${p.id}`}
+              className={`inline-flex items-center gap-1 text-xs font-medium hover:underline shrink-0 ${openCls}`}
+            >
+              Open <ChevronRight className="size-3.5" />
+            </Link>
+          ) : (
+            <span
+              className={`inline-flex items-center gap-1 text-xs font-medium shrink-0 ${metaCls}`}
+              title="Your organization isn't allowed to open programs from the admin console (a Nexus setting). You can still manage this program's admins and features here."
+            >
+              <Lock className="size-3.5" /> Restricted
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -848,6 +874,7 @@ function EditFeaturesDialog({
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
   const [primary, setPrimary] = useState<string>("");
   const [secondary, setSecondary] = useState<string[]>([]);
+  const [platformsOpen, setPlatformsOpen] = useState(true);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -855,6 +882,7 @@ function EditFeaturesDialog({
       setFeatures({ ...DEFAULT_PROGRAM_FEATURES, ...(program.features ?? {}) });
       setPrimary(program.category);
       setSecondary(program.secondary_categories ?? []);
+      setPlatformsOpen(program.platforms_open !== false);
     }
   }, [program]);
 
@@ -866,7 +894,7 @@ function EditFeaturesDialog({
     if (!program) return;
     setBusy(true);
     try {
-      await updateProgramFeatures(program.id, features);
+      await updateProgramFeatures(program.id, features, platformsOpen);
       if (primary !== program.category || JSON.stringify(secondary) !== JSON.stringify(program.secondary_categories ?? [])) {
         await updateProgramCategories(program.id, {
           category: primary,
@@ -934,6 +962,20 @@ function EditFeaturesDialog({
             the record, but the area stops being offered.
           </p>
           <FeatureToggles features={features} onChange={setFeatures} allowedKeys={allowedFeatureKeys} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Platform access</Label>
+          <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3">
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">This program's people can open platforms</span>
+              <span className="block text-xs text-muted-foreground">
+                {platformsOpen
+                  ? "This program's admins and members can open its Learning, App Shell, and Bridge platforms."
+                  : "Off — this program's admins and members can manage the program but can't open its platforms. (You, as an org admin, are unaffected.)"}
+              </span>
+            </span>
+            <Switch checked={platformsOpen} onCheckedChange={setPlatformsOpen} disabled={busy} />
+          </label>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>

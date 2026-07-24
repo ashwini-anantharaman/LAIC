@@ -284,10 +284,15 @@ export async function updateOrgTheme(
 // platform features. Stored in organizations.settings.capabilities.
 function _mergeCapabilities(base: Row, patch: Row): Row {
   const merge = (a: Row, b: Row): Row => ({ ...a, ...b });
+  const pickBool = (...vals: unknown[]): boolean => {
+    for (const v of vals) if (typeof v === "boolean") return v;
+    return true;
+  };
   return {
     programTypes: merge((tpg.DEFAULT_CAPABILITIES.programTypes as Row), merge((base.programTypes as Row) ?? {}, (patch.programTypes as Row) ?? {})),
     offeringTypes: merge((tpg.DEFAULT_CAPABILITIES.offeringTypes as Row), merge((base.offeringTypes as Row) ?? {}, (patch.offeringTypes as Row) ?? {})),
     features: merge((tpg.DEFAULT_CAPABILITIES.features as Row), merge((base.features as Row) ?? {}, (patch.features as Row) ?? {})),
+    adminsEnterPrograms: pickBool(patch.adminsEnterPrograms, base.adminsEnterPrograms),
   };
 }
 
@@ -410,13 +415,18 @@ export async function renameOrgCategory(orgId: string, from: string, to: string)
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
+  platformsOpen?: boolean,
 ): Promise<Row | null> {
-  if (usePg()) return tpg.updateProgramFeatures(programId, features);
+  if (usePg()) return tpg.updateProgramFeatures(programId, features, platformsOpen);
   if (await useLocal()) return local.localUpdateProgramFeatures(programId, features);
   const client = requireClient();
   const existing = await getProgram(programId);
   if (!existing) return null;
-  const meta = { ...((existing.metadata_json as Row) ?? {}), features };
+  const meta = {
+    ...((existing.metadata_json as Row) ?? {}),
+    features,
+    ...(platformsOpen === undefined ? {} : { platforms_open: platformsOpen }),
+  };
   return _mutateOne(
     client.from("programs").update({ metadata_json: meta }).eq("id", programId).select("*"),
     "Failed to update program features",

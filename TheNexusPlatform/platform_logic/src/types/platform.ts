@@ -59,6 +59,10 @@ export interface Program {
    * card background image on the Programs page (distinct from `logo`).
    */
   branding?: { accent: string | null; logo: string | null; cover?: string | null } | null;
+  /** Platform lock: may this program's own admins/members open the platform
+   *  runtimes (Learning, App Shell, Bridge)? Absent/true = yes. Org admins are
+   *  never restricted by this. */
+  platforms_open?: boolean;
 }
 
 export interface Integration {

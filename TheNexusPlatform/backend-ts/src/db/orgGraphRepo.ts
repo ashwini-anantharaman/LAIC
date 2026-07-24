@@ -27,7 +27,8 @@ type Row = Record<string, unknown>;
 // ── Per-program custom roles (§3.5 Team & Roles) ────────────────────────────
 const programRoleRow = (r: typeof programRoles.$inferSelect): Row => ({
   id: r.id, organization_id: r.organizationId, program_id: r.programId,
-  name: r.name, perms: r.perms, display_as_group: r.displayAsGroup ?? false, created_at: r.createdAt,
+  name: r.name, perms: r.perms, display_as_group: r.displayAsGroup ?? false,
+  parent_group_id: r.parentGroupId ?? null, created_at: r.createdAt,
 });
 
 export async function listProgramRoles(programId: string): Promise<Row[]> {
@@ -52,6 +53,7 @@ export async function createProgramRole(
   perms: Row,
   createdByUserId?: string | null,
   displayAsGroup?: boolean,
+  parentGroupId?: string | null,
 ): Promise<Row> {
   return scoped(async (tx) => {
     const [r] = await tx
@@ -59,6 +61,7 @@ export async function createProgramRole(
       .values({
         organizationId: orgId, programId, name, perms,
         displayAsGroup: displayAsGroup ?? false,
+        parentGroupId: parentGroupId ?? null,
         createdByUserId: createdByUserId ?? null,
       })
       .returning();
@@ -68,13 +71,14 @@ export async function createProgramRole(
 
 export async function updateProgramRole(
   id: string,
-  patch: { name?: string; perms?: Row; displayAsGroup?: boolean },
+  patch: { name?: string; perms?: Row; displayAsGroup?: boolean; parentGroupId?: string | null },
 ): Promise<Row | null> {
   return asPrivileged(async (tx) => {
     const set: Row = {};
     if (patch.name != null) set.name = patch.name;
     if (patch.perms != null) set.perms = patch.perms;
     if (patch.displayAsGroup != null) set.displayAsGroup = patch.displayAsGroup;
+    if (patch.parentGroupId !== undefined) set.parentGroupId = patch.parentGroupId;
     if (Object.keys(set).length === 0) return getProgramRole(id);
     const [r] = await tx.update(programRoles).set(set).where(eq(programRoles.id, id)).returning();
     return r ? programRoleRow(r) : null;
@@ -99,10 +103,19 @@ export async function listOrgRoles(orgId: string): Promise<Row[]> {
   );
 }
 
-export async function createOrgRole(orgId: string, name: string, perms: Row): Promise<Row> {
+export async function createOrgRole(
+  orgId: string,
+  name: string,
+  perms: Row,
+  displayAsGroup?: boolean,
+  parentGroupId?: string | null,
+): Promise<Row> {
   return scoped(async (tx) => {
     const [r] = await tx.insert(programRoles)
-      .values({ organizationId: orgId, programId: null, name, perms }).returning();
+      .values({
+        organizationId: orgId, programId: null, name, perms,
+        displayAsGroup: displayAsGroup ?? false, parentGroupId: parentGroupId ?? null,
+      }).returning();
     return programRoleRow(r);
   });
 }
@@ -113,10 +126,18 @@ export async function listNexusRoles(): Promise<Row[]> {
   );
 }
 
-export async function createNexusRole(name: string, perms: Row): Promise<Row> {
+export async function createNexusRole(
+  name: string,
+  perms: Row,
+  displayAsGroup?: boolean,
+  parentGroupId?: string | null,
+): Promise<Row> {
   return asPrivileged(async (tx) => {
     const [r] = await tx.insert(programRoles)
-      .values({ organizationId: null, programId: null, name, perms }).returning();
+      .values({
+        organizationId: null, programId: null, name, perms,
+        displayAsGroup: displayAsGroup ?? false, parentGroupId: parentGroupId ?? null,
+      }).returning();
     return programRoleRow(r);
   });
 }
@@ -963,20 +984,22 @@ export async function removeGroupMember(memberId: string): Promise<void> {
 // invite → activation, exactly like role assignments. Scoped to one program's
 // own groups so setting placements never touches another program.
 
-/** Replace a person's explicit group placements within THIS program's groups. */
-export async function setPersonGroups(
-  orgId: string,
-  programId: string,
+/** Replace a person's explicit group placements within one ALTITUDE's groups —
+ *  program (orgId+programId), org (orgId, null) or nexus (null, null). Privileged
+ *  (routes gate people-admin access); nexus rows are RLS-invisible otherwise. */
+export async function setPersonGroupsScoped(
+  orgId: string | null,
+  programId: string | null,
   email: string,
   groupIds: string[],
 ): Promise<void> {
   const key = email.trim().toLowerCase();
-  await scoped(async (tx) => {
-    const progGroups = await tx.select({ id: groups.id }).from(groups)
-      .where(and(eq(groups.organizationId, orgId), eq(groups.programId, programId)));
-    const allowed = new Set(progGroups.map((g) => g.id));
+  await asPrivileged(async (tx) => {
+    const scopeGroups = await tx.select({ id: groups.id }).from(groups)
+      .where(and(_scopeEq(groups.organizationId, orgId), _scopeEq(groups.programId, programId)));
+    const allowed = new Set(scopeGroups.map((g) => g.id));
     const wanted = [...new Set(groupIds)].filter((g) => allowed.has(g));
-    // Clear this person's placements across the program's groups, then re-add.
+    // Clear this person's placements across this altitude's groups, then re-add.
     if (allowed.size) {
       await tx.delete(groupMemberships).where(and(
         inArray(groupMemberships.groupId, [...allowed]),
@@ -991,6 +1014,16 @@ export async function setPersonGroups(
   });
 }
 
+/** Program-altitude convenience wrapper (unchanged callers). */
+export async function setPersonGroups(
+  orgId: string,
+  programId: string,
+  email: string,
+  groupIds: string[],
+): Promise<void> {
+  return setPersonGroupsScoped(orgId, programId, email, groupIds);
+}
+
 /**
  * The People-tab groups model for a program: the real (placement) groups, the
  * roles flagged display_as_group (which act as groups), and — keyed by email —
@@ -998,10 +1031,23 @@ export async function setPersonGroups(
  * role), so the frontend unions role assignments in; this returns only the
  * explicit placements plus the role→group flags.
  */
-export async function listProgramGroupsModel(orgId: string, programId: string): Promise<Row> {
+/** Scope predicate: null means "this altitude is unset" (org- or nexus-level). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function _scopeEq(col: any, val: string | null) {
+  return val === null ? isNull(col) : eq(col, val);
+}
+
+/**
+ * The People-tab groups model at ANY altitude — program (orgId+programId),
+ * org (orgId, null) or nexus (null, null): the real (placement) groups, the
+ * roles (with display_as_group + parent_group_id so roles can sit in the tree),
+ * and — keyed by email — who is placed where. Role-group membership is implicit
+ * (whoever holds the role); the frontend unions role assignments in.
+ */
+export async function listGroupsModel(orgId: string | null, programId: string | null): Promise<Row> {
   return asPrivileged(async (tx) => {
     const realGroups = (await tx.select().from(groups)
-      .where(and(eq(groups.organizationId, orgId), eq(groups.programId, programId))))
+      .where(and(_scopeEq(groups.organizationId, orgId), _scopeEq(groups.programId, programId))))
       .map((g) => ({ id: g.id, name: g.name, label: g.label ?? null, parent_id: g.parentGroupId ?? null }));
     const groupIds = realGroups.map((g) => g.id);
     const placementRows = groupIds.length
@@ -1015,9 +1061,59 @@ export async function listProgramGroupsModel(orgId: string, programId: string): 
       if (!e) continue;
       (placements[e] ??= []).push(p.groupId);
     }
-    const roles = (await tx.select().from(programRoles).where(eq(programRoles.programId, programId)))
-      .map((r) => ({ id: r.id, name: r.name, display_as_group: r.displayAsGroup ?? false }));
+    const roles = (await tx.select().from(programRoles)
+      .where(and(_scopeEq(programRoles.organizationId, orgId), _scopeEq(programRoles.programId, programId))))
+      .map((r) => ({
+        id: r.id, name: r.name, display_as_group: r.displayAsGroup ?? false,
+        parent_group_id: r.parentGroupId ?? null,
+      }));
     return { groups: realGroups, roles, placements };
+  });
+}
+
+/** Program-altitude convenience wrapper (unchanged callers). */
+export async function listProgramGroupsModel(orgId: string, programId: string): Promise<Row> {
+  return listGroupsModel(orgId, programId);
+}
+
+// ── Nexus (platform) groups: same table, org_id null. Operator-only, so these
+// run privileged (nexus rows are invisible to org-scoped RLS by construction).
+export async function listNexusGroups(): Promise<Row[]> {
+  return asPrivileged(async (tx) =>
+    (await tx.select().from(groups).where(and(isNull(groups.organizationId), isNull(groups.programId)))).map(groupRow),
+  );
+}
+
+export async function createNexusGroup(opts: { name: string; label?: string | null; parentGroupId?: string | null }): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const [g] = await tx.insert(groups).values({
+      organizationId: null, programId: null, name: opts.name,
+      label: opts.label ?? null, parentGroupId: opts.parentGroupId ?? null,
+    }).returning();
+    return groupRow(g);
+  });
+}
+
+/** Update/delete a group privileged — used for nexus groups (org-scoped RLS
+ *  hides them). Routes gate the caller's altitude. */
+export async function updateGroupPriv(id: string, patch: { name?: string; label?: string | null; parentGroupId?: string | null }): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const set: Row = {};
+    if (patch.name != null) set.name = patch.name;
+    if (patch.label !== undefined) set.label = patch.label;
+    if (patch.parentGroupId !== undefined) set.parentGroupId = patch.parentGroupId;
+    const [g] = await tx.update(groups).set(set).where(eq(groups.id, id)).returning();
+    return g ? groupRow(g) : null;
+  });
+}
+
+export async function deleteGroupPriv(id: string): Promise<void> {
+  await asPrivileged(async (tx) => {
+    const cur = await tx.select({ parent: groups.parentGroupId }).from(groups).where(eq(groups.id, id)).limit(1);
+    const parent = cur[0]?.parent ?? null;
+    await tx.update(groups).set({ parentGroupId: parent }).where(eq(groups.parentGroupId, id));
+    await tx.delete(groupMemberships).where(eq(groupMemberships.groupId, id));
+    await tx.delete(groups).where(eq(groups.id, id));
   });
 }
 
@@ -1046,16 +1142,18 @@ export async function coachAddParticipant(groupId: string, actorAuthId: string, 
     const g = await tx.select().from(groups).where(eq(groups.id, groupId)).limit(1);
     if (!g.length) throw new Error("Group not found");
     const grp = g[0];
+    const orgId = grp.organizationId;
+    if (!orgId) throw new Error("Coach-add applies to org/program groups only");
     const offeringId = opts.offeringId ?? grp.offeringId;
     if (!offeringId) throw new Error("An offering is required (group has none; pass offering_id)");
-    const addedBy = await resolveProfileId(tx, actorAuthId, grp.organizationId);
+    const addedBy = await resolveProfileId(tx, actorAuthId, orgId);
     const [reg] = await tx.insert(registrations).values({
-      organizationId: grp.organizationId, programId: grp.programId, offeringId,
+      organizationId: orgId, programId: grp.programId, offeringId,
       registrationSource: "coach_add", email: opts.email ?? null, name: opts.name ?? null,
       status: "directly_added", createdByUserId: addedBy,
     }).returning();
     const [p] = await tx.insert(participants).values({
-      organizationId: grp.organizationId, programId: grp.programId, offeringId,
+      organizationId: orgId, programId: grp.programId, offeringId,
       groupId, participantType: opts.participantType ?? "learner", addedByUserId: addedBy, registrationId: reg.id,
     }).returning();
     return { id: p.id, group_id: groupId, offering_id: offeringId, registration_id: reg.id, participant_type: p.participantType };

@@ -40,6 +40,9 @@ const programRow = (p: typeof programs.$inferSelect): Row => ({
   features: normalizeProgramFeatures((p.metadataJson as Row)?.features as Row),
   secondary_categories: ((p.metadataJson as Row)?.secondary_categories as string[]) ?? [],
   branding: ((p.metadataJson as Row)?.branding as Row) ?? null,
+  // Whether this program's own admins/members may open the platform runtimes
+  // (Learning, App Shell, Bridge). On by default; the org admin can lock it.
+  platforms_open: ((p.metadataJson as Row)?.platforms_open as boolean | undefined) ?? true,
   created_at: p.createdAt,
 });
 const stageRow = (s: typeof stageNodes.$inferSelect): Row => ({
@@ -149,12 +152,21 @@ export async function createProgram(orgId: string, name: string, category: strin
   });
 }
 
-/** Replace a program's accessible-feature set (org-admin config). */
-export async function updateProgramFeatures(programId: string, features: ProgramFeatures): Promise<Row | null> {
+/** Replace a program's accessible-feature set (org-admin config). Optionally
+ * updates the per-program platform lock (platforms_open) in the same write. */
+export async function updateProgramFeatures(
+  programId: string,
+  features: ProgramFeatures,
+  platformsOpen?: boolean,
+): Promise<Row | null> {
   return scoped(async (tx) => {
     const existing = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
     if (!existing.length) return null;
-    const meta = { ...(existing[0].metadataJson as Row), features };
+    const meta = {
+      ...(existing[0].metadataJson as Row),
+      features,
+      ...(platformsOpen === undefined ? {} : { platforms_open: platformsOpen }),
+    };
     const [p] = await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId)).returning();
     if (!p) return null;
     const caps = await _orgFeatureCaps(tx, p.orgId);
@@ -750,6 +762,12 @@ export const DEFAULT_CAPABILITIES = {
   features: { learning: true, bridge: true, appbuilder: true, community: true, teams: true, partners: true },
   // Max programs the org may create; null = unlimited.
   programCapacity: null as number | null,
+  // Whether org-level admins/owners automatically get access INTO the org's
+  // programs. On by default. When off, org admins keep org governance (features,
+  // admins, categories) but cannot enter a program workspace without explicit
+  // program-scoped access. A per-program toggle (metadata.admins_can_enter) can
+  // narrow this further for a single program.
+  adminsEnterPrograms: true,
 } as const;
 
 // Older envelopes stored platform-flavored keys — translate on read so a
@@ -771,6 +789,7 @@ function _capsFromSettings(settings: Record<string, unknown>): Row {
     offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((caps.offeringTypes as Row) ?? {}) },
     features: { ...DEFAULT_CAPABILITIES.features, ..._normalizeCapFeatures(caps.features as Row) },
     programCapacity: (caps.programCapacity as number | null | undefined) ?? null,
+    adminsEnterPrograms: (caps.adminsEnterPrograms as boolean | undefined) ?? true,
   };
 }
 
@@ -794,6 +813,8 @@ export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row
       features: { ...(existing.features as Row), ..._normalizeCapFeatures(patch.features as Row) },
       programCapacity:
         "programCapacity" in patch ? ((patch.programCapacity as number | null) ?? null) : existing.programCapacity,
+      adminsEnterPrograms:
+        "adminsEnterPrograms" in patch ? patch.adminsEnterPrograms !== false : existing.adminsEnterPrograms,
     };
     settings.capabilities = merged;
     await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));

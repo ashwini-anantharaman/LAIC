@@ -5,8 +5,8 @@
  * Managed by full operators only. The org people walls are untouched — this
  * is strictly about who runs Nexus.
  */
-import { useCallback, useEffect, useState } from "react";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Copy, Layers, LayoutGrid, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -20,52 +20,43 @@ import {
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
 import {
-  createNexusScopedRole,
-  deleteProgramRole,
+  getNexusGroupsModel,
   inviteNexusOperator,
   listNexusScopedRoles,
   listNexusTeam,
   removeNexusOperator,
+  setNexusMemberGroups,
   setNexusTeamRole,
+  type GroupsModel,
   type NexusOperator,
   type ScopedRole,
 } from "@/services/api";
-import { EmptyState, PageHeader, Pill, Section, Spinner } from "@/nexus/ui/kit";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
-import { ScopedRoleDialog, type ScopedArea } from "@/nexus/ui/ScopedRoleDialog";
+import { PeoplePage, CollapsibleSection } from "@/nexus/people/PeoplePage";
+import { RolesAndGroups } from "@/nexus/people/RolesAndGroups";
+import { MemberRoster, type RosterMember } from "@/nexus/people/MemberRoster";
+import { nexusRgAdapter } from "@/nexus/people/adapters";
 import { useSession } from "@/nexus/session";
-
-const NEXUS_AREAS: ScopedArea[] = [
-  { key: "organizations", label: "Organizations", kind: "graded", hint: "edit = provision + the org Edit dialog" },
-  { key: "audit", label: "Platform audit", kind: "toggle", grant: "view", hint: "read-only by nature" },
-  { key: "settings", label: "Settings", kind: "toggle", grant: "edit", hint: "Nexus's own theme and logo" },
-];
-const areaLabel = (k: string) => NEXUS_AREAS.find((a) => a.key === k)?.label ?? k;
 
 export function NexusTeam() {
   const { user } = useSession();
   const [roles, setRoles] = useState<ScopedRole[] | null>(null);
   const [team, setTeam] = useState<NexusOperator[] | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [groupsModel, setGroupsModel] = useState<GroupsModel | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [view, setView] = useState<"grid" | "stack">(
+    () => (localStorage.getItem("nexus_people_view") as "grid" | "stack") || "grid",
+  );
+  const switchView = (v: "grid" | "stack") => { setView(v); localStorage.setItem("nexus_people_view", v); };
+  const rg = useMemo(() => nexusRgAdapter(), []);
 
   const load = useCallback(() => {
     listNexusScopedRoles().then(setRoles).catch(() => setRoles([]));
     listNexusTeam().then(setTeam).catch(() => setTeam([]));
+    getNexusGroupsModel().then(setGroupsModel).catch(() => setGroupsModel(null));
   }, []);
   useEffect(() => load(), [load]);
-
-  async function removeRole(r: ScopedRole) {
-    try {
-      await deleteProgramRole(r.id);
-      toast.success(`Deleted "${r.name}"`);
-      load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete role");
-    }
-  }
 
   async function assignRole(p: NexusOperator, roleId: string | null) {
     if (!p.email) return;
@@ -89,155 +80,77 @@ export function NexusTeam() {
     }
   }
 
-  return (
-    <div>
-      <PageHeader
-        title="People"
-        subtitle="Who operates Nexus, and what each operator role can see and do."
-        actions={
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Create role
-          </Button>
-        }
-      />
+  const rosterMembers: RosterMember[] | null =
+    team?.map((p) => ({
+      key: p.email ?? p.invitation_id ?? "",
+      email: p.email,
+      name: p.display_name,
+      status: p.status,
+      roleId: p.role_id,
+      privileged: p.kind === "admin",
+      privilegedLabel: "Admin",
+    })) ?? null;
 
-      <Section title="Roles">
-        {!roles ? (
-          <Spinner />
-        ) : roles.length === 0 ? (
-          <EmptyState>No operator roles yet — full operators see everything by default.</EmptyState>
-        ) : (
-          <div className="space-y-2">
-            {roles.map((r) => {
-              const holders = (team ?? []).filter((p) => p.role_id === r.id).length;
-              return (
-                <div key={r.id} className="flex items-center gap-3 glass-card px-4 py-3">
-                  <div className="min-w-[140px]">
-                    <div className="font-medium text-foreground">{r.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {holders} operator{holders !== 1 ? "s" : ""}
-                    </div>
-                  </div>
-                  <div className="flex flex-1 flex-wrap gap-1.5">
-                    {Object.entries(r.perms).map(([a, lvl]) => (
-                      <Pill key={a} tone="neutral">
-                        {areaLabel(a)} · {lvl}
-                      </Pill>
-                    ))}
-                  </div>
-                  <ConfirmButton
-                    title={`Delete the "${r.name}" role?`}
-                    description="Operators assigned to it lose the role's access."
-                    actionLabel="Delete"
-                    onConfirm={() => removeRole(r)}
-                    buttonTitle="Delete role"
-                  >
-                    <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
-                  </ConfirmButton>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Section>
-
-      <Section
-        title="Operators"
-        action={
-          <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <Plus className="size-3.5" /> Invite operator
-          </Button>
-        }
+  const renderActions = (m: RosterMember) => {
+    const p = team?.find((x) => (x.email ?? x.invitation_id) === m.key);
+    if (!p) return null;
+    const isSelf = !!user?.email && p.email?.toLowerCase() === user.email.toLowerCase();
+    if (isSelf || !p.email) return <span className="text-xs text-muted-foreground">you</span>;
+    return (
+      <ConfirmButton
+        title={`Remove ${p.display_name ?? p.email} as an operator?`}
+        description="They lose all Nexus console access. Their account itself is untouched."
+        actionLabel="Remove"
+        onConfirm={() => removeOperator(p)}
+        buttonTitle="Remove operator"
       >
-        {!team ? (
-          <Spinner />
-        ) : (
-          <div className="glass-card overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Operator</TableHead>
-                  <TableHead>Access</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {team.map((p) => {
-                  const isSelf = !!user?.email && p.email?.toLowerCase() === user.email.toLowerCase();
-                  return (
-                    <TableRow key={p.email ?? p.invitation_id}>
-                      <TableCell>
-                        <div className="font-medium text-foreground">{p.display_name ?? "—"}</div>
-                        <div className="text-xs text-muted-foreground">{p.email}</div>
-                      </TableCell>
-                      <TableCell>
-                        {p.kind === "admin" ? (
-                          <div>
-                            <Pill tone="accent">Admin</Pill>
-                            <div className="text-[11px] text-muted-foreground mt-0.5">Platform-level access</div>
-                          </div>
-                        ) : (
-                          <Select
-                            value={p.role_id ?? "none"}
-                            onValueChange={(v) => assignRole(p, v === "none" ? null : v)}
-                          >
-                            <SelectTrigger className="h-8 w-44">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No role</SelectItem>
-                              {(roles ?? []).map((r) => (
-                                <SelectItem key={r.id} value={r.id}>
-                                  {r.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Pill tone={p.status === "active" ? "positive" : "warn"}>{p.status}</Pill>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {!isSelf && p.email ? (
-                          <ConfirmButton
-                            title={`Remove ${p.display_name ?? p.email} as an operator?`}
-                            description="They lose all Nexus console access. Their account itself is untouched."
-                            actionLabel="Remove"
-                            onConfirm={() => removeOperator(p)}
-                            buttonTitle="Remove operator"
-                          >
-                            <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
-                          </ConfirmButton>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">you</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </Section>
+        <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+      </ConfirmButton>
+    );
+  };
 
-      {creating ? (
-        <ScopedRoleDialog
-          title="Create operator role"
-          areas={NEXUS_AREAS}
-          onClose={() => setCreating(false)}
-          onSave={async (name, perms) => {
-            await createNexusScopedRole({ name, perms });
-            toast.success("Role created");
-            load();
-          }}
-        />
-      ) : null}
-
-      <NexusInviteDialog roles={roles ?? []} open={inviteOpen} onOpenChange={setInviteOpen} onDone={load} />
+  const peopleActions = (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <button
+        type="button"
+        onClick={() => switchView(view === "grid" ? "stack" : "grid")}
+        className="grid size-9 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+        title={view === "grid" ? "Stack view (group by group)" : "Grid view (everyone)"}
+        aria-label="Switch people view"
+      >
+        {view === "grid" ? <Layers className="size-4" /> : <LayoutGrid className="size-4" />}
+      </button>
+      <Button size="sm" onClick={() => setInviteOpen(true)}>
+        <Plus className="size-3.5" /> Invite operator
+      </Button>
     </div>
+  );
+
+  const peopleContent = (
+    <CollapsibleSection title="Operators" count={team?.length}>
+      <MemberRoster
+        members={rosterMembers}
+        roles={(roles ?? []).map((r) => ({ id: r.id, name: r.name }))}
+        groupsModel={groupsModel}
+        view={view}
+        privilegedNote="Platform-level access"
+        onAssignRole={(email, roleId) => assignRole({ email } as NexusOperator, roleId)}
+        onSetGroups={async (email, ids) => { await setNexusMemberGroups(email, ids); load(); }}
+        renderActions={renderActions}
+      />
+    </CollapsibleSection>
+  );
+
+  return (
+    <>
+      <PeoplePage
+        subtitle="Who operates Nexus, and what each operator role can see and do."
+        actions={peopleActions}
+        people={peopleContent}
+        rolesGroups={<RolesAndGroups adapter={rg} />}
+      />
+      <NexusInviteDialog roles={roles ?? []} open={inviteOpen} onOpenChange={setInviteOpen} onDone={load} />
+    </>
   );
 }
 

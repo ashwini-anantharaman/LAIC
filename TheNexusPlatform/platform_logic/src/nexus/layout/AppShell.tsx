@@ -689,7 +689,7 @@ export function AppShell() {
           >
             <Menu className="size-5" />
           </button>
-          <nav className="flex items-center gap-1.5 text-sm text-muted-foreground min-w-0">
+          <nav className="hidden md:flex items-center gap-1.5 text-sm text-muted-foreground min-w-0">
             {crumbs.map((c, i) => (
               <span key={i} className="flex items-center gap-1.5 min-w-0">
                 {i > 0 && <ChevronRight className="size-3.5 shrink-0 opacity-50" />}
@@ -739,8 +739,8 @@ export function AppShell() {
             </button>
           </div>
         ) : null}
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-8 py-8">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto">
+          <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
             <Outlet />
           </div>
         </main>

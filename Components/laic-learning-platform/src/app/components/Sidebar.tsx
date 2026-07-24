@@ -71,7 +71,8 @@ const PROGRAM_COLORS: Record<string, string> = {
 };
 
 export function Sidebar() {
-  const { role, program, currentScreen, navigate, logout, activeUserId, nexusMode, learningPerms, learningIsAdmin } = useApp();
+  const { role, program, currentScreen, navigate, logout, activeUserId, nexusMode, learningPerms, learningIsAdmin, nexusProgramName, nexusUserName, nexusUserRole } = useApp();
+  const initialsOf = (name: string) => name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
   // Nexus mode: nav is computed from the person's granted AREAS (custom role);
   // admins see everything. Demo mode keeps the fixed per-persona nav.
   const items: NavItem[] = nexusMode
@@ -98,13 +99,17 @@ export function Sidebar() {
           >
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '-0.5px' }}>LA</span>
           </div>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.3px' }}>
-            Life in AI Center
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.3px' }} className="truncate">
+            {nexusMode ? (nexusProgramName ?? 'Learning Platform') : 'Life in AI Center'}
           </span>
         </div>
-        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide ${PROGRAM_COLORS[program] || 'bg-slate-100 text-slate-700'}`}>
-          {PROGRAM_LABELS[program] || program}
-        </span>
+        {/* Demo program chip only in standalone mode — a Nexus launch is scoped
+            to one program already (shown as the wordmark above). */}
+        {!nexusMode ? (
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide ${PROGRAM_COLORS[program] || 'bg-slate-100 text-slate-700'}`}>
+            {PROGRAM_LABELS[program] || program}
+          </span>
+        ) : null}
       </div>
 
       {/* Nav items */}
@@ -136,11 +141,11 @@ export function Sidebar() {
             className="w-7 h-7 rounded-full flex items-center justify-center text-white shrink-0"
             style={{ background: '#0B0F1A', fontSize: 11, fontWeight: 700 }}
           >
-            {user?.initials ?? '??'}
+            {nexusMode ? initialsOf(nexusUserName ?? '?') : (user?.initials ?? '??')}
           </div>
           <div className="flex-1 min-w-0">
-            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#0B1220' }} className="truncate">{user?.name ?? 'User'}</p>
-            <p style={{ fontSize: 11, color: '#9AA3AF' }} className="truncate capitalize">{role.replace(/-/g, ' ')}</p>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#0B1220' }} className="truncate">{nexusMode ? (nexusUserName ?? 'You') : (user?.name ?? 'User')}</p>
+            <p style={{ fontSize: 11, color: '#9AA3AF' }} className="truncate capitalize">{nexusMode ? (nexusUserRole ?? '') : role.replace(/-/g, ' ')}</p>
           </div>
           <button
             onClick={logout}

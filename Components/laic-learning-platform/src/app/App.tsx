@@ -34,6 +34,14 @@ export interface AppState {
   /** Custom-role area perms (null = admin/none); admins see everything. */
   learningPerms: Record<string, AreaLevel> | null;
   learningIsAdmin: boolean;
+  /** Admin "Test as" a role: preview the app confined to that role's perms. */
+  previewName: string | null;
+  startRolePreview: (name: string, perms: Record<string, AreaLevel>) => void;
+  stopRolePreview: () => void;
+  /** Identity from the Nexus launch (null in standalone demo mode). */
+  nexusProgramName: string | null;
+  nexusUserName: string | null;
+  nexusUserRole: string | null;
   readerObjectId: string | null;
   creatorObjectType: string;
   createdObjects: LearningObject[];
@@ -84,6 +92,11 @@ export default function App() {
   const [nexusMode, setNexusMode] = useState(false);
   const [learningPerms, setLearningPerms] = useState<Record<string, AreaLevel> | null>(null);
   const [learningIsAdmin, setLearningIsAdmin] = useState(false);
+  const [previewPerms, setPreviewPerms] = useState<Record<string, AreaLevel> | null>(null);
+  const [previewName, setPreviewName] = useState<string | null>(null);
+  const [nexusProgramName, setNexusProgramName] = useState<string | null>(null);
+  const [nexusUserName, setNexusUserName] = useState<string | null>(null);
+  const [nexusUserRole, setNexusUserRole] = useState<string | null>(null);
   /** Gate first paint until we know whether this is a Nexus launch. */
   const [booting, setBooting] = useState(true);
 
@@ -161,6 +174,9 @@ export default function App() {
         setNexusMode(true);
         setLearningIsAdmin(isAdmin);
         setLearningPerms(perms);
+        setNexusProgramName(ctx.program_name ?? null);
+        setNexusUserName(ctx.displayName ?? null);
+        setNexusUserRole(isAdmin ? 'Administrator' : (ctx.learning_role?.role_name ?? ctx.role_name ?? 'Member'));
         setActiveUserId(uid);
         setRoleState(r);
         // Land on the first screen the person's granted areas expose (admins:
@@ -318,9 +334,28 @@ export default function App() {
     setEditingObjectId(null);
   }, []);
 
+  const startRolePreview = useCallback((name: string, perms: Record<string, AreaLevel>) => {
+    setPreviewName(name);
+    setPreviewPerms(perms);
+    const nav = navItemsForPerms(perms, false);
+    setCurrentScreen(nav[0]?.id ?? 'student-dashboard');
+    setReaderObjectId(null);
+    setEditingObjectId(null);
+  }, []);
+  const stopRolePreview = useCallback(() => {
+    setPreviewName(null);
+    setPreviewPerms(null);
+    setCurrentScreen('admin-people');
+  }, []);
+
+  const previewing = previewPerms !== null;
   const ctx: AppState = {
     role, program, currentScreen, activeUserId, isLoggedIn, nexusMode,
-    learningPerms, learningIsAdmin,
+    // While previewing a role, the whole app runs confined to that role's perms.
+    learningPerms: previewing ? previewPerms : learningPerms,
+    learningIsAdmin: previewing ? false : learningIsAdmin,
+    previewName, startRolePreview, stopRolePreview,
+    nexusProgramName, nexusUserName, nexusUserRole,
     readerObjectId, creatorObjectType, createdObjects, editingObjectId,
     navigate, login, logout,
     setRole, setProgram, openReader, closeReader, setCreatorObjectType, addObject,
@@ -342,6 +377,18 @@ export default function App() {
         ) : (
           <Layout />
         )}
+        {previewName ? (
+          <div className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 flex items-center gap-3 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
+            <span>Viewing as <b>{previewName}</b></span>
+            <button
+              type="button"
+              onClick={stopRolePreview}
+              className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium hover:bg-white/25"
+            >
+              Exit test view
+            </button>
+          </div>
+        ) : null}
       </div>
     </AppContext.Provider>
   );

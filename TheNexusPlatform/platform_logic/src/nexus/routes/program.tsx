@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BookOpen, Check, Plus, Rocket, Trash2, Waypoints, X } from "lucide-react";
+import { BookOpen, Check, ExternalLink, Lock, Plus, Rocket, Trash2, Waypoints, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -72,6 +72,7 @@ import { EmptyState, PageHeader, Pill, Section, Spinner, statusTone } from "@/ne
 import { openInStudio } from "@/services/studio";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useProgramAccess } from "@/nexus/access";
+import { useSession } from "@/nexus/session";
 
 /** Fetch the current program (no single-get endpoint; list + find). */
 function useProgram(): { program: Program | null; orgId: string; programId: string } {
@@ -91,9 +92,9 @@ function Head({ program, subtitle, actions }: { program: Program | null; subtitl
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="glass-card px-5 py-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+    <div className="glass-card flex flex-col justify-center px-5 py-4">
+      <div className="text-4xl font-semibold leading-none tabular-nums tracking-tight">{value}</div>
+      <div className="mt-2 text-sm font-medium text-muted-foreground">{label}</div>
     </div>
   );
 }
@@ -123,6 +124,7 @@ export function ProgramOverview() {
   const { program, orgId, programId } = useProgram();
   const navigate = useNavigate();
   const access = useProgramAccess(programId);
+  const { programMemberships } = useSession();
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [caps, setCaps] = useState<OrgCapabilities | null>(null);
   const [features, setFeatures] = useState<ProgramFeatures>(DEFAULT_PROGRAM_FEATURES);
@@ -157,6 +159,24 @@ export function ProgramOverview() {
     }
   }
 
+  // Nexus envelope: an ORG-level admin (no program-scoped membership here) is
+  // bounced out of the workspace when the org isn't allowed to open programs.
+  // Program-scoped people always keep workspace access.
+  const hasProgramMembership = programMemberships.some((m) => m.program_id === programId);
+  const enterBlocked = !hasProgramMembership && (caps ? caps.adminsEnterPrograms === false : false);
+  useEffect(() => {
+    if (access.loading || access.impersonating) return;
+    if (!caps || !program) return; // wait until the envelope is known
+    if (access.isAdmin && enterBlocked) {
+      navigate(`/o/${orgId}/programs`, { replace: true });
+    }
+  }, [access.loading, access.isAdmin, access.impersonating, caps, program, enterBlocked, orgId, navigate]);
+
+  // Program platform lock: this program's OWN people (they have a program-scoped
+  // membership) can't open the platform runtimes when platforms_open is off.
+  // Org admins (no program membership) set the lock, so it never applies to them.
+  const platformsLocked = hasProgramMembership && program?.platforms_open === false;
+
   // Confined viewers (members / role previews) never see a half-loaded page:
   // one spinner until we know whether to auto-launch or what cards to paint.
   const confinedDeciding = !access.isAdmin && (access.loading || !caps || !program);
@@ -173,10 +193,11 @@ export function ProgramOverview() {
   useEffect(() => {
     if (access.loading || access.isAdmin || access.impersonating) return;
     if (!caps || !program) return; // wait until the platform set is settled
+    if (platformsLocked) return; // don't fling a member into a locked platform
     if (soleActiveKey && !otherAreas) {
       navigate(`/o/${orgId}/p/${programId}/${soleActiveKey.path}`, { replace: true });
     }
-  }, [access.loading, access.isAdmin, access.impersonating, caps, program, soleActiveKey, otherAreas, orgId, programId, navigate]);
+  }, [access.loading, access.isAdmin, access.impersonating, caps, program, platformsLocked, soleActiveKey, otherAreas, orgId, programId, navigate]);
 
   if (confinedDeciding) return <Spinner />;
 
@@ -197,7 +218,8 @@ export function ProgramOverview() {
             hint={p.hint}
             busy={busy === p.key}
             canRemove={access.isAdmin}
-            onOpen={() => navigate(`/o/${orgId}/p/${programId}/${p.path}`)}
+            locked={platformsLocked}
+            href={`${window.location.origin}/o/${orgId}/p/${programId}/${p.path}`}
             onRemove={() => setFeature(p.key, false)}
           />
         ))}
@@ -215,7 +237,8 @@ function PlatformCard({
   hint,
   busy,
   canRemove,
-  onOpen,
+  locked,
+  href,
   onRemove,
 }: {
   icon: React.ReactNode;
@@ -223,9 +246,29 @@ function PlatformCard({
   hint: string;
   busy: boolean;
   canRemove: boolean;
-  onOpen: () => void;
+  locked?: boolean;
+  href: string;
   onRemove: () => void;
 }) {
+  // Platforms locked for this program's people: show the card but make it
+  // non-clickable, with a clear reason. (Org admins never see it locked.)
+  if (locked) {
+    return (
+      <div
+        className="relative flex items-center gap-4 glass-card p-5 opacity-70"
+        title="Opening platforms is turned off for this program. Ask an org admin to enable platform access."
+      >
+        <div className="grid size-11 place-items-center rounded-xl bg-muted text-muted-foreground">{icon}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 font-medium text-muted-foreground">
+            {title}
+            <Lock className="size-3.5" />
+          </div>
+          <div className="text-xs text-muted-foreground">Platform access is turned off for this program.</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="group relative flex items-center gap-4 glass-card p-5 hover:border-foreground/20 transition-colors">
       {canRemove ? (
@@ -240,13 +283,23 @@ function PlatformCard({
           {busy ? <span className="text-[10px]">…</span> : <X className="size-3.5" />}
         </ConfirmButton>
       ) : null}
-      <button type="button" onClick={onOpen} className="flex flex-1 items-center gap-4 text-left">
+      {/* Opens the platform in a new tab so the console stays put (no navigate
+          away + back-and-forth). A real link → cmd/middle-click work too. */}
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex flex-1 items-center gap-4 text-left"
+      >
         <div className="grid size-11 place-items-center rounded-xl bg-primary/10 text-foreground">{icon}</div>
-        <div className="min-w-0">
-          <div className="font-medium text-foreground">{title}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 font-medium text-foreground">
+            {title}
+            <ExternalLink className="size-3.5 text-muted-foreground" />
+          </div>
           <div className="text-xs text-muted-foreground">{hint}</div>
         </div>
-      </button>
+      </a>
     </div>
   );
 }

@@ -18,23 +18,23 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-10">
+    <div className="mb-6 flex flex-col gap-3 sm:mb-10 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="min-w-0">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">{title}</h1>
         {subtitle ? <p className="mt-2 text-[15px] text-muted-foreground">{subtitle}</p> : null}
       </div>
-      {actions ? <div className="flex items-center gap-2 shrink-0">{actions}</div> : null}
+      {actions ? <div className="flex flex-wrap items-center gap-2 sm:shrink-0">{actions}</div> : null}
     </div>
   );
 }
 
-/** A quiet stat tile. */
+/** A stat tile — the number is the hero; label + optional hint sit beneath. */
 export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
   return (
-    <div className="glass-card px-5 py-5">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="mt-1.5 text-3xl font-semibold text-foreground tabular-nums tracking-tight">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
+    <div className="glass-card flex flex-col justify-center px-5 py-4">
+      <div className="text-4xl font-semibold leading-none text-foreground tabular-nums tracking-tight">{value}</div>
+      <div className="mt-2 text-sm font-medium text-muted-foreground">{label}</div>
+      {hint ? <div className="mt-0.5 text-xs text-muted-foreground/70">{hint}</div> : null}
     </div>
   );
 }
@@ -53,7 +53,7 @@ export function Section({
   return (
     <section className={cn("mb-12", className)}>
       {title || action ? (
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           {title ? <h2 className="text-lg font-semibold tracking-tight text-foreground">{title}</h2> : <span />}
           {action}
         </div>

@@ -129,6 +129,7 @@ function _programResponse(row: Row): Row {
     platforms: row.platforms ?? null,
     secondary_categories: row.secondary_categories ?? [],
     branding: row.branding ?? null,
+    platforms_open: row.platforms_open !== false,
   };
 }
 
@@ -1237,14 +1238,14 @@ platformRouter.patch("/programs/:program_id/features", async (c) => {
   await _assertProgramConfigAccess(user, program.org_id, programId);
   const req = parseBody(programFeaturesUpdate, await c.req.json());
   const features = normalizeProgramFeatures(req.features);
-  const row = await db.updateProgramFeatures(programId, features);
+  const row = await db.updateProgramFeatures(programId, features, req.platforms_open);
   if (!row) throw new HttpError(404, "Program not found");
   await db.recordAuditEvent("program.features.updated", {
     orgId: program.org_id,
     actorUserId: user.id,
     scopeType: "program",
     scopeId: programId,
-    metadata: { features },
+    metadata: { features, platforms_open: req.platforms_open },
   });
   return c.json(_programResponse((await db.getProgram(programId)) ?? row));
 });
@@ -1974,6 +1975,8 @@ const capabilityPatchSchema = z.object({
   features: z.record(z.string(), z.boolean()).optional(),
   // Max programs the org may create; null = unlimited.
   programCapacity: z.number().int().min(1).nullable().optional(),
+  // May org-level admins enter the org's programs? (access boundary)
+  adminsEnterPrograms: z.boolean().optional(),
 });
 
 platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
@@ -2233,7 +2236,12 @@ platformRouter.patch("/orgs/:org_id/categories", async (c) => {
 });
 
 // ── Team & Roles: ORGANIZATION altitude ──────────────────────────────────────
-const scopedRoleSchema = z.object({ name: z.string().trim().min(1).max(80), perms: z.record(z.string(), z.string()) });
+const scopedRoleSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  perms: z.record(z.string(), z.string()),
+  display_as_group: z.boolean().optional(),
+  parent_group_id: z.string().uuid().nullable().optional(),
+});
 
 platformRouter.get("/orgs/:org_id/roles", async (c) => {
   const user = await getCurrentUser(c);
@@ -2249,7 +2257,7 @@ platformRouter.post("/orgs/:org_id/roles", async (c) => {
   const orgId = c.req.param("org_id");
   await _requireOrgArea(user, orgId, "team", "edit");
   const req = parseBody(scopedRoleSchema, await c.req.json());
-  const row = await graph.createOrgRole(orgId, req.name, req.perms);
+  const row = await graph.createOrgRole(orgId, req.name, req.perms, req.display_as_group, req.parent_group_id);
   await db.recordAuditEvent("organization.role.created", {
     orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { name: req.name },
   });
@@ -2610,7 +2618,7 @@ platformRouter.post("/admin/nexus/roles", async (c) => {
   _requirePlatformAdmin(user);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(scopedRoleSchema, await c.req.json());
-  return c.json(await graph.createNexusRole(req.name, req.perms));
+  return c.json(await graph.createNexusRole(req.name, req.perms, req.display_as_group, req.parent_group_id));
 });
 
 platformRouter.get("/admin/nexus/team", async (c) => {
@@ -3097,6 +3105,83 @@ platformRouter.delete("/groups/:id/members/:member_id", async (c) => {
   if (!g) throw new HttpError(404, "Group not found");
   _assertOrgPeopleAccess(user, g.organization_id as string, true);
   await graph.removeGroupMember(c.req.param("member_id"));
+  return c.json({ ok: true });
+});
+
+// ── ORG-level groups model + email-keyed placement (People → Roles & Groups) ─
+platformRouter.get("/orgs/:org_id/groups-model", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _assertOrgPeopleAccess(user, orgId);
+  return c.json(await graph.listGroupsModel(orgId, null));
+});
+const orgGroupsPlacementSchema = z.object({ email: z.string().email(), group_ids: z.array(z.string().uuid()) });
+platformRouter.put("/orgs/:org_id/team/groups", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _assertOrgPeopleAccess(user, orgId, true);
+  const req = parseBody(orgGroupsPlacementSchema, await c.req.json());
+  await graph.setPersonGroupsScoped(orgId, null, req.email, req.group_ids);
+  return c.json({ ok: true });
+});
+
+// ── NEXUS-level groups (org_id null). Full operators only. ───────────────────
+platformRouter.get("/admin/nexus/groups-model", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  _requireDb();
+  return c.json(await graph.listGroupsModel(null, null));
+});
+platformRouter.get("/admin/nexus/groups", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  _requireDb();
+  return c.json(await graph.listNexusGroups());
+});
+const nexusGroupCreateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  label: z.string().nullish(),
+  parent_group_id: z.string().uuid().nullable().optional(),
+});
+platformRouter.post("/admin/nexus/groups", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  _requireDb();
+  const req = parseBody(nexusGroupCreateSchema, await c.req.json());
+  return c.json(await graph.createNexusGroup({ name: req.name, label: req.label ?? null, parentGroupId: req.parent_group_id ?? null }));
+});
+const nexusGroupUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  label: z.string().nullish(),
+  parent_group_id: z.string().uuid().nullable().optional(),
+});
+platformRouter.patch("/admin/nexus/groups/:id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  _requireDb();
+  const req = parseBody(nexusGroupUpdateSchema, await c.req.json());
+  const row = await graph.updateGroupPriv(c.req.param("id"), {
+    name: req.name, label: req.label === undefined ? undefined : (req.label ?? null), parentGroupId: req.parent_group_id,
+  });
+  if (!row) throw new HttpError(404, "Group not found");
+  return c.json(row);
+});
+platformRouter.delete("/admin/nexus/groups/:id", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  _requireDb();
+  await graph.deleteGroupPriv(c.req.param("id"));
+  return c.json({ ok: true });
+});
+const nexusGroupsPlacementSchema = z.object({ email: z.string().email(), group_ids: z.array(z.string().uuid()) });
+platformRouter.put("/admin/nexus/team/groups", async (c) => {
+  const user = await getCurrentUser(c);
+  _requirePlatformAdmin(user);
+  _requireDb();
+  const req = parseBody(nexusGroupsPlacementSchema, await c.req.json());
+  await graph.setPersonGroupsScoped(null, null, req.email, req.group_ids);
   return c.json({ ok: true });
 });
 

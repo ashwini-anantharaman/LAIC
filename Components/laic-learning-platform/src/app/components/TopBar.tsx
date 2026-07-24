@@ -64,7 +64,7 @@ function GlassPill({ children, onClick }: { children: React.ReactNode; onClick?:
 }
 
 export function TopBar() {
-  const { role, program, currentScreen, setRole, setProgram } = useApp();
+  const { role, program, currentScreen, setRole, setProgram, nexusMode } = useApp();
   const [showRoles, setShowRoles] = useState(false);
   const [showPrograms, setShowPrograms] = useState(false);
 
@@ -83,6 +83,10 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Demo-only switchers: a Nexus launch is scoped to one program and a
+            real role, so these are hidden in Nexus mode. */}
+        {!nexusMode ? (
+        <>
         {/* Program switcher */}
         <div className="relative">
           <GlassPill onClick={() => { setShowPrograms(v => !v); setShowRoles(false); }}>
@@ -142,6 +146,9 @@ export function TopBar() {
             </div>
           )}
         </div>
+
+        </>
+        ) : null}
 
         {/* ⌘K button */}
         <button

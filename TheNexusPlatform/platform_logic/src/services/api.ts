@@ -287,6 +287,8 @@ export interface ProgramRole {
   perms: RolePerms;
   /** Discord-style: when true, this role also acts as a group. */
   display_as_group?: boolean;
+  /** Optional parent group — lets a role nest in the hierarchy. */
+  parent_group_id?: string | null;
   created_at?: string;
 }
 
@@ -295,13 +297,13 @@ export async function listProgramRoles(programId: string): Promise<ProgramRole[]
 }
 export async function createProgramRole(
   programId: string,
-  payload: { name: string; perms: RolePerms; display_as_group?: boolean },
+  payload: { name: string; perms: RolePerms; display_as_group?: boolean; parent_group_id?: string | null },
 ): Promise<ProgramRole> {
   return request<ProgramRole>(`/api/programs/${programId}/roles`, { method: "POST", body: JSON.stringify(payload) });
 }
 export async function updateProgramRole(
   roleId: string,
-  patch: { name?: string; perms?: RolePerms; display_as_group?: boolean },
+  patch: { name?: string; perms?: RolePerms; display_as_group?: boolean; parent_group_id?: string | null },
 ): Promise<ProgramRole> {
   return request<ProgramRole>(`/api/roles/${roleId}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
@@ -310,17 +312,52 @@ export async function deleteProgramRole(roleId: string): Promise<void> {
 }
 
 // ── Groups vs Roles: the People-tab groups model + placement ────────────────
-export interface ProgramGroupsModel {
+// One shape at every altitude (program / org / nexus).
+export interface GroupsModel {
   groups: { id: string; name: string; label: string | null; parent_id: string | null }[];
-  roles: { id: string; name: string; display_as_group: boolean }[];
+  roles: { id: string; name: string; display_as_group: boolean; parent_group_id?: string | null }[];
   /** email (lowercased) → explicit group ids they're placed in. */
   placements: Record<string, string[]>;
 }
-export async function getProgramGroupsModel(programId: string): Promise<ProgramGroupsModel> {
-  return request<ProgramGroupsModel>(`/api/programs/${programId}/groups-model`);
+export type ProgramGroupsModel = GroupsModel;
+
+export async function getProgramGroupsModel(programId: string): Promise<GroupsModel> {
+  return request<GroupsModel>(`/api/programs/${programId}/groups-model`);
 }
 export async function setProgramMemberGroups(programId: string, email: string, groupIds: string[]): Promise<void> {
   await request(`/api/programs/${programId}/members/groups`, {
+    method: "PUT",
+    body: JSON.stringify({ email, group_ids: groupIds }),
+  });
+}
+
+// Org-level groups model + placement (org groups = program_id null; reuse the
+// existing group CRUD with no program_id).
+export async function getOrgGroupsModel(orgId: string): Promise<GroupsModel> {
+  return request<GroupsModel>(`/api/platform/orgs/${orgId}/groups-model`);
+}
+export async function setOrgMemberGroups(orgId: string, email: string, groupIds: string[]): Promise<void> {
+  await request(`/api/platform/orgs/${orgId}/team/groups`, {
+    method: "PUT",
+    body: JSON.stringify({ email, group_ids: groupIds }),
+  });
+}
+
+// Nexus-level groups (platform scope; org_id null). Operator-only.
+export async function getNexusGroupsModel(): Promise<GroupsModel> {
+  return request<GroupsModel>(`/api/platform/admin/nexus/groups-model`);
+}
+export async function createNexusGroup(payload: { name: string; label?: string | null; parent_group_id?: string | null }): Promise<Group> {
+  return request<Group>(`/api/platform/admin/nexus/groups`, { method: "POST", body: JSON.stringify(payload) });
+}
+export async function updateNexusGroup(groupId: string, patch: { name?: string; label?: string | null; parent_group_id?: string | null }): Promise<Group> {
+  return request<Group>(`/api/platform/admin/nexus/groups/${groupId}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+export async function deleteNexusGroup(groupId: string): Promise<void> {
+  await request(`/api/platform/admin/nexus/groups/${groupId}`, { method: "DELETE" });
+}
+export async function setNexusMemberGroups(email: string, groupIds: string[]): Promise<void> {
+  await request(`/api/platform/admin/nexus/team/groups`, {
     method: "PUT",
     body: JSON.stringify({ email, group_ids: groupIds }),
   });
@@ -526,10 +563,13 @@ export async function createProgram(orgId: string, program: DraftProgramInput): 
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
+  platformsOpen?: boolean,
 ): Promise<Program> {
   return request<Program>(`/api/platform/programs/${programId}/features`, {
     method: "PATCH",
-    body: JSON.stringify({ features }),
+    body: JSON.stringify(
+      platformsOpen === undefined ? { features } : { features, platforms_open: platformsOpen },
+    ),
   });
 }
 
@@ -592,6 +632,8 @@ export interface ScopedRole {
   program_id: string | null;
   name: string;
   perms: Record<string, string>;
+  display_as_group?: boolean;
+  parent_group_id?: string | null;
 }
 
 export interface TeamPerson {
@@ -608,7 +650,10 @@ export interface TeamPerson {
 export async function listOrgScopedRoles(orgId: string): Promise<ScopedRole[]> {
   return request<ScopedRole[]>(`/api/platform/orgs/${orgId}/roles`);
 }
-export async function createOrgScopedRole(orgId: string, payload: { name: string; perms: Record<string, string> }): Promise<ScopedRole> {
+export async function createOrgScopedRole(
+  orgId: string,
+  payload: { name: string; perms: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null },
+): Promise<ScopedRole> {
   return request<ScopedRole>(`/api/platform/orgs/${orgId}/roles`, { method: "POST", body: JSON.stringify(payload) });
 }
 export async function listOrgTeam(orgId: string): Promise<TeamPerson[]> {
@@ -641,7 +686,9 @@ export interface NexusOperator {
 export async function listNexusScopedRoles(): Promise<ScopedRole[]> {
   return request<ScopedRole[]>("/api/platform/admin/nexus/roles");
 }
-export async function createNexusScopedRole(payload: { name: string; perms: Record<string, string> }): Promise<ScopedRole> {
+export async function createNexusScopedRole(
+  payload: { name: string; perms: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null },
+): Promise<ScopedRole> {
   return request<ScopedRole>("/api/platform/admin/nexus/roles", { method: "POST", body: JSON.stringify(payload) });
 }
 export async function listNexusTeam(): Promise<NexusOperator[]> {
@@ -769,6 +816,8 @@ export interface OrgCapabilities {
   features: Record<string, boolean>;
   /** Max programs the org may create; null = unlimited. */
   programCapacity?: number | null;
+  /** May org-level admins enter the org's programs? Absent/true = yes. */
+  adminsEnterPrograms?: boolean;
 }
 
 export async function getOrgCapabilities(orgId: string): Promise<OrgCapabilities> {

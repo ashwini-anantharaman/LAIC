@@ -827,11 +827,13 @@ const programRoleCreateSchema = z.object({
   name: z.string().min(1),
   perms: _programRolePerms.default({}),
   display_as_group: z.boolean().optional(),
+  parent_group_id: z.string().uuid().nullable().optional(),
 });
 const programRoleUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   perms: _programRolePerms.optional(),
   display_as_group: z.boolean().optional(),
+  parent_group_id: z.string().uuid().nullable().optional(),
 });
 
 /**
@@ -867,7 +869,9 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   // created_by is provenance only; skip it to avoid the demo-mode auth-id vs
   // profile-id mismatch (the FK targets profiles.id).
   const perms = _permsWithinFeatures(req.perms, program.features);
-  const row = await graph.createProgramRole(program.org_id, programId, req.name, perms, null, req.display_as_group);
+  const row = await graph.createProgramRole(
+    program.org_id, programId, req.name, perms, null, req.display_as_group, req.parent_group_id,
+  );
   await db.recordAuditEvent("program.role.created", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
     metadata: { name: req.name },
@@ -884,11 +888,15 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
   if (!existing) throw new HttpError(404, "Role not found");
   _requireScopedRoleAdmin(user, existing);
   let perms = req.perms;
-  if (perms !== undefined) {
+  // Only program-scoped roles are clamped to program features; org/nexus roles
+  // use a different (free-form) permission vocabulary and must pass through.
+  if (perms !== undefined && existing.program_id) {
     const program = await db.getProgram(existing.program_id as string);
     perms = _permsWithinFeatures(perms, program?.features);
   }
-  const row = await graph.updateProgramRole(roleId, { name: req.name, perms, displayAsGroup: req.display_as_group });
+  const row = await graph.updateProgramRole(roleId, {
+    name: req.name, perms, displayAsGroup: req.display_as_group, parentGroupId: req.parent_group_id,
+  });
   await db.recordAuditEvent("program.role.updated", {
     orgId: existing.organization_id as string, actorUserId: user.id, scopeType: "program",
     scopeId: existing.program_id as string, metadata: { name: req.name ?? existing.name },
@@ -1133,6 +1141,18 @@ offeringsRouter.get("/programs/:program_id/my-role", async (c) => {
     const assigned = await graph.getPlatformRoleForEmail(programId, platform, user.email).catch(() => null);
     if (assigned) {
       perms[platform] = assigned;
+      anyPlatformRole = true;
+    }
+  }
+  // A custom Learning role (the learning app's own People tab, stored in
+  // learning_role_assignments) also grants the Learning platform — surface it
+  // as perms.learning so Nexus shows the Learning card and auto-launches a
+  // learning-only member, just like a prebuilt assignment.
+  if (!perms.learning) {
+    const lr = await graph.getLearningRoleForEmail(programId, user.email).catch(() => null);
+    if (lr) {
+      const lp = (lr.perms as Record<string, string>) ?? {};
+      perms.learning = Object.values(lp).includes("edit") ? "edit" : "view";
       anyPlatformRole = true;
     }
   }

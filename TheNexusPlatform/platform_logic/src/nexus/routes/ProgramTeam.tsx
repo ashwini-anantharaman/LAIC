@@ -4,7 +4,7 @@
  * role (preview) or a real person (actual dev sign-in) to confirm everything
  * is stored and confining correctly.
  */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ChevronRight, Copy, Eye, Layers, LayoutGrid, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -51,9 +51,12 @@ import {
 } from "@/services/api";
 import type { Program, ProgramFeatureKey } from "@/types/platform";
 import { DEFAULT_PROGRAM_FEATURES, PROGRAM_FEATURES } from "@/types/platform";
-import { EmptyState, PageHeader, Pill, Section, Spinner } from "@/nexus/ui/kit";
+import { EmptyState, Pill, Section, Spinner } from "@/nexus/ui/kit";
 import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
+import { PeoplePage, CollapsibleSection } from "@/nexus/people/PeoplePage";
+import { RolesAndGroups, type RgRole } from "@/nexus/people/RolesAndGroups";
+import { programRgAdapter } from "@/nexus/people/adapters";
 import { useSession } from "@/nexus/session";
 
 // Role areas mirror the program's configurable features 1:1 (same keys).
@@ -124,6 +127,21 @@ export function ProgramTeam() {
 
   // The program's accessible features gate which areas roles can grant/show.
   const enabledFeatures = program?.features ?? DEFAULT_PROGRAM_FEATURES;
+
+  // Shared Roles & Groups panel adapter — enabled areas + role "Test as".
+  const programRg = useMemo(
+    () =>
+      programRgAdapter(
+        orgId,
+        programId,
+        (Object.keys(enabledFeatures) as (keyof typeof enabledFeatures)[]).filter((k) => enabledFeatures[k] !== false),
+        (role: RgRole) => {
+          startImpersonation({ roleName: role.name, perms: role.perms, orgId, programId });
+          navigate(`/o/${orgId}/p/${programId}`);
+        },
+      ),
+    [orgId, programId, enabledFeatures, startImpersonation, navigate],
+  );
 
   const load = useCallback(() => {
     listProgramRoles(programId).then(setRoles).catch(() => setRoles([]));
@@ -430,97 +448,26 @@ export function ProgramTeam() {
     );
   }
 
-  return (
-    <div>
-      <PageHeader
-        title={program?.name ?? "Program"}
-        subtitle="Define roles, assign people to them, and test exactly what each person sees."
-        actions={
-          <Button onClick={() => setEditing("new")}>
-            <Plus className="size-4" /> Create role
-          </Button>
-        }
-      />
-
-      <Section title="Roles">
-        {!roles ? (
-          <Spinner />
-        ) : roles.length === 0 ? (
-          <EmptyState>No roles yet. Create one, then assign people to it below.</EmptyState>
-        ) : (
-          <div className="space-y-2">
-            {roles.map((r) => {
-              // Only show areas that are still enabled for this program — a
-              // feature turned off after the fact stops appearing as granted.
-              const granted = Object.keys(r.perms).filter(
-                (a) => enabledFeatures[a as ProgramFeatureKey],
-              );
-              const holders = (members ?? []).filter((m) => m.role_id === r.id).length;
-              return (
-                <div key={r.id} className="flex items-center gap-3 glass-card px-4 py-3">
-                  <div className="min-w-[140px]">
-                    <div className="font-medium text-foreground">{r.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {holders} member{holders !== 1 ? "s" : ""}
-                    </div>
-                  </div>
-                  <div className="flex flex-1 flex-wrap gap-1.5">
-                    {granted.length ? (
-                      granted.map((a) => (
-                        <Pill key={a} tone="neutral">
-                          {areaLabel(a)} · {r.perms[a as RoleArea]}
-                        </Pill>
-                      ))
-                    ) : (
-                      <span className="text-xs text-muted-foreground">no areas</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Button size="sm" variant="ghost" onClick={() => testAsRole(r)} title="Preview a member with this role">
-                      <Eye className="size-3.5" /> Test as
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(r)} title="Edit role">
-                      <Pencil className="size-3.5" />
-                    </Button>
-                    <ConfirmButton
-                      title={`Delete the "${r.name}" role?`}
-                      description="Members assigned to it keep their membership but lose the role's access."
-                      actionLabel="Delete"
-                      onConfirm={() => remove(r)}
-                      buttonTitle="Delete role"
-                    >
-                      <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
-                    </ConfirmButton>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Section>
-
-      <Section
-        title="People"
-        action={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => switchView(view === "grid" ? "stack" : "grid")}
-              className="grid size-9 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-              title={view === "grid" ? "Stack view (group by group)" : "Grid view (everyone)"}
-              aria-label="Switch people view"
-            >
-              {view === "grid" ? <Layers className="size-4" /> : <LayoutGrid className="size-4" />}
-            </button>
-            <Button size="sm" variant="outline" onClick={() => setNewGroupOpen(true)}>
-              <Plus className="size-3.5" /> New group
-            </Button>
-            <Button size="sm" onClick={() => setInviteOpen(true)}>
-              <Plus className="size-3.5" /> Invite member
-            </Button>
-          </div>
-        }
+  const peopleActions = (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <button
+        type="button"
+        onClick={() => switchView(view === "grid" ? "stack" : "grid")}
+        className="grid size-9 place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+        title={view === "grid" ? "Stack view (group by group)" : "Grid view (everyone)"}
+        aria-label="Switch people view"
       >
+        {view === "grid" ? <Layers className="size-4" /> : <LayoutGrid className="size-4" />}
+      </button>
+      <Button size="sm" onClick={() => setInviteOpen(true)}>
+        <Plus className="size-3.5" /> Invite member
+      </Button>
+    </div>
+  );
+
+  const peopleContent = (
+    <>
+      <CollapsibleSection title="Program members" count={members?.length}>
         {!members ? (
           <Spinner />
         ) : members.length === 0 ? (
@@ -599,10 +546,10 @@ export function ProgramTeam() {
             ) : null}
           </div>
         )}
-      </Section>
+      </CollapsibleSection>
 
       {groups.length > 0 ? (
-        <Section title="Platform members">
+        <CollapsibleSection title="Platform members" count={groups.length}>
           <div className="space-y-2">
             {groups.map((g) => (
               <PlatformGroup
@@ -616,8 +563,19 @@ export function ProgramTeam() {
               />
             ))}
           </div>
-        </Section>
+        </CollapsibleSection>
       ) : null}
+    </>
+  );
+
+  return (
+    <>
+      <PeoplePage
+        subtitle="Invite people, place them in groups, and test exactly what each role sees."
+        actions={peopleActions}
+        people={peopleContent}
+        rolesGroups={<RolesAndGroups adapter={programRg} />}
+      />
 
       {editing ? (
         <RoleBuilder
@@ -677,7 +635,7 @@ export function ProgramTeam() {
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 

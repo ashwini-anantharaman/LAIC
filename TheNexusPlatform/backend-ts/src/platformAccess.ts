@@ -265,15 +265,32 @@ async function _grantLevel(
 ): Promise<{ level: AreaGrantLevel; platformRole?: string } | null> {
   const orgId = program.org_id as string;
   const pid = program.id as string;
-  // Org owner/administrator (org-level, program_id null) or this program's
-  // reserved administrator → full access (§3.5 delegation).
-  const isAdmin = user.memberships.some(
-    (m) =>
-      m.org_id === orgId &&
-      ["owner", "administrator"].includes(m.role) &&
-      (!m.program_id || m.program_id === pid),
-  );
-  if (isAdmin) return { level: "admin" };
+  const isAdminRole = (m: Row) => m.org_id === orgId && ["owner", "administrator"].includes(m.role);
+  // Two independent access boundaries meet here:
+  //  • Nexus envelope (org.adminsEnterPrograms): may ORG-level admins enter this
+  //    org's programs at all. Operator-controlled.
+  //  • Program platform lock (program.platforms_open): may this program's OWN
+  //    people (its admins + members) open the platform runtimes — Learning,
+  //    App Shell, Bridge. The org admin's tool to lock a program's people out of
+  //    the runtimes while they still manage the program. Org admins set it, so
+  //    it never restricts them.
+  const isPlatformArea = area === "learning" || area === "bridge" || area === "appbuilder";
+  const platformsLocked = isPlatformArea && (program.platforms_open as boolean | undefined) === false;
+
+  // This program's reserved administrator (program-scoped) — full workspace, but
+  // barred from the platform runtimes when the program's platforms are locked.
+  const programScopedAdmin = user.memberships.some((m) => isAdminRole(m) && m.program_id === pid);
+  if (programScopedAdmin) return platformsLocked ? null : { level: "admin" };
+  // Org-LEVEL admin/owner (program_id null): blanket access when the Nexus
+  // envelope allows it. They bypass the per-program platform lock (they own it).
+  const orgLevelAdmin = user.memberships.some((m) => isAdminRole(m) && !m.program_id);
+  if (orgLevelAdmin) {
+    const caps = await db.getOrgCapabilities(orgId).catch(() => null);
+    const orgAllows = !caps || (caps.adminsEnterPrograms as boolean | undefined) !== false;
+    if (orgAllows) return { level: "admin" };
+  }
+  // Program members (custom roles) obey the platform lock too.
+  if (platformsLocked) return null;
 
   // Plain member: the custom role's area grant (Team & Roles). Role
   // assignments live in the DB layer only (501-free: absent in demo mode).
