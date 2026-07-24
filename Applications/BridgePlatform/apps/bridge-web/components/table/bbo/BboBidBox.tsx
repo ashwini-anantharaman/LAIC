@@ -1,120 +1,135 @@
-// BBO-view bidding box (2026-07-23 skin): the iconic full grid — 7 rows
-// (levels 1–7) × 5 columns (♣ ♦ ♥ ♠ NT) of every contract bid, plus the wide
-// green Pass, red Dbl and blue Rdbl below it. No client state is needed (the
-// full grid shows every call at once), so this is a plain server component:
-// every button posts the SAME `bidAction` + `sessionId`/`call` fields the
-// classic BiddingBox posts. Illegal calls render disabled/greyed.
+"use client";
 
+// BBO-view bidding box (rebuilt against a real BBO screenshot): the two-click
+// flow BBO uses by default. One row: the big green Pass, red X / blue XX when
+// legal, then ONLY the legal level numbers (after 3NT you see just 4 5 6 7,
+// like BBO). Tapping a level swaps the numbers for that level's legal strains
+// (‹ backs out). Legality is the engine's real `legalCalls` set passed from
+// the server; every concrete call posts the same `bidAction` the classic
+// BiddingBox posts. The only client state is the armed level.
+
+import { useState } from "react";
 import type { Suit } from "@bridge/events";
 import { bidAction } from "@/app/bridge/table/actions";
 
 const STRAINS = ["C", "D", "H", "S", "N"] as const;
 const GLYPH: Record<Suit | "N", string> = { C: "♣", D: "♦", H: "♥", S: "♠", N: "NT" };
-const red = (s: string) => s === "H" || s === "D";
-
+const isRed = (s: string) => s === "H" || s === "D";
 const RED = "#CC0000";
+const SANS = "Arial, Helvetica, sans-serif";
+
+const whiteBtn: React.CSSProperties = {
+  fontFamily: SANS,
+  background: "#fff",
+  color: "#000",
+  border: "1px solid #8a8a6a",
+  borderRadius: 6,
+  padding: "6px 0",
+  width: 46,
+  font: `700 20px ${SANS}`,
+  cursor: "pointer",
+  lineHeight: 1.1,
+};
 
 export function BboBidBox({
   sessionId,
   legal,
 }: Readonly<{ sessionId: string; legal: string[] }>) {
+  const [armed, setArmed] = useState<number | null>(null);
   const legalSet = new Set(legal);
 
-  const bidButton = (value: string, label: React.ReactNode, ok: boolean) => (
+  const legalLevels = [1, 2, 3, 4, 5, 6, 7].filter((l) =>
+    STRAINS.some((s) => legalSet.has(`${l}${s}`)),
+  );
+
+  const callForm = (
+    value: string,
+    label: React.ReactNode,
+    style: React.CSSProperties,
+    aria: string,
+  ) => (
     <form key={value} action={bidAction} className="contents">
       <input type="hidden" name="sessionId" value={sessionId} />
       <input type="hidden" name="call" value={value} />
-      <button
-        type="submit"
-        disabled={!ok}
-        aria-label={`Bid ${value}`}
-        className={`w-full rounded-[3px] border py-1.5 text-[13px] font-bold tabular-nums transition-colors ${
-          ok
-            ? "border-neutral-400 bg-white text-black hover:bg-[#e8f0ff]"
-            : "cursor-not-allowed border-neutral-300 bg-neutral-200 text-neutral-400"
-        }`}
-      >
+      <button type="submit" aria-label={aria} style={style}>
         {label}
       </button>
     </form>
   );
 
   return (
-    <div
-      className="w-full max-w-md space-y-1"
-      style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
-    >
-      {/* The 7×5 grid: every contract bid from 1♣ to 7NT. */}
-      <div className="space-y-1">
-        {[1, 2, 3, 4, 5, 6, 7].map((level) => (
-          <div key={level} className="grid grid-cols-5 gap-1">
-            {STRAINS.map((s) => {
-              const value = `${level}${s}`;
-              const ok = legalSet.has(value);
-              return bidButton(
-                value,
-                <span style={ok && red(s) ? { color: RED } : undefined}>
-                  {level}
-                  {GLYPH[s]}
-                </span>,
-                ok,
-              );
-            })}
-          </div>
-        ))}
-      </div>
+    <div className="flex flex-wrap items-center gap-1.5" style={{ fontFamily: SANS }}>
+      {/* Pass — BBO's wide green button, always first. */}
+      {legalSet.has("P") &&
+        callForm(
+          "P",
+          "Pass",
+          {
+            ...whiteBtn,
+            width: 96,
+            background: "#1E7B32",
+            color: "#fff",
+            border: "1px solid #155A24",
+          },
+          "Pass",
+        )}
+      {legalSet.has("X") &&
+        callForm(
+          "X",
+          "X",
+          { ...whiteBtn, width: 52, background: RED, color: "#fff", border: "1px solid #8F0000" },
+          "Double",
+        )}
+      {legalSet.has("XX") &&
+        callForm(
+          "XX",
+          "XX",
+          {
+            ...whiteBtn,
+            width: 56,
+            background: "#1034A6",
+            color: "#fff",
+            border: "1px solid #0A2170",
+          },
+          "Redouble",
+        )}
 
-      {/* Pass (green, wide) · Dbl (red) · Rdbl (blue). */}
-      <div className="grid grid-cols-4 gap-1 pt-0.5">
-        <form action={bidAction} className="col-span-2">
-          <input type="hidden" name="sessionId" value={sessionId} />
-          <input type="hidden" name="call" value="P" />
+      {armed === null ? (
+        // Only the LEGAL levels appear — BBO shows "4 5 6 7" after 3NT.
+        legalLevels.map((l) => (
           <button
-            type="submit"
-            disabled={!legalSet.has("P")}
-            aria-label="Pass"
-            className={`w-full rounded-[3px] border py-1.5 text-[13px] font-bold ${
-              legalSet.has("P")
-                ? "border-[#1f6b1f] bg-[#2E8B2E] text-white hover:brightness-110"
-                : "cursor-not-allowed border-neutral-300 bg-neutral-200 text-neutral-400"
-            }`}
+            key={l}
+            type="button"
+            aria-label={`Level ${l}`}
+            style={whiteBtn}
+            onClick={() => setArmed(l)}
           >
-            Pass
+            {l}
           </button>
-        </form>
-        <form action={bidAction}>
-          <input type="hidden" name="sessionId" value={sessionId} />
-          <input type="hidden" name="call" value="X" />
+        ))
+      ) : (
+        <>
           <button
-            type="submit"
-            disabled={!legalSet.has("X")}
-            aria-label="Double"
-            className={`w-full rounded-[3px] border py-1.5 text-[13px] font-bold ${
-              legalSet.has("X")
-                ? "border-[#990000] bg-[#CC0000] text-white hover:brightness-110"
-                : "cursor-not-allowed border-neutral-300 bg-neutral-200 text-neutral-400"
-            }`}
+            type="button"
+            aria-label="Back to levels"
+            style={{ ...whiteBtn, width: 36, fontSize: 16 }}
+            onClick={() => setArmed(null)}
           >
-            Dbl
+            ‹
           </button>
-        </form>
-        <form action={bidAction}>
-          <input type="hidden" name="sessionId" value={sessionId} />
-          <input type="hidden" name="call" value="XX" />
-          <button
-            type="submit"
-            disabled={!legalSet.has("XX")}
-            aria-label="Redouble"
-            className={`w-full rounded-[3px] border py-1.5 text-[13px] font-bold ${
-              legalSet.has("XX")
-                ? "border-[#0a2170] bg-[#1034A6] text-white hover:brightness-110"
-                : "cursor-not-allowed border-neutral-300 bg-neutral-200 text-neutral-400"
-            }`}
-          >
-            Rdbl
-          </button>
-        </form>
-      </div>
+          {STRAINS.filter((s) => legalSet.has(`${armed}${s}`)).map((s) =>
+            callForm(
+              `${armed}${s}`,
+              <span style={{ color: isRed(s) ? RED : "#000" }}>
+                {armed}
+                {GLYPH[s]}
+              </span>,
+              { ...whiteBtn, width: s === "N" ? 64 : 56 },
+              `Bid ${armed}${GLYPH[s]}`,
+            ),
+          )}
+        </>
+      )}
     </div>
   );
 }

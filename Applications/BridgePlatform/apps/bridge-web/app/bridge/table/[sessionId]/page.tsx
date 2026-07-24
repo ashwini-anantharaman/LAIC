@@ -245,28 +245,33 @@ export default async function SessionPage({
     );
   };
 
-  // BBO-view nameplate: a solid dark-blue rectangle (gold when the seat is to
-  // act), white bold name text. For fellows it stays a swap/edit dropdown —
-  // same roster, same swapSeatAction the classic seatTag posts — so BBO view
-  // keeps full parity. Only rendered under skin=bbo, so the swap forms always
-  // carry skin=bbo to round-trip the fork back into BBO view.
+  // BBO-view nameplate: BBO's grey name bar with the small teal seat-letter
+  // badge at its left end — gold while the seat is to act. For fellows it
+  // stays a swap/edit dropdown — same roster, same swapSeatAction the classic
+  // seatTag posts — so BBO view keeps full parity. Only rendered under
+  // skin=bbo, so the swap forms always carry skin=bbo to round-trip the fork
+  // back into BBO view.
   const bboPlate = (seat: Seat) => {
     const acting = seat === actingSeat && state.phase !== "complete";
     const config = record.seats[seat];
     const plateStyle = acting
-      ? { background: "#FFD700", color: "#000000" }
-      : { background: "#1034A6", color: "#ffffff" };
+      ? { background: "#FFC933", color: "#000000" }
+      : { background: "#D6D6D6", color: "#000000" };
     const inner = (
       <>
-        <span className="font-bold">{seat}</span>
-        <span className="max-w-24 truncate font-bold">{seatLabel(seat)}</span>
+        <span
+          className="flex h-[18px] w-[18px] flex-none items-center justify-center text-[12px] font-bold text-white"
+          style={{ background: "#1F5E63" }}
+        >
+          {seat}
+        </span>
+        <span className="max-w-32 truncate text-[14px]">{seatLabel(seat)}</span>
         {seat === dummy && state.phase === "play" && (
-          <span className="text-[9px] font-normal uppercase tracking-wide opacity-80">· dummy</span>
+          <span className="text-[9px] font-normal uppercase tracking-wide opacity-70">· dummy</span>
         )}
       </>
     );
-    const barClass =
-      "flex min-w-[6rem] items-center justify-center gap-1.5 rounded-[3px] px-2 py-1 text-[13px] shadow";
+    const barClass = "flex w-full min-w-[8rem] items-center gap-1.5 px-0.5 py-0.5 text-[13px]";
     if (learnerMode) {
       return (
         <p className={barClass} style={plateStyle}>
