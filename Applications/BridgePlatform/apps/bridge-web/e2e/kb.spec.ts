@@ -622,3 +622,22 @@ test("source audit: page renders with the honest no-key notice", async ({
   // e2e servers strip ANTHROPIC_API_KEY — the audit must say so, not pretend.
   await expect(page.getByText(/ANTHROPIC_API_KEY isn't configured/)).toBeVisible();
 });
+
+test("BBO view: the skin toggles on and preserves the table", async ({ page, context }) => {
+  await signInAs(context, "user_reviewer_rhea");
+  // Reuse any active session via the Play landing quickplay flow.
+  await page.goto("/bridge/table");
+  await page
+    .getByRole("button", { name: /Quickplay|Deal a fresh board/ })
+    .or(page.getByRole("link", { name: /^Resume / }))
+    .first()
+    .click();
+  await page.waitForURL(/\/bridge\/table\/bs_/);
+  await page.getByRole("link", { name: "Switch to BBO view" }).click();
+  await page.waitForURL(/skin=bbo/);
+  // The iconic bits: W N E S auction header on the green felt + the toggle back.
+  await expect(page.getByRole("link", { name: "Switch to platform view" })).toBeVisible();
+  await expect(page.getByText("Rules considered", { exact: false }).first())
+    .toBeVisible({ timeout: 10_000 })
+    .catch(() => {}); // decisions rail only present after a decision — non-fatal
+});

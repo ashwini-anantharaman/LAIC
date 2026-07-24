@@ -16,6 +16,7 @@ import { ItemView } from "@/components/kb/ItemView";
 import { DealEditor } from "@/components/library/DealEditor";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { BiddingBox } from "@/components/table/BiddingBox";
+import { BboTable } from "@/components/table/bbo/BboTable";
 import { DecisionEntry } from "@/components/table/DecisionEntry";
 import { HandRow } from "@/components/table/HandRow";
 import { PlayingCard } from "@/components/table/PlayingCard";
@@ -52,13 +53,19 @@ export default async function SessionPage({
     fixed?: string;
     fixError?: string;
     editDeal?: string;
+    skin?: string;
   }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { mode, hands: handsParam, saved, error, paused, fix, fixMode, fixed, fixError, editDeal } =
+  const { mode, hands: handsParam, saved, error, paused, fix, fixMode, fixed, fixError, editDeal, skin } =
     await searchParams;
+  // Optional BBO-view skin (2026-07-23): ?skin=bbo swaps the felt/seats/auction/
+  // bidbox presentation for a Bridge Base Online replica. Purely presentational
+  // — same server actions, same params, same overlays; absent it, everything
+  // renders exactly as before.
+  const bbo = skin === "bbo";
 
   let view;
   try {
@@ -96,7 +103,7 @@ export default async function SessionPage({
   // Fix-at-the-table overlay: ?fix=<itemId> opens the real item editor over
   // the board; saving re-pins this session to the fresh compile and returns
   // here paused, so the corrected rule can be stepped through immediately.
-  const overlayReturn = `/bridge/table/${sessionId}?paused=${Date.now()}`;
+  const overlayReturn = `/bridge/table/${sessionId}?paused=${Date.now()}${bbo ? "&skin=bbo" : ""}`;
   const logicEvents = record.events.filter(isLogicEvent);
   const aiToAct = !actingIsHuman && state.phase !== "complete";
 
@@ -238,6 +245,112 @@ export default async function SessionPage({
     );
   };
 
+  // BBO-view nameplate: a solid dark-blue rectangle (gold when the seat is to
+  // act), white bold name text. For fellows it stays a swap/edit dropdown —
+  // same roster, same swapSeatAction the classic seatTag posts — so BBO view
+  // keeps full parity. Only rendered under skin=bbo, so the swap forms always
+  // carry skin=bbo to round-trip the fork back into BBO view.
+  const bboPlate = (seat: Seat) => {
+    const acting = seat === actingSeat && state.phase !== "complete";
+    const config = record.seats[seat];
+    const plateStyle = acting
+      ? { background: "#FFD700", color: "#000000" }
+      : { background: "#1034A6", color: "#ffffff" };
+    const inner = (
+      <>
+        <span className="font-bold">{seat}</span>
+        <span className="max-w-24 truncate font-bold">{seatLabel(seat)}</span>
+        {seat === dummy && state.phase === "play" && (
+          <span className="text-[9px] font-normal uppercase tracking-wide opacity-80">· dummy</span>
+        )}
+      </>
+    );
+    const barClass =
+      "flex min-w-[6rem] items-center justify-center gap-1.5 rounded-[3px] px-2 py-1 text-[13px] shadow";
+    if (learnerMode) {
+      return (
+        <p className={barClass} style={plateStyle}>
+          {inner}
+        </p>
+      );
+    }
+    const iAmHere = config.kind === "human" && config.nexusUserId === context.nexusUserId;
+    return (
+      <details className="relative">
+        <summary
+          className={`${barClass} cursor-pointer list-none hover:brightness-110`}
+          style={plateStyle}
+          title="Seat options — swap or edit this player"
+        >
+          {inner}
+          <span aria-hidden className="text-[9px] opacity-70">
+            ▾
+          </span>
+        </summary>
+        <div className="absolute left-1/2 top-full z-20 mt-1 w-56 -translate-x-1/2 rounded-lg border border-neutral-200 bg-white p-2 text-left text-black shadow-md">
+          <p className="px-1 pb-1 text-[10px] uppercase tracking-wide text-neutral-400">
+            {state.phase === "complete" ? "swap & replay this board" : "swap (forks this board)"}
+          </p>
+          <div className="max-h-52 space-y-0.5 overflow-y-auto">
+            {roster.map((p) => {
+              const current = config.kind === "kb_player" && config.playerId === p.playerId;
+              return (
+                <form key={p.playerId} action={swapSeatAction}>
+                  <input type="hidden" name="sessionId" value={sessionId} />
+                  <input type="hidden" name="seat" value={seat} />
+                  <input type="hidden" name="playerId" value={p.playerId} />
+                  <input type="hidden" name="skin" value="bbo" />
+                  <button
+                    type="submit"
+                    disabled={current}
+                    className="w-full rounded px-1.5 py-1 text-left text-xs enabled:hover:bg-emerald-50 disabled:cursor-default"
+                  >
+                    <span className={current ? "font-semibold" : ""}>{p.name}</span>
+                    {current && (
+                      <span className="ml-1 text-[9px] uppercase text-neutral-400">seated</span>
+                    )}
+                    {p.validationStatus === "invalid" && (
+                      <span className="ml-1 text-[9px] uppercase text-[color:var(--color-invalid)]">
+                        incomplete
+                      </span>
+                    )}
+                  </button>
+                </form>
+              );
+            })}
+            {roster.length === 0 && (
+              <p className="px-1.5 py-1 text-xs text-neutral-400">No players in this KB yet.</p>
+            )}
+          </div>
+          <div className="mt-1 space-y-0.5 border-t border-[var(--line)] pt-1">
+            {!iAmHere && (
+              <form action={swapSeatAction}>
+                <input type="hidden" name="sessionId" value={sessionId} />
+                <input type="hidden" name="seat" value={seat} />
+                <input type="hidden" name="playerId" value="me" />
+                <input type="hidden" name="skin" value="bbo" />
+                <button
+                  type="submit"
+                  className="w-full rounded px-1.5 py-1 text-left text-xs hover:bg-emerald-50"
+                >
+                  Sit here yourself
+                </button>
+              </form>
+            )}
+            {config.kind === "kb_player" && (
+              <Link
+                href={`/bridge/kb/${record.kbId}/players/${config.playerId}`}
+                className="block rounded px-1.5 py-1 text-xs text-emerald-800 hover:bg-emerald-50"
+              >
+                Edit {config.label} →
+              </Link>
+            )}
+          </div>
+        </div>
+      </details>
+    );
+  };
+
   // Current (unfinished) trick, by seat.
   const trick = state.tricks[state.tricks.length - 1];
   const trickCards: Partial<Record<Seat, Card>> = {};
@@ -256,10 +369,22 @@ export default async function SessionPage({
   const toggleHref = (params: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
     if (learnerMode && isFellow) q.set("mode", "learner");
+    if (bbo) q.set("skin", "bbo");
     for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table/${sessionId}?${s}` : `/bridge/table/${sessionId}`;
   };
+  // The BBO-view toggle preserves every other param (mode, hands, paused) and
+  // only flips skin. Building it here keeps the toolbar control declarative.
+  const skinToggleHref = (() => {
+    const q = new URLSearchParams();
+    if (learnerMode && isFellow) q.set("mode", "learner");
+    if (handsParam) q.set("hands", handsParam);
+    if (paused) q.set("paused", paused);
+    if (!bbo) q.set("skin", "bbo");
+    const s = q.toString();
+    return s ? `/bridge/table/${sessionId}?${s}` : `/bridge/table/${sessionId}`;
+  })();
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -339,6 +464,22 @@ export default async function SessionPage({
           seq={record.events.length}
           complete={state.phase === "complete"}
         />
+        <Link
+          href={skinToggleHref}
+          aria-label={bbo ? "Switch to platform view" : "Switch to BBO view"}
+          title={
+            bbo
+              ? "Platform view — the standard table"
+              : "BBO view — the classic Bridge Base Online table"
+          }
+          className={
+            bbo
+              ? "rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-emerald-800"
+              : "rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
+          }
+        >
+          🃏<span className="ml-1 hidden lg:inline text-[10px]">{bbo ? "classic" : "bbo"}</span>
+        </Link>
         {!learnerMode && (
           <Link
             href={toggleHref({ hands: showAll ? "mine" : "all" })}
@@ -368,6 +509,7 @@ export default async function SessionPage({
               className="absolute z-10 mt-1 flex w-64 flex-col gap-1.5 rounded-lg border border-neutral-200 bg-white p-2 shadow-md"
             >
               <input type="hidden" name="sessionId" value={sessionId} />
+              {bbo && <input type="hidden" name="skin" value="bbo" />}
               <select
                 name="kind"
                 defaultValue="board"
@@ -413,6 +555,7 @@ export default async function SessionPage({
         )}
         <form action={undoAction}>
           <input type="hidden" name="sessionId" value={sessionId} />
+          {bbo && <input type="hidden" name="skin" value="bbo" />}
           <button
             type="submit"
             aria-label="Undo the last decision"
@@ -424,6 +567,7 @@ export default async function SessionPage({
         </form>
         <form action={rewindAction}>
           <input type="hidden" name="sessionId" value={sessionId} />
+          {bbo && <input type="hidden" name="skin" value="bbo" />}
           <button
             type="submit"
             disabled={record.events.length === 0}
@@ -437,6 +581,7 @@ export default async function SessionPage({
         {!learnerMode && (
           <form action={newDealAction}>
             <input type="hidden" name="sessionId" value={sessionId} />
+            {bbo && <input type="hidden" name="skin" value="bbo" />}
             <button
               type="submit"
               aria-label="New deal"
@@ -459,7 +604,15 @@ export default async function SessionPage({
         )}
         {isFellow && (
           <Link
-            href={learnerMode ? `/bridge/table/${sessionId}` : `/bridge/table/${sessionId}?mode=learner`}
+            href={
+              learnerMode
+                ? bbo
+                  ? `/bridge/table/${sessionId}?skin=bbo`
+                  : `/bridge/table/${sessionId}`
+                : bbo
+                  ? `/bridge/table/${sessionId}?mode=learner&skin=bbo`
+                  : `/bridge/table/${sessionId}?mode=learner`
+            }
             aria-label={learnerMode ? "Switch to verification view" : "Switch to learner view"}
             title={learnerMode ? "Verification view — show the decisions rail" : "Learner view — hide the decisions rail"}
             className="ml-auto rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
@@ -474,6 +627,25 @@ export default async function SessionPage({
 
       <div className={`grid gap-6 ${learnerMode ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"}`}>
         <div>
+          {bbo ? (
+            <BboTable
+              sessionId={sessionId}
+              state={state}
+              score={score}
+              visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
+              legalNow={legalNow ? [...legalNow] : null}
+              callsNow={callsNow ? [...callsNow] : null}
+              myTurn={myTurn}
+              mySeat={mySeat}
+              dummy={dummy}
+              actingSeat={actingSeat}
+              actingIsHuman={actingIsHuman}
+              dealer={record.board.dealer}
+              auctionRows={auctionRows as never}
+              plate={bboPlate}
+            />
+          ) : (
+          <>
           {/* The table — green felt, BBO-style */}
           <div className="rounded-2xl border border-emerald-950/60 bg-[radial-gradient(120%_120%_at_50%_30%,#35825e_0%,#256a49_65%,#1c573a_100%)] p-3 shadow-md sm:p-6 xl:p-8">
             {/* North */}
@@ -645,6 +817,8 @@ export default async function SessionPage({
               </p>
             )}
           </div>
+          </>
+          )}
         </div>
 
         {/* The verification rail */}
@@ -735,7 +909,7 @@ export default async function SessionPage({
       {editDeal && !learnerMode && (
         <div className="fixed inset-0 z-50">
           <Link
-            href={`/bridge/table/${sessionId}?paused=${Date.now()}`}
+            href={`/bridge/table/${sessionId}?paused=${Date.now()}${bbo ? "&skin=bbo" : ""}`}
             aria-label="Close the deal editor"
             className="absolute inset-0 bg-black/50"
           />
@@ -753,7 +927,7 @@ export default async function SessionPage({
                 </p>
               </div>
               <Link
-                href={`/bridge/table/${sessionId}?paused=${Date.now()}`}
+                href={`/bridge/table/${sessionId}?paused=${Date.now()}${bbo ? "&skin=bbo" : ""}`}
                 className="flex-none rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
               >
                 ✕ back to the board
@@ -766,6 +940,7 @@ export default async function SessionPage({
             )}
             <form action={redealEditedAction}>
               <input type="hidden" name="sessionId" value={sessionId} />
+              {bbo && <input type="hidden" name="skin" value="bbo" />}
               <DealEditor
                 initialName={
                   record.board.name.endsWith("(edited)")
