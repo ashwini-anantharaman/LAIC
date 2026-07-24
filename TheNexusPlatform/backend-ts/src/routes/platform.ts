@@ -25,6 +25,8 @@ import { slugify } from "../platformLocalStore";
 import * as catalogue from "../accessCatalogue/store";
 import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
 import { resolveCapabilities, surfacesForCapabilities } from "../accessCatalogue/resolver";
+import { capabilitiesFor } from "../accessCatalogue/enforce";
+import type { ProviderId } from "../accessCatalogue/types";
 import { isOfferingAdmin } from "../permissions";
 import {
   canViewStage,
@@ -2131,6 +2133,20 @@ platformRouter.get("/catalogues/:provider_id", async (c) => {
   if (!catalogue.isProviderId(id)) throw new HttpError(404, "Unknown catalogue provider");
   return c.json(await catalogue.getCatalogue(id));
 });
+// The caller's own effective capabilities for a provider scope — the authority
+// the apps use to decide what a person can do. Read-only.
+platformRouter.get("/me/capabilities", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const providerId = c.req.query("provider");
+  if (!providerId || !catalogue.isProviderId(providerId)) throw new HttpError(400, "provider query param required");
+  const caps = await capabilitiesFor(user, {
+    providerId: providerId as ProviderId,
+    orgId: c.req.query("org") ?? null,
+    programId: c.req.query("program") ?? null,
+  });
+  return c.json({ provider: providerId, capabilities: [...caps] });
+});
 // Preview: given capability ids (?capabilities=a,b), the validated set + the
 // surfaces they unlock. The role builder + enforcement use the same expansion.
 platformRouter.get("/catalogues/:provider_id/resolve", async (c) => {
@@ -2381,9 +2397,15 @@ const scopedRoleSchema = z.object({
   // Fine-grained capability ids from the Access Catalogue (folded into perms).
   capabilities: z.array(z.string()).optional(),
 });
-/** Merge fine-grained capability ids into a role's perms blob (additive). */
-function _permsWithCapabilities(perms: Record<string, unknown>, capabilities?: string[]): Record<string, unknown> {
-  return capabilities !== undefined ? { ...perms, capabilities } : perms;
+/** Merge fine-grained capability ids into a role's perms blob (additive),
+ *  sanitized against the given catalogue(s) so unknown/reserved ids are dropped. */
+async function _permsWithCapabilities(
+  perms: Record<string, unknown>,
+  capabilities: string[] | undefined,
+  providers: ProviderId[],
+): Promise<Record<string, unknown>> {
+  if (capabilities === undefined) return perms;
+  return { ...perms, capabilities: await catalogue.validGrantsAcross(providers, capabilities) };
 }
 
 platformRouter.get("/orgs/:org_id/roles", async (c) => {
@@ -2400,7 +2422,7 @@ platformRouter.post("/orgs/:org_id/roles", async (c) => {
   const orgId = c.req.param("org_id");
   await _requireOrgArea(user, orgId, "team", "edit");
   const req = parseBody(scopedRoleSchema, await c.req.json());
-  const row = await graph.createOrgRole(orgId, req.name, _permsWithCapabilities(req.perms, req.capabilities), req.display_as_group, req.parent_group_id);
+  const row = await graph.createOrgRole(orgId, req.name, await _permsWithCapabilities(req.perms, req.capabilities, ["org-console"]), req.display_as_group, req.parent_group_id);
   await db.recordAuditEvent("organization.role.created", {
     orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { name: req.name },
   });
@@ -2761,7 +2783,7 @@ platformRouter.post("/admin/nexus/roles", async (c) => {
   _requirePlatformAdmin(user);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(scopedRoleSchema, await c.req.json());
-  return c.json(await graph.createNexusRole(req.name, _permsWithCapabilities(req.perms, req.capabilities), req.display_as_group, req.parent_group_id));
+  return c.json(await graph.createNexusRole(req.name, await _permsWithCapabilities(req.perms, req.capabilities, ["nexus-console"]), req.display_as_group, req.parent_group_id));
 });
 
 platformRouter.get("/admin/nexus/team", async (c) => {

@@ -13,6 +13,9 @@ import { HttpError } from "../httpError";
 import * as db from "../platformDb";
 import { dbEnabled } from "../db/client";
 import * as graph from "../db/orgGraphRepo";
+import { validGrantsAcross } from "../accessCatalogue/store";
+import { requireCapability } from "../accessCatalogue/enforce";
+import type { ProviderId } from "../accessCatalogue/types";
 import { isOfferingAdmin } from "../permissions";
 import { BRIDGE_PREBUILT_ROLES } from "../platformAccess";
 import {
@@ -173,6 +176,9 @@ offeringsRouter.post("/programs/:program_id/offerings", async (c) => {
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
   _requireOfferingAdmin(user, program.org_id, programId);
+  // Fine-grained gate (Access Catalogue): only bites for roles that carry
+  // capabilities; structural tiers + legacy coarse roles are unaffected.
+  await requireCapability(user, { providerId: "program-console", orgId: program.org_id, programId }, "program.offerings.create");
   if (user.role !== "platform_admin" && ["course", "challenge", "app"].includes(req.offering_type)) {
     const caps = await db.getOrgCapabilities(program.org_id);
     if (!(caps.offeringTypes as Row)[req.offering_type]) {
@@ -873,8 +879,11 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   // created_by is provenance only; skip it to avoid the demo-mode auth-id vs
   // profile-id mismatch (the FK targets profiles.id).
   const perms = _permsWithinFeatures(req.perms, program.features);
+  const validCaps = req.capabilities !== undefined
+    ? await validGrantsAcross(["program-console", "learning", "bridge"], req.capabilities)
+    : undefined;
   const finalPerms: Record<string, unknown> =
-    req.capabilities !== undefined ? { ...perms, capabilities: req.capabilities } : perms;
+    validCaps !== undefined ? { ...perms, capabilities: validCaps } : perms;
   const row = await graph.createProgramRole(
     program.org_id, programId, req.name, finalPerms, null, req.display_as_group, req.parent_group_id,
   );
@@ -902,8 +911,14 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
   }
   // Fold fine-grained capabilities into perms without wiping the area perms.
   if (req.capabilities !== undefined) {
+    const providers: ProviderId[] = existing.program_id
+      ? ["program-console", "learning", "bridge"]
+      : existing.organization_id
+        ? ["org-console"]
+        : ["nexus-console"];
+    const validCaps = await validGrantsAcross(providers, req.capabilities);
     const base = (perms ?? (existing.perms as Record<string, unknown>) ?? {}) as Record<string, unknown>;
-    perms = { ...base, capabilities: req.capabilities };
+    perms = { ...base, capabilities: validCaps };
   }
   const row = await graph.updateProgramRole(roleId, {
     name: req.name, perms, displayAsGroup: req.display_as_group, parentGroupId: req.parent_group_id,

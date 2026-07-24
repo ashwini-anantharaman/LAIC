@@ -8,6 +8,7 @@ import * as db from "../platformDb";
 import type { CapabilityCatalogueDocument, ProviderId } from "./types";
 import { PROVIDER_IDS } from "./types";
 import { DEFAULT_CATALOGUES } from "./defaults";
+import { grantableCapabilities } from "./resolver";
 
 const settingKey = (id: string) => `access_catalogue:${id}`;
 
@@ -45,4 +46,17 @@ export async function saveCatalogue(
 export async function resetCatalogue(providerId: ProviderId): Promise<CapabilityCatalogueDocument> {
   await db.setPlatformSetting(settingKey(providerId), DEFAULT_CATALOGUES[providerId] as unknown as Record<string, unknown>);
   return DEFAULT_CATALOGUES[providerId];
+}
+
+/** Keep only capability ids that are grantable in one of the given providers'
+ *  catalogues — how a role save is sanitized against the inventory (drops
+ *  unknown or reserved ids so junk/forged grants can't be stored). */
+export async function validGrantsAcross(providerIds: ProviderId[], ids: string[]): Promise<string[]> {
+  if (!ids?.length) return [];
+  const ok = new Set<string>();
+  for (const p of providerIds) {
+    const doc = await getCatalogue(p);
+    for (const id of grantableCapabilities(doc)) ok.add(id);
+  }
+  return [...new Set(ids)].filter((id) => ok.has(id));
 }
