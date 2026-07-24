@@ -19,6 +19,7 @@ import { Label } from "@/app/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
 import {
   addOrgAdmin,
+  checkOrgSlug,
   getOrgCapabilities,
   listAllOrganizations,
   listOrgAdmins,
@@ -36,6 +37,10 @@ import { Switch } from "@/app/components/ui/switch";
 import { EmptyState, PageHeader, Pill, Spinner, StatPill, statusTone } from "@/nexus/ui/kit";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+
+/** Mirrors the backend slug rule so the preview matches the real URL. */
+const slugify = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 export function OperatorOrgs() {
   const [orgs, setOrgs] = useState<OrgSummary[] | null>(null);
@@ -395,15 +400,43 @@ function ProvisionDialog({
   onDone: () => void;
 }) {
   const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
   const [admins, setAdmins] = useState<AdminDraft[]>([{ email: "", displayName: "" }]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ProvisionResult | null>(null);
+  const [slugStatus, setSlugStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+
+  // Until the operator edits the slug, it tracks the name (a sensible default).
+  const effectiveSlug = slugify(slugEdited ? slug : name);
 
   function reset() {
     setName("");
+    setSlug("");
+    setSlugEdited(false);
     setAdmins([{ email: "", displayName: "" }]);
     setResult(null);
+    setSlugStatus("idle");
   }
+
+  // Debounced availability check against the normalized slug.
+  useEffect(() => {
+    if (!effectiveSlug) {
+      setSlugStatus("idle");
+      return;
+    }
+    setSlugStatus("checking");
+    let live = true;
+    const t = setTimeout(() => {
+      checkOrgSlug(effectiveSlug)
+        .then((r) => live && setSlugStatus(r.available ? "available" : "taken"))
+        .catch(() => live && setSlugStatus("idle"));
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [effectiveSlug]);
 
   function updateAdmin(i: number, patch: Partial<AdminDraft>) {
     setAdmins((cur) => cur.map((a, idx) => (idx === i ? { ...a, ...patch } : a)));
@@ -418,6 +451,7 @@ function ProvisionDialog({
       const res = await provisionOrganization(
         name.trim(),
         validAdmins.map((a) => ({ email: a.email.trim(), display_name: a.displayName.trim() || undefined })),
+        effectiveSlug || undefined,
       );
       setResult(res);
       toast.success(`Provisioned ${name.trim()}`);
@@ -485,6 +519,30 @@ function ProvisionDialog({
                 placeholder="e.g. Riverside Robotics Lab"
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="org-slug">URL slug</Label>
+              <Input
+                id="org-slug"
+                value={slugEdited ? slug : effectiveSlug}
+                onChange={(e) => {
+                  setSlugEdited(true);
+                  setSlug(e.target.value);
+                }}
+                placeholder="riverside-robotics"
+              />
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="font-mono text-muted-foreground truncate">
+                  nexus /@/{effectiveSlug || "…"}
+                </span>
+                {!effectiveSlug ? null : slugStatus === "checking" ? (
+                  <span className="text-muted-foreground shrink-0">Checking…</span>
+                ) : slugStatus === "available" ? (
+                  <span className="text-emerald-600 dark:text-emerald-400 shrink-0">Available</span>
+                ) : slugStatus === "taken" ? (
+                  <span className="text-red-600 dark:text-red-400 shrink-0">Taken — pick another</span>
+                ) : null}
+              </div>
+            </div>
             <div className="space-y-2">
               <Label>
                 Administrators <span className="text-xs font-normal text-muted-foreground">the first becomes owner</span>
@@ -524,7 +582,10 @@ function ProvisionDialog({
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button onClick={submit} disabled={busy || !name.trim() || validAdmins.length === 0}>
+              <Button
+                onClick={submit}
+                disabled={busy || !name.trim() || validAdmins.length === 0 || !effectiveSlug || slugStatus === "taken" || slugStatus === "checking"}
+              >
                 {busy ? "Provisioning…" : "Provision"}
               </Button>
             </>

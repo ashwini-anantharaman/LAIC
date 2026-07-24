@@ -21,6 +21,7 @@ import { dbEnabled } from "../db/client";
 import { provisionOrganization } from "../db/provisioning";
 import * as graph from "../db/orgGraphRepo";
 import { getStorage, orgKey } from "../storage";
+import { slugify } from "../platformLocalStore";
 import { isOfferingAdmin } from "../permissions";
 import {
   canViewStage,
@@ -1422,6 +1423,16 @@ platformRouter.get("/orgs/by-slug/:slug", async (c) => {
   });
 });
 
+// Is a URL slug free? (operator provisioning check) — returns the normalized
+// slug so the UI shows exactly what the URL will be.
+platformRouter.get("/orgs/slug-available/:slug", async (c) => {
+  const user = await getCurrentUser(c);
+  await _requireNexusArea(user, "organizations", "view");
+  const slug = slugify(c.req.param("slug") ?? "");
+  const existing = slug ? await db.getOrganizationBySlug(slug) : null;
+  return c.json({ slug, available: !!slug && !existing });
+});
+
 platformRouter.get("/join-codes/:code", async (c) => {
   const code = c.req.param("code");
   const row = await db.getJoinCode(code);
@@ -2783,6 +2794,8 @@ platformRouter.get("/admin/organizations", async (c) => {
 const PROVISION_PASSWORD = "NexusDev2026!";
 const provisionOrgSchema = z.object({
   name: z.string().min(1),
+  // Optional operator-chosen URL slug; normalized + made unique server-side.
+  slug: z.string().trim().max(63).optional(),
   admins: z.array(z.object({ email: z.string().email(), display_name: z.string().nullish() })).min(1),
 });
 
@@ -2806,6 +2819,7 @@ platformRouter.post("/admin/organizations", async (c) => {
   const ownerAcct = await _resolveOrCreateAccount(owner.email);
   const result = await provisionOrganization({
     name: req.name,
+    slug: req.slug?.trim() || undefined,
     owner: { userId: ownerAcct.authId, email: owner.email.trim().toLowerCase(), displayName: owner.display_name ?? undefined },
     // The operator explicitly designating this account as owner is consent to
     // let an existing account (from another org) also own this one.

@@ -241,6 +241,11 @@ export async function createOrganization(name: string): Promise<OrgSummary> {
   return request<OrgSummary>("/api/platform/orgs", { method: "POST", body: JSON.stringify({ name }) });
 }
 
+/** Operator: is a URL slug free? Returns the normalized slug the URL would use. */
+export async function checkOrgSlug(slug: string): Promise<{ slug: string; available: boolean }> {
+  return request<{ slug: string; available: boolean }>(`/api/platform/orgs/slug-available/${encodeURIComponent(slug)}`);
+}
+
 export interface ProvisionedAdmin {
   email: string;
   role: string;
@@ -263,10 +268,11 @@ export interface ProvisionResult {
 export async function provisionOrganization(
   name: string,
   admins: { email: string; display_name?: string }[],
+  slug?: string,
 ): Promise<ProvisionResult> {
   return request<ProvisionResult>("/api/platform/admin/organizations", {
     method: "POST",
-    body: JSON.stringify({ name, admins }),
+    body: JSON.stringify({ name, admins, slug }),
   });
 }
 
