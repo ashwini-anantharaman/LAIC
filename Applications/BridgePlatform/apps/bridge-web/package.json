@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Bridge Platform web app: knowledge-base workspace, players, verification table (rebuilding on the knowledge-rework model).",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
