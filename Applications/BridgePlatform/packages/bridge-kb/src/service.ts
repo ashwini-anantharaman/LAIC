@@ -8,6 +8,12 @@ import type { CompiledKb } from "./compiled";
 import { compileKb } from "./compile";
 import { newId } from "./ids";
 import type {
+  KbBenchmarkCursor,
+  KbBenchmarkDivergence,
+  KbBenchmarkMarking,
+  KbBenchmarkParams,
+  KbBenchmarkRun,
+  KbBenchmarkStats,
   KbEdge,
   KbPack,
   KbPackVersion,
@@ -988,6 +994,114 @@ export class KbService {
       resolvedBy,
       resolvedAt: this.now(),
     });
+  }
+
+  // ---- benchmark (Pillar B: BEN objective assessment) ------------------------
+
+  /** Mint a running, compile-pinned benchmark run at its start cursor. */
+  async createBenchmarkRun(input: {
+    kbId: string;
+    params: KbBenchmarkParams;
+    compileRef: string;
+    createdBy: string;
+  }): Promise<KbBenchmarkRun> {
+    const run: KbBenchmarkRun = {
+      runId: newId("bm"),
+      kbId: input.kbId,
+      params: input.params,
+      compileRef: input.compileRef,
+      status: "running",
+      cursor: { nextSeed: input.params.seedStart, sequencesSeen: [] },
+      divergences: [],
+      stats: {
+        dealsPlayed: 0,
+        dealsSkippedDup: 0,
+        sequences: 0,
+        matches: 0,
+        divergences: 0,
+      },
+      createdBy: input.createdBy,
+      createdAt: this.now(),
+      updatedAt: this.now(),
+    };
+    await this.store.putBenchmarkRun(run);
+    return run;
+  }
+
+  async getBenchmarkRun(runId: string): Promise<KbBenchmarkRun | null> {
+    return this.store.getBenchmarkRun(runId);
+  }
+
+  async listBenchmarkRunsForKb(kbId: string): Promise<KbBenchmarkRun[]> {
+    return this.store.listBenchmarkRunsForKb(kbId);
+  }
+
+  /**
+   * Persist one batch's results: advance the cursor, APPEND the batch's new
+   * divergences to the frozen list, overwrite stats, and flip to complete when
+   * a stop condition was reached. Divergences are append-only; cursor/stats
+   * are the running totals the batch computed.
+   */
+  async advanceBenchmarkRun(input: {
+    runId: string;
+    cursor: KbBenchmarkCursor;
+    appendDivergences: KbBenchmarkDivergence[];
+    stats: KbBenchmarkStats;
+    complete?: boolean;
+  }): Promise<KbBenchmarkRun> {
+    const run = await this.store.getBenchmarkRun(input.runId);
+    if (!run) throw new Error(`No benchmark run ${input.runId}`);
+    const updated: KbBenchmarkRun = {
+      ...run,
+      cursor: input.cursor,
+      divergences: [...run.divergences, ...input.appendDivergences],
+      stats: input.stats,
+      status: input.complete ? "complete" : run.status,
+      updatedAt: this.now(),
+    };
+    await this.store.putBenchmarkRun(updated);
+    return updated;
+  }
+
+  async completeBenchmarkRun(runId: string): Promise<void> {
+    const run = await this.store.getBenchmarkRun(runId);
+    if (!run) throw new Error(`No benchmark run ${runId}`);
+    await this.store.putBenchmarkRun({
+      ...run,
+      status: "complete",
+      updatedAt: this.now(),
+    });
+  }
+
+  /**
+   * Record (or update) a "system difference" verdict for a divergence
+   * signature. One marking per (kbId, signature): a repeat verdict updates the
+   * note in place rather than minting a duplicate.
+   */
+  async putBenchmarkMarking(input: {
+    kbId: string;
+    signature: string;
+    note?: string;
+    createdBy: string;
+  }): Promise<KbBenchmarkMarking> {
+    const existing = (await this.store.listBenchmarkMarkingsForKb(input.kbId)).find(
+      (m) => m.signature === input.signature,
+    );
+    const marking: KbBenchmarkMarking = {
+      markingId: existing?.markingId ?? newId("bmk"),
+      kbId: input.kbId,
+      signature: input.signature,
+      verdict: "system_difference",
+      note: input.note,
+      createdBy: existing?.createdBy ?? input.createdBy,
+      createdAt: existing?.createdAt ?? this.now(),
+    };
+    await this.store.putBenchmarkMarking(marking);
+    return marking;
+  }
+
+  async listBenchmarkMarkingsForKb(kbId: string): Promise<KbBenchmarkMarking[]> {
+    return this.store.listBenchmarkMarkingsForKb(kbId);
   }
 
   // ---- compile (auto on save; last-good protection) --------------------------------

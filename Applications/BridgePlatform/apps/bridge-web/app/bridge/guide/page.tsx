@@ -386,7 +386,7 @@ export default async function GuidePage() {
               <dt className="font-medium">totalPoints</dt>
               <dd className="text-neutral-600">HCP plus length points (one per card past the fourth in 3+ card suits).<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"totalPoints":{"min":13}}`}</code></dd>
               <dt className="font-medium">suitLength</dt>
-              <dd className="text-neutral-600">Cards held in a suit — a literal suit (<code className="rounded bg-neutral-100 px-1 text-xs">&quot;S&quot; &quot;H&quot; &quot;D&quot; &quot;C&quot;</code>) or a contextual one: <code className="rounded bg-neutral-100 px-1 text-xs">partner_last_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">partner_first_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_longest_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_shortest_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_first_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_last_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">rho_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">lho_bid_suit</code>, or <code className="rounded bg-neutral-100 px-1 text-xs">only_unbid_suit</code> (the fourth suit — resolves only when exactly three are bid).<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"suitLength":{"suit":"partner_last_bid_suit","min":3}}`}</code></dd>
+              <dd className="text-neutral-600">Cards held in a suit — a literal suit (<code className="rounded bg-neutral-100 px-1 text-xs">&quot;S&quot; &quot;H&quot; &quot;D&quot; &quot;C&quot;</code>) or a contextual one: <code className="rounded bg-neutral-100 px-1 text-xs">partner_last_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">partner_first_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_longest_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_shortest_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_first_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">own_last_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">rho_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">lho_bid_suit</code>, <code className="rounded bg-neutral-100 px-1 text-xs">only_unbid_suit</code> (the fourth suit — resolves only when exactly three are bid), or <code className="rounded bg-neutral-100 px-1 text-xs">agreed_suit</code> (the partnership&apos;s agreed trump suit — a suit both named, else the best known 8-card combined fit).<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"suitLength":{"suit":"partner_last_bid_suit","min":3}}`}</code></dd>
               <dt className="font-medium">longestSuitAmong</dt>
               <dd className="text-neutral-600">My longest suit is one of these.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"longestSuitAmong":{"suits":["H","S"]}}`}</code></dd>
               <dt className="font-medium">balanced</dt>
@@ -406,6 +406,42 @@ export default async function GuidePage() {
               <dt className="font-medium">playingTricks</dt>
               <dd className="text-neutral-600">Estimated playing tricks — the preempt-discipline count (an ace is one; a king one with company, half alone; a queen half with three; plus one per card past the third in a suit).<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"playingTricks":{"min":6}}`}</code></dd>
             </dl>
+            <p className="mt-4 text-sm font-semibold">Partnership checks — reasoning about the combined hands</p>
+            <p className="mt-1 text-sm text-neutral-600">
+              These read what partner&apos;s (and your own) earlier calls <b>showed</b>: the engine
+              replays the auction against the rules&apos; <code className="rounded bg-neutral-100 px-1 text-xs">shows</code>/<code className="rounded bg-neutral-100 px-1 text-xs">ask</code> metadata
+              (below) and attributes a meaning to each call. When no history is known a floor reads as
+              0 and a ceiling as unknown, so a min-check with no evidence fails rather than firing blind.
+            </p>
+            <dl className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[10.5rem_1fr]">
+              <dt className="font-medium">partnerShownHcp</dt>
+              <dd className="text-neutral-600">Partner has PROMISED this HCP range.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"partnerShownHcp":{"min":6}}`}</code></dd>
+              <dt className="font-medium">partnerShownLength</dt>
+              <dd className="text-neutral-600">Partner has shown this many cards in a suit.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"partnerShownLength":{"suit":"agreed_suit","min":4}}`}</code></dd>
+              <dt className="font-medium">combinedHcp</dt>
+              <dd className="text-neutral-600">My HCP plus partner&apos;s shown bound — <code className="rounded bg-neutral-100 px-1 text-xs">min</code> uses partner&apos;s floor, <code className="rounded bg-neutral-100 px-1 text-xs">max</code> partner&apos;s ceiling (fails if partner&apos;s ceiling is unknown).<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"combinedHcp":{"min":33}}`}</code></dd>
+              <dt className="font-medium">combinedKeycards</dt>
+              <dd className="text-neutral-600">My keycards for the agreed suit plus partner&apos;s decoded ask reply.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"combinedKeycards":{"min":4}}`}</code></dd>
+              <dt className="font-medium">keycardsMissing</dt>
+              <dd className="text-neutral-600">Keycards the partnership is missing (5 − combined) — the sign-off test.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"keycardsMissing":{"min":2}}`}</code></dd>
+              <dt className="font-medium">fitEstablished</dt>
+              <dd className="text-neutral-600">A trump fit — combined length reaches <code className="rounded bg-neutral-100 px-1 text-xs">minCombined</code> (default 8) in a named suit, <code className="rounded bg-neutral-100 px-1 text-xs">&quot;any&quot;</code> suit, or <code className="rounded bg-neutral-100 px-1 text-xs">&quot;any_major&quot;</code>.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"fitEstablished":{"suit":"any_major"}}`}</code></dd>
+              <dt className="font-medium">unshownSupport</dt>
+              <dd className="text-neutral-600">Delayed support — I HOLD <code className="rounded bg-neutral-100 px-1 text-xs">min</code>+ cards but have not yet shown that length.<br /><code className="rounded bg-neutral-100 px-1 text-xs">{`{"unshownSupport":{"suit":"partner_first_bid_suit","min":3}}`}</code></dd>
+            </dl>
+            <p className="mt-4 text-sm font-semibold">A bid&apos;s meaning — shows &amp; ask</p>
+            <p className="mt-1 text-sm text-neutral-600">
+              Each rule may carry <b>shows</b> (what the bid promises) and <b>ask</b> (a
+              Blackwood/RKCB question). <b>shows</b> is optional — leave it blank and the compiler
+              derives it from the conditions; give it when a bid shows more than it tests. The
+              partnership checks above read this metadata across the whole auction.
+            </p>
+            <p className="mt-2 text-sm">
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"hcp":{"min":6},"suits":[{"suit":"S","min":4}],"forcing":true}`}</code>{" "}
+              (shows), and{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">{`{"id":"rkcb","responses":{"5D":{"keycards":[1,4]},"5H":{"keycards":[2]}}}`}</code>{" "}
+              (ask — each reply&apos;s meaning as a set of possible values).
+            </p>
             <p className="mt-3 text-sm text-neutral-600">
               <b>Combining checks:</b>{" "}
               <code className="rounded bg-neutral-100 px-1 text-xs">{`{"all":[…]}`}</code> means
@@ -446,8 +482,10 @@ export default async function GuidePage() {
               <code className="rounded bg-neutral-100 px-1 text-xs">{`{"type":"bid_longest","among":["H","S"],"level":2}`}</code> (my
               longest among these; cheapest legal level if omitted), and{" "}
               <code className="rounded bg-neutral-100 px-1 text-xs">{`{"type":"bid_suit","suit":"rho_bid_suit","level":2}`}</code> (a
-              contextual suit — cue-bids, rebids, fourth suit; it simply doesn&apos;t act when
-              the reference can&apos;t be resolved). Strains are{" "}
+              contextual suit — cue-bids, rebids, the fourth suit, or the{" "}
+              <code className="rounded bg-neutral-100 px-1 text-xs">agreed_suit</code> for &ldquo;bid
+              6 of the fit&rdquo;; it simply doesn&apos;t act when the reference can&apos;t be
+              resolved). Strains are{" "}
               <code className="rounded bg-neutral-100 px-1 text-xs">&quot;C&quot; &quot;D&quot; &quot;H&quot; &quot;S&quot; &quot;N&quot;</code>.
             </p>
           </div>

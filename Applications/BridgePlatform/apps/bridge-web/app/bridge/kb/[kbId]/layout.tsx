@@ -110,6 +110,7 @@ export default async function KbLayout({
           <TabLink href={`${base}/coverage`} label="Coverage" />
           <TabLink href={`${base}/findings`} label="Findings" />
           <TabLink href={`${base}/source-audit`} label="Source audit" />
+          <TabLink href={`${base}/benchmark`} label="Benchmark" />
           <TabLink href={`${base}/sets`} label="Knowledge sets" />
           <TabLink href={`${base}/sources`} label="Sources" />
           <TabLink href={`${base}/versions`} label="Versions" />

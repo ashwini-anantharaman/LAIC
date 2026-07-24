@@ -17,6 +17,8 @@ import type {
   LeadSpec,
   NumParam,
   PlayRuleSpec,
+  RuleAsk,
+  RuleShows,
   SettingSpec,
   Strain,
 } from "@bridge/kb";
@@ -84,6 +86,33 @@ function conditions(fd: FormData, prefix: string): HandCondition {
           ...(max !== undefined && { max }),
         },
       });
+  }
+  // Partnership rows (Pillar A) — combined HCP, a declared fit, partner's
+  // shown length. Field names are the stable contract with ItemEditor.tsx.
+  const combHcpMin = numParam(str(fd, `${prefix}:combinedHcpMin`));
+  const combHcpMax = numParam(str(fd, `${prefix}:combinedHcpMax`));
+  if (combHcpMin !== undefined || combHcpMax !== undefined)
+    all.push({
+      combinedHcp: {
+        ...(combHcpMin !== undefined && { min: combHcpMin }),
+        ...(combHcpMax !== undefined && { max: combHcpMax }),
+      },
+    });
+  const fitSuit = str(fd, `${prefix}:fitSuit`);
+  if (fitSuit) {
+    const fitMin = numParam(str(fd, `${prefix}:fitMin`));
+    all.push({
+      fitEstablished: {
+        suit: fitSuit as never,
+        ...(fitMin !== undefined && { minCombined: fitMin }),
+      },
+    });
+  }
+  const psSuit = str(fd, `${prefix}:psSuit`);
+  if (psSuit) {
+    const psMin = numParam(str(fd, `${prefix}:psLenMin`));
+    if (psMin !== undefined)
+      all.push({ partnerShownLength: { suit: psSuit as never, min: psMin } });
   }
   const extra = str(fd, `${prefix}:conditionsJson`);
   if (extra) all.push(JSON.parse(extra) as HandCondition);
@@ -175,6 +204,11 @@ function auctionRules(fd: FormData): AuctionRuleSpec[] {
     if (str(fd, `${p}:remove`) === "on") continue;
     const label = str(fd, `${p}:label`);
     if (!label) continue;
+    // Meaning metadata (Pillar A): a compact JSON box each — exotic shapes and
+    // ask/response tables ride through verbatim. Empty = omit (compiler derives
+    // `shows` from conditions).
+    const showsRaw = str(fd, `${p}:showsJson`);
+    const askRaw = str(fd, `${p}:askJson`);
     rules.push({
       key: str(fd, `${p}:key`) || `r${i}`,
       label,
@@ -182,6 +216,8 @@ function auctionRules(fd: FormData): AuctionRuleSpec[] {
       conditions: conditions(fd, p),
       action: auctionAction(fd, p),
       priority: num(fd, `${p}:priority`) ?? 10,
+      ...(showsRaw && { shows: JSON.parse(showsRaw) as RuleShows }),
+      ...(askRaw && { ask: JSON.parse(askRaw) as RuleAsk }),
     });
   }
   return rules;

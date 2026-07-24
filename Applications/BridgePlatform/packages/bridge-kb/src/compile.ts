@@ -17,7 +17,7 @@ import type {
   CompileError,
 } from "./compiled";
 import { hashValue } from "./ids";
-import type { HandCondition, NumParam, SignalSpec } from "./language";
+import type { HandCondition, NumParam, RuleShows, SignalSpec, Suit } from "./language";
 import type { KbEdge, KbPack, KnowledgeItem, KnowledgeType } from "./model";
 
 /**
@@ -56,6 +56,43 @@ function settingRefs(cond: HandCondition, into: Set<string>): void {
       }
     }
   }
+}
+
+const LITERAL_SUITS: readonly string[] = ["S", "H", "D", "C"];
+const litNum = (p: NumParam | undefined): number | undefined =>
+  typeof p === "number" ? p : undefined;
+const bound = (min?: number, max?: number): { min?: number; max?: number } | undefined =>
+  min === undefined && max === undefined
+    ? undefined
+    : { ...(min !== undefined && { min }), ...(max !== undefined && { max }) };
+
+/**
+ * Derive what a bid SHOWS (Pillar A) from its `all`-conditions when the spec
+ * gives no explicit `shows`. Only a flat top-level `all` (or a single
+ * predicate) contributes — `any`/`not` and nested trees promise nothing — and
+ * only LITERAL numeric bounds on literal suits are captured ($setting bounds
+ * can't be resolved without a player's values). Returns undefined when the rule
+ * constrains nothing derivable.
+ */
+export function deriveShows(cond: HandCondition): RuleShows | undefined {
+  const parts: HandCondition[] = "all" in cond ? cond.all : [cond];
+  if (!Array.isArray(parts)) return undefined;
+  const shows: RuleShows = {};
+  for (const part of parts) {
+    if ("hcp" in part) {
+      shows.hcp = bound(litNum(part.hcp.min), litNum(part.hcp.max)) ?? shows.hcp;
+    } else if ("totalPoints" in part) {
+      shows.tp = bound(litNum(part.totalPoints.min), litNum(part.totalPoints.max)) ?? shows.tp;
+    } else if (
+      "suitLength" in part &&
+      typeof part.suitLength.suit === "string" &&
+      LITERAL_SUITS.includes(part.suitLength.suit)
+    ) {
+      const b = bound(litNum(part.suitLength.min), litNum(part.suitLength.max));
+      if (b) (shows.suits ??= []).push({ suit: part.suitLength.suit as Suit, ...b });
+    }
+  }
+  return shows.hcp || shows.tp || shows.suits ? shows : undefined;
 }
 
 export interface CompileInput {
@@ -127,6 +164,7 @@ export function compileKb(input: CompileInput): CompileResult {
                 message: `rule "${spec.key}" references unknown setting "${ref}"`,
               });
           }
+          const shows = spec.shows ?? deriveShows(spec.conditions);
           auctionRules.push({
             ruleId: `${item.itemId}.${spec.key}`,
             label: spec.label,
@@ -136,6 +174,8 @@ export function compileKb(input: CompileInput): CompileResult {
             order: order(item.knowledgeType, spec.priority),
             settingGates: gates,
             provenance,
+            ...(shows && { shows }),
+            ...(spec.ask && { ask: spec.ask }),
           });
         }
         break;

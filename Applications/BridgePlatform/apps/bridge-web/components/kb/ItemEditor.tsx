@@ -35,6 +35,11 @@ interface TypedConditions {
   tpMax?: NumParam;
   balanced?: boolean;
   suits: { suit: string; min?: NumParam; max?: NumParam }[];
+  /** Partnership rows (Pillar A). */
+  combinedHcpMin?: NumParam;
+  combinedHcpMax?: NumParam;
+  fit?: { suit: string; minCombined?: NumParam };
+  partnerShownLen?: { suit: string; min?: NumParam };
   /** Set when the tree exceeds the typed subset — goes to the JSON box. */
   overflow?: HandCondition;
 }
@@ -60,6 +65,17 @@ function decompose(cond: HandCondition): TypedConditions {
         min: part.suitLength.min,
         max: part.suitLength.max,
       });
+    } else if ("combinedHcp" in part) {
+      out.combinedHcpMin = part.combinedHcp.min;
+      out.combinedHcpMax = part.combinedHcp.max;
+    } else if ("fitEstablished" in part && !out.fit) {
+      out.fit = { suit: String(part.fitEstablished.suit ?? "any"), minCombined: part.fitEstablished.minCombined };
+    } else if (
+      "partnerShownLength" in part &&
+      !out.partnerShownLen &&
+      typeof part.partnerShownLength.suit === "string"
+    ) {
+      out.partnerShownLen = { suit: part.partnerShownLength.suit, min: part.partnerShownLength.min };
     } else {
       leftovers.push(part);
     }
@@ -121,6 +137,13 @@ interface RuleDraft extends ContextDraft {
   tpMin: string;
   balanced: string;
   suits: [SuitDraft, SuitDraft];
+  /** Partnership rows (Pillar A). */
+  combinedHcpMin: string;
+  combinedHcpMax: string;
+  fitSuit: string;
+  fitMin: string;
+  psSuit: string;
+  psLenMin: string;
   actionType: string;
   actionLevel: string;
   actionStrain: string;
@@ -128,6 +151,9 @@ interface RuleDraft extends ContextDraft {
   actionSuit: string;
   /** Serialized action for types beyond the dropdown (first_legal_of…). */
   actionJson: string;
+  /** Meaning metadata (Pillar A) as JSON — empty means compiler-derived. */
+  showsJson: string;
+  askJson: string;
   remove: boolean;
 }
 
@@ -179,6 +205,14 @@ function draftFrom(rule: AuctionRuleSpec | null, index: number): RuleDraft {
       { suit: c.suits[0]?.suit ?? "", min: showNum(c.suits[0]?.min), max: showNum(c.suits[0]?.max) },
       { suit: c.suits[1]?.suit ?? "", min: showNum(c.suits[1]?.min), max: showNum(c.suits[1]?.max) },
     ],
+    combinedHcpMin: showNum(c.combinedHcpMin),
+    combinedHcpMax: showNum(c.combinedHcpMax),
+    fitSuit: c.fit?.suit ?? "",
+    fitMin: showNum(c.fit?.minCombined),
+    psSuit: c.partnerShownLen?.suit ?? "",
+    psLenMin: showNum(c.partnerShownLen?.min),
+    showsJson: rule?.shows ? JSON.stringify(rule.shows) : "",
+    askJson: rule?.ask ? JSON.stringify(rule.ask) : "",
     actionType: a ? (TYPED_ACTIONS.has(a.type) ? a.type : "json") : "bid",
     actionLevel:
       a && "level" in a && a.level !== undefined
@@ -311,6 +345,23 @@ function ruleSentence(d: RuleDraft): ReactNode {
     else if (mx) hand.push(<>at most {mx} cards in {name}</>);
     else hand.push(<>some length in {name}</>);
   }
+  // Partnership phrases (Pillar A).
+  const cLo = numText(d.combinedHcpMin);
+  const cHi = numText(d.combinedHcpMax);
+  if (cLo && cHi) hand.push(`${cLo}–${cHi} combined HCP`);
+  else if (cLo) hand.push(`${cLo}+ combined HCP`);
+  else if (cHi) hand.push(`at most ${cHi} combined HCP`);
+  if (d.fitSuit) {
+    const where =
+      d.fitSuit === "any"
+        ? "any suit"
+        : d.fitSuit === "any_major"
+          ? "a major"
+          : suitName(d.fitSuit);
+    hand.push(<>a {numText(d.fitMin) || "8"}+ card fit in {where}</>);
+  }
+  if (d.psSuit && numText(d.psLenMin))
+    hand.push(<>partner has shown {numText(d.psLenMin)}+ cards in {suitName(d.psSuit)}</>);
 
   return (
     <>
@@ -787,6 +838,7 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
                 <option value="own_last_bid_suit">my last bid suit</option>
                 <option value="rho_bid_suit">RHO&apos;s bid suit</option>
                 <option value="only_unbid_suit">the fourth (only unbid) suit</option>
+                <option value="agreed_suit">the agreed suit (partnership fit)</option>
               </select>
             </label>
             {d.suits[i].suit ? (
@@ -816,6 +868,97 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
           </div>
           );
         })}
+        {/* Partnership (Pillar A): reason about the COMBINED hands. Blank =
+            no constraint. Field names are the itemForm.ts contract. */}
+        <details
+          className="sm:col-span-4"
+          open={Boolean(
+            d.combinedHcpMin || d.combinedHcpMax || d.fitSuit || d.psSuit,
+          )}
+        >
+          <summary className="cursor-pointer text-[11px] text-neutral-500">
+            Partnership — combined HCP, an agreed fit, partner&apos;s shown length
+          </summary>
+          <div className="mt-2 grid gap-2 sm:grid-cols-4">
+            <label>
+              <span className={label}>Combined HCP min</span>
+              <input
+                name={`${p}:combinedHcpMin`}
+                value={d.combinedHcpMin}
+                onChange={(e) => set({ combinedHcpMin: e.target.value })}
+                placeholder="25"
+                className={input}
+              />
+            </label>
+            <label>
+              <span className={label}>Combined HCP max</span>
+              <input
+                name={`${p}:combinedHcpMax`}
+                value={d.combinedHcpMax}
+                onChange={(e) => set({ combinedHcpMax: e.target.value })}
+                className={input}
+              />
+            </label>
+            <label>
+              <span className={label}>Fit established in…</span>
+              <select
+                name={`${p}:fitSuit`}
+                value={d.fitSuit}
+                onChange={(e) => set({ fitSuit: e.target.value })}
+                className={input}
+              >
+                <option value="">— no fit check</option>
+                <option value="any">any suit</option>
+                <option value="any_major">any major</option>
+                <option value="agreed_suit">the agreed suit</option>
+                <option value="S">♠ spades</option>
+                <option value="H">♥ hearts</option>
+                <option value="D">♦ diamonds</option>
+                <option value="C">♣ clubs</option>
+                <option value="partner_last_bid_suit">partner&apos;s last bid suit</option>
+                <option value="partner_first_bid_suit">partner&apos;s first bid suit</option>
+              </select>
+            </label>
+            <label>
+              <span className={label}>Fit min cards (default 8)</span>
+              <input
+                name={`${p}:fitMin`}
+                value={d.fitMin}
+                onChange={(e) => set({ fitMin: e.target.value })}
+                placeholder="8"
+                className={input}
+              />
+            </label>
+            <label className="sm:col-span-2">
+              <span className={label}>Partner has shown length in…</span>
+              <select
+                name={`${p}:psSuit`}
+                value={d.psSuit}
+                onChange={(e) => set({ psSuit: e.target.value })}
+                className={input}
+              >
+                <option value="">— no partner-length check</option>
+                <option value="agreed_suit">the agreed suit</option>
+                <option value="partner_last_bid_suit">partner&apos;s last bid suit</option>
+                <option value="partner_first_bid_suit">partner&apos;s first bid suit</option>
+                <option value="S">♠ spades</option>
+                <option value="H">♥ hearts</option>
+                <option value="D">♦ diamonds</option>
+                <option value="C">♣ clubs</option>
+              </select>
+            </label>
+            <label>
+              <span className={label}>Partner shown ≥</span>
+              <input
+                name={`${p}:psLenMin`}
+                value={d.psLenMin}
+                onChange={(e) => set({ psLenMin: e.target.value })}
+                placeholder="4"
+                className={input}
+              />
+            </label>
+          </div>
+        </details>
       </Band>
 
       <Band tag="Then" hint="the call to make (skipped if illegal in the live auction)" rail="border-l-neutral-500">
@@ -933,6 +1076,35 @@ function RuleRow({ rule, index }: Readonly<{ rule: AuctionRuleSpec | null; index
           defaultValue={c.overflow ? JSON.stringify(c.overflow, null, 1) : ""}
           className="mt-1 w-full rounded border border-neutral-300 p-2 font-mono text-xs"
         />
+      </details>
+
+      {/* Meaning metadata (Pillar A): what this bid SHOWS (leave blank to let
+          the compiler derive it from the conditions) and, for Blackwood-family
+          asks, the ASK table decoding partner's responses. */}
+      <details className="border-t border-neutral-100 px-3 py-2" open={Boolean(d.showsJson || d.askJson)}>
+        <summary className="cursor-pointer text-xs text-neutral-500">
+          Shows / Ask (JSON) — the bid&apos;s meaning; blank shows = derived from conditions
+        </summary>
+        <label className="mt-1 block">
+          <span className={label}>Shows (what this bid promises)</span>
+          <input
+            name={`${p}:showsJson`}
+            value={d.showsJson}
+            onChange={(e) => set({ showsJson: e.target.value })}
+            placeholder='{"hcp":{"min":6},"suits":[{"suit":"S","min":4}]}'
+            className={`${input} font-mono`}
+          />
+        </label>
+        <label className="mt-1 block">
+          <span className={label}>Ask (keycard/king decode of partner&apos;s replies)</span>
+          <input
+            name={`${p}:askJson`}
+            value={d.askJson}
+            onChange={(e) => set({ askJson: e.target.value })}
+            placeholder='{"id":"rkcb","responses":{"5D":{"keycards":[1,4]}}}'
+            className={`${input} font-mono`}
+          />
+        </label>
       </details>
     </details>
   );

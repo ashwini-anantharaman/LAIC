@@ -64,7 +64,10 @@ AuctionRuleSpec = {
     "roundMin"?: number, "roundMax"?: number,  // 1-based partnership round
     "vulnerability"?: "equal"|"favorable"|"unfavorable",  // relative to this seat
     "oppSuitsBidMin"?: number, "oppSuitsBidMax"?: number, // DISTINCT suits the opponents bid
-    "partnerCued"?: boolean            // partner's last bid is a cue of THEIR suit
+    "partnerCued"?: boolean,           // partner's last bid is a cue of THEIR suit
+    "askInProgress"?: string           // an ask with this id awaits my reply (partner's
+                                       // last bid posed it) — e.g. "blackwood"; use on the
+                                       // response rules so a natural/quantitative 4NT differs
   },
   "conditions": HandCondition,
   "action": {"type":"bid","level":1-7,"strain":"C"|"D"|"H"|"S"|"N"} |
@@ -72,9 +75,24 @@ AuctionRuleSpec = {
             {"type":"bid_longest","among":["S","H"],"level"?:number} |
             {"type":"raise_partner","toLevel":number} |
             {"type":"first_legal_of","calls":[{"level":n,"strain":s}...]} |
-            {"type":"bid_suit","suit":SuitRef,"level"?:number},  // cue-bid RHO's suit / rebid own suit
-  "priority": number                 // lower fires first within the item's band
+            {"type":"bid_suit","suit":SuitRef,"level"?:number},  // cue-bid RHO's suit / rebid own
+                                       // suit / bid the agreed suit ("bid_suit" + "agreed_suit")
+  "priority": number,                // lower fires first within the item's band
+  "shows"?: RuleShows,               // OPTIONAL: what this bid promises. Omit and the compiler
+                                     // derives it from the conditions; give it when the bid shows
+                                     // more than it tests (e.g. a raise showing 3+ trumps + points)
+  "ask"?: RuleAsk                    // OPTIONAL: mark a Blackwood/RKCB/Gerber ASK and decode replies
 }
+
+RuleShows = {"hcp"?:{"min"?:number,"max"?:number},
+  "tp"?:{"min"?:number,"max"?:number},        // total points
+  "suits"?:[{"suit":"C"|"D"|"H"|"S","min"?:number,"max"?:number}...],
+  "forcing"?:boolean}
+
+RuleAsk = {"id":string,                        // e.g. "blackwood", matched by askInProgress
+  "responses":{"<call>":{"keycards"?:[number...],"kings"?:[number...]}}}
+  // Each of partner's possible replies → its meaning as a SET of values, so 5D = "1 or 4
+  // keycards" is [1,4]. The engine decodes partner's actual reply into partnerShownKeycards.
 
 CallPattern = {"kind":"bid"|"pass"|"double"|"redouble"|"any_bid"|"any"|"none",
   "level"?:number,                   // shorthand for levelMin = levelMax = level
@@ -90,7 +108,9 @@ ForcingRuleSpec = {"key":string,"label":string,"context":<same shape as AuctionR
 SuitRef = "S"|"H"|"D"|"C"|"partner_last_bid_suit"|"partner_first_bid_suit"|
   "own_longest_suit"|"own_shortest_suit"|"own_first_bid_suit"|"own_last_bid_suit"|
   "rho_bid_suit"|"lho_bid_suit"|
-  "only_unbid_suit"   // the FOURTH suit when exactly three have been bid (fourth-suit-forcing)
+  "only_unbid_suit"|  // the FOURTH suit when exactly three have been bid (fourth-suit-forcing)
+  "agreed_suit"       // the partnership's agreed trump suit (a suit both named, else the best
+                      // known 8-card combined fit) — use for "bid 6 of the fit suit"
 
 HandCondition = {"all":[...]} | {"any":[...]} | {"not":...} |
   {"hcp":{"min"?:NumParam,"max"?:NumParam}} |
@@ -104,8 +124,17 @@ HandCondition = {"all":[...]} | {"any":[...]} | {"not":...} |
   {"kings":{"min"?:NumParam,"max"?:NumParam}} |
   {"keycards":{"suit":SuitRef,"min"?:NumParam,"max"?:NumParam}} |  // aces + that suit's K (RKCB)
   {"holds":{"suit":SuitRef,"rank":2-14}} |              // a specific card (trump Q = rank 12)
-  {"playingTricks":{"min"?:NumParam,"max"?:NumParam}}   // A=1; K=1 with 2+ (0.5 alone); Q=0.5 with 3+;
+  {"playingTricks":{"min"?:NumParam,"max"?:NumParam}} | // A=1; K=1 with 2+ (0.5 alone); Q=0.5 with 3+;
                                                         // +1/card past 3rd in an honor-headed suit (preempt discipline)
+  // Partnership checks (reason about the COMBINED hands — partner's shown state
+  // comes from replaying the auction against these very rules' shows/ask):
+  {"partnerShownHcp":{"min"?:NumParam,"max"?:NumParam}} |   // partner has PROMISED this HCP range
+  {"partnerShownLength":{"suit":SuitRef,"min"?:NumParam,"max"?:NumParam}} | // …this suit length
+  {"combinedHcp":{"min"?:NumParam,"max"?:NumParam}} |       // my HCP + partner's shown bound
+  {"combinedKeycards":{"min"?:NumParam,"max"?:NumParam}} |  // my keycards + partner's decoded ask reply
+  {"keycardsMissing":{"min"?:NumParam,"max"?:NumParam}} |   // 5 − combined (the sign-off test)
+  {"fitEstablished":{"suit"?:SuitRef|"any"|"any_major","minCombined"?:NumParam}} | // combined length ≥ 8 (default)
+  {"unshownSupport":{"suit":SuitRef,"min"?:NumParam}}       // I HOLD min+ but have not yet shown it (delayed support)
 
 NumParam = number | {"$setting":"<setting key>","field"?:"low"|"high"}
 

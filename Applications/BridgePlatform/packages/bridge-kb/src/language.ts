@@ -89,6 +89,13 @@ export interface AuctionContext {
   oppSuitsBidMax?: number;
   /** Partner's last bid was a CUE of a suit the opponents bid first. */
   partnerCued?: boolean;
+  /**
+   * An ask (by this specified id) is awaiting my response — partner's last
+   * call matched a rule declaring that `ask` (Pillar A). Disambiguates "my/
+   * partner's 4NT was Blackwood" from a natural/quantitative 4NT. Matched from
+   * the partnership-inference state, not from the raw call.
+   */
+  askInProgress?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +114,14 @@ export type SuitRef =
   | "rho_bid_suit"
   | "lho_bid_suit"
   /** The single suit NOBODY has bid (resolves only when exactly three are bid). */
-  | "only_unbid_suit";
+  | "only_unbid_suit"
+  /**
+   * The partnership's agreed trump suit (Pillar A): a suit both partners named,
+   * else the best known 8-card combined fit (majors first). Derived by the
+   * partnership-inference pass from FACTS ONLY (no hand, no settings) so it
+   * resolves inside `bid_suit` too — "bid 6 of the fit suit".
+   */
+  | "agreed_suit";
 
 export type HandPredicate =
   | { hcp: { min?: NumParam; max?: NumParam } }
@@ -132,7 +146,42 @@ export type HandPredicate =
    * two-plus cards (half alone), Q=half with three-plus, plus one for every
    * card beyond the third in the suit.
    */
-  | { playingTricks: { min?: NumParam; max?: NumParam } };
+  | { playingTricks: { min?: NumParam; max?: NumParam } }
+  // -------------------------------------------------------------------------
+  // Partnership predicates (Pillar A). All read the inference pass's enriched
+  // facts and are ABSENCE-TOLERANT: when nothing was inferred (old compiles,
+  // no auction history) a partner-shown floor reads as 0 and a ceiling as
+  // unknown, so a min-check with no evidence fails rather than fires blind.
+  // -------------------------------------------------------------------------
+  /** Partner has SHOWN this HCP range (min = promised floor; max = promised ceiling). */
+  | { partnerShownHcp: { min?: NumParam; max?: NumParam } }
+  /** Partner has SHOWN at least (min) / at most (max) cards in the suit. */
+  | { partnerShownLength: { suit: SuitRef; min?: NumParam; max?: NumParam } }
+  /**
+   * The two hands together (my HCP + partner's shown bound). `min` tests my
+   * HCP + partner's shown FLOOR; `max` tests my HCP + partner's shown CEILING
+   * (fails when partner's ceiling is unknown — the combined max is unbounded).
+   */
+  | { combinedHcp: { min?: NumParam; max?: NumParam } }
+  /**
+   * Combined keycards for the agreed suit (my aces + that suit's king +
+   * partner's decoded keycards from an ask). `min` uses partner's lowest
+   * possible decoded count, `max` the highest.
+   */
+  | { combinedKeycards: { min?: NumParam; max?: NumParam } }
+  /** Keycards the partnership is MISSING (5 total − combined); the sign-off test. */
+  | { keycardsMissing: { min?: NumParam; max?: NumParam } }
+  /**
+   * A trump fit is established: combined length (my holding + partner's shown
+   * length) reaches `minCombined` (default 8) in the named suit, in ANY suit,
+   * or in ANY_MAJOR.
+   */
+  | { fitEstablished: { suit?: SuitRef | "any" | "any_major"; minCombined?: NumParam } }
+  /**
+   * Delayed support: I actually HOLD `min`+ cards in the suit but have not yet
+   * SHOWN that length (my own calls promised fewer) — the hidden-fit test.
+   */
+  | { unshownSupport: { suit: SuitRef; min?: NumParam } };
 
 export type HandCondition =
   | { all: HandCondition[] }
@@ -245,6 +294,53 @@ export interface ForcingRuleSpec {
   priority: number;
 }
 
+// ---------------------------------------------------------------------------
+// Meaning metadata (Pillar A): what a bid SHOWS and what an ask DECODES. Both
+// are authorable and reviewable; both are absence-tolerant (old artifacts lack
+// them). The compiler DERIVES `shows` from the rule's own `all`-conditions when
+// it is absent, so every rule carries a meaning the inference pass can read.
+// ---------------------------------------------------------------------------
+
+/** One inclusive numeric bound (plain numbers — meaning is $setting-free). */
+export interface ShowsBound {
+  min?: number;
+  max?: number;
+}
+
+/**
+ * What making this bid SHOWS about the bidder's hand. Auto-derived at compile
+ * from the rule's `all`-conditions when omitted (hcp/totalPoints/suitLength
+ * bounds; `any`/`not` contribute nothing); an explicit `shows` overrides.
+ */
+export interface RuleShows {
+  hcp?: ShowsBound;
+  tp?: ShowsBound;
+  /** Per-suit length promise. */
+  suits?: { suit: Suit; min?: number; max?: number }[];
+  /** The bid is forcing (partner must not pass). */
+  forcing?: boolean;
+}
+
+/** The machine meaning of one response to an ask (a possible-values set). */
+export interface AskResponseMeaning {
+  /** Keycards this response promises (a set — e.g. 5♦ = "1 or 4" → [1,4]). */
+  keycards?: number[];
+  /** Kings this response promises (5NT king ask). */
+  kings?: number[];
+}
+
+/**
+ * A convention ASK (Blackwood/Gerber/RKCB): making this bid asks a question,
+ * and each of partner's possible responses carries a decoded meaning. The
+ * inference pass decodes partner's actual response into `partnerShownKeycards`.
+ */
+export interface RuleAsk {
+  /** Stable ask identifier, matched into `AuctionContext.askInProgress`. */
+  id: string;
+  /** Partner's response call (e.g. "5D") → its meaning. */
+  responses: Record<Call, AskResponseMeaning>;
+}
+
 export interface AuctionRuleSpec {
   /** Stable within the item; compiled ruleId = `${itemId}.${key}`. */
   key: string;
@@ -255,6 +351,14 @@ export interface AuctionRuleSpec {
   action: AuctionAction;
   /** Within-band ordering; lower fires first (bands come from knowledgeType). */
   priority: number;
+  /**
+   * What this bid SHOWS (Pillar A). Optional and authorable; when absent the
+   * compiler derives it from `conditions`. The partnership-inference pass reads
+   * this to attribute meaning to each of a partner's (and one's own) prior calls.
+   */
+  shows?: RuleShows;
+  /** This bid is an ASK; decodes partner's responses into keycards/kings. */
+  ask?: RuleAsk;
 }
 
 // ---------------------------------------------------------------------------

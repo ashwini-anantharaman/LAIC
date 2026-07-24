@@ -44,6 +44,7 @@ export function suitRefName(ref: string): ReactNode {
   if (ref === "rho_bid_suit") return "RHO's suit";
   if (ref === "lho_bid_suit") return "LHO's suit";
   if (ref === "only_unbid_suit") return "the fourth (only unbid) suit";
+  if (ref === "agreed_suit") return "the agreed suit";
   return <Glyph s={ref} />;
 }
 
@@ -160,6 +161,7 @@ export function contextPhrases(ctx: AuctionContext | undefined): ReactNode[] {
     );
   if (ctx.partnerCued === true) when.push("partner cue-bid their suit");
   if (ctx.partnerCued === false) when.push("partner did not cue-bid");
+  if (ctx.askInProgress) when.push(`partner's ${ctx.askInProgress} ask is awaiting my reply`);
   return when;
 }
 
@@ -250,6 +252,54 @@ export function conditionPhrases(
   if ("playingTricks" in cond) {
     const r = rangeText(cond.playingTricks.min, cond.playingTricks.max, values);
     return r ? [`${r} playing tricks`] : [];
+  }
+  // ---- partnership constructs (Pillar A) -----------------------------------
+  if ("partnerShownHcp" in cond) {
+    const r = rangeText(cond.partnerShownHcp.min, cond.partnerShownHcp.max, values);
+    return r ? [`partner has shown ${r} HCP`] : [];
+  }
+  if ("partnerShownLength" in cond) {
+    const r = rangeText(cond.partnerShownLength.min, cond.partnerShownLength.max, values);
+    return [
+      r ? (
+        <>partner has shown {r} cards in {suitRefName(cond.partnerShownLength.suit)}</>
+      ) : (
+        <>partner has shown length in {suitRefName(cond.partnerShownLength.suit)}</>
+      ),
+    ];
+  }
+  if ("combinedHcp" in cond) {
+    const r = rangeText(cond.combinedHcp.min, cond.combinedHcp.max, values);
+    return r ? [`${r} combined HCP`] : [];
+  }
+  if ("combinedKeycards" in cond) {
+    const r = rangeText(cond.combinedKeycards.min, cond.combinedKeycards.max, values);
+    return r ? [`${r} combined keycards`] : [];
+  }
+  if ("keycardsMissing" in cond) {
+    const r = rangeText(cond.keycardsMissing.min, cond.keycardsMissing.max, values);
+    return r ? [`${r} keycards missing`] : [];
+  }
+  if ("fitEstablished" in cond) {
+    const which = cond.fitEstablished.suit;
+    const where =
+      which === "any_major" ? (
+        "a major"
+      ) : which === undefined || which === "any" ? (
+        "any suit"
+      ) : (
+        suitRefName(which)
+      );
+    const n = numParamText(cond.fitEstablished.minCombined, values) ?? "8";
+    return [<>a {n}+ card fit in {where}</>];
+  }
+  if ("unshownSupport" in cond) {
+    const n = numParamText(cond.unshownSupport.min, values);
+    return [
+      <>
+        undisclosed {n ? `${n}+ ` : ""}support in {suitRefName(cond.unshownSupport.suit)}
+      </>,
+    ];
   }
   return [];
 }

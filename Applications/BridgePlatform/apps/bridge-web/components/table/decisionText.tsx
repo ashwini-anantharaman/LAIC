@@ -12,6 +12,7 @@ import type {
   CompiledKb,
   CompiledLeadRule,
   CompiledPlayRule,
+  HandCondition,
 } from "@bridge/kb";
 import type { ReactNode } from "react";
 import {
@@ -54,6 +55,41 @@ export function ruleLabel(info: RuleInfo): string {
   return info.rule.label;
 }
 
+/** Partnership predicate keys (Pillar A) — rendered as a distinct clause. */
+const PARTNERSHIP_KEYS = [
+  "partnerShownHcp",
+  "partnerShownLength",
+  "combinedHcp",
+  "combinedKeycards",
+  "keycardsMissing",
+  "fitEstablished",
+  "unshownSupport",
+] as const;
+
+/**
+ * Split a rule's conditions into own-hand phrases and partnership phrases so
+ * the decisions rail reads "…holding 15+ HCP — partner has shown 6+ HCP and
+ * 4+ ♠; 25–27 combined HCP; a fit in ♠". Flat `all` (what rules are) splits
+ * cleanly; nested any/not fall into the own-hand bucket.
+ */
+function splitHand(
+  cond: HandCondition | undefined,
+  values: Record<string, SettingValue>,
+): { hand: ReactNode[]; partnership: ReactNode[] } {
+  const hand: ReactNode[] = [];
+  const partnership: ReactNode[] = [];
+  const visit = (c: HandCondition): void => {
+    if ("all" in c) {
+      c.all.forEach(visit);
+      return;
+    }
+    const isPartner = PARTNERSHIP_KEYS.some((k) => k in c);
+    (isPartner ? partnership : hand).push(...conditionPhrases(c, values));
+  };
+  if (cond) visit(cond);
+  return { hand, partnership };
+}
+
 /**
  * Why this rule fired, in the item editor's English. Reads as the tail of
  * "…{label} (from “{item}”): {becauseClause}."
@@ -65,11 +101,12 @@ export function becauseClause(
   switch (info.kind) {
     case "auction": {
       const when = contextPhrases(info.rule.context);
-      const hand = conditionPhrases(info.rule.conditions, values);
+      const { hand, partnership } = splitHand(info.rule.conditions, values);
       return (
         <>
           applies when {when.length ? joinNodes(when) : "it's this seat's turn"}
           {hand.length > 0 && <>, holding {joinNodes(hand)}</>}
+          {partnership.length > 0 && <> — {joinNodes(partnership, "; ")}</>}
         </>
       );
     }

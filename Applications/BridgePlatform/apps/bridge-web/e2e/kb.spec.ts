@@ -623,6 +623,17 @@ test("source audit: page renders with the honest no-key notice", async ({
   await expect(page.getByText(/ANTHROPIC_API_KEY isn't configured/)).toBeVisible();
 });
 
+test("benchmark: page renders with the honest no-endpoint notice", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto(`${kbUrl}/benchmark`);
+  await expect(page.getByRole("heading", { name: "Benchmark", exact: true })).toBeVisible();
+  // e2e servers never set BEN_ENDPOINT — the benchmark must say so, not pretend.
+  await expect(page.getByText(/BEN_ENDPOINT isn't configured/)).toBeVisible();
+});
+
 test("BBO view: the skin toggles on and preserves the table", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
   // Reuse any active session via the Play landing quickplay flow.

@@ -14,6 +14,7 @@ import {
   type Vul,
 } from "@bridge/events";
 import type { AuctionContext, AuctionRole, CallPattern, Strain } from "@bridge/kb";
+import type { PartnershipInference } from "./inference";
 
 /** Typed description of where `seat` stands in the auction. */
 export interface SeatAuctionFacts {
@@ -43,6 +44,13 @@ export interface SeatAuctionFacts {
   suitsBid: Suit[];
   /** Partner's last bid cues a suit the opponents bid first. */
   partnerCued: boolean;
+  /**
+   * Partnership-state inference (Pillar A): what each side's calls have shown,
+   * the agreed suit, decoded ask responses. NOT computed by `analyzeSeat` (it
+   * has no compiled rules to reverse-look-up against) — the decider attaches it
+   * via `inferPartnership`. Absent for play decisions and old call sites.
+   */
+  inference?: PartnershipInference;
 }
 
 /** First non-pass call in the auction, with its absolute index. */
@@ -214,6 +222,10 @@ export function matchContext(context: AuctionContext, facts: SeatAuctionFacts): 
   if (context.oppSuitsBidMax !== undefined && facts.oppSuitsBid > context.oppSuitsBidMax)
     return false;
   if (context.partnerCued !== undefined && context.partnerCued !== facts.partnerCued)
+    return false;
+  // askInProgress: the inference pass reports which ask (if any) is awaiting
+  // this seat's reply; absent (old facts / no inference) never matches.
+  if (context.askInProgress !== undefined && context.askInProgress !== facts.inference?.askInProgress)
     return false;
   return true;
 }

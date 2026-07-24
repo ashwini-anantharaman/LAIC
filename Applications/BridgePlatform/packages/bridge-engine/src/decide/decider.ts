@@ -28,6 +28,7 @@ import { sideOf } from "../state";
 import type { AsyncDecider } from "../game";
 import type { Decision, MatchedRule } from "../decision";
 import { analyzeSeat, matchContext, type SeatAuctionFacts } from "./auctionContext";
+import { inferPartnership, type PartnershipInference } from "./inference";
 import { evalCondition, explainFailures, type ConditionEnv } from "./handConditions";
 import { realizeAuctionAction, realizeLead, realizePlayBehavior } from "./actions";
 import { mulberry32, seedFrom } from "./rng";
@@ -132,6 +133,21 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
   const surface = effectiveSurface(options);
   const random = mulberry32(seedFrom(options.seed ?? compiled.compileId));
 
+  // Partnership inference (Pillar A) is pure over (seat, vul, auction content),
+  // so memoize it across the many predicate evaluations in one decision (and
+  // across turns for a stable auction prefix). The decider is built once per
+  // player config; this Map lives for its lifetime.
+  const inferenceMemo = new Map<string, PartnershipInference>();
+  const inferenceFor = (state: GameState, seat: Seat): PartnershipInference => {
+    const key = `${seat}|${state.vul}|${state.auction.map((c) => `${c.seat}${c.call}`).join(",")}`;
+    let inf = inferenceMemo.get(key);
+    if (!inf) {
+      inf = inferPartnership(state.auction, seat, state.vul, { auctionRules: surface.auctionRules });
+      inferenceMemo.set(key, inf);
+    }
+    return inf;
+  };
+
   const pick = <A, R extends { order: number }>(
     matches: { rule: R; ruleId: string; label: string; action: A }[],
   ): { rule: R; ruleId: string; label: string; action: A } => {
@@ -145,6 +161,10 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
   return {
     async decideBid(state: GameState, seat: Seat): Promise<Decision<Call>> {
       const facts = analyzeSeat(state.auction, seat, state.vul);
+      // Enrich with partnership state BEFORE any context match / condition eval
+      // / action realization reads it (agreed_suit inside bid_suit, combined*
+      // predicates, askInProgress context gating).
+      facts.inference = inferenceFor(state, seat);
       const hand = state.hands[seat];
       const consulted = new Set<string>();
       const env: ConditionEnv = { values: surface.values, facts, consulted };

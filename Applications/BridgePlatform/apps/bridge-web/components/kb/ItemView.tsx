@@ -3,7 +3,7 @@
 // settings section. Server component — pure rendering over ruleEnglish.
 
 import type { SettingValue } from "@bridge/config";
-import type { KnowledgeItem, SettingSpec } from "@bridge/kb";
+import { deriveShows, type KnowledgeItem, type RuleShows, type SettingSpec } from "@bridge/kb";
 import type { ReactNode } from "react";
 import {
   actionSentence,
@@ -11,7 +11,26 @@ import {
   forcingRuleSentence,
   leadSentence,
   playRuleSentence,
+  SUIT_GLYPH,
 } from "./ruleEnglish";
+
+/** Compact text for one inclusive bound — "15–17", "6+", "at most 9". */
+function boundText(b: { min?: number; max?: number }): string {
+  if (b.min !== undefined && b.max !== undefined) return b.min === b.max ? `${b.min}` : `${b.min}–${b.max}`;
+  if (b.min !== undefined) return `${b.min}+`;
+  if (b.max !== undefined) return `at most ${b.max}`;
+  return "";
+}
+
+/** What a bid SHOWS, as a short review line (Pillar A). */
+function showsText(shows: RuleShows): string {
+  const parts: string[] = [];
+  if (shows.hcp) parts.push(`${boundText(shows.hcp)} HCP`);
+  if (shows.tp) parts.push(`${boundText(shows.tp)} total points`);
+  for (const s of shows.suits ?? []) parts.push(`${boundText(s)} ${SUIT_GLYPH[s.suit] ?? s.suit}`);
+  if (shows.forcing) parts.push("forcing");
+  return parts.filter(Boolean).join(", ");
+}
 
 const CONTROL_LABEL: Record<SettingSpec["control"], string> = {
   toggle: "toggle",
@@ -73,7 +92,10 @@ export function ItemView({ item }: Readonly<{ item: KnowledgeItem }>) {
       <RuleList>
         {[...p.rules]
           .sort((a, b) => a.priority - b.priority)
-          .map((rule) => (
+          .map((rule) => {
+            const shows = rule.shows ?? deriveShows(rule.conditions);
+            const showsLine = shows ? showsText(shows) : "";
+            return (
             <section key={rule.key} className={card}>
               <div className="flex flex-wrap items-center gap-2">
                 <h4 className="text-sm font-medium">{rule.label}</h4>
@@ -82,12 +104,20 @@ export function ItemView({ item }: Readonly<{ item: KnowledgeItem }>) {
               <p className="mt-2 text-sm leading-relaxed text-neutral-700">
                 {auctionRuleSentence(rule, values)}
               </p>
+              {showsLine && (
+                <p className="mt-1.5 text-xs text-neutral-500">
+                  <span className="font-medium text-neutral-600">Shows:</span> {showsLine}
+                  {rule.shows ? "" : " (derived)"}
+                  {rule.ask ? ` · asks (${rule.ask.id})` : ""}
+                </p>
+              )}
               <p className="mt-2 text-[11px] text-neutral-400">
                 key <span className="font-mono">{rule.key}</span> · priority {rule.priority}
                 {gate}
               </p>
             </section>
-          ))}
+            );
+          })}
       </RuleList>
     );
   } else if (p.kind === "forcing_rules") {

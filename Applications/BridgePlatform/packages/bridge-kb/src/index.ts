@@ -18,7 +18,7 @@ export * from "./capabilities";
 export * from "./store";
 export { JsonFileKbStore } from "./fileStore";
 export { fnv1a, hashValue, newId, stableStringify } from "./ids";
-export { BAND, bandOf, compileKb, type CompileInput, type CompileResult } from "./compile";
+export { BAND, bandOf, compileKb, deriveShows, type CompileInput, type CompileResult } from "./compile";
 export { KbService, type KbServiceOptions } from "./service";
 export {
   ITEM_CONTENT_KEYS,

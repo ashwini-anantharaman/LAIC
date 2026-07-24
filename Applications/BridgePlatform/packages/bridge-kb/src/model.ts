@@ -474,6 +474,128 @@ export interface KbSuggestion {
 }
 
 // ---------------------------------------------------------------------------
+// BEN Bidding Benchmark (Pillar B) — the bridge expert's objective assessment
+// tool. BEN (a neural bridge engine) bids seeded deals; our compiled rules bid
+// the SAME deals; the FIRST call that differs on each unique bidding sequence
+// is recorded as a divergence. A divergence a human marks "system difference"
+// counts as a success. The RUN is an append-only, compile-pinned artifact
+// (Nitin's params, cursor, appended divergences, stats — frozen at completion).
+// MARKINGS are a SEPARATE mutable, kbId-scoped entity keyed by divergence
+// signature, so a "this is fine, just a system difference" verdict persists
+// across re-runs and is never embedded in the frozen run.
+// ---------------------------------------------------------------------------
+
+/** Nitin's four knobs + which set and where the seed walk starts. */
+export interface KbBenchmarkParams {
+  /** Max deals (seeds) consumed, incl. dup-skips. Default 1000. */
+  maxDeals: number;
+  /** First N calls of each auction BEN bids / we compare. Default 4. */
+  maxBids: number;
+  /** Let opponents bid; when false E/W pass in BOTH engines. Default false. */
+  competition: boolean;
+  /** Stop once this many distinct bidding sequences are tested. Default 100. */
+  maxUniqueSequences: number;
+  /** Knowledge set our decider carries (empty = the whole KB). */
+  packId?: string;
+  /** Deal seed the run starts walking from. */
+  seedStart: number;
+}
+
+/** One BEN candidate call, raw fields as returned by /bid?details=true. */
+export interface BenCandidate {
+  call: string;
+  insta_score?: number;
+  expected_score?: number;
+  expected_tricks?: number;
+  explanation?: string;
+  alert?: string;
+}
+
+/** How our call came to be: a rule matched, a fallback item, or engine floor. */
+export type BenchmarkOurKind = "matched" | "fallback" | "floor";
+
+/** The FIRST call that differed on one unique bidding sequence. */
+export interface KbBenchmarkDivergence {
+  dealSeed: number;
+  dealer: string;
+  /** Shared auction leading to the divergence, calls '-'-joined ("" = opening). */
+  auction: string;
+  /** Index into the auction where our call first differs from BEN's. */
+  index: number;
+  ourCall: string;
+  ourRuleId?: string;
+  ourRuleLabel?: string;
+  ourItemId?: string;
+  ourItemTitle?: string;
+  /** Plain-English reason our call was made (the decision's own reason). */
+  ourBecause: string;
+  ourKind: BenchmarkOurKind;
+  benCall: string;
+  benWho?: string;
+  benQuality?: string;
+  /** BEN's full candidate list (insta_score / explanation / alert) at this call. */
+  benCandidates: BenCandidate[];
+  /** auction + '|' + ourCall + '|' + benCall — the marking join key. */
+  signature: string;
+}
+
+export interface KbBenchmarkStats {
+  /** Unique-sequence deals compared (== matches + divergences). */
+  dealsPlayed: number;
+  /** Deals whose bidding sequence was already tested, so skipped. */
+  dealsSkippedDup: number;
+  /** Distinct bidding sequences tested (== cursor.sequencesSeen.length). */
+  sequences: number;
+  matches: number;
+  divergences: number;
+}
+
+/** Resumable batch cursor persisted after every batch (one click = one batch). */
+export interface KbBenchmarkCursor {
+  /** Next deal seed to play. */
+  nextSeed: number;
+  /** Bidding sequences already tested (dedup keys). */
+  sequencesSeen: string[];
+}
+
+/**
+ * An append-only benchmark run pinned to one compiled artifact. Divergences
+ * accumulate batch by batch; cursor + stats advance; status flips to complete
+ * when a stop condition (maxDeals or maxUniqueSequences) is reached.
+ */
+export interface KbBenchmarkRun {
+  runId: string;
+  kbId: string;
+  params: KbBenchmarkParams;
+  /** The compiled artifact (compileId) this run is frozen against. */
+  compileRef: string;
+  status: "running" | "complete";
+  cursor: KbBenchmarkCursor;
+  divergences: KbBenchmarkDivergence[];
+  stats: KbBenchmarkStats;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * A human verdict that a recorded divergence is an acceptable SYSTEM DIFFERENCE
+ * (BEN plays a different-but-valid system), not a defect. Mutable, kbId-scoped,
+ * keyed by divergence signature so it survives re-runs and applies to any run
+ * that reproduces the same {auction, ourCall, benCall}. Modeled on KbSuggestion.
+ */
+export interface KbBenchmarkMarking {
+  markingId: string;
+  kbId: string;
+  /** auctionPrefix + '|' + ourCall + '|' + benCall. */
+  signature: string;
+  verdict: "system_difference";
+  note?: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Sources v2 (spec §1: same proven design, new lineage)
 // ---------------------------------------------------------------------------
 

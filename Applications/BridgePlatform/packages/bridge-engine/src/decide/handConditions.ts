@@ -63,6 +63,9 @@ export function resolveSuitRef(ref: SuitRef, hand: Hand, env: ConditionEnv): Sui
     }
     case "own_last_bid_suit":
       return suitOfBid(env.facts.ownLastBid);
+    case "agreed_suit":
+      // Facts-only (partnership inference); absent → unresolvable (rule skips).
+      return env.facts.inference?.agreedSuit ?? null;
     default:
       return ref;
   }
@@ -171,7 +174,103 @@ function evalPredicate(pred: HandPredicate, hand: Hand, env: ConditionEnv): bool
     const suit = resolveSuitRef(pred.holds.suit, hand, env);
     return suit !== null && hand.some((c) => c.suit === suit && c.rank === pred.holds.rank);
   }
+  // ---- partnership predicates (Pillar A) — all absence-tolerant -------------
+  if ("partnerShownHcp" in pred) {
+    const ps = env.facts.inference?.partnerShown;
+    const min = num(pred.partnerShownHcp.min, env);
+    const max = num(pred.partnerShownHcp.max, env);
+    if (min !== undefined && (ps?.hcpMin ?? 0) < min) return false;
+    if (max !== undefined && (ps?.hcpMax === undefined || ps.hcpMax > max)) return false;
+    return true;
+  }
+  if ("partnerShownLength" in pred) {
+    const suit = resolveSuitRef(pred.partnerShownLength.suit, hand, env);
+    if (!suit) return false;
+    const ps = env.facts.inference?.partnerShown;
+    const min = num(pred.partnerShownLength.min, env);
+    const max = num(pred.partnerShownLength.max, env);
+    if (min !== undefined && (ps?.suitMin[suit] ?? 0) < min) return false;
+    if (max !== undefined && (ps?.suitMax[suit] === undefined || ps.suitMax[suit]! > max)) return false;
+    return true;
+  }
+  if ("combinedHcp" in pred) {
+    const ps = env.facts.inference?.partnerShown;
+    const own = hcp(hand);
+    const min = num(pred.combinedHcp.min, env);
+    const max = num(pred.combinedHcp.max, env);
+    if (min !== undefined && own + (ps?.hcpMin ?? 0) < min) return false;
+    // A combined ceiling needs partner's ceiling; unknown → unbounded → can't pass.
+    if (max !== undefined && (ps?.hcpMax === undefined || own + ps.hcpMax > max)) return false;
+    return true;
+  }
+  if ("combinedKeycards" in pred) {
+    const range = combinedKeycardRange(hand, env);
+    if (!range) return false;
+    const min = num(pred.combinedKeycards.min, env);
+    const max = num(pred.combinedKeycards.max, env);
+    if (min !== undefined && range.min < min) return false;
+    if (max !== undefined && range.max > max) return false;
+    return true;
+  }
+  if ("keycardsMissing" in pred) {
+    const range = combinedKeycardRange(hand, env);
+    if (!range) return false;
+    const missMin = KEYCARDS_TOTAL - range.max;
+    const missMax = KEYCARDS_TOTAL - range.min;
+    const min = num(pred.keycardsMissing.min, env);
+    const max = num(pred.keycardsMissing.max, env);
+    if (min !== undefined && missMin < min) return false;
+    if (max !== undefined && missMax > max) return false;
+    return true;
+  }
+  if ("fitEstablished" in pred) {
+    const minCombined = num(pred.fitEstablished.minCombined, env) ?? 8;
+    const which = pred.fitEstablished.suit;
+    let candidates: Suit[];
+    if (which === "any_major") candidates = ["H", "S"];
+    else if (which === undefined || which === "any") candidates = ["S", "H", "D", "C"];
+    else {
+      const s = resolveSuitRef(which, hand, env);
+      if (!s) return false;
+      candidates = [s];
+    }
+    const counts = suitCounts(hand);
+    const ps = env.facts.inference?.partnerShown;
+    return candidates.some((suit) => counts[suit] + (ps?.suitMin[suit] ?? 0) >= minCombined);
+  }
+  if ("unshownSupport" in pred) {
+    const suit = resolveSuitRef(pred.unshownSupport.suit, hand, env);
+    if (!suit) return false;
+    const target = num(pred.unshownSupport.min, env) ?? 1;
+    const own = suitCounts(hand)[suit];
+    const shown = env.facts.inference?.selfShown.suitMin[suit] ?? 0;
+    return own >= target && shown < target;
+  }
   return false;
+}
+
+/** Resolve a numeric parameter, or undefined when absent. */
+function num(p: NumParam | undefined, env: ConditionEnv): number | undefined {
+  return p !== undefined ? resolveNumParam(p, env) : undefined;
+}
+
+const KEYCARDS_TOTAL = 5; // four aces + the trump king (RKCB)
+
+/**
+ * The combined-keycard range for the agreed suit: my keycards + partner's
+ * decoded possibilities. null when there is no agreed suit or partner has shown
+ * no keycards (an ask/response the inference could decode).
+ */
+function combinedKeycardRange(
+  hand: Hand,
+  env: ConditionEnv,
+): { min: number; max: number } | null {
+  const inf = env.facts.inference;
+  const suit = inf?.agreedSuit;
+  const kc = inf?.partnerShownKeycards;
+  if (!suit || !kc || !kc.length) return null;
+  const own = keycardCount(hand, suit);
+  return { min: own + Math.min(...kc), max: own + Math.max(...kc) };
 }
 
 export function evalCondition(cond: HandCondition, hand: Hand, env: ConditionEnv): boolean {
@@ -197,6 +296,7 @@ const SUIT_REF_TEXT: Record<Exclude<SuitRef, Suit>, string> = {
   own_first_bid_suit: "my first bid suit",
   own_last_bid_suit: "my last bid suit",
   only_unbid_suit: "the fourth (only unbid) suit",
+  agreed_suit: "the agreed suit",
 };
 
 const suitRefText = (ref: SuitRef): string =>
@@ -239,6 +339,29 @@ function describePredicate(pred: HandPredicate, env: ConditionEnv): string {
     return suit in SUIT_GLYPH ? `the ${SUIT_GLYPH[suit as Suit]}${rank}` : `the ${rank} of ${suitRefText(suit)}`;
   }
   if ("playingTricks" in pred) return `${rangeText(pred.playingTricks, env)} playing tricks`;
+  if ("partnerShownHcp" in pred)
+    return `partner has shown ${rangeText(pred.partnerShownHcp, env)} HCP`;
+  if ("partnerShownLength" in pred)
+    return `partner has shown ${rangeText(pred.partnerShownLength, env)} cards in ${suitRefText(pred.partnerShownLength.suit)}`;
+  if ("combinedHcp" in pred) return `${rangeText(pred.combinedHcp, env)} combined HCP`;
+  if ("combinedKeycards" in pred)
+    return `${rangeText(pred.combinedKeycards, env)} combined keycards`;
+  if ("keycardsMissing" in pred)
+    return `${rangeText(pred.keycardsMissing, env)} keycards missing`;
+  if ("fitEstablished" in pred) {
+    const which = pred.fitEstablished.suit;
+    const where =
+      which === "any_major"
+        ? "a major"
+        : which === undefined || which === "any"
+          ? "any suit"
+          : suitRefText(which);
+    const min = pred.fitEstablished.minCombined;
+    const n = min !== undefined ? (resolveNumParam(min, env) ?? 8) : 8;
+    return `a ${n}+ card fit in ${where}`;
+  }
+  if ("unshownSupport" in pred)
+    return `undisclosed ${rangeText({ min: pred.unshownSupport.min }, env)} support in ${suitRefText(pred.unshownSupport.suit)}`;
   return "unknown condition";
 }
 
@@ -281,6 +404,34 @@ function explainPredicate(pred: HandPredicate, hand: Hand, env: ConditionEnv): s
   if ("aces" in pred) return `${needed}, held ${hand.filter((c) => c.rank === 14).length}`;
   if ("kings" in pred) return `${needed}, held ${hand.filter((c) => c.rank === 13).length}`;
   if ("playingTricks" in pred) return `${needed}, held ${playingTricks(hand)}`;
+  const shownText = (min?: number, max?: number): string =>
+    min === undefined && max === undefined
+      ? "nothing"
+      : min !== undefined && max !== undefined
+        ? min === max
+          ? `${min}`
+          : `${min}–${max}`
+        : min !== undefined
+          ? `${min}+`
+          : `at most ${max}`;
+  if ("partnerShownHcp" in pred) {
+    const ps = env.facts.inference?.partnerShown;
+    return `${needed}, partner has shown ${shownText(ps?.hcpMin, ps?.hcpMax)}`;
+  }
+  if ("combinedHcp" in pred) {
+    const ps = env.facts.inference?.partnerShown;
+    return `${needed}, held ${hcp(hand)} + partner ${shownText(ps?.hcpMin, ps?.hcpMax)}`;
+  }
+  if ("partnerShownLength" in pred) {
+    const suit = resolveSuitRef(pred.partnerShownLength.suit, hand, env);
+    if (!suit) return `${needed} (no such suit yet)`;
+    const ps = env.facts.inference?.partnerShown;
+    return `${needed}, partner has shown ${shownText(ps?.suitMin[suit], ps?.suitMax[suit])}`;
+  }
+  if ("combinedKeycards" in pred || "keycardsMissing" in pred) {
+    const range = combinedKeycardRange(hand, env);
+    return range ? `${needed}, combined ${range.min}–${range.max}` : `${needed} (no keycard answer yet)`;
+  }
   return needed;
 }
 
