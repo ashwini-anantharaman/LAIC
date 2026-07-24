@@ -831,6 +831,15 @@ export async function setOrgCapabilities(orgId: string, patch: Partial<OrgCapabi
   });
 }
 
+/** Owner (Super Admin) only: toggle whether org admins may open this org's
+ *  programs. Lives in the org's own Settings, not the Nexus console. */
+export async function setOrgAccess(orgId: string, adminsEnterPrograms: boolean): Promise<OrgCapabilities> {
+  return request<OrgCapabilities>(`/api/platform/orgs/${orgId}/access`, {
+    method: "PATCH",
+    body: JSON.stringify({ admins_enter_programs: adminsEnterPrograms }),
+  });
+}
+
 // ── Offerings, Registered Apps, and the Signup Hook (Nexus v0.3) ────────────
 export async function listOfferings(programId: string): Promise<Offering[]> {
   return request<Offering[]>(`/api/programs/${programId}/offerings`);

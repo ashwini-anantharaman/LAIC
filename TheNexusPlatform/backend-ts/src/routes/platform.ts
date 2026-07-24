@@ -1724,9 +1724,14 @@ platformRouter.delete("/members/:member_id", async (c) => {
       throw new HttpError(403, "Program admin access required");
     }
   } else if (row.role === "administrator") {
-    // Admins stay owner/admin-managed (Q1) — a custom Team·edit role can't
-    // remove them.
-    _assertOrgPeopleAccess(user, row.org_id, true);
+    // Super Admin only: only the org owner may remove another administrator —
+    // a regular admin (or a custom Team·edit role) cannot remove admins.
+    const isOwner = user.memberships.some(
+      (m) => m.org_id === row.org_id && m.role === "owner" && !m.program_id,
+    );
+    if (!isOwner) {
+      throw new HttpError(403, "Only the organization owner (Super Admin) can remove an administrator");
+    }
   } else {
     await _requireOrgArea(user, row.org_id, "team", "edit");
   }
@@ -1990,6 +1995,28 @@ platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
     actorUserId: user.id,
     scopeType: "organization",
     scopeId: orgId,
+  });
+  return c.json(caps);
+});
+
+// Org-owned access boundary (Super Admin only): whether org admins may open the
+// org's programs. Lives in the org's own Settings, gated to the OWNER — this is
+// the org's call, not a Nexus operator's.
+const orgAccessSchema = z.object({ admins_enter_programs: z.boolean() });
+platformRouter.patch("/orgs/:org_id/access", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  _requireDb();
+  const isOwner = user.memberships.some((m) => m.org_id === orgId && m.role === "owner" && !m.program_id);
+  if (!isOwner) throw new HttpError(403, "Only the organization owner (Super Admin) can change this");
+  const req = parseBody(orgAccessSchema, await c.req.json());
+  const caps = await db.setOrgCapabilities(orgId, { adminsEnterPrograms: req.admins_enter_programs });
+  await db.recordAuditEvent("organization.access_updated", {
+    orgId,
+    actorUserId: user.id,
+    scopeType: "organization",
+    scopeId: orgId,
+    metadata: { adminsEnterPrograms: req.admins_enter_programs },
   });
   return c.json(caps);
 });

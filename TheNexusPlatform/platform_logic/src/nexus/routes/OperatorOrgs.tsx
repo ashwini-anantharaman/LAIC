@@ -283,27 +283,8 @@ function EditOrgDialog({ org, onClose }: { org: OrgSummary | null; onClose: () =
               </div>
             </div>
 
-            {/* Access boundary */}
-            <div>
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5">
-                Access
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-foreground">Admins can open programs</div>
-                  <div className="text-xs text-muted-foreground">
-                    {caps.adminsEnterPrograms !== false
-                      ? "Org admins can enter any program in this org."
-                      : "Off — org admins manage programs (features, admins, categories) but can't open one unless given explicit access."}
-                  </div>
-                </div>
-                <Switch
-                  checked={caps.adminsEnterPrograms !== false}
-                  disabled={capsBusy}
-                  onCheckedChange={(v) => void patchCaps({ adminsEnterPrograms: v })}
-                />
-              </div>
-            </div>
+            {/* "Admins can open programs" now lives in the org's own Settings tab,
+                controlled by the org owner (Super Admin) — not here. */}
 
             {/* Administrators */}
             <div>

@@ -576,7 +576,7 @@ export function AppShell() {
     heading = myRoleName ?? programMembership?.program_name ?? "Program";
     items = confinedProgramNav(orgId, programId, myRolePerms ?? {}).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (programId) {
-    heading = "Program";
+    heading = programName ?? "Program";
     items = programNav(orgId, programId).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
     // Members live inside their program; only org-level admins get the org space.
     if (mode === "org") {

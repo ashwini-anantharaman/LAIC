@@ -17,11 +17,13 @@ import {
 } from "@/app/components/ui/dialog";
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
+import { Switch } from "@/app/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
 import {
   addOrgCategory,
   createInvitation,
   getOrgBySlug,
+  getOrgCapabilities,
   listMyOrgs,
   listMembers,
   listOrgCategories,
@@ -30,9 +32,11 @@ import {
   removeOrgCategory,
   renameOrgCategory,
   revokeInvitation,
+  setOrgAccess,
   updateOrgName,
   updateOrgTheme,
   uploadOrgLogo,
+  type OrgCapabilities,
 } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import type { Invitation, OrgMember } from "@/types/platform";
@@ -135,6 +139,8 @@ export function OrgSettings() {
       </Section>
 
       <CategoriesSection orgId={orgId} />
+
+      <AccessSection orgId={orgId} />
 
       <InviteAdminDialog orgId={orgId} open={inviteOpen} onOpenChange={setInviteOpen} onInvited={loadMembers} />
     </div>
@@ -254,6 +260,55 @@ function InviteAdminDialog({
   );
 }
 
+
+/**
+ * Settings → Access: the org's own boundary control — whether org admins may
+ * open the org's programs. Only the owner (Super Admin) can flip it; other
+ * admins see it read-only.
+ */
+function AccessSection({ orgId }: { orgId: string }) {
+  const { user } = useSession();
+  const isOwner = (user?.memberships ?? []).some(
+    (m) => m.org_id === orgId && m.role === "owner" && !m.program_id,
+  );
+  const [caps, setCaps] = useState<OrgCapabilities | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    getOrgCapabilities(orgId).then(setCaps).catch(() => setCaps(null));
+  }, [orgId]);
+  if (!caps) return null;
+  const on = caps.adminsEnterPrograms !== false;
+  return (
+    <Section title="Access">
+      <div className="glass-card flex items-center justify-between gap-3 p-5">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">Admins can open programs</div>
+          <div className="text-xs text-muted-foreground">
+            {on
+              ? "Org admins can open any program in this organization."
+              : "Off — admins manage programs (features, people, categories) but can't open one without explicit program access."}
+            {!isOwner ? " Only the organization owner (Super Admin) can change this." : ""}
+          </div>
+        </div>
+        <Switch
+          checked={on}
+          disabled={!isOwner || busy}
+          onCheckedChange={async (v) => {
+            setBusy(true);
+            try {
+              setCaps(await setOrgAccess(orgId, v));
+              toast.success("Access updated");
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Failed to update");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      </div>
+    </Section>
+  );
+}
 
 /**
  * Settings → Categories: the org's program taxonomy. Programs pick a primary

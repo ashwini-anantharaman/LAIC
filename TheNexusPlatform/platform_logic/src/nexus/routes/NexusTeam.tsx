@@ -88,7 +88,7 @@ export function NexusTeam() {
       status: p.status,
       roleId: p.role_id,
       privileged: p.kind === "admin",
-      privilegedLabel: "Admin",
+      privilegedLabel: "Super Admin",
     })) ?? null;
 
   const renderActions = (m: RosterMember) => {
@@ -121,13 +121,13 @@ export function NexusTeam() {
         {view === "grid" ? <Layers className="size-4" /> : <LayoutGrid className="size-4" />}
       </button>
       <Button size="sm" onClick={() => setInviteOpen(true)}>
-        <Plus className="size-3.5" /> Invite operator
+        <Plus className="size-3.5" /> Invite
       </Button>
     </div>
   );
 
   const peopleContent = (
-    <CollapsibleSection title="Operators" count={team?.length}>
+    <CollapsibleSection title="People" count={team?.length}>
       <MemberRoster
         members={rosterMembers}
         roles={(roles ?? []).map((r) => ({ id: r.id, name: r.name }))}
@@ -189,7 +189,7 @@ function NexusInviteDialog({
       });
       setLink(inv.token ? `${window.location.origin}/invite/${inv.token}` : inv.redeem_url ?? null);
       onDone();
-      toast.success("Operator invited");
+      toast.success("Invited");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to invite");
     } finally {
@@ -207,7 +207,7 @@ function NexusInviteDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Invite an operator</DialogTitle>
+          <DialogTitle>Invite</DialogTitle>
         </DialogHeader>
         {link ? (
           <div className="space-y-2">
@@ -244,7 +244,7 @@ function NexusInviteDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="full">Full operator</SelectItem>
+                  <SelectItem value="full">Super Admin (full access)</SelectItem>
                   {roles.map((r) => (
                     <SelectItem key={r.id} value={r.id}>
                       Confined · {r.name}

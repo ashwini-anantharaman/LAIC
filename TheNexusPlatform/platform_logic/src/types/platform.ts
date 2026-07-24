@@ -22,7 +22,7 @@ export const PROGRAM_FEATURES: { key: ProgramFeatureKey; label: string }[] = [
   { key: "bridge", label: "Bridge Platform" },
   { key: "appbuilder", label: "App Builder" },
   { key: "community", label: "Community" },
-  { key: "teams", label: "Teams" },
+  { key: "teams", label: "People" },
   { key: "partners", label: "Partners" },
 ];
 
