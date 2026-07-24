@@ -34,22 +34,28 @@ const GLYPH: Record<Suit, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const isRed = (s: Suit) => s === "H" || s === "D";
 const SANS = { fontFamily: "Arial, Helvetica, sans-serif" } as const;
 
-/** A BBO card face: white, rank over suit in the top-left, adjacent layout. */
+/** A BBO card face: white, rank over suit in the top-left, adjacent layout.
+ *  Sized in container-query units so the whole table scales fluidly. */
 function Face({ card, big }: Readonly<{ card: Card; big: boolean }>) {
+  const w = big ? "clamp(34px, 6.4cqw, 64px)" : "clamp(24px, 4.4cqw, 44px)";
   return (
     <span
-      className={`relative block border border-neutral-500 bg-white ${
-        big ? "h-[86px] w-[46px] xl:h-[96px] xl:w-[52px]" : "h-[58px] w-[32px] xl:w-[36px]"
-      } first:rounded-l-[4px] last:rounded-r-[4px]`}
+      className="relative block border border-neutral-500 bg-white first:rounded-l-[4px] last:rounded-r-[4px]"
+      style={{ width: w, aspectRatio: big ? "6 / 11" : "6 / 10.6" }}
     >
       <span
-        className="absolute left-1 top-0.5 flex flex-col items-center leading-none"
+        className="absolute left-[8%] top-[2%] flex flex-col items-center leading-none"
         style={{ color: isRed(card.suit) ? RED : "#000" }}
       >
-        <span className={`${big ? "text-[22px]" : "text-[15px]"} font-bold tabular-nums`}>
+        <span
+          className="font-bold tabular-nums"
+          style={{ fontSize: big ? "clamp(15px, 3cqw, 30px)" : "clamp(12px, 2.1cqw, 21px)" }}
+        >
           {rankLabel(card.rank)}
         </span>
-        <span className={big ? "text-[20px]" : "text-[13px]"}>{GLYPH[card.suit]}</span>
+        <span style={{ fontSize: big ? "clamp(13px, 2.7cqw, 27px)" : "clamp(10px, 1.9cqw, 19px)" }}>
+          {GLYPH[card.suit]}
+        </span>
       </span>
     </span>
   );
@@ -109,8 +115,10 @@ function Backs({ count }: Readonly<{ count: number }>) {
         <span
           key={i}
           aria-hidden
-          className="block h-[60px] w-[13px] xl:h-[68px] xl:w-[15px]"
+          className="block"
           style={{
+            width: "clamp(9px, 1.9cqw, 20px)",
+            height: "clamp(42px, 9cqw, 92px)",
             background: BACK_TEAL,
             borderLeft: i > 0 ? "1.5px solid rgba(255,255,255,.9)" : undefined,
           }}
@@ -201,15 +209,18 @@ export function BboTable({
   // W N E S header (red letter = that side vulnerable), calls as grey chips.
   const auctionPanel = (
     <div
-      className="min-w-[248px] max-w-[340px] rounded-[4px] px-3 pb-3 shadow-lg"
-      style={{ background: PANEL }}
+      className="rounded-[4px] px-3 pb-3 shadow-lg"
+      style={{ background: PANEL, width: "clamp(224px, 37cqw, 420px)" }}
     >
       <div className="grid grid-cols-4 rounded-t-[4px] bg-white px-1 text-center">
         {(["W", "N", "E", "S"] as Seat[]).map((s) => (
           <span
             key={s}
-            className="py-0.5 text-[26px] font-bold leading-tight"
-            style={{ color: isVulnerable(state.vul, s) ? RED : "#000" }}
+            className="py-0.5 font-bold leading-tight"
+            style={{
+              color: isVulnerable(state.vul, s) ? RED : "#000",
+              fontSize: "clamp(18px, 3.4cqw, 34px)",
+            }}
           >
             {s}
           </span>
@@ -230,8 +241,12 @@ export function BboTable({
               return (
                 <span
                   key={j}
-                  className="rounded-[3px] py-0.5 text-[19px] font-medium leading-tight"
-                  style={{ background: CHIP, color: rc ? RED : "#000" }}
+                  className="rounded-[3px] py-0.5 font-medium leading-tight"
+                  style={{
+                    background: CHIP,
+                    color: rc ? RED : "#000",
+                    fontSize: "clamp(14px, 2.5cqw, 25px)",
+                  }}
                 >
                   {entry.call === "P" ? "Pass" : callLabel(entry.call)}
                 </span>
@@ -250,7 +265,10 @@ export function BboTable({
     for (const p of trick.plays) trickCards[p.seat] = p.card;
   }
   const trickArea = (
-    <div className="relative mx-auto h-44 w-44 xl:h-52 xl:w-52">
+    <div
+      className="relative mx-auto"
+      style={{ width: "clamp(150px, 26cqw, 280px)", height: "clamp(150px, 26cqw, 280px)" }}
+    >
       {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
         const pos =
           seat === "N"
@@ -267,9 +285,10 @@ export function BboTable({
               <Face card={card} big={false} />
             ) : (
               <span
-                className={`block h-[58px] w-[32px] rounded-[4px] border border-dashed xl:w-[36px] ${
+                className={`block rounded-[4px] border border-dashed ${
                   seat === state.turn ? "border-[#FFC933]" : "border-white/40"
                 }`}
+                style={{ width: "clamp(24px, 4.4cqw, 44px)", aspectRatio: "6 / 10.6" }}
               />
             )}
           </div>
@@ -301,10 +320,16 @@ export function BboTable({
         : trickArea;
 
   return (
-    <div style={SANS}>
+    // containerType makes every cqw unit below track THIS element's width, so
+    // the whole table scales continuously with the window (no breakpoints).
+    <div style={{ ...SANS, containerType: "inline-size" }}>
       <div
-        className="relative flex min-h-[560px] flex-col justify-between rounded-lg px-4 pb-3 pt-4 shadow-md sm:px-6 xl:min-h-[620px]"
-        style={{ background: FELT }}
+        className="relative flex flex-col justify-between rounded-lg shadow-md"
+        style={{
+          background: FELT,
+          minHeight: "clamp(420px, 76cqw, 820px)",
+          padding: "clamp(12px, 2.2cqw, 26px) clamp(12px, 2.6cqw, 30px) clamp(10px, 1.8cqw, 20px)",
+        }}
       >
         {/* Dealer/vul → contract/tricks tally, pinned top-left like BBO. */}
         <div className="absolute left-3 top-3">{summary}</div>
