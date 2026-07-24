@@ -115,8 +115,13 @@ export default async function MobileTablePage({
   const dummy =
     state.phase !== "auction" && state.contract ? PARTNER[state.contract.declarer] : null;
   const showAll = handsParam === "all" || (handsParam !== "mine" && !mySeat && !learnerMode);
+  // Dummy spreads only after the opening lead (real-bridge timing).
+  const leadMade = state.tricks.length > 0 && (state.tricks[0]?.plays.length ?? 0) > 0;
   const canSee = (seat: Seat) =>
-    showAll || seat === mySeat || seat === dummy || state.phase === "complete";
+    showAll ||
+    seat === mySeat ||
+    (seat === dummy && leadMade) ||
+    state.phase === "complete";
 
   const myTurn =
     actingIsHuman &&

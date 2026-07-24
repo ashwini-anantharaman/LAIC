@@ -102,6 +102,36 @@ function FaceHand({
   );
 }
 
+/** BBO hand diagram: white panel, four suit rows — how BBO shows a revealed
+ *  side hand. Compact enough that West · center · East fit at any width. */
+function Diagram({ hand }: Readonly<{ hand: Card[] }>) {
+  return (
+    <div
+      className="rounded-[3px] border border-neutral-400 bg-white px-2 py-1 leading-tight shadow-md"
+      style={{ fontSize: "clamp(12px, 1.9cqw, 18px)" }}
+    >
+      {(["S", "H", "C", "D"] as Suit[]).map((suit) => {
+        const ranks = hand
+          .filter((c) => c.suit === suit)
+          .sort((a, b) => b.rank - a.rank)
+          .map((c) => rankLabel(c.rank));
+        return (
+          <div
+            key={suit}
+            className="flex gap-1 whitespace-nowrap"
+            style={{ color: isRed(suit) ? RED : "#000" }}
+          >
+            <span className="w-[1.1em]">{GLYPH[suit]}</span>
+            <span className="tabular-nums tracking-tight">
+              {ranks.length ? ranks.join(" ") : "—"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Hidden hand, BBO style: one horizontal block of teal card-back slivers
  *  separated by thin white lines, with a white outline. */
 function Backs({ count }: Readonly<{ count: number }>) {
@@ -163,15 +193,21 @@ export function BboTable({
   const seatBlock = (seat: Seat) => {
     const hand = state.hands[seat];
     const playable = legalNow && state.turn === seat ? legalNow : null;
-    const body = visible[seat] ? (
+    const side = seat === "E" || seat === "W";
+    // Side hands: full faces only while you must play from that hand (e.g.
+    // declaring dummy); a merely-revealed side hand is BBO's suit diagram —
+    // three 13-card face rows can't share a row at smaller widths.
+    const body = !visible[seat] ? (
+      <Backs count={hand.length} />
+    ) : side && !playable ? (
+      <Diagram hand={hand} />
+    ) : (
       <FaceHand
         hand={hand}
         playable={playable}
         sessionId={sessionId}
         big={seat === mySeat || seat === "S"}
       />
-    ) : (
-      <Backs count={hand.length} />
     );
     return (
       <div className="flex w-fit max-w-full flex-col items-stretch gap-0.5">

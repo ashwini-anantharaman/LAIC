@@ -88,8 +88,15 @@ export default async function SessionPage({
   // Watching four AIs defaults to open cards; sitting in defaults to table
   // realism. The toggle overrides either way.
   const showAll = handsParam === "all" || (handsParam !== "mine" && !mySeat && !learnerMode);
+  // Dummy spreads only after the opening lead (real-bridge timing) — without
+  // this, a hand flips face-up the instant the auction ends, which reads as a
+  // random reveal (often on the left, when West is dummy).
+  const leadMade = state.tricks.length > 0 && (state.tricks[0]?.plays.length ?? 0) > 0;
   const canSee = (seat: Seat) =>
-    showAll || seat === mySeat || seat === dummy || state.phase === "complete";
+    showAll ||
+    seat === mySeat ||
+    (seat === dummy && leadMade) ||
+    state.phase === "complete";
 
   const myTurn =
     actingIsHuman &&
@@ -666,7 +673,7 @@ export default async function SessionPage({
             </div>
 
             {/* West · center · East */}
-            <div className="my-3 grid grid-cols-[minmax(2rem,auto)_1fr_minmax(2rem,auto)] items-center gap-1.5 sm:my-4 sm:gap-4">
+            <div className="my-3 grid grid-cols-[minmax(2rem,auto)_minmax(0,1fr)_minmax(2rem,auto)] items-center gap-1.5 sm:my-4 sm:gap-4">
               <div className="flex w-fit flex-col items-center gap-1 justify-self-start">
                 <HandRow
                   hand={state.hands.W}
