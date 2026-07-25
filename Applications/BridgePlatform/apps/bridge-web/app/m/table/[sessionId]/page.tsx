@@ -82,6 +82,7 @@ export default async function MobileTablePage({
     fixError?: string;
     editDeal?: string;
     skin?: string;
+    bboAuction?: string;
   }>;
 }>) {
   const context = await getBridgeContext();
@@ -99,10 +100,12 @@ export default async function MobileTablePage({
     fixError,
     editDeal,
     skin,
+    bboAuction,
   } = await searchParams;
   // ?skin=bbo swaps the felt for the BBO replica (same fluid components the
   // desktop BBO view uses — they size in container units, so they fit phones).
   const bbo = skin === "bbo";
+  const bboSeats = bboAuction === "seats";
 
   let view;
   try {
@@ -163,10 +166,19 @@ export default async function MobileTablePage({
     const q = new URLSearchParams();
     if (learnerMode && isFellow) q.set("mode", "learner");
     if (bbo) q.set("skin", "bbo");
+    if (bbo && bboSeats) q.set("bboAuction", "seats");
     for (const [k, v] of Object.entries(extra)) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/m/table/${sessionId}?${s}` : `/m/table/${sessionId}`;
   };
+  // Flip only the BBO auction-display mode (mobile corner toggle).
+  const mobileAuctionToggleHref = (() => {
+    const q = new URLSearchParams();
+    if (learnerMode && isFellow) q.set("mode", "learner");
+    q.set("skin", "bbo");
+    if (!bboSeats) q.set("bboAuction", "seats");
+    return `/m/table/${sessionId}?${q.toString()}`;
+  })();
 
   // BBO-view nameplate (mobile): the grey bar + teal seat badge, gold when
   // the seat is to act. No swap dropdown on the phone.
@@ -842,6 +854,8 @@ export default async function MobileTablePage({
             auctionRows={auctionRows as never}
             plate={mobileBboPlate}
             lobbyHref="/m/play"
+            auctionDisplay={bboSeats ? "seats" : "box"}
+            auctionToggleHref={mobileAuctionToggleHref}
           />
         </div>
       ) : (

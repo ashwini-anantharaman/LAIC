@@ -54,18 +54,34 @@ export default async function SessionPage({
     fixError?: string;
     editDeal?: string;
     skin?: string;
+    bboAuction?: string;
   }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { mode, hands: handsParam, saved, error, paused, fix, fixMode, fixed, fixError, editDeal, skin } =
-    await searchParams;
+  const {
+    mode,
+    hands: handsParam,
+    saved,
+    error,
+    paused,
+    fix,
+    fixMode,
+    fixed,
+    fixError,
+    editDeal,
+    skin,
+    bboAuction,
+  } = await searchParams;
   // Optional BBO-view skin (2026-07-23): ?skin=bbo swaps the felt/seats/auction/
   // bidbox presentation for a Bridge Base Online replica. Purely presentational
   // — same server actions, same params, same overlays; absent it, everything
   // renders exactly as before.
   const bbo = skin === "bbo";
+  // Within the BBO skin, where to show the auction: the central box (default)
+  // or a call bubble beside each player (?bboAuction=seats).
+  const bboSeats = bboAuction === "seats";
 
   let view;
   try {
@@ -382,10 +398,22 @@ export default async function SessionPage({
     const q = new URLSearchParams();
     if (learnerMode && isFellow) q.set("mode", "learner");
     if (bbo) q.set("skin", "bbo");
+    if (bbo && bboSeats) q.set("bboAuction", "seats");
     for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table/${sessionId}?${s}` : `/bridge/table/${sessionId}`;
   };
+  // Flips only the auction-display mode, preserving everything else — the
+  // corner toggle inside the BBO felt.
+  const auctionToggleHref = (() => {
+    const q = new URLSearchParams();
+    if (learnerMode && isFellow) q.set("mode", "learner");
+    q.set("skin", "bbo");
+    if (handsParam) q.set("hands", handsParam);
+    if (paused) q.set("paused", paused);
+    if (!bboSeats) q.set("bboAuction", "seats");
+    return `/bridge/table/${sessionId}?${q.toString()}`;
+  })();
   // The BBO-view toggle preserves every other param (mode, hands, paused) and
   // only flips skin. Building it here keeps the toolbar control declarative.
   const skinToggleHref = (() => {
@@ -655,6 +683,8 @@ export default async function SessionPage({
               dealer={record.board.dealer}
               auctionRows={auctionRows as never}
               plate={bboPlate}
+              auctionDisplay={bboSeats ? "seats" : "box"}
+              auctionToggleHref={auctionToggleHref}
             />
           ) : (
           <>

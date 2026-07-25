@@ -6,7 +6,12 @@
 // like BBO). Tapping a level swaps the numbers for that level's legal strains
 // (‹ backs out). Legality is the engine's real `legalCalls` set passed from
 // the server; every concrete call posts the same `bidAction` the classic
-// BiddingBox posts. The only client state is the armed level.
+// BiddingBox posts.
+//
+// FIXED SIZE (2026-07-24): the buttons are fixed pixels and never scale with
+// the window — they only wrap to a second row when the felt is very narrow.
+// When it isn't your turn the box stays present but disabled, so the bidding
+// options are ALWAYS visible during the auction and nothing shifts.
 
 import { useState } from "react";
 import type { Suit } from "@bridge/events";
@@ -18,30 +23,34 @@ const isRed = (s: string) => s === "H" || s === "D";
 const RED = "#CC0000";
 const SANS = "Arial, Helvetica, sans-serif";
 
-const whiteBtn: React.CSSProperties = {
+// Fixed metrics — the whole point of this box is that it does not resize.
+const BTN: React.CSSProperties = {
   fontFamily: SANS,
   background: "#fff",
   color: "#000",
   border: "1px solid #8a8a6a",
   borderRadius: 6,
-  padding: "clamp(4px, 0.8cqw, 9px) 0",
-  width: "clamp(30px, 6cqw, 60px)",
+  padding: "8px 0",
+  width: 44,
   fontWeight: 700,
-  fontSize: "clamp(13px, 2.6cqw, 26px)",
-  cursor: "pointer",
+  fontSize: 19,
   lineHeight: 1.1,
+  cursor: "pointer",
+  flex: "none",
+};
+const disabledStyle: React.CSSProperties = {
+  opacity: 0.4,
+  cursor: "default",
+  background: "#eee",
 };
 
 export function BboBidBox({
   sessionId,
   legal,
-}: Readonly<{ sessionId: string; legal: string[] }>) {
+  active,
+}: Readonly<{ sessionId: string; legal: string[]; active: boolean }>) {
   const [armed, setArmed] = useState<number | null>(null);
   const legalSet = new Set(legal);
-
-  const legalLevels = [1, 2, 3, 4, 5, 6, 7].filter((l) =>
-    STRAINS.some((s) => legalSet.has(`${l}${s}`)),
-  );
 
   const callForm = (
     value: string,
@@ -58,40 +67,54 @@ export function BboBidBox({
     </form>
   );
 
+  const passStyle = {
+    ...BTN,
+    width: 96,
+    background: "#1E7B32",
+    color: "#fff",
+    border: "1px solid #155A24",
+  };
+
+  // ---- Inactive: the full ladder, disabled, so the box stays put -----------
+  if (!active) {
+    return (
+      <div
+        className="flex flex-wrap items-center justify-center gap-1.5"
+        style={{ fontFamily: SANS }}
+        aria-hidden
+      >
+        <span style={{ ...passStyle, ...disabledStyle, background: "#cfe0d3" }}>Pass</span>
+        {[1, 2, 3, 4, 5, 6, 7].map((l) => (
+          <span key={l} style={{ ...BTN, ...disabledStyle }}>
+            {l}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  const legalLevels = [1, 2, 3, 4, 5, 6, 7].filter((l) =>
+    STRAINS.some((s) => legalSet.has(`${l}${s}`)),
+  );
+
   return (
-    <div className="flex flex-wrap items-center gap-1.5" style={{ fontFamily: SANS }}>
+    <div className="flex flex-wrap items-center justify-center gap-1.5" style={{ fontFamily: SANS }}>
       {/* Pass — BBO's wide green button, always first. */}
-      {legalSet.has("P") &&
-        callForm(
-          "P",
-          "Pass",
-          {
-            ...whiteBtn,
-            width: "clamp(58px, 12.5cqw, 124px)",
-            background: "#1E7B32",
-            color: "#fff",
-            border: "1px solid #155A24",
-          },
-          "Pass",
-        )}
+      {legalSet.has("P")
+        ? callForm("P", "Pass", passStyle, "Pass")
+        : null}
       {legalSet.has("X") &&
         callForm(
           "X",
           "X",
-          { ...whiteBtn, width: "clamp(40px, 6.8cqw, 68px)", background: RED, color: "#fff", border: "1px solid #8F0000" },
+          { ...BTN, width: 52, background: RED, color: "#fff", border: "1px solid #8F0000" },
           "Double",
         )}
       {legalSet.has("XX") &&
         callForm(
           "XX",
           "XX",
-          {
-            ...whiteBtn,
-            width: "clamp(44px, 7.2cqw, 72px)",
-            background: "#1034A6",
-            color: "#fff",
-            border: "1px solid #0A2170",
-          },
+          { ...BTN, width: 56, background: "#1034A6", color: "#fff", border: "1px solid #0A2170" },
           "Redouble",
         )}
 
@@ -102,7 +125,7 @@ export function BboBidBox({
             key={l}
             type="button"
             aria-label={`Level ${l}`}
-            style={whiteBtn}
+            style={BTN}
             onClick={() => setArmed(l)}
           >
             {l}
@@ -113,7 +136,7 @@ export function BboBidBox({
           <button
             type="button"
             aria-label="Back to levels"
-            style={{ ...whiteBtn, width: "clamp(28px, 4.6cqw, 46px)", fontSize: "clamp(13px, 2.1cqw, 21px)" }}
+            style={{ ...BTN, width: 34, fontSize: 16 }}
             onClick={() => setArmed(null)}
           >
             ‹
@@ -125,7 +148,7 @@ export function BboBidBox({
                 {armed}
                 {GLYPH[s]}
               </span>,
-              { ...whiteBtn, width: s === "N" ? "clamp(50px, 8.4cqw, 84px)" : "clamp(44px, 7.2cqw, 72px)" },
+              { ...BTN, width: s === "N" ? 60 : 52 },
               `Bid ${armed}${GLYPH[s]}`,
             ),
           )}

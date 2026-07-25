@@ -1,19 +1,24 @@
 // BBO view (2026-07-23 skin, rebuilt against a real BBO web-client screenshot):
 // a near 1:1 replica of Bridge Base Online's table, offered as an OPTIONAL
-// skin behind ?skin=bbo. The load-bearing BBO traits, in order:
-//   - the AUCTION lives in a big pale panel in the CENTER of the felt while
-//     bidding (giant W N E S header, calls as grey chips);
+// skin behind ?skin=bbo. The load-bearing BBO traits:
+//   - the auction is shown either in a central pale panel (giant W N E S header,
+//     grey call chips) OR as a small call bubble beside each player — a toggle,
+//     like BBO. Default: the central box;
 //   - ALL four hands are horizontal blocks — hidden hands are teal
-//     striped-sliver blocks with a white outline (no vertical stacks);
-//   - face-up hands (yours, dummy, watching) are large ADJACENT card faces,
-//     rank over suit, grouped ♠ ♥ ♣ ♦;
+//     striped-sliver blocks with a white outline; face-up hands are large
+//     adjacent card faces, rank over suit, grouped ♠ ♥ ♣ ♦;
 //   - the name bar sits UNDER each hand (grey, teal seat badge; gold = to act);
-//   - your bid box is a khaki strip above your hand: green Pass + only the
-//     LEGAL level numbers, then the strains (two-click, like BBO's default).
+//   - the bid box is a fixed-size khaki strip above your hand — always present
+//     during the auction (disabled off-turn), never resizing.
 // It receives the page's already-computed props and only changes presentation
 // — every form still posts the same server actions the classic table posts.
+//
+// SIZING (2026-07-24): the bid box and auction box are fixed / barely-scaling
+// (tight clamps that stay put on desktop and only shrink enough to fit a phone),
+// per fellow feedback that the controls should not shrink and grow. Cards still
+// scale, but gently.
 
-import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
+import type { AuctionCall, Call, Card, Seat, Suit } from "@bridge/events";
 import { callLabel, rankLabel, isVulnerable, VUL_LABEL } from "@bridge/events";
 import { resultLabel, type GameState, type ScoreBreakdown } from "@bridge/engine";
 import Link from "next/link";
@@ -34,10 +39,12 @@ const GLYPH: Record<Suit, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const isRed = (s: Suit) => s === "H" || s === "D";
 const SANS = { fontFamily: "Arial, Helvetica, sans-serif" } as const;
 
-/** A BBO card face: white, rank over suit in the top-left, adjacent layout.
- *  Sized in container-query units so the whole table scales fluidly. */
+const callChipText = (call: Call) => (call === "P" ? "Pass" : callLabel(call));
+const callIsRed = (call: Call) => call[1] === "D" || call[1] === "H";
+
+/** A BBO card face. Scales gently (tight clamp) so the table stays stable. */
 function Face({ card, big }: Readonly<{ card: Card; big: boolean }>) {
-  const w = big ? "clamp(25px, 6.4cqw, 64px)" : "clamp(19px, 4.4cqw, 44px)";
+  const w = big ? "clamp(38px, 3.4cqw, 54px)" : "clamp(28px, 2.6cqw, 40px)";
   return (
     <span
       className="relative block border border-neutral-500 bg-white first:rounded-l-[4px] last:rounded-r-[4px]"
@@ -49,11 +56,11 @@ function Face({ card, big }: Readonly<{ card: Card; big: boolean }>) {
       >
         <span
           className="font-bold tabular-nums"
-          style={{ fontSize: big ? "clamp(12px, 3cqw, 30px)" : "clamp(10px, 2.1cqw, 21px)" }}
+          style={{ fontSize: big ? "clamp(17px, 1.7cqw, 26px)" : "clamp(13px, 1.3cqw, 19px)" }}
         >
           {rankLabel(card.rank)}
         </span>
-        <span style={{ fontSize: big ? "clamp(11px, 2.7cqw, 27px)" : "clamp(9px, 1.9cqw, 19px)" }}>
+        <span style={{ fontSize: big ? "clamp(15px, 1.5cqw, 23px)" : "clamp(12px, 1.2cqw, 17px)" }}>
           {GLYPH[card.suit]}
         </span>
       </span>
@@ -61,8 +68,7 @@ function Face({ card, big }: Readonly<{ card: Card; big: boolean }>) {
   );
 }
 
-/** Face-up hand: adjacent big card faces (BBO style — no overlap), grouped
- *  ♠ ♥ ♣ ♦. Legal cards post playCardAction; illegal dim while playing. */
+/** Face-up hand: adjacent big card faces (BBO style — no overlap). */
 function FaceHand({
   hand,
   playable,
@@ -102,13 +108,12 @@ function FaceHand({
   );
 }
 
-/** BBO hand diagram: white panel, four suit rows — how BBO shows a revealed
- *  side hand. Compact enough that West · center · East fit at any width. */
+/** BBO hand diagram: white panel, four suit rows — a revealed side hand. */
 function Diagram({ hand }: Readonly<{ hand: Card[] }>) {
   return (
     <div
       className="rounded-[3px] border border-neutral-400 bg-white px-2 py-1 leading-tight shadow-md"
-      style={{ fontSize: "clamp(10.5px, 1.9cqw, 18px)" }}
+      style={{ fontSize: "clamp(13px, 1.3cqw, 17px)" }}
     >
       {(["S", "H", "C", "D"] as Suit[]).map((suit) => {
         const ranks = hand
@@ -132,8 +137,7 @@ function Diagram({ hand }: Readonly<{ hand: Card[] }>) {
   );
 }
 
-/** Hidden hand, BBO style: one horizontal block of teal card-back slivers
- *  separated by thin white lines, with a white outline. */
+/** Hidden hand: one horizontal block of teal card-back slivers. */
 function Backs({ count }: Readonly<{ count: number }>) {
   return (
     <div
@@ -147,8 +151,8 @@ function Backs({ count }: Readonly<{ count: number }>) {
           aria-hidden
           className="block"
           style={{
-            width: "clamp(6.5px, 1.9cqw, 20px)",
-            height: "clamp(34px, 9cqw, 92px)",
+            width: "clamp(10px, 1.2cqw, 16px)",
+            height: "clamp(52px, 5.6cqw, 78px)",
             background: BACK_TEAL,
             borderLeft: i > 0 ? "1.5px solid rgba(255,255,255,.9)" : undefined,
           }}
@@ -161,6 +165,8 @@ function Backs({ count }: Readonly<{ count: number }>) {
 export function BboTable({
   sessionId,
   lobbyHref = "/bridge/table",
+  auctionDisplay = "box",
+  auctionToggleHref,
   state,
   score,
   visible,
@@ -191,15 +197,44 @@ export function BboTable({
   plate: (seat: Seat) => ReactNode;
   /** Where "Play another" goes — the mobile shell passes /m/play. */
   lobbyHref?: string;
+  /** Where to show the auction: the central box, or a bubble by each seat. */
+  auctionDisplay?: "box" | "seats";
+  /** Href that flips auctionDisplay (rendered as the corner toggle). */
+  auctionToggleHref?: string;
 }>) {
-  // A hand block: the horizontal hand with its name bar UNDERNEATH (BBO).
+  const seatsMode = auctionDisplay === "seats";
+  const inAuction = state.phase === "auction";
+
+  // Each seat's most recent call — for the seat-bubble display mode.
+  const lastCallBySeat: Partial<Record<Seat, Call>> = {};
+  for (const a of state.auction) lastCallBySeat[a.seat] = a.call;
+
+  const callBubble = (seat: Seat) => {
+    const call = lastCallBySeat[seat];
+    if (!seatsMode || !inAuction) return null;
+    return (
+      <div
+        className="rounded-[4px] px-2 py-0.5 text-center font-bold shadow"
+        style={{
+          background: call ? "#fff" : "rgba(255,255,255,.35)",
+          color: call && callIsRed(call) ? RED : "#000",
+          fontSize: 15,
+          minWidth: 40,
+          minHeight: 22,
+          lineHeight: "16px",
+        }}
+      >
+        {call ? callChipText(call) : "—"}
+      </div>
+    );
+  };
+
+  // A hand block: the horizontal hand with (in seats mode) its call bubble
+  // above and its name bar under (BBO).
   const seatBlock = (seat: Seat) => {
     const hand = state.hands[seat];
     const playable = legalNow && state.turn === seat ? legalNow : null;
     const side = seat === "E" || seat === "W";
-    // Side hands: full faces only while you must play from that hand (e.g.
-    // declaring dummy); a merely-revealed side hand is BBO's suit diagram —
-    // three 13-card face rows can't share a row at smaller widths.
     const body = !visible[seat] ? (
       <Backs count={hand.length} />
     ) : side && !playable ? (
@@ -213,9 +248,12 @@ export function BboTable({
       />
     );
     return (
-      <div className="flex w-fit max-w-full flex-col items-stretch gap-0.5">
-        {body}
-        {plate(seat)}
+      <div className="flex w-fit max-w-full flex-col items-center gap-0.5">
+        {callBubble(seat)}
+        <div className="flex w-full flex-col items-stretch gap-0.5">
+          {body}
+          {plate(seat)}
+        </div>
       </div>
     );
   };
@@ -226,8 +264,7 @@ export function BboTable({
       } ${state.contract.declarer}`
     : null;
 
-  // Top-left summary: dealer/vul during the auction; contract + trick
-  // counters once the contract is set (BBO's corner tally).
+  // Top-left summary: dealer/vul during the auction; contract + trick tally after.
   const summary = (
     <div className="rounded-[3px] border border-neutral-400 bg-white px-2 py-1.5 text-[12px] leading-snug text-black shadow-sm">
       {contractText ? (
@@ -244,22 +281,19 @@ export function BboTable({
     </div>
   );
 
-  // The centrepiece during bidding: BBO's big pale auction panel — giant
-  // W N E S header (red letter = that side vulnerable), calls as grey chips.
+  // The central auction box (box mode). Barely-scaling: fixed fonts, a tight
+  // width clamp that is 320px on desktop and only shrinks to fit a phone.
   const auctionPanel = (
     <div
       className="rounded-[4px] px-3 pb-3 shadow-lg"
-      style={{ background: PANEL, width: "clamp(156px, 37cqw, 420px)" }}
+      style={{ background: PANEL, width: "clamp(236px, 40cqw, 320px)" }}
     >
       <div className="grid grid-cols-4 rounded-t-[4px] bg-white px-1 text-center">
         {(["W", "N", "E", "S"] as Seat[]).map((s) => (
           <span
             key={s}
-            className="py-0.5 font-bold leading-tight"
-            style={{
-              color: isVulnerable(state.vul, s) ? RED : "#000",
-              fontSize: "clamp(15px, 3.4cqw, 34px)",
-            }}
+            className="py-0.5 text-[22px] font-bold leading-tight"
+            style={{ color: isVulnerable(state.vul, s) ? RED : "#000" }}
           >
             {s}
           </span>
@@ -267,27 +301,20 @@ export function BboTable({
       </div>
       <div className="mt-1 space-y-1">
         {auctionRows.length === 0 && (
-          <div className="py-2 text-center text-[13px] text-neutral-500">
-            {dealer} deals
-          </div>
+          <div className="py-2 text-center text-[14px] text-neutral-500">{dealer} deals</div>
         )}
         {auctionRows.map((row, i) => (
           <div key={i} className="grid grid-cols-4 gap-1 text-center">
             {[0, 1, 2, 3].map((j) => {
               const entry = row[j];
               if (!entry) return <span key={j} />;
-              const rc = entry.call[1] === "D" || entry.call[1] === "H";
               return (
                 <span
                   key={j}
-                  className="rounded-[3px] py-0.5 font-medium leading-tight"
-                  style={{
-                    background: CHIP,
-                    color: rc ? RED : "#000",
-                    fontSize: "clamp(12px, 2.5cqw, 25px)",
-                  }}
+                  className="rounded-[3px] py-0.5 text-[16px] font-medium leading-tight"
+                  style={{ background: CHIP, color: callIsRed(entry.call) ? RED : "#000" }}
                 >
-                  {entry.call === "P" ? "Pass" : callLabel(entry.call)}
+                  {callChipText(entry.call)}
                 </span>
               );
             })}
@@ -306,7 +333,7 @@ export function BboTable({
   const trickArea = (
     <div
       className="relative mx-auto"
-      style={{ width: "clamp(118px, 26cqw, 280px)", height: "clamp(118px, 26cqw, 280px)" }}
+      style={{ width: "clamp(170px, 22cqw, 250px)", height: "clamp(170px, 22cqw, 250px)" }}
     >
       {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
         const pos =
@@ -327,7 +354,7 @@ export function BboTable({
                 className={`block rounded-[4px] border border-dashed ${
                   seat === state.turn ? "border-[#FFC933]" : "border-white/40"
                 }`}
-                style={{ width: "clamp(19px, 4.4cqw, 44px)", aspectRatio: "6 / 10.6" }}
+                style={{ width: "clamp(28px, 2.6cqw, 40px)", aspectRatio: "6 / 10.6" }}
               />
             )}
           </div>
@@ -351,27 +378,57 @@ export function BboTable({
     </div>
   );
 
+  // What sits in the middle. In seats mode during the auction the middle is
+  // clear (the calls live at each seat) — keep a fixed spacer so the felt
+  // doesn't collapse.
   const center =
-    state.phase === "auction"
-      ? auctionPanel
-      : state.phase === "complete"
-        ? resultPanel
-        : trickArea;
+    state.phase === "complete"
+      ? resultPanel
+      : state.phase === "play"
+        ? trickArea
+        : seatsMode
+          ? <div style={{ height: "clamp(120px, 18cqw, 200px)" }} aria-hidden />
+          : auctionPanel;
+
+  // The bid box wrapper: fixed height so it never shifts the felt, and always
+  // present during the auction (disabled off-turn) so the options stay visible.
+  const bidStrip = inAuction ? (
+    <div
+      className="rounded-[4px] px-3 py-2.5 shadow-md"
+      style={{ background: KHAKI }}
+    >
+      <BboBidBox sessionId={sessionId} legal={callsNow ?? []} active={!!myTurn} />
+    </div>
+  ) : null;
 
   return (
-    // containerType makes every cqw unit below track THIS element's width, so
-    // the whole table scales continuously with the window (no breakpoints).
+    // containerType makes cqw units track THIS element's width.
     <div style={{ ...SANS, containerType: "inline-size" }}>
       <div
         className="relative flex flex-col justify-between rounded-lg shadow-md"
         style={{
           background: FELT,
-          minHeight: "clamp(380px, 76cqw, 820px)",
-          padding: "clamp(12px, 2.2cqw, 26px) clamp(12px, 2.6cqw, 30px) clamp(10px, 1.8cqw, 20px)",
+          minHeight: "clamp(520px, 60cqw, 700px)",
+          padding: "clamp(14px, 2cqw, 24px) clamp(12px, 2.2cqw, 26px) clamp(10px, 1.6cqw, 18px)",
         }}
       >
         {/* Dealer/vul → contract/tricks tally, pinned top-left like BBO. */}
         <div className="absolute left-3 top-3">{summary}</div>
+
+        {/* Auction-display toggle, pinned top-right. */}
+        {auctionToggleHref && (
+          <Link
+            href={auctionToggleHref}
+            className="absolute right-3 top-3 rounded-[4px] border border-white/40 bg-black/20 px-2 py-1 text-[11px] font-medium text-white/90 hover:bg-black/30"
+            title={
+              seatsMode
+                ? "Show the auction in the centre box"
+                : "Show each player's last call at their seat"
+            }
+          >
+            bids: {seatsMode ? "at seats" : "centre"}
+          </Link>
+        )}
 
         {/* North */}
         <div className="flex justify-center">{seatBlock("N")}</div>
@@ -383,29 +440,28 @@ export function BboTable({
           <div className="justify-self-end">{seatBlock("E")}</div>
         </div>
 
-        {/* South: the khaki bid strip sits directly above your hand (BBO). */}
+        {/* South: the fixed bid strip sits directly above your hand (BBO). */}
         <div className="flex flex-col items-center gap-2">
-          {myTurn && callsNow && (
-            <div
-              className="w-fit max-w-full rounded-[4px] px-3 py-2.5 shadow-md"
-              style={{ background: KHAKI }}
-            >
-              <BboBidBox sessionId={sessionId} legal={[...callsNow]} />
-            </div>
-          )}
+          {bidStrip}
           {seatBlock("S")}
         </div>
       </div>
 
       {/* Prompt line under the table, plain BBO tone. */}
       <div className="mt-2 flex flex-col items-center gap-1 text-black" style={SANS}>
+        {inAuction && !myTurn && actingIsHuman && (
+          <p className="text-sm text-neutral-600">Waiting on the human in seat {actingSeat}.</p>
+        )}
+        {inAuction && !myTurn && !actingIsHuman && (
+          <p className="text-sm text-neutral-600">Waiting on {actingSeat} to bid…</p>
+        )}
         {myTurn && legalNow && (
           <p className="text-sm text-neutral-700">
             Your play — click a card
             {state.turn !== mySeat ? ` (dummy, seat ${state.turn})` : ""}.
           </p>
         )}
-        {actingIsHuman && !myTurn && state.phase !== "complete" && (
+        {actingIsHuman && !myTurn && state.phase === "play" && (
           <p className="text-sm text-neutral-600">Waiting on the human in seat {actingSeat}.</p>
         )}
         {state.phase === "complete" && (
