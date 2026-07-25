@@ -294,7 +294,9 @@ export default async function SessionPage({
         )}
       </>
     );
-    const barClass = "flex w-full min-w-[8rem] items-center gap-1.5 px-0.5 py-0.5 text-[13px]";
+    // Fills its reserved-width column (BboTable wraps the plate in a fixed-
+    // width box), so the plate — and the column — never resizes with the name.
+    const barClass = "flex w-full items-center gap-1.5 px-1 py-0.5 text-[13px]";
     if (learnerMode) {
       return (
         <p className={barClass} style={plateStyle}>

@@ -188,10 +188,11 @@ export default async function MobileTablePage({
       <p
         style={{
           display: "flex",
+          // Fills its reserved-width column wrapper (BboTable sizes it).
           width: "100%",
           alignItems: "center",
           gap: 5,
-          padding: "2px 3px",
+          padding: "2px 4px",
           margin: 0,
           background: acting ? "#FFC933" : "#D6D6D6",
           color: "#000",

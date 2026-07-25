@@ -30,8 +30,8 @@ const BTN: React.CSSProperties = {
   color: "#000",
   border: "1px solid #8a8a6a",
   borderRadius: 6,
-  padding: "8px 0",
-  width: 44,
+  padding: "7px 0",
+  width: 42,
   fontWeight: 700,
   fontSize: 19,
   lineHeight: 1.1,
@@ -69,7 +69,7 @@ export function BboBidBox({
 
   const passStyle = {
     ...BTN,
-    width: 96,
+    width: 88,
     background: "#1E7B32",
     color: "#fff",
     border: "1px solid #155A24",
