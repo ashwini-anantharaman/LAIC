@@ -1,3 +1,4 @@
+import { AutoRead } from "@/components/kb/AutoRead";
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -462,6 +463,17 @@ export default async function NewFromDocumentPage({
                 {readingDone ? " — nothing left to read." : " · one batch per click, resumable."}
               </span>
             </form>
+            {/* Or let it drain itself — an 88-slide deck is ~11 batches. */}
+            {!readingDone && (
+              <AutoRead
+                kbId={kb!.kbId}
+                sourceId={source!.sourceId}
+                model={modelId}
+                total={pageCount}
+                remaining={pageCount - readCount}
+                disabled={!llmReady || !storeReady}
+              />
+            )}
           </div>
         )}
       </Stage>
