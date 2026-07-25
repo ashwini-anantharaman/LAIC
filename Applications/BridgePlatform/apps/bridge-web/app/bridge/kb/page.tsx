@@ -321,6 +321,25 @@ export default async function KbListPage({
       </section>
 
       <section className="mt-6 rounded-lg border border-neutral-200 p-5">
+        <h2 className="font-medium">Build one from a slide deck or PDF</h2>
+        <p className="mt-1 max-w-2xl text-xs text-neutral-600">
+          For a document whose meaning lives in its <em>pictures</em> — bidding tables,
+          color-coded rows, support matrices, card diagrams, deal figures. The pages are read as
+          images (so a table stays a table), then you extract the deck one named section at a
+          time and settle each before the next. Ends with a playable knowledge base whose every
+          rule cites the slide it came from.
+        </p>
+        <p className="mt-3">
+          <Link
+            href="/bridge/kb/new-from-document"
+            className="inline-block rounded border border-emerald-400 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+          >
+            New knowledge base from a document →
+          </Link>
+        </p>
+      </section>
+
+      <section className="mt-6 rounded-lg border border-neutral-200 p-5">
         <h2 className="font-medium">New knowledge base</h2>
         <p className="mt-1 text-xs text-neutral-500">
           A fresh master base. To make a limited version of an existing one,

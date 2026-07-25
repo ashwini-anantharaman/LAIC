@@ -705,6 +705,33 @@ test("auction rules explorer: lists the rules at a decision point", async ({
   await expect(page.getByText(/match this context/)).toBeVisible();
 });
 
+test("document wizard: renders with the honest no-key notice", async ({ page, context }) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto("/bridge/kb/new-from-document");
+  await expect(
+    page.getByRole("heading", { name: "New knowledge base from a document" }),
+  ).toBeVisible();
+  // e2e servers strip ANTHROPIC_API_KEY — the wizard must say so, not pretend.
+  await expect(page.getByText(/ANTHROPIC_API_KEY isn't configured/)).toBeVisible();
+  // Stage 1 is the only actionable step until a KB exists.
+  await expect(page.getByRole("button", { name: "Create the knowledge base" })).toBeVisible();
+});
+
+test("KB index: the document wizard is offered and links to it", async ({ page, context }) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto("/bridge/kb");
+  const wizardCard = page
+    .locator("section")
+    .filter({ hasText: "Build one from a slide deck or PDF" });
+  await expect(wizardCard).toBeVisible();
+  const link = wizardCard.getByRole("link", { name: /New knowledge base from a document/ });
+  await expect(link).toHaveAttribute("href", "/bridge/kb/new-from-document");
+  await link.click();
+  await expect(
+    page.getByRole("heading", { name: "New knowledge base from a document" }),
+  ).toBeVisible();
+});
+
 test("drills: the runner renders and seeds the expert cases", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
   await page.goto(`${kbUrl}/drills`);

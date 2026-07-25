@@ -18,6 +18,7 @@ const TOC = [
   ["settings", "Settings & dials"],
   ["engine", "How the AI decides"],
   ["versions", "Versions & history"],
+  ["sources", "Sources & slide decks"],
   ["augment", "Augmenting with a source"],
   ["completeness", "Complete players"],
   ["editing", "Editing safely"],
@@ -656,6 +657,39 @@ export default async function GuidePage() {
               recompiled knowledge, so an undo → fix → step continues under the corrected rules.
             </p>
           </div>
+        </div>
+      </Section>
+
+      <Section
+        id="sources"
+        title="Sources & slide decks"
+        intro="Where knowledge comes from — and what happens when the meaning is in the pictures."
+      >
+        <div className={prose}>
+          <p>
+            A prose document (a system booklet, an article) is uploaded on a KB&apos;s{" "}
+            <b>Sources</b> tab: its text is split into passages, and extraction reads it section
+            by section, every item citing the passages it came from. A <b>slide deck</b> can&apos;t
+            be read that way — its meaning is in bidding tables, color-coded rows (orange =
+            forcing), support-by-strength matrices, card diagrams and deal figures, all of which a
+            text layer throws away.
+          </p>
+          <p>
+            So decks go through{" "}
+            <Link
+              href="/bridge/kb/new-from-document"
+              className="text-emerald-700 underline-offset-2 hover:underline"
+            >
+              New knowledge base from a document
+            </Link>{" "}
+            instead: the PDF itself is stored and <b>read as pictures</b>, one slide at a time, so
+            a table stays a table and what a color <i>means</i> is written down. You then agree an
+            editable <b>section map</b> — named page ranges — and extract{" "}
+            <b>one section at a time</b>, settling &ldquo;Opening bids&rdquo; before
+            &ldquo;Responses&rdquo; is even attempted. Every drafted item cites the slide it came
+            from, and its Source panel has a <b>view slide</b> link that opens the real page — so
+            you can always check a rule against the picture that produced it.
+          </p>
         </div>
       </Section>
 

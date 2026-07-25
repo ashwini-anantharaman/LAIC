@@ -622,7 +622,22 @@ export interface KbSourceDocument {
   mediaType: string;
   charCount: number;
   uploadedAt: string;
+  /**
+   * The whole document as readable text. REQUIRED — every text surface (source
+   * reader, source-fidelity audit, search) reads this. For a VISUAL ingest the
+   * reading pass fills it with the concatenated per-page readings, so those
+   * surfaces keep working unchanged.
+   */
   text: string;
+  // --- Visual ingest (additive; absent on every text-ingested document) ------
+  /** Object path of the raw file in the private `kb-source-files` bucket. */
+  storagePath?: string;
+  /** Pages in the stored PDF (the reading pass writes one passage per page). */
+  pageCount?: number;
+  /** How this document was ingested. Absent means the historical "text". */
+  ingestMode?: "text" | "visual";
+  /** Owner-editable table of contents: named page ranges, extracted one at a time. */
+  sections?: { title: string; fromPage: number; toPage: number }[];
 }
 
 export interface KbSourcePassage {

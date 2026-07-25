@@ -72,16 +72,27 @@ export default async function ItemPage({
   const dirty = itemIsDirty(item, mainSnapshot);
   const titleOf = new Map(kbItems.map((i) => [i.itemId, i.title]));
 
-  // Resolve cited passages for the side-by-side pane.
+  // Resolve cited passages for the side-by-side pane, plus each source's
+  // document — a VISUAL source (a slide deck read as pictures) cites pages, so
+  // its citations can also open the actual slide, not just its transcription.
   const passagesBySource = new Map<string, Awaited<ReturnType<typeof store.listPassages>>>();
+  const documentBySource = new Map<string, Awaited<ReturnType<typeof store.getDocument>>>();
   for (const ref of item.sourceReferences) {
     if (!passagesBySource.has(ref.sourceId))
       passagesBySource.set(ref.sourceId, await store.listPassages(ref.sourceId));
+    if (!documentBySource.has(ref.sourceId))
+      documentBySource.set(ref.sourceId, await store.getDocument(ref.sourceId));
   }
-  const citedPassages = item.sourceReferences.map((ref) => ({
-    ref,
-    passage: passagesBySource.get(ref.sourceId)?.find((p) => p.passageId === ref.passageId),
-  }));
+  const citedPassages = item.sourceReferences.map((ref) => {
+    const passage = passagesBySource.get(ref.sourceId)?.find((p) => p.passageId === ref.passageId);
+    const doc = documentBySource.get(ref.sourceId);
+    const isVisual = doc?.ingestMode === "visual" && Boolean(doc.storagePath);
+    // Visual passages anchor as "page-N"; trust the anchor on either the
+    // citation or the passage it resolved to.
+    const pageAnchor = /^page-(\d+)$/.exec(ref.anchor ?? "") ?? /^page-(\d+)$/.exec(passage?.anchor ?? "");
+    const slide = isVisual && pageAnchor ? Number(pageAnchor[1]) : undefined;
+    return { ref, passage, slide };
+  });
 
   const base = `/bridge/kb/${kbId}`;
   const backHref = from ?? `${base}/items`;
@@ -306,7 +317,7 @@ export default async function ItemPage({
             <p className="text-sm text-neutral-500">No citations.</p>
           ) : (
             <ul className="space-y-3">
-              {citedPassages.map(({ ref, passage }, i) => (
+              {citedPassages.map(({ ref, passage, slide }, i) => (
                 <li key={i} className="border-l-2 border-emerald-300 pl-3">
                   <p className="text-[11px] uppercase tracking-wide text-neutral-400">
                     {passage ? (
@@ -315,7 +326,7 @@ export default async function ItemPage({
                         className="text-emerald-800 underline-offset-2 hover:underline"
                         title="Open this passage in the source document"
                       >
-                        {ref.sourceId} · ¶{passage.ordinal} →
+                        {ref.sourceId} · {slide ? `slide ${slide}` : `¶${passage.ordinal}`} →
                       </Link>
                     ) : (
                       <Link
@@ -327,11 +338,26 @@ export default async function ItemPage({
                     )}
                   </p>
                   {passage ? (
-                    <blockquote className="prose-knowledge mt-1 text-[15px] text-neutral-700">
+                    <blockquote
+                      className={`prose-knowledge mt-1 text-[15px] text-neutral-700${
+                        slide ? " whitespace-pre-wrap" : ""
+                      }`}
+                    >
                       {passage.text}
                     </blockquote>
                   ) : (
                     <p className="mt-1 text-sm italic text-neutral-500">{ref.anchor}</p>
+                  )}
+                  {slide && passage && (
+                    <p className="mt-1">
+                      <Link
+                        href={`/bridge/kb/${kbId}/sources/${ref.sourceId}?p=${passage.passageId}&slide=${slide}#${passage.passageId}`}
+                        className="text-xs text-emerald-700 underline-offset-2 hover:underline"
+                        title="Open the actual slide this rule came from — the reading above is only its transcription"
+                      >
+                        view slide {slide} →
+                      </Link>
+                    </p>
                   )}
                 </li>
               ))}

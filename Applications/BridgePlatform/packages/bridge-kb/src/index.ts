@@ -36,13 +36,18 @@ export { FIXTURE_EDGES, FIXTURE_ITEMS, fixturePacks } from "./fixture";
 export { chunkDocument, looksLikeHeading, normalizeExtractedText, type ChunkedSection, type ChunkResult } from "./passages";
 export {
   materializeExtraction,
+  pageRangeOfPassages,
   runExtraction,
+  runVisualSectionExtraction,
+  visualExtractionSection,
   type ExtractedEdge,
   type ExtractedItem,
   type ExtractionSection,
   type ExtractorOutput,
   type MaterializedSection,
+  type PageRange,
   type RunExtractionOptions,
+  type RunVisualSectionExtractionOptions,
   type SectionExtractor,
 } from "./extraction";
 export {
