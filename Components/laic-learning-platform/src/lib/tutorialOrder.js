@@ -36,7 +36,7 @@ export function orderTutorialParts(parts, opts = {}) {
   const checksPerSection = Math.max(1, Number(opts.checksPerSection) || 1);
 
   if (assessmentPlacement === 'none') {
-    return parts.filter((p) => p?.type !== 'question');
+    return parts.filter((p) => p?.type !== 'question' && p?.type !== 'section-quiz');
   }
 
   const intro = [];
@@ -75,7 +75,7 @@ export function orderTutorialParts(parts, opts = {}) {
       continue;
     }
 
-    if (p.type === 'question') {
+    if (p.type === 'question' || p.type === 'section-quiz') {
       if (mode === 'closing' || assessmentPlacement === 'end_only') {
         closing.push(p);
       } else if (cur) {
@@ -98,15 +98,15 @@ export function orderTutorialParts(parts, opts = {}) {
       fromSections.push(...s.questions);
       s.questions = [];
     }
-    const closingQs = closing.filter((p) => p.type === 'question');
-    const closingOther = closing.filter((p) => p.type !== 'question');
+    const closingQs = closing.filter((p) => p.type === 'question' || p.type === 'section-quiz');
+    const closingOther = closing.filter((p) => p.type !== 'question' && p.type !== 'section-quiz');
     return [
-      ...intro.filter((p) => p.type !== 'question'),
+      ...intro.filter((p) => p.type !== 'question' && p.type !== 'section-quiz'),
       ...sections.flatMap((s) => s.teaching),
       ...closingOther,
       ...fromSections,
       ...closingQs,
-      ...intro.filter((p) => p.type === 'question'),
+      ...intro.filter((p) => p.type === 'question' || p.type === 'section-quiz'),
     ];
   }
 
@@ -125,8 +125,8 @@ export function orderTutorialParts(parts, opts = {}) {
     }
   }
 
-  const introQs = intro.filter((p) => p.type === 'question');
-  const introOther = intro.filter((p) => p.type !== 'question');
+  const introQs = intro.filter((p) => p.type === 'question' || p.type === 'section-quiz');
+  const introOther = intro.filter((p) => p.type !== 'question' && p.type !== 'section-quiz');
   if (introQs.length && sections[0]) {
     sections[0].questions = [...introQs, ...sections[0].questions];
   }

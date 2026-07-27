@@ -1081,6 +1081,36 @@ function buildGeneratePrompt(body) {
   // Template + cluster path (preferred)
   if (template && Array.isArray(sectionPlans) && sectionPlans.length && knowledgeBase?.units?.length) {
     const unitsById = new Map((knowledgeBase.units || []).map((u) => [u.id, u]));
+    const anyComposite = sectionPlans.some((sp) => Array.isArray(sp.sectionRecipe) && sp.sectionRecipe.length > 0);
+
+    const formatFlatRecipe = (rows) =>
+      (rows || [])
+        .map((r, i) => `${i + 1}. ${r.type}${r.preferKinds ? ` (prefer: ${r.preferKinds.join(', ')})` : ''}`)
+        .join('; ');
+
+    const formatCompositeRecipe = (items) =>
+      (items || []).map((item, i) => {
+        if (item.kind === 'atomic') {
+          const prefer = item.preferKinds?.length ? ` (prefer: ${item.preferKinds.join(', ')})` : '';
+          const req = item.required === false ? ' [optional]' : '';
+          return `${i + 1}. atomic:${item.blockType}${prefer}${req}`;
+        }
+        if (item.objectType === 'quiz') {
+          const note = item.authoringNote
+            ? ` authoringNote="${String(item.authoringNote).replace(/"/g, "'")}"`
+            : '';
+          const req = item.required ? ' required=true' : ' required=false';
+          return (
+            `${i + 1}. EMBEDDED_QUIZ objectType=quiz sourceMode=${item.sourceMode || 'generate'}${req}${note}`
+            + ' → emit ONE {"type":"section-quiz",...} for THIS section only'
+          );
+        }
+        return (
+          `${i + 1}. EMBEDDED_${String(item.objectType || 'object').toUpperCase()} `
+          + `[DEFERRED — not yet wired for generation; do NOT emit a part for this slot]`
+        );
+      }).join('; ');
+
     const clusterLines = sectionPlans.map((sp) => {
       const cluster = (knowledgeBase.clusters || []).find((x) => x.id === sp.clusterId);
       const units = (cluster?.unitIds || [])
@@ -1088,9 +1118,10 @@ function buildGeneratePrompt(body) {
         .filter(Boolean)
         .map((u, i) => `    (${i + 1}) [${u.kind}] ${u.text}${u.from ? ` — ${u.from}` : ''}`)
         .join('\n');
-      const recipe = (sp.recipe || template.sectionBlockRecipe || [])
-        .map((r, i) => `${i + 1}. ${r.type}${r.preferKinds ? ` (prefer: ${r.preferKinds.join(', ')})` : ''}`)
-        .join('; ');
+      const useComposite = Array.isArray(sp.sectionRecipe) && sp.sectionRecipe.length > 0;
+      const recipe = useComposite
+        ? formatCompositeRecipe(sp.sectionRecipe)
+        : formatFlatRecipe(sp.recipe || template.sectionBlockRecipe || []);
       const mediaPl = (sp.mediaPlacements || [])
         .map((m) => `slot ${m.slotId} → ref ${m.mediaRef}`)
         .join(', ') || '(none)';
@@ -1116,6 +1147,24 @@ function buildGeneratePrompt(body) {
       'When you add material not in the units, keep it short and label the part with a normal pedagogical label (e.g. Explanation) — do not claim it is a source excerpt.',
     ].join(' ');
 
+    const compositeQuizRules = anyComposite ? [
+      'EMBEDDED QUIZ (composite templates): When a recipe line is EMBEDDED_QUIZ, emit exactly ONE part of type "section-quiz" after that section\'s teaching — a nested quiz *object* for the section, NOT a loose "question" part.',
+      'section-quiz shape: {"type":"section-quiz","label":string,"sourceMode":"generate","authoringNote":string,"required":true,"questions":[{"question":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings]}]}',
+      'Honor sourceMode, authoringNote, and required from the recipe line. Ground every question in THAT section\'s units only (e.g. authoringNote "test only this section\'s concept").',
+      'Emit about ' + Math.max(chks, 1) + ' question(s) inside the section-quiz questions array (from the checks-per-section knob).',
+      'Do NOT emit separate top-level "question" parts for an EMBEDDED_QUIZ slot. Atomic try-it (if any) may still use a single "question" part.',
+      'Lines marked [DEFERRED] must produce no part.',
+    ].join('\n') : '';
+
+    const legacyCheckRules = !anyComposite ? [
+      'knowledge-check / try-it → question parts. worked-example / explanation / instruction / principle / misconception / correction / scenario-advance / source-excerpt → rich-text with an appropriate label.',
+      'Number question labels sequentially across the whole tutorial: "Question 1", "Question 2", …',
+      'CHECK PLACEMENT (critical): When assessment is after_each_section or checkpoints, finish ALL teaching parts for a section, then emit that section\'s question(s) IMMEDIATELY before starting the next section heading. Never dump all questions at the end. Never put Section 2\'s teaching before Section 1\'s check. Each question must test ONLY the section it follows.',
+    ].join('\n') : [
+      'Atomic teaching items → rich-text with an appropriate label. Atomic try-it → a single "question" part.',
+      'CHECK PLACEMENT: finish ALL teaching for a section, then the section-quiz (or try-it question), IMMEDIATELY before the next section heading.',
+    ].join('\n');
+
     const system = [
       'You generate a tutorial as STRUCTURED JSON from a FIXED pedagogical template and CLUSTERED source units.',
       allowExtra ? groundingExtra : groundingStrict,
@@ -1123,14 +1172,14 @@ function buildGeneratePrompt(body) {
       'Part shapes:',
       '  {"type":"rich-text","label":string,"heading":string|null,"subheads":string[]|null,"body":string}',
       '  {"type":"question","label":string,"prompt":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings]}',
+      '  {"type":"section-quiz","label":string,"sourceMode":"generate","authoringNote":string,"required":boolean,"questions":[{"question":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings]}]}',
       '  {"type":"media","ref":string}',
       'For each section: emit a rich-text with heading set to the section title (and subheads if given), then follow the recipe order.',
-      'knowledge-check / try-it → question parts. worked-example / explanation / instruction / principle / misconception / correction / scenario-advance / source-excerpt → rich-text with an appropriate label.',
-      'Number question labels sequentially across the whole tutorial: "Question 1", "Question 2", …',
-      'CHECK PLACEMENT (critical): When assessment is after_each_section or checkpoints, finish ALL teaching parts for a section, then emit that section\'s question(s) IMMEDIATELY before starting the next section heading. Never dump all questions at the end. Never put Section 2\'s teaching before Section 1\'s check. Each question must test ONLY the section it follows.',
-      'HINTS: Follow the author\'s hint settings below. If hints are ON, every question must include exactly that many progressive strings in "hints". Hint 1 lightly points; later hints get more specific; at least one must tell the learner which section/passage to re-read (use that section\'s title). Never reveal the correct option letter/text. If hints are OFF, set "hints" to [].',
+      legacyCheckRules,
+      compositeQuizRules,
+      'HINTS: Follow the author\'s hint settings below. If hints are ON, every question (inline or inside section-quiz) must include exactly that many progressive strings in "hints". Hint 1 lightly points; later hints get more specific; at least one must tell the learner which section/passage to re-read (use that section\'s title). Never reveal the correct option letter/text. If hints are OFF, set "hints" to [].',
       'Place media parts only where section media slots specify. Keep bodies 2–5 short sentences.',
-    ].join('\n');
+    ].filter(Boolean).join('\n');
 
     const assess = template.assessmentPlacement || 'after_each_section';
     const hintOpts = resolveHintSettings(c);
@@ -1155,10 +1204,16 @@ function buildGeneratePrompt(body) {
       mediaList.length ? `Available media refs: ${mediaList.map((m) => `${m.ref}(${m.kind})`).join(', ')}` : 'No media attached.',
       '',
       'Produce IN ORDER: (1) Introduction rich-text with heading "Introduction", (2) for EACH section: teaching parts then that section\'s check(s), (3) closing per End with.',
-      assess === 'end_only' ? 'Put knowledge-check questions ONLY after all sections (end quiz), not mid-section.' : '',
-      assess === 'none' ? 'Do not emit knowledge-check questions.' : '',
+      assess === 'end_only'
+        ? (anyComposite
+          ? 'Put section-quiz / knowledge-check questions ONLY after all sections (end quiz), not mid-section.'
+          : 'Put knowledge-check questions ONLY after all sections (end quiz), not mid-section.')
+        : '',
+      assess === 'none' ? 'Do not emit knowledge-check or section-quiz parts.' : '',
       (assess === 'after_each_section' || assess === 'checkpoints_after_each')
-        ? `Pattern per section: [heading rich-text] → [teaching…] → [${Math.max(chks, 1)} question(s)] → next section.`
+        ? (anyComposite
+          ? `Pattern per section: [heading rich-text] → [teaching…] → [ONE section-quiz with ~${Math.max(chks, 1)} question(s)] → next section.`
+          : `Pattern per section: [heading rich-text] → [teaching…] → [${Math.max(chks, 1)} question(s)] → next section.`)
         : '',
       'Return the JSON array now.',
     ].filter(Boolean).join('\n');
@@ -1226,7 +1281,7 @@ function buildGeneratePrompt(body) {
   return { system, user, secs };
 }
 
-const ALLOWED_TYPES = new Set(['rich-text', 'concept-card', 'question']);
+const ALLOWED_TYPES = new Set(['rich-text', 'concept-card', 'question', 'section-quiz']);
 
 function normalizePart(raw, idx) {
   if (!raw || typeof raw !== 'object') return null;
@@ -1250,6 +1305,39 @@ function normalizePart(raw, idx) {
   if (raw.type === 'concept-card') {
     return { id, type: 'concept-card', label, concept: String(raw.concept || ''), plain: String(raw.plain || ''), misc: String(raw.misc || '') };
   }
+  if (raw.type === 'section-quiz') {
+    const rawQs = Array.isArray(raw.questions) ? raw.questions : [];
+    const questions = rawQs.map((q) => {
+      if (!q || typeof q !== 'object') return null;
+      const options = Array.isArray(q.options) ? q.options.slice(0, 4).map(String) : [];
+      while (options.length < 4) options.push(`Option ${options.length + 1}`);
+      let correct = Number(q.correct);
+      if (!Number.isInteger(correct) || correct < 0 || correct > 3) correct = 0;
+      const hints = Array.isArray(q.hints)
+        ? q.hints.map((h) => String(h || '').trim()).filter(Boolean)
+        : [];
+      const question = String(q.question || q.prompt || '').trim();
+      if (!question) return null;
+      return {
+        question,
+        options,
+        correct,
+        explanation: String(q.explanation || q.exp || ''),
+        hints,
+        label: typeof q.label === 'string' ? q.label : undefined,
+      };
+    }).filter(Boolean);
+    if (!questions.length) return null;
+    return {
+      id,
+      type: 'section-quiz',
+      label: label || 'Section quiz',
+      sourceMode: String(raw.sourceMode || 'generate'),
+      authoringNote: typeof raw.authoringNote === 'string' ? raw.authoringNote : undefined,
+      required: raw.required !== false,
+      questions,
+    };
+  }
   const options = Array.isArray(raw.options) ? raw.options.slice(0, 4).map(String) : [];
   while (options.length < 4) options.push(`Option ${options.length + 1}`);
   let correct = Number(raw.correct);
@@ -1267,6 +1355,15 @@ function normalizePart(raw, idx) {
 function renumberQuestionLabels(parts) {
   let n = 0;
   return parts.map((p) => {
+    if (p.type === 'section-quiz' && Array.isArray(p.questions)) {
+      return {
+        ...p,
+        questions: p.questions.map((q) => {
+          n += 1;
+          return { ...q, label: `Question ${n}` };
+        }),
+      };
+    }
     if (p.type !== 'question') return p;
     n += 1;
     return { ...p, label: `Question ${n}` };
@@ -2328,11 +2425,23 @@ function normalizeDrill(raw, prev = {}, config = {}) {
     const choices = Array.isArray(it?.choices)
       ? it.choices.map((x) => String(x || '').trim()).filter(Boolean)
       : undefined;
+    const whyCorrect = String(it?.whyCorrect || it?.why || it?.explanation || '').trim() || undefined;
+    let corrections;
+    if (it?.corrections && typeof it.corrections === 'object' && !Array.isArray(it.corrections)) {
+      corrections = Object.fromEntries(
+        Object.entries(it.corrections)
+          .map(([k, v]) => [String(k).trim(), String(v || '').trim()])
+          .filter(([k, v]) => k && v),
+      );
+      if (!Object.keys(corrections).length) corrections = undefined;
+    }
     return {
       id: it?.id || `di${i + 1}`,
       prompt,
       answer,
-      choices: /recognition/i.test(fmt) ? (choices && choices.length >= 2 ? choices : undefined) : undefined,
+      choices: choices && choices.length >= 2 ? choices : undefined,
+      whyCorrect,
+      corrections,
       hint: String(it?.hint || '').trim() || undefined,
       difficulty: ['easy', 'medium', 'hard'].includes(String(it?.difficulty || '').toLowerCase())
         ? String(it.difficulty).toLowerCase()
@@ -2369,10 +2478,15 @@ function buildDrillPrompt({ title, config, extracts, prompt }) {
     'You generate ONE drill (rapid practice set) as STRUCTURED JSON.',
     groundingFromExtracts(extracts, 'No marked-up units — build from Define (skill, practice design) and the author prompt.'),
     'Output ONLY a JSON object. No prose, no markdown fences.',
-    'Shape: {"skill":string,"format":string,"difficultyCurve":string,"feedback":string,"timed":boolean,"repeatUntilMastery":boolean,"items":[{"id":string,"prompt":string,"answer":string,"choices":string[]|null,"hint":string|null,"difficulty":"easy"|"medium"|"hard"|null}]}',
+    'Shape: {"skill":string,"format":string,"difficultyCurve":string,"feedback":string,"timed":boolean,"repeatUntilMastery":boolean,"items":[{"id":string,"prompt":string,"answer":string,"choices":string[]|null,"whyCorrect":string,"corrections":{"wrongAnswer":"specific correction"}|null,"hint":string|null,"difficulty":"easy"|"medium"|"hard"|null}]}',
     `Write exactly ${ni} items in format "${fmt}".`,
-    /recognition/i.test(fmt) ? 'Recognition: each item needs 3–4 choices including the correct answer.' : 'Recall/Application: choices may be null; answer is the expected response.',
-    `Difficulty curve: ${c.diff || 'Easy → hard'}. Feedback mode: ${c.fb || 'Immediate'}.`,
+    /recognition/i.test(fmt)
+      ? 'Recognition: each item needs 3–4 choices including the correct answer.'
+      : /application/i.test(fmt)
+        ? 'Application: each item must make the learner APPLY the skill on a fresh instance (compute, decide, compare) — not recite a rule. Prefer short typed answers; choices only when the decision is categorical (e.g. made/failed).'
+        : 'Recall: answer is the expected typed response; choices may be null.',
+    'Every item needs whyCorrect (1–2 sentences explaining the right answer). For likely wrong answers, fill corrections keyed by that wrong answer text with a targeted mistake explanation.',
+    `Difficulty curve: ${c.diff || 'Easy → hard'}. Tag items easy/medium/hard accordingly. Feedback mode: ${c.fb || 'Immediate'}.`,
   ].join('\n');
   const user = [
     `Title: ${title || '(untitled)'}`,

@@ -1038,7 +1038,7 @@ function Step8({ courseTitle, onSubmit, submitted }: { courseTitle: string; onSu
         <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: '#FEF3C7', color: '#92400E' }}>in review</span>
         <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: '#F3F4F6', color: '#374151' }}>Bridge</span>
       </div>
-      <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>Track it under <strong>Versions & Publishing</strong> or <strong>Review Queue</strong>. Use "Finish" below to return to the Object Library.</p>
+      <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>Track it under <strong>Versions & Publishing</strong> or <strong>Review Queue</strong>. Use "Finish" below to return to Activity objects.</p>
     </div>
   );
 
@@ -1222,7 +1222,7 @@ export function CourseWizard() {
       <div className="sticky top-0 z-20 flex items-center justify-between px-5 py-3 border-b border-white/40"
         style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
         <button onClick={() => navigate('cd-library')} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
-          <ArrowLeft size={14} />Object Library
+          <ArrowLeft size={14} />Activity objects
         </button>
         <p style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>New course from a source</p>
         <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"

@@ -6,8 +6,9 @@ import { OBJECTS } from '../../../lib/data';
 import type {
   Block, QuizContent, FlashcardSetContent, BridgePlayContent, BiddingSequenceContent,
   ImageContent, VideoEmbedContent, VideoScriptContent, ConceptCardContent, SummaryContent, ReflectionContent,
-  AssignmentContent, DrillContent,
+  AssignmentContent, DrillContent, LearningObject,
 } from '../../../lib/types';
+import { resolveLearningObject } from '../../../lib/objectUrls';
 import { renumberBlockQuestionLabels } from '../../../lib/tutorialOrder.js';
 import { hintsForQuestion, parsePassMark, resolveHintSettings } from '../../../lib/questionHints.js';
 import { buildGlossary, type GlossaryEntry } from '../../../lib/glossary';
@@ -16,6 +17,7 @@ import { AskAIChat } from './AskAIChat';
 import { SummaryView, ReflectionView, AssignmentView, DrillView } from './StructuredObjectEditors';
 import { ConceptCardTemplate } from './ConceptCardTemplate';
 import { VideoScriptPlayer } from './VideoScriptPlayer';
+import { mockDrillContent } from '../../../lib/mockDrillBlueprint';
 
 export type QuizResolveStatus = 'correct' | 'revealed';
 
@@ -1030,8 +1032,19 @@ function BlockRenderer({
       return <ReflectionView content={block.content as ReflectionContent} />;
     case 'assignment':
       return <AssignmentView content={block.content as AssignmentContent} />;
-    case 'drill':
-      return <DrillView content={block.content as DrillContent} />;
+    case 'drill': {
+      const c = block.content as DrillContent;
+      const hasItems = (c?.items && c.items.length > 0)
+        || (c?.blueprint?.items && c.blueprint.items.length > 0);
+      return <DrillView content={hasItems ? c : mockDrillContent({
+        skill: c?.skill,
+        format: c?.format,
+        difficultyCurve: c?.difficultyCurve,
+        feedback: c?.feedback,
+        timed: c?.timed,
+        repeatUntilMastery: c?.repeatUntilMastery ?? true,
+      })} />;
+    }
     default:
       return null;
   }
@@ -1248,9 +1261,22 @@ export function LearningBlocksPreview({
   );
 }
 
-export function LearnerReader({ objectId }: { objectId: string }) {
-  const { closeReader, createdObjects } = useApp();
-  const obj = createdObjects.find(o => o.id === objectId) || OBJECTS.find(o => o.id === objectId);
+export function LearnerReader({
+  objectId,
+  object: objectProp,
+  embedded = false,
+}: {
+  objectId: string;
+  object?: LearningObject;
+  embedded?: boolean;
+}) {
+  const app = useApp();
+  const closeReader = app.closeReader || (() => {});
+  const createdObjects = app.createdObjects || [];
+  const obj = objectProp
+    || createdObjects.find(o => o.id === objectId)
+    || OBJECTS.find(o => o.id === objectId)
+    || resolveLearningObject(objectId);
   const [showAsk, setShowAsk] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
@@ -1278,6 +1304,29 @@ export function LearnerReader({ objectId }: { objectId: string }) {
   const videoScript = videoScriptBlock?.content as VideoScriptContent | undefined;
   const showGlobalAsk = obj.type !== 'video-script' || videoScript?.enableChat !== false;
 
+  // Drill objects: always mount the player. Prefer real items; fall back to seed
+  // catalog (same id) or the demo blueprint when a saved copy has empty blocks/items.
+  const drillContent: DrillContent | null = (() => {
+    if (obj.type !== 'drill') return null;
+    const hasItems = (c?: DrillContent | null) =>
+      Boolean((c?.items && c.items.length > 0) || (c?.blueprint?.items && c.blueprint.items.length > 0));
+    const fromObj = (obj.blocks || []).find((b) => b.type === 'drill')?.content as DrillContent | undefined;
+    if (hasItems(fromObj)) return fromObj!;
+    const seed = OBJECTS.find((o) => o.id === objectId && o.type === 'drill');
+    const fromSeed = seed
+      ? (seed.blocks || []).find((b) => b.type === 'drill')?.content as DrillContent | undefined
+      : undefined;
+    if (hasItems(fromSeed)) return fromSeed!;
+    return mockDrillContent({
+      skill: fromObj?.skill || obj.title || 'Practice skill',
+      format: fromObj?.format,
+      difficultyCurve: fromObj?.difficultyCurve,
+      feedback: fromObj?.feedback || 'Immediate',
+      timed: fromObj?.timed,
+      repeatUntilMastery: fromObj?.repeatUntilMastery ?? true,
+    });
+  })();
+
   const jumpToGlossaryPassage = (entry: GlossaryEntry) => {
     setActiveGlossaryId(entry.id);
     if (entry.blockId) scrollToGlossaryBlock(entry.blockId);
@@ -1296,16 +1345,20 @@ export function LearnerReader({ objectId }: { objectId: string }) {
         className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3"
         style={{ background: 'rgba(242,245,248,0.85)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.5)' }}
       >
-        <button
-          onClick={closeReader}
-          className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-black/5"
-          style={{ background: 'rgba(255,255,255,0.7)' }}
-        >
-          <ArrowLeft size={15} className="text-[#374151]" />
-        </button>
+        {!embedded && (
+          <button
+            onClick={closeReader}
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-black/5"
+            style={{ background: 'rgba(255,255,255,0.7)' }}
+          >
+            <ArrowLeft size={15} className="text-[#374151]" />
+          </button>
+        )}
         <div className="flex-1 min-w-0">
           <p style={{ fontSize: 14, fontWeight: 600, color: '#0B1220' }} className="truncate">{obj.title}</p>
-          <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>{obj.estimatedTime} · {obj.type}</p>
+          <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+            {embedded ? 'Activity object · embed' : `${obj.estimatedTime} · ${obj.type}`}
+          </p>
         </div>
         {glossaryEntries.length > 0 && (
           <button
@@ -1336,7 +1389,7 @@ export function LearnerReader({ objectId }: { objectId: string }) {
       </div>
 
       {/* Content stays visible; glossary opens as a right sidebar */}
-      <div className={`px-5 py-6 mx-auto space-y-5 ${obj.type === 'video-script' ? 'max-w-6xl' : 'max-w-xl'}`}>
+      <div className={`px-5 py-6 mx-auto space-y-5 ${obj.type === 'video-script' ? 'max-w-6xl' : obj.type === 'drill' ? 'max-w-2xl' : 'max-w-xl'}`}>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
           <div className="flex items-center gap-2 mb-1">
             <BookOpen size={13} style={{ color: '#9AA3AF' }} />
@@ -1361,6 +1414,8 @@ export function LearnerReader({ objectId }: { objectId: string }) {
 
         {videoScript ? (
           <VideoScriptPlayer content={videoScript} object={obj} />
+        ) : drillContent ? (
+          <DrillView content={drillContent} />
         ) : obj.blocks.length > 0 ? (
           <AssessedBlocks
             blocks={numbered}

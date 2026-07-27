@@ -15,6 +15,8 @@ import {
 } from '../lib/demoAuth';
 import { LoginPortal } from './components/LoginPortal';
 import { Layout } from './components/Layout';
+import { ObjectEmbedPage } from './components/screens/ObjectEmbedPage';
+import { parseObjectEmbedId } from '../lib/objectUrls';
 import {
   consumeLaunchFromUrl,
   fetchLearningContext,
@@ -84,6 +86,14 @@ function objectsForUser(all: LearningObject[], userId: string): LearningObject[]
 }
 
 export default function App() {
+  // Standalone object-embed route (URL-driven) renders before the studio shell,
+  // so the check stays outside the hook-bearing StudioApp (rules of hooks).
+  const embedObjectId = typeof window !== 'undefined' ? parseObjectEmbedId() : null;
+  if (embedObjectId) return <ObjectEmbedPage objectId={embedObjectId} />;
+  return <StudioApp />;
+}
+
+function StudioApp() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeUserId, setActiveUserId] = useState('riya');
   const [role, setRoleState] = useState<Role>('student');

@@ -1101,7 +1101,8 @@ platformRouter.get("/learning/objects", async (c) => {
   if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
-  return c.json(await graph.listLearningObjects(access.orgId));
+  // Program-scoped: each program is its own Content Studio instance.
+  return c.json(await graph.listLearningObjects(access.orgId, access.programId));
 });
 
 platformRouter.put("/learning/objects", async (c) => {
@@ -1112,7 +1113,7 @@ platformRouter.put("/learning/objects", async (c) => {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   if (!body.id || !body.type) throw new HttpError(422, "id and type are required");
-  await graph.upsertLearningObject(access.orgId, body);
+  await graph.upsertLearningObject(access.orgId, body, access.programId);
   return c.json({ ok: true });
 });
 

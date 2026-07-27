@@ -2,6 +2,7 @@ import React from 'react';
 import { Eye } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
+import { ScreenErrorBoundary } from './ScreenErrorBoundary';
 import { useApp } from '../App';
 import { isScreenReadOnly } from '../../lib/learningAreas';
 
@@ -37,6 +38,7 @@ import { AdminPeopleRoles } from './screens/AdminPeopleRoles';
 import { AdminCoursesAssignments } from './screens/AdminCoursesAssignments';
 import { AdminPublishingGovernance } from './screens/AdminPublishingGovernance';
 import { PlatformAccessCatalogue } from './screens/PlatformAccessCatalogue';
+import { TestContainer } from './screens/TestContainer';
 import { CoachScreen } from './screens/CoachScreen';
 
 function ScreenRouter() {
@@ -53,6 +55,7 @@ function ScreenRouter() {
     case 'cd-templates': return <TemplateLibrary />;
     case 'cd-sources':  return <CDSources />;
     case 'cd-library':  return <ObjectLibrary />;
+    case 'cd-test-container': return <TestContainer />;
     case 'cd-submissions': return <MySubmissions />;
     case 'cd-versions': return <VersionsPublishing />;
     case 'cd-analytics': return <AuthorAnalytics />;
@@ -76,6 +79,10 @@ function ScreenRouter() {
 }
 
 export function Layout() {
+  const { currentScreen, readerObjectId, navigate } = useApp();
+  // Isolate each screen so a crash (e.g. the student-preview crash) shows a
+  // recoverable boundary instead of blanking the whole app.
+  const boundaryKey = readerObjectId ? `reader:${readerObjectId}` : currentScreen || 'unknown';
   return (
     <div className="flex min-h-screen">
       <Sidebar />
@@ -83,7 +90,9 @@ export function Layout() {
         <TopBar />
         <ReadOnlyBanner />
         <main className="flex-1 overflow-y-auto">
-          <ScreenRouter />
+          <ScreenErrorBoundary key={boundaryKey} onReset={() => navigate(currentScreen || 'cd-library')}>
+            <ScreenRouter />
+          </ScreenErrorBoundary>
         </main>
       </div>
     </div>

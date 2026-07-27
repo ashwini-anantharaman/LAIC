@@ -78,6 +78,26 @@ export function attachHintsToQuestionParts(parts, opts = {}) {
         lastSection = h;
       }
     }
+    if (p.type === 'section-quiz' && Array.isArray(p.questions)) {
+      if (!enabled || count <= 0) {
+        return {
+          ...p,
+          questions: p.questions.map((q) => ({ ...q, hints: [] })),
+        };
+      }
+      return {
+        ...p,
+        questions: p.questions.map((q) => ({
+          ...q,
+          hints: ensureHints(q.hints, {
+            sectionTitle: lastSection,
+            explanation: q.explanation || q.exp,
+            count,
+            enabled: true,
+          }),
+        })),
+      };
+    }
     if (p.type !== 'question') return p;
     if (!enabled || count <= 0) {
       const { hints: _drop, ...rest } = p;

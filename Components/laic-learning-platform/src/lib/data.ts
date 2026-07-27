@@ -2,6 +2,7 @@ import type {
   User, LearningObject, Course, Source,
   ReviewItem, Person, Version, LearnerProgress,
 } from './types';
+import { mockDrillContent } from './mockDrillBlueprint';
 
 export const USERS: User[] = [
   { id: 'demo-cd', name: 'Course Dev Demo', initials: 'CD', email: '1@gmail.com', role: 'content-developer', program: 'bridge' },
@@ -227,7 +228,12 @@ export const OBJECTS: LearningObject[] = [
     status: 'published', scope: 'bridge', reuseCount: 6,
     description: 'Rapid-fire drill: given a contract level, say how many tricks you need. Build automatic recall.',
     estimatedTime: '8 min', tags: ['drill', 'tricks', 'levels'],
-    sourceIds: [], createdAt: '2026-06-15', updatedAt: '2026-07-01', blocks: [],
+    sourceIds: [], createdAt: '2026-06-15', updatedAt: '2026-07-01',
+    blocks: [{
+      id: 'blk-drill-13',
+      type: 'drill',
+      content: mockDrillContent(),
+    }],
   },
 ];
 

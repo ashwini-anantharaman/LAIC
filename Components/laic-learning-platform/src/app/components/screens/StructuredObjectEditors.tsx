@@ -6,6 +6,9 @@ import type {
   ReflectionContent, ReflectionPrompt, SummaryContent,
 } from '../../../lib/types';
 import { editStructuredObject, errorMessage, type StructuredObjectKind } from '../../../lib/api';
+import { DrillView } from './drill/DrillView';
+
+export { DrillView };
 
 type Mode = 'edit' | 'preview';
 
@@ -30,11 +33,11 @@ function EditorShell({
         <input value={title} onChange={(e) => setTitle(e.target.value)}
           className="flex-1 bg-transparent outline-none" style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }} />
         <div className="flex rounded-full border p-0.5" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
-          <button onClick={() => setMode('edit')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
+          <button type="button" onClick={() => setMode('edit')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
             style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}>
             <Pencil size={12} />Edit
           </button>
-          <button onClick={() => setMode('preview')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
+          <button type="button" onClick={() => setMode('preview')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
             style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}>
             <Eye size={12} />Student preview
           </button>
@@ -193,62 +196,6 @@ export function AssignmentView({ content }: { content: AssignmentContent }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-export function DrillView({ content }: { content: DrillContent }) {
-  const [idx, setIdx] = useState(0);
-  const [revealed, setRevealed] = useState(false);
-  const [chosen, setChosen] = useState<string | null>(null);
-  const items = content.items || [];
-  const item = items[idx];
-  if (!item) return <p style={{ color: '#9AA3AF' }}>No drill items yet.</p>;
-  const next = () => { setIdx((i) => Math.min(items.length - 1, i + 1)); setRevealed(false); setChosen(null); };
-  return (
-    <div className="space-y-4">
-      <div>
-        <p style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Drill</p>
-        <h2 style={{ fontSize: 18, fontWeight: 750, color: '#0B1220', marginTop: 4 }}>{content.skill}</h2>
-        <p style={{ fontSize: 12, color: '#9AA3AF', marginTop: 4 }}>
-          {[content.format, content.difficultyCurve, content.feedback, `Item ${idx + 1} of ${items.length}`].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-      <div className="rounded-2xl p-5 border" style={{ background: 'rgba(255,255,255,0.92)', borderColor: 'rgba(0,0,0,0.08)' }}>
-        <p style={{ fontSize: 15, fontWeight: 650, color: '#0B1220', marginBottom: 12 }}>{item.prompt}</p>
-        {item.choices?.length ? (
-          <div className="space-y-2">
-            {item.choices.map((c) => (
-              <button key={c} type="button" disabled={revealed} onClick={() => { setChosen(c); if (content.feedback === 'Immediate') setRevealed(true); }}
-                className="w-full text-left px-3 py-2 rounded-xl border"
-                style={{
-                  fontSize: 13.5,
-                  borderColor: revealed && c === item.answer ? '#059669' : chosen === c ? '#0B0F1A' : 'rgba(0,0,0,0.1)',
-                  background: revealed && c === item.answer ? 'rgba(5,150,105,0.08)' : '#fff',
-                }}>{c}</button>
-            ))}
-          </div>
-        ) : (
-          <button type="button" onClick={() => setRevealed(true)} className="px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 13 }}>
-            {revealed ? 'Answer shown' : 'Reveal answer'}
-          </button>
-        )}
-        {revealed && (
-          <p style={{ fontSize: 13.5, color: '#059669', marginTop: 12, fontWeight: 600 }}>Answer: {item.answer}</p>
-        )}
-        {item.hint && !revealed && (
-          <p style={{ fontSize: 12, color: '#9AA3AF', marginTop: 10 }}>Hint: {item.hint}</p>
-        )}
-      </div>
-      <div className="flex gap-2">
-        <button type="button" disabled={idx === 0} onClick={() => { setIdx((i) => i - 1); setRevealed(false); setChosen(null); }}
-          className="px-4 py-2 rounded-full border" style={{ fontSize: 13, opacity: idx === 0 ? 0.4 : 1 }}>Back</button>
-        {!revealed && content.feedback !== 'Immediate' && (
-          <button type="button" onClick={() => setRevealed(true)} className="px-4 py-2 rounded-full border" style={{ fontSize: 13 }}>Check</button>
-        )}
-        <button type="button" disabled={idx >= items.length - 1} onClick={next}
-          className="px-4 py-2 rounded-full text-white ml-auto" style={{ background: '#0B0F1A', fontSize: 13, opacity: idx >= items.length - 1 ? 0.4 : 1 }}>Next</button>
-      </div>
     </div>
   );
 }
@@ -494,12 +441,34 @@ export function DrillEditor({ typeId, title, scope, fv, content: initial, initia
           {aiOpen && <AskAiBox kind="drill" item={local} onApply={setLocal} />}
           <div className="mb-3"><label style={lbl}>Skill</label>
             <input value={local.skill} onChange={(e) => setLocal({ ...local, skill: e.target.value })} className="w-full rounded-xl px-3 py-2" style={field} /></div>
+          <p style={{ fontSize: 12, color: '#9AA3AF', marginBottom: 10 }}>
+            Student preview uses interactive formats from item data (or the demo blueprint when items are empty).
+          </p>
           <div className="space-y-2">
             {(local.items || []).map((it, i) => (
               <div key={it.id || i} className="rounded-2xl border p-3" style={{ background: 'rgba(255,255,255,0.88)', borderColor: 'rgba(0,0,0,0.08)' }}>
-                <p style={{ fontSize: 11, color: '#9AA3AF', marginBottom: 4 }}>Item {i + 1}</p>
-                <input value={it.prompt} onChange={(e) => setItem(i, { prompt: e.target.value })} placeholder="Prompt" className="w-full rounded-xl px-3 py-2 mb-2" style={field} />
-                <input value={it.answer} onChange={(e) => setItem(i, { answer: e.target.value })} placeholder="Answer" className="w-full rounded-xl px-3 py-2" style={field} />
+                <p style={{ fontSize: 11, color: '#9AA3AF', marginBottom: 4 }}>
+                  Item {i + 1}{it.difficulty ? ` · ${it.difficulty}` : ''}{it.interactive ? ` · ${it.interactive.kind}` : ''}
+                </p>
+                <input value={it.prompt} onChange={(e) => setItem(i, { prompt: e.target.value, interactive: undefined })} placeholder="Prompt" className="w-full rounded-xl px-3 py-2 mb-2" style={field} />
+                <input value={it.answer} onChange={(e) => setItem(i, { answer: e.target.value, interactive: undefined })} placeholder="Correct answer" className="w-full rounded-xl px-3 py-2 mb-2" style={field} />
+                <input
+                  value={it.whyCorrect || ''}
+                  onChange={(e) => setItem(i, { whyCorrect: e.target.value || undefined })}
+                  placeholder="Why correct (shown after commit)"
+                  className="w-full rounded-xl px-3 py-2 mb-2"
+                  style={field}
+                />
+                <input
+                  value={(it.choices || []).join(' | ')}
+                  onChange={(e) => {
+                    const choices = e.target.value.split('|').map((s) => s.trim()).filter(Boolean);
+                    setItem(i, { choices: choices.length ? choices : undefined, interactive: undefined });
+                  }}
+                  placeholder="Choices (optional, pipe-separated) → maps to choice format"
+                  className="w-full rounded-xl px-3 py-2"
+                  style={field}
+                />
               </div>
             ))}
           </div>

@@ -248,7 +248,7 @@ export function needsLibraryPin(item: EmbeddedObjectItem): boolean {
   );
 }
 
-/* ─── Library boundary (Object Library → embed picker) ──────────── */
+/* ─── Library boundary (Activity objects → embed picker) ──────────── */
 
 export interface LibraryObjectVersionChoice {
   versionId: string;
@@ -265,7 +265,7 @@ export interface LibraryObjectChoice {
   versions: LibraryObjectVersionChoice[];
 }
 
-/** Map an embedded-slot type to Object Library type filter (null = any type). */
+/** Map an embedded-slot type to Activity objects type filter (null = any type). */
 export function embedTypeToLibraryTypes(objectType: EmbeddableObjectType): ObjectType[] | null {
   if (objectType === 'reused-from-library') return null;
   return [objectType];
@@ -292,7 +292,7 @@ function versionsForObject(obj: LearningObject): LibraryObjectVersionChoice[] {
 }
 
 /**
- * Typed boundary for embedding / version-pinning from the Object Library.
+ * Typed boundary for embedding / version-pinning from the Activity objects.
  * Reads the in-app library (seed catalog + optional account objects). No fabricated rows.
  * TODO: replace with GET /api/objects?reusable=true when the backend is wired.
  */
@@ -371,7 +371,43 @@ function packTemplate(
     recipe,
     sectionBlockRecipe: toFlatSectionBlockRecipe(recipe),
     mediaSlots: deriveMediaSlots(recipe),
+    // Builtins and editor saves are composite-authored; callers may override to false for legacy.
+    usesCompositeRecipe: partial.usesCompositeRecipe !== false,
   };
+}
+
+/** True when generation should read composite recipe (not the flat shadow). */
+export function templateUsesCompositeRecipe(template: TutorialTemplate): boolean {
+  return template.usesCompositeRecipe === true
+    && Array.isArray(template.recipe)
+    && template.recipe.length > 0;
+}
+
+/**
+ * Serialize one recipe item for the generate prompt.
+ * Quiz embeds are first-class; other embeds are explicitly deferred (not silent skips).
+ */
+export function formatRecipeItemForPrompt(item: RecipeItem, index: number): string {
+  if (item.kind === 'atomic') {
+    const prefer = item.preferKinds?.length ? ` (prefer: ${item.preferKinds.join(', ')})` : '';
+    const req = item.required === false ? ' [optional]' : '';
+    return `${index + 1}. atomic:${item.blockType}${prefer}${req}`;
+  }
+  if (item.objectType === 'quiz') {
+    const note = item.authoringNote
+      ? ` authoringNote="${item.authoringNote.replace(/"/g, "'")}"`
+      : '';
+    const req = item.required ? ' required=true' : ' required=false';
+    return (
+      `${index + 1}. EMBEDDED_QUIZ objectType=quiz sourceMode=${item.sourceMode}${req}${note}`
+      + ' → emit ONE section-quiz object for THIS section only (see part shape)'
+    );
+  }
+  // Deferred cleanly — visible in the prompt, not a silent omission.
+  return (
+    `${index + 1}. EMBEDDED_${item.objectType.toUpperCase()} `
+    + `[DEFERRED — not yet wired for generation; do NOT emit a part for this slot]`
+  );
 }
 
 /** Built-in pedagogical templates. Custom templates use the same shape. */
@@ -540,6 +576,12 @@ function normalizeCustom(raw: unknown): TutorialTemplate | null {
     ];
   }
 
+  // Only treat as composite-authored when storage already had RecipeItem[].
+  // Flat-only customs stay on the legacy generate path until re-saved from the editor.
+  const authoredComposite = Array.isArray(t.recipe)
+    && (t.recipe as unknown[]).length > 0
+    && (t.recipe as unknown[]).some(isRecipeItem);
+
   return packTemplate({
     id: t.id,
     name: t.name.trim() || 'Untitled template',
@@ -552,6 +594,7 @@ function normalizeCustom(raw: unknown): TutorialTemplate | null {
       ? t.assessmentPlacement
       : 'after_each_section') as AssessmentPlacement,
     recipe,
+    usesCompositeRecipe: authoredComposite || t.usesCompositeRecipe === true,
     knobDefaults: {
       ...defaultKnobDefaults(),
       ...(t.knobDefaults || {}),
@@ -605,6 +648,7 @@ export function saveCustomTutorialTemplate(
           makeAtomicItem('section-heading', { required: true }),
           makeAtomicItem('explanation', { required: true }),
         ],
+    usesCompositeRecipe: true,
     knobDefaults: input.knobDefaults || defaultKnobDefaults(),
   });
 

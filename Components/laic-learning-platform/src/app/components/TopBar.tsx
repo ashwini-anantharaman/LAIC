@@ -30,6 +30,7 @@ const SCREEN_TITLES: Record<string, { title: string; sub: string }> = {
   'cd-templates': { title: 'Template Library', sub: 'Recommended & custom templates' },
   'cd-sources': { title: 'Sources', sub: 'Source library' },
   'cd-library': { title: 'Object Library', sub: 'Bridge program' },
+  'cd-test-container': { title: 'Test container', sub: 'Embed host preview' },
   'cd-submissions': { title: 'My Submissions', sub: 'Review history' },
   'cd-versions': { title: 'Versions & Publishing', sub: 'Version timeline' },
   'cd-analytics': { title: 'Author Analytics', sub: 'Usage & performance' },
