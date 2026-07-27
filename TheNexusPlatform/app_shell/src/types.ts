@@ -35,6 +35,8 @@ export interface AuthToggles {
 
 export interface OnboardingQuestion {
   prompt: string;
+  /** Optional one-line helper under the question. */
+  helper?: string;
   type: QuestionType;
   required: boolean;
   /** Only meaningful for single-choice / multi-select. */
@@ -51,6 +53,27 @@ export interface NavItem {
   label: string;
 }
 
+/** A stat in the hero strip (e.g. Sessions 47). */
+export interface HomeStat {
+  value: string;
+  label: string;
+}
+
+/** A swipeable hero card — the "Continue / Learn" carousel from the design. */
+export interface HomeCard {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  cta?: string;
+}
+
+/** A real activity-feed row (e.g. "Quiz: Fractions"). */
+export interface FeedItem {
+  title: string;
+  subtitle?: string;
+  meta?: string;
+}
+
 export interface HomeConfig {
   greeting: string;
   subtitle: string;
@@ -59,6 +82,12 @@ export interface HomeConfig {
   feedLabel: string;
   navItems: NavItem[];
   activeNavIndex: number;
+  /** Optional rich content from the templates. When present, the home renders
+   * the designed layout (stat strip / carousel / real feed); when absent it
+   * falls back to the tiles grid so older configs still render. */
+  stats?: HomeStat[];
+  cards?: HomeCard[];
+  feedItems?: FeedItem[];
 }
 
 /** A platform the app's content section can connect to. */
@@ -95,6 +124,7 @@ export interface AppShellConfig {
   accentForeground: string;
   welcomeTitle: string;
   welcomeSubtitle: string;
+  welcomeImageUrl?: string;
   roles: Role[];
   registrationPath: RegistrationPath;
   requireApproval: boolean;
@@ -124,6 +154,7 @@ export interface Template {
   accentForeground: string;
   welcomeTitle: string;
   welcomeSubtitle: string;
+  welcomeImageUrl?: string;
   roles: Role[];
   registrationPath: RegistrationPath;
   requireApproval: boolean;

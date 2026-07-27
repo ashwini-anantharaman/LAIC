@@ -1,0 +1,800 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lifeinai.center/schemas/laic-access-control.schema.json",
+  "title": "LAIC Cross-Platform Access Control",
+  "description": "Schema for platform/application capability catalogues and scoped access policies used by Nexus, organizations, programs, provisioned platform instances, teams, and program participants.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/capabilityCatalogueDocument"
+    },
+    {
+      "$ref": "#/$defs/accessPolicyDocument"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$"
+    },
+    "scopeType": {
+      "type": "string",
+      "enum": [
+        "nexus",
+        "organization",
+        "program",
+        "platform_instance",
+        "team",
+        "program_unit"
+      ]
+    },
+    "scopeRef": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/scopeType"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "catalogueRef": {
+      "type": "object",
+      "required": [
+        "catalogueId",
+        "version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "catalogueId": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      }
+    },
+    "resourceConstraint": {
+      "type": "object",
+      "required": [
+        "resourceType"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "resourceType": {
+          "$ref": "#/$defs/id"
+        },
+        "includeIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                },
+                "uniqueItems": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    "capabilityGrant": {
+      "type": "object",
+      "required": [
+        "platformInstanceId",
+        "capabilityIds"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "platformInstanceId": {
+          "$ref": "#/$defs/id"
+        },
+        "capabilityIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "resourceConstraints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resourceConstraint"
+          }
+        }
+      }
+    },
+    "subjectRef": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "user",
+            "team"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "group"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "group": {
+          "$ref": "#/$defs/id"
+        },
+        "resourceTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "supportsResourceConstraints": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "resourceType": {
+      "type": "object",
+      "required": [
+        "id",
+        "label"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "constraintFields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "uiSurface": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "navigation",
+            "screen",
+            "component",
+            "action"
+          ]
+        },
+        "group": {
+          "$ref": "#/$defs/id"
+        },
+        "routeOrComponent": {
+          "type": "string"
+        },
+        "requiredAnyCapabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "requiredAllCapabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "catalogueGroup": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "order"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capabilityIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "uiSurfaceIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "sampleRoleTemplate": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "grants"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "grants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capabilityGrant"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "capabilityCatalogueDocument": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "documentType",
+        "id",
+        "name",
+        "provider",
+        "catalogueVersion",
+        "capabilities",
+        "resourceTypes",
+        "uiSurfaces",
+        "groups"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "$ref": "#/$defs/version"
+        },
+        "documentType": {
+          "const": "capability_catalogue"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "object",
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "platform",
+                "application",
+                "framework"
+              ]
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        },
+        "catalogueVersion": {
+          "$ref": "#/$defs/version"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capability"
+          },
+          "minItems": 1
+        },
+        "resourceTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resourceType"
+          }
+        },
+        "uiSurfaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/uiSurface"
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/catalogueGroup"
+          }
+        },
+        "sampleRoleTemplates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sampleRoleTemplate"
+          }
+        }
+      }
+    },
+    "platformInstance": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "scopeRef",
+        "catalogue",
+        "enabledCapabilityIds",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "platform",
+            "application",
+            "framework"
+          ]
+        },
+        "scopeRef": {
+          "$ref": "#/$defs/scopeRef"
+        },
+        "catalogue": {
+          "$ref": "#/$defs/catalogueRef"
+        },
+        "enabledCapabilityIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "inactive",
+            "planned"
+          ]
+        }
+      }
+    },
+    "team": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "scopeRef",
+        "memberUserIds"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scopeRef": {
+          "$ref": "#/$defs/scopeRef"
+        },
+        "memberUserIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "role": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "scopeRef",
+        "grants"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "scopeRef": {
+          "$ref": "#/$defs/scopeRef"
+        },
+        "systemCapabilityIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "grants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capabilityGrant"
+          }
+        }
+      }
+    },
+    "roleAssignment": {
+      "type": "object",
+      "required": [
+        "id",
+        "subject",
+        "roleIds"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "subject": {
+          "$ref": "#/$defs/subjectRef"
+        },
+        "roleIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "directGrant": {
+      "type": "object",
+      "required": [
+        "id",
+        "subject",
+        "scopeRef",
+        "grants"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "subject": {
+          "$ref": "#/$defs/subjectRef"
+        },
+        "scopeRef": {
+          "$ref": "#/$defs/scopeRef"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "grants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capabilityGrant"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "delegation": {
+      "type": "object",
+      "required": [
+        "id",
+        "fromScopeRef",
+        "toScopeRef",
+        "delegateSubject",
+        "systemCapabilityIds"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "fromScopeRef": {
+          "$ref": "#/$defs/scopeRef"
+        },
+        "toScopeRef": {
+          "$ref": "#/$defs/scopeRef"
+        },
+        "delegateSubject": {
+          "$ref": "#/$defs/subjectRef"
+        },
+        "systemCapabilityIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "platformInstanceIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "targetScopeRef",
+        "membershipType",
+        "approvalMode",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "app_signup",
+            "invitation",
+            "admin_create",
+            "import"
+          ]
+        },
+        "applicationId": {
+          "$ref": "#/$defs/id"
+        },
+        "targetScopeRef": {
+          "$ref": "#/$defs/scopeRef"
+        },
+        "membershipType": {
+          "type": "string",
+          "enum": [
+            "team_member",
+            "program_participant",
+            "external_collaborator"
+          ]
+        },
+        "approvalMode": {
+          "type": "string",
+          "enum": [
+            "automatic",
+            "manual",
+            "invitation_only"
+          ]
+        },
+        "defaultRoleIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "inactive",
+            "planned"
+          ]
+        }
+      }
+    },
+    "accessPolicyDocument": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "documentType",
+        "id",
+        "name",
+        "rootOrganizationId",
+        "scopeRef",
+        "platformInstances",
+        "teams",
+        "roles",
+        "roleAssignments",
+        "directGrants",
+        "delegations",
+        "gates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "$ref": "#/$defs/version"
+        },
+        "documentType": {
+          "const": "access_policy"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "rootOrganizationId": {
+          "$ref": "#/$defs/id"
+        },
+        "scopeRef": {
+          "$ref": "#/$defs/scopeRef"
+        },
+        "platformInstances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/platformInstance"
+          }
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/team"
+          }
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/role"
+          }
+        },
+        "roleAssignments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/roleAssignment"
+          }
+        },
+        "directGrants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/directGrant"
+          }
+        },
+        "delegations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/delegation"
+          }
+        },
+        "gates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gate"
+          }
+        }
+      }
+    }
+  }
+}

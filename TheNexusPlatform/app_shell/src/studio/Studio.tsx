@@ -104,6 +104,10 @@ export function Studio() {
   });
   const [tab, setTab] = useState<EditorTab>("identity");
   const [mode, setMode] = useState<Mode>("studio");
+  // Scoped app with no config yet → show the template picker before editing,
+  // so a brand-new app chooses Learning / Bridge / Community instead of being
+  // silently defaulted.
+  const [needTemplate, setNeedTemplate] = useState(false);
   const [showPublish, setShowPublish] = useState(false);
   // When bound to an app, the program's participant sign-up gates — offered in
   // the Auth tab so you pick the "Create an account" gate right there. Undefined
@@ -166,7 +170,12 @@ export function Studio() {
           console.error("Scoped Studio: could not read the app's config", err);
         }
       }
-      imported ??= { ...fromTemplate(templateFor("learning")), id: `nx-${scope.appId.slice(0, 8)}`, name: scope.appName };
+      // No stored config anywhere → this is a fresh app: let the user pick a
+      // template (the import effect leaves configs empty; the picker fills it).
+      if (!imported) {
+        if (!stale) setNeedTemplate(true);
+        return;
+      }
       saveLink(imported.id, {
         appId: scope.appId,
         appSlug: scope.appSlug,
@@ -207,6 +216,33 @@ export function Studio() {
     setTab("identity");
     setMode("studio");
   };
+
+  // A fresh SCOPED app picks its template here: build from the choice, keep the
+  // scoped id/name, and bind the local↔Nexus link so publishing targets it.
+  const pickScopedTemplate = (category: AppCategory) => {
+    if (!scope) return;
+    const created: AppShellConfig = {
+      ...fromTemplate(templateFor(category)),
+      id: `nx-${scope.appId.slice(0, 8)}`,
+      name: scope.appName,
+    };
+    saveLink(created.id, { appId: scope.appId, appSlug: scope.appSlug, programId: scope.programId, orgId: scope.orgId });
+    setConfigs([created]);
+    setActiveId(created.id);
+    setNeedTemplate(false);
+    setTab("identity");
+  };
+
+  // Choose a template — on first open (no config yet) or any time via the
+  // header "Templates" button. Cancelling keeps the current app if one exists,
+  // else falls back to a default so a fresh app is never left empty.
+  if (scope && needTemplate) {
+    return (
+      <div className="flex h-screen flex-col overflow-hidden" style={{ backgroundColor: "var(--studio-bg)", color: "#e0e0f0" }}>
+        <NewAppPicker onPick={pickScopedTemplate} onCancel={() => (active ? setNeedTemplate(false) : pickScopedTemplate("learning"))} />
+      </div>
+    );
+  }
 
   // Scoped tab still importing: a quiet holding screen, never the sandbox.
   if (scope && !active) {
@@ -278,6 +314,16 @@ export function Studio() {
               }}
             >
               {mode === "newapp" ? "‹ Cancel" : "+ New app"}
+            </button>
+          )}
+          {scope && (
+            <button
+              onClick={() => setNeedTemplate(true)}
+              className={headerBtn}
+              style={{ backgroundColor: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.45)", border: "1px solid rgba(255,255,255,0.08)" }}
+              title="Pick a starting template (Learning / Bridge / Community)"
+            >
+              ▦ Templates
             </button>
           )}
           <button

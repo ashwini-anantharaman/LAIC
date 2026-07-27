@@ -39,7 +39,7 @@ const strKeys = (a: OnboardingAnswers): Record<string, unknown> =>
 function Frame({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-[100dvh] w-full justify-center bg-[#0b0f1a]">
-      <div className="relative flex h-[100dvh] w-full max-w-[440px] flex-col overflow-hidden bg-[#f8f8fb] shadow-2xl">
+      <div className="relative flex h-[100dvh] w-full max-w-[440px] flex-col overflow-hidden bg-[#0E1320] shadow-2xl">
         {children}
       </div>
     </div>
@@ -205,9 +205,9 @@ export function LivePlayer({ slug, api }: { slug: string; api: string | null }) 
     return (
       <Frame>
         <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-          <div className="grid size-11 place-items-center rounded-2xl bg-gray-200 text-lg text-gray-500">!</div>
-          <h1 className="text-base font-bold text-gray-900">This app isn't available</h1>
-          <p className="max-w-xs text-xs leading-relaxed text-gray-500">
+          <div className="grid size-11 place-items-center rounded-2xl text-lg" style={{ background: "#1C2333", color: "#9AA6BF" }}>!</div>
+          <h1 className="text-base font-bold text-white">This app isn't available</h1>
+          <p className="max-w-xs text-xs leading-relaxed" style={{ color: "#9AA6BF" }}>
             {bootError ?? "This app was published without a full design."}
           </p>
         </div>
@@ -241,16 +241,16 @@ export function LivePlayer({ slug, api }: { slug: string; api: string | null }) 
 
   return (
     <Frame>
-      <div className="flex h-full flex-col bg-[#f8f8fb]">
+      <div className="flex h-full flex-col bg-[#0E1320]">
         <div className="relative flex items-center justify-between px-5 pb-0.5 pt-3">
-          <span className="text-[9px] font-bold text-gray-500">9:41</span>
-          <span className="text-[9px] font-semibold text-gray-500">{config.name}</span>
+          <span className="text-[9px] font-bold text-white">9:41</span>
+          <span className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.55)" }}>{config.name}</span>
           {session ? (
-            <button onClick={signOut} className="text-[9px] font-semibold text-gray-400 hover:text-gray-600" title="Sign out">
+            <button onClick={signOut} className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.5)" }} title="Sign out">
               Sign out
             </button>
           ) : (
-            <span className="text-[9px] text-gray-500">•••</span>
+            <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.4)" }}>•••</span>
           )}
         </div>
 
@@ -302,7 +302,7 @@ export function LivePlayer({ slug, api }: { slug: string; api: string | null }) 
         </div>
 
         {launching ? (
-          <div className="absolute inset-0 z-10 grid place-items-center bg-white/70">
+          <div className="absolute inset-0 z-10 grid place-items-center" style={{ background: "rgba(14,19,32,0.72)" }}>
             <div className="size-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
           </div>
         ) : null}

@@ -5,3 +5,4 @@ dist/
 *.log
 .env*
 api/index.mjs
+.vercel
