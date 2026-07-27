@@ -12,9 +12,10 @@ const OBJECT_TYPE_ICONS: Record<string, string> = {
 };
 
 export function CDHome() {
-  const { navigate, activeUserId, createdObjects } = useApp();
+  const { navigate, activeUserId, createdObjects, nexusMode } = useApp();
 
-  const seedMine = OBJECTS.filter(o => o.ownerId === activeUserId || o.ownerId === 'sam' || o.ownerId === 'chen');
+  // Nexus mode: only the program's real objects; no demo seed.
+  const seedMine = nexusMode ? [] : OBJECTS.filter(o => o.ownerId === activeUserId || o.ownerId === 'sam' || o.ownerId === 'chen');
   const myObjects = [...createdObjects, ...seedMine.filter(o => !createdObjects.some(c => c.id === o.id))];
   const inReview = myObjects.filter(o => o.status === 'in-review').length;
   const published = myObjects.filter(o => o.status === 'published').length;

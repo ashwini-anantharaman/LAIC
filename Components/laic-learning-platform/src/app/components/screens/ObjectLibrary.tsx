@@ -41,7 +41,11 @@ export function ObjectLibrary() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<ObjectStatus | 'all'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const { openReader, openEditor, createdObjects } = useApp();
+  const { openReader, openEditor, createdObjects, nexusMode } = useApp();
+  // In Nexus mode the library shows ONLY this program's real objects (from the
+  // backend, program-scoped). The demo seed catalog is standalone-only.
+  const seedObjects = nexusMode ? [] : OBJECTS;
+  const seedCourses = nexusMode ? [] : COURSES;
 
   const copyObjectUrl = async (objectId: string) => {
     const url = objectEmbedUrl(objectId);
@@ -57,7 +61,7 @@ export function ObjectLibrary() {
   // Saved objects first (account library), then seed catalog without duplicates.
   const allObjects = [
     ...createdObjects,
-    ...OBJECTS.filter(o => !createdObjects.some(c => c.id === o.id)),
+    ...seedObjects.filter(o => !createdObjects.some(c => c.id === o.id)),
   ];
 
   const filtered = allObjects.filter(o => {
@@ -68,7 +72,7 @@ export function ObjectLibrary() {
 
   const savedCount = createdObjects.length;
 
-  const courseFiltered = COURSES.filter(c => {
+  const courseFiltered = seedCourses.filter(c => {
     const matchSearch = c.title.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || c.status === filterStatus;
     return matchSearch && matchStatus;
