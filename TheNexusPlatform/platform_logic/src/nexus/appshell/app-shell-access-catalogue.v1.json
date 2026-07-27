@@ -3,8 +3,8 @@
   "schemaVersion": "1.0",
   "documentType": "capability_catalogue",
   "id": "app-shell-access",
-  "name": "App Shell Capability Catalogue",
-  "description": "Atomic capabilities and optional UI mappings published by the App Shell. Live program roles and assignments are defined by program administrators.",
+  "name": "App Studio Capability Catalogue",
+  "description": "Atomic capabilities and optional UI mappings published by the App Studio. Live program roles and assignments are defined by program administrators.",
   "provider": {
     "kind": "application",
     "id": "app-shell"

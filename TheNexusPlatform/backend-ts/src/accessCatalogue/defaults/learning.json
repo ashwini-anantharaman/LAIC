@@ -3,8 +3,8 @@
   "schemaVersion": "1.0",
   "documentType": "capability_catalogue",
   "id": "learning-platform-access",
-  "name": "Learning Platform Capability Catalogue",
-  "description": "Atomic capabilities and optional UI mappings published by the Learning Platform. Live program roles and assignments are defined by program administrators.",
+  "name": "Content Studio Capability Catalogue",
+  "description": "Atomic capabilities and optional UI mappings published by the Content Studio. Live program roles and assignments are defined by program administrators.",
   "provider": {
     "kind": "platform",
     "id": "learning-platform"
