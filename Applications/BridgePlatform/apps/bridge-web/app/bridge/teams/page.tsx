@@ -73,7 +73,7 @@ export default async function TeamsPage({
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Teams &amp; roles</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">People</h1>
         <p className="text-sm text-neutral-600">
           Build capability-based roles from the Access Catalogue, assign them to
           people, and preview anyone&apos;s access. Roles and assignments are stored in
