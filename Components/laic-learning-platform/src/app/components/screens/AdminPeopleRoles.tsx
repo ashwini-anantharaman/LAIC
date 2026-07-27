@@ -21,6 +21,7 @@ import {
   upsertCustomPolicyRole,
 } from '../../../lib/accessPolicy';
 import { listPolicyDemoAccounts } from '../../../lib/roleAccess';
+import { getToken, listLearningRoster, assignLearningRole, type RosterPerson } from '../../../lib/nexus';
 
 const ROLE_LABELS: Record<Role, string> = {
   'content-developer': 'Content Dev',
@@ -237,6 +238,15 @@ export function AdminPeopleRoles() {
   const [catalogue, setCatalogue] = useState<CapabilityCatalogueDocument>(() => loadCatalogue());
   const [policy, setPolicy] = useState<AccessPolicyDocument>(() => loadPolicy());
 
+  // Live roster (Nexus mode). null → not loaded / demo mode (fall back to PEOPLE).
+  const [roster, setRoster] = useState<RosterPerson[] | null>(null);
+  const nexusMode = !!getToken();
+
+  const reloadRoster = React.useCallback(() => {
+    if (!nexusMode) return;
+    listLearningRoster().then(setRoster).catch(() => setRoster([]));
+  }, [nexusMode]);
+
   // Seed the catalogue + roles from the Nexus backend (falls back to the local
   // cache / demo when there is no session).
   useEffect(() => {
@@ -249,6 +259,17 @@ export function AdminPeopleRoles() {
     })();
     return () => { live = false; };
   }, []);
+  useEffect(() => { reloadRoster(); }, [reloadRoster]);
+
+  const assignRole = async (email: string, roleId: string | null) => {
+    try {
+      await assignLearningRole(email, roleId);
+      fireToast(roleId ? 'Role assigned' : 'Role cleared');
+      reloadRoster();
+    } catch (e) {
+      fireToast(e instanceof Error ? e.message : 'Failed to assign role');
+    }
+  };
   const [editorState, setEditorState] = useState<{
     open: boolean;
     initial: ReturnType<typeof roleToEditorInitial> | null;
@@ -505,43 +526,77 @@ export function AdminPeopleRoles() {
               </tr>
             </thead>
             <tbody>
-              {PEOPLE.map((p, i) => (
-                <tr key={p.id} style={{ borderBottom: i < PEOPLE.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-[#0B0F1A] text-white flex items-center justify-center shrink-0" style={{ fontSize: 11, fontWeight: 700 }}>{p.initials}</div>
-                      <p style={{ fontSize: 13, fontWeight: 550, color: '#0B1220' }}>{p.name}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className="px-2.5 py-0.5 rounded-full text-xs font-medium"
-                      style={{
-                        background: p.role === 'student' ? 'rgba(6,182,212,0.1)' : 'rgba(0,0,0,0.05)',
-                        color: p.role === 'student' ? '#0E7490' : '#374151',
-                      }}
-                    >
-                      {ROLE_LABELS[p.role]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p style={{ fontSize: 12.5, color: '#6B7280' }}>Bridge</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>today</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => fireToast(`Role assignment UI for ${p.name} — coming with assignments API`)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-medium"
-                      style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.9)' }}
-                    >
-                      ⚙ Roles
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {nexusMode ? (
+                (roster ?? []).length === 0 ? (
+                  <tr><td colSpan={5} className="px-4 py-6 text-center" style={{ fontSize: 12.5, color: '#9AA3AF' }}>
+                    {roster === null ? 'Loading people…' : 'No people in this program yet.'}
+                  </td></tr>
+                ) : (
+                  (roster ?? []).map((p, i, arr) => {
+                    const initials = (p.display_name ?? p.email ?? '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+                    return (
+                      <tr key={p.email} style={{ borderBottom: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-full bg-[#0B0F1A] text-white flex items-center justify-center shrink-0" style={{ fontSize: 11, fontWeight: 700 }}>{initials}</div>
+                            <div className="min-w-0">
+                              <p style={{ fontSize: 13, fontWeight: 550, color: '#0B1220' }} className="truncate">{p.display_name ?? p.email}</p>
+                              {p.display_name ? <p style={{ fontSize: 11.5, color: '#9AA3AF' }} className="truncate">{p.email}</p> : null}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {p.is_admin ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: 'rgba(0,0,0,0.05)', color: '#374151' }}>
+                              <Shield size={11} /> Administrator
+                            </span>
+                          ) : (
+                            <select
+                              value={p.role_id ?? ''}
+                              onChange={(e) => assignRole(p.email, e.target.value || null)}
+                              className="px-2 py-1 rounded-lg border text-xs"
+                              style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.12)', background: 'white' }}
+                            >
+                              <option value="">No role</option>
+                              {customRoles.map((r) => (
+                                <option key={r.id} value={r.id}>{r.name}</option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: p.status === 'active' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.12)', color: p.status === 'active' ? '#047857' : '#92400E' }}>{p.status}</span>
+                        </td>
+                        <td className="px-4 py-3"><p style={{ fontSize: 12.5, color: '#9AA3AF' }}>—</p></td>
+                        <td className="px-4 py-3" />
+                      </tr>
+                    );
+                  })
+                )
+              ) : (
+                PEOPLE.map((p, i) => (
+                  <tr key={p.id} style={{ borderBottom: i < PEOPLE.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-[#0B0F1A] text-white flex items-center justify-center shrink-0" style={{ fontSize: 11, fontWeight: 700 }}>{p.initials}</div>
+                        <p style={{ fontSize: 13, fontWeight: 550, color: '#0B1220' }}>{p.name}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: p.role === 'student' ? 'rgba(6,182,212,0.1)' : 'rgba(0,0,0,0.05)', color: p.role === 'student' ? '#0E7490' : '#374151' }}>
+                        {ROLE_LABELS[p.role]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3"><p style={{ fontSize: 12.5, color: '#6B7280' }}>Bridge</p></td>
+                    <td className="px-4 py-3"><p style={{ fontSize: 12.5, color: '#9AA3AF' }}>today</p></td>
+                    <td className="px-4 py-3">
+                      <button type="button" onClick={() => fireToast(`Role assignment is available when launched from Nexus.`)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-medium" style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.9)' }}>
+                        ⚙ Roles
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
