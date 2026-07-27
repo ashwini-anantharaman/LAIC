@@ -177,7 +177,7 @@
       "id": "learning.repository.organize",
       "label": "Organize repository collections and metadata",
       "description": "Organize repository collections and metadata",
-      "group": "administration"
+      "group": "repository"
     },
     {
       "id": "learning.analytics.view",
