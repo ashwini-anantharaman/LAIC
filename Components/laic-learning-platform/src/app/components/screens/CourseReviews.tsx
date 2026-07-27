@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Check, RotateCcw, ChevronDown, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { REVIEWS, COURSES } from '../../../lib/data';
+import { useApp } from '../../App';
 import { StatusPill } from './StatusPill';
 import type { ReviewItem } from '../../../lib/types';
 
@@ -81,8 +82,9 @@ function CourseDetail({ review }: { review: ReviewItem }) {
 }
 
 export function CourseReviews() {
+  const { nexusMode } = useApp();
   const [selected, setSelected] = useState<ReviewItem | null>(null);
-  const queue = REVIEWS.filter(r => r.type === 'course');
+  const queue = (nexusMode ? [] : REVIEWS).filter(r => r.type === 'course');
 
   return (
     <div className="px-6 py-6 w-full flex gap-5">

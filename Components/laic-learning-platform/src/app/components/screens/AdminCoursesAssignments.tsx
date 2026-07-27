@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BookMarked, GraduationCap, Plus, UserPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { COURSES } from '../../../lib/data';
+import { useApp } from '../../App';
 import { StatusPill } from './StatusPill';
 
 function Toast({ msg }: { msg: string }) {
@@ -20,6 +21,8 @@ const STAFF: Record<string, { developer: string; objReviewer: string; courseRevi
 };
 
 export function AdminCoursesAssignments() {
+  const { nexusMode } = useApp();
+  const seedCourses = nexusMode ? [] : COURSES;
   const [toast, setToast] = useState('');
   const [newCourseCreated, setNewCourseCreated] = useState(false);
 
@@ -68,7 +71,7 @@ export function AdminCoursesAssignments() {
         </motion.div>
       )}
 
-      {COURSES.map((course, i) => {
+      {seedCourses.map((course, i) => {
         const staff = STAFF[course.id] || { developer: 'Sam Chen', objReviewer: 'Lee Park', courseReviewer: 'María Gómez' };
         const totalLessons = course.modules.reduce((s, m) => s + m.lessons.length, 0);
         return (

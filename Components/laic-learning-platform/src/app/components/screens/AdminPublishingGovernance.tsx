@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { GraduationCap, X, Globe, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { COURSES } from '../../../lib/data';
+import { useApp } from '../../App';
 import { StatusPill } from './StatusPill';
 
 /* ─── audience modal ─────────────────────────────────────────── */
@@ -127,6 +128,8 @@ function AudienceModal({ courseTitle, current, onPublish, onClose }: {
 /* ─── main component ──────────────────────────────────────────── */
 
 export function AdminPublishingGovernance() {
+  const { nexusMode } = useApp();
+  const seedCourses = nexusMode ? [] : COURSES;
   const [audiences, setAudiences] = useState<Record<string, AudienceState>>({});
   const [openModal, setOpenModal] = useState<string | null>(null);
   const [toast, setToast] = useState('');
@@ -138,7 +141,7 @@ export function AdminPublishingGovernance() {
     fireToast('Course published');
   };
 
-  const eligibleCourses = COURSES.filter(c => c.status === 'published' || c.status === 'approved');
+  const eligibleCourses = seedCourses.filter(c => c.status === 'published' || c.status === 'approved');
 
   const audienceSummary = (courseId: string): string => {
     const a = audiences[courseId];
@@ -205,7 +208,7 @@ export function AdminPublishingGovernance() {
 
       {openModal && (
         <AudienceModal
-          courseTitle={COURSES.find(c => c.id === openModal)?.title || ''}
+          courseTitle={seedCourses.find(c => c.id === openModal)?.title || ''}
           current={audiences[openModal] || null}
           onPublish={(s) => publishCourse(openModal, s)}
           onClose={() => setOpenModal(null)}

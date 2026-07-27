@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MessageSquare, Inbox, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { REVIEWS } from '../../../lib/data';
+import { useApp } from '../../App';
 import { StatusPill } from './StatusPill';
 import type { ObjectStatus } from '../../../lib/types';
 
@@ -31,10 +32,11 @@ const FEEDBACK_INBOX = [
 ];
 
 export function MySubmissions() {
+  const { nexusMode } = useApp();
   const [resolved, setResolvedState] = useState<Set<string>>(new Set());
   const resolve = (id: string) => setResolvedState(prev => new Set([...prev, id]));
 
-  const objectReviews = REVIEWS.filter(r => r.type === 'object');
+  const objectReviews = (nexusMode ? [] : REVIEWS).filter(r => r.type === 'object');
   const openCount = FEEDBACK_INBOX.reduce((sum, g) => sum + g.comments.filter(c => !resolved.has(c.id)).length, 0);
 
   return (

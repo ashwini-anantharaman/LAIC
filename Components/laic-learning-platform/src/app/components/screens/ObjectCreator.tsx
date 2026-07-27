@@ -1059,13 +1059,16 @@ function TutorialSource(props: any) {
 }
 
 function S1({ selected, setSelected, roles, setRoles, urlRefs, setUrlRefs }: any) {
+  const { nexusMode } = useApp();
   const [url, setUrl] = useState('');
+  // Program-scoped instance: no shared demo source pool in Nexus mode.
+  const seedSources = nexusMode ? [] : SOURCES;
   return (
     <div className="flex gap-5 p-5">
       <div className="flex-1 min-w-0">
         <p style={{ fontSize: 11.5, fontWeight: 700, color: '#6B7280', letterSpacing: '.06em', marginBottom: 10 }}>SOURCE POOL — Bridge</p>
         <div className="space-y-2">
-          {SOURCES.map(s => {
+          {seedSources.map(s => {
             const on = selected.includes(s.id);
             return (
               <div key={s.id} onClick={() => setSelected((p: string[]) => on ? p.filter((x: string) => x !== s.id) : [...p, s.id])}

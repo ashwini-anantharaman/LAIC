@@ -18,10 +18,12 @@ function ProgressRing({ percent, size = 40, stroke = 3.5, color = '#059669' }: {
 }
 
 export function StudentDashboard() {
-  const { activeUserId, openReader, navigate } = useApp();
-  const progress = LEARNER_PROGRESS.find(p => p.learnerId === activeUserId);
-  const featuredCourse = COURSES[0];
-  const otherCourses = COURSES.slice(1);
+  const { activeUserId, openReader, navigate, nexusMode } = useApp();
+  // Program-scoped instance: no shared demo courses/progress in Nexus mode.
+  const seedCourses = nexusMode ? [] : COURSES;
+  const progress = (nexusMode ? [] : LEARNER_PROGRESS).find(p => p.learnerId === activeUserId);
+  const featuredCourse = seedCourses[0];
+  const otherCourses = seedCourses.slice(1);
   const totalLessons = featuredCourse?.modules.reduce((s, m) => s + m.lessons.length, 0) || 0;
 
   return (
