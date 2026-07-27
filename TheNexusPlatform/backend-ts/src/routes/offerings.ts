@@ -13,6 +13,8 @@ import { HttpError } from "../httpError";
 import * as db from "../platformDb";
 import { dbEnabled } from "../db/client";
 import * as graph from "../db/orgGraphRepo";
+import { validGrantsAcross, type CatalogueRef } from "../accessCatalogue/store";
+import { requireCapability } from "../accessCatalogue/enforce";
 import { isOfferingAdmin } from "../permissions";
 import { BRIDGE_PREBUILT_ROLES } from "../platformAccess";
 import {
@@ -173,6 +175,9 @@ offeringsRouter.post("/programs/:program_id/offerings", async (c) => {
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
   _requireOfferingAdmin(user, program.org_id, programId);
+  // Fine-grained gate (Access Catalogue): only bites for roles that carry
+  // capabilities; structural tiers + legacy coarse roles are unaffected.
+  await requireCapability(user, { providerId: "program-console", orgId: program.org_id, programId }, "program.offerings.create");
   if (user.role !== "platform_admin" && ["course", "challenge", "app"].includes(req.offering_type)) {
     const caps = await db.getOrgCapabilities(program.org_id);
     if (!(caps.offeringTypes as Row)[req.offering_type]) {
@@ -812,7 +817,10 @@ offeringsRouter.post("/offerings/:offering_id/registrations/bulk-import", async 
 // graded view/edit/comment levels.
 const _ACCESS_LEVEL = z.enum(["view", "edit", "comment", "administrator"]);
 const _BRIDGE_ROLE = z.enum(BRIDGE_PREBUILT_ROLES);
-const _programRolePerms = z.record(z.string(), z.union([_ACCESS_LEVEL, _BRIDGE_ROLE]));
+// perms.capabilities (fine-grained capability ids) rides inside this same blob
+// (see _permsWithCapabilities / the capabilities fold below) and round-trips
+// through the client on every edit, so the value union must accept it too.
+const _programRolePerms = z.record(z.string(), z.union([_ACCESS_LEVEL, _BRIDGE_ROLE, z.array(z.string())]));
 // Roles now exist at three altitudes: program (org+program set), organization
 // (program null), and nexus (both null). The guard follows the scope.
 function _requireScopedRoleAdmin(user: PlatformUser, role: Row): void {
@@ -828,12 +836,16 @@ const programRoleCreateSchema = z.object({
   perms: _programRolePerms.default({}),
   display_as_group: z.boolean().optional(),
   parent_group_id: z.string().uuid().nullable().optional(),
+  // Fine-grained capability ids from the Access Catalogue (additive; stored in
+  // perms.capabilities). Coarse area perms above are untouched.
+  capabilities: z.array(z.string()).optional(),
 });
 const programRoleUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   perms: _programRolePerms.optional(),
   display_as_group: z.boolean().optional(),
   parent_group_id: z.string().uuid().nullable().optional(),
+  capabilities: z.array(z.string()).optional(),
 });
 
 /**
@@ -869,8 +881,16 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   // created_by is provenance only; skip it to avoid the demo-mode auth-id vs
   // profile-id mismatch (the FK targets profiles.id).
   const perms = _permsWithinFeatures(req.perms, program.features);
+  const validCaps = req.capabilities !== undefined
+    ? await validGrantsAcross(
+        [{ providerId: "program-console", instanceId: programId }, { providerId: "learning" }, { providerId: "bridge" }],
+        req.capabilities,
+      )
+    : undefined;
+  const finalPerms: Record<string, unknown> =
+    validCaps !== undefined ? { ...perms, capabilities: validCaps } : perms;
   const row = await graph.createProgramRole(
-    program.org_id, programId, req.name, perms, null, req.display_as_group, req.parent_group_id,
+    program.org_id, programId, req.name, finalPerms, null, req.display_as_group, req.parent_group_id,
   );
   await db.recordAuditEvent("program.role.created", {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
@@ -887,12 +907,23 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
   const existing = await graph.getProgramRole(roleId);
   if (!existing) throw new HttpError(404, "Role not found");
   _requireScopedRoleAdmin(user, existing);
-  let perms = req.perms;
+  let perms: Record<string, unknown> | undefined = req.perms;
   // Only program-scoped roles are clamped to program features; org/nexus roles
   // use a different (free-form) permission vocabulary and must pass through.
   if (perms !== undefined && existing.program_id) {
     const program = await db.getProgram(existing.program_id as string);
     perms = _permsWithinFeatures(perms, program?.features);
+  }
+  // Fold fine-grained capabilities into perms without wiping the area perms.
+  if (req.capabilities !== undefined) {
+    const refs: CatalogueRef[] = existing.program_id
+      ? [{ providerId: "program-console", instanceId: existing.program_id as string }, { providerId: "learning" }, { providerId: "bridge" }]
+      : existing.organization_id
+        ? [{ providerId: "org-console", instanceId: existing.organization_id as string }]
+        : [{ providerId: "nexus-console" }];
+    const validCaps = await validGrantsAcross(refs, req.capabilities);
+    const base = (perms ?? (existing.perms as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+    perms = { ...base, capabilities: validCaps };
   }
   const row = await graph.updateProgramRole(roleId, {
     name: req.name, perms, displayAsGroup: req.display_as_group, parentGroupId: req.parent_group_id,

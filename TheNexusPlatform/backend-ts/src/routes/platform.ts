@@ -21,6 +21,12 @@ import { dbEnabled } from "../db/client";
 import { provisionOrganization } from "../db/provisioning";
 import * as graph from "../db/orgGraphRepo";
 import { getStorage, orgKey } from "../storage";
+import { slugify } from "../platformLocalStore";
+import * as catalogue from "../accessCatalogue/store";
+import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
+import { resolveCapabilities, surfacesForCapabilities } from "../accessCatalogue/resolver";
+import { capabilitiesFor } from "../accessCatalogue/enforce";
+import type { ProviderId } from "../accessCatalogue/types";
 import { isOfferingAdmin } from "../permissions";
 import {
   canViewStage,
@@ -1270,6 +1276,7 @@ platformRouter.patch("/orgs/:org_id/theme", async (c) => {
     owner_id: org.owner_id ?? null,
     theme_accent_color: theme.accent_color ?? null,
     theme_logo_url: theme.logo_url ?? null,
+    theme_favicon_url: theme.favicon_url ?? null,
   });
 });
 
@@ -1417,7 +1424,18 @@ platformRouter.get("/orgs/by-slug/:slug", async (c) => {
     slug: org.slug,
     theme_accent_color: theme.accent_color ?? null,
     theme_logo_url: theme.logo_url ?? org.logo_url ?? null,
+    theme_favicon_url: theme.favicon_url ?? null,
   });
+});
+
+// Is a URL slug free? (operator provisioning check) — returns the normalized
+// slug so the UI shows exactly what the URL will be.
+platformRouter.get("/orgs/slug-available/:slug", async (c) => {
+  const user = await getCurrentUser(c);
+  await _requireNexusArea(user, "organizations", "view");
+  const slug = slugify(c.req.param("slug") ?? "");
+  const existing = slug ? await db.getOrganizationBySlug(slug) : null;
+  return c.json({ slug, available: !!slug && !existing });
 });
 
 platformRouter.get("/join-codes/:code", async (c) => {
@@ -1724,9 +1742,14 @@ platformRouter.delete("/members/:member_id", async (c) => {
       throw new HttpError(403, "Program admin access required");
     }
   } else if (row.role === "administrator") {
-    // Admins stay owner/admin-managed (Q1) — a custom Team·edit role can't
-    // remove them.
-    _assertOrgPeopleAccess(user, row.org_id, true);
+    // Super Admin only: only the org owner may remove another administrator —
+    // a regular admin (or a custom Team·edit role) cannot remove admins.
+    const isOwner = user.memberships.some(
+      (m) => m.org_id === row.org_id && m.role === "owner" && !m.program_id,
+    );
+    if (!isOwner) {
+      throw new HttpError(403, "Only the organization owner (Super Admin) can remove an administrator");
+    }
   } else {
     await _requireOrgArea(user, row.org_id, "team", "edit");
   }
@@ -1994,6 +2017,28 @@ platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
   return c.json(caps);
 });
 
+// Org-owned access boundary (Super Admin only): whether org admins may open the
+// org's programs. Lives in the org's own Settings, gated to the OWNER — this is
+// the org's call, not a Nexus operator's.
+const orgAccessSchema = z.object({ admins_enter_programs: z.boolean() });
+platformRouter.patch("/orgs/:org_id/access", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  _requireDb();
+  const isOwner = user.memberships.some((m) => m.org_id === orgId && m.role === "owner" && !m.program_id);
+  if (!isOwner) throw new HttpError(403, "Only the organization owner (Super Admin) can change this");
+  const req = parseBody(orgAccessSchema, await c.req.json());
+  const caps = await db.setOrgCapabilities(orgId, { adminsEnterPrograms: req.admins_enter_programs });
+  await db.recordAuditEvent("organization.access_updated", {
+    orgId,
+    actorUserId: user.id,
+    scopeType: "organization",
+    scopeId: orgId,
+    metadata: { adminsEnterPrograms: req.admins_enter_programs },
+  });
+  return c.json(caps);
+});
+
 // ── Branding: Nexus platform + per-program (theme + logo) ───────────────────
 // Same shape as the org theme; Nexus's own branding lives in platform_settings
 // and a program's rides its metadata (revert = clear, falls back to the org).
@@ -2005,6 +2050,7 @@ platformRouter.get("/platform/branding", async (c) => {
   return c.json({
     accent: (b.accent as string) ?? null,
     logo: (b.logo as string) ?? null,
+    favicon: (b.favicon as string) ?? null,
     title: (b.title as string) ?? null,
   });
 });
@@ -2051,6 +2097,161 @@ platformRouter.post("/admin/platform/logo", async (c) => {
   const cur = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
   await db.setPlatformSetting("branding", { ...cur, logo: url });
   return c.json({ logo_url: url });
+});
+
+platformRouter.post("/admin/platform/favicon", async (c) => {
+  const user = await getCurrentUser(c);
+  await _requireNexusArea(user, "settings", "edit");
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const body = (await c.req.json()) as { data?: string; content_type?: string };
+  const ext = _LOGO_EXT[body.content_type ?? ""];
+  if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
+  const buf = Buffer.from(body.data, "base64");
+  if (buf.length === 0) throw new HttpError(422, "Empty upload");
+  if (buf.length > _MAX_LOGO_BYTES) throw new HttpError(413, "Favicon exceeds the 1 MB limit");
+  const key = `platform/favicon.${ext}`;
+  await getStorage().put(key, buf, body.content_type as string);
+  const url = await getStorage().url(key);
+  const cur = ((await db.getPlatformSetting("branding")) ?? {}) as Row;
+  await db.setPlatformSetting("branding", { ...cur, favicon: url });
+  return c.json({ favicon_url: url });
+});
+
+// ── Central Access Catalogue — one document per provider (nexus-console,
+// org-console, program-console, learning, bridge). Read: any authenticated
+// caller (the role builders + resolver need it). Write: platform operators only
+// (the platform owns the inventory). See ACCESS_CATALOGUE_DESIGN.md.
+platformRouter.get("/catalogues", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  return c.json(await catalogue.listCatalogues());
+});
+platformRouter.get("/catalogues/:provider_id", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  const id = c.req.param("provider_id");
+  if (!catalogue.isProviderId(id)) throw new HttpError(404, "Unknown catalogue provider");
+  return c.json(await catalogue.getCatalogue(id));
+});
+// The caller's own effective capabilities for a provider scope — the authority
+// the apps use to decide what a person can do. Read-only.
+platformRouter.get("/me/capabilities", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const providerId = c.req.query("provider");
+  if (!providerId || !catalogue.isProviderId(providerId)) throw new HttpError(400, "provider query param required");
+  const caps = await capabilitiesFor(user, {
+    providerId: providerId as ProviderId,
+    orgId: c.req.query("org") ?? null,
+    programId: c.req.query("program") ?? null,
+  });
+  return c.json({ provider: providerId, capabilities: [...caps] });
+});
+// Preview: given capability ids (?capabilities=a,b), the validated set + the
+// surfaces they unlock. The role builder + enforcement use the same expansion.
+platformRouter.get("/catalogues/:provider_id/resolve", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  const id = c.req.param("provider_id");
+  if (!catalogue.isProviderId(id)) throw new HttpError(404, "Unknown catalogue provider");
+  const doc = await catalogue.getCatalogue(id);
+  const ids = (c.req.query("capabilities") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const caps = resolveCapabilities(doc, ids);
+  return c.json({ capabilities: [...caps], surfaces: surfacesForCapabilities(doc, caps) });
+});
+platformRouter.put("/catalogues/:provider_id", async (c) => {
+  const user = await getCurrentUser(c);
+  await _requireNexusArea(user, "settings", "edit");
+  _requireDb();
+  const id = c.req.param("provider_id");
+  if (!catalogue.isProviderId(id)) throw new HttpError(404, "Unknown catalogue provider");
+  const doc = (await c.req.json()) as CapabilityCatalogueDocument;
+  if (doc?.documentType !== "capability_catalogue" || !Array.isArray(doc.capabilities) || !Array.isArray(doc.groups)) {
+    throw new HttpError(422, "Not a valid catalogue document");
+  }
+  if (doc.provider?.id !== id) throw new HttpError(422, `provider.id must equal "${id}"`);
+  return c.json(await catalogue.saveCatalogue(id, doc));
+});
+platformRouter.delete("/catalogues/:provider_id", async (c) => {
+  const user = await getCurrentUser(c);
+  await _requireNexusArea(user, "settings", "edit");
+  _requireDb();
+  const id = c.req.param("provider_id");
+  if (!catalogue.isProviderId(id)) throw new HttpError(404, "Unknown catalogue provider");
+  return c.json(await catalogue.resetCatalogue(id));
+});
+
+// ── Per-instance catalogues — each org/program carries its OWN customization of
+// its console catalogue, seeded from the shipped default and falling back to it
+// until edited. Read: any authed caller (the level's role builder needs it).
+// Write: the level admin — org owner (Super Admin) for the org catalogue,
+// program admin for the program catalogue; platform operators may edit any.
+function _validCatalogueBody(body: unknown, providerId: ProviderId): CapabilityCatalogueDocument {
+  const doc = body as CapabilityCatalogueDocument;
+  if (doc?.documentType !== "capability_catalogue" || !Array.isArray(doc.capabilities) || !Array.isArray(doc.groups)) {
+    throw new HttpError(422, "Not a valid catalogue document");
+  }
+  if (doc.provider?.id !== providerId) throw new HttpError(422, `provider.id must equal "${providerId}"`);
+  return doc;
+}
+function _requireOrgOwner(user: PlatformUser, orgId: string): void {
+  if (user.role === "platform_admin") return;
+  const isOwner = user.memberships.some((m) => m.org_id === orgId && m.role === "owner" && !m.program_id);
+  if (!isOwner) throw new HttpError(403, "Only the organization owner (Super Admin) can edit the access catalogue");
+}
+
+platformRouter.get("/orgs/:org_id/catalogue", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  return c.json(await catalogue.getCatalogue("org-console", c.req.param("org_id")));
+});
+platformRouter.put("/orgs/:org_id/catalogue", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _requireOrgOwner(user, orgId);
+  const doc = _validCatalogueBody(await c.req.json(), "org-console");
+  const saved = await catalogue.saveCatalogue("org-console", doc, orgId);
+  await db.recordAuditEvent("organization.catalogue_updated", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { provider: "org-console" },
+  });
+  return c.json(saved);
+});
+platformRouter.delete("/orgs/:org_id/catalogue", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgId = c.req.param("org_id");
+  _requireOrgOwner(user, orgId);
+  return c.json(await catalogue.resetCatalogue("org-console", orgId));
+});
+
+platformRouter.get("/programs/:program_id/catalogue", async (c) => {
+  await getCurrentUser(c);
+  _requireDb();
+  return c.json(await catalogue.getCatalogue("program-console", c.req.param("program_id")));
+});
+platformRouter.put("/programs/:program_id/catalogue", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const programId = c.req.param("program_id");
+  const prog = await db.getProgram(programId);
+  if (!prog) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, prog.org_id as string, programId);
+  const doc = _validCatalogueBody(await c.req.json(), "program-console");
+  const saved = await catalogue.saveCatalogue("program-console", doc, programId);
+  await db.recordAuditEvent("program.catalogue_updated", {
+    orgId: prog.org_id as string, actorUserId: user.id, scopeType: "program", scopeId: programId, metadata: { provider: "program-console" },
+  });
+  return c.json(saved);
+});
+platformRouter.delete("/programs/:program_id/catalogue", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const programId = c.req.param("program_id");
+  const prog = await db.getProgram(programId);
+  if (!prog) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, prog.org_id as string, programId);
+  return c.json(await catalogue.resetCatalogue("program-console", programId));
 });
 
 const programThemeSchema = z.object({
@@ -2148,6 +2349,31 @@ platformRouter.post("/programs/:program_id/logo", async (c) => {
   return c.json({ logo_url: url });
 });
 
+// Program favicon — the browser-tab icon (separate from the sidebar logo).
+platformRouter.post("/programs/:program_id/favicon", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  await _assertProgramConfigAccess(user, program.org_id, programId);
+  const body = (await c.req.json()) as { data?: string; content_type?: string };
+  const ext = _LOGO_EXT[body.content_type ?? ""];
+  if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
+  const buf = Buffer.from(body.data, "base64");
+  if (buf.length === 0) throw new HttpError(422, "Empty upload");
+  if (buf.length > _MAX_LOGO_BYTES) throw new HttpError(413, "Favicon exceeds the 1 MB limit");
+  const key = orgKey(program.org_id, `programs/${programId}/favicon.${ext}`);
+  await getStorage().put(key, buf, body.content_type as string);
+  const url = await getStorage().url(key);
+  await db.setProgramBranding(programId, { favicon: url });
+  await db.recordAuditEvent("program.favicon_uploaded", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { key, bytes: buf.length },
+  });
+  return c.json({ favicon_url: url });
+});
+
 // Program card cover (the background image on the Programs page). Larger cap
 // than a logo since it's a full-bleed photo, but still small enough for the
 // DB-backed storage adapter.
@@ -2241,7 +2467,19 @@ const scopedRoleSchema = z.object({
   perms: z.record(z.string(), z.string()),
   display_as_group: z.boolean().optional(),
   parent_group_id: z.string().uuid().nullable().optional(),
+  // Fine-grained capability ids from the Access Catalogue (folded into perms).
+  capabilities: z.array(z.string()).optional(),
 });
+/** Merge fine-grained capability ids into a role's perms blob (additive),
+ *  sanitized against the given catalogue(s) so unknown/reserved ids are dropped. */
+async function _permsWithCapabilities(
+  perms: Record<string, unknown>,
+  capabilities: string[] | undefined,
+  refs: catalogue.CatalogueRef[],
+): Promise<Record<string, unknown>> {
+  if (capabilities === undefined) return perms;
+  return { ...perms, capabilities: await catalogue.validGrantsAcross(refs, capabilities) };
+}
 
 platformRouter.get("/orgs/:org_id/roles", async (c) => {
   const user = await getCurrentUser(c);
@@ -2257,7 +2495,7 @@ platformRouter.post("/orgs/:org_id/roles", async (c) => {
   const orgId = c.req.param("org_id");
   await _requireOrgArea(user, orgId, "team", "edit");
   const req = parseBody(scopedRoleSchema, await c.req.json());
-  const row = await graph.createOrgRole(orgId, req.name, req.perms, req.display_as_group, req.parent_group_id);
+  const row = await graph.createOrgRole(orgId, req.name, await _permsWithCapabilities(req.perms, req.capabilities, [{ providerId: "org-console", instanceId: orgId }]), req.display_as_group, req.parent_group_id);
   await db.recordAuditEvent("organization.role.created", {
     orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { name: req.name },
   });
@@ -2618,7 +2856,7 @@ platformRouter.post("/admin/nexus/roles", async (c) => {
   _requirePlatformAdmin(user);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(scopedRoleSchema, await c.req.json());
-  return c.json(await graph.createNexusRole(req.name, req.perms, req.display_as_group, req.parent_group_id));
+  return c.json(await graph.createNexusRole(req.name, await _permsWithCapabilities(req.perms, req.capabilities, [{ providerId: "nexus-console" }]), req.display_as_group, req.parent_group_id));
 });
 
 platformRouter.get("/admin/nexus/team", async (c) => {
@@ -2710,6 +2948,8 @@ platformRouter.get("/admin/organizations", async (c) => {
 const PROVISION_PASSWORD = "NexusDev2026!";
 const provisionOrgSchema = z.object({
   name: z.string().min(1),
+  // Optional operator-chosen URL slug; normalized + made unique server-side.
+  slug: z.string().trim().max(63).optional(),
   admins: z.array(z.object({ email: z.string().email(), display_name: z.string().nullish() })).min(1),
 });
 
@@ -2733,6 +2973,7 @@ platformRouter.post("/admin/organizations", async (c) => {
   const ownerAcct = await _resolveOrCreateAccount(owner.email);
   const result = await provisionOrganization({
     name: req.name,
+    slug: req.slug?.trim() || undefined,
     owner: { userId: ownerAcct.authId, email: owner.email.trim().toLowerCase(), displayName: owner.display_name ?? undefined },
     // The operator explicitly designating this account as owner is consent to
     // let an existing account (from another org) also own this one.
@@ -3258,6 +3499,28 @@ platformRouter.post("/orgs/:org_id/logo", async (c) => {
     orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { key, bytes: buf.length },
   });
   return c.json({ logo_url: url });
+});
+
+// Org favicon — separate from the logo (shown in the browser tab, not the sidebar).
+platformRouter.post("/orgs/:org_id/favicon", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "settings", "edit");
+  const body = (await c.req.json()) as { data?: string; content_type?: string };
+  const ext = _LOGO_EXT[body.content_type ?? ""];
+  if (!body.data || !ext) throw new HttpError(422, "data (base64) and a valid image content_type are required");
+  const buf = Buffer.from(body.data, "base64");
+  if (buf.length === 0) throw new HttpError(422, "Empty upload");
+  if (buf.length > _MAX_LOGO_BYTES) throw new HttpError(413, "Favicon exceeds the 1 MB limit");
+
+  const key = orgKey(orgId, `favicon.${ext}`);
+  await getStorage().put(key, buf, body.content_type as string);
+  const url = await getStorage().url(key);
+  await db.updateOrgTheme(orgId, null, null, url);
+  await db.recordAuditEvent("organization.favicon_uploaded", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { key, bytes: buf.length },
+  });
+  return c.json({ favicon_url: url });
 });
 
 // Serve locally-stored objects (FS adapter dev mode). Public — logos are org page assets.

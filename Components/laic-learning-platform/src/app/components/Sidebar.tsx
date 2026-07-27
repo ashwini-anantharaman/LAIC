@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Home, PlusSquare, Database, BookOpen, SendHorizontal,
   GitBranch, BarChart2, ClipboardCheck, GraduationCap,
-  Users, BookMarked, Shield, UserCheck, ChevronRight, LogOut,
+  Users, BookMarked, Shield, UserCheck, ChevronRight, LogOut, LayoutTemplate, ListTree,
 } from 'lucide-react';
 import { useApp } from '../App';
 import { USERS } from '../../lib/data';
@@ -17,12 +17,13 @@ interface NavItem {
 
 /** Icon per nav-item id, so the areas-driven nav (Nexus mode) can render. */
 const ICON_BY_ID: Record<string, React.ReactNode> = {
-  'cd-home': <Home size={16} />, 'cd-create': <PlusSquare size={16} />, 'cd-sources': <Database size={16} />,
+  'cd-home': <Home size={16} />, 'cd-create': <PlusSquare size={16} />, 'cd-templates': <LayoutTemplate size={16} />, 'cd-sources': <Database size={16} />,
   'cd-library': <BookOpen size={16} />, 'cd-submissions': <SendHorizontal size={16} />,
   'cd-versions': <GitBranch size={16} />, 'cd-analytics': <BarChart2 size={16} />,
   'or-reviews': <ClipboardCheck size={16} />, 'cr-reviews': <ClipboardCheck size={16} />,
   'admin-overview': <Shield size={16} />, 'admin-people': <Users size={16} />,
   'admin-courses': <BookMarked size={16} />, 'admin-publishing': <GitBranch size={16} />,
+  'admin-access-catalogue': <ListTree size={16} />,
   'coach': <UserCheck size={16} />,
   'student-dashboard': <Home size={16} />, 'student-courses': <GraduationCap size={16} />,
 };
@@ -31,6 +32,7 @@ const NAV: Record<Role, NavItem[]> = {
   'content-developer': [
     { id: 'cd-home', label: 'Home', icon: <Home size={16} /> },
     { id: 'cd-create', label: 'Create', icon: <PlusSquare size={16} /> },
+    { id: 'cd-templates', label: 'Template Library', icon: <LayoutTemplate size={16} /> },
     { id: 'cd-sources', label: 'Sources', icon: <Database size={16} /> },
     { id: 'cd-library', label: 'Object Library', icon: <BookOpen size={16} /> },
     { id: 'cd-submissions', label: 'My Submissions', icon: <SendHorizontal size={16} /> },
@@ -48,6 +50,7 @@ const NAV: Record<Role, NavItem[]> = {
     { id: 'admin-people', label: 'People', icon: <Users size={16} /> },
     { id: 'admin-courses', label: 'Courses & Assignments', icon: <BookMarked size={16} /> },
     { id: 'admin-publishing', label: 'Publishing & Governance', icon: <GitBranch size={16} /> },
+    { id: 'admin-access-catalogue', label: 'Access Catalogue', icon: <ListTree size={16} /> },
   ],
   'coach': [
     { id: 'coach', label: 'Coach', icon: <UserCheck size={16} /> },

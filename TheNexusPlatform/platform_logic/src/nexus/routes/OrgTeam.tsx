@@ -46,7 +46,9 @@ import { useSession } from "@/nexus/session";
 export function OrgTeam() {
   const { orgId = "" } = useParams();
   const navigate = useNavigate();
-  const { refresh } = useSession();
+  const { refresh, user } = useSession();
+  // Super Admin = the org owner. Only the owner may remove/demote admins.
+  const isOwner = (user?.memberships ?? []).some((m) => m.org_id === orgId && m.role === "owner" && !m.program_id);
   const [roles, setRoles] = useState<ScopedRole[] | null>(null);
   const [team, setTeam] = useState<TeamPerson[] | null>(null);
   const [groupsModel, setGroupsModel] = useState<GroupsModel | null>(null);
@@ -105,7 +107,7 @@ export function OrgTeam() {
       status: p.status,
       roleId: p.role_id,
       privileged: p.membership_role === "administrator" || p.membership_role === "owner",
-      privilegedLabel: p.membership_role === "owner" ? "Owner" : "Admin",
+      privilegedLabel: p.membership_role === "owner" ? "Super Admin" : "Admin",
     })) ?? null;
 
   const renderActions = (m: RosterMember) => {
@@ -118,7 +120,9 @@ export function OrgTeam() {
             <Eye className="size-3.5" /> Test as
           </Button>
         ) : null}
-        {p.membership_role !== "owner" && (p.membership_id || p.invitation_id) ? (
+        {p.membership_role !== "owner" &&
+        (p.membership_id || p.invitation_id) &&
+        (p.membership_role !== "administrator" || isOwner) ? (
           <ConfirmButton
             title={p.status === "invited" ? `Withdraw the invitation for ${p.display_name ?? p.email}?` : `Remove ${p.display_name ?? p.email}?`}
             description={p.status === "invited" ? "Their activation link stops working." : "They lose access to this organization immediately."}

@@ -68,7 +68,7 @@ import type {
 } from "@/types/platform";
 import { DEFAULT_PROGRAM_FEATURES } from "@/types/platform";
 import type { ProgramFeatureKey, ProgramFeatures } from "@/types/platform";
-import { EmptyState, PageHeader, Pill, Section, Spinner, statusTone } from "@/nexus/ui/kit";
+import { EmptyState, PageHeader, Pill, Section, Spinner, StatPill, statusTone } from "@/nexus/ui/kit";
 import { AppShellAccessCatalogue } from "@/nexus/appshell/AccessCatalogue";
 import { openInStudio } from "@/services/studio";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
@@ -89,15 +89,6 @@ function useProgram(): { program: Program | null; orgId: string; programId: stri
 
 function Head({ program, subtitle, actions }: { program: Program | null; subtitle: string; actions?: React.ReactNode }) {
   return <PageHeader title={program?.name ?? "Program"} subtitle={subtitle} actions={actions} />;
-}
-
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="glass-card flex flex-col justify-center px-5 py-4">
-      <div className="text-4xl font-semibold leading-none tabular-nums tracking-tight">{value}</div>
-      <div className="mt-2 text-sm font-medium text-muted-foreground">{label}</div>
-    </div>
-  );
 }
 
 // The platforms a program can run. A card renders only when the org is
@@ -205,10 +196,10 @@ export function ProgramOverview() {
   return (
     <div>
       <Head program={program} subtitle={program?.description ?? "Program workspace."} />
-      <div className="grid gap-4 sm:grid-cols-3 mb-8">
-        <Stat label="Offerings" value={offerings.length} />
-        <Stat label="Learners" value={program?.learner_count ?? 0} />
-        <Stat label="Courses" value={program?.course_count ?? 0} />
+      <div className="mb-8 flex flex-wrap gap-2">
+        <StatPill label="Offerings" value={offerings.length} />
+        <StatPill label="Learners" value={program?.learner_count ?? 0} />
+        <StatPill label="Courses" value={program?.course_count ?? 0} />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         {active.map((p) => (

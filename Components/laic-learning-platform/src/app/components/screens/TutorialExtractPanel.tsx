@@ -16,6 +16,10 @@ interface Props {
   topic?: string;
   /** Keep flat extracts in sync for counts / legacy paths. */
   syncExtracts: (units: ContentUnit[]) => void;
+  /** e.g. "tutorial", "quiz" — steers Extract copy. */
+  typeNoun?: string;
+  /** How clusters map into this object (one short sentence). */
+  clusterOutcome?: string;
 }
 
 function unitsOf(kb: ClusteredKnowledgeBase, cluster: ConceptCluster): ContentUnit[] {
@@ -33,11 +37,17 @@ export function TutorialExtractPanel({
   objective,
   topic,
   syncExtracts,
+  typeNoun = 'object',
+  clusterOutcome,
 }: Props) {
   const pullable = (markHighlights || []).filter((h: any) => h.tag === 'Use' || h.tag === 'Support');
   const hlCount = pullable.length;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const outcome = clusterOutcome
+    || (typeNoun === 'tutorial'
+      ? 'Each cluster becomes one tutorial section.'
+      : `Each cluster groups related material for this ${typeNoun}.`);
 
   const applyKb = (kb: ClusteredKnowledgeBase) => {
     setKnowledgeBase(kb);
@@ -181,8 +191,8 @@ export function TutorialExtractPanel({
     <div className="p-5 max-w-3xl">
       <div className="rounded-2xl p-4 mb-4" style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)' }}>
         <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
-          <strong>Extract classifies, dedupes, and clusters your markup into teaching material.</strong>{' '}
-          Each cluster becomes one tutorial section. Shape with AI steers how units are grouped — nothing is invented from general knowledge.
+          <strong>Extract classifies, dedupes, and clusters your markup into teaching material for this {typeNoun}.</strong>{' '}
+          {outcome} Shape with AI steers how units are grouped — nothing is invented from general knowledge.
         </p>
       </div>
 
@@ -280,7 +290,7 @@ export function TutorialExtractPanel({
       ) : (
         <div className="space-y-4">
           <p style={{ fontSize: 11.5, fontWeight: 700, color: '#6B7280', letterSpacing: '.06em' }}>
-            CONCEPT CLUSTERS → SECTIONS
+            CONCEPT CLUSTERS
           </p>
           {knowledgeBase.clusters.map((cluster) => {
             const units = unitsOf(knowledgeBase, cluster);

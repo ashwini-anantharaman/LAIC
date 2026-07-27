@@ -73,7 +73,7 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -241,6 +241,11 @@ export async function createOrganization(name: string): Promise<OrgSummary> {
   return request<OrgSummary>("/api/platform/orgs", { method: "POST", body: JSON.stringify({ name }) });
 }
 
+/** Operator: is a URL slug free? Returns the normalized slug the URL would use. */
+export async function checkOrgSlug(slug: string): Promise<{ slug: string; available: boolean }> {
+  return request<{ slug: string; available: boolean }>(`/api/platform/orgs/slug-available/${encodeURIComponent(slug)}`);
+}
+
 export interface ProvisionedAdmin {
   email: string;
   role: string;
@@ -263,10 +268,11 @@ export interface ProvisionResult {
 export async function provisionOrganization(
   name: string,
   admins: { email: string; display_name?: string }[],
+  slug?: string,
 ): Promise<ProvisionResult> {
   return request<ProvisionResult>("/api/platform/admin/organizations", {
     method: "POST",
-    body: JSON.stringify({ name, admins }),
+    body: JSON.stringify({ name, admins, slug }),
   });
 }
 
@@ -297,13 +303,13 @@ export async function listProgramRoles(programId: string): Promise<ProgramRole[]
 }
 export async function createProgramRole(
   programId: string,
-  payload: { name: string; perms: RolePerms; display_as_group?: boolean; parent_group_id?: string | null },
+  payload: { name: string; perms: RolePerms; display_as_group?: boolean; parent_group_id?: string | null; capabilities?: string[] },
 ): Promise<ProgramRole> {
   return request<ProgramRole>(`/api/programs/${programId}/roles`, { method: "POST", body: JSON.stringify(payload) });
 }
 export async function updateProgramRole(
   roleId: string,
-  patch: { name?: string; perms?: RolePerms; display_as_group?: boolean; parent_group_id?: string | null },
+  patch: { name?: string; perms?: RolePerms; display_as_group?: boolean; parent_group_id?: string | null; capabilities?: string[] },
 ): Promise<ProgramRole> {
   return request<ProgramRole>(`/api/roles/${roleId}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
@@ -395,6 +401,7 @@ export interface OrgBranding {
   slug: string;
   theme_accent_color: string | null;
   theme_logo_url: string | null;
+  theme_favicon_url?: string | null;
 }
 
 /** Orgs the signed-in user belongs to (id/name/slug/role). */
@@ -616,6 +623,15 @@ export async function uploadOrgLogo(orgId: string, file: File): Promise<{ logo_u
   });
 }
 
+/** Upload the org's favicon (≤1 MB image) — the browser-tab icon. */
+export async function uploadOrgFavicon(orgId: string, file: File): Promise<{ favicon_url: string }> {
+  const data = await fileToBase64(file);
+  return request<{ favicon_url: string }>(`/api/platform/orgs/${orgId}/favicon`, {
+    method: "POST",
+    body: JSON.stringify({ data, content_type: file.type }),
+  });
+}
+
 async function fileToBase64(file: File): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -652,7 +668,7 @@ export async function listOrgScopedRoles(orgId: string): Promise<ScopedRole[]> {
 }
 export async function createOrgScopedRole(
   orgId: string,
-  payload: { name: string; perms: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null },
+  payload: { name: string; perms: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null; capabilities?: string[] },
 ): Promise<ScopedRole> {
   return request<ScopedRole>(`/api/platform/orgs/${orgId}/roles`, { method: "POST", body: JSON.stringify(payload) });
 }
@@ -687,7 +703,7 @@ export async function listNexusScopedRoles(): Promise<ScopedRole[]> {
   return request<ScopedRole[]>("/api/platform/admin/nexus/roles");
 }
 export async function createNexusScopedRole(
-  payload: { name: string; perms: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null },
+  payload: { name: string; perms: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null; capabilities?: string[] },
 ): Promise<ScopedRole> {
   return request<ScopedRole>("/api/platform/admin/nexus/roles", { method: "POST", body: JSON.stringify(payload) });
 }
@@ -708,6 +724,7 @@ export async function removeNexusOperator(email: string): Promise<void> {
 export interface PlatformBranding {
   accent: string | null;
   logo: string | null;
+  favicon?: string | null;
   title?: string | null;
 }
 
@@ -733,11 +750,18 @@ export async function uploadPlatformLogo(file: File): Promise<{ logo_url: string
     body: JSON.stringify({ data, content_type: file.type }),
   });
 }
+export async function uploadPlatformFavicon(file: File): Promise<{ favicon_url: string }> {
+  const data = await fileToBase64(file);
+  return request<{ favicon_url: string }>("/api/platform/admin/platform/favicon", {
+    method: "POST",
+    body: JSON.stringify({ data, content_type: file.type }),
+  });
+}
 
 export async function updateProgramTheme(
   programId: string,
   opts: { accent?: string; revert?: boolean },
-): Promise<{ branding: { accent: string | null; logo: string | null } | null }> {
+): Promise<{ branding: { accent: string | null; logo: string | null; favicon?: string | null } | null }> {
   return request(`/api/platform/programs/${programId}/theme`, {
     method: "PATCH",
     body: JSON.stringify({ accent_color: opts.accent, revert: opts.revert }),
@@ -761,6 +785,15 @@ export async function updateProgramCategories(
 export async function uploadProgramLogo(programId: string, file: File): Promise<{ logo_url: string }> {
   const data = await fileToBase64(file);
   return request<{ logo_url: string }>(`/api/platform/programs/${programId}/logo`, {
+    method: "POST",
+    body: JSON.stringify({ data, content_type: file.type }),
+  });
+}
+
+/** Upload a program's favicon (≤1 MB image) — the browser-tab icon. */
+export async function uploadProgramFavicon(programId: string, file: File): Promise<{ favicon_url: string }> {
+  const data = await fileToBase64(file);
+  return request<{ favicon_url: string }>(`/api/platform/programs/${programId}/favicon`, {
     method: "POST",
     body: JSON.stringify({ data, content_type: file.type }),
   });
@@ -828,6 +861,15 @@ export async function setOrgCapabilities(orgId: string, patch: Partial<OrgCapabi
   return request<OrgCapabilities>(`/api/platform/orgs/${orgId}/capabilities`, {
     method: "PUT",
     body: JSON.stringify(patch),
+  });
+}
+
+/** Owner (Super Admin) only: toggle whether org admins may open this org's
+ *  programs. Lives in the org's own Settings, not the Nexus console. */
+export async function setOrgAccess(orgId: string, adminsEnterPrograms: boolean): Promise<OrgCapabilities> {
+  return request<OrgCapabilities>(`/api/platform/orgs/${orgId}/access`, {
+    method: "PATCH",
+    body: JSON.stringify({ admins_enter_programs: adminsEnterPrograms }),
   });
 }
 

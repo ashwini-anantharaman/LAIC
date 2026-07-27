@@ -68,6 +68,7 @@ export type AssessmentPlacement =
   | 'none'
   | 'checkpoints_after_each';
 
+/** @deprecated Flat recipe vocabulary for generation consumers; prefer RecipeItem. */
 export type SectionRecipeBlockType =
   | 'section-heading'
   | 'explanation'
@@ -90,13 +91,81 @@ export interface MediaSlot {
   hint?: string;
 }
 
+/** @deprecated Flat recipe row; prefer AtomicBlockItem | EmbeddedObjectItem. */
 export interface SectionBlockRecipeItem {
   type: SectionRecipeBlockType;
   preferKinds?: ContentUnitKind[];
   required?: boolean;
 }
 
+/** @deprecated Prefer SectionRecipe (RecipeItem[]). Kept for ObjectCreator / section plans. */
 export type SectionBlockRecipe = SectionBlockRecipeItem[];
+
+export type SectionConnection = SectionConnectionRule;
+
+export type AtomicBlockType =
+  | 'section-heading'
+  | 'explanation'
+  | 'worked-example'
+  | 'source-excerpt'
+  | 'instruction'
+  | 'try-it'
+  | 'principle'
+  | 'misconception'
+  | 'correction'
+  | 'scenario-advance'
+  | 'media';
+
+export type EmbeddableObjectType =
+  | 'quiz'
+  | 'flashcard-set'
+  | 'concept-card'
+  | 'scenario'
+  | 'assignment'
+  | 'reflection'
+  | 'reused-from-library';
+
+export type EmbeddedObjectSourceMode =
+  | 'generate'
+  | 'pick_from_library'
+  | 'prompt_on_author';
+
+/**
+ * Live pin to a library object version.
+ * `objectId` → LearningObject.id; `versionId` → Version.id (not a copied versionNumber string).
+ */
+export interface VersionPin {
+  objectId: string;
+  versionId: string;
+}
+
+export interface MediaSlotConfig {
+  kind: 'image' | 'video' | 'either';
+  hint?: string;
+}
+
+export interface AtomicBlockItem {
+  kind: 'atomic';
+  id: string;
+  blockType: AtomicBlockType;
+  required?: boolean;
+  preferKinds?: ContentUnitKind[];
+  media?: MediaSlotConfig;
+}
+
+export interface EmbeddedObjectItem {
+  kind: 'embedded';
+  id: string;
+  objectType: EmbeddableObjectType;
+  sourceMode: EmbeddedObjectSourceMode;
+  required: boolean;
+  authoringNote?: string;
+  versionPin?: VersionPin;
+  libraryTitle?: string;
+}
+
+export type RecipeItem = AtomicBlockItem | EmbeddedObjectItem;
+export type SectionRecipe = RecipeItem[];
 
 export interface TutorialKnobDefaults {
   secs?: number;
@@ -124,9 +193,16 @@ export interface TutorialTemplate {
   name: string;
   description: string;
   builtin: boolean;
+  /** Composite-aware ordered recipe (source of truth for the template editor). */
+  recipe: SectionRecipe;
+  /**
+   * Flat projection for existing generation / scaffold consumers.
+   * Derived from `recipe` on save; do not treat as independently authored.
+   */
   sectionBlockRecipe: SectionBlockRecipe;
   sectionConnection: SectionConnectionRule;
   assessmentPlacement: AssessmentPlacement;
+  /** Derived from atomic media items in `recipe` on save. */
   mediaSlots: MediaSlot[];
   knobDefaults: TutorialKnobDefaults;
 }
@@ -342,6 +418,38 @@ export interface VideoEmbedContent {
   caption?: string;
 }
 
+/** Timed caption chunk for video-script transcript panel. */
+export interface VideoScriptTranscriptSegment {
+  id: string;
+  start: number;
+  end?: number;
+  text: string;
+}
+
+/** Interactive pause point with a question (Edpuzzle-style). */
+export interface VideoScriptCheckpoint {
+  id: string;
+  /** Pause the video at this time (seconds). */
+  time: number;
+  question: QuestionContent;
+}
+
+/** Interactive video lesson: video + checkpoints + optional transcript/chat. */
+export interface VideoScriptContent {
+  provider: 'youtube';
+  videoUrl: string;
+  videoId: string;
+  title?: string;
+  transcript: VideoScriptTranscriptSegment[];
+  checkpoints: VideoScriptCheckpoint[];
+  /** Show clickable transcript beside the video for learners. */
+  showTranscript?: boolean;
+  /** Show Ask-AI chatbot grounded on the video transcript. */
+  enableChat?: boolean;
+  /** Learner must submit an answer before playback continues. */
+  requireAnswer?: boolean;
+}
+
 export interface SummaryContent {
   shape: string;
   length?: string;
@@ -418,6 +526,7 @@ export type BlockContent =
   | SourceExcerptContent
   | ImageContent
   | VideoEmbedContent
+  | VideoScriptContent
   | SummaryContent
   | ReflectionContent
   | AssignmentContent
@@ -439,6 +548,7 @@ export interface Block {
     | 'drill'
     | 'image'
     | 'video-embed'
+    | 'video-script'
     | 'bridge-play'
     | 'bidding-sequence';
   content: BlockContent;

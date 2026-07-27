@@ -70,7 +70,7 @@ export const LEARNING_MANIFEST: AccessManifest = {
     { id: 'repo_write', label: 'Organize repository folders', group: 'Repository & administration' },
     { id: 'manage_people', label: 'Manage people & roles', group: 'Repository & administration' },
   ],
-  adminSurfaces: [{ id: 'admin-people', label: 'People' }],
+  adminSurfaces: [{ id: 'admin-people', label: 'People' }, { id: 'admin-access-catalogue', label: 'Access Catalogue' }],
   accessTree: [
     {
       id: 'overview', label: 'Program Overview', hint: 'Program dashboard & activity',
@@ -83,6 +83,7 @@ export const LEARNING_MANIFEST: AccessManifest = {
       surfaces: [
         { id: 'cd-home', label: 'Home' },
         { id: 'cd-create', label: 'Create', requiresEdit: true },
+        { id: 'cd-templates', label: 'Template Library', requiresEdit: true },
         { id: 'cd-sources', label: 'Sources', requiresEdit: true },
         { id: 'cd-library', label: 'Object Library' },
         { id: 'cd-submissions', label: 'My Submissions' },

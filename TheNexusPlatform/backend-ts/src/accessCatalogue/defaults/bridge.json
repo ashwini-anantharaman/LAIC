@@ -1,0 +1,624 @@
+{
+  "$schema": "./laic-access-control.schema.json",
+  "schemaVersion": "1.0",
+  "documentType": "capability_catalogue",
+  "id": "bridge-platform-access",
+  "name": "Bridge Platform Capability Catalogue",
+  "description": "Atomic capabilities and optional UI mappings published by the Bridge Platform. Learning content capabilities are supplied by a separately provisioned Learning Platform instance.",
+  "provider": {
+    "kind": "platform",
+    "id": "bridge-platform"
+  },
+  "catalogueVersion": "1.0",
+  "capabilities": [
+    {
+      "id": "bridge.knowledge.read",
+      "label": "Browse approved Bridge knowledge",
+      "description": "Browse approved Bridge knowledge",
+      "group": "knowledge"
+    },
+    {
+      "id": "bridge.knowledge.create",
+      "label": "Create Bridge knowledge items",
+      "description": "Create Bridge knowledge items",
+      "group": "knowledge"
+    },
+    {
+      "id": "bridge.knowledge.edit",
+      "label": "Edit Bridge knowledge items",
+      "description": "Edit Bridge knowledge items",
+      "group": "knowledge"
+    },
+    {
+      "id": "bridge.knowledge.review",
+      "label": "Review Bridge knowledge changes",
+      "description": "Review Bridge knowledge changes",
+      "group": "knowledge"
+    },
+    {
+      "id": "bridge.knowledge.approve",
+      "label": "Approve Bridge knowledge versions",
+      "description": "Approve Bridge knowledge versions",
+      "group": "knowledge"
+    },
+    {
+      "id": "bridge.knowledge.version",
+      "label": "Manage Bridge knowledge versions",
+      "description": "Manage Bridge knowledge versions",
+      "group": "knowledge"
+    },
+    {
+      "id": "bridge.taxonomy.manage",
+      "label": "Manage Bridge taxonomies and classifications",
+      "description": "Manage Bridge taxonomies and classifications",
+      "group": "knowledge"
+    },
+    {
+      "id": "bridge.relationship.manage",
+      "label": "Manage knowledge relationships, dependencies, conflicts, and exceptions",
+      "description": "Manage knowledge relationships, dependencies, conflicts, and exceptions",
+      "group": "knowledge"
+    },
+    {
+      "id": "bridge.cp.read",
+      "label": "Browse CP definitions and configurations",
+      "description": "Browse CP definitions and configurations",
+      "group": "cp"
+    },
+    {
+      "id": "bridge.cp.configure",
+      "label": "Create or edit CP configurations",
+      "description": "Create or edit CP configurations",
+      "group": "cp"
+    },
+    {
+      "id": "bridge.cp.test",
+      "label": "Run CP test suites and table tests",
+      "description": "Run CP test suites and table tests",
+      "group": "cp"
+    },
+    {
+      "id": "bridge.cp.review",
+      "label": "Review CP configuration and behavior",
+      "description": "Review CP configuration and behavior",
+      "group": "cp"
+    },
+    {
+      "id": "bridge.cp.approve",
+      "label": "Approve CP versions for use",
+      "description": "Approve CP versions for use",
+      "group": "cp"
+    },
+    {
+      "id": "bridge.cp.run",
+      "label": "Use an approved CP in an allowed session",
+      "description": "Use an approved CP in an allowed session",
+      "group": "cp",
+      "resourceTypes": [
+        "cp_definition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "bridge.sandbox.read",
+      "label": "Browse Sandbox definitions",
+      "description": "Browse Sandbox definitions",
+      "group": "sandbox"
+    },
+    {
+      "id": "bridge.sandbox.configure",
+      "label": "Create or edit Sandbox definitions",
+      "description": "Create or edit Sandbox definitions",
+      "group": "sandbox"
+    },
+    {
+      "id": "bridge.sandbox.test",
+      "label": "Test Sandbox reachability and behavior",
+      "description": "Test Sandbox reachability and behavior",
+      "group": "sandbox"
+    },
+    {
+      "id": "bridge.sandbox.approve",
+      "label": "Approve Sandbox versions",
+      "description": "Approve Sandbox versions",
+      "group": "sandbox"
+    },
+    {
+      "id": "bridge.sandbox.run",
+      "label": "Launch an approved Sandbox-backed experience",
+      "description": "Launch an approved Sandbox-backed experience",
+      "group": "sandbox",
+      "resourceTypes": [
+        "sandbox_definition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "bridge.deal.read",
+      "label": "Browse deals",
+      "description": "Browse deals",
+      "group": "deals"
+    },
+    {
+      "id": "bridge.deal.create",
+      "label": "Create or import deals",
+      "description": "Create or import deals",
+      "group": "deals"
+    },
+    {
+      "id": "bridge.deal.generate",
+      "label": "Generate random or constrained deals",
+      "description": "Generate random or constrained deals",
+      "group": "deals"
+    },
+    {
+      "id": "bridge.deal_collection.manage",
+      "label": "Create and manage deal collections",
+      "description": "Create and manage deal collections",
+      "group": "deals"
+    },
+    {
+      "id": "bridge.deal_collection.use",
+      "label": "Use permitted deal collections",
+      "description": "Use permitted deal collections",
+      "group": "deals",
+      "resourceTypes": [
+        "bridge_deal_collection"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "bridge.table.host",
+      "label": "Create and host Bridge tables or sessions",
+      "description": "Create and host Bridge tables or sessions",
+      "group": "play"
+    },
+    {
+      "id": "bridge.table.join",
+      "label": "Join an allowed Bridge table or session",
+      "description": "Join an allowed Bridge table or session",
+      "group": "play"
+    },
+    {
+      "id": "bridge.table.play",
+      "label": "Bid and play at a Bridge table",
+      "description": "Bid and play at a Bridge table",
+      "group": "play"
+    },
+    {
+      "id": "bridge.session.manage",
+      "label": "Manage session seats, participants, and settings",
+      "description": "Manage session seats, participants, and settings",
+      "group": "play"
+    },
+    {
+      "id": "bridge.session.review",
+      "label": "Review completed sessions",
+      "description": "Review completed sessions",
+      "group": "analysis"
+    },
+    {
+      "id": "bridge.analysis.view",
+      "label": "View Bridge analysis",
+      "description": "View Bridge analysis",
+      "group": "analysis"
+    },
+    {
+      "id": "bridge.decision_trace.view",
+      "label": "View CP decision traces and move reasons",
+      "description": "View CP decision traces and move reasons",
+      "group": "analysis"
+    },
+    {
+      "id": "bridge.convention_card.manage",
+      "label": "Create and manage convention cards and partnership settings",
+      "description": "Create and manage convention cards and partnership settings",
+      "group": "configuration"
+    }
+  ],
+  "resourceTypes": [
+    {
+      "id": "bridge_knowledge_item",
+      "label": "Bridge knowledge item",
+      "description": "Bridge knowledge item",
+      "constraintFields": [
+        "knowledge_type",
+        "encoding_system",
+        "status"
+      ]
+    },
+    {
+      "id": "bridge_taxonomy_item",
+      "label": "Bridge taxonomy item",
+      "description": "Bridge taxonomy item",
+      "constraintFields": [
+        "taxonomy_type",
+        "encoding_system"
+      ]
+    },
+    {
+      "id": "cp_definition",
+      "label": "Configured Player definition",
+      "description": "Configured Player definition",
+      "constraintFields": [
+        "encoding_system",
+        "status",
+        "coverage_type"
+      ]
+    },
+    {
+      "id": "sandbox_definition",
+      "label": "Sandbox definition",
+      "description": "Sandbox definition",
+      "constraintFields": [
+        "encoding_system",
+        "status",
+        "learning_objective"
+      ]
+    },
+    {
+      "id": "bridge_deal",
+      "label": "Bridge deal",
+      "description": "Bridge deal",
+      "constraintFields": [
+        "deal_type",
+        "difficulty"
+      ]
+    },
+    {
+      "id": "bridge_deal_collection",
+      "label": "Bridge deal collection",
+      "description": "Bridge deal collection",
+      "constraintFields": [
+        "collection_type",
+        "owner_scope_id"
+      ]
+    },
+    {
+      "id": "bridge_table_session",
+      "label": "Bridge table session",
+      "description": "Bridge table session",
+      "constraintFields": [
+        "session_type",
+        "owner_scope_id"
+      ]
+    },
+    {
+      "id": "convention_card",
+      "label": "Convention card",
+      "description": "Convention card",
+      "constraintFields": [
+        "encoding_system",
+        "owner_scope_id"
+      ]
+    },
+    {
+      "id": "bridge_analysis_record",
+      "label": "Bridge analysis record",
+      "description": "Bridge analysis record",
+      "constraintFields": [
+        "session_id"
+      ]
+    }
+  ],
+  "uiSurfaces": [
+    {
+      "id": "bridge.home",
+      "label": "Bridge Home",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge",
+      "requiredAnyCapabilities": [
+        "bridge.table.join",
+        "bridge.knowledge.read"
+      ]
+    },
+    {
+      "id": "bridge.knowledge",
+      "label": "Knowledge Library",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/knowledge",
+      "requiredAnyCapabilities": [
+        "bridge.knowledge.read"
+      ]
+    },
+    {
+      "id": "bridge.knowledge_review",
+      "label": "Knowledge Review",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/knowledge/review",
+      "requiredAnyCapabilities": [
+        "bridge.knowledge.review",
+        "bridge.knowledge.approve"
+      ]
+    },
+    {
+      "id": "bridge.cp_library",
+      "label": "CP Library",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/cp",
+      "requiredAnyCapabilities": [
+        "bridge.cp.read"
+      ]
+    },
+    {
+      "id": "bridge.cp_builder",
+      "label": "CP Configuration",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/cp/configure",
+      "requiredAnyCapabilities": [
+        "bridge.cp.configure"
+      ]
+    },
+    {
+      "id": "bridge.cp_testing",
+      "label": "CP Testing",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/cp/testing",
+      "requiredAnyCapabilities": [
+        "bridge.cp.test",
+        "bridge.cp.review"
+      ]
+    },
+    {
+      "id": "bridge.sandboxes",
+      "label": "Sandboxes",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/sandboxes",
+      "requiredAnyCapabilities": [
+        "bridge.sandbox.read"
+      ]
+    },
+    {
+      "id": "bridge.sandbox_builder",
+      "label": "Sandbox Configuration",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/sandboxes/configure",
+      "requiredAnyCapabilities": [
+        "bridge.sandbox.configure"
+      ]
+    },
+    {
+      "id": "bridge.deals",
+      "label": "Deals & Collections",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/deals",
+      "requiredAnyCapabilities": [
+        "bridge.deal.read",
+        "bridge.deal_collection.manage"
+      ]
+    },
+    {
+      "id": "bridge.table",
+      "label": "Play Bridge",
+      "kind": "screen",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/table",
+      "requiredAnyCapabilities": [
+        "bridge.table.join",
+        "bridge.table.play"
+      ]
+    },
+    {
+      "id": "bridge.session_admin",
+      "label": "Session Management",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/sessions",
+      "requiredAnyCapabilities": [
+        "bridge.table.host",
+        "bridge.session.manage"
+      ]
+    },
+    {
+      "id": "bridge.analysis",
+      "label": "Analysis & Review",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/analysis",
+      "requiredAnyCapabilities": [
+        "bridge.analysis.view",
+        "bridge.session.review"
+      ]
+    },
+    {
+      "id": "bridge.decision_trace",
+      "label": "Why This Move",
+      "kind": "component",
+      "group": "bridge",
+      "routeOrComponent": "CPDecisionTrace",
+      "requiredAnyCapabilities": [
+        "bridge.decision_trace.view"
+      ]
+    },
+    {
+      "id": "bridge.convention_cards",
+      "label": "Convention Cards",
+      "kind": "navigation",
+      "group": "bridge",
+      "routeOrComponent": "/bridge/convention-cards",
+      "requiredAnyCapabilities": [
+        "bridge.convention_card.manage"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "id": "knowledge",
+      "label": "Bridge Knowledge",
+      "order": 1,
+      "capabilityIds": [
+        "bridge.knowledge.read",
+        "bridge.knowledge.create",
+        "bridge.knowledge.edit",
+        "bridge.knowledge.review",
+        "bridge.knowledge.approve",
+        "bridge.knowledge.version",
+        "bridge.taxonomy.manage",
+        "bridge.relationship.manage"
+      ],
+      "uiSurfaceIds": [
+        "bridge.knowledge",
+        "bridge.knowledge_review"
+      ]
+    },
+    {
+      "id": "cp",
+      "label": "Configured Players",
+      "order": 2,
+      "capabilityIds": [
+        "bridge.cp.read",
+        "bridge.cp.configure",
+        "bridge.cp.test",
+        "bridge.cp.review",
+        "bridge.cp.approve",
+        "bridge.cp.run"
+      ],
+      "uiSurfaceIds": [
+        "bridge.cp_library",
+        "bridge.cp_builder",
+        "bridge.cp_testing"
+      ]
+    },
+    {
+      "id": "sandbox",
+      "label": "Sandboxes",
+      "order": 3,
+      "capabilityIds": [
+        "bridge.sandbox.read",
+        "bridge.sandbox.configure",
+        "bridge.sandbox.test",
+        "bridge.sandbox.approve",
+        "bridge.sandbox.run"
+      ],
+      "uiSurfaceIds": [
+        "bridge.sandboxes",
+        "bridge.sandbox_builder"
+      ]
+    },
+    {
+      "id": "deals",
+      "label": "Deals",
+      "order": 4,
+      "capabilityIds": [
+        "bridge.deal.read",
+        "bridge.deal.create",
+        "bridge.deal.generate",
+        "bridge.deal_collection.manage",
+        "bridge.deal_collection.use"
+      ],
+      "uiSurfaceIds": [
+        "bridge.deals"
+      ]
+    },
+    {
+      "id": "play",
+      "label": "Playing",
+      "order": 5,
+      "capabilityIds": [
+        "bridge.table.host",
+        "bridge.table.join",
+        "bridge.table.play",
+        "bridge.session.manage"
+      ],
+      "uiSurfaceIds": [
+        "bridge.table",
+        "bridge.session_admin"
+      ]
+    },
+    {
+      "id": "analysis",
+      "label": "Analysis",
+      "order": 6,
+      "capabilityIds": [
+        "bridge.session.review",
+        "bridge.analysis.view",
+        "bridge.decision_trace.view"
+      ],
+      "uiSurfaceIds": [
+        "bridge.analysis",
+        "bridge.decision_trace"
+      ]
+    },
+    {
+      "id": "configuration",
+      "label": "Partnership Configuration",
+      "order": 7,
+      "capabilityIds": [
+        "bridge.convention_card.manage"
+      ],
+      "uiSurfaceIds": [
+        "bridge.convention_cards"
+      ]
+    }
+  ],
+  "sampleRoleTemplates": [
+    {
+      "id": "bridge-expert",
+      "name": "Bridge Expert",
+      "description": "Reviews Bridge knowledge and validates CP behavior.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-bridge-instance",
+          "capabilityIds": [
+            "bridge.knowledge.read",
+            "bridge.knowledge.edit",
+            "bridge.knowledge.review",
+            "bridge.taxonomy.manage",
+            "bridge.relationship.manage",
+            "bridge.cp.read",
+            "bridge.cp.test",
+            "bridge.cp.review",
+            "bridge.analysis.view",
+            "bridge.decision_trace.view"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bridge-session-operator",
+      "name": "Bridge Session Operator",
+      "description": "Runs Bridge tables and test sessions.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-bridge-instance",
+          "capabilityIds": [
+            "bridge.deal.read",
+            "bridge.deal_collection.use",
+            "bridge.table.host",
+            "bridge.table.join",
+            "bridge.table.play",
+            "bridge.session.manage",
+            "bridge.session.review",
+            "bridge.analysis.view"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bridge-participant",
+      "name": "Bridge Participant",
+      "description": "Joins allowed Bridge sessions and plays.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-bridge-instance",
+          "capabilityIds": [
+            "bridge.table.join",
+            "bridge.table.play",
+            "bridge.cp.run",
+            "bridge.sandbox.run",
+            "bridge.deal_collection.use"
+          ]
+        }
+      ]
+    }
+  ]
+}

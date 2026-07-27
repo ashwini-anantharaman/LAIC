@@ -27,6 +27,7 @@ const PROGRAMS: { id: Program; label: string }[] = [
 const SCREEN_TITLES: Record<string, { title: string; sub: string }> = {
   'cd-home': { title: 'Home', sub: 'Content Developer workspace' },
   'cd-create': { title: 'Create', sub: 'New learning object' },
+  'cd-templates': { title: 'Template Library', sub: 'Recommended & custom templates' },
   'cd-sources': { title: 'Sources', sub: 'Source library' },
   'cd-library': { title: 'Object Library', sub: 'Bridge program' },
   'cd-submissions': { title: 'My Submissions', sub: 'Review history' },
@@ -38,6 +39,7 @@ const SCREEN_TITLES: Record<string, { title: string; sub: string }> = {
   'admin-people': { title: 'People', sub: 'Invite and manage people' },
   'admin-courses': { title: 'Courses & Assignments', sub: 'Learner management' },
   'admin-publishing': { title: 'Publishing & Governance', sub: "What's live" },
+  'admin-access-catalogue': { title: 'Access Catalogue', sub: 'Capabilities & surfaces (managed in Nexus)' },
   'coach': { title: 'Coach', sub: 'Learner roster' },
   'student-dashboard': { title: 'Today', sub: '' },
   'student-courses': { title: 'My Courses', sub: 'Bridge program' },

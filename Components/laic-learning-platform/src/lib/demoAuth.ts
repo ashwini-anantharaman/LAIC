@@ -1,12 +1,42 @@
 import type { LearningObject } from './types';
 
-/** Hard-coded demo logins for local / prototype use. */
+/** Hard-coded demo logins for local / prototype use — one account per role. */
 export const DEMO_ACCOUNTS = [
   {
     userId: 'demo-cd',
     email: '1@gmail.com',
     password: '123456',
-    label: 'Course Developer',
+    label: 'Content Developer',
+  },
+  {
+    userId: 'lee',
+    email: 'lee@laic.org',
+    password: '123456',
+    label: 'Object Reviewer',
+  },
+  {
+    userId: 'maria',
+    email: 'maria@laic.org',
+    password: '123456',
+    label: 'Course Reviewer',
+  },
+  {
+    userId: 'amina',
+    email: 'amina@laic.org',
+    password: '123456',
+    label: 'Administrator',
+  },
+  {
+    userId: 'jordan',
+    email: 'jordan@laic.org',
+    password: '123456',
+    label: 'Coach',
+  },
+  {
+    userId: 'riya',
+    email: 'riya@laic.org',
+    password: '123456',
+    label: 'Student',
   },
 ] as const;
 

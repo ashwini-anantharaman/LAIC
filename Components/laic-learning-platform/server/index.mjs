@@ -287,6 +287,41 @@ function json3ToText(raw) {
   return parts.join('').replace(/\s+/g, ' ').trim();
 }
 
+/** Timed caption chunks from yt-dlp json3 (merged into ~chunkSec windows). */
+function json3ToSegments(raw, chunkSec = 8) {
+  let data;
+  try { data = JSON.parse(raw); } catch { return []; }
+  const rawSegs = [];
+  for (const ev of data.events || []) {
+    if (ev.tStartMs == null) continue;
+    const text = (ev.segs || []).map((s) => s.utf8 || '').join('').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    const start = Number(ev.tStartMs) / 1000;
+    const end = start + (Number(ev.dDurationMs) || 0) / 1000;
+    rawSegs.push({ start, end: end > start ? end : start + 1, text });
+  }
+  if (!rawSegs.length) return [];
+  const merged = [];
+  let cur = { start: rawSegs[0].start, end: rawSegs[0].end, text: rawSegs[0].text };
+  for (let i = 1; i < rawSegs.length; i++) {
+    const s = rawSegs[i];
+    if (s.start - cur.start < chunkSec && (cur.text + ' ' + s.text).length < 420) {
+      cur.end = Math.max(cur.end, s.end);
+      cur.text = `${cur.text} ${s.text}`.replace(/\s+/g, ' ').trim();
+    } else {
+      merged.push(cur);
+      cur = { start: s.start, end: s.end, text: s.text };
+    }
+  }
+  merged.push(cur);
+  return merged.map((s, i) => ({
+    id: `seg-${i + 1}`,
+    start: Math.round(s.start * 10) / 10,
+    end: Math.round(s.end * 10) / 10,
+    text: s.text,
+  }));
+}
+
 async function fetchYoutubeTranscript(url) {
   const id = parseVideoId(url);
   if (!id) throw new LlmError(400, 'bad_url', "That doesn't look like a YouTube link.");
@@ -322,10 +357,101 @@ async function fetchYoutubeTranscript(url) {
     const raw = await readFile(join(dir, files[0]), 'utf8');
     const transcript = json3ToText(raw);
     if (!transcript) throw new LlmError(422, 'empty_transcript', 'The transcript came back empty.');
-    return { title, sentences: toSentences(transcript) };
+    const segments = json3ToSegments(raw);
+    return { title, videoId: id, sentences: toSentences(transcript), segments };
   } finally {
     rm(dir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+function buildVideoScriptPrompt({ title, config, extracts, prompt, transcriptSegments, videoTitle }) {
+  const c = config || {};
+  const num = (v, d) => (typeof v === 'number' ? v : Number(v) || d);
+  const ncp = Math.max(1, Math.min(12, num(c.ncp, 4)));
+  const extractLines = extractLinesFrom(extracts);
+  const segs = Array.isArray(transcriptSegments) ? transcriptSegments : [];
+  const durationHint = segs.length
+    ? Math.max(...segs.map((s) => Number(s.end || s.start) || 0))
+    : 0;
+  const timedLines = segs.slice(0, 80).map((s) =>
+    `[${fmtClockServer(s.start)}${s.end != null ? `–${fmtClockServer(s.end)}` : ''}] ${s.text}`,
+  ).join('\n');
+
+  const system = [
+    'You generate an interactive VIDEO LESSON (Edpuzzle-style) as STRUCTURED JSON.',
+    'Place comprehension checkpoints along a YouTube video using its timed transcript.',
+    'Output ONLY a JSON object. No prose, no markdown fences.',
+    'Shape:',
+    '{"checkpoints":[{"time":number,"question":string,"options":[string,string,string,string],"correct":number,"explanation":string}]}',
+    'Rules:',
+    `- Produce EXACTLY ${ncp} checkpoints.`,
+    '- time is seconds from video start (number). Spread them through the video — not all near the start.',
+    '- Prefer pausing shortly AFTER a key idea is spoken (use transcript times). Leave ~8+ seconds between checkpoints.',
+    '- Never place a checkpoint in the first 5 seconds or in the last 3 seconds of the video.',
+    '- Each question is multiple-choice with exactly 4 options; correct is the 0-based index of the right option.',
+    '- Questions MUST be answerable from what was said in the video up to that timestamp (and any marked-up extracts).',
+    '- Do not invent facts outside the transcript / extracts.',
+    '- Write a short explanation for each question.',
+  ].join('\n');
+
+  const user = [
+    `Lesson title: ${title || videoTitle || '(untitled)'}`,
+    `Video title: ${videoTitle || '(unknown)'}`,
+    durationHint > 0 ? `Approx video length from captions: ${Math.round(durationHint)}s` : '',
+    '--- Define settings ---',
+    `Learning objective: ${c.obj || '(none)'}`,
+    `Audience: ${c.aud || 'High school'}`,
+    `Level: ${c.lvl || 'Basic'}`,
+    `Number of checkpoints: ${ncp}`,
+    prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    '',
+    '--- Timed transcript ---',
+    timedLines || '(no timed captions — invent plausible evenly-spaced times and ground questions in extracts/prompt)',
+    '',
+    '--- Marked-up extracts (optional extra grounding) ---',
+    extractLines,
+    '',
+    'Return the JSON object now.',
+  ].filter(Boolean).join('\n');
+
+  return { system, user, ncp };
+}
+
+function fmtClockServer(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+function normalizeVideoScriptCheckpoint(raw, idx, durationHint) {
+  if (!raw || typeof raw !== 'object') return null;
+  const question = String(raw.question || raw.stem || '').trim();
+  if (!question) return null;
+  const options = Array.isArray(raw.options)
+    ? raw.options.map((o) => String(o || '').trim()).filter(Boolean)
+    : [];
+  if (options.length < 2) return null;
+  while (options.length < 4) options.push(`Option ${options.length + 1}`);
+  const correct = Math.max(0, Math.min(options.length - 1, Number(raw.correct) || 0));
+  let time = Number(raw.time);
+  if (!Number.isFinite(time) || time < 0) time = (idx + 1) * 30;
+  if (durationHint > 10) {
+    time = Math.min(Math.max(5, time), durationHint - 3);
+  } else {
+    time = Math.max(5, time);
+  }
+  return {
+    id: `cp-${Date.now()}-${idx}`,
+    time: Math.round(time * 10) / 10,
+    question: {
+      question,
+      type: 'multiple-choice',
+      options: options.slice(0, 4),
+      correct,
+      explanation: String(raw.explanation || '').trim() || undefined,
+    },
+  };
 }
 
 /* ─── Tutorial: website page → sentences ──────────────────────────── */
@@ -2678,6 +2804,89 @@ const server = createServer(async (req, res) => {
     return sseDone(res);
   }
 
+  /* ---- Video scripts: generate checkpoints from YouTube transcript ---- */
+  if (method === 'POST' && path === '/api/video-scripts/generate') {
+    const body = await readJson(req);
+    sseStart(res);
+    try {
+      sseSend(res, { type: 'progress', message: 'Reading the video transcript and Define settings…' });
+      let segments = Array.isArray(body?.transcriptSegments) ? body.transcriptSegments : [];
+      let videoTitle = body?.videoTitle || '';
+      let videoId = body?.videoId || parseVideoId(body?.videoUrl || '') || '';
+      const videoUrl = body?.videoUrl || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : '');
+
+      if ((!segments.length || !videoId) && videoUrl) {
+        sseSend(res, { type: 'progress', message: 'Fetching captions from YouTube…' });
+        const ingested = await fetchYoutubeTranscript(videoUrl);
+        segments = ingested.segments || [];
+        videoTitle = videoTitle || ingested.title || '';
+        videoId = videoId || ingested.videoId || parseVideoId(videoUrl) || '';
+      }
+      if (!videoId) {
+        throw new LlmError(400, 'no_video', 'Provide a YouTube video URL in Sources.');
+      }
+
+      const { system, user, ncp } = buildVideoScriptPrompt({
+        title: body?.title,
+        config: body?.config,
+        extracts: body?.extracts,
+        prompt: body?.prompt,
+        transcriptSegments: segments,
+        videoTitle,
+      });
+      sseSend(res, { type: 'progress', message: `Writing ${ncp} checkpoint questions…` });
+      const raw = await callAnthropic({ system, user, maxTokens: 8192 });
+      const parsed = extractJson(raw);
+      const arr = Array.isArray(parsed?.checkpoints) ? parsed.checkpoints
+        : Array.isArray(parsed) ? parsed
+          : [];
+      const durationHint = segments.length
+        ? Math.max(...segments.map((s) => Number(s.end || s.start) || 0))
+        : 0;
+      let checkpoints = arr
+        .map((c, i) => normalizeVideoScriptCheckpoint(c, i, durationHint))
+        .filter(Boolean)
+        .sort((a, b) => a.time - b.time);
+
+      // Ensure distinct times if the model clustered them.
+      for (let i = 1; i < checkpoints.length; i++) {
+        if (checkpoints[i].time < checkpoints[i - 1].time + 8) {
+          checkpoints[i] = { ...checkpoints[i], time: checkpoints[i - 1].time + 8 };
+        }
+      }
+
+      if (checkpoints.length === 0) {
+        throw new LlmError(502, 'llm_no_checkpoints', 'The model did not return any usable checkpoints. Try again.');
+      }
+
+      const transcript = (segments.length ? segments : []).map((s, i) => ({
+        id: s.id || `seg-${i + 1}`,
+        start: Number(s.start) || 0,
+        end: s.end != null ? Number(s.end) : undefined,
+        text: String(s.text || '').trim(),
+      })).filter((s) => s.text);
+
+      const content = {
+        provider: 'youtube',
+        videoUrl: videoUrl || `https://www.youtube.com/watch?v=${videoId}`,
+        videoId,
+        title: body?.title || videoTitle || '',
+        transcript,
+        checkpoints,
+        showTranscript: body?.config?.showTranscript !== false,
+        enableChat: body?.config?.enableChat !== false,
+        requireAnswer: body?.config?.requireAnswer !== false,
+      };
+
+      sseSend(res, { type: 'progress', message: `Assembling ${checkpoints.length} checkpoints…` });
+      sseSend(res, { type: 'result', content });
+      sseSend(res, { type: 'done', count: checkpoints.length });
+    } catch (e) {
+      sseSend(res, { type: 'error', code: e.code || 'error', message: e.message || 'Generation failed.' });
+    }
+    return sseDone(res);
+  }
+
   /* ---- Quizzes: generate (real LLM, streamed as SSE) ---- */
   if (method === 'POST' && path === '/api/quizzes/generate') {
     const body = await readJson(req);
@@ -3035,8 +3244,70 @@ const server = createServer(async (req, res) => {
     const context = String(body.context || '').trim();
     const title = String(body.title || 'this learning object');
     const history = Array.isArray(body.history) ? body.history.slice(-8) : [];
+    const videoAsk = !!body.videoAsk;
     if (!message) return send(res, 400, { code: 'no_message', message: 'Ask a question.' });
     if (!context) return send(res, 400, { code: 'no_context', message: 'No learning-object content to ground the answer.' });
+
+    const historyLines = history
+      .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && h.content)
+      .map((h) => `${h.role === 'user' ? 'Learner' : 'Hoot'}: ${h.content}`)
+      .join('\n');
+
+    if (videoAsk) {
+      const currentTime = Number(body.currentTime);
+      const system = [
+        'You are Hoot, a friendly study tutor for an interactive video lesson.',
+        `Answer ONLY from the timed transcript / checkpoints for "${title}".`,
+        'Output ONLY a JSON object (no markdown fences, no prose outside JSON):',
+        '{"reply":string,"timestamps":number[]}',
+        'reply rules:',
+        '- Clear, encouraging, well-structured. Short paragraphs and - bullet lists when listing items.',
+        '- You may wrap key terms in **double asterisks** for bold (the UI renders them; learners will not see the asterisks).',
+        '- Do NOT use bare asterisks for emphasis without closing pairs. Do not use headings or code fences.',
+        '- Do not invent facts outside the transcript.',
+        'timestamps rules:',
+        '- Include 1–3 video times in SECONDS (numbers) that best support the answer, taken from transcript [m:ss] labels.',
+        '- Prefer the moment where the idea is explained. Always include at least one timestamp when the transcript has times.',
+      ].join(' ');
+
+      const user = [
+        `Learning object: ${title}`,
+        Number.isFinite(currentTime) ? `Learner is currently around ${Math.round(currentTime)}s in the video.` : '',
+        '',
+        '=== TIMED TRANSCRIPT + CHECKPOINTS (your only knowledge source) ===',
+        context.slice(0, 14000),
+        '=== END ===',
+        historyLines ? `\nRecent conversation:\n${historyLines}\n` : '',
+        `Learner question: ${message}`,
+        '',
+        'Return the JSON object now.',
+      ].filter(Boolean).join('\n');
+
+      try {
+        const raw = await callAnthropic({ system, user, maxTokens: 1024 });
+        let reply = '';
+        let timestamps = [];
+        try {
+          const parsed = extractJson(raw);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            reply = String(parsed.reply || '').trim();
+            timestamps = Array.isArray(parsed.timestamps)
+              ? parsed.timestamps.map((t) => Number(t)).filter((t) => Number.isFinite(t) && t >= 0)
+              : [];
+          }
+        } catch { /* fall through */ }
+        if (!reply) {
+          // Model returned plain text — still usable.
+          reply = String(raw || '').trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+        }
+        // Dedupe / sort timestamps
+        timestamps = [...new Set(timestamps.map((t) => Math.round(t * 10) / 10))].sort((a, b) => a - b).slice(0, 3);
+        return send(res, 200, { reply, timestamps });
+      } catch (e) {
+        const status = e instanceof LlmError ? e.status : 500;
+        return send(res, status, { code: e.code || 'error', message: e.message });
+      }
+    }
 
     const system = [
       'You are Hoot, a friendly study tutor owl for the LAIC learning platform.',
@@ -3045,11 +3316,6 @@ const server = createServer(async (req, res) => {
       'Be concise, clear, and encouraging. Use short paragraphs. Do not invent facts beyond the provided content.',
       'You may use light markdown: **bold** for key terms, and - bullet lists. Do not use headings or code fences.',
     ].join(' ');
-
-    const historyLines = history
-      .filter((h) => h && (h.role === 'user' || h.role === 'assistant') && h.content)
-      .map((h) => `${h.role === 'user' ? 'Learner' : 'Hoot'}: ${h.content}`)
-      .join('\n');
 
     const user = [
       `Learning object: ${title}`,

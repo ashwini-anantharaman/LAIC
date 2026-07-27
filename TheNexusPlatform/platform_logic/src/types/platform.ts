@@ -22,7 +22,7 @@ export const PROGRAM_FEATURES: { key: ProgramFeatureKey; label: string }[] = [
   { key: "bridge", label: "Bridge Platform" },
   { key: "appbuilder", label: "App Builder" },
   { key: "community", label: "Community" },
-  { key: "teams", label: "Teams" },
+  { key: "teams", label: "People" },
   { key: "partners", label: "Partners" },
 ];
 
@@ -58,7 +58,7 @@ export interface Program {
    * Program's own branding; null = inherit the organization's. `cover` is the
    * card background image on the Programs page (distinct from `logo`).
    */
-  branding?: { accent: string | null; logo: string | null; cover?: string | null } | null;
+  branding?: { accent: string | null; logo: string | null; cover?: string | null; favicon?: string | null } | null;
   /** Platform lock: may this program's own admins/members open the platform
    *  runtimes (Learning, App Shell, Bridge)? Absent/true = yes. Org admins are
    *  never restricted by this. */

@@ -39,6 +39,20 @@ export function Stat({ label, value, hint }: { label: string; value: ReactNode; 
   );
 }
 
+/**
+ * A compact headline count — "4 Programs" as a small inline pill. Meant to sit
+ * in a wrapping row (a quiet summary strip), not as a big hero card, so it
+ * stays unobtrusive and reads fine on a phone.
+ */
+export function StatPill({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/70 px-3 py-1 text-sm">
+      <span className="font-semibold tabular-nums text-foreground">{value}</span>
+      <span className="text-muted-foreground">{label}</span>
+    </span>
+  );
+}
+
 export function Section({
   title,
   action,

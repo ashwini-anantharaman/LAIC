@@ -29,6 +29,8 @@ export interface RgRole {
   perms: Record<string, string>;
   display_as_group: boolean;
   parent_group_id: string | null;
+  /** Fine-grained capability ids granted from the Access Catalogue (additive). */
+  capabilities?: string[];
 }
 export interface RgGroup {
   id: string;
@@ -51,8 +53,8 @@ export interface RgArea {
 export interface RgAdapter {
   loadRoles(): Promise<RgRole[]>;
   loadGroups(): Promise<RgGroup[]>;
-  createRole(input: { name: string; perms: Record<string, string>; display_as_group: boolean; parent_group_id: string | null }): Promise<void>;
-  updateRole(id: string, patch: { name?: string; perms?: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null }): Promise<void>;
+  createRole(input: { name: string; perms: Record<string, string>; display_as_group: boolean; parent_group_id: string | null; capabilities?: string[] }): Promise<void>;
+  updateRole(id: string, patch: { name?: string; perms?: Record<string, string>; display_as_group?: boolean; parent_group_id?: string | null; capabilities?: string[] }): Promise<void>;
   deleteRole(id: string): Promise<void>;
   createGroup(input: { name: string; parent_group_id: string | null }): Promise<void>;
   updateGroup(id: string, patch: { name?: string; parent_group_id?: string | null }): Promise<void>;
@@ -61,6 +63,17 @@ export interface RgAdapter {
   areas: RgArea[];
   /** Optional: preview the platform as a holder of this role ("Test as"). */
   testAsRole?: (role: RgRole) => void;
+  /** Optional: load the Access Catalogue(s) whose fine-grained capabilities this
+   *  level's roles can grant. When present, the builder shows a capabilities
+   *  section (reserved capabilities are hidden). */
+  loadCatalogues?: () => Promise<CatalogueForBuilder[]>;
+}
+
+/** The slice of a catalogue the role builder needs — grantable capabilities by group. */
+export interface CatalogueForBuilder {
+  id: string;
+  name: string;
+  groups: { id: string; label: string; capabilities: { id: string; label: string }[] }[];
 }
 
 type Kind = "group" | "role";
@@ -171,6 +184,8 @@ function EditorDialog({
   const [parent, setParent] = useState<string | null>(null);
   const [displayAsGroup, setDisplayAsGroup] = useState(false);
   const [perms, setPerms] = useState<Record<string, string>>({});
+  const [caps, setCaps] = useState<Set<string>>(new Set());
+  const [catalogues, setCatalogues] = useState<CatalogueForBuilder[]>([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -178,12 +193,22 @@ function EditorDialog({
     if (existing?.kind === "role" && existing.role) {
       setTab("role"); setName(existing.role.name); setParent(existing.role.parent_group_id);
       setDisplayAsGroup(existing.role.display_as_group); setPerms({ ...existing.role.perms });
+      setCaps(new Set(existing.role.capabilities ?? []));
     } else if (existing?.kind === "group" && existing.group) {
       setTab("group"); setName(existing.group.name); setParent(existing.group.parent_id);
     } else {
-      setTab("role"); setName(""); setParent(null); setDisplayAsGroup(false); setPerms({});
+      setTab("role"); setName(""); setParent(null); setDisplayAsGroup(false); setPerms({}); setCaps(new Set());
     }
   }, [open, editing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!open || !adapter.loadCatalogues) return;
+    let live = true;
+    adapter.loadCatalogues().then((c) => live && setCatalogues(c)).catch(() => live && setCatalogues([]));
+    return () => { live = false; };
+  }, [open, adapter]);
+
+  const toggleCap = (id: string) => setCaps((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   // Reparenting a group can't target itself or a descendant.
   const excluded = existing?.kind === "group" && existing.group ? groupSubtree(existing.group.id, groups) : undefined;
@@ -194,11 +219,11 @@ function EditorDialog({
     try {
       if (isNew) {
         if (tab === "group") await adapter.createGroup({ name: name.trim(), parent_group_id: parent });
-        else await adapter.createRole({ name: name.trim(), perms, display_as_group: displayAsGroup, parent_group_id: parent });
+        else await adapter.createRole({ name: name.trim(), perms, display_as_group: displayAsGroup, parent_group_id: parent, capabilities: [...caps] });
       } else if (existing?.kind === "group") {
         await adapter.updateGroup(existing.group!.id, { name: name.trim(), parent_group_id: parent });
       } else if (existing?.kind === "role") {
-        await adapter.updateRole(existing.role!.id, { name: name.trim(), perms, display_as_group: displayAsGroup, parent_group_id: parent });
+        await adapter.updateRole(existing.role!.id, { name: name.trim(), perms, display_as_group: displayAsGroup, parent_group_id: parent, capabilities: [...caps] });
       }
       toast.success(isNew ? "Created" : "Saved");
       onClose(); onDone();
@@ -257,6 +282,28 @@ function EditorDialog({
                 ))}
               </div>
             </div>
+            {catalogues.length ? (
+              <div className="space-y-2">
+                <Label>Fine-grained capabilities</Label>
+                <p className="-mt-1 text-xs text-muted-foreground">From the Access Catalogue. Layered on top of the areas above.</p>
+                {catalogues.map((cat) => (
+                  <div key={cat.id} className="rounded-lg border border-border p-2">
+                    <div className="mb-1 px-1 text-xs font-semibold text-muted-foreground">{cat.name}</div>
+                    {cat.groups.map((g) => (
+                      <div key={g.id} className="mb-1.5">
+                        <div className="px-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">{g.label}</div>
+                        {g.capabilities.map((cp) => (
+                          <label key={cp.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
+                            <Switch checked={caps.has(cp.id)} onCheckedChange={() => toggleCap(cp.id)} />
+                            <span className="min-w-0"><span className="text-foreground">{cp.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{cp.id}</span></span>
+                          </label>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </>
         ) : null}
 

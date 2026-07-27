@@ -47,6 +47,8 @@ export interface AppState {
   createdObjects: LearningObject[];
   /** When set, ObjectCreator opens this library object for editing. */
   editingObjectId: string | null;
+  /** Template id chosen in Template Library before opening the creator. */
+  pendingTemplateId: string | null;
   navigate: (screen: string) => void;
   login: (userId: string) => void;
   logout: () => void;
@@ -55,6 +57,7 @@ export interface AppState {
   openReader: (objectId: string) => void;
   closeReader: () => void;
   setCreatorObjectType: (type: string) => void;
+  setPendingTemplateId: (id: string | null) => void;
   addObject: (partial: Partial<LearningObject> & { type: ObjectType; title: string }) => string;
   openEditor: (objectId: string) => void;
   clearEditingObject: () => void;
@@ -87,6 +90,7 @@ export default function App() {
   const [creatorObjectType, setCreatorObjectTypeState] = useState<string>('lesson');
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
+  const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
   /** Only persist to localStorage after the library for this user has been loaded. */
   const [libraryReady, setLibraryReady] = useState(false);
   const [nexusMode, setNexusMode] = useState(false);
@@ -356,9 +360,9 @@ export default function App() {
     learningIsAdmin: previewing ? false : learningIsAdmin,
     previewName, startRolePreview, stopRolePreview,
     nexusProgramName, nexusUserName, nexusUserRole,
-    readerObjectId, creatorObjectType, createdObjects, editingObjectId,
+    readerObjectId, creatorObjectType, createdObjects, editingObjectId, pendingTemplateId,
     navigate, login, logout,
-    setRole, setProgram, openReader, closeReader, setCreatorObjectType, addObject,
+    setRole, setProgram, openReader, closeReader, setCreatorObjectType, setPendingTemplateId, addObject,
     openEditor, clearEditingObject,
   };
 

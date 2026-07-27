@@ -24,6 +24,7 @@ import { CDHome } from './screens/CDHome';
 import { CDCreate } from './screens/CDCreate';
 import { CDSources } from './screens/CDSources';
 import { ObjectLibrary } from './screens/ObjectLibrary';
+import { TemplateLibrary } from './screens/TemplateLibrary';
 import { MySubmissions } from './screens/MySubmissions';
 import { VersionsPublishing } from './screens/VersionsPublishing';
 import { AuthorAnalytics } from './screens/AuthorAnalytics';
@@ -35,6 +36,7 @@ import { AdminProgramOverview } from './screens/AdminProgramOverview';
 import { AdminPeopleRoles } from './screens/AdminPeopleRoles';
 import { AdminCoursesAssignments } from './screens/AdminCoursesAssignments';
 import { AdminPublishingGovernance } from './screens/AdminPublishingGovernance';
+import { AccessCatalogueScreen } from './screens/AccessCatalogueScreen';
 import { CoachScreen } from './screens/CoachScreen';
 
 function ScreenRouter() {
@@ -48,6 +50,7 @@ function ScreenRouter() {
       return <StudentDashboard />;
     case 'cd-home':     return <CDHome />;
     case 'cd-create':   return <CDCreate />;
+    case 'cd-templates': return <TemplateLibrary />;
     case 'cd-sources':  return <CDSources />;
     case 'cd-library':  return <ObjectLibrary />;
     case 'cd-submissions': return <MySubmissions />;
@@ -61,6 +64,7 @@ function ScreenRouter() {
     case 'admin-people':     return <AdminPeopleRoles />;
     case 'admin-courses':    return <AdminCoursesAssignments />;
     case 'admin-publishing': return <AdminPublishingGovernance />;
+    case 'admin-access-catalogue': return <AccessCatalogueScreen />;
     case 'coach':       return <CoachScreen />;
     default:
       return (

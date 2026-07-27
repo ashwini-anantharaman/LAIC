@@ -5,7 +5,7 @@ import { useApp } from '../../App';
 import { OBJECTS } from '../../../lib/data';
 import type {
   Block, QuizContent, FlashcardSetContent, BridgePlayContent, BiddingSequenceContent,
-  ImageContent, VideoEmbedContent, ConceptCardContent, SummaryContent, ReflectionContent,
+  ImageContent, VideoEmbedContent, VideoScriptContent, ConceptCardContent, SummaryContent, ReflectionContent,
   AssignmentContent, DrillContent,
 } from '../../../lib/types';
 import { renumberBlockQuestionLabels } from '../../../lib/tutorialOrder.js';
@@ -15,6 +15,7 @@ import { FlashcardStudy, type StudyCard } from './FlashcardStudy';
 import { AskAIChat } from './AskAIChat';
 import { SummaryView, ReflectionView, AssignmentView, DrillView } from './StructuredObjectEditors';
 import { ConceptCardTemplate } from './ConceptCardTemplate';
+import { VideoScriptPlayer } from './VideoScriptPlayer';
 
 export type QuizResolveStatus = 'correct' | 'revealed';
 
@@ -1007,6 +1008,9 @@ function BlockRenderer({
       return <ImageBlock content={block.content as ImageContent} />;
     case 'video-embed':
       return <VideoEmbed content={block.content as VideoEmbedContent} />;
+    case 'video-script':
+      // Full player is rendered by LearnerReader shell (needs LearningObject for chat).
+      return null;
     case 'question': {
       const c = block.content as Parameters<typeof QuizBlock>[0]['content']['questions'][0];
       return (
@@ -1268,6 +1272,11 @@ export function LearnerReader({ objectId }: { objectId: string }) {
     blocks: numbered,
     highlights: draft?.highlights || [],
   });
+  const videoScriptBlock = obj.type === 'video-script'
+    ? (obj.blocks || []).find((b) => b.type === 'video-script')
+    : undefined;
+  const videoScript = videoScriptBlock?.content as VideoScriptContent | undefined;
+  const showGlobalAsk = obj.type !== 'video-script' || videoScript?.enableChat !== false;
 
   const jumpToGlossaryPassage = (entry: GlossaryEntry) => {
     setActiveGlossaryId(entry.id);
@@ -1314,18 +1323,20 @@ export function LearnerReader({ objectId }: { objectId: string }) {
             Glossary
           </button>
         )}
-        <button
-          onClick={() => { setShowAsk((v) => !v); setGlossaryOpen(false); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
-          style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.9)', fontSize: 12, fontWeight: 600, color: '#059669', boxShadow: '0 2px 8px -4px rgba(30,50,80,0.2)' }}
-        >
-          <img src="/owl-logo.png" alt="" style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }} />
-          Ask AI
-        </button>
+        {showGlobalAsk && obj.type !== 'video-script' && (
+          <button
+            onClick={() => { setShowAsk((v) => !v); setGlossaryOpen(false); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
+            style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.9)', fontSize: 12, fontWeight: 600, color: '#059669', boxShadow: '0 2px 8px -4px rgba(30,50,80,0.2)' }}
+          >
+            <img src="/owl-logo.png" alt="" style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }} />
+            Ask AI
+          </button>
+        )}
       </div>
 
       {/* Content stays visible; glossary opens as a right sidebar */}
-      <div className="px-5 py-6 max-w-xl mx-auto space-y-5">
+      <div className={`px-5 py-6 mx-auto space-y-5 ${obj.type === 'video-script' ? 'max-w-6xl' : 'max-w-xl'}`}>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
           <div className="flex items-center gap-2 mb-1">
             <BookOpen size={13} style={{ color: '#9AA3AF' }} />
@@ -1338,7 +1349,8 @@ export function LearnerReader({ objectId }: { objectId: string }) {
                         : obj.type === 'reflection' ? 'Reflection'
                           : obj.type === 'assignment' ? 'Assignment'
                             : obj.type === 'drill' ? 'Drill'
-                              : 'Lesson'}
+                              : obj.type === 'video-script' ? 'Video script'
+                                : 'Lesson'}
             </span>
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.4px', lineHeight: 1.15, marginBottom: 6 }}>
@@ -1347,7 +1359,9 @@ export function LearnerReader({ objectId }: { objectId: string }) {
           <p style={{ fontSize: 13.5, color: '#6B7280', lineHeight: 1.6 }}>{obj.description}</p>
         </motion.div>
 
-        {obj.blocks.length > 0 ? (
+        {videoScript ? (
+          <VideoScriptPlayer content={videoScript} object={obj} />
+        ) : obj.blocks.length > 0 ? (
           <AssessedBlocks
             blocks={numbered}
             objectId={obj.id}
@@ -1375,7 +1389,9 @@ export function LearnerReader({ objectId }: { objectId: string }) {
         onSelect={jumpToGlossaryPassage}
       />
 
-      <AskAIChat open={showAsk} onClose={() => setShowAsk(false)} obj={obj} />
+      {showGlobalAsk && obj.type !== 'video-script' && (
+        <AskAIChat open={showAsk} onClose={() => setShowAsk(false)} obj={obj} />
+      )}
     </motion.div>
   );
 }

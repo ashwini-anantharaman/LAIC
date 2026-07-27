@@ -7,7 +7,7 @@ import { Link, useParams } from "react-router";
 
 import { listAuditEvents, listPrograms } from "@/services/api";
 import type { AuditEvent, Program } from "@/types/platform";
-import { EmptyState, PageHeader, Section, Spinner, Stat } from "@/nexus/ui/kit";
+import { EmptyState, PageHeader, Section, Spinner, StatPill } from "@/nexus/ui/kit";
 import { ChevronRight } from "lucide-react";
 
 export function OrgDashboard() {
@@ -43,10 +43,10 @@ export function OrgDashboard() {
     <div>
       <PageHeader title="Dashboard" subtitle="Everything your organization runs, in one place." />
 
-      <div className="grid grid-cols-2 gap-4 mb-8 sm:grid-cols-3">
-        <Stat label="Programs" value={programs.length} />
-        <Stat label="Learners" value={programs.reduce((n, p) => n + (p.learner_count ?? 0), 0)} />
-        <Stat label="Courses" value={programs.reduce((n, p) => n + (p.course_count ?? 0), 0)} />
+      <div className="mb-8 flex flex-wrap gap-2">
+        <StatPill label="Programs" value={programs.length} />
+        <StatPill label="Learners" value={programs.reduce((n, p) => n + (p.learner_count ?? 0), 0)} />
+        <StatPill label="Courses" value={programs.reduce((n, p) => n + (p.course_count ?? 0), 0)} />
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr] items-start [&>*]:min-w-0">

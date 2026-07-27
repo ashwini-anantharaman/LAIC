@@ -19,6 +19,7 @@ import { Label } from "@/app/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
 import {
   addOrgAdmin,
+  checkOrgSlug,
   getOrgCapabilities,
   listAllOrganizations,
   listOrgAdmins,
@@ -33,9 +34,13 @@ import {
 import { PROGRAM_FEATURES } from "@/types/platform";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { Switch } from "@/app/components/ui/switch";
-import { EmptyState, PageHeader, Pill, Spinner, Stat, statusTone } from "@/nexus/ui/kit";
+import { EmptyState, PageHeader, Pill, Spinner, StatPill, statusTone } from "@/nexus/ui/kit";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+
+/** Mirrors the backend slug rule so the preview matches the real URL. */
+const slugify = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 export function OperatorOrgs() {
   const [orgs, setOrgs] = useState<OrgSummary[] | null>(null);
@@ -71,9 +76,9 @@ export function OperatorOrgs() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 mb-8 sm:max-w-md">
-        <Stat label="Organizations" value={orgs.length} />
-        <Stat label="Active" value={active} />
+      <div className="mb-8 flex flex-wrap gap-2">
+        <StatPill label="Organizations" value={orgs.length} />
+        <StatPill label="Active" value={active} />
       </div>
 
       {orgs.length === 0 ? (
@@ -283,27 +288,8 @@ function EditOrgDialog({ org, onClose }: { org: OrgSummary | null; onClose: () =
               </div>
             </div>
 
-            {/* Access boundary */}
-            <div>
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5">
-                Access
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-foreground">Admins can open programs</div>
-                  <div className="text-xs text-muted-foreground">
-                    {caps.adminsEnterPrograms !== false
-                      ? "Org admins can enter any program in this org."
-                      : "Off — org admins manage programs (features, admins, categories) but can't open one unless given explicit access."}
-                  </div>
-                </div>
-                <Switch
-                  checked={caps.adminsEnterPrograms !== false}
-                  disabled={capsBusy}
-                  onCheckedChange={(v) => void patchCaps({ adminsEnterPrograms: v })}
-                />
-              </div>
-            </div>
+            {/* "Admins can open programs" now lives in the org's own Settings tab,
+                controlled by the org owner (Super Admin) — not here. */}
 
             {/* Administrators */}
             <div>
@@ -414,15 +400,43 @@ function ProvisionDialog({
   onDone: () => void;
 }) {
   const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
   const [admins, setAdmins] = useState<AdminDraft[]>([{ email: "", displayName: "" }]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ProvisionResult | null>(null);
+  const [slugStatus, setSlugStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+
+  // Until the operator edits the slug, it tracks the name (a sensible default).
+  const effectiveSlug = slugify(slugEdited ? slug : name);
 
   function reset() {
     setName("");
+    setSlug("");
+    setSlugEdited(false);
     setAdmins([{ email: "", displayName: "" }]);
     setResult(null);
+    setSlugStatus("idle");
   }
+
+  // Debounced availability check against the normalized slug.
+  useEffect(() => {
+    if (!effectiveSlug) {
+      setSlugStatus("idle");
+      return;
+    }
+    setSlugStatus("checking");
+    let live = true;
+    const t = setTimeout(() => {
+      checkOrgSlug(effectiveSlug)
+        .then((r) => live && setSlugStatus(r.available ? "available" : "taken"))
+        .catch(() => live && setSlugStatus("idle"));
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [effectiveSlug]);
 
   function updateAdmin(i: number, patch: Partial<AdminDraft>) {
     setAdmins((cur) => cur.map((a, idx) => (idx === i ? { ...a, ...patch } : a)));
@@ -437,6 +451,7 @@ function ProvisionDialog({
       const res = await provisionOrganization(
         name.trim(),
         validAdmins.map((a) => ({ email: a.email.trim(), display_name: a.displayName.trim() || undefined })),
+        effectiveSlug || undefined,
       );
       setResult(res);
       toast.success(`Provisioned ${name.trim()}`);
@@ -504,6 +519,30 @@ function ProvisionDialog({
                 placeholder="e.g. Riverside Robotics Lab"
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="org-slug">URL slug</Label>
+              <Input
+                id="org-slug"
+                value={slugEdited ? slug : effectiveSlug}
+                onChange={(e) => {
+                  setSlugEdited(true);
+                  setSlug(e.target.value);
+                }}
+                placeholder="riverside-robotics"
+              />
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="font-mono text-muted-foreground truncate">
+                  nexus /@/{effectiveSlug || "…"}
+                </span>
+                {!effectiveSlug ? null : slugStatus === "checking" ? (
+                  <span className="text-muted-foreground shrink-0">Checking…</span>
+                ) : slugStatus === "available" ? (
+                  <span className="text-emerald-600 dark:text-emerald-400 shrink-0">Available</span>
+                ) : slugStatus === "taken" ? (
+                  <span className="text-red-600 dark:text-red-400 shrink-0">Taken — pick another</span>
+                ) : null}
+              </div>
+            </div>
             <div className="space-y-2">
               <Label>
                 Administrators <span className="text-xs font-normal text-muted-foreground">the first becomes owner</span>
@@ -543,7 +582,10 @@ function ProvisionDialog({
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button onClick={submit} disabled={busy || !name.trim() || validAdmins.length === 0}>
+              <Button
+                onClick={submit}
+                disabled={busy || !name.trim() || validAdmins.length === 0 || !effectiveSlug || slugStatus === "taken" || slugStatus === "checking"}
+              >
                 {busy ? "Provisioning…" : "Provision"}
               </Button>
             </>

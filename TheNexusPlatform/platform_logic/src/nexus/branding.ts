@@ -16,8 +16,10 @@ export interface CachedBranding {
   orgId?: string | null;
   slug?: string | null;
   accent: string | null;
-  /** Resolved (absolute) logo URL, ready for <img src>. */
+  /** Resolved (absolute) logo URL, ready for <img src>. Sidebar brand slot. */
   logo: string | null;
+  /** Resolved (absolute) favicon URL — the browser tab icon. Falls back to logo. */
+  favicon?: string | null;
   /** Display name/title for this level (drives the browser tab + brand slot). */
   title?: string | null;
 }
@@ -42,6 +44,7 @@ export function writeBranding(b: CachedBranding): void {
   const merged: CachedBranding = {
     ...b,
     title: b.title !== undefined ? b.title : existing?.title ?? null,
+    favicon: b.favicon !== undefined ? b.favicon : existing?.favicon ?? null,
   };
   const payload = JSON.stringify(merged);
   if (merged.orgId) localStorage.setItem(key(merged.orgId), payload);

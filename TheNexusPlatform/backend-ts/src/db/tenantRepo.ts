@@ -718,13 +718,19 @@ const joinCodeRow = (j: typeof joinCodesTable.$inferSelect): Row => ({
   uses_remaining: j.usesRemaining, expires_at: j.expiresAt, created_by_user_id: j.createdByUserId, created_at: j.createdAt,
 });
 
-export async function updateOrgTheme(orgId: string, accentColor: string | null | undefined, logoUrl: string | null | undefined): Promise<Row> {
+export async function updateOrgTheme(
+  orgId: string,
+  accentColor: string | null | undefined,
+  logoUrl: string | null | undefined,
+  faviconUrl?: string | null | undefined,
+): Promise<Row> {
   return scoped(async (tx) => {
     const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
     const settings: Record<string, unknown> = { ...((r[0]?.settings as Record<string, unknown>) ?? {}) };
     const theme: Record<string, unknown> = { ...((settings.theme as Record<string, unknown>) ?? {}) };
     if (accentColor != null) theme.accent_color = accentColor;
     if (logoUrl != null) theme.logo_url = logoUrl;
+    if (faviconUrl != null) theme.favicon_url = faviconUrl;
     settings.theme = theme;
     const [o] = await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId)).returning();
     return { id: o.id, name: o.name, slug: o.slug, owner_id: o.ownerId, settings: o.settings, created_at: o.createdAt };
@@ -871,7 +877,7 @@ export async function updateProgramCategories(
  */
 export async function setProgramBranding(
   programId: string,
-  branding: { accent?: string | null; logo?: string | null; cover?: string | null } | null,
+  branding: { accent?: string | null; logo?: string | null; cover?: string | null; favicon?: string | null } | null,
 ): Promise<Row | null> {
   return scoped(async (tx) => {
     const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
@@ -885,6 +891,7 @@ export async function setProgramBranding(
         accent: branding.accent !== undefined ? branding.accent : (cur.accent ?? null),
         logo: branding.logo !== undefined ? branding.logo : (cur.logo ?? null),
         cover: branding.cover !== undefined ? branding.cover : (cur.cover ?? null),
+        favicon: branding.favicon !== undefined ? branding.favicon : (cur.favicon ?? null),
       };
     }
     await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId));

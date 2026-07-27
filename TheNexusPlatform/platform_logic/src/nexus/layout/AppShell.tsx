@@ -20,6 +20,7 @@ import {
   Rocket,
   Waypoints,
   ScrollText,
+  ListTree,
   ChevronRight,
   ChevronLeft,
   Moon,
@@ -62,7 +63,7 @@ interface NavItem {
 
 // Org nav — each item names the org-role area that gates it (null = always).
 const ORG_NAV_AREAS: Record<string, string | null> = {
-  dashboard: null, programs: "programs", team: "team", gates: "team", settings: "settings", audit: "audit",
+  dashboard: null, programs: "programs", team: "team", "access-catalogue": "team", gates: "team", settings: "settings", audit: "audit",
 };
 function orgNav(orgId: string): NavItem[] {
   const base = `/o/${orgId}`;
@@ -70,6 +71,7 @@ function orgNav(orgId: string): NavItem[] {
     { to: `${base}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `${base}/programs`, label: "Programs", icon: Boxes },
     { to: `${base}/team`, label: "People", icon: KeyRound },
+    { to: `${base}/access-catalogue`, label: "Access Catalogue", icon: ListTree },
     { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/settings`, label: "Settings", icon: Settings },
     { to: `${base}/audit`, label: "Audit", icon: ScrollText },
@@ -87,6 +89,7 @@ function programNav(orgId: string, programId: string): NavItem[] {
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
     { to: `${base}/team`, label: "People", icon: KeyRound },
+    { to: `${base}/access-catalogue`, label: "Access Catalogue", icon: ListTree },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
     { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
   ];
@@ -381,6 +384,7 @@ export function AppShell() {
             slug,
             accent: b.theme_accent_color,
             logo: resolveAssetUrl(b.theme_logo_url),
+            favicon: resolveAssetUrl(b.theme_favicon_url ?? null),
             title: b.name,
           });
         }
@@ -402,7 +406,7 @@ export function AppShell() {
     getPlatformBranding()
       .then((b) => {
         setPlatformTitle(b.title ?? null);
-        writeBranding({ orgId: "platform", accent: b.accent, logo: resolveAssetUrl(b.logo), title: b.title ?? null });
+        writeBranding({ orgId: "platform", accent: b.accent, logo: resolveAssetUrl(b.logo), favicon: resolveAssetUrl(b.favicon ?? null), title: b.title ?? null });
       })
       .catch(() => {});
   }, [mode]);
@@ -468,13 +472,14 @@ export function AppShell() {
     // Reconcile once the program row arrives: cache its branding, or clear a
     // stale override if it reverted to the org's.
     if (!programId || !program) return;
-    const b = (program as Program & { branding?: { accent: string | null; logo: string | null } | null }).branding;
-    if (b && (b.accent || b.logo)) {
+    const b = (program as Program & { branding?: { accent: string | null; logo: string | null; favicon?: string | null } | null }).branding;
+    if (b && (b.accent || b.logo || b.favicon)) {
       const org = readBranding(orgId);
       writeBranding({
         orgId: programId,
         accent: b.accent ?? org?.accent ?? null,
         logo: b.logo ? resolveAssetUrl(b.logo) : org?.logo ?? null,
+        favicon: b.favicon ? resolveAssetUrl(b.favicon) : org?.favicon ?? null,
       });
     } else {
       clearBranding(programId);
@@ -494,7 +499,16 @@ export function AppShell() {
           ? `${programName} · ${effectiveOrgName}`
           : effectiveOrgName
         : effectiveOrgName;
-  useDocumentChrome(tabTitle, displayBranding.logo);
+  // The browser-tab icon uses the active level's favicon, falling back to its
+  // logo. Read from the cache at render — a branding write re-renders the shell
+  // (via onBranding → state), so this stays live.
+  const activeFavicon =
+    (mode === "nexus"
+      ? readBranding("platform")
+      : programId && programBranding
+        ? readBranding(programId)
+        : readBranding(orgId))?.favicon ?? null;
+  useDocumentChrome(tabTitle, activeFavicon ?? displayBranding.logo);
   // Effective feature switches (already clamped by the org's Nexus envelope
   // server-side). Until loaded, show everything to avoid a nav flash.
   const programFeatures: Record<string, boolean> = program?.features ?? {};
@@ -526,7 +540,7 @@ export function AppShell() {
   // Which program feature gates each program-nav segment. Segments not listed
   // (overview, offerings, registrations, groups) are always available.
   const NAV_FEATURE: Record<string, string> = {
-    shells: "appbuilder", community: "community", team: "teams",
+    shells: "appbuilder", community: "community", team: "teams", "access-catalogue": "teams",
     partners: "partners", learning: "learning", bridge: "bridge",
   };
   const navKey = (to: string) => to.split("/").pop() ?? "";
@@ -555,6 +569,7 @@ export function AppShell() {
     items = [
       { to: "/orgs", label: "Organizations", icon: Building2 },
       { to: "/team", label: "People", icon: KeyRound },
+      { to: "/access-catalogue", label: "Access Catalogue", icon: ListTree },
       { to: "/nexus-gates", label: "Gates", icon: DoorOpen },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
@@ -564,7 +579,7 @@ export function AppShell() {
     if (user?.role !== "platform_admin") {
       const perms = user?.nexus_role?.perms ?? {};
       const NEXUS_NAV_AREAS: Record<string, string | null> = {
-        orgs: "organizations", team: "__admin__", "nexus-gates": "__admin__", audit: "audit", settings: "settings",
+        orgs: "organizations", team: "__admin__", "access-catalogue": "__admin__", "nexus-gates": "__admin__", audit: "audit", settings: "settings",
       };
       items = items.filter((it) => {
         const area = NEXUS_NAV_AREAS[navKey(it.to)];
@@ -576,7 +591,7 @@ export function AppShell() {
     heading = myRoleName ?? programMembership?.program_name ?? "Program";
     items = confinedProgramNav(orgId, programId, myRolePerms ?? {}).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (programId) {
-    heading = "Program";
+    heading = programName ?? "Program";
     items = programNav(orgId, programId).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
     // Members live inside their program; only org-level admins get the org space.
     if (mode === "org") {
@@ -618,6 +633,7 @@ export function AppShell() {
     orgs: "Organizations", offerings: "Offerings", shells: "App",
     registrations: "Registrations", groups: "Participants & Groups", community: "Community",
     team: "People", partners: "Partners", learning: "Learning Platform",
+    "access-catalogue": "Access Catalogue",
   };
   const segments = pathname.split("/").filter(Boolean);
   const last = segments[segments.length - 1] ?? "";
