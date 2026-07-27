@@ -46,13 +46,13 @@ const PREBUILT_ASSIGNABLE: { key: string; label: string }[] = [
 export default async function TeamsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ invited?: string; who?: string }>;
+  searchParams: Promise<{ added?: string; pw?: string }>;
 }) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   if (await isFellowDemo()) redirect("/bridge/table");
   if (!canAccessAdminArea(context)) redirect("/bridge/home");
-  const { invited, who } = await searchParams;
+  const { added, pw } = await searchParams;
 
   const programId = nexusProgramId(context);
   const live = nexusMode() === "http" && !!programId;
@@ -103,10 +103,21 @@ export default async function TeamsPage({
         </p>
       ) : (
         <>
-          {invited ? (
+          {added ? (
             <section className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-              <p className="text-sm font-medium text-emerald-900">{who ?? "They"} — invited. Share this activation link:</p>
-              <code className="block break-all rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs text-neutral-700">{invited}</code>
+              <p className="text-sm font-medium text-emerald-900">
+                {added} — added as an active member of this program (via Nexus).
+              </p>
+              {pw ? (
+                <p className="text-sm text-emerald-900">
+                  New Nexus account created. They sign in at the org portal with this initial password (they should change it):{" "}
+                  <code className="rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-xs text-neutral-800">{pw}</code>
+                </p>
+              ) : (
+                <p className="text-sm text-emerald-800">
+                  They already have a Nexus account — they use their existing login. Their role is set here and applies on next launch.
+                </p>
+              )}
             </section>
           ) : null}
 

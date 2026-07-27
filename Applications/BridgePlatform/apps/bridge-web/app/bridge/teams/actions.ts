@@ -67,7 +67,11 @@ export async function inviteAction(formData: FormData): Promise<void> {
     role: role === "none" ? null : role,
   });
   revalidatePath("/bridge/teams");
-  redirect(`/bridge/teams?invited=${encodeURIComponent(inv.redeem_url)}&who=${encodeURIComponent(email)}`);
+  // The endpoint enrolls an active member; surface whether a new account was
+  // created (and its initial password) vs. an existing person added.
+  const qs = new URLSearchParams({ added: email });
+  if (inv.created && inv.temp_password) qs.set("pw", inv.temp_password);
+  redirect(`/bridge/teams?${qs.toString()}`);
 }
 
 export async function removePersonAction(formData: FormData): Promise<void> {

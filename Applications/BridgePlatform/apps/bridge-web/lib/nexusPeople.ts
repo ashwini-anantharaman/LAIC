@@ -62,15 +62,18 @@ export async function setBridgeRole(
 }
 
 export interface BridgeInviteResult {
-  token: string;
-  redeem_url: string;
+  /** true when the endpoint just created a brand-new Nexus account. */
+  created: boolean;
+  /** the new account's initial password (only when created); null otherwise. */
+  temp_password: string | null;
 }
 
 /**
- * Invite a person into the program (a normal Nexus invitation — they activate
- * at the org portal) and optionally pre-assign their Bridge role, which is
- * email-keyed and therefore waits for them. Authorized by the caller's own
- * Nexus session (program-admin level).
+ * Add a person to the program via Nexus. NOTE: this ENROLLS AN ACTIVE member
+ * immediately (not a pending "activation link" invite): an existing Nexus
+ * person keeps their own login; a brand-new account is created with an initial
+ * password returned here. Either way the person becomes a real Nexus program
+ * member (roster, access, launch) right away. Optionally pre-assigns a role.
  */
 export async function inviteBridgePerson(
   programId: string,
