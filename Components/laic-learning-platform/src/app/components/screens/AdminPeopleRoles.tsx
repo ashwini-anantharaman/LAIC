@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Shield, Users, Lock, Plus, Award, Check, X } from 'lucide-react';
+import { Shield, Users, Lock, Plus, Award, Check, X, Eye, UserPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PEOPLE } from '../../../lib/data';
 import type { Role } from '../../../lib/types';
@@ -20,8 +20,7 @@ import {
   roleCapabilityIds,
   upsertCustomPolicyRole,
 } from '../../../lib/accessPolicy';
-import { listPolicyDemoAccounts } from '../../../lib/roleAccess';
-import { getToken, listLearningRoster, assignLearningRole, type RosterPerson } from '../../../lib/nexus';
+import { getToken, listLearningRoster, assignLearningRole, inviteLearningPerson, testAsPerson, type RosterPerson } from '../../../lib/nexus';
 
 const ROLE_LABELS: Record<Role, string> = {
   'content-developer': 'Content Dev',
@@ -270,6 +269,11 @@ export function AdminPeopleRoles() {
       fireToast(e instanceof Error ? e.message : 'Failed to assign role');
     }
   };
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const doTestAs = async (email: string) => {
+    try { await testAsPerson(email); } // reloads on success
+    catch (e) { fireToast(e instanceof Error ? e.message : 'Test login failed'); }
+  };
   const [editorState, setEditorState] = useState<{
     open: boolean;
     initial: ReturnType<typeof roleToEditorInitial> | null;
@@ -471,7 +475,6 @@ export function AdminPeopleRoles() {
             {customRoles.map((r) => {
               const caps = roleCapabilityIds(r);
               const { show, more } = permChips(catalogue, caps);
-              const demo = listPolicyDemoAccounts({ customOnly: true }).find((a) => a.policyRoleId === r.id);
               return (
                 <div key={r.id} className="p-4 rounded-[22px]" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
                   <div className="flex items-start gap-2 mb-2">
@@ -490,11 +493,6 @@ export function AdminPeopleRoles() {
                     {show.map((l) => <span key={l} className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#374151' }}>{l}</span>)}
                     {more > 0 && <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#9AA3AF' }}>+{more} more</span>}
                   </div>
-                  {demo && (
-                    <p style={{ fontSize: 12, color: '#047857', marginBottom: 8, fontFamily: 'ui-monospace, monospace' }}>
-                      Login: {demo.email} / {demo.password}
-                    </p>
-                  )}
                   {(r.restrictedResourceTypes || []).length > 0 && (
                     <p style={{ fontSize: 12, color: '#D97706', marginBottom: 8 }}>
                       ⌗ Can create: {r.restrictedResourceTypes!.join(', ')}
@@ -515,6 +513,16 @@ export function AdminPeopleRoles() {
         <div className="flex items-center gap-2 mb-3">
           <Users size={15} style={{ color: '#374151' }} />
           <h2 style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>People</h2>
+          {nexusMode ? (
+            <button
+              type="button"
+              onClick={() => setInviteOpen(true)}
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+              style={{ background: '#0B0F1A' }}
+            >
+              <UserPlus size={13} /> Invite
+            </button>
+          ) : null}
         </div>
         <div className="rounded-[22px] overflow-hidden" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
           <table className="w-full">
@@ -568,7 +576,19 @@ export function AdminPeopleRoles() {
                           <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: p.status === 'active' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.12)', color: p.status === 'active' ? '#047857' : '#92400E' }}>{p.status}</span>
                         </td>
                         <td className="px-4 py-3"><p style={{ fontSize: 12.5, color: '#9AA3AF' }}>—</p></td>
-                        <td className="px-4 py-3" />
+                        <td className="px-4 py-3">
+                          {p.email ? (
+                            <button
+                              type="button"
+                              onClick={() => doTestAs(p.email)}
+                              title="Sign in as this person (test)"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-medium"
+                              style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.9)' }}
+                            >
+                              <Eye size={12} /> Test as
+                            </button>
+                          ) : null}
+                        </td>
                       </tr>
                     );
                   })
@@ -611,6 +631,14 @@ export function AdminPeopleRoles() {
         />
       )}
 
+      {inviteOpen && (
+        <InvitePersonModal
+          roles={customRoles}
+          onClose={() => setInviteOpen(false)}
+          onInvited={(msg) => { fireToast(msg); reloadRoster(); }}
+        />
+      )}
+
       <AnimatePresence>
         {toast && (
           <motion.div
@@ -624,6 +652,86 @@ export function AdminPeopleRoles() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/* ─── invite modal (centralized: creates a real Nexus person) ──── */
+
+function InvitePersonModal({
+  roles,
+  onClose,
+  onInvited,
+}: {
+  roles: PolicyRole[];
+  onClose: () => void;
+  onInvited: (msg: string) => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [roleId, setRoleId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<{ created: boolean; temp_password: string | null } | null>(null);
+
+  const submit = async () => {
+    if (!email.trim()) return;
+    setBusy(true); setError('');
+    try {
+      const res = await inviteLearningPerson({ email: email.trim(), display_name: name.trim() || undefined, role_id: roleId || null });
+      onInvited(res.created ? 'Person added — new account created' : 'Person added to the learning platform');
+      // Keep the modal open to reveal the temp password for a new account; else close.
+      if (res.created && res.temp_password) setResult(res); else onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Invite failed');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(10,15,26,0.4)' }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-[22px] p-6" style={{ background: 'white', boxShadow: '0 24px 64px -16px rgba(0,0,0,0.35)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-4">
+          <UserPlus size={16} style={{ color: '#0B1220' }} />
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }}>Invite to the learning platform</h3>
+        </div>
+        {result ? (
+          <div className="space-y-3">
+            <p style={{ fontSize: 12.5, color: '#6B7280' }}>Account created and added to this program. Share these sign-in details:</p>
+            <div className="rounded-lg border px-3 py-2 space-y-1" style={{ borderColor: 'rgba(0,0,0,0.1)', background: '#F9FAFB' }}>
+              <p style={{ fontSize: 12 }}><span style={{ color: '#6B7280' }}>Email:</span> <code>{email.trim()}</code></p>
+              <div className="flex items-center gap-2">
+                <p style={{ fontSize: 12 }}><span style={{ color: '#6B7280' }}>Temp password:</span> <code>{result.temp_password}</code></p>
+                <button type="button" onClick={() => { void navigator.clipboard?.writeText(result.temp_password ?? ''); }} className="px-2 py-0.5 rounded-md text-xs" style={{ background: 'rgba(0,0,0,0.06)' }}>Copy</button>
+              </div>
+            </div>
+            <div className="flex justify-end"><button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: '#0B0F1A' }}>Done</button></div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Name</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jordan Lee" className="w-full mt-1 px-3 py-2 rounded-lg border" style={{ fontSize: 13, borderColor: 'rgba(0,0,0,0.12)' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Email</label>
+              <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="jordan@example.org" className="w-full mt-1 px-3 py-2 rounded-lg border" style={{ fontSize: 13, borderColor: 'rgba(0,0,0,0.12)' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Learning role</label>
+              <select value={roleId} onChange={(e) => setRoleId(e.target.value)} className="w-full mt-1 px-3 py-2 rounded-lg border" style={{ fontSize: 13, borderColor: 'rgba(0,0,0,0.12)', background: 'white' }}>
+                <option value="">No role yet</option>
+                {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </div>
+            {error ? <p style={{ fontSize: 12, color: '#DC2626' }}>{error}</p> : null}
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: '#374151' }}>Cancel</button>
+              <button type="button" onClick={submit} disabled={busy || !email.trim()} className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50" style={{ background: '#0B0F1A' }}>{busy ? 'Inviting…' : 'Invite'}</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

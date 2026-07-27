@@ -48,8 +48,18 @@ export interface LearningContext {
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
+/** Swap the active session token (used by centralized "Test as"). */
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
 export function getProgramId(): string | null {
   return localStorage.getItem(PROGRAM_KEY);
+}
+// The launched person's org id, cached from the learning context — needed by the
+// centralized dev-login ("Test as") the same way the console passes it.
+let _orgId: string | null = null;
+export function getOrgId(): string | null {
+  return _orgId;
 }
 function getReturnUrl(): string | null {
   return localStorage.getItem(RETURN_KEY);
@@ -113,7 +123,9 @@ export async function fetchLearningContext(): Promise<LearningContext | null> {
   try {
     const res = await nexusFetch(`/api/platform/learning/context${qs}`);
     if (!res.ok) return null;
-    return (await res.json()) as LearningContext;
+    const ctx = (await res.json()) as LearningContext;
+    _orgId = ctx.laicOrgId ?? null;
+    return ctx;
   } catch {
     return null;
   }
@@ -226,4 +238,42 @@ export async function assignLearningRole(email: string, roleId: string | null): 
     body: JSON.stringify({ program_id: pid(), email, role_id: roleId }),
   });
   if (!res.ok) throw new Error(`Assign failed (${res.status})`);
+}
+
+/**
+ * Invite a person into the learning platform via the SAME centralized flow the
+ * console uses: create a real Nexus program membership/invitation
+ * (`POST /programs/:id/members`), then optionally assign a learning role. The
+ * person is now a real Nexus person — reflected everywhere, launchable, testable.
+ */
+export async function inviteLearningPerson(input: { email: string; display_name?: string; role_id?: string | null }): Promise<{ created: boolean; temp_password: string | null }> {
+  const res = await nexusFetch(`/api/programs/${encodeURIComponent(pid())}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ email: input.email, display_name: input.display_name }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err?.detail === 'string' ? err.detail : `Invite failed (${res.status})`);
+  }
+  const out = (await res.json()) as { created: boolean; temp_password: string | null };
+  if (input.role_id) await assignLearningRole(input.email, input.role_id);
+  return out;
+}
+
+/**
+ * Centralized "Test as" — the same dev-login the console uses. Swaps the session
+ * to that person (reflected at the Nexus level) and reloads so the app re-enters
+ * with their resolved learning role. Throws if dev-login isn't enabled.
+ */
+export async function testAsPerson(email: string): Promise<void> {
+  const res = await nexusFetch('/api/platform/dev/login-as', {
+    method: 'POST',
+    body: JSON.stringify({ email, org_id: getOrgId() ?? undefined }),
+  });
+  if (!res.ok) {
+    throw new Error(res.status === 404 ? 'Test login is not enabled on this environment' : `Test login failed (${res.status})`);
+  }
+  const { access_token } = (await res.json()) as { access_token: string };
+  setToken(access_token);
+  window.location.reload();
 }
