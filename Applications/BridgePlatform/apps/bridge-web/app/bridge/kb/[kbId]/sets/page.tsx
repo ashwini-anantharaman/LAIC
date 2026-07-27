@@ -1,6 +1,8 @@
 import { validatePlayerStatic, type KbPack, type KbPlayer } from "@bridge/kb";
 import Link from "next/link";
 import { kbService, kbStore } from "@/lib/kb";
+import { createB2F3CollectionsAction } from "../../actions";
+import { isB2f3Collection } from "@/lib/b2f3";
 
 const NOW = () => new Date().toISOString();
 
@@ -12,10 +14,10 @@ export default async function SetsPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ kbId: string }>;
-  searchParams: Promise<{ deleted?: string; error?: string }>;
+  searchParams: Promise<{ deleted?: string; error?: string; b2f3created?: string }>;
 }>) {
   const { kbId } = await params;
-  const { deleted, error } = await searchParams;
+  const { deleted, error, b2f3created } = await searchParams;
   const store = kbStore();
   const [packs, players, compiled] = await Promise.all([
     store.listPacksForKb(kbId),
@@ -25,6 +27,8 @@ export default async function SetsPage({
   const base = `/bridge/kb/${kbId}`;
   const sets = [...packs].sort((a, b) => a.name.localeCompare(b.name));
   const byId = new Map(packs.map((p) => [p.packId, p]));
+  const b2f3Sets = sets.filter((s) => isB2f3Collection(s.name));
+  const hasB2f3 = b2f3Sets.length > 0;
 
   /** All set ids reachable from `packId` down its Includes chain (incl. itself). */
   const chainOf = (packId: string): Set<string> => {
@@ -88,6 +92,60 @@ export default async function SetsPage({
           {error}
         </p>
       )}
+
+      {b2f3created && b2f3Sets.length > 0 && (
+        <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          <p className="font-medium">B2F3 collections drafted.</p>
+          <p className="mt-1 text-emerald-800">
+            Three teaching sets are ready to review and edit:{" "}
+            {b2f3Sets.map((s, i) => (
+              <span key={s.packId}>
+                {i > 0 && ", "}
+                <Link href={`${base}/sets/${s.packId}`} className="font-medium underline">
+                  {s.name}
+                </Link>
+              </span>
+            ))}
+            . Membership is a draft from a standard teaching progression — adjust it below.
+          </p>
+        </div>
+      )}
+
+      <div className="rounded-lg border border-neutral-200 bg-[var(--card)] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-2xl">
+            <h3 className="font-serif text-lg font-medium">B2F3 curriculum collections</h3>
+            <p className="mt-1 text-sm text-neutral-600">
+              Draft three teachable sets — <strong>B2F3 Beginner</strong> (openings,
+              responses, raises, basic rebids, card-play fundamentals),{" "}
+              <strong>B2F3 Advanced Beginner</strong> (adds basic competition and Stayman),
+              and <strong>B2F3 Intermediate</strong> (adds transfers, the strong 2♣, slam
+              conventions and advanced competition) — each including the one below it. A
+              deterministic classifier drafts the membership from each item&rsquo;s content;
+              you then adjust every set in the builder like any other.
+            </p>
+            <p className="mt-1 text-xs text-neutral-500">
+              {hasB2f3
+                ? "Re-running regenerates the same three sets from the classifier (it never duplicates them). Your edits to these sets are replaced, but every save is version-snapshotted, so the prior state is recoverable from a set’s history."
+                : "Sets are matched by name, so this is safe to re-run. The three sets are drafts — nothing is published and no player changes until you build one."}
+            </p>
+          </div>
+          <form action={createB2F3CollectionsAction} className="shrink-0">
+            <input type="hidden" name="kbId" value={kbId} />
+            <button
+              type="submit"
+              className="rounded border border-emerald-700 px-4 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
+            >
+              {hasB2f3 ? "Regenerate B2F3 collections (draft)" : "Create B2F3 collections (draft)"}
+            </button>
+          </form>
+        </div>
+        {hasB2f3 && (
+          <p className="mt-2 text-xs text-neutral-500">
+            Present: {b2f3Sets.map((s) => s.name).join(" · ")}.
+          </p>
+        )}
+      </div>
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-neutral-600">

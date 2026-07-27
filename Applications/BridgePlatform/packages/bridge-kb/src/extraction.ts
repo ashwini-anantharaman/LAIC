@@ -39,6 +39,13 @@ export interface ExtractedItem {
   /** Passage ordinals (within the source) this item is grounded in. */
   citedPassageOrdinals: number[];
   supportedLevels?: string[];
+  /**
+   * Fellow-facing working notes, never shown to players. Slide extraction uses
+   * it for material that is content but not a rule: an Example-column hand, a
+   * colour whose meaning the slide never defined, and negative agreements
+   * ("Undiscussed, DON'T USE THEM!") which must NOT become rules.
+   */
+  internalNotes?: string;
 }
 
 export interface ExtractedEdge {
@@ -62,6 +69,21 @@ export interface ExtractorOutput {
 export interface ExtractionSection {
   anchor: string;
   passages: KbSourcePassage[];
+  /**
+   * VISUAL sources only (a slide deck read page by page): the inclusive
+   * 1-indexed page range this section covers. Passage ordinal = page number, so
+   * the range is redundant for citation resolution — it is here so an extractor
+   * that reads the PAGES (not the transcripts) knows its window even for pages
+   * whose passage is missing. Text sections leave it undefined and behave
+   * exactly as before.
+   */
+  pageRange?: PageRange;
+}
+
+/** An inclusive, 1-indexed page range of a visual source. */
+export interface PageRange {
+  fromPage: number;
+  toPage: number;
 }
 
 /** The pluggable LLM boundary. Throws or returns malformed output → the
@@ -124,6 +146,9 @@ export function materializeExtraction(
         settings: local.settings ?? [],
         sourceReferences: citations,
         supportedLevels: local.supportedLevels ?? [],
+        // Optional by design: stableStringify drops undefined, so an item
+        // without notes hashes exactly as it did before this field existed.
+        ...(local.internalNotes?.trim() ? { internalNotes: local.internalNotes.trim() } : {}),
         status: "draft",
         version: 1,
         createdBy: context.requestedBy,
@@ -281,4 +306,88 @@ export async function runExtraction(
   }
 
   return jobs;
+}
+
+// ---------------------------------------------------------------------------
+// VISUAL sources: a page-range section is still a section
+// ---------------------------------------------------------------------------
+//
+// A slide deck is read one page per passage (ordinal = page, anchor "page-N")
+// and extracted one NAMED SECTION at a time — the owner settles "Opening bids"
+// before touching "Responses". Nothing here forks the machinery above: a visual
+// section is built into a normal ExtractionSection (plus its pageRange) and run
+// through runExtraction, so KbExtractionJob rows, resumability and the
+// "needs a person" failure report behave exactly as they do for text.
+
+/** The page range a set of page passages spans (ordinal = page). */
+export function pageRangeOfPassages(passages: KbSourcePassage[]): PageRange | null {
+  const ordinals = passages.map((p) => p.ordinal).filter((o) => Number.isFinite(o));
+  if (!ordinals.length) return null;
+  return { fromPage: Math.min(...ordinals), toPage: Math.max(...ordinals) };
+}
+
+/**
+ * Build the ExtractionSection for one named page range: the anchor is the
+ * section's human title (it is what the job's failure report and the review
+ * flow show), and the passages are that range's page passages, in page order —
+ * citations resolve through them exactly as text citations do.
+ */
+export function visualExtractionSection(input: {
+  title: string;
+  fromPage: number;
+  toPage: number;
+  /** All of the source's page passages; the range is selected here. */
+  passages: KbSourcePassage[];
+}): ExtractionSection {
+  const fromPage = Math.min(input.fromPage, input.toPage);
+  const toPage = Math.max(input.fromPage, input.toPage);
+  const passages = input.passages
+    .filter((p) => p.ordinal >= fromPage && p.ordinal <= toPage)
+    .sort((a, b) => a.ordinal - b.ordinal);
+  return { anchor: input.title, passages, pageRange: { fromPage, toPage } };
+}
+
+export interface RunVisualSectionExtractionOptions {
+  kbId: string;
+  sourceId: string;
+  requestedBy: string;
+  /** The ONE named page range to extract now (the owner's per-section click). */
+  section: { title: string; fromPage: number; toPage: number };
+  /** The source's page passages (ordinal = page). */
+  passages: KbSourcePassage[];
+  now?: () => string;
+}
+
+/**
+ * Extract ONE named page-range section. Thin by design: it builds the section
+ * and delegates to runExtraction, so the job row, the compiler gate, the
+ * citation wiring, the recompile and the failure report are the SAME code paths
+ * text extraction uses. Returns that section's job.
+ */
+export async function runVisualSectionExtraction(
+  store: KbStore,
+  service: KbService,
+  extractor: SectionExtractor,
+  options: RunVisualSectionExtractionOptions,
+): Promise<KbExtractionJob> {
+  const section = visualExtractionSection({
+    title: options.section.title,
+    fromPage: options.section.fromPage,
+    toPage: options.section.toPage,
+    passages: options.passages,
+  });
+  if (!section.passages.length)
+    throw new Error(
+      `No page passages for "${options.section.title}" (pages ${options.section.fromPage}-${options.section.toPage}) — run the reading pass for those pages first`,
+    );
+  const jobs = await runExtraction(store, service, extractor, {
+    kbId: options.kbId,
+    sourceId: options.sourceId,
+    requestedBy: options.requestedBy,
+    sections: [section],
+    ...(options.now ? { now: options.now } : {}),
+  });
+  const job = jobs[0];
+  if (!job) throw new Error("visual extraction produced no job");
+  return job;
 }

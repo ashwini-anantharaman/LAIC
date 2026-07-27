@@ -9,3 +9,7 @@ Components/*
 Applications/BridgePlatform/apps/bridge-web/.data
 Applications/BridgePlatform/apps/bridge-web/e2e
 Applications/BridgePlatform/apps/bridge-web/test-results
+# The e2e dev server's build dir — its turbopack cache grows past Vercel's
+# 100 MB per-file upload limit and hangs/fails the deploy.
+Applications/BridgePlatform/apps/bridge-web/.next-e2e
+Applications/BridgePlatform/apps/bridge-web/playwright-report

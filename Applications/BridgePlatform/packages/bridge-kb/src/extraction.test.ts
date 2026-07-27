@@ -3,8 +3,16 @@
 // ones fail VISIBLY in the job report and never half-land.
 
 import { describe, expect, it } from "vitest";
-import { materializeExtraction, runExtraction, type ExtractorOutput } from "./extraction";
+import {
+  materializeExtraction,
+  pageRangeOfPassages,
+  runExtraction,
+  runVisualSectionExtraction,
+  visualExtractionSection,
+  type ExtractorOutput,
+} from "./extraction";
 import type { ExtractionSection } from "./extraction";
+import type { KbSourcePassage } from "./model";
 import { chunkDocument, looksLikeHeading } from "./passages";
 import { KbService } from "./service";
 import { InMemoryKbStore } from "./store";
@@ -227,6 +235,165 @@ describe("runExtraction", () => {
     const compiled = await service.liveCompile(kb.kbId);
     expect(compiled?.auctionRules.length).toBe(2);
     expect(compiled?.requires).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VISUAL sources: a page-range section runs through the SAME machinery
+// ---------------------------------------------------------------------------
+
+/** How a slide deck is stored: one passage per page, ordinal = page number. */
+function pagePassages(sourceId: string, pages: number[]): KbSourcePassage[] {
+  return pages.map((page) => ({
+    passageId: `pp_${page}_deck`,
+    sourceId,
+    ordinal: page,
+    anchor: `page-${page}`,
+    text: `Page ${page} — Slide ${page} [table]\n\n| Points | Bid |`,
+  }));
+}
+
+describe("visualExtractionSection", () => {
+  const passages = pagePassages("src_deck", [10, 14, 12, 13, 24]);
+
+  it("selects the range's page passages in page order and carries the range", () => {
+    const section = visualExtractionSection({
+      title: "Opening bids",
+      fromPage: 12,
+      toPage: 14,
+      passages,
+    });
+    expect(section.anchor).toBe("Opening bids");
+    expect(section.pageRange).toEqual({ fromPage: 12, toPage: 14 });
+    expect(section.passages.map((p) => p.ordinal)).toEqual([12, 13, 14]);
+  });
+
+  it("un-swaps reversed bounds; pageRangeOfPassages reads the span back", () => {
+    const section = visualExtractionSection({
+      title: "Backwards",
+      fromPage: 14,
+      toPage: 12,
+      passages,
+    });
+    expect(section.pageRange).toEqual({ fromPage: 12, toPage: 14 });
+    expect(pageRangeOfPassages(section.passages)).toEqual({ fromPage: 12, toPage: 14 });
+    expect(pageRangeOfPassages([])).toBeNull();
+  });
+});
+
+describe("runVisualSectionExtraction", () => {
+  const SLIDE_OUTPUT: ExtractorOutput = {
+    items: [
+      {
+        ...GOOD_OUTPUT.items[0]!,
+        // Slides cite PAGE NUMBERS — they are the passage ordinals.
+        citedPassageOrdinals: [13],
+        internalNotes:
+          "Slide 13 example: spades xxx, hearts KJx. Slide 14 marks 2D as undiscussed — DON'T USE.",
+      },
+      { ...GOOD_OUTPUT.items[1]!, citedPassageOrdinals: [14, 99] },
+    ],
+    edges: GOOD_OUTPUT.edges,
+  };
+
+  async function fixture() {
+    const store = new InMemoryKbStore();
+    const service = new KbService(store, { now: () => NOW });
+    const kb = await service.createKb({
+      name: "Teaching deck",
+      systemLabel: "Deck",
+      createdBy: "u",
+    });
+    await store.replacePassages("src_deck", pagePassages("src_deck", [12, 13, 14, 15]));
+    return { store, service, kbId: kb.kbId };
+  }
+
+  it("lands draft items citing page-N passages, one job for the section", async () => {
+    const { store, service, kbId } = await fixture();
+    const seen: ExtractionSection[] = [];
+    const job = await runVisualSectionExtraction(
+      store,
+      service,
+      async (section) => {
+        seen.push(section);
+        return SLIDE_OUTPUT;
+      },
+      {
+        kbId,
+        sourceId: "src_deck",
+        requestedBy: "u_fellow",
+        section: { title: "Opening bids", fromPage: 12, toPage: 14 },
+        passages: await store.listPassages("src_deck"),
+        now: () => NOW,
+      },
+    );
+
+    // The extractor sees a normal section, plus the page range.
+    expect(seen[0]!.anchor).toBe("Opening bids");
+    expect(seen[0]!.pageRange).toEqual({ fromPage: 12, toPage: 14 });
+
+    // The job is an ordinary KbExtractionJob over those page ordinals.
+    expect(job.status).toBe("completed");
+    expect(job.passageOrdinals).toEqual([12, 13, 14]);
+    expect(job.createdItemIds).toHaveLength(2);
+    expect(job.failures).toEqual([]);
+    expect(await store.listJobsForKb(kbId)).toHaveLength(1);
+
+    const items = await store.listItemsForKb(kbId);
+    const opening = items.find((i) => i.title === "1NT opening")!;
+    expect(opening.status).toBe("draft");
+    expect(opening.sourceReferences).toEqual([
+      { sourceId: "src_deck", passageId: "pp_13_deck", anchor: "page-13" },
+    ]);
+    // internalNotes rides along — the Example column and the DON'T USE warning.
+    expect(opening.internalNotes).toContain("DON'T USE");
+    // A citation outside the deck's passages is ignored, not fatal.
+    const stayman = items.find((i) => i.title === "Stayman")!;
+    expect(stayman.sourceReferences.map((r) => r.anchor)).toEqual(["page-14"]);
+    expect(stayman.internalNotes).toBeUndefined();
+
+    // The KB recompiled, as with text extraction.
+    const compiled = await service.liveCompile(kbId);
+    expect(compiled?.auctionRules).toHaveLength(2);
+  });
+
+  it("a failed extractor leaves the section in the failure queue, resumable", async () => {
+    const { store, service, kbId } = await fixture();
+    const job = await runVisualSectionExtraction(
+      store,
+      service,
+      async () => {
+        throw new Error("window 2 would not parse");
+      },
+      {
+        kbId,
+        sourceId: "src_deck",
+        requestedBy: "u_fellow",
+        section: { title: "Opening bids", fromPage: 12, toPage: 14 },
+        passages: await store.listPassages("src_deck"),
+        now: () => NOW,
+      },
+    );
+    expect(job.status).toBe("failed");
+    expect(job.failures).toEqual([
+      { anchor: "Opening bids", reason: "window 2 would not parse" },
+    ]);
+    expect(await store.listItemsForKb(kbId)).toEqual([]);
+  });
+
+  it("refuses a range whose pages were never read (nothing to cite)", async () => {
+    const { store, service, kbId } = await fixture();
+    await expect(
+      runVisualSectionExtraction(store, service, async () => SLIDE_OUTPUT, {
+        kbId,
+        sourceId: "src_deck",
+        requestedBy: "u_fellow",
+        section: { title: "Play techniques", fromPage: 40, toPage: 48 },
+        passages: await store.listPassages("src_deck"),
+        now: () => NOW,
+      }),
+    ).rejects.toThrow(/run the reading pass/);
+    expect(await store.listJobsForKb(kbId)).toEqual([]);
   });
 });
 

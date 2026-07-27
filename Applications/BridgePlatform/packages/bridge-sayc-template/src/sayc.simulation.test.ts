@@ -77,16 +77,12 @@ describe("curated SAYC — whole-system gates", () => {
     expect(report.engineFloorEvents).toBe(0);
   }, 120_000);
 
-  it("RKCB variants stay dormant by default and conflict when doubled up", () => {
-    // Default: classic on, RKCB off — no conflicts (asserted above). Turning
-    // BOTH classic and 1430 on must surface the authored conflict edge.
-    const report = validatePlayerStatic(
-      compiled,
-      probe([fullPackId]) && {
-        ...probe([fullPackId]),
-        settingOverrides: { rkcb1430_on: true },
-      },
-    );
-    expect(report.conflicts.length).toBeGreaterThan(0);
+  it("the Blackwood king-ask requires the ask (authored requires edge holds)", () => {
+    // The rebuilt slam chapter is three staged items plus the king-ask and
+    // DOPI, which REQUIRE the ask trigger. With everything on by default the
+    // requires are satisfied and there are no conflicts.
+    const report = validatePlayerStatic(compiled, probe([fullPackId]));
+    expect(report.missingRequires).toEqual([]);
+    expect(report.conflicts).toEqual([]);
   });
 });

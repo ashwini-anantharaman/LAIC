@@ -18,7 +18,7 @@ export * from "./capabilities";
 export * from "./store";
 export { JsonFileKbStore } from "./fileStore";
 export { fnv1a, hashValue, newId, stableStringify } from "./ids";
-export { compileKb, type CompileInput, type CompileResult } from "./compile";
+export { BAND, bandOf, compileKb, deriveShows, type CompileInput, type CompileResult } from "./compile";
 export { KbService, type KbServiceOptions } from "./service";
 export {
   ITEM_CONTENT_KEYS,
@@ -36,14 +36,26 @@ export { FIXTURE_EDGES, FIXTURE_ITEMS, fixturePacks } from "./fixture";
 export { chunkDocument, looksLikeHeading, normalizeExtractedText, type ChunkedSection, type ChunkResult } from "./passages";
 export {
   materializeExtraction,
+  pageRangeOfPassages,
   runExtraction,
+  runVisualSectionExtraction,
+  visualExtractionSection,
   type ExtractedEdge,
   type ExtractedItem,
   type ExtractionSection,
   type ExtractorOutput,
   type MaterializedSection,
+  type PageRange,
   type RunExtractionOptions,
+  type RunVisualSectionExtractionOptions,
   type SectionExtractor,
 } from "./extraction";
+export {
+  runAugmentation,
+  type AugmentOutput,
+  type ExtractedModification,
+  type RunAugmentationOptions,
+  type SectionAugmentor,
+} from "./augment";
 export { applySandboxConstraints, effectiveAgreements, suggestMinimalPlayers, type AgreementsCard, type SuggestedPlayer } from "./players";
 export { acblConventionCard, type AcblCard, type CardEntry, type CardSection, type CardSettingChip } from "./card";

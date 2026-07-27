@@ -1,11 +1,13 @@
 import { stubDisplayName } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
-import { getBridgeContext } from "@/lib/nexus";
+import { getBridgeContext, isFellowDemo } from "@/lib/nexus";
 
 /** Home: the knowledge-base platform, post-rework. */
 export default async function HomePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  // Hidden on the fellows-testing deployment.
+  if (await isFellowDemo()) redirect("/bridge/table");
 
   const firstName = (
     // Real name from the Nexus context (http mode); stub roster in dev.

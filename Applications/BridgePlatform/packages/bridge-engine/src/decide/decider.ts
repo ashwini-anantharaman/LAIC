@@ -15,6 +15,7 @@ import type { SettingValue } from "@bridge/config";
 import { callLabel, rankLabel } from "@bridge/events";
 import type {
   CompiledAuctionRule,
+  CompiledForcingRule,
   CompiledKb,
   CompiledLeadRule,
   CompiledPlayRule,
@@ -27,7 +28,8 @@ import { sideOf } from "../state";
 import type { AsyncDecider } from "../game";
 import type { Decision, MatchedRule } from "../decision";
 import { analyzeSeat, matchContext, type SeatAuctionFacts } from "./auctionContext";
-import { evalCondition, type ConditionEnv } from "./handConditions";
+import { inferPartnership, type PartnershipInference } from "./inference";
+import { evalCondition, explainFailures, type ConditionEnv } from "./handConditions";
 import { realizeAuctionAction, realizeLead, realizePlayBehavior } from "./actions";
 import { mulberry32, seedFrom } from "./rng";
 
@@ -50,6 +52,7 @@ export interface KbDeciderOptions {
 interface EffectiveSurface {
   values: Record<string, SettingValue>;
   auctionRules: CompiledAuctionRule[];
+  forcingRules: CompiledForcingRule[];
   leadRules: CompiledLeadRule[];
   playRules: CompiledPlayRule[];
   auctionFallbacks: CompiledKb["fallbacks"];
@@ -100,6 +103,8 @@ export function effectiveSurface(options: KbDeciderOptions): EffectiveSurface {
   return {
     values,
     auctionRules: capped(live(compiled.auctionRules)),
+    // ?? []: compiled blobs stored before the forcing tier lack the field.
+    forcingRules: capped(live(compiled.forcingRules ?? [])),
     leadRules: capped(live(compiled.leadRules)),
     playRules: capped(live(compiled.playRules)),
     auctionFallbacks: compiled.fallbacks.filter((f) => allowed.has(f.provenance.itemId)),
@@ -128,6 +133,21 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
   const surface = effectiveSurface(options);
   const random = mulberry32(seedFrom(options.seed ?? compiled.compileId));
 
+  // Partnership inference (Pillar A) is pure over (seat, vul, auction content),
+  // so memoize it across the many predicate evaluations in one decision (and
+  // across turns for a stable auction prefix). The decider is built once per
+  // player config; this Map lives for its lifetime.
+  const inferenceMemo = new Map<string, PartnershipInference>();
+  const inferenceFor = (state: GameState, seat: Seat): PartnershipInference => {
+    const key = `${seat}|${state.vul}|${state.auction.map((c) => `${c.seat}${c.call}`).join(",")}`;
+    let inf = inferenceMemo.get(key);
+    if (!inf) {
+      inf = inferPartnership(state.auction, seat, state.vul, { auctionRules: surface.auctionRules });
+      inferenceMemo.set(key, inf);
+    }
+    return inf;
+  };
+
   const pick = <A, R extends { order: number }>(
     matches: { rule: R; ruleId: string; label: string; action: A }[],
   ): { rule: R; ruleId: string; label: string; action: A } => {
@@ -140,7 +160,11 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
 
   return {
     async decideBid(state: GameState, seat: Seat): Promise<Decision<Call>> {
-      const facts = analyzeSeat(state.auction, seat);
+      const facts = analyzeSeat(state.auction, seat, state.vul);
+      // Enrich with partnership state BEFORE any context match / condition eval
+      // / action realization reads it (agreed_suit inside bid_suit, combined*
+      // predicates, askInProgress context gating).
+      facts.inference = inferenceFor(state, seat);
       const hand = state.hands[seat];
       const consulted = new Set<string>();
       const env: ConditionEnv = { values: surface.values, facts, consulted };
@@ -151,6 +175,11 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
         label: string;
         action: Call;
       }[] = [];
+
+      // A matching forcing rule declares that PASS is not an available call
+      // here (partner's bid was forcing). Rules that would pass are suppressed
+      // and the no-agreement fallback becomes a bid instead of a pass.
+      const forcing = surface.forcingRules.find((r) => matchContext(r.context, facts)) ?? null;
 
       for (const rule of surface.auctionRules) {
         if (!matchContext(rule.context, facts)) continue; // silent: wrong context
@@ -163,6 +192,7 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
             matched: false,
             settingsConsulted: cited(compiled, newKeys, surface.values),
             reason: "hand conditions not met",
+            failedChecks: explainFailures(rule.conditions, hand, env),
           });
           continue;
         }
@@ -173,6 +203,15 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
             matched: false,
             settingsConsulted: cited(compiled, newKeys, surface.values),
             reason: "action not legal here",
+          });
+          continue;
+        }
+        if (forcing && call === "P") {
+          trace.push({
+            ruleId: rule.ruleId,
+            matched: false,
+            settingsConsulted: cited(compiled, newKeys, surface.values),
+            reason: `pass suppressed — ${forcing.label}`,
           });
           continue;
         }
@@ -208,6 +247,37 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
         };
       }
 
+      // Forcing situation with no bid found: passing would violate the
+      // partnership agreement, so make the cheapest legal bid in the longest
+      // suit and say the forcing rule made us.
+      if (forcing) {
+        const forced = realizeAuctionAction(
+          { type: "bid_longest", among: ["S", "H", "D", "C"] },
+          state,
+          seat,
+          facts,
+        );
+        if (forced !== null) {
+          trace.push({
+            ruleId: forcing.ruleId,
+            matched: true,
+            settingsConsulted: [],
+            reason: `forcing — no rule bid, so ${callLabel(forced)} (cheapest in longest suit)`,
+          });
+          return {
+            action: forced,
+            candidates: [forced],
+            trace,
+            citedSettings: cited(compiled, consulted, surface.values),
+            facts: facts_,
+            reason: `${forcing.label} — pass is not available; bid the longest suit`,
+            rejected: [],
+            fallback: true,
+            matchedRuleId: forcing.ruleId,
+          };
+        }
+      }
+
       // No agreement matched: the pack's auction fallback item, else floor.
       const fb = surface.auctionFallbacks.find((f) => f.fallback.phase === "auction");
       return {
@@ -228,7 +298,7 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
     async decidePlay(state: GameState, seat: Seat): Promise<Decision<Card>> {
       const hand = state.hands[seat];
       const consulted = new Set<string>();
-      const facts = analyzeSeat(state.auction, seat);
+      const facts = analyzeSeat(state.auction, seat, state.vul);
       const env: ConditionEnv = { values: surface.values, facts, consulted };
       const trace: RuleEval[] = [];
       const legal = legalPlays(state, seat);
@@ -278,7 +348,13 @@ export function createKbDecider(options: KbDeciderOptions): AsyncDecider {
           if (spec.side === "defense" && declarerSide) continue;
         }
         if (spec.conditions && !evalCondition(spec.conditions, hand, env)) {
-          trace.push({ ruleId: rule.ruleId, matched: false, settingsConsulted: [], reason: "conditions not met" });
+          trace.push({
+            ruleId: rule.ruleId,
+            matched: false,
+            settingsConsulted: [],
+            reason: "conditions not met",
+            failedChecks: explainFailures(spec.conditions, hand, env),
+          });
           continue;
         }
         const card = realizePlayBehavior(spec.behavior, state, seat);

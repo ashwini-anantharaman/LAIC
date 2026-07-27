@@ -11,10 +11,13 @@ const red = (s: Suit) => s === "H" || s === "D";
 
 export type CardSize = "sm" | "md" | "lg";
 
+// Fluid sizing: every card scales continuously with the window (clamped at
+// readable extremes) instead of stepping at breakpoints — this is what keeps
+// 13-card rows inside the felt at any width.
 const FACE_SIZE: Record<CardSize, string> = {
-  sm: "w-8 text-[13px] xl:w-10 xl:text-[15px]",
-  md: "w-10 text-[15px] sm:w-11 xl:w-12 xl:text-base",
-  lg: "w-11 text-base sm:w-14 sm:text-lg xl:w-16 xl:text-xl",
+  sm: "w-[clamp(24px,2.6vw,40px)] text-[clamp(11px,1.15vw,15px)]",
+  md: "w-[clamp(30px,3.1vw,48px)] text-[clamp(12px,1.25vw,16px)]",
+  lg: "w-[clamp(34px,4vw,64px)] text-[clamp(14px,1.5vw,20px)]",
 };
 
 export function PlayingCard({

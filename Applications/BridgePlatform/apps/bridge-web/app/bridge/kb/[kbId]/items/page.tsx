@@ -1,11 +1,13 @@
 import type { KnowledgeItem, KnowledgePhase, KnowledgeType } from "@bridge/kb";
 import Link from "next/link";
-import { deleteItemsAction } from "@/app/bridge/kb/actions";
 import { AccordionGroup, AccordionSection } from "@/components/kb/Accordion";
-import { StatusBadge, TYPE_LABEL } from "@/components/kb/badges";
-import { BulkItemsForm } from "@/components/kb/BulkItemsForm";
-import { BulkResultBanner } from "@/components/kb/BulkResultBanner";
+import { bandLine, bandOf, BAND_TEXT, StatusBadge, TYPE_DESCRIPTION, TYPE_LABEL } from "@/components/kb/badges";
+import { SelectNav } from "@/components/kb/SelectNav";
+import { ViewerPrefs } from "@/components/kb/ViewerPrefs";
 import { kbStore } from "@/lib/kb";
+import { applyMasterQuery, parseMasterQuery, ruleCount } from "@/lib/masterQuery";
+import { WHEN_LABEL, WHEN_ORDER, whenOf } from "@/lib/whenFacet";
+import { setItemStatusAction } from "../../actions";
 
 const PHASES: KnowledgePhase[] = ["auction", "opening_lead", "declarer_play", "defense", "scoring"];
 const PHASE_LABEL: Record<KnowledgePhase, string> = {
@@ -25,35 +27,34 @@ const STATUS_LABEL: Record<string, string> = {
 const plural = (label: string) =>
   label.endsWith("y") ? `${label.slice(0, -1)}ies` : `${label}s`;
 
-/** How many executable rules an item carries (0 = teaching prose). */
-function ruleCount(item: KnowledgeItem): number {
-  const p = item.payload;
-  switch (p.kind) {
-    case "auction_rules":
-      return p.rules.length;
-    case "play_rules":
-      return p.rules.length;
-    case "lead_rules":
-      return p.leads.length;
-    case "signals":
-    case "fallback":
-      return 1;
-    default:
-      return 0;
-  }
-}
-
 function contentLabel(item: KnowledgeItem): string {
   const n = ruleCount(item);
   if (item.payload.kind === "signals") return "signal policy";
   if (item.payload.kind === "fallback") return "fallback";
+  if (item.payload.kind === "forcing_rules")
+    return `${n} forcing situation${n === 1 ? "" : "s"}`;
   if (n === 0) return "teaching prose";
   const noun = item.payload.kind === "lead_rules" ? "lead rule" : "rule";
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
-type View = "cards" | "list" | "table";
-type Group = "kind" | "phase" | "status" | "none";
+/** Rule lines an item contributes, with their priority (for the Priority view).
+ *  Priorities only tie-break within a band; lower fires first. */
+function itemRules(item: KnowledgeItem): { label: string; priority?: number }[] {
+  const p = item.payload;
+  if (p.kind === "auction_rules" || p.kind === "forcing_rules")
+    return p.rules.map((r) => ({ label: r.label, priority: r.priority }));
+  if (p.kind === "play_rules")
+    return p.rules.map((r) => ({ label: r.behavior.replace(/_/g, " "), priority: r.priority }));
+  if (p.kind === "lead_rules")
+    return p.leads.map((l) => ({ label: `${l.style.replace(/_/g, " ")} vs ${l.versus}` }));
+  if (p.kind === "signals") return [{ label: "signal policy" }];
+  if (p.kind === "fallback") return [{ label: `fallback: ${p.fallback.behavior.replace(/_/g, " ")}` }];
+  return [];
+}
+
+type View = "cards" | "list" | "table" | "priority";
+type Group = "kind" | "phase" | "status" | "when" | "band" | "none";
 type Sort = "title" | "updated" | "rules";
 
 /** The Master knowledge viewer: three views (cards for reading, list for
@@ -68,35 +69,34 @@ export default async function ItemsPage({
     type?: string;
     phase?: string;
     status?: string;
+    when?: string;
+    tag?: string;
     view?: string;
     group?: string;
     sort?: string;
-    bulkDeleted?: string;
-    bulkBlocked?: string;
-    bulkSets?: string;
+    statusSet?: string;
   }>;
 }>) {
   const { kbId } = await params;
   const sp = await searchParams;
-  const { q, type, phase, status, bulkDeleted, bulkBlocked, bulkSets } = sp;
-  const view: View = sp.view === "list" || sp.view === "table" ? sp.view : "cards";
+  const { q, type, phase, status, when, tag, statusSet } = sp;
+  const view: View =
+    sp.view === "list" || sp.view === "table" || sp.view === "priority" ? sp.view : "cards";
   const group: Group =
-    sp.group === "phase" || sp.group === "status" || sp.group === "none" ? sp.group : "kind";
+    sp.group === "phase" ||
+    sp.group === "status" ||
+    sp.group === "when" ||
+    sp.group === "band" ||
+    sp.group === "none"
+      ? sp.group
+      : "kind";
   const sort: Sort = sp.sort === "updated" || sp.sort === "rules" ? sp.sort : "title";
 
   const items = await kbStore().listItemsForKb(kbId);
 
-  const query = (q ?? "").toLowerCase();
-  const filtered = items
-    .filter((i) => !query || `${i.title} ${i.humanReadableText}`.toLowerCase().includes(query))
-    .filter((i) => !type || i.knowledgeType === type)
-    .filter((i) => !phase || i.phase === phase)
-    .filter((i) => (status ? i.status === status : i.status !== "deprecated"))
-    .sort((a, b) => {
-      if (sort === "updated") return b.updatedAt.localeCompare(a.updatedAt);
-      if (sort === "rules") return ruleCount(b) - ruleCount(a) || a.title.localeCompare(b.title);
-      return a.title.localeCompare(b.title);
-    });
+  // Filter + sort via the shared Master query module (same semantics the item
+  // page re-runs for prev/next review navigation).
+  const filtered = applyMasterQuery(items, parseMasterQuery(sp));
 
   // ---- grouping ------------------------------------------------------------
   let groups: { id: string; label: string; items: KnowledgeItem[] }[];
@@ -112,6 +112,26 @@ export default async function ItemsPage({
       label: STATUS_LABEL[s] ?? s,
       items: filtered.filter((i) => i.status === s),
     }));
+  } else if (group === "when") {
+    groups = WHEN_ORDER.map((w) => ({
+      id: w,
+      label: WHEN_LABEL[w],
+      items: filtered.filter((i) => whenOf(i) === w),
+    }));
+  } else if (group === "band") {
+    // Precedence bands, in firing order; teaching prose (no band) last.
+    groups = [
+      ...[0, 1, 2, 9].map((b) => ({
+        id: `band-${b}`,
+        label: `${BAND_TEXT[b]!.name} (${BAND_TEXT[b]!.blurb})`,
+        items: filtered.filter((i) => bandOf(i.knowledgeType) === b),
+      })),
+      {
+        id: "band-none",
+        label: "teaching prose — never plays",
+        items: filtered.filter((i) => bandOf(i.knowledgeType) === null),
+      },
+    ];
   } else if (group === "none") {
     groups = [{ id: "all", label: "All knowledge", items: filtered }];
   } else {
@@ -126,7 +146,7 @@ export default async function ItemsPage({
   const base = `/bridge/kb/${kbId}`;
   const qs = (overrides: Record<string, string | undefined>) => {
     const merged: Record<string, string | undefined> = {
-      q, type, phase, status, view, group, sort, ...overrides,
+      q, type, phase, status, when, tag, view, group, sort, ...overrides,
     };
     // Defaults stay out of the URL so links stay clean.
     if (merged.view === "cards") delete merged.view;
@@ -138,11 +158,66 @@ export default async function ItemsPage({
     return `${base}/items${p ? `?${p}` : ""}`;
   };
   const returnTo = qs({});
+  // Detail pages get a `from` param so their back link restores this exact
+  // list shape (filters + view/group/sort).
+  const itemHref = (item: KnowledgeItem) =>
+    `${base}/items/${item.itemId}?from=${encodeURIComponent(returnTo)}`;
 
-  const chip = (active: boolean) =>
-    active
-      ? "rounded-full border border-emerald-400 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800"
-      : "rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400";
+  // Tag facet is built from ALL items (not the filtered set) so options don't
+  // vanish as you narrow.
+  const allTags = [...new Set(items.flatMap((i) => i.tags ?? []))].sort();
+
+  /** Muted priority-band suffix for kind group headers ("· convention (band 1 — …)"). */
+  const kindSuffix = (id: string) =>
+    group === "kind" ? (
+      <span className="text-xs font-normal normal-case text-neutral-400">
+        {" "}
+        · {bandLine(id as KnowledgeType) ?? "teaching prose — never plays"}
+      </span>
+    ) : null;
+
+  const tagChips = (item: KnowledgeItem) =>
+    (item.tags ?? []).map((t) => (
+      <Link
+        key={t}
+        href={qs({ tag: t })}
+        className="relative rounded-full border border-neutral-200 px-1.5 py-0.5 text-[10px] text-neutral-500 hover:border-emerald-400 hover:text-emerald-800"
+      >
+        {t}
+      </Link>
+    ));
+
+  // List-view row-approve controls: advance an item's trust status inline
+  // without opening it. Real forms (siblings of the stretched row link), so
+  // they need `relative z-10` to sit above the link's ::after overlay. The
+  // returnTo is this exact list url so we land back here with a statusSet banner.
+  const approveControls = (item: KnowledgeItem) => {
+    if (item.status !== "draft" && item.status !== "reviewed") return null;
+    const btn = (status: string, label: string, primary: boolean) => (
+      <form action={setItemStatusAction} className="relative">
+        <input type="hidden" name="kbId" value={kbId} />
+        <input type="hidden" name="itemId" value={item.itemId} />
+        <input type="hidden" name="status" value={status} />
+        <input type="hidden" name="returnTo" value={returnTo} />
+        <button
+          type="submit"
+          className={
+            primary
+              ? "rounded bg-emerald-700 px-2 py-0.5 text-xs font-medium text-white hover:bg-emerald-800"
+              : "rounded border border-neutral-300 px-2 py-0.5 text-xs hover:border-emerald-400 hover:text-emerald-800"
+          }
+        >
+          {label}
+        </button>
+      </form>
+    );
+    return (
+      <div className="relative z-10 flex shrink-0 items-center gap-1.5 pr-4">
+        {item.status === "draft" && btn("reviewed", "Reviewed", false)}
+        {btn("approved", "Approve", true)}
+      </div>
+    );
+  };
 
   const kindChip = (item: KnowledgeItem) => (
     <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-600">
@@ -167,6 +242,103 @@ export default async function ItemsPage({
     );
   };
 
+  // ---- priority view: bands → items → rules, in firing order ----------------
+  // The compiler orders every rule by band (×100k) then priority, first match
+  // wins. This lays that out: each band, the items whose type sits in it, and
+  // each item's rules with their priority (lower fires first).
+  const BAND_ORDER = [0, 1, 2, 9] as const;
+  const priorityBands = BAND_ORDER.map((band) => {
+    const bandItems = filtered
+      .filter((i) => bandOf(i.knowledgeType) === band && itemRules(i).length > 0)
+      .map((i) => ({
+        item: i,
+        rules: itemRules(i)
+          .slice()
+          .sort((a, b) => (a.priority ?? 1e9) - (b.priority ?? 1e9)),
+      }))
+      // Items with the lowest-priority rule first — approximates firing order.
+      .sort(
+        (a, b) =>
+          (a.rules[0]?.priority ?? 1e9) - (b.rules[0]?.priority ?? 1e9) ||
+          a.item.title.localeCompare(b.item.title),
+      );
+    return { band, items: bandItems };
+  }).filter((b) => b.items.length > 0);
+
+  const priority = (
+    <div className="space-y-6">
+      <p className="text-xs text-neutral-500">
+        The order the engine actually reads rules in: by <b>band</b> first, then by{" "}
+        <b>priority</b> within an item (lower fires first). The first rule whose context and
+        hand conditions match wins.
+      </p>
+      {priorityBands.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
+          No executable rules match the current filters.
+        </p>
+      ) : (
+        <AccordionGroup
+          storageKey={`bridge.kb.${kbId}.priority.bands.v1`}
+          sectionIds={priorityBands.map(({ band }) => `band-${band}`)}
+        >
+          {priorityBands.map(({ band, items: bandItems }) => (
+            <AccordionSection
+              key={band}
+              id={`band-${band}`}
+              summary={
+                <>
+                  <span className="font-serif text-lg font-medium capitalize">
+                    {BAND_TEXT[band]?.name ?? `band ${band}`}
+                    <span className="ml-2 text-xs font-normal normal-case text-neutral-400">
+                      {BAND_TEXT[band]?.blurb}
+                    </span>
+                  </span>
+                  <span className="text-xs text-neutral-400">{bandItems.length}</span>
+                </>
+              }
+            >
+              <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
+                {bandItems.map(({ item, rules }) => (
+                  <li key={item.itemId} className="px-4 py-2.5">
+                    {/* Each item folds too — a fat item scans as one line. */}
+                    <details open>
+                      <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-2 [&::-webkit-details-marker]:hidden">
+                        <span aria-hidden className="text-[9px] text-neutral-400">
+                          ▾
+                        </span>
+                        <Link
+                          href={itemHref(item)}
+                          className="font-serif text-[15px] font-medium hover:text-emerald-900"
+                        >
+                          {item.title}
+                        </Link>
+                        {kindChip(item)}
+                        <StatusBadge status={item.status} />
+                        <span className="ml-auto text-xs text-neutral-400">
+                          {rules.length} rule{rules.length === 1 ? "" : "s"}
+                        </span>
+                      </summary>
+                      <ul className="mt-1.5 space-y-0.5 pl-4">
+                        {rules.map((r, i) => (
+                          <li key={i} className="flex items-baseline gap-2 text-sm">
+                            <span className="w-14 flex-none font-mono text-xs text-neutral-400">
+                              {r.priority === undefined ? "—" : `p${r.priority}`}
+                            </span>
+                            <span className="text-neutral-700">{r.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </li>
+                ))}
+              </ul>
+            </AccordionSection>
+          ))}
+        </AccordionGroup>
+      )}
+    </div>
+  );
+
   // ---- the three bodies ------------------------------------------------------
 
   const cards = (
@@ -180,22 +352,29 @@ export default async function ItemsPage({
           id={g.id}
           summary={
             <>
-              <span className="font-serif text-lg font-medium capitalize">{g.label}</span>
+              <span className="font-serif text-lg font-medium capitalize">
+                {g.label}
+                {kindSuffix(g.id)}
+              </span>
               <span className="text-xs text-neutral-400">{g.items.length}</span>
             </>
           }
         >
           <div className="grid gap-3 border-t border-[var(--line)] p-4 sm:grid-cols-2">
             {g.items.map((item) => (
-              <Link
+              // Stretched-link card: the title link's ::after covers the card,
+              // so tag chips can stay real links (no nested anchors).
+              <div
                 key={item.itemId}
-                href={`${base}/items/${item.itemId}`}
-                className="group flex flex-col rounded-xl border border-neutral-200 bg-[var(--card)] p-4 shadow-sm transition-shadow hover:border-emerald-300 hover:shadow"
+                className="group relative flex flex-col rounded-xl border border-neutral-200 bg-[var(--card)] p-4 shadow-sm transition-shadow hover:border-emerald-300 hover:shadow"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-serif text-[15px] font-medium group-hover:text-emerald-900">
+                  <Link
+                    href={itemHref(item)}
+                    className="font-serif text-[15px] font-medium after:absolute after:inset-0 after:content-[''] group-hover:text-emerald-900"
+                  >
                     {item.title}
-                  </span>
+                  </Link>
                   <StatusBadge status={item.status} />
                 </div>
                 <p className="mt-1.5 flex-1 text-sm leading-relaxed text-neutral-600">
@@ -207,9 +386,10 @@ export default async function ItemsPage({
                   <span className="text-[10px] uppercase tracking-wide text-neutral-400">
                     {contentLabel(item)}
                   </span>
+                  {tagChips(item)}
                   <span className="ml-auto">{toggleChip(item)}</span>
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
         </AccordionSection>
@@ -218,74 +398,69 @@ export default async function ItemsPage({
   );
 
   const list = (
-    <BulkItemsForm kbId={kbId} returnTo={returnTo} action={deleteItemsAction}>
-      <AccordionGroup
-        storageKey={`bridge.kb.${kbId}.master.groups.v1`}
-        sectionIds={groups.map((g) => g.id)}
-      >
-        {groups.map((g) => (
-          <AccordionSection
-            key={g.id}
-            id={g.id}
-            summary={
-              <>
-                <span className="font-serif text-lg font-medium capitalize">{g.label}</span>
-                <span className="text-xs text-neutral-400">{g.items.length}</span>
-              </>
-            }
-          >
-            <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
-              {g.items.map((item) => (
-                <li key={item.itemId} className="flex items-stretch">
-                  <label className="flex cursor-pointer items-center pl-4 pr-1">
-                    <input
-                      type="checkbox"
-                      name="itemIds"
-                      value={item.itemId}
-                      aria-label={`Select ${item.title}`}
-                      className="h-4 w-4 accent-emerald-700"
-                    />
-                  </label>
-                  <Link
-                    href={`${base}/items/${item.itemId}`}
-                    className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-3 hover:bg-neutral-50"
-                  >
-                    <span className="font-serif text-[15px] font-medium">{item.title}</span>
-                    <StatusBadge status={item.status} />
-                    {item.settings.length > 0 && (
-                      <span className="text-[10px] uppercase tracking-wide text-emerald-700">
-                        {item.settings.length} setting{item.settings.length > 1 ? "s" : ""}
-                      </span>
-                    )}
-                    <span className="ml-auto hidden max-w-md truncate text-xs text-neutral-400 sm:block">
-                      {item.humanReadableText}
+    <AccordionGroup
+      storageKey={`bridge.kb.${kbId}.master.groups.v1`}
+      sectionIds={groups.map((g) => g.id)}
+    >
+      {groups.map((g) => (
+        <AccordionSection
+          key={g.id}
+          id={g.id}
+          summary={
+            <>
+              <span className="font-serif text-lg font-medium capitalize">
+                {g.label}
+                {kindSuffix(g.id)}
+              </span>
+              <span className="text-xs text-neutral-400">{g.items.length}</span>
+            </>
+          }
+        >
+          <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
+            {g.items.map((item) => (
+              // Stretched-link row: the row link's ::after covers the <li>, so
+              // the approve forms stay real siblings (no nested anchors).
+              <li key={item.itemId} className="group relative flex items-stretch hover:bg-neutral-50">
+                <Link
+                  href={itemHref(item)}
+                  className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 after:absolute after:inset-0 after:content-['']"
+                >
+                  <span className="font-serif text-[15px] font-medium">{item.title}</span>
+                  <StatusBadge status={item.status} />
+                  {item.settings.length > 0 && (
+                    <span className="text-[10px] uppercase tracking-wide text-emerald-700">
+                      {item.settings.length} setting{item.settings.length > 1 ? "s" : ""}
                     </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </AccordionSection>
-        ))}
-      </AccordionGroup>
-    </BulkItemsForm>
+                  )}
+                  <span className="ml-auto hidden max-w-md truncate text-xs text-neutral-400 sm:block">
+                    {item.humanReadableText}
+                  </span>
+                </Link>
+                {approveControls(item)}
+              </li>
+            ))}
+          </ul>
+        </AccordionSection>
+      ))}
+    </AccordionGroup>
   );
 
   const th = "px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-neutral-500";
   const table = (
-    <BulkItemsForm kbId={kbId} returnTo={returnTo} action={deleteItemsAction}>
-      <div className="space-y-6">
+    <div className="space-y-6">
         {groups.map((g) => (
           <section key={g.id}>
             {group !== "none" && (
               <h2 className="mb-2 font-serif text-lg font-medium capitalize">
-                {g.label} <span className="text-xs font-normal text-neutral-400">{g.items.length}</span>
+                {g.label}
+                {kindSuffix(g.id)}{" "}
+                <span className="text-xs font-normal text-neutral-400">{g.items.length}</span>
               </h2>
             )}
             <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-[var(--card)]">
               <table className="w-full text-sm">
                 <thead className="border-b border-neutral-200">
                   <tr>
-                    <th className={th} />
                     <th className={th}>
                       <Link href={qs({ sort: "title" })} className="hover:text-emerald-800">
                         Title {sort === "title" && "↑"}
@@ -310,18 +485,9 @@ export default async function ItemsPage({
                 <tbody className="divide-y divide-neutral-100">
                   {g.items.map((item) => (
                     <tr key={item.itemId} className="hover:bg-neutral-50">
-                      <td className="pl-3">
-                        <input
-                          type="checkbox"
-                          name="itemIds"
-                          value={item.itemId}
-                          aria-label={`Select ${item.title}`}
-                          className="h-4 w-4 accent-emerald-700"
-                        />
-                      </td>
                       <td className="px-3 py-2">
                         <Link
-                          href={`${base}/items/${item.itemId}`}
+                          href={itemHref(item)}
                           className="font-medium text-emerald-900 underline-offset-2 hover:underline"
                         >
                           {item.title}
@@ -346,112 +512,160 @@ export default async function ItemsPage({
             </div>
           </section>
         ))}
-      </div>
-    </BulkItemsForm>
+    </div>
   );
+
+  const explicit = sp.view !== undefined || sp.group !== undefined || sp.sort !== undefined;
 
   return (
     <div>
-      <BulkResultBanner deleted={bulkDeleted} blocked={bulkBlocked} sets={bulkSets} />
+      <ViewerPrefs
+        storageKey={`bridge.kb.${kbId}.master.prefs.v1`}
+        view={view}
+        group={group}
+        sort={sort}
+        explicit={explicit}
+      />
 
-      {/* Toolbar: search + facets (GET form) and view/group/sort (links). */}
-      <form className="mb-3 flex flex-wrap items-end gap-3" method="GET">
-        {view !== "cards" && <input type="hidden" name="view" value={view} />}
-        {group !== "kind" && <input type="hidden" name="group" value={group} />}
-        {sort !== "title" && <input type="hidden" name="sort" value={sort} />}
+      {statusSet && (
+        <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Status updated to <span className="font-medium">{statusSet}</span>.
+        </p>
+      )}
+
+      {/* Toolbar: search (GET form) + facets (SelectNav navigations). Every
+          facet auto-applies on change; only search waits for Enter. */}
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <form className="flex items-end gap-3" method="GET">
+          {/* Carry every OTHER current param so Enter preserves state. */}
+          {type && <input type="hidden" name="type" value={type} />}
+          {phase && <input type="hidden" name="phase" value={phase} />}
+          {status && <input type="hidden" name="status" value={status} />}
+          {when && <input type="hidden" name="when" value={when} />}
+          {tag && <input type="hidden" name="tag" value={tag} />}
+          {view !== "cards" && <input type="hidden" name="view" value={view} />}
+          {group !== "kind" && <input type="hidden" name="group" value={group} />}
+          {sort !== "title" && <input type="hidden" name="sort" value={sort} />}
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-neutral-500">Search</span>
+            <input
+              name="q"
+              defaultValue={q ?? ""}
+              placeholder="Search… press Enter"
+              className="w-56 rounded border border-neutral-300 px-2 py-1.5"
+            />
+          </label>
+        </form>
         <label className="text-sm">
-          <span className="mb-1 block text-xs text-neutral-500">Search</span>
-          <input
-            name="q"
-            defaultValue={q ?? ""}
-            placeholder="stayman, 1NT, lead…"
-            className="w-56 rounded border border-neutral-300 px-2 py-1.5"
+          <span className="mb-1 block text-xs text-neutral-500">Kind</span>
+          <SelectNav
+            label=""
+            value={type ?? ""}
+            options={[
+              { value: "", label: "all", href: qs({ type: undefined }) },
+              ...Object.entries(TYPE_LABEL).map(([value, label]) => ({
+                value,
+                label,
+                href: qs({ type: value }),
+                title: TYPE_DESCRIPTION[value as KnowledgeType],
+              })),
+            ]}
           />
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-xs text-neutral-500">Kind</span>
-          <select name="type" defaultValue={type ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
-            <option value="">all</option>
-            {Object.entries(TYPE_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
           <span className="mb-1 block text-xs text-neutral-500">Phase</span>
-          <select name="phase" defaultValue={phase ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
-            <option value="">all</option>
-            {PHASES.map((p) => (
-              <option key={p} value={p}>
-                {PHASE_LABEL[p]}
-              </option>
-            ))}
-          </select>
+          <SelectNav
+            label=""
+            value={phase ?? ""}
+            options={[
+              { value: "", label: "all", href: qs({ phase: undefined }) },
+              ...PHASES.map((p) => ({ value: p, label: PHASE_LABEL[p], href: qs({ phase: p }) })),
+            ]}
+          />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-xs text-neutral-500">Status</span>
-          <select name="status" defaultValue={status ?? ""} className="rounded border border-neutral-300 px-2 py-1.5">
-            <option value="">active (default)</option>
-            {["draft", "reviewed", "approved", "deprecated"].map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          <SelectNav
+            label=""
+            value={status ?? ""}
+            options={[
+              { value: "", label: "active (default)", href: qs({ status: undefined }) },
+              ...["draft", "reviewed", "approved", "deprecated"].map((s) => ({
+                value: s,
+                label: s,
+                href: qs({ status: s }),
+              })),
+            ]}
+          />
         </label>
-        <button type="submit" className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-400">
-          Filter
-        </button>
+        <label className="text-sm">
+          <span className="mb-1 block text-xs text-neutral-500">Applies when</span>
+          <SelectNav
+            label=""
+            value={when ?? ""}
+            options={[
+              { value: "", label: "any stage", href: qs({ when: undefined }) },
+              ...(["opening", "responding", "rebidding", "competing"] as const).map((w) => ({
+                value: w,
+                label: WHEN_LABEL[w],
+                href: qs({ when: w }),
+              })),
+            ]}
+          />
+        </label>
+        {allTags.length > 0 && (
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-neutral-500">Tag</span>
+            <SelectNav
+              label=""
+              value={tag ?? ""}
+              options={[
+                { value: "", label: "all", href: qs({ tag: undefined }) },
+                ...allTags.map((t) => ({ value: t, label: t, href: qs({ tag: t }) })),
+              ]}
+            />
+          </label>
+        )}
         <Link
           href={`${base}/items/new`}
           className="ml-auto rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
         >
           New knowledge item
         </Link>
-      </form>
+      </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-[var(--line)] pb-3 text-xs">
-        <span className="flex items-center gap-1.5">
-          <span className="text-neutral-400">View</span>
-          <Link href={qs({ view: "cards" })} className={chip(view === "cards")}>
-            Cards
-          </Link>
-          <Link href={qs({ view: "list" })} className={chip(view === "list")}>
-            List
-          </Link>
-          <Link href={qs({ view: "table" })} className={chip(view === "table")}>
-            Table
-          </Link>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="text-neutral-400">Group by</span>
-          <Link href={qs({ group: "kind" })} className={chip(group === "kind")}>
-            Kind
-          </Link>
-          <Link href={qs({ group: "phase" })} className={chip(group === "phase")}>
-            Phase
-          </Link>
-          <Link href={qs({ group: "status" })} className={chip(group === "status")}>
-            Status
-          </Link>
-          <Link href={qs({ group: "none" })} className={chip(group === "none")}>
-            None
-          </Link>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="text-neutral-400">Sort</span>
-          <Link href={qs({ sort: "title" })} className={chip(sort === "title")}>
-            A–Z
-          </Link>
-          <Link href={qs({ sort: "updated" })} className={chip(sort === "updated")}>
-            Recently updated
-          </Link>
-          <Link href={qs({ sort: "rules" })} className={chip(sort === "rules")}>
-            Most rules
-          </Link>
-        </span>
+        <SelectNav
+          label="View"
+          value={view}
+          options={[
+            { value: "cards", label: "Cards", href: qs({ view: "cards" }) },
+            { value: "list", label: "List", href: qs({ view: "list" }) },
+            { value: "table", label: "Table", href: qs({ view: "table" }) },
+            { value: "priority", label: "Priority — firing order", href: qs({ view: "priority" }) },
+          ]}
+        />
+        <SelectNav
+          label="Group by"
+          value={group}
+          options={[
+            { value: "kind", label: "Kind — what it is", href: qs({ group: "kind" }) },
+            { value: "phase", label: "Phase", href: qs({ group: "phase" }) },
+            { value: "status", label: "Status", href: qs({ group: "status" }) },
+            { value: "when", label: "When — auction position", href: qs({ group: "when" }) },
+            { value: "band", label: "Band — who outranks whom", href: qs({ group: "band" }) },
+            { value: "none", label: "None", href: qs({ group: "none" }) },
+          ]}
+        />
+        <SelectNav
+          label="Sort"
+          value={sort}
+          options={[
+            { value: "title", label: "A–Z", href: qs({ sort: "title" }) },
+            { value: "updated", label: "Recently updated", href: qs({ sort: "updated" }) },
+            { value: "rules", label: "Most rules", href: qs({ sort: "rules" }) },
+          ]}
+        />
         <span className="ml-auto text-neutral-400">
           {filtered.length} item{filtered.length === 1 ? "" : "s"}
         </span>
@@ -462,6 +676,8 @@ export default async function ItemsPage({
           Nothing here yet — run extraction on a source, install a template, or author a
           knowledge item by hand.
         </p>
+      ) : view === "priority" ? (
+        priority
       ) : view === "cards" ? (
         cards
       ) : view === "table" ? (

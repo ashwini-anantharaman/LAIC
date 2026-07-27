@@ -13,6 +13,7 @@ import {
   type KbStore,
 } from "@bridge/kb";
 import { newId } from "@bridge/kb";
+import { isB2f3Collection } from "./b2f3";
 
 export const HOUSE_PREFIX = "House · ";
 
@@ -63,10 +64,17 @@ export function arenaSets(compiled: CompiledKb): CompiledPack[] {
   return [...compiled.packs].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** The default table's opponent: the most capable set (largest roster). */
+/** The default table's opponent: the most capable set (largest roster). The
+ *  B2F3 curriculum collections are teaching drafts, not a quickplay opponent —
+ *  they are EXCLUDED from the default pick so seeding them never silently
+ *  switches quickplay's opponent (their Intermediate superset can rival the
+ *  largest system set). They are only considered if nothing else qualifies. */
 export function pickDefaultSet(compiled: CompiledKb): CompiledPack | null {
-  return compiled.packs.reduce<CompiledPack | null>(
-    (best, p) => (!best || p.itemIds.length > best.itemIds.length ? p : best),
-    null,
-  );
+  const largest = (packs: CompiledPack[]) =>
+    packs.reduce<CompiledPack | null>(
+      (best, p) => (!best || p.itemIds.length > best.itemIds.length ? p : best),
+      null,
+    );
+  const nonCurriculum = compiled.packs.filter((p) => !isB2f3Collection(p.name));
+  return largest(nonCurriculum) ?? largest(compiled.packs);
 }

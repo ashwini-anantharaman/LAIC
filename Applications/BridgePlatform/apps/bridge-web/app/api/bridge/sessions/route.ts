@@ -15,7 +15,13 @@ const SEATS: Seat[] = ["N", "E", "S", "W"];
 export async function GET() {
   try {
     await requireContext();
-    const sessions = await sessionService().listRecent();
+    const { kbStore } = await import("@/lib/kb");
+    const archived = new Set(
+      (await kbStore().listKbs()).filter((k) => k.archived).map((k) => k.kbId),
+    );
+    const sessions = (await sessionService().listRecent()).filter(
+      (s) => !archived.has(s.kbId),
+    );
     return NextResponse.json({
       sessions: sessions.map((s) => ({
         sessionId: s.sessionId,

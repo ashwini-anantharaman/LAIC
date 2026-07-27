@@ -2,8 +2,10 @@ import { canAccessAdminArea } from "@bridge/nexus-client";
 import { playerIsValid, validatePlayerStatic } from "@bridge/kb";
 import { notFound, redirect } from "next/navigation";
 import { TabLink } from "@/components/kb/TabLink";
+import { benchmarkEnabled } from "@/lib/benchmark";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
+import { libraryStore } from "@/lib/sessions";
 
 /**
  * The KB dashboard shell (spec §6): health strip + tabs. The health strip is
@@ -34,6 +36,18 @@ export default async function KbLayout({
 
   const byStatus = (s: string) => items.filter((i) => i.status === s).length;
   const openSuggestions = suggestions.filter((s) => s.status === "open").length;
+
+  // Drills count for the health strip. We show only the COUNT here, never the
+  // pass-rate: running every drill means a decideBid per drill, and the layout
+  // renders on every KB page — too heavy for a shell. The pass-rate lives on
+  // the Drills page, which runs the suite once, on demand. The library table
+  // may not be provisioned on every backend, so this is best-effort.
+  let drillCount = 0;
+  try {
+    drillCount = (await libraryStore().listEntries("drill")).filter((e) => e.kbId === kbId).length;
+  } catch {
+    drillCount = 0;
+  }
   const validPlayers = compiled
     ? players.filter((p) => playerIsValid(validatePlayerStatic(compiled, p))).length
     : 0;
@@ -58,13 +72,16 @@ export default async function KbLayout({
           <p className="text-xs text-neutral-500">
             {kb.latestVersionNumber ? (
               <>
-                published <span className="font-medium">v{kb.latestVersionNumber}</span> ·{" "}
+                <span title="Releases are frozen, numbered publications of the whole KB">
+                  release <span className="font-medium">v{kb.latestVersionNumber}</span>
+                </span>{" "}
+                ·{" "}
               </>
             ) : null}
             {compiled ? (
-              <>
-                draft compile <span className="font-medium">v{compiled.version}</span>
-              </>
+              <span title="The working compile updates on every save — what new boards play from">
+                working compile <span className="font-medium">v{compiled.version}</span>
+              </span>
             ) : (
               "no compile yet"
             )}
@@ -98,11 +115,19 @@ export default async function KbLayout({
           )}
           {stat(openSuggestions, "open flags")}
           {stat(compiled?.settings.length ?? 0, "settings")}
+          {drillCount > 0 && stat(drillCount, "drills")}
         </div>
 
         <nav className="mt-6 flex flex-wrap gap-5 border-b border-[var(--line)]">
           <TabLink href={base} exact label="Overview" />
           <TabLink href={`${base}/items`} label="Master" />
+          <TabLink href={`${base}/test`} label="Test" />
+          <TabLink href={`${base}/auction-rules`} label="Auction rules" />
+          <TabLink href={`${base}/drills`} label="Drills" />
+          <TabLink href={`${base}/coverage`} label="Coverage" />
+          <TabLink href={`${base}/findings`} label="Findings" />
+          <TabLink href={`${base}/source-audit`} label="Source audit" />
+          {benchmarkEnabled() && <TabLink href={`${base}/benchmark`} label="Benchmark" />}
           <TabLink href={`${base}/sets`} label="Knowledge sets" />
           <TabLink href={`${base}/sources`} label="Sources" />
           <TabLink href={`${base}/versions`} label="Versions" />

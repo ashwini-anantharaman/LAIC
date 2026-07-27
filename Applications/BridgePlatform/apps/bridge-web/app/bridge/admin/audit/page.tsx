@@ -1,9 +1,13 @@
+import { redirect } from "next/navigation";
 import { auditStore } from "@/lib/audit";
+import { isFellowDemo } from "@/lib/nexus";
 
 /** §21: the append-only trail of privileged actions. Read-only by design. */
 export default async function AuditPage({
   searchParams,
 }: Readonly<{ searchParams: Promise<{ actor?: string; action?: string }> }>) {
+  // Hidden on the fellows-testing deployment.
+  if (await isFellowDemo()) redirect("/bridge/table");
   const { actor, action } = await searchParams;
   const records = await auditStore().query({
     actorUserId: actor || undefined,

@@ -3,8 +3,9 @@
 // Bulk selection over server-rendered item rows: the page renders plain
 // checkboxes named "itemIds" inside this form; we count them via event
 // delegation and float a sticky action bar (select all shown / clear /
-// two-step delete) once anything is ticked. Deletion is a server action —
-// release-pinned items survive and come back reported in the banner.
+// two-step confirm) once anything is ticked. The verb/warning are
+// configurable so the same bar drives delete (augmentation drafts) and
+// deprecate (everywhere else); the action is a server action either way.
 
 import { useRef, useState } from "react";
 
@@ -12,11 +13,15 @@ export function BulkItemsForm({
   kbId,
   returnTo,
   action,
+  verb = "Delete",
+  warning,
   children,
 }: Readonly<{
   kbId: string;
   returnTo: string;
   action: (formData: FormData) => Promise<void>;
+  verb?: string;
+  warning?: string;
   children: React.ReactNode;
 }>) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -70,15 +75,16 @@ export function BulkItemsForm({
           {arming ? (
             <span className="ml-auto flex items-center gap-2">
               <span className="text-xs text-red-700">
-                Delete {count} item{count > 1 ? "s" : ""}? Sets that list them are updated; this
-                can&apos;t be undone.
+                {verb} {count} item{count > 1 ? "s" : ""}?{" "}
+                {warning ??
+                  "Sets that list them are updated; this can't be undone."}
               </span>
               <button
                 type="submit"
                 disabled={busy}
                 className="rounded bg-red-700 px-3 py-1 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-50"
               >
-                {busy ? "Deleting…" : "Yes, delete"}
+                {busy ? `${verb.replace(/e$/, "")}ing…` : `Yes, ${verb.toLowerCase()}`}
               </button>
               <button
                 type="button"
@@ -94,7 +100,7 @@ export function BulkItemsForm({
               onClick={() => setArming(true)}
               className="ml-auto rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
             >
-              Delete selected…
+              {verb} selected…
             </button>
           )}
         </div>

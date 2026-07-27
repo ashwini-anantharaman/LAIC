@@ -1,17 +1,22 @@
 import { itemIsDirty, type EdgeType } from "@bridge/kb";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { StatusBadge, TypeChip } from "@/components/kb/badges";
+import { bandLine, StatusBadge, TypeChip } from "@/components/kb/badges";
 import { ConfirmButton } from "@/components/kb/ConfirmButton";
 import { ItemEditor } from "@/components/kb/ItemEditor";
+import { ItemView } from "@/components/kb/ItemView";
+import { summarizeItemDiff } from "@/lib/itemDiff";
 import { kbStore } from "@/lib/kb";
+import { applyMasterQuery, parseMasterQuery } from "@/lib/masterQuery";
 import {
   addEdgeAction,
   commitItemVersionAction,
+  createSuggestionAction,
   deleteItemVersionAction,
   removeEdgeAction,
   saveItemAction,
   setItemMainVersionAction,
+  setItemStatusAction,
 } from "../../../actions";
 
 const EDGE_LABEL: Record<EdgeType, string> = {
@@ -32,13 +37,21 @@ export default async function ItemPage({
   searchParams: Promise<{
     saved?: string;
     committed?: string;
+    statusSet?: string;
     madeMain?: string;
     versionDeleted?: string;
     versionError?: string;
+    mode?: string;
+    from?: string;
   }>;
 }>) {
   const { kbId, itemId } = await params;
-  const { saved, committed, madeMain, versionDeleted, versionError } = await searchParams;
+  const sp = await searchParams;
+  const { saved, committed, statusSet, madeMain, versionDeleted, versionError } = sp;
+  const edit = sp.mode === "edit";
+  // Back link (R9): only honor a `from` that points back into this KB's
+  // Master view — anything else falls back to the plain items list.
+  const from = sp.from?.startsWith(`/bridge/kb/${kbId}/items`) ? sp.from : undefined;
   const store = kbStore();
   const item = await store.getItem(itemId);
   if (!item) notFound();
@@ -59,28 +72,73 @@ export default async function ItemPage({
   const dirty = itemIsDirty(item, mainSnapshot);
   const titleOf = new Map(kbItems.map((i) => [i.itemId, i.title]));
 
-  // Resolve cited passages for the side-by-side pane.
+  // Resolve cited passages for the side-by-side pane, plus each source's
+  // document — a VISUAL source (a slide deck read as pictures) cites pages, so
+  // its citations can also open the actual slide, not just its transcription.
   const passagesBySource = new Map<string, Awaited<ReturnType<typeof store.listPassages>>>();
+  const documentBySource = new Map<string, Awaited<ReturnType<typeof store.getDocument>>>();
   for (const ref of item.sourceReferences) {
     if (!passagesBySource.has(ref.sourceId))
       passagesBySource.set(ref.sourceId, await store.listPassages(ref.sourceId));
+    if (!documentBySource.has(ref.sourceId))
+      documentBySource.set(ref.sourceId, await store.getDocument(ref.sourceId));
   }
-  const citedPassages = item.sourceReferences.map((ref) => ({
-    ref,
-    passage: passagesBySource.get(ref.sourceId)?.find((p) => p.passageId === ref.passageId),
-  }));
+  const citedPassages = item.sourceReferences.map((ref) => {
+    const passage = passagesBySource.get(ref.sourceId)?.find((p) => p.passageId === ref.passageId);
+    const doc = documentBySource.get(ref.sourceId);
+    const isVisual = doc?.ingestMode === "visual" && Boolean(doc.storagePath);
+    // Visual passages anchor as "page-N"; trust the anchor on either the
+    // citation or the passage it resolved to.
+    const pageAnchor = /^page-(\d+)$/.exec(ref.anchor ?? "") ?? /^page-(\d+)$/.exec(passage?.anchor ?? "");
+    const slide = isVisual && pageAnchor ? Number(pageAnchor[1]) : undefined;
+    return { ref, passage, slide };
+  });
 
   const base = `/bridge/kb/${kbId}`;
+  const backHref = from ?? `${base}/items`;
+  const fromQuery = from ? `&from=${encodeURIComponent(from)}` : "";
+  const selfHref = `${base}/items/${itemId}`;
+
+  // Prev/next review navigation (R4): re-run the Master query the `from` URL
+  // encoded, so the neighbors match the exact filtered/sorted list the fellow
+  // was working. Fall back to the full title-sorted list when this item isn't
+  // in that filtered set (e.g. deprecated) or there's no `from`.
+  const fromQs = from ? (from.split("?")[1] ?? "") : "";
+  let ordered = from
+    ? applyMasterQuery(kbItems, parseMasterQuery(new URLSearchParams(fromQs)))
+    : [];
+  let navIdx = ordered.findIndex((i) => i.itemId === itemId);
+  if (navIdx === -1) {
+    ordered = [...kbItems].sort((a, b) => a.title.localeCompare(b.title));
+    navIdx = ordered.findIndex((i) => i.itemId === itemId);
+  }
+  const prevItem = navIdx > 0 ? ordered[navIdx - 1] : undefined;
+  const nextItem =
+    navIdx >= 0 && navIdx < ordered.length - 1 ? ordered[navIdx + 1] : undefined;
+  // Neighbors preserve `from` but drop mode — land in the reading view.
+  const neighborHref = (i: { itemId: string }) =>
+    `${base}/items/${i.itemId}${from ? `?from=${encodeURIComponent(from)}` : ""}`;
+
+  // Draft-vs-main diff one-liner (R5): shown only when the item is dirty.
+  const diffSummary = dirty
+    ? mainSnapshot
+      ? (() => {
+          const d = summarizeItemDiff(item, mainSnapshot);
+          const more = d.length > 3 ? `, +${d.length - 3} more` : "";
+          return `vs v${item.mainVersion}: ${d.slice(0, 3).join("; ")}${more}`;
+        })()
+      : "never committed to a version yet"
+    : null;
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       <div>
         <p className="mb-2 text-xs text-neutral-400">
-          <Link href={`${base}/items`} className="hover:underline">
-            Master
+          <Link href={backHref} className="hover:underline">
+            ← Back to Master
           </Link>{" "}
           / {item.itemId} · rev {item.version}
-          {item.mainVersion ? <> · main v{item.mainVersion}</> : <> · uncommitted</>}
+          {item.mainVersion && <> · main v{item.mainVersion}</>}
           {item.forkedFromItemId && (
             <>
               {" "}
@@ -106,6 +164,11 @@ export default async function ItemPage({
             snapshot, now the main version.
           </p>
         )}
+        {statusSet && (
+          <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            Status updated to <span className="font-medium">{statusSet}</span>.
+          </p>
+        )}
         {madeMain && (
           <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             <span className="font-medium">v{madeMain}</span> is now the main version —
@@ -122,14 +185,127 @@ export default async function ItemPage({
             {versionError}
           </p>
         )}
-        <div className="mb-4 flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <h2 className="text-2xl font-medium">{item.title}</h2>
           <TypeChip type={item.knowledgeType} />
           <StatusBadge status={item.status} />
+          {dirty && (
+            <span
+              title="This item has draft edits no committed version captures — Save as new version (Versions panel) to freeze them. Committed versions are never modified."
+              className="inline-block rounded border border-amber-400 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-700"
+            >
+              draft edits
+            </span>
+          )}
+          {!edit && navIdx >= 0 && (
+            <nav className="ml-auto flex items-center gap-2 text-xs text-neutral-500">
+              {prevItem ? (
+                <Link href={neighborHref(prevItem)} title={prevItem.title} className="hover:text-emerald-800">
+                  ← prev
+                </Link>
+              ) : (
+                <span className="text-neutral-300">← prev</span>
+              )}
+              <span className="tabular-nums">
+                {navIdx + 1} of {ordered.length}
+              </span>
+              {nextItem ? (
+                <Link href={neighborHref(nextItem)} title={nextItem.title} className="hover:text-emerald-800">
+                  next →
+                </Link>
+              ) : (
+                <span className="text-neutral-300">next →</span>
+              )}
+            </nav>
+          )}
+          {edit ? (
+            <Link
+              href={`${selfHref}${from ? `?from=${encodeURIComponent(from)}` : ""}`}
+              className="ml-auto rounded border border-neutral-300 px-3 py-1 text-sm hover:border-emerald-400 hover:text-emerald-800"
+            >
+              View
+            </Link>
+          ) : (
+            <Link
+              href={`${selfHref}?mode=edit${fromQuery}`}
+              className={`rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800 ${navIdx >= 0 ? "" : "ml-auto"}`}
+            >
+              Edit
+            </Link>
+          )}
         </div>
-        <p className="prose-knowledge mb-6 text-neutral-800">{item.humanReadableText}</p>
+        {diffSummary && (
+          <p className="mt-1 text-xs text-neutral-400">{diffSummary}</p>
+        )}
+        <p className="mb-2 mt-1 text-xs text-neutral-400">
+          {bandLine(item.knowledgeType) ?? "teaching prose — never plays"}
+        </p>
+        {!edit && (item.status === "draft" || item.status === "reviewed") && (
+          <div className="mb-4 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
+            <span className="text-xs text-neutral-500">
+              Status is a trust badge — it never gates play.
+            </span>
+            {item.status === "draft" && (
+              <form action={setItemStatusAction} className="inline">
+                <input type="hidden" name="kbId" value={kbId} />
+                <input type="hidden" name="itemId" value={itemId} />
+                <input type="hidden" name="status" value="reviewed" />
+                <button
+                  type="submit"
+                  className="rounded border border-neutral-300 px-2.5 py-1 text-xs hover:border-emerald-400 hover:text-emerald-800"
+                >
+                  Mark reviewed
+                </button>
+              </form>
+            )}
+            <form action={setItemStatusAction} className="inline">
+              <input type="hidden" name="kbId" value={kbId} />
+              <input type="hidden" name="itemId" value={itemId} />
+              <input type="hidden" name="status" value="approved" />
+              <button
+                type="submit"
+                className="rounded bg-emerald-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+              >
+                Approve
+              </button>
+            </form>
+          </div>
+        )}
+        {(item.tags?.length ?? 0) > 0 && (
+          <p className="mb-2 flex flex-wrap gap-1.5">
+            {item.tags!.map((t) => (
+              <Link
+                key={t}
+                href={`${base}/items?tag=${encodeURIComponent(t)}`}
+                className="rounded-full border border-neutral-200 px-1.5 py-0.5 text-[10px] text-neutral-500 hover:border-emerald-400 hover:text-emerald-800"
+              >
+                {t}
+              </Link>
+            ))}
+          </p>
+        )}
+        <p className="prose-knowledge mb-6 mt-2 text-neutral-800">{item.humanReadableText}</p>
+        {item.internalNotes && (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-amber-800">
+              Internal notes — never shown to players
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-amber-900">
+              {item.internalNotes}
+            </p>
+          </div>
+        )}
 
-        <ItemEditor kbId={kbId} item={item} action={saveItemAction} />
+        {edit ? (
+          <ItemEditor
+            kbId={kbId}
+            item={item}
+            action={saveItemAction}
+            hiddenFields={{ ...(from && { from }) }}
+          />
+        ) : (
+          <ItemView item={item} />
+        )}
       </div>
 
       <aside className="space-y-6">
@@ -141,7 +317,7 @@ export default async function ItemPage({
             <p className="text-sm text-neutral-500">No citations.</p>
           ) : (
             <ul className="space-y-3">
-              {citedPassages.map(({ ref, passage }, i) => (
+              {citedPassages.map(({ ref, passage, slide }, i) => (
                 <li key={i} className="border-l-2 border-emerald-300 pl-3">
                   <p className="text-[11px] uppercase tracking-wide text-neutral-400">
                     {passage ? (
@@ -150,7 +326,7 @@ export default async function ItemPage({
                         className="text-emerald-800 underline-offset-2 hover:underline"
                         title="Open this passage in the source document"
                       >
-                        {ref.sourceId} · ¶{passage.ordinal} →
+                        {ref.sourceId} · {slide ? `slide ${slide}` : `¶${passage.ordinal}`} →
                       </Link>
                     ) : (
                       <Link
@@ -162,11 +338,26 @@ export default async function ItemPage({
                     )}
                   </p>
                   {passage ? (
-                    <blockquote className="prose-knowledge mt-1 text-[15px] text-neutral-700">
+                    <blockquote
+                      className={`prose-knowledge mt-1 text-[15px] text-neutral-700${
+                        slide ? " whitespace-pre-wrap" : ""
+                      }`}
+                    >
                       {passage.text}
                     </blockquote>
                   ) : (
                     <p className="mt-1 text-sm italic text-neutral-500">{ref.anchor}</p>
+                  )}
+                  {slide && passage && (
+                    <p className="mt-1">
+                      <Link
+                        href={`/bridge/kb/${kbId}/sources/${ref.sourceId}?p=${passage.passageId}&slide=${slide}#${passage.passageId}`}
+                        className="text-xs text-emerald-700 underline-offset-2 hover:underline"
+                        title="Open the actual slide this rule came from — the reading above is only its transcription"
+                      >
+                        view slide {slide} →
+                      </Link>
+                    </p>
                   )}
                 </li>
               ))}
@@ -174,6 +365,7 @@ export default async function ItemPage({
           )}
         </section>
 
+        {edit && (
         <section className="rounded-lg border border-neutral-200 p-4">
           <h3 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
             Relationships
@@ -255,7 +447,38 @@ export default async function ItemPage({
             </button>
           </form>
         </section>
+        )}
 
+        {!edit && (
+        <section className="rounded-lg border border-neutral-200 p-4">
+          <h3 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
+            Suggest
+          </h3>
+          <form action={createSuggestionAction} className="flex items-end gap-2">
+            <input type="hidden" name="kbId" value={kbId} />
+            <input type="hidden" name="itemId" value={itemId} />
+            <label className="flex-1 text-xs">
+              <span className="mb-0.5 block text-neutral-500">
+                What should change about this item? Lands in the Suggestions queue.
+              </span>
+              <input
+                name="text"
+                required
+                placeholder="e.g. the range should be 14–16 here"
+                className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              className="rounded border border-neutral-300 px-2 py-1 text-sm hover:border-emerald-400"
+            >
+              Suggest
+            </button>
+          </form>
+        </section>
+        )}
+
+        {!edit && (
         <section className="rounded-lg border border-neutral-200 p-4">
           <h3 className="mb-2 flex items-baseline text-sm font-medium uppercase tracking-wide text-neutral-500">
             Versions
@@ -275,26 +498,6 @@ export default async function ItemPage({
                 ? `The main version (highlighted) is what's in use. Click "Make main" on any version to switch — no new version is created.`
                 : "This item has never been committed."}
           </p>
-
-          <form action={commitItemVersionAction} className="mt-3 flex flex-wrap items-end gap-2 border-b border-[var(--line)] pb-3">
-            <input type="hidden" name="kbId" value={kbId} />
-            <input type="hidden" name="itemId" value={itemId} />
-            <label className="flex-1 text-xs">
-              <span className="mb-0.5 block text-neutral-500">Change note (optional)</span>
-              <input
-                name="changeNote"
-                placeholder="what changed in this version"
-                className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={!dirty}
-              className="rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
-            >
-              Commit v{(versions[0]?.versionNumber ?? 0) + 1}
-            </button>
-          </form>
 
           {versions.length === 0 ? (
             <p className="mt-3 text-sm text-neutral-500">No committed versions yet.</p>
@@ -363,7 +566,29 @@ export default async function ItemPage({
               })}
             </ul>
           )}
+
+          {/* Commit control lives at the bottom of the panel. */}
+          <form action={commitItemVersionAction} className="mt-3 flex flex-wrap items-end gap-2 border-t border-[var(--line)] pt-3">
+            <input type="hidden" name="kbId" value={kbId} />
+            <input type="hidden" name="itemId" value={itemId} />
+            <label className="flex-1 text-xs">
+              <span className="mb-0.5 block text-neutral-500">Change note (optional)</span>
+              <input
+                name="changeNote"
+                placeholder="what changed in this version"
+                className="w-full rounded border border-neutral-300 px-1.5 py-1 text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={!dirty}
+              className="rounded bg-emerald-700 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
+            >
+              Save as new version (v{(versions[0]?.versionNumber ?? 0) + 1})
+            </button>
+          </form>
         </section>
+        )}
       </aside>
     </div>
   );

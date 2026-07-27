@@ -30,7 +30,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
   {
     href: "/bridge/people",
     label: "People",
-    requiresRoles: ["bridge_program_admin", "bridge_org_admin", "bridge_club_admin"],
+    requiresRoles: ADMIN_AREA_ROLES,
+  },
+  {
+    href: "/bridge/teams",
+    label: "Teams & roles",
+    requiresRoles: ADMIN_AREA_ROLES,
   },
   {
     href: "/bridge/org",

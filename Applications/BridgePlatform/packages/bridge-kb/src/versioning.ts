@@ -25,6 +25,11 @@ export const ITEM_CONTENT_KEYS = [
   "sourceReferences",
   "supportedLevels",
   "status",
+  // Optional fields: stableStringify drops undefined values, so items and
+  // snapshots minted before these existed hash identically to a head that
+  // leaves them unset — old committed versions never read as dirty.
+  "internalNotes",
+  "tags",
 ] as const;
 
 /** Stable hash of an item's content (ignores metadata: version, timestamps). */
@@ -68,6 +73,8 @@ export function snapshotItem(
     sourceReferences: item.sourceReferences,
     supportedLevels: item.supportedLevels,
     status: item.status,
+    internalNotes: item.internalNotes,
+    tags: item.tags,
     contentHash: itemContentHash(item),
     changeNote,
     committedBy,
@@ -142,6 +149,8 @@ export function itemContentFromVersion(
   | "sourceReferences"
   | "supportedLevels"
   | "status"
+  | "internalNotes"
+  | "tags"
 > {
   return {
     title: v.title,
@@ -153,5 +162,7 @@ export function itemContentFromVersion(
     sourceReferences: v.sourceReferences,
     supportedLevels: v.supportedLevels,
     status: v.status,
+    internalNotes: v.internalNotes,
+    tags: v.tags,
   };
 }

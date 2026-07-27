@@ -1,7 +1,7 @@
 import type { KnowledgeItem } from "@bridge/kb";
 import { chunkDocument } from "@bridge/kb";
 import Link from "next/link";
-import { deleteItemsAction } from "@/app/bridge/kb/actions";
+import { deprecateItemsAction } from "@/app/bridge/kb/actions";
 import { StatusBadge, TYPE_LABEL } from "@/components/kb/badges";
 import { BulkItemsForm } from "@/components/kb/BulkItemsForm";
 import { BulkResultBanner } from "@/components/kb/BulkResultBanner";
@@ -10,7 +10,8 @@ import { kbStore } from "@/lib/kb";
 /** "What this source added" — extraction is strictly additive, so everything a
  *  new document did to the KB is the list of items its jobs created. Grouped
  *  by document section for skimming, each card opens the editor, and the same
- *  bulk-delete bar as the Master tab handles cleanup sweeps. */
+ *  bulk bar as the Master tab handles cleanup sweeps — deprecating, never
+ *  deleting: knowledge items are kept, they just stop compiling. */
 
 function payloadSummary(item: KnowledgeItem): string {
   const p = item.payload;
@@ -37,13 +38,13 @@ export default async function SourceReviewPage({
   params: Promise<{ kbId: string }>;
   searchParams: Promise<{
     source?: string;
-    bulkDeleted?: string;
+    bulkDeprecated?: string;
     bulkBlocked?: string;
     bulkSets?: string;
   }>;
 }>) {
   const { kbId } = await params;
-  const { source: sourceId, bulkDeleted, bulkBlocked, bulkSets } = await searchParams;
+  const { source: sourceId, bulkDeprecated, bulkBlocked, bulkSets } = await searchParams;
   const store = kbStore();
   const base = `/bridge/kb/${kbId}`;
 
@@ -130,14 +131,20 @@ export default async function SourceReviewPage({
         </p>
       </header>
 
-      <BulkResultBanner deleted={bulkDeleted} blocked={bulkBlocked} sets={bulkSets} />
+      <BulkResultBanner deprecated={bulkDeprecated} blocked={bulkBlocked} sets={bulkSets} />
 
       {totalAdded === 0 ? (
         <p className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
           Nothing from this source yet — run extraction on the Sources tab first.
         </p>
       ) : (
-        <BulkItemsForm kbId={kbId} returnTo={returnTo} action={deleteItemsAction}>
+        <BulkItemsForm
+          kbId={kbId}
+          returnTo={returnTo}
+          action={deprecateItemsAction}
+          verb="Deprecate"
+          warning="They stop compiling and drop out of the default view — nothing is deleted, and any item can be brought back from its editor."
+        >
           <div className="space-y-6">
             {groups.map((group) => (
               <section key={group.heading}>

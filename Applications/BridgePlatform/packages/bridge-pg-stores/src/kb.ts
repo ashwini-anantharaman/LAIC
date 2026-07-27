@@ -5,6 +5,8 @@
 
 import type {
   CompiledKb,
+  KbBenchmarkMarking,
+  KbBenchmarkRun,
   KbEdge,
   KbExtractionJob,
   KbMembership,
@@ -613,5 +615,66 @@ export class PgKbStore implements KbStore {
       await this.db.from("bridge_kb_compiles").delete().eq("kb_id", kbId),
       "compiles.deleteForKb",
     );
+  }
+
+  // ---- benchmark runs (append-only) + markings (mutable) ---------------------
+
+  async putBenchmarkRun(run: KbBenchmarkRun) {
+    check(
+      await this.db.from("bridge_kb_benchmark_runs").upsert(
+        {
+          run_id: run.runId,
+          kb_id: run.kbId,
+          record: run,
+          created_at: run.createdAt,
+          updated_at: run.updatedAt,
+        },
+        { onConflict: "run_id" },
+      ),
+      "benchmarkRuns.put",
+    );
+  }
+  async getBenchmarkRun(runId: string) {
+    const rows = check(
+      await this.db.from("bridge_kb_benchmark_runs").select("record").eq("run_id", runId),
+      "benchmarkRuns.get",
+    );
+    return rows.length ? ((rows[0] as any).record as KbBenchmarkRun) : null;
+  }
+  async listBenchmarkRunsForKb(kbId: string) {
+    const rows = check(
+      await this.db
+        .from("bridge_kb_benchmark_runs")
+        .select("record")
+        .eq("kb_id", kbId)
+        .order("created_at", { ascending: false }),
+      "benchmarkRuns.forKb",
+    );
+    return records<KbBenchmarkRun>(rows);
+  }
+  async putBenchmarkMarking(m: KbBenchmarkMarking) {
+    check(
+      await this.db.from("bridge_kb_benchmark_markings").upsert(
+        {
+          marking_id: m.markingId,
+          kb_id: m.kbId,
+          record: m,
+          created_at: m.createdAt,
+        },
+        { onConflict: "marking_id" },
+      ),
+      "benchmarkMarkings.put",
+    );
+  }
+  async listBenchmarkMarkingsForKb(kbId: string) {
+    const rows = check(
+      await this.db
+        .from("bridge_kb_benchmark_markings")
+        .select("record")
+        .eq("kb_id", kbId)
+        .order("created_at", { ascending: false }),
+      "benchmarkMarkings.forKb",
+    );
+    return records<KbBenchmarkMarking>(rows);
   }
 }

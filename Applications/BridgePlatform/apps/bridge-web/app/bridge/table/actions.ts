@@ -18,6 +18,34 @@ import { libraryStore, sessionService } from "@/lib/sessions";
 const SEATS: Seat[] = ["N", "E", "S", "W"];
 
 /**
+ * Additive, inert-by-default skin passthrough (mirrors the `mobile=1` pattern):
+ * when a table form posts skin=bbo, keep the BBO view on the redirect back to
+ * the table by appending ?skin=bbo (or &skin=bbo if the URL already has a
+ * query). Absent the field, the URL is returned untouched — the default (no
+ * skin) round-trip stays byte-identical.
+ */
+function withSkin(url: string, formData: FormData): string {
+  if (formData.get("skin") !== "bbo") return url;
+  return `${url}${url.includes("?") ? "&" : "?"}skin=bbo`;
+}
+
+/**
+ * Strip any trailing auto-appended " · deal"/" · board"/" · play"/" · table"
+ * kind suffixes from a board name before we append a fresh one. These stack
+ * across save→resume→save cycles ("Board 1 · play · play · deal"), so we peel
+ * them off repeatedly. Only touches the auto-generated tail; user-typed names
+ * never reach this (they short-circuit the default before it's called).
+ */
+function stripKindSuffixes(name: string): string {
+  let out = name.trim();
+  for (;;) {
+    const stripped = out.replace(/\s*·\s*(deal|board|play|table)$/, "").trimEnd();
+    if (stripped === out) return out;
+    out = stripped;
+  }
+}
+
+/**
  * Play Arena (2026-07-16 rework): one click on a ladder rung seats you South
  * against three auto-provisioned house players of that strength. Fellows
  * edit the house players afterwards instead of assembling one up front.
@@ -28,6 +56,9 @@ export async function arenaPlayAction(formData: FormData): Promise<void> {
   const kbId = String(formData.get("kbId"));
   const packId = String(formData.get("packId"));
   const watch = formData.get("watch") === "1";
+  // Additive, inert by default: the mobile UI posts mobile=1 so the session
+  // opens in the /m/table chrome instead of the desktop table.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   await assertAiAllowed(context);
   await assertKbAllowed(context, kbId);
   const compiled = await kbService().liveCompile(kbId);
@@ -52,7 +83,7 @@ export async function arenaPlayAction(formData: FormData): Promise<void> {
     kbId,
     arena: pack.packId,
   });
-  redirect(`/bridge/table/${record.sessionId}`);
+  redirect(`${tableBase}${record.sessionId}`);
 }
 
 /**
@@ -68,7 +99,12 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
 
   const { pickDefaultSet, ensureHousePlayer } = await import("@/lib/arena");
   const store = kbStore();
+  // Additive, inert by default: the mobile phone UI posts mobile=1 so the
+  // fresh board opens in the /m/table chrome instead of the desktop table.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const preferredKbId = String(formData.get("kbId") ?? "").trim();
+  const dealerRaw = String(formData.get("dealer") ?? "N");
+  const dealer: Seat = (SEATS as string[]).includes(dealerRaw) ? (dealerRaw as Seat) : "N";
   const kbs = (await store.listKbs()).filter((k) => !k.archived);
   const ordered = preferredKbId
     ? [...kbs].sort((a) => (a.kbId === preferredKbId ? -1 : 0))
@@ -89,11 +125,12 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
       compiled,
       seats,
       seed: (Date.now() % 100_000) + 1,
+      dealer,
       createdBy: context.nexusUserId,
     });
-    redirect(`/bridge/table/${record.sessionId}`);
+    redirect(`${tableBase}${record.sessionId}`);
   }
-  redirect("/bridge/table");
+  redirect(tableBase === "/m/table/" ? "/m/play" : "/bridge/table");
 }
 
 /**
@@ -107,8 +144,13 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
 export async function redealEditedAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   const sessionId = String(formData.get("sessionId"));
+  // Additive, inert by default: the mobile deal editor posts mobile=1 so both
+  // the error round-trip and the fork land back in the /m/table chrome.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const failBack: (message: string) => never = (message) =>
-    redirect(`/bridge/table/${sessionId}/edit?error=${encodeURIComponent(message)}`);
+    redirect(
+      withSkin(`${tableBase}${sessionId}?editDeal=1&error=${encodeURIComponent(message)}`, formData),
+    );
 
   const service = sessionService();
   const record = await service.requireSession(sessionId);
@@ -178,7 +220,7 @@ export async function redealEditedAction(formData: FormData): Promise<void> {
     kbId: record.kbId,
     editedFrom: sessionId,
   });
-  redirect(`/bridge/table/${next.sessionId}`);
+  redirect(withSkin(`${tableBase}${next.sessionId}`, formData));
 }
 
 export async function createSessionAction(formData: FormData): Promise<void> {
@@ -189,6 +231,9 @@ export async function createSessionAction(formData: FormData): Promise<void> {
   await assertKbAllowed(context, kbId);
   const compiled = await kbService().liveCompile(kbId);
   if (!compiled) throw new Error("That knowledge base has no live compile yet");
+  // Additive, inert by default: the mobile UI posts mobile=1 so the session
+  // opens in the /m/table chrome instead of the desktop table.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
 
   const store = kbStore();
   const humanSeat = String(formData.get("humanSeat") ?? "") as Seat | "";
@@ -215,7 +260,7 @@ export async function createSessionAction(formData: FormData): Promise<void> {
     kbId,
     created: true,
   });
-  redirect(`/bridge/table/${record.sessionId}`);
+  redirect(`${tableBase}${record.sessionId}`);
 }
 
 export async function stepAction(formData: FormData): Promise<void> {
@@ -265,6 +310,9 @@ export async function playCardAction(formData: FormData): Promise<void> {
 export async function undoAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   const sessionId = String(formData.get("sessionId"));
+  // Additive, inert by default: the mobile felt UI posts mobile=1 so we return
+  // to the /m/table chrome instead of the desktop board.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   await sessionService().undo(sessionId);
   await audit(context, "session.undo", "kb_session", sessionId);
   revalidatePath(`/bridge/table/${sessionId}`);
@@ -272,7 +320,45 @@ export async function undoAction(formData: FormData): Promise<void> {
   // decision — auto-play would instantly redo it. Step ▸ resumes one beat
   // at a time. The token is unique per undo so AutoAdvance remounts paused
   // even when the previous pause was already resumed.
-  redirect(`/bridge/table/${sessionId}?paused=${Date.now()}`);
+  redirect(withSkin(`${tableBase}${sessionId}?paused=${Date.now()}`, formData));
+}
+
+/** Rewind the whole board to the deal — undo's big sibling. Comes back
+ *  paused for the same reason undo does: rewinding is for re-watching. */
+export async function rewindAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const sessionId = String(formData.get("sessionId"));
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
+  await sessionService().rewindToStart(sessionId);
+  await audit(context, "session.undo", "kb_session", sessionId, { toStart: true });
+  revalidatePath(`/bridge/table/${sessionId}`);
+  redirect(withSkin(`${tableBase}${sessionId}?paused=${Date.now()}`, formData));
+}
+
+/**
+ * "New deal" (2026-07-22 rework): fresh cards for the SAME table — same
+ * lineup, same pinned compile — unlike quickPlayAction, which re-derives a
+ * default lineup from the KB's live compile.
+ */
+export async function newDealAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const sessionId = String(formData.get("sessionId"));
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
+  const service = sessionService();
+  const record = await service.requireSession(sessionId);
+  const compiled = await service.compiledFor(record);
+  const next = await service.createSession({
+    kbId: record.kbId,
+    compiled,
+    seats: record.seats,
+    seed: (Date.now() % 100_000) + 1,
+    createdBy: context.nexusUserId,
+  });
+  await audit(context, "profile.update", "kb_session", next.sessionId, {
+    kbId: record.kbId,
+    newDealFrom: sessionId,
+  });
+  redirect(withSkin(`${tableBase}${next.sessionId}`, formData));
 }
 
 /**
@@ -316,7 +402,7 @@ export async function swapSeatAction(formData: FormData): Promise<void> {
     playerId,
     forkedFrom: sessionId,
   });
-  redirect(`/bridge/table/${forked.sessionId}`);
+  redirect(withSkin(`/bridge/table/${forked.sessionId}`, formData));
 }
 
 /**
@@ -329,6 +415,7 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
   const sessionId = String(formData.get("sessionId"));
   const kind = String(formData.get("kind")) as "deal" | "board" | "play" | "table";
   if (!["deal", "board", "play", "table"].includes(kind)) throw new Error("Pick what to save");
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
 
   const { record, state } = await sessionService().view(sessionId);
   const { seededDeal, resultLabel, scoreBoard } = await import("@bridge/engine");
@@ -338,12 +425,14 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
   const originalHands = record.board.hands ?? seededDeal(record.board.seed);
   const name =
     String(formData.get("name") ?? "").trim() ||
-    `${record.board.name} · ${kind}`;
+    `${stripKindSuffixes(record.board.name)} · ${kind}`;
+  const notes = String(formData.get("notes") ?? "").trim();
   const now = new Date().toISOString();
 
   const base = {
     entryId: newId("le"),
     name,
+    ...(notes && { notes }),
     tags: [] as string[],
     origin: "recorded" as const,
     sourceSessionId: sessionId,
@@ -387,16 +476,19 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
   } catch {
     // Most likely: bridge_kb_library missing (migration 0015 not applied).
     redirect(
-      `/bridge/table/${sessionId}?error=${encodeURIComponent(
-        "Couldn't save — the library isn't provisioned on this backend yet (migration 0015_library.sql).",
-      )}`,
+      withSkin(
+        `${tableBase}${sessionId}?error=${encodeURIComponent(
+          "Couldn't save — the library isn't provisioned on this backend yet (migration 0015_library.sql).",
+        )}`,
+        formData,
+      ),
     );
   }
   await audit(context, "profile.create", "kb_library", entry.entryId, {
     sessionId,
     kind,
   });
-  redirect(`/bridge/table/${sessionId}?saved=${kind}`);
+  redirect(withSkin(`${tableBase}${sessionId}?saved=${kind}`, formData));
 }
 
 /** Flag a decision → a suggestion in the KB's queue (spec §7). */

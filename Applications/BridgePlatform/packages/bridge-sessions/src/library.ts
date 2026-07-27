@@ -47,6 +47,12 @@ export interface LibraryEntry {
   kbId?: string;
   seats?: Record<Seat, LibrarySeatRef>;
 
+  // `drill` entries (bidding regression, Pillar D): the auction-so-far lives in
+  // `auction`, the hand-to-test in `hands` (only the acting seat is needed), and
+  // `expectedCalls` lists the acceptable engine answers. `notes` carries the
+  // authoring note. Additive jsonb fields — no migration; old entries lack them.
+  expectedCalls?: Call[];
+
   origin: "recorded" | "imported" | "authored";
   sourceSessionId?: string;
   importFileName?: string;

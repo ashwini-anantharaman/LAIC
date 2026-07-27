@@ -5,6 +5,12 @@
 // select built in so items arriving via the included set render as locked
 // rows. Posts plain `itemIds` hidden inputs in canonical (list) order — the
 // server action is unchanged and reorders can never dirty a set snapshot.
+//
+// 2026-07-22: matched the Master viewer's local filter/sort controls (kind,
+// phase, applies-when, sort) and hardened grouping so a drifted knowledgeType
+// can never silently vanish — it lands in an "other kinds" catch-all. The
+// role/phase/rule-count facets arrive precomputed as plain PickerItem fields
+// (computed server-side) so this client bundle never touches @bridge/kb runtime.
 
 import type { KnowledgeType } from "@bridge/kb";
 import { useMemo, useState } from "react";
@@ -14,6 +20,14 @@ export type PickerItem = {
   itemId: string;
   title: string;
   knowledgeType: string;
+  /** Auction roles the item's rules mention (empty for non-auction items). */
+  roles: string[];
+  /** Raw KnowledgePhase string (auction | opening_lead | …). */
+  phase: string;
+  /** Executable rules the item carries (0 = teaching prose). */
+  ruleCount: number;
+  /** True only for already-in-set items whose status is deprecated. */
+  deprecated?: boolean;
 };
 export type PickerPack = {
   packId: string;
@@ -23,8 +37,39 @@ export type PickerPack = {
 };
 
 const GROUP_ORDER = Object.keys(TYPE_LABEL) as KnowledgeType[];
+const KNOWN_KINDS = new Set<string>(GROUP_ORDER);
+const OTHER_KIND = "__other__";
 
 const plural = (label: string) => `${label}s`;
+
+// Mirror of the Master viewer's phase / applies-when facets (kept as plain
+// literals — no runtime import from @bridge/kb).
+const PHASE_OPTIONS: { value: string; label: string }[] = [
+  { value: "auction", label: "Bidding" },
+  { value: "opening_lead", label: "Opening leads" },
+  { value: "declarer_play", label: "Declarer play" },
+  { value: "defense", label: "Defense" },
+  { value: "scoring", label: "Scoring" },
+];
+const WHEN_OPTIONS: { value: string; label: string }[] = [
+  { value: "opening", label: "Opening" },
+  { value: "responding", label: "Responding" },
+  { value: "rebidding", label: "Rebidding" },
+  { value: "competing", label: "Competing" },
+];
+
+/** Does the item speak in this auction position? Mirrors lib/whenFacet's
+ *  matchesWhen: "any"-role rules match all four positions; items with no
+ *  auction roles never match a specific stage. */
+function matchesWhen(roles: string[], when: string): boolean {
+  if (!when) return true;
+  const has = (r: string) => roles.includes(r);
+  if (when === "opening") return has("opening") || has("any");
+  if (when === "responding") return has("responder") || has("any");
+  if (when === "rebidding") return has("opener") || has("any");
+  if (when === "competing") return has("overcaller") || has("advancer") || has("any");
+  return true;
+}
 
 export function SetItemPicker({
   items,
@@ -32,16 +77,22 @@ export function SetItemPicker({
   currentPackId,
   initialSelected,
   initialIncludeId,
+  hiddenDeprecatedCount = 0,
 }: Readonly<{
   items: PickerItem[];
   packs: PickerPack[];
   currentPackId?: string;
   initialSelected?: string[];
   initialIncludeId?: string;
+  hiddenDeprecatedCount?: number;
 }>) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(initialSelected ?? []));
   const [includeId, setIncludeId] = useState(initialIncludeId ?? "");
   const [query, setQuery] = useState("");
+  const [kind, setKind] = useState("");
+  const [phase, setPhase] = useState("");
+  const [when, setWhen] = useState("");
+  const [sort, setSort] = useState<"title" | "rules">("title");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   const packById = useMemo(() => new Map(packs.map((p) => [p.packId, p])), [packs]);
@@ -82,14 +133,36 @@ export function SetItemPicker({
     return map;
   }, [includeId, packById, currentPackId]);
 
+  const filtersActive = Boolean(query.trim() || kind || phase || when);
+
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const visible = q ? items.filter((i) => i.title.toLowerCase().includes(q)) : items;
-    return GROUP_ORDER.map((kind) => ({
-      kind,
-      items: visible.filter((i) => i.knowledgeType === kind),
-    })).filter((g) => g.items.length > 0);
-  }, [items, query]);
+    const visible = items.filter(
+      (i) =>
+        (!q || i.title.toLowerCase().includes(q)) &&
+        (!kind || i.knowledgeType === kind) &&
+        (!phase || i.phase === phase) &&
+        matchesWhen(i.roles, when),
+    );
+    const sortItems = (list: PickerItem[]) =>
+      [...list].sort((a, b) =>
+        sort === "rules"
+          ? b.ruleCount - a.ruleCount || a.title.localeCompare(b.title)
+          : a.title.localeCompare(b.title),
+      );
+    const result: { kind: string; label: string; items: PickerItem[] }[] = GROUP_ORDER.map(
+      (k) => ({
+        kind: k,
+        label: plural(TYPE_LABEL[k]),
+        items: sortItems(visible.filter((i) => i.knowledgeType === k)),
+      }),
+    );
+    // Catch-all: any item whose knowledgeType drifted off the known set would
+    // otherwise land in no group and silently disappear.
+    const other = sortItems(visible.filter((i) => !KNOWN_KINDS.has(i.knowledgeType)));
+    if (other.length) result.push({ kind: OTHER_KIND, label: "other kinds", items: other });
+    return result.filter((g) => g.items.length > 0);
+  }, [items, query, kind, phase, when, sort]);
 
   const toggle = (itemId: string) =>
     setSelected((prev) => {
@@ -113,6 +186,8 @@ export function SetItemPicker({
   const postedCount = items.filter(
     (i) => selected.has(i.itemId) && !locked.has(i.itemId),
   ).length;
+
+  const selectClass = "rounded border border-neutral-300 px-2 py-1 text-sm";
 
   return (
     <div className="space-y-3">
@@ -139,21 +214,76 @@ export function SetItemPicker({
         </span>
       </label>
 
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded border border-neutral-200 bg-white px-3 py-2">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded border border-neutral-200 bg-white px-3 py-2">
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search knowledge items…"
-          className="w-56 rounded border border-neutral-300 px-2 py-1 text-sm"
+          className="w-48 rounded border border-neutral-300 px-2 py-1 text-sm"
         />
-        <span className="text-xs text-neutral-500">
+        <select
+          aria-label="Filter by kind"
+          value={kind}
+          onChange={(e) => setKind(e.target.value)}
+          className={selectClass}
+        >
+          <option value="">All kinds</option>
+          {GROUP_ORDER.map((k) => (
+            <option key={k} value={k}>
+              {plural(TYPE_LABEL[k])}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Filter by phase"
+          value={phase}
+          onChange={(e) => setPhase(e.target.value)}
+          className={selectClass}
+        >
+          <option value="">Any phase</option>
+          {PHASE_OPTIONS.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Filter by applies-when"
+          value={when}
+          onChange={(e) => setWhen(e.target.value)}
+          className={selectClass}
+        >
+          <option value="">Applies: any</option>
+          {WHEN_OPTIONS.map((w) => (
+            <option key={w.value} value={w.value}>
+              {w.label}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Sort items"
+          value={sort}
+          onChange={(e) => setSort(e.target.value === "rules" ? "rules" : "title")}
+          className={selectClass}
+        >
+          <option value="title">Sort: A–Z</option>
+          <option value="rules">Sort: most rules</option>
+        </select>
+        <span className="ml-auto text-xs text-neutral-500">
           {postedCount} selected
           {locked.size > 0 && includeName
             ? ` · ${locked.size} included via “${includeName}”`
             : ""}
         </span>
       </div>
+
+      {hiddenDeprecatedCount > 0 && (
+        <p className="px-1 text-xs text-neutral-400">
+          {hiddenDeprecatedCount} deprecated item{hiddenDeprecatedCount === 1 ? "" : "s"} hidden —
+          restore an item&apos;s status in the Master list to pick it here.
+        </p>
+      )}
 
       <div className="max-h-96 space-y-2 overflow-y-auto rounded border border-neutral-200 p-2">
         {groups.map((group) => {
@@ -182,7 +312,7 @@ export function SetItemPicker({
                   >
                     <path d="M3 1l6 5-6 5z" fill="currentColor" />
                   </svg>
-                  {plural(TYPE_LABEL[group.kind])}
+                  {group.label}
                   <span className="text-xs font-normal text-neutral-400">
                     {onCount}/{group.items.length}
                   </span>
@@ -219,7 +349,14 @@ export function SetItemPicker({
                             disabled={lockedHere}
                             onChange={() => toggle(item.itemId)}
                           />
-                          {item.title}
+                          <span className={item.deprecated ? "text-neutral-400 line-through" : ""}>
+                            {item.title}
+                          </span>
+                          {item.deprecated && (
+                            <span className="rounded border border-neutral-200 px-1 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">
+                              deprecated
+                            </span>
+                          )}
                           {lockedHere && (
                             <span className="ml-auto text-[10px] uppercase text-neutral-400">
                               from “{locked.get(item.itemId)}”
@@ -236,7 +373,9 @@ export function SetItemPicker({
         })}
         {groups.length === 0 && (
           <p className="px-3 py-4 text-center text-sm text-neutral-400">
-            No knowledge items match &ldquo;{query}&rdquo;.
+            {items.length === 0
+              ? "This knowledge base has no items yet — add some in the Master list."
+              : "No items match your filters."}
           </p>
         )}
       </div>

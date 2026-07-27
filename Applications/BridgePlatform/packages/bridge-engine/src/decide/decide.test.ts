@@ -244,6 +244,28 @@ describe("self-play simulation", () => {
     expect(report.engineFloorEvents).toBe(0);
   });
 
+  it("reports per-rule usage keyed by compiled ruleIds", async () => {
+    const report = await simulateSelfPlay({
+      compiled,
+      player: basePlayer,
+      deals: 8,
+      seed: 7,
+    });
+    const known = new Set(
+      [
+        ...compiled.auctionRules,
+        ...compiled.forcingRules,
+        ...compiled.leadRules,
+        ...compiled.playRules,
+        ...compiled.fallbacks,
+      ].map((r) => r.ruleId),
+    );
+    const used = Object.keys(report.ruleUsage);
+    expect(used.length).toBeGreaterThan(0);
+    for (const ruleId of used) expect(known.has(ruleId)).toBe(true);
+    for (const n of Object.values(report.ruleUsage)) expect(n).toBeGreaterThan(0);
+  });
+
   it("an incomplete player hits the floor — measurably", async () => {
     const report = await simulateSelfPlay({
       compiled,

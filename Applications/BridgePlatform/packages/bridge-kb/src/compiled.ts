@@ -11,6 +11,8 @@ import type {
   HandCondition,
   LeadSpec,
   PlayRuleSpec,
+  RuleAsk,
+  RuleShows,
   SettingSpec,
   SignalSpec,
 } from "./language";
@@ -42,6 +44,24 @@ export interface CompiledAuctionRule {
    */
   order: number;
   /** Enable-setting keys that must resolve truthy for the rule to be live. */
+  settingGates: string[];
+  provenance: RuleProvenance;
+  /**
+   * What this bid SHOWS (Pillar A): the authored `shows`, or — when the spec
+   * omitted it — derived at compile from the rule's `all`-conditions. Absent
+   * on artifacts compiled before Pillar A; readers guard with `?? …`.
+   */
+  shows?: RuleShows;
+  /** Ask metadata (Blackwood/RKCB) decoding partner's responses, if declared. */
+  ask?: RuleAsk;
+}
+
+/** A compiled forcing situation — the pass-suppression pattern. */
+export interface CompiledForcingRule {
+  ruleId: string;
+  label: string;
+  context: AuctionContext;
+  order: number;
   settingGates: string[];
   provenance: RuleProvenance;
 }
@@ -92,6 +112,7 @@ export interface CompiledKb {
   settings: CompiledSetting[];
   defaults: Record<string, SettingValue>;
   auctionRules: CompiledAuctionRule[];
+  forcingRules: CompiledForcingRule[];
   leadRules: CompiledLeadRule[];
   playRules: CompiledPlayRule[];
   signalDefaults: SignalSpec;

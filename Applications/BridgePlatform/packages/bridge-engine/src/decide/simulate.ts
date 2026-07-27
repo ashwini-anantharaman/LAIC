@@ -39,6 +39,13 @@ export interface SimulatedDeal {
   floorEvents: number;
   fallbackEvents: number;
   finalContract: string | null;
+  /** matchedRuleId → times it decided an action in this deal (bid + play + lead). */
+  ruleUsage: Record<string, number>;
+}
+
+/** SimulationReport plus per-rule usage counts (coverage check). */
+export interface SelfPlayReport extends SimulationReport {
+  ruleUsage: Record<string, number>;
 }
 
 const MAX_STEPS = 400; // hard stop far above any legal deal's action count
@@ -50,23 +57,25 @@ export async function simulateDeal(
   const hands = seededDeal(dealSeed);
   let floorEvents = 0;
   let fallbackEvents = 0;
+  const ruleUsage: Record<string, number> = {};
 
   const decider = createKbDecider({ ...options, seed: `sim_${dealSeed}` });
+  const count = (d: { fallback: boolean; reason: string; matchedRuleId?: string }) => {
+    if (d.fallback) {
+      if (d.reason.startsWith("ENGINE FLOOR")) floorEvents++;
+      else fallbackEvents++;
+    }
+    if (d.matchedRuleId) ruleUsage[d.matchedRuleId] = (ruleUsage[d.matchedRuleId] ?? 0) + 1;
+  };
   const counting = {
     decideBid: async (state: GameState, seat: Seat) => {
       const d = await decider.decideBid(state, seat);
-      if (d.fallback) {
-        if (d.reason.startsWith("ENGINE FLOOR")) floorEvents++;
-        else fallbackEvents++;
-      }
+      count(d);
       return d;
     },
     decidePlay: async (state: GameState, seat: Seat) => {
       const d = await decider.decidePlay(state, seat);
-      if (d.fallback) {
-        if (d.reason.startsWith("ENGINE FLOOR")) floorEvents++;
-        else fallbackEvents++;
-      }
+      count(d);
       return d;
     },
   };
@@ -94,13 +103,15 @@ export async function simulateDeal(
       : state.phase === "complete"
         ? "passed out"
         : null,
+    ruleUsage,
   };
 }
 
-export async function simulateSelfPlay(options: SimulateOptions): Promise<SimulationReport> {
+export async function simulateSelfPlay(options: SimulateOptions): Promise<SelfPlayReport> {
   let completed = 0;
   let floorTotal = 0;
   let fallbackTotal = 0;
+  const ruleUsage: Record<string, number> = {};
 
   for (let i = 0; i < options.deals; i++) {
     const result = await simulateDeal(
@@ -110,6 +121,8 @@ export async function simulateSelfPlay(options: SimulateOptions): Promise<Simula
     if (result.completed) completed++;
     floorTotal += result.floorEvents;
     fallbackTotal += result.fallbackEvents;
+    for (const [ruleId, n] of Object.entries(result.ruleUsage))
+      ruleUsage[ruleId] = (ruleUsage[ruleId] ?? 0) + n;
     options.onDeal?.(i, result);
   }
 
@@ -119,6 +132,7 @@ export async function simulateSelfPlay(options: SimulateOptions): Promise<Simula
     completed,
     engineFloorEvents: floorTotal,
     fallbackUsage: { any: fallbackTotal },
+    ruleUsage,
     generatedAt: new Date().toISOString(),
   };
 }
