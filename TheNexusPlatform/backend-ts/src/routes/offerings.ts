@@ -817,7 +817,10 @@ offeringsRouter.post("/offerings/:offering_id/registrations/bulk-import", async 
 // graded view/edit/comment levels.
 const _ACCESS_LEVEL = z.enum(["view", "edit", "comment", "administrator"]);
 const _BRIDGE_ROLE = z.enum(BRIDGE_PREBUILT_ROLES);
-const _programRolePerms = z.record(z.string(), z.union([_ACCESS_LEVEL, _BRIDGE_ROLE]));
+// perms.capabilities (fine-grained capability ids) rides inside this same blob
+// (see _permsWithCapabilities / the capabilities fold below) and round-trips
+// through the client on every edit, so the value union must accept it too.
+const _programRolePerms = z.record(z.string(), z.union([_ACCESS_LEVEL, _BRIDGE_ROLE, z.array(z.string())]));
 // Roles now exist at three altitudes: program (org+program set), organization
 // (program null), and nexus (both null). The guard follows the scope.
 function _requireScopedRoleAdmin(user: PlatformUser, role: Row): void {
