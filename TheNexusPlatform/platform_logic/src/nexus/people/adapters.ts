@@ -62,6 +62,12 @@ const PROGRAM_AREA_LABELS: Record<string, string> = {
   community: "Community", teams: "People", partners: "Partners",
 };
 const PROGRAM_PLATFORM_AREAS = new Set(["learning", "bridge"]);
+// Feature areas that map 1:1 to a program-console catalogue group (→ the coarse
+// level seeds that group's capabilities). learning/bridge/appbuilder open a
+// platform via single caps and are handled by their own toggle, not seeded here.
+const PROGRAM_AREA_GROUP: Record<string, string> = {
+  teams: "people", community: "community", partners: "partners",
+};
 
 export function programRgAdapter(
   orgId: string,
@@ -82,7 +88,10 @@ export function programRgAdapter(
     areas: enabledAreaKeys.map<RgArea>((key) =>
       PROGRAM_PLATFORM_AREAS.has(key)
         ? { key, label: PROGRAM_AREA_LABELS[key] ?? key, kind: "admin" }
-        : { key, label: PROGRAM_AREA_LABELS[key] ?? key, kind: "graded", levels: ["view", "comment", "edit"] },
+        : {
+            key, label: PROGRAM_AREA_LABELS[key] ?? key, kind: "graded", levels: ["view", "comment", "edit"],
+            ...(PROGRAM_AREA_GROUP[key] ? { capabilityGroup: { catalogueId: "program-console", groupId: PROGRAM_AREA_GROUP[key] } } : {}),
+          },
     ),
     // A program role grants THIS program's console capabilities + the platforms it
     // opens (learning/bridge inventory is platform-global).
@@ -106,10 +115,10 @@ export function orgRgAdapter(orgId: string): RgAdapter {
     updateGroup: (id, patch) => updateGroup(id, patch).then(() => undefined),
     deleteGroup: (id) => deleteGroup(id),
     areas: [
-      { key: "programs", label: "Programs", kind: "graded", levels: ["view", "edit"] },
-      { key: "team", label: "People", kind: "graded", levels: ["view", "edit"] },
-      { key: "settings", label: "Settings", kind: "graded", levels: ["view", "edit"] },
-      { key: "audit", label: "Audit", kind: "toggle", grant: "view" },
+      { key: "programs", label: "Programs", kind: "graded", levels: ["view", "edit"], capabilityGroup: { catalogueId: "org-console", groupId: "programs" } },
+      { key: "team", label: "People", kind: "graded", levels: ["view", "edit"], capabilityGroup: { catalogueId: "org-console", groupId: "people" } },
+      { key: "settings", label: "Settings", kind: "graded", levels: ["view", "edit"], capabilityGroup: { catalogueId: "org-console", groupId: "settings" } },
+      { key: "audit", label: "Audit", kind: "toggle", grant: "view", capabilityGroup: { catalogueId: "org-console", groupId: "audit" } },
     ],
     loadCatalogues: catalogueLoader([() => getOrgCatalogue(orgId)]),
   };
@@ -127,9 +136,9 @@ export function nexusRgAdapter(): RgAdapter {
     updateGroup: (id, patch) => updateNexusGroup(id, patch).then(() => undefined),
     deleteGroup: (id) => deleteNexusGroup(id),
     areas: [
-      { key: "organizations", label: "Organizations", kind: "graded", levels: ["view", "edit"] },
-      { key: "audit", label: "Platform audit", kind: "toggle", grant: "view" },
-      { key: "settings", label: "Settings", kind: "toggle", grant: "edit" },
+      { key: "organizations", label: "Organizations", kind: "graded", levels: ["view", "edit"], capabilityGroup: { catalogueId: "nexus-console", groupId: "organizations" } },
+      { key: "audit", label: "Platform audit", kind: "toggle", grant: "view", capabilityGroup: { catalogueId: "nexus-console", groupId: "audit" } },
+      { key: "settings", label: "Settings", kind: "toggle", grant: "edit", capabilityGroup: { catalogueId: "nexus-console", groupId: "settings" } },
     ],
     loadCatalogues: catalogueLoader([() => getCatalogue("nexus-console")]),
   };

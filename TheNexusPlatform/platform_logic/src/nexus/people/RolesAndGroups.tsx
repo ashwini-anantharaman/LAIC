@@ -48,6 +48,10 @@ export interface RgArea {
   /** toggle: value stored when on (default "edit"). */
   grant?: string;
   /** admin: value stored when on (default "administrator"). */
+  /** Catalogue group this area maps 1:1 to. Setting the area to an edit/grant
+   *  level seeds all of that group's capabilities ON (then you subtract);
+   *  view/off clears them. Capabilities are the enforced source of truth. */
+  capabilityGroup?: { catalogueId: string; groupId: string };
 }
 
 export interface RgAdapter {
@@ -210,6 +214,25 @@ function EditorDialog({
 
   const toggleCap = (id: string) => setCaps((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  // Capability ids belonging to an area's mapped catalogue group (grantable only —
+  // reserved caps are already filtered out of the builder view).
+  const groupCapIds = (area: RgArea): string[] => {
+    const g = area.capabilityGroup;
+    if (!g) return [];
+    return catalogues.find((c) => c.id === g.catalogueId)?.groups.find((gr) => gr.id === g.groupId)?.capabilities.map((c) => c.id) ?? [];
+  };
+  // Setting an area's coarse level is a PRESET over its capabilities: choosing the
+  // top level (edit / on) seeds every capability in the group ON; view / off clears
+  // them. Individual toggles then subtract. Capabilities are the enforced truth.
+  const applyAreaLevel = (area: RgArea, v: string | undefined) => {
+    setPerms((p) => { const n = { ...p }; if (v == null) delete n[area.key]; else n[area.key] = v; return n; });
+    const ids = groupCapIds(area);
+    if (!ids.length) return;
+    const topLevel = area.levels ? area.levels[area.levels.length - 1] : "edit";
+    const on = area.kind === "graded" ? v === topLevel : v != null;
+    setCaps((s) => { const n = new Set(s); for (const id of ids) on ? n.add(id) : n.delete(id); return n; });
+  };
+
   // Reparenting a group can't target itself or a descendant.
   const excluded = existing?.kind === "group" && existing.group ? groupSubtree(existing.group.id, groups) : undefined;
 
@@ -277,8 +300,7 @@ function EditorDialog({
               <Label>Access</Label>
               <div className="space-y-1.5">
                 {adapter.areas.map((a) => (
-                  <PermRow key={a.key} area={a} value={perms[a.key]}
-                    onChange={(v) => setPerms((p) => { const n = { ...p }; if (v == null) delete n[a.key]; else n[a.key] = v; return n; })} />
+                  <PermRow key={a.key} area={a} value={perms[a.key]} onChange={(v) => applyAreaLevel(a, v)} />
                 ))}
               </div>
             </div>
