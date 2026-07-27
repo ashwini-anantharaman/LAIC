@@ -24,7 +24,7 @@ export function nexusProgramId(context: NexusBridgeContext): string | null {
   return ext.nexus_program_id ?? null;
 }
 
-async function nexusFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function nexusFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const baseUrl = process.env.NEXUS_API_BASE_URL;
   if (!baseUrl) throw new Error("People & Roles requires NEXUS_API_BASE_URL (http mode)");
   const cookieStore = await cookies();
