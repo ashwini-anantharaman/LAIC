@@ -1100,6 +1100,54 @@ offeringsRouter.post("/programs/:program_id/members", async (c) => {
   return c.json({ active: true, email: result.email, created: result.created, temp_password: result.created ? DEFAULT_MEMBER_PASSWORD : null });
 });
 
+// Link-based program invitation (the true system): creates a PENDING invitation
+// and returns an activation link (`/invite/:token`). The person opens it at the
+// org portal, creates their account + sets their OWN password, and accepts —
+// then they're a program member. Optionally pre-assigns a role, stored
+// email-keyed so it takes effect on acceptance. `platform` selects which role
+// system the role_id belongs to (program | learning | bridge).
+const programLinkInviteSchema = z.object({
+  email: z.string().email(),
+  display_name: z.string().nullish(),
+  platform: z.enum(["program", "learning", "bridge"]).optional(),
+  role_id: z.string().nullish(),
+  group_ids: z.array(z.string()).optional(),
+});
+
+offeringsRouter.post("/programs/:program_id/invite", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const req = parseBody(programLinkInviteSchema, await c.req.json());
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOfferingPeopleAdmin(user, program.org_id, programId);
+  const { invitation, token } = await graph.createInvitation(program.org_id, user.id, {
+    email: req.email, displayName: req.display_name ?? null, role: "member", programId,
+  });
+  // Pre-assign the chosen role email-keyed (applies when they accept).
+  if (req.role_id) {
+    const platform = req.platform ?? "program";
+    if (platform === "learning") {
+      await graph.setLearningRoleAssignment(program.org_id, programId, req.email, req.role_id).catch((e) => console.error("invite learning role:", e));
+    } else if (platform === "bridge") {
+      await graph.setPlatformRoleAssignment(program.org_id, programId, "bridge", req.email, req.role_id, user.id).catch((e) => console.error("invite bridge role:", e));
+    } else {
+      await graph.setProgramRoleAssignment(program.org_id, programId, req.email, req.role_id).catch((e) => console.error("invite program role:", e));
+    }
+  }
+  // Groups are email-keyed too — pre-place them for when they accept.
+  if (req.group_ids?.length) {
+    await graph.setPersonGroups(program.org_id, programId, req.email, req.group_ids).catch((e) => console.error("invite groups:", e));
+  }
+  await db.recordAuditEvent("program.member.invited", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { email: req.email, platform: req.platform ?? "program", role_id: req.role_id ?? null },
+  });
+  const base = (getSettings().frontendOrigin || "").replace(/\/+$/, "");
+  return c.json({ ...invitation, token, redeem_url: base ? `${base}/invite/${token}` : `/invite/${token}` });
+});
+
 const setMemberRoleSchema = z.object({ email: z.string().email(), role_id: z.string().nullable() });
 
 offeringsRouter.put("/programs/:program_id/members/role", async (c) => {

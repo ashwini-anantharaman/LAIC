@@ -67,11 +67,9 @@ export async function inviteAction(formData: FormData): Promise<void> {
     role: role === "none" ? null : role,
   });
   revalidatePath("/bridge/teams");
-  // The endpoint enrolls an active member; surface whether a new account was
-  // created (and its initial password) vs. an existing person added.
-  const qs = new URLSearchParams({ added: email });
-  if (inv.created && inv.temp_password) qs.set("pw", inv.temp_password);
-  redirect(`/bridge/teams?${qs.toString()}`);
+  // Share the activation link — the person sets their own password at the org
+  // portal and accepts; their role applies on acceptance.
+  redirect(`/bridge/teams?invited=${encodeURIComponent(inv.redeem_url)}&who=${encodeURIComponent(email)}`);
 }
 
 export async function removePersonAction(formData: FormData): Promise<void> {

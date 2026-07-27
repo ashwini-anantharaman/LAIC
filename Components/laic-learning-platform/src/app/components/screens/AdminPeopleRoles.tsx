@@ -672,16 +672,16 @@ function InvitePersonModal({
   const [roleId, setRoleId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<{ created: boolean; temp_password: string | null } | null>(null);
+  const [result, setResult] = useState<{ redeem_url: string } | null>(null);
 
   const submit = async () => {
     if (!email.trim()) return;
     setBusy(true); setError('');
     try {
       const res = await inviteLearningPerson({ email: email.trim(), display_name: name.trim() || undefined, role_id: roleId || null });
-      onInvited(res.created ? 'Person added — new account created' : 'Person added to Content Studio');
-      // Keep the modal open to reveal the temp password for a new account; else close.
-      if (res.created && res.temp_password) setResult(res); else onClose();
+      onInvited('Invitation created');
+      // Reveal the activation link to share; the person sets their own password.
+      setResult(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Invite failed');
       setBusy(false);
@@ -697,13 +697,10 @@ function InvitePersonModal({
         </div>
         {result ? (
           <div className="space-y-3">
-            <p style={{ fontSize: 12.5, color: '#6B7280' }}>Account created and added to this program. Share these sign-in details:</p>
-            <div className="rounded-lg border px-3 py-2 space-y-1" style={{ borderColor: 'rgba(0,0,0,0.1)', background: '#F9FAFB' }}>
-              <p style={{ fontSize: 12 }}><span style={{ color: '#6B7280' }}>Email:</span> <code>{email.trim()}</code></p>
-              <div className="flex items-center gap-2">
-                <p style={{ fontSize: 12 }}><span style={{ color: '#6B7280' }}>Temp password:</span> <code>{result.temp_password}</code></p>
-                <button type="button" onClick={() => { void navigator.clipboard?.writeText(result.temp_password ?? ''); }} className="px-2 py-0.5 rounded-md text-xs" style={{ background: 'rgba(0,0,0,0.06)' }}>Copy</button>
-              </div>
+            <p style={{ fontSize: 12.5, color: '#6B7280' }}>Invitation created. Share this activation link — {email.trim()} opens it, sets their own password at the org portal, and accepts. Their role applies on acceptance.</p>
+            <div className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: 'rgba(0,0,0,0.1)', background: '#F9FAFB' }}>
+              <code className="flex-1 truncate" style={{ fontSize: 11.5 }}>{result.redeem_url}</code>
+              <button type="button" onClick={() => { void navigator.clipboard?.writeText(result.redeem_url); }} className="px-2 py-0.5 rounded-md text-xs" style={{ background: 'rgba(0,0,0,0.06)' }}>Copy</button>
             </div>
             <div className="flex justify-end"><button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold text-white" style={{ background: '#0B0F1A' }}>Done</button></div>
           </div>

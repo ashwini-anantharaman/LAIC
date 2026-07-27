@@ -1314,6 +1314,19 @@ export async function inviteProgramMember(
   });
 }
 
+/** The true invite flow: creates a PENDING invitation and returns an activation
+ *  link (`/invite/:token`). The person sets their own password at the org portal
+ *  and accepts; role + groups (pre-assigned email-keyed) apply on acceptance. */
+export async function inviteProgramLink(
+  programId: string,
+  payload: { email: string; display_name?: string; role_id?: string; group_ids?: string[] },
+): Promise<{ token: string; redeem_url: string }> {
+  return request<{ token: string; redeem_url: string }>(`/api/programs/${programId}/invite`, {
+    method: "POST",
+    body: JSON.stringify({ ...payload, platform: "program" }),
+  });
+}
+
 export async function setProgramMemberRole(programId: string, email: string, roleId: string | null): Promise<void> {
   await request(`/api/programs/${programId}/members/role`, {
     method: "PUT",

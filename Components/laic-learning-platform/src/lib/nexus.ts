@@ -241,23 +241,26 @@ export async function assignLearningRole(email: string, roleId: string | null): 
 }
 
 /**
- * Invite a person into the learning platform via the SAME centralized flow the
- * console uses: create a real Nexus program membership/invitation
- * (`POST /programs/:id/members`), then optionally assign a learning role. The
- * person is now a real Nexus person — reflected everywhere, launchable, testable.
+ * Invite a person via the true Nexus link flow: creates a PENDING invitation and
+ * returns an activation link. The person opens it at the org portal, sets their
+ * OWN password, and accepts — then they're a program member. The learning role
+ * (if any) is pre-assigned email-keyed and applies on acceptance.
  */
-export async function inviteLearningPerson(input: { email: string; display_name?: string; role_id?: string | null }): Promise<{ created: boolean; temp_password: string | null }> {
-  const res = await nexusFetch(`/api/programs/${encodeURIComponent(pid())}/members`, {
+export async function inviteLearningPerson(input: { email: string; display_name?: string; role_id?: string | null }): Promise<{ redeem_url: string }> {
+  const res = await nexusFetch(`/api/programs/${encodeURIComponent(pid())}/invite`, {
     method: 'POST',
-    body: JSON.stringify({ email: input.email, display_name: input.display_name }),
+    body: JSON.stringify({
+      email: input.email,
+      display_name: input.display_name,
+      platform: 'learning',
+      role_id: input.role_id || undefined,
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(typeof err?.detail === 'string' ? err.detail : `Invite failed (${res.status})`);
   }
-  const out = (await res.json()) as { created: boolean; temp_password: string | null };
-  if (input.role_id) await assignLearningRole(input.email, input.role_id);
-  return out;
+  return (await res.json()) as { redeem_url: string };
 }
 
 /**
