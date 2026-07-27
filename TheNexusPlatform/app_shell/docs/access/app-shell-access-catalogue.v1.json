@@ -1,0 +1,478 @@
+{
+  "$schema": "./laic-access-control.schema.json",
+  "schemaVersion": "1.0",
+  "documentType": "capability_catalogue",
+  "id": "app-shell-access",
+  "name": "App Shell Capability Catalogue",
+  "description": "Atomic capabilities and optional UI mappings published by the App Shell. Live program roles and assignments are defined by program administrators.",
+  "provider": {
+    "kind": "application",
+    "id": "app-shell"
+  },
+  "catalogueVersion": "1.0",
+  "capabilities": [
+    {
+      "id": "appshell.app.create",
+      "label": "Create a new app from a template",
+      "description": "Create a new app from a template",
+      "group": "design",
+      "resourceTypes": [
+        "app_template"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "appshell.config.read",
+      "label": "Open and view an app configuration",
+      "description": "Open and view an app configuration",
+      "group": "design",
+      "resourceTypes": [
+        "app"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "appshell.config.edit",
+      "label": "Edit the app configuration (identity, start, auth, onboarding, home)",
+      "description": "Edit the app configuration (identity, start, auth, onboarding, home)",
+      "group": "design",
+      "resourceTypes": [
+        "app"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "appshell.content.configure",
+      "label": "Configure connected-platform content cards",
+      "description": "Configure connected-platform content cards",
+      "group": "design",
+      "resourceTypes": [
+        "app",
+        "platform_connection"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "appshell.app.preview",
+      "label": "Preview the app",
+      "description": "Preview the app",
+      "group": "design",
+      "resourceTypes": [
+        "app"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "appshell.publish.release",
+      "label": "Publish an immutable app version",
+      "description": "Publish an immutable app version",
+      "group": "publishing",
+      "resourceTypes": [
+        "app"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "appshell.publish.version",
+      "label": "Manage published versions",
+      "description": "Manage published versions",
+      "group": "publishing",
+      "resourceTypes": [
+        "app"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "appshell.publish.gate",
+      "label": "Bind the participant sign-up gate",
+      "description": "Bind the participant sign-up gate",
+      "group": "publishing",
+      "resourceTypes": [
+        "app"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "appshell.distribute.local",
+      "label": "Create portable links and native build packages",
+      "description": "Create portable links and native build packages",
+      "group": "publishing",
+      "resourceTypes": [
+        "app"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "appshell.runtime.use",
+      "label": "Use a published app (sign in, onboard, home)",
+      "description": "Use a published app (sign in, onboard, home)",
+      "group": "runtime"
+    },
+    {
+      "id": "appshell.runtime.launch",
+      "label": "Launch into a connected platform from the app",
+      "description": "Launch into a connected platform from the app",
+      "group": "runtime"
+    },
+    {
+      "id": "appshell.app.manage",
+      "label": "Register, rename, and retire apps",
+      "description": "Register, rename, and retire apps",
+      "group": "administration",
+      "resourceTypes": [
+        "app"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "appshell.analytics.view",
+      "label": "View app usage and enrollment analytics",
+      "description": "View app usage and enrollment analytics",
+      "group": "administration",
+      "resourceTypes": [
+        "app"
+      ],
+      "supportsResourceConstraints": true
+    }
+  ],
+  "resourceTypes": [
+    {
+      "id": "app",
+      "label": "Registered app",
+      "description": "Registered app",
+      "constraintFields": [
+        "app_type",
+        "category",
+        "status",
+        "program_id"
+      ]
+    },
+    {
+      "id": "app_template",
+      "label": "Starting template",
+      "description": "Starting template",
+      "constraintFields": [
+        "category"
+      ]
+    },
+    {
+      "id": "platform_connection",
+      "label": "Connected content platform",
+      "description": "Connected content platform",
+      "constraintFields": [
+        "platform",
+        "status"
+      ]
+    }
+  ],
+  "uiSurfaces": [
+    {
+      "id": "appshell.studio",
+      "label": "Studio",
+      "kind": "screen",
+      "group": "studio",
+      "routeOrComponent": "/studio",
+      "requiredAnyCapabilities": [
+        "appshell.config.read"
+      ]
+    },
+    {
+      "id": "appshell.tab.identity",
+      "label": "Identity",
+      "kind": "navigation",
+      "group": "studio",
+      "routeOrComponent": "IdentityTab",
+      "requiredAnyCapabilities": [
+        "appshell.config.edit"
+      ]
+    },
+    {
+      "id": "appshell.tab.start",
+      "label": "Start",
+      "kind": "navigation",
+      "group": "studio",
+      "routeOrComponent": "StartTab",
+      "requiredAnyCapabilities": [
+        "appshell.config.edit"
+      ]
+    },
+    {
+      "id": "appshell.tab.auth",
+      "label": "Auth",
+      "kind": "navigation",
+      "group": "studio",
+      "routeOrComponent": "AuthTab",
+      "requiredAnyCapabilities": [
+        "appshell.config.edit"
+      ]
+    },
+    {
+      "id": "appshell.tab.onboarding",
+      "label": "Onboarding",
+      "kind": "navigation",
+      "group": "studio",
+      "routeOrComponent": "OnboardingTab",
+      "requiredAnyCapabilities": [
+        "appshell.config.edit"
+      ]
+    },
+    {
+      "id": "appshell.tab.home",
+      "label": "Home",
+      "kind": "navigation",
+      "group": "studio",
+      "routeOrComponent": "HomeTab",
+      "requiredAnyCapabilities": [
+        "appshell.config.edit"
+      ]
+    },
+    {
+      "id": "appshell.tab.content",
+      "label": "Content",
+      "kind": "navigation",
+      "group": "studio",
+      "routeOrComponent": "ContentTab",
+      "requiredAnyCapabilities": [
+        "appshell.content.configure"
+      ]
+    },
+    {
+      "id": "appshell.action.newapp",
+      "label": "New App",
+      "kind": "action",
+      "group": "studio",
+      "routeOrComponent": "NewAppPicker",
+      "requiredAnyCapabilities": [
+        "appshell.app.create"
+      ]
+    },
+    {
+      "id": "appshell.action.preview",
+      "label": "Preview",
+      "kind": "action",
+      "group": "studio",
+      "routeOrComponent": "PreviewMode",
+      "requiredAnyCapabilities": [
+        "appshell.app.preview"
+      ]
+    },
+    {
+      "id": "appshell.action.publish",
+      "label": "Publish",
+      "kind": "action",
+      "group": "studio",
+      "routeOrComponent": "PublishModal",
+      "requiredAnyCapabilities": [
+        "appshell.publish.release",
+        "appshell.distribute.local"
+      ]
+    },
+    {
+      "id": "appshell.screen.start",
+      "label": "Start",
+      "kind": "screen",
+      "group": "app",
+      "routeOrComponent": "StartScreen",
+      "requiredAnyCapabilities": [
+        "appshell.runtime.use"
+      ]
+    },
+    {
+      "id": "appshell.screen.signin",
+      "label": "Sign In",
+      "kind": "screen",
+      "group": "app",
+      "routeOrComponent": "SignInScreen",
+      "requiredAnyCapabilities": [
+        "appshell.runtime.use"
+      ]
+    },
+    {
+      "id": "appshell.screen.onboarding",
+      "label": "Onboarding",
+      "kind": "screen",
+      "group": "app",
+      "routeOrComponent": "OnboardingScreen",
+      "requiredAnyCapabilities": [
+        "appshell.runtime.use"
+      ]
+    },
+    {
+      "id": "appshell.screen.home",
+      "label": "Home",
+      "kind": "screen",
+      "group": "app",
+      "routeOrComponent": "HomeScreen",
+      "requiredAnyCapabilities": [
+        "appshell.runtime.use"
+      ]
+    },
+    {
+      "id": "appshell.screen.platform",
+      "label": "Platform Launch",
+      "kind": "screen",
+      "group": "app",
+      "routeOrComponent": "PlatformScreen",
+      "requiredAnyCapabilities": [
+        "appshell.runtime.launch"
+      ]
+    },
+    {
+      "id": "appshell.admin.apps",
+      "label": "App Administration",
+      "kind": "navigation",
+      "group": "administration",
+      "routeOrComponent": "/apps",
+      "requiredAnyCapabilities": [
+        "appshell.app.manage"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "id": "design",
+      "label": "Design",
+      "description": "Configure an app in the Studio: identity, start screen, auth, onboarding, home, and content.",
+      "order": 1,
+      "capabilityIds": [
+        "appshell.app.create",
+        "appshell.config.read",
+        "appshell.config.edit",
+        "appshell.content.configure",
+        "appshell.app.preview"
+      ],
+      "uiSurfaceIds": [
+        "appshell.studio",
+        "appshell.tab.identity",
+        "appshell.tab.start",
+        "appshell.tab.auth",
+        "appshell.tab.onboarding",
+        "appshell.tab.home",
+        "appshell.tab.content",
+        "appshell.action.newapp",
+        "appshell.action.preview"
+      ]
+    },
+    {
+      "id": "publishing",
+      "label": "Publishing",
+      "description": "Publish immutable versions, bind sign-up gates, and distribute builds.",
+      "order": 2,
+      "capabilityIds": [
+        "appshell.publish.release",
+        "appshell.publish.version",
+        "appshell.publish.gate",
+        "appshell.distribute.local"
+      ],
+      "uiSurfaceIds": [
+        "appshell.action.publish"
+      ]
+    },
+    {
+      "id": "runtime",
+      "label": "Participant Runtime",
+      "description": "Use a published app as a participant; launching into a connected platform defers to that platform's catalogue.",
+      "order": 3,
+      "capabilityIds": [
+        "appshell.runtime.use",
+        "appshell.runtime.launch"
+      ],
+      "uiSurfaceIds": [
+        "appshell.screen.start",
+        "appshell.screen.signin",
+        "appshell.screen.onboarding",
+        "appshell.screen.home",
+        "appshell.screen.platform"
+      ]
+    },
+    {
+      "id": "administration",
+      "label": "Administration",
+      "description": "Manage the program's registered apps and view usage analytics.",
+      "order": 4,
+      "capabilityIds": [
+        "appshell.app.manage",
+        "appshell.analytics.view"
+      ],
+      "uiSurfaceIds": [
+        "appshell.admin.apps"
+      ]
+    }
+  ],
+  "sampleRoleTemplates": [
+    {
+      "id": "app-designer",
+      "name": "App Designer",
+      "description": "Builds and configures apps in the Studio.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-app-shell-instance",
+          "capabilityIds": [
+            "appshell.app.create",
+            "appshell.config.read",
+            "appshell.config.edit",
+            "appshell.content.configure",
+            "appshell.app.preview"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "app-publisher",
+      "name": "App Publisher",
+      "description": "Publishes and distributes apps to participants.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-app-shell-instance",
+          "capabilityIds": [
+            "appshell.config.read",
+            "appshell.config.edit",
+            "appshell.content.configure",
+            "appshell.app.preview",
+            "appshell.publish.release",
+            "appshell.publish.version",
+            "appshell.publish.gate",
+            "appshell.distribute.local"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "app-admin",
+      "name": "App Administrator",
+      "description": "Full app management across the program.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-app-shell-instance",
+          "capabilityIds": [
+            "appshell.app.create",
+            "appshell.config.read",
+            "appshell.config.edit",
+            "appshell.content.configure",
+            "appshell.app.preview",
+            "appshell.publish.release",
+            "appshell.publish.version",
+            "appshell.publish.gate",
+            "appshell.distribute.local",
+            "appshell.app.manage",
+            "appshell.analytics.view"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "app-participant",
+      "name": "App Participant",
+      "description": "Uses a published app.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-app-shell-instance",
+          "capabilityIds": [
+            "appshell.runtime.use",
+            "appshell.runtime.launch"
+          ]
+        }
+      ]
+    }
+  ]
+}

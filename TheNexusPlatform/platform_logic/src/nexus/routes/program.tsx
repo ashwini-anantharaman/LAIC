@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BookOpen, Check, ExternalLink, Lock, Plus, Rocket, Trash2, Waypoints, X } from "lucide-react";
+import { BookOpen, Check, ExternalLink, Lock, Plus, Rocket, ShieldCheck, Trash2, Waypoints, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -69,6 +69,7 @@ import type {
 import { DEFAULT_PROGRAM_FEATURES } from "@/types/platform";
 import type { ProgramFeatureKey, ProgramFeatures } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Section, Spinner, statusTone } from "@/nexus/ui/kit";
+import { AppShellAccessCatalogue } from "@/nexus/appshell/AccessCatalogue";
 import { openInStudio } from "@/services/studio";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useProgramAccess } from "@/nexus/access";
@@ -1129,10 +1130,15 @@ function Placeholder({ subtitle, note }: { subtitle: string; note: string }) {
 
 export function ProgramShells() {
   const { program, orgId, programId } = useProgram();
+  const access = useProgramAccess(programId);
   const [apps, setApps] = useState<RegisteredApp[] | null>(null);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  // The App Shell's capability catalogue — shown at this governing level (it
+  // decides what people can see/do inside the Studio, so it must never live
+  // inside the Studio itself). Admin-only.
+  const [showCatalogue, setShowCatalogue] = useState(false);
 
   const load = useCallback(() => {
     if (programId) listApps(programId).then(setApps).catch(() => setApps([]));
@@ -1161,12 +1167,25 @@ export function ProgramShells() {
         program={program}
         subtitle="Configurable app containers — one runtime renders every shell's config."
         actions={
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="size-4" /> New App Shell
-          </Button>
+          <>
+            {access.isAdmin && (
+              <Button
+                variant={showCatalogue ? "secondary" : "outline"}
+                onClick={() => setShowCatalogue((v) => !v)}
+                title="The capability catalogue the App Shell publishes — what roles can grant for the Studio and published apps"
+              >
+                <ShieldCheck className="size-4" /> Access Catalogue
+              </Button>
+            )}
+            <Button onClick={() => setOpen(true)}>
+              <Plus className="size-4" /> New App
+            </Button>
+          </>
         }
       />
-      {!apps ? (
+      {showCatalogue && access.isAdmin ? (
+        <AppShellAccessCatalogue />
+      ) : !apps ? (
         <Spinner />
       ) : apps.length === 0 ? (
         <EmptyState>No App Shells yet. Create one and configure its screens.</EmptyState>
@@ -1230,7 +1249,7 @@ export function ProgramShells() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New App Shell</DialogTitle>
+            <DialogTitle>New App</DialogTitle>
           </DialogHeader>
           <div className="space-y-1.5">
             <Label htmlFor="app-name">App name</Label>
