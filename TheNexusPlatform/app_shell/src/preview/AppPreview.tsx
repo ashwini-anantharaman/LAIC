@@ -32,11 +32,11 @@ export function AppPreview({
   const platformConnection = openConnection ?? contentOf(config).connections.find((c) => c.enabled) ?? null;
 
   return (
-    <div className="flex h-full flex-col bg-[#f8f8fb]">
+    <div className="flex h-full flex-col bg-[#0E1320]">
       <div className="relative flex items-center justify-between px-5 pb-0.5 pt-3">
-        <span className="text-[9px] font-bold text-gray-500">9:41</span>
-        <span className="text-[9px] font-semibold text-gray-500">{config.name}</span>
-        <span className="text-[9px] text-gray-500">•••</span>
+        <span className="text-[9px] font-bold text-white">9:41</span>
+        <span className="text-[9px] font-semibold" style={{ color: "rgba(255,255,255,0.55)" }}>{config.name}</span>
+        <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.4)" }}>•••</span>
       </div>
 
       <div className="min-h-0 flex-1">

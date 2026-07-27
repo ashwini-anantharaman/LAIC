@@ -81,7 +81,7 @@ function programNav(orgId: string, programId: string): NavItem[] {
   return [
     { to: `${base}`, label: "Overview", icon: LayoutDashboard, end: true },
     { to: `${base}/offerings`, label: "Offerings", icon: Package },
-    { to: `${base}/shells`, label: "App Shells", icon: AppWindow },
+    { to: `${base}/shells`, label: "App", icon: AppWindow },
     { to: `${base}/registrations`, label: "Registrations", icon: UserPlus },
     { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
@@ -101,7 +101,7 @@ function confinedProgramNav(orgId: string, programId: string, perms: Record<stri
   const items: NavItem[] = [{ to: `${base}`, label: "Home", icon: LayoutDashboard, end: true }];
   if (perms.learning) items.push({ to: `${base}/learning`, label: "Learning Platform", icon: Rocket });
   if (perms.bridge) items.push({ to: `${base}/bridge`, label: "Bridge Platform", icon: Waypoints });
-  if (perms.appbuilder) items.push({ to: `${base}/shells`, label: "App Shells", icon: AppWindow });
+  if (perms.appbuilder) items.push({ to: `${base}/shells`, label: "App", icon: AppWindow });
   if (perms.community) items.push({ to: `${base}/community`, label: "Community", icon: MessagesSquare });
   if (perms.teams) items.push({ to: `${base}/team`, label: "People", icon: KeyRound });
   if (perms.partners) items.push({ to: `${base}/partners`, label: "Partners", icon: Handshake });
@@ -615,7 +615,7 @@ export function AppShell() {
 
   const PAGE_LABELS: Record<string, string> = {
     dashboard: "Dashboard", programs: "Programs", settings: "Settings", audit: "Audit",
-    orgs: "Organizations", offerings: "Offerings", shells: "App Shells",
+    orgs: "Organizations", offerings: "Offerings", shells: "App",
     registrations: "Registrations", groups: "Participants & Groups", community: "Community",
     team: "People", partners: "Partners", learning: "Learning Platform",
   };
