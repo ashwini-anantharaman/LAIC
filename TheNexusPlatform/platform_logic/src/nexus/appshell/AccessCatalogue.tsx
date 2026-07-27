@@ -1,17 +1,17 @@
 /**
- * App Shell Access Catalogue — the capability catalogue the App Shell
- * application publishes, presented in the console at the program's App Shells
+ * App Studio Access Catalogue — the capability catalogue the App Studio
+ * application publishes, presented in the console at the program's App Studios
  * tab. This is the governing level: the catalogue decides what people can see
- * and do inside the App Shell Studio, so it lives with the admin who grants
+ * and do inside the App Studio, so it lives with the admin who grants
  * that access — never inside the Studio itself.
  *
- * Mirrors the Learning Platform's Access Catalogue editor: groups embed their
+ * Mirrors the Content Studio's Access Catalogue editor: groups embed their
  * capabilities and UI surfaces; the Capabilities tab classifies capabilities
  * under the predefined groups; capabilities and groups can be added and
  * removed. Capability IDs are the stable enforcement contract — set once at
  * creation, never renamed (programs grant these; they cannot invent new ids).
  *
- * The v1 baseline is a copy of the document the App Shell ships
+ * The v1 baseline is a copy of the document the App Studio ships
  * (app_shell/docs/access/app-shell-access-catalogue.v1.json). Edits persist
  * locally; "Reset v1 defaults" restores the published baseline.
  */

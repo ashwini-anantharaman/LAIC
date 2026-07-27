@@ -1,5 +1,5 @@
 /**
- * Access manifest (v2) for the Learning Platform — the checked-in contract the
+ * Access manifest (v2) for the Content Studio — the checked-in contract the
  * Nexus role builder consumes. It's a hierarchy of grantable NODES; each node
  * maps its "view" and "edit" levels down to the platform's capabilities (the
  * atomic enforcement primitives), and lists the sidebar SURFACES it reveals.

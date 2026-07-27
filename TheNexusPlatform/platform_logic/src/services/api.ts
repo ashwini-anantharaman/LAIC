@@ -949,7 +949,7 @@ export async function rotateAppKey(appId: string): Promise<RegisteredAppWithKey>
   return request<RegisteredAppWithKey>(`/api/apps/${appId}/rotate-key`, { method: "POST" });
 }
 
-/** Delete an App Shell: its published versions and launch tokens go with it; offerings/registrations that pointed at it are detached, not deleted. */
+/** Delete an App Studio: its published versions and launch tokens go with it; offerings/registrations that pointed at it are detached, not deleted. */
 export async function deleteApp(appId: string): Promise<void> {
   await request<{ ok: boolean }>(`/api/apps/${appId}`, { method: "DELETE" });
 }
@@ -1333,7 +1333,7 @@ export async function listDevOrgs(): Promise<{ id: string; name: string; slug: s
   return request(`/api/platform/dev/orgs`);
 }
 
-// ── App Shell config + versions (Phase 4) ───────────────────────────────────
+// ── App Studio config + versions (Phase 4) ───────────────────────────────────
 export interface ShellSignupField {
   key: string;
   label: string;
@@ -1346,7 +1346,7 @@ export interface ShellNavTab {
   label: string;
 }
 
-/** The App Shell working config. All sections optional — the editor fills them in. */
+/** The App Studio working config. All sections optional — the editor fills them in. */
 export interface ShellConfig {
   identity?: { displayName?: string; shortName?: string };
   branding?: {
@@ -1382,7 +1382,7 @@ export async function publishAppVersion(appId: string): Promise<{ version: numbe
   return request<{ version: number }>(`/api/apps/${appId}/publish-version`, { method: "POST" });
 }
 
-// ── Learning Platform launch seam (Phase 5) ─────────────────────────────────
+// ── Content Studio launch seam (Phase 5) ─────────────────────────────────
 export interface LpLaunch {
   app_slug: string;
   launch_url: string | null;
@@ -1396,7 +1396,7 @@ export interface LpLaunch {
   };
 }
 
-/** Mint a verified launch context for the program's Learning Platform. */
+/** Mint a verified launch context for the program's Content Studio. */
 export async function launchLearningPlatform(programId: string): Promise<LpLaunch> {
   return request<LpLaunch>(`/api/programs/${programId}/learning-platform/launch`, { method: "POST" });
 }

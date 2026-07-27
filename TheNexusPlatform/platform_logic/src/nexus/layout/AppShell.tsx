@@ -83,7 +83,7 @@ function programNav(orgId: string, programId: string): NavItem[] {
   return [
     { to: `${base}`, label: "Overview", icon: LayoutDashboard, end: true },
     { to: `${base}/offerings`, label: "Offerings", icon: Package },
-    { to: `${base}/shells`, label: "App", icon: AppWindow },
+    { to: `${base}/shells`, label: "App Studio", icon: AppWindow },
     { to: `${base}/registrations`, label: "Registrations", icon: UserPlus },
     { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
@@ -102,9 +102,9 @@ function programNav(orgId: string, programId: string): NavItem[] {
 function confinedProgramNav(orgId: string, programId: string, perms: Record<string, string>): NavItem[] {
   const base = `/o/${orgId}/p/${programId}`;
   const items: NavItem[] = [{ to: `${base}`, label: "Home", icon: LayoutDashboard, end: true }];
-  if (perms.learning) items.push({ to: `${base}/learning`, label: "Learning Platform", icon: Rocket });
+  if (perms.learning) items.push({ to: `${base}/learning`, label: "Content Studio", icon: Rocket });
   if (perms.bridge) items.push({ to: `${base}/bridge`, label: "Bridge Platform", icon: Waypoints });
-  if (perms.appbuilder) items.push({ to: `${base}/shells`, label: "App", icon: AppWindow });
+  if (perms.appbuilder) items.push({ to: `${base}/shells`, label: "App Studio", icon: AppWindow });
   if (perms.community) items.push({ to: `${base}/community`, label: "Community", icon: MessagesSquare });
   if (perms.teams) items.push({ to: `${base}/team`, label: "People", icon: KeyRound });
   if (perms.partners) items.push({ to: `${base}/partners`, label: "Partners", icon: Handshake });
@@ -632,7 +632,7 @@ export function AppShell() {
     dashboard: "Dashboard", programs: "Programs", settings: "Settings", audit: "Audit",
     orgs: "Organizations", offerings: "Offerings", shells: "App",
     registrations: "Registrations", groups: "Participants & Groups", community: "Community",
-    team: "People", partners: "Partners", learning: "Learning Platform",
+    team: "People", partners: "Partners", learning: "Content Studio",
     "access-catalogue": "Access Catalogue",
   };
   const segments = pathname.split("/").filter(Boolean);

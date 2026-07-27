@@ -58,7 +58,7 @@ function catalogueLoader(loaders: Array<() => Promise<CapabilityCatalogueDocumen
 
 // ── Program ─────────────────────────────────────────────────────────────────
 const PROGRAM_AREA_LABELS: Record<string, string> = {
-  learning: "Learning Platform", bridge: "Bridge Platform", appbuilder: "App Shell",
+  learning: "Content Studio", bridge: "Bridge Platform", appbuilder: "App Studio",
   community: "Community", teams: "People", partners: "Partners",
 };
 const PROGRAM_PLATFORM_AREAS = new Set(["learning", "bridge"]);

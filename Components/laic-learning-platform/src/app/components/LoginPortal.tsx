@@ -63,7 +63,7 @@ export function LoginPortal() {
             </div>
             <div>
               <p style={{ fontSize: 15, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.3px' }}>Life in AI Center</p>
-              <p style={{ fontSize: 12, color: '#9AA3AF' }}>LAIC Learning Platform</p>
+              <p style={{ fontSize: 12, color: '#9AA3AF' }}>LAIC Content Studio</p>
             </div>
           </div>
           <p style={{ fontSize: 13, color: '#6B7280', lineHeight: 1.5, marginTop: 8 }}>

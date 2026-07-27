@@ -1,5 +1,5 @@
 /**
- * Console → App Shell Studio handoff.
+ * Console → App Studio handoff.
  *
  * Opens the Studio (TheNexusPlatform/app_shell) for a registered app with the
  * admin's CURRENT session — no second sign-in. The session token travels in

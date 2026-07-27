@@ -922,7 +922,7 @@ function ProgramCard({ program, accent }: { program: Program; accent: string }) 
               </span>
             </p>
             <p className="text-[11px] mt-1 line-clamp-2" style={{ color: MUTED, fontFamily: FONT_BODY }}>
-              {program.description || (program.category === "game" ? "Coaching program on the Game Platform" : "Learning program on the Learning Platform")}
+              {program.description || (program.category === "game" ? "Coaching program on the Game Platform" : "Learning program on the Content Studio")}
             </p>
           </div>
         </div>

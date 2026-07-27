@@ -72,7 +72,7 @@ const AREAS: { key: RoleArea; label: string; platform?: boolean }[] =
 const LEVELS: AccessLevel[] = ["view", "edit", "comment"];
 const areaLabel = (k: string) => AREAS.find((a) => a.key === k)?.label ?? k;
 // Human labels for platform roles assigned inside a platform (read-only here).
-const PLATFORM_LABELS: Record<string, string> = { bridge: "Bridge Platform", learning: "Learning Platform" };
+const PLATFORM_LABELS: Record<string, string> = { bridge: "Bridge Platform", learning: "Content Studio" };
 const platformRoleLabel = (r: string) => {
   if (["bridge_program_admin", "bridge_org_admin", "bridge_club_admin", "administrator"].includes(r)) return "Admin";
   if (r === "bridge_reviewer" || r === "bridge_fellow") return "Reviewer & Fellow";

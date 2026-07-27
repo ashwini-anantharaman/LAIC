@@ -1,6 +1,6 @@
 /**
  * Program workspace pages, all wired to the live API. Team & Roles lives in
- * ProgramTeam.tsx; App Shells are designed in the App Shell Studio (card click).
+ * ProgramTeam.tsx; App Studios are designed in the App Studio (card click).
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -103,9 +103,9 @@ const PROGRAM_PLATFORMS: {
   icon: React.ReactNode;
   path: string;
 }[] = [
-  { key: "learning", cap: "learning", title: "Learning Platform", hint: "Author lessons and courses for this program.", icon: <Rocket className="size-5" />, path: "learning" },
+  { key: "learning", cap: "learning", title: "Content Studio", hint: "Author lessons and courses for this program.", icon: <Rocket className="size-5" />, path: "learning" },
   { key: "bridge", cap: "bridge", title: "Bridge Platform", hint: "Coach-driven app runtime for this program.", icon: <Waypoints className="size-5" />, path: "bridge" },
-  { key: "appbuilder", cap: "appbuilder", title: "App Shell", hint: "Configure an App Shell and fill it with content.", icon: <BookOpen className="size-5" />, path: "shells" },
+  { key: "appbuilder", cap: "appbuilder", title: "App Studio", hint: "Configure an App Studio and fill it with content.", icon: <BookOpen className="size-5" />, path: "shells" },
 ];
 
 // Confined areas that aren't platforms — their presence keeps a single-platform
@@ -367,7 +367,7 @@ export function ProgramOfferings() {
                 <div className="flex flex-wrap gap-1.5">
                   <Pill tone="neutral">{o.offering_type}</Pill>
                   <Pill tone="neutral">{o.approval_mode}</Pill>
-                  {o.content_package ? <Pill tone="accent">Learning Platform package</Pill> : null}
+                  {o.content_package ? <Pill tone="accent">Content Studio package</Pill> : null}
                 </div>
                 <div className="flex gap-1.5">
                   {o.status !== "open" ? (
@@ -1126,7 +1126,7 @@ export function ProgramShells() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
-  // The App Shell's capability catalogue — shown at this governing level (it
+  // The App Studio's capability catalogue — shown at this governing level (it
   // decides what people can see/do inside the Studio, so it must never live
   // inside the Studio itself). Admin-only.
   const [showCatalogue, setShowCatalogue] = useState(false);
@@ -1143,10 +1143,10 @@ export function ProgramShells() {
       await createApp(programId, { app_name: name.trim() });
       setName("");
       setOpen(false);
-      toast.success("App Shell created — click its card to design it in the Studio");
+      toast.success("App Studio created — click its card to design it in the Studio");
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create App Shell");
+      toast.error(e instanceof Error ? e.message : "Failed to create App Studio");
     } finally {
       setBusy(false);
     }
@@ -1163,7 +1163,7 @@ export function ProgramShells() {
               <Button
                 variant={showCatalogue ? "secondary" : "outline"}
                 onClick={() => setShowCatalogue((v) => !v)}
-                title="The capability catalogue the App Shell publishes — what roles can grant for the Studio and published apps"
+                title="The capability catalogue the App Studio publishes — what roles can grant for the Studio and published apps"
               >
                 <ShieldCheck className="size-4" /> Access Catalogue
               </Button>
@@ -1179,7 +1179,7 @@ export function ProgramShells() {
       ) : !apps ? (
         <Spinner />
       ) : apps.length === 0 ? (
-        <EmptyState>No App Shells yet. Create one and configure its screens.</EmptyState>
+        <EmptyState>No App Studios yet. Create one and configure its screens.</EmptyState>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {apps.map((a) => (
@@ -1195,7 +1195,7 @@ export function ProgramShells() {
                 }
               }}
               className="glass-card cursor-pointer p-4 hover:border-foreground/20 transition-colors"
-              title="Open in the App Shell Studio with your current session"
+              title="Open in the App Studio with your current session"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -1215,16 +1215,16 @@ export function ProgramShells() {
                 >
                   <ConfirmButton
                     title={`Delete "${a.app_name}"?`}
-                    description="Removes this App Shell from the organization's space, including its published config versions and launch tokens. Published links stop working immediately. Offerings and registrations that referenced it are kept, detached. This can't be undone."
-                    actionLabel="Delete App Shell"
-                    buttonTitle="Delete this App Shell"
+                    description="Removes this App Studio from the organization's space, including its published config versions and launch tokens. Published links stop working immediately. Offerings and registrations that referenced it are kept, detached. This can't be undone."
+                    actionLabel="Delete App Studio"
+                    buttonTitle="Delete this App Studio"
                     onConfirm={async () => {
                       try {
                         await deleteApp(a.id);
                         toast.success(`"${a.app_name}" deleted`);
                         load();
                       } catch (e) {
-                        toast.error(e instanceof Error ? e.message : "Failed to delete App Shell");
+                        toast.error(e instanceof Error ? e.message : "Failed to delete App Studio");
                       }
                     }}
                   >

@@ -970,7 +970,7 @@ function EditFeaturesDialog({
               <span className="block text-sm font-medium text-foreground">This program's people can open platforms</span>
               <span className="block text-xs text-muted-foreground">
                 {platformsOpen
-                  ? "This program's admins and members can open its Learning, App Shell, and Bridge platforms."
+                  ? "This program's admins and members can open its Learning, App Studio, and Bridge platforms."
                   : "Off — this program's admins and members can manage the program but can't open its platforms. (You, as an org admin, are unaffected.)"}
               </span>
             </span>

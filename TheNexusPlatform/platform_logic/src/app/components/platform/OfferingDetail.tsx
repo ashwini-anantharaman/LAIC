@@ -4,7 +4,7 @@
  * The top card depends on the offering type:
  *  - app     → Registered App record + signup-hook explainer (Nexus owns auth +
  *              the hook; the app owns its own screens).
- *  - course  → Learning Platform handoff. Nexus does not author lessons.
+ *  - course  → Content Studio handoff. Nexus does not author lessons.
  *  - other   → generic overview.
  * Registrations (approval queue) and Participants are Nexus's job for every
  * offering type and are shown below.
@@ -106,9 +106,9 @@ export function OfferingDetail({ program, offering: initial, accent, onDeleted }
               <BookOpen size={18} />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-white" style={{ fontFamily: FONT_HEAD }}>Authored on the Learning Platform</p>
+              <p className="text-sm font-semibold text-white" style={{ fontFamily: FONT_HEAD }}>Authored on the Content Studio</p>
               <p className="text-[11px] mt-1" style={{ color: MUTED, fontFamily: FONT_BODY }}>
-                Nexus owns this course's registration records and access. Lessons, modules, and explanation modes are built and edited on the Learning Platform.
+                Nexus owns this course's registration records and access. Lessons, modules, and explanation modes are built and edited on the Content Studio.
               </p>
               <a
                 href={offering.external_runtime_url || LEARNING_APP_URL}
@@ -116,7 +116,7 @@ export function OfferingDetail({ program, offering: initial, accent, onDeleted }
                 className="mt-3 inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-xs font-semibold transition-all focus:outline-none"
                 style={{ background: accent, color: "#111", fontFamily: FONT_BODY }}
               >
-                Open in Learning Platform <ArrowUpRight size={14} />
+                Open in Content Studio <ArrowUpRight size={14} />
               </a>
             </div>
           </div>

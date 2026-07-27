@@ -1,5 +1,5 @@
 /**
- * Learning Platform launch surface (Phase 5). Full-screen chrome with the
+ * Content Studio launch surface (Phase 5). Full-screen chrome with the
  * verified org/program launch context and a "Back to Nexus" exit. The interior
  * is a placeholder this pass — but the seam is real: launching mints a
  * single-use token via the LP's registered-app record and exchanges it, the
@@ -74,7 +74,7 @@ export function LearningLaunch() {
           <GraduationCap className="size-4" />
         </div>
         <div className="min-w-0">
-          <div className="text-sm font-semibold leading-tight">Learning Platform</div>
+          <div className="text-sm font-semibold leading-tight">Content Studio</div>
           {launch ? (
             <div className="text-xs text-muted-foreground leading-tight">
               {launch.context.program_name} · {launch.context.role}
@@ -122,11 +122,11 @@ export function LearningLaunch() {
             <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-primary/10">
               <GraduationCap className="size-7 text-foreground" />
             </div>
-            <h1 className="mt-4 text-lg font-semibold tracking-tight">The Learning Platform arrives here</h1>
+            <h1 className="mt-4 text-lg font-semibold tracking-tight">The Content Studio arrives here</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               This launch surface is live — Nexus minted and verified a single-use launch context for{" "}
               <span className="font-medium text-foreground">{launch.context.program_name}</span>. When the
-              Learning Platform ships, it opens in this frame with that context.
+              Content Studio ships, it opens in this frame with that context.
             </p>
           </div>
         )}

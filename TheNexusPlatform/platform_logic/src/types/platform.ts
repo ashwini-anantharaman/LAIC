@@ -18,9 +18,9 @@ export type ProgramFeatureKey =
 export type ProgramFeatures = Record<ProgramFeatureKey, boolean>;
 
 export const PROGRAM_FEATURES: { key: ProgramFeatureKey; label: string }[] = [
-  { key: "learning", label: "Learning Platform" },
+  { key: "learning", label: "Content Studio" },
   { key: "bridge", label: "Bridge Platform" },
-  { key: "appbuilder", label: "App Builder" },
+  { key: "appbuilder", label: "App Studio" },
   { key: "community", label: "Community" },
   { key: "teams", label: "People" },
   { key: "partners", label: "Partners" },
@@ -60,7 +60,7 @@ export interface Program {
    */
   branding?: { accent: string | null; logo: string | null; cover?: string | null; favicon?: string | null } | null;
   /** Platform lock: may this program's own admins/members open the platform
-   *  runtimes (Learning, App Shell, Bridge)? Absent/true = yes. Org admins are
+   *  runtimes (Learning, App Studio, Bridge)? Absent/true = yes. Org admins are
    *  never restricted by this. */
   platforms_open?: boolean;
 }
@@ -344,8 +344,8 @@ export interface RegisteredApp {
   launch_context: Record<string, unknown>;
 }
 
-// ── App Shell (Nexus v0.4 §6) ───────────────────────────────────────────────
-// v0.4 re-adopts the App Shell as the single configurable app object. The
+// ── App Studio (Nexus v0.4 §6) ───────────────────────────────────────────────
+// v0.4 re-adopts the App Studio as the single configurable app object. The
 // backend still persists a RegisteredApp; the extra shell configuration
 // (appType, theme, navigation, feature flags) is carried inside the app's
 // `launch_context.shell` blob until the backend grows dedicated columns.

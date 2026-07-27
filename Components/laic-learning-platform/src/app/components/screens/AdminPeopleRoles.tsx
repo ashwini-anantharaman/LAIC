@@ -83,7 +83,7 @@ function RoleEditorModal({
               {initial?.name ? `Edit “${initial.name}”` : 'New role'}
             </h3>
             <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>
-              Grants use Learning Platform catalogue capability ids.
+              Grants use Content Studio catalogue capability ids.
             </p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
@@ -679,7 +679,7 @@ function InvitePersonModal({
     setBusy(true); setError('');
     try {
       const res = await inviteLearningPerson({ email: email.trim(), display_name: name.trim() || undefined, role_id: roleId || null });
-      onInvited(res.created ? 'Person added — new account created' : 'Person added to the learning platform');
+      onInvited(res.created ? 'Person added — new account created' : 'Person added to Content Studio');
       // Keep the modal open to reveal the temp password for a new account; else close.
       if (res.created && res.temp_password) setResult(res); else onClose();
     } catch (e) {
@@ -693,7 +693,7 @@ function InvitePersonModal({
       <div className="w-full max-w-md rounded-[22px] p-6" style={{ background: 'white', boxShadow: '0 24px 64px -16px rgba(0,0,0,0.35)' }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 mb-4">
           <UserPlus size={16} style={{ color: '#0B1220' }} />
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }}>Invite to the learning platform</h3>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }}>Invite to Content Studio</h3>
         </div>
         {result ? (
           <div className="space-y-3">

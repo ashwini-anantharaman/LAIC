@@ -1,7 +1,7 @@
 /**
- * App Shell editor — Nexus v0.4 §6.
+ * App Studio editor — Nexus v0.4 §6.
  *
- * v0.4 re-adopts the App Shell as the single configurable app object: identity,
+ * v0.4 re-adopts the App Studio as the single configurable app object: identity,
  * theme, navigation, onboarding/signup fields, role labels, auth, the signup-hook
  * credential, and launch context. The backend still stores a RegisteredApp plus
  * the offering's signup fields/labels, so this editor persists across both:
@@ -228,7 +228,7 @@ export function AppShellEditor({
       <div className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: "rgba(255,255,255,0.03)", border: `1px dashed ${BORDER}` }}>
         <p className="text-sm font-semibold text-white" style={{ fontFamily: FONT_HEAD }}>Create the app shell</p>
         <p className="text-[11px]" style={{ color: MUTED, fontFamily: FONT_BODY }}>
-          The App Shell is this offering's configurable container — branding, onboarding, role labels, auth, and the signup-hook credential. One runtime renders many shells.
+          The App Studio is this offering's configurable container — branding, onboarding, role labels, auth, and the signup-hook credential. One runtime renders many shells.
         </p>
         {error && <p className="text-xs text-red-400" style={{ fontFamily: FONT_BODY }}>{error}</p>}
         <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="App name" className={inputCls} style={inputStyle} />

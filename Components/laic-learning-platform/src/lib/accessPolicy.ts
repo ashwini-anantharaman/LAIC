@@ -71,13 +71,13 @@ function emptyPolicy(catalogue?: CapabilityCatalogueDocument): AccessPolicyDocum
     id: 'bridge-learning-access-policy',
     name: 'Bridge Learning Access Policy',
     description:
-      'Live roles for the Bridge Learning Platform instance. Sample roles sync from the Learning capability catalogue on Save.',
+      'Live roles for the Bridge Content Studio instance. Sample roles sync from the Learning capability catalogue on Save.',
     rootOrganizationId: 'life-in-ai-center',
     scopeRef: { type: 'program', id: BRIDGE_PROGRAM_ID },
     platformInstances: [
       {
         id: LEARNING_INSTANCE_ID,
-        name: 'Bridge Learning Platform',
+        name: 'Bridge Content Studio',
         kind: 'platform',
         scopeRef: { type: 'program', id: BRIDGE_PROGRAM_ID },
         catalogue: {

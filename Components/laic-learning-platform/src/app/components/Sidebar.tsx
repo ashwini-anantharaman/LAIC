@@ -111,7 +111,7 @@ export function Sidebar() {
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '-0.5px' }}>LA</span>
           </div>
           <span style={{ fontSize: 14, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.3px' }} className="truncate">
-            {nexusMode ? (nexusProgramName ?? 'Learning Platform') : 'Life in AI Center'}
+            {nexusMode ? (nexusProgramName ?? 'Content Studio') : 'Life in AI Center'}
           </span>
         </div>
         {/* Demo program chip only in standalone mode — a Nexus launch is scoped

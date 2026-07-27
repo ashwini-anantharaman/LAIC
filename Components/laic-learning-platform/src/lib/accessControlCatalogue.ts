@@ -1,5 +1,5 @@
 /**
- * LAIC Learning Platform Access Catalogue — capability_catalogue document (v1).
+ * LAIC Content Studio Access Catalogue — capability_catalogue document (v1).
  * Matches docs/laic-access-control.schema.json + learning-platform-access-catalogue.v1.json
  */
 
