@@ -2029,6 +2029,13 @@ export async function createLearningRole(orgId: string, programId: string, name:
   });
 }
 
+export async function getLearningRole(id: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx.select().from(learningRoles).where(eq(learningRoles.id, id)).limit(1);
+    return r.length ? learningRoleRow(r[0]) : null;
+  });
+}
+
 export async function updateLearningRole(id: string, patch: { name?: string; perms?: Row }): Promise<Row | null> {
   return asPrivileged(async (tx) => {
     const set: Row = {};

@@ -1,349 +1,574 @@
-/**
- * People (Learning Platform) — custom roles + people, wired to Nexus.
- *
- * Admins define custom-titled roles that grant view/edit over specific AREAS of
- * the platform (Authoring, Reviews, Publishing, …); the granted areas determine
- * which parts of the app a person sees. People are invited (link → set password
- * → sign in) and assigned a role. Admins are Nexus territory: read-only here.
- */
-import React, { useCallback, useEffect, useState } from 'react';
-import { Users, Shield, Trash2, RefreshCw, Plus, Copy, X, Pencil, KeyRound, Eye } from 'lucide-react';
-import { useApp } from '../../App';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Shield, Users, Lock, Plus, Award, Check, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { PEOPLE } from '../../../lib/data';
+import type { Role } from '../../../lib/types';
 import {
-  nexusFetch, getProgramId,
-  listLearningRoles, createLearningRole, updateLearningRole, deleteLearningRole,
-  listLearningRoster, assignLearningRole,
-  type LearningRole, type RosterPerson,
-} from '../../../lib/nexus';
+  type CapabilityCatalogueDocument,
+  groupsSorted,
+  loadCatalogue,
+  initCatalogue,
+} from '../../../lib/accessControlCatalogue';
 import {
-  LEARNING_MANIFEST, isEditable, effectiveLevel, cascadeSet, cascadeClear, grantedTopAreas,
-  type AreaLevel, type AccessNode,
-} from '../../../lib/learningAreas';
+  type AccessPolicyDocument,
+  type PolicyRole,
+  catalogueSampleRoles,
+  customPolicyRoles,
+  deleteCustomPolicyRole,
+  loadPolicy,
+  initPolicy,
+  roleCapabilityIds,
+  upsertCustomPolicyRole,
+} from '../../../lib/accessPolicy';
+import { listPolicyDemoAccounts } from '../../../lib/roleAccess';
 
-export function AdminPeopleRoles() {
-  const { startRolePreview } = useApp();
-  const programId = getProgramId();
-  const [roles, setRoles] = useState<LearningRole[] | null>(null);
-  const [people, setPeople] = useState<RosterPerson[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [editingRole, setEditingRole] = useState<LearningRole | 'new' | null>(null);
+const ROLE_LABELS: Record<Role, string> = {
+  'content-developer': 'Content Dev',
+  'object-reviewer': 'Obj Reviewer',
+  'course-reviewer': 'Course Reviewer',
+  'administrator': 'Administrator',
+  'coach': 'Coach',
+  'student': 'Student',
+};
 
-  const load = useCallback(async () => {
-    if (!programId) { setError('No program context — open this platform from Nexus.'); setPeople([]); setRoles([]); return; }
-    setError(null);
-    try {
-      const [r, p] = await Promise.all([listLearningRoles(), listLearningRoster()]);
-      setRoles(r); setPeople(p);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load'); setPeople([]); setRoles([]);
-    }
-  }, [programId]);
-  useEffect(() => { void load(); }, [load]);
+/* ─── role editor modal (catalogue capability chips) ──────────── */
 
-  const roleName = (id: string | null) => roles?.find((r) => r.id === id)?.name ?? null;
+function RoleEditorModal({
+  catalogue,
+  initial,
+  onSave,
+  onClose,
+}: {
+  catalogue: CapabilityCatalogueDocument;
+  initial: { id?: string; name: string; desc: string; permissions: string[]; restrictedTypes?: string[] } | null;
+  onSave: (role: { id?: string; name: string; desc: string; permissions: string[]; restrictedTypes?: string[] }) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(initial?.name || '');
+  const [desc, setDesc] = useState(initial?.desc || '');
+  const [perms, setPerms] = useState<Set<string>>(new Set(initial?.permissions || []));
+  const [restricted, setRestricted] = useState<string[]>(initial?.restrictedTypes || []);
 
-  async function assign(p: RosterPerson, roleId: string | null) {
-    setBusy(p.email);
-    try { await assignLearningRole(p.email, roleId); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Failed to assign role'); }
-    finally { setBusy(null); }
-  }
+  const toggle = (id: string) => setPerms((prev) => {
+    const n = new Set(prev);
+    n.has(id) ? n.delete(id) : n.add(id);
+    return n;
+  });
+  const toggleType = (t: string) => setRestricted((prev) => (
+    prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+  ));
 
-  async function removePerson(p: RosterPerson) {
-    if (!programId || !window.confirm(`Remove ${p.display_name ?? p.email} from this program?`)) return;
-    setBusy(p.email);
-    try {
-      const res = await nexusFetch(
-        `/api/platform/platforms/learning/people?program_id=${encodeURIComponent(programId)}&email=${encodeURIComponent(p.email)}`,
-        { method: 'DELETE' },
-      );
-      if (!res.ok) throw new Error(`Failed to remove (${res.status})`);
-      await load();
-    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to remove'); }
-    finally { setBusy(null); }
-  }
-
-  async function removeRole(r: LearningRole) {
-    if (!window.confirm(`Delete the "${r.name}" role? People keep their membership but lose its access.`)) return;
-    try { await deleteLearningRole(r.id); await load(); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Failed to delete role'); }
-  }
+  const hasCreate = perms.has('learning.object.create');
+  const objectResourceTypes = catalogue.resourceTypes.filter((rt) =>
+    rt.id.includes('object') || ['lesson', 'tutorial', 'quiz', 'flashcard', 'concept', 'summary', 'reflection', 'scenario', 'assignment', 'drill'].some((k) => rt.id.includes(k)),
+  );
+  const typeChips = objectResourceTypes.length
+    ? objectResourceTypes.map((rt) => ({ id: rt.id, label: rt.label }))
+    : [
+        'lesson', 'tutorial', 'quiz', 'flashcard-set', 'concept-card',
+        'summary', 'reflection', 'scenario', 'assignment', 'drill',
+      ].map((id) => ({ id, label: id }));
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Users className="h-5 w-5 text-slate-600" />
-          <h1 className="text-xl font-semibold text-slate-800">People</h1>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(11,18,32,0.5)', backdropFilter: 'blur(4px)' }}>
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-xl rounded-[28px] overflow-hidden flex flex-col"
+        style={{ background: 'white', boxShadow: '0 24px 64px -16px rgba(30,50,80,0.3)', maxHeight: '90vh' }}
+      >
+        <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>
+              {initial?.name ? `Edit “${initial.name}”` : 'New role'}
+            </h3>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>
+              Grants use Learning Platform catalogue capability ids.
+            </p>
+          </div>
+          <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => void load()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </button>
-          <button type="button" onClick={() => setEditingRole('new')}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-            <Plus className="h-3.5 w-3.5" /> Create role
-          </button>
-          <button type="button" onClick={() => setInviteOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">
-            <Plus className="h-3.5 w-3.5" /> Invite person
-          </button>
-        </div>
-      </div>
 
-      {error ? <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">{error}</div> : null}
-
-      {/* Roles */}
-      <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-700"><KeyRound className="h-4 w-4" /> Roles</h2>
-      <p className="mb-3 text-xs text-slate-500">Each role grants view or edit access to specific areas of the platform. Assign people below.</p>
-      {roles === null ? (
-        <div className="mb-6 text-sm text-slate-500">Loading…</div>
-      ) : roles.length === 0 ? (
-        <div className="mb-6 rounded-xl border border-slate-200 bg-white/70 p-4 text-sm text-slate-500">No roles yet. Create one, then assign people to it.</div>
-      ) : (
-        <div className="mb-6 space-y-2">
-          {roles.map((r) => (
-            <div key={r.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white/80 px-4 py-3">
-              <div className="min-w-[130px] font-medium text-slate-800">{r.name}</div>
-              <div className="flex flex-1 flex-wrap gap-1.5">
-                {grantedTopAreas(r.perms).length === 0 ? <span className="text-xs text-slate-400">no areas</span> :
-                  grantedTopAreas(r.perms).map((a) => (
-                    <span key={a.label} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{a.label} · {a.level}</span>
-                  ))}
-              </div>
-              <button type="button" onClick={() => startRolePreview(r.name, r.perms)} title="Test as this role" className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700"><Eye className="h-3.5 w-3.5" /> Test as</button>
-              <button type="button" onClick={() => setEditingRole(r)} title="Edit role" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Pencil className="h-3.5 w-3.5" /></button>
-              <button type="button" onClick={() => void removeRole(r)} title="Delete role" className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+        <div className="overflow-y-auto flex-1 p-5 space-y-5">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Role name</p>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Drill Developer"
+                className="w-full rounded-xl px-3 py-2"
+                style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none' }}
+              />
             </div>
-          ))}
-        </div>
-      )}
+            <div>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Description</p>
+              <input
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder="What this role is for"
+                className="w-full rounded-xl px-3 py-2"
+                style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none' }}
+              />
+            </div>
+          </div>
 
-      {/* People */}
-      <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-700"><Users className="h-4 w-4" /> People</h2>
-      {people === null ? (
-        <div className="text-sm text-slate-500">Loading…</div>
-      ) : people.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white/70 p-6 text-sm text-slate-500">No people yet. Invite someone above.</div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white/80">
-          <table className="w-full text-sm">
+          {groupsSorted(catalogue).map((group) => {
+            const groupCaps = catalogue.capabilities.filter((c) => c.group === group.id);
+            if (!groupCaps.length) return null;
+            return (
+              <div key={group.id}>
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: '#9AA3AF', letterSpacing: '.05em', marginBottom: 8, textTransform: 'uppercase' }}>
+                  {group.label}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {groupCaps.map((p) => {
+                    const on = perms.has(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => toggle(p.id)}
+                        title={p.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all"
+                        style={{
+                          background: on ? 'rgba(5,150,105,0.08)' : 'rgba(0,0,0,0.03)',
+                          borderColor: on ? 'rgba(5,150,105,0.4)' : 'rgba(0,0,0,0.08)',
+                          color: on ? '#059669' : '#6B7280',
+                          fontSize: 12.5,
+                          fontWeight: on ? 600 : 400,
+                        }}
+                      >
+                        {on && <Check size={11} />}
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {group.id === 'authoring' && hasCreate && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-3 p-3 rounded-2xl"
+                    style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)' }}
+                  >
+                    <p style={{ fontSize: 12.5, fontWeight: 600, color: '#92400E', marginBottom: 7 }}>
+                      Which object types can this role create? — leave empty for all
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {typeChips.map((t) => {
+                        const on = restricted.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => toggleType(t.id)}
+                            className="px-2.5 py-1 rounded-full border transition-all capitalize"
+                            style={{
+                              background: on ? 'rgba(217,119,6,0.15)' : 'rgba(255,255,255,0.7)',
+                              borderColor: on ? '#D97706' : 'rgba(0,0,0,0.1)',
+                              color: on ? '#92400E' : '#6B7280',
+                              fontSize: 12,
+                            }}
+                          >
+                            {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex gap-2 p-4 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-full" style={{ background: 'rgba(0,0,0,0.05)', fontSize: 13, fontWeight: 600, color: '#374151' }}>Cancel</button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!name.trim()) return;
+              onSave({
+                id: initial?.id,
+                name: name.trim(),
+                desc: desc.trim(),
+                permissions: [...perms],
+                restrictedTypes: restricted,
+              });
+              onClose();
+            }}
+            disabled={!name.trim()}
+            className="flex-1 py-2.5 rounded-full text-white"
+            style={{ background: name.trim() ? '#0B0F1A' : '#E5E7EB', color: name.trim() ? '#fff' : '#9AA3AF', fontSize: 13, fontWeight: 600 }}
+          >
+            ✓ Save role · {perms.size} capacit{perms.size === 1 ? 'y' : 'ies'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function roleToEditorInitial(r: PolicyRole) {
+  return {
+    id: r.id,
+    name: r.name,
+    desc: r.description || '',
+    permissions: roleCapabilityIds(r),
+    restrictedTypes: r.restrictedResourceTypes || [],
+  };
+}
+
+function permChips(
+  catalogue: CapabilityCatalogueDocument,
+  capIds: string[],
+) {
+  const labels = capIds
+    .map((id) => catalogue.capabilities.find((c) => c.id === id)?.label || id)
+    .filter(Boolean);
+  const show = labels.slice(0, 5);
+  return { show, more: labels.length - show.length };
+}
+
+/* ─── main ────────────────────────────────────────────────────── */
+
+export function AdminPeopleRoles() {
+  const [catalogue, setCatalogue] = useState<CapabilityCatalogueDocument>(() => loadCatalogue());
+  const [policy, setPolicy] = useState<AccessPolicyDocument>(() => loadPolicy());
+
+  // Seed the catalogue + roles from the Nexus backend (falls back to the local
+  // cache / demo when there is no session).
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const cat = await initCatalogue();
+      if (live) setCatalogue(cat);
+      const pol = await initPolicy();
+      if (live) setPolicy(pol);
+    })();
+    return () => { live = false; };
+  }, []);
+  const [editorState, setEditorState] = useState<{
+    open: boolean;
+    initial: ReturnType<typeof roleToEditorInitial> | null;
+  }>({ open: false, initial: null });
+  const [toast, setToast] = useState('');
+
+  const fireToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2400); };
+
+  const sampleRoles = useMemo(() => catalogueSampleRoles(policy), [policy]);
+  const customRoles = useMemo(() => customPolicyRoles(policy), [policy]);
+  const learningInstance = policy.platformInstances.find((i) => i.id === 'bridge-learning');
+  const enabledCount = learningInstance?.enabledCapabilityIds?.length ?? catalogue.capabilities.length;
+
+  const openNew = () => setEditorState({ open: true, initial: null });
+  const openDuplicate = (r: PolicyRole) => {
+    setEditorState({
+      open: true,
+      initial: {
+        name: `${r.name} (custom)`,
+        desc: `Based on ${r.name}`,
+        permissions: roleCapabilityIds(r),
+        restrictedTypes: [],
+      },
+    });
+  };
+  const openEdit = (c: PolicyRole) => setEditorState({ open: true, initial: roleToEditorInitial(c) });
+
+  const deleteCustom = async (id: string) => {
+    setPolicy(await deleteCustomPolicyRole(id));
+    fireToast('Role deleted');
+  };
+
+  const saveRole = async (role: {
+    id?: string;
+    name: string;
+    desc: string;
+    permissions: string[];
+    restrictedTypes?: string[];
+  }) => {
+    const next = await upsertCustomPolicyRole({
+      id: role.id,
+      name: role.name,
+      description: role.desc,
+      capabilityIds: role.permissions,
+      restrictedResourceTypes: role.restrictedTypes,
+    });
+    setPolicy(next);
+    fireToast('Role saved');
+  };
+
+  const ENABLED_TYPES = catalogue.resourceTypes.map((rt) => rt.label);
+
+  return (
+    <div className="px-6 py-6 w-full space-y-8">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="p-5 rounded-[24px]"
+        style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}
+      >
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl" style={{ background: '#F3F4F6' }}>🃏</div>
+            <div>
+              <p style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }}>Bridge — Learning access policy</p>
+              <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>
+                Roles sync from Access Catalogue sample templates on Save. Custom roles persist in the program policy.
+              </p>
+            </div>
+          </div>
+          <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: '#F3F4F6', color: '#374151' }}>
+            {catalogue.id} · v{catalogue.catalogueVersion}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="p-3.5 rounded-2xl" style={{ background: 'rgba(0,0,0,0.025)' }}>
+            <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 7 }}>
+              ENABLED CAPABILITIES ({enabledCount})
+            </p>
+            <p style={{ fontSize: 13, color: '#374151' }}>
+              From catalogue · refreshed when you Save catalogue
+            </p>
+          </div>
+          <div className="p-3.5 rounded-2xl" style={{ background: 'rgba(0,0,0,0.025)' }}>
+            <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 7 }}>
+              RESOURCE TYPES ({ENABLED_TYPES.length})
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {ENABLED_TYPES.slice(0, 8).map((t) => (
+                <span key={t} className="px-2 py-0.5 rounded-full text-xs" style={{ background: '#EFF6FF', color: '#1D4ED8' }}>{t}</span>
+              ))}
+              {ENABLED_TYPES.length > 8 && (
+                <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: '#F3F4F6', color: '#9AA3AF' }}>+{ENABLED_TYPES.length - 8}</span>
+              )}
+            </div>
+          </div>
+          <div className="p-3.5 rounded-2xl" style={{ background: 'rgba(0,0,0,0.025)' }}>
+            <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 7 }}>
+              DECLARED ROLES ({sampleRoles.length + customRoles.length})
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {[...sampleRoles, ...customRoles].map((r) => (
+                <span key={r.id} className="px-2 py-0.5 rounded-full text-xs" style={{ background: '#F3F4F6', color: '#374151' }}>{r.name}</span>
+              ))}
+            </div>
+          </div>
+          <div className="p-3.5 rounded-2xl" style={{ background: 'rgba(0,0,0,0.025)' }}>
+            <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 7 }}>POLICY</p>
+            <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0B1220' }}>{policy.id}</p>
+            <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full text-xs" style={{ background: '#F0FDF4', color: '#15803D' }}>
+              {policy.updatedAt ? `Updated ${policy.updatedAt.slice(0, 10)}` : 'Live'}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 mt-4 pt-4 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+          <Lock size={12} style={{ color: '#9AA3AF' }} />
+          <p style={{ fontSize: 12, color: '#9AA3AF' }}>
+            Edit the Access Catalogue, then Save — sample roles and enabled capabilities update here automatically.
+          </p>
+        </div>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Shield size={15} style={{ color: '#374151' }} />
+            <h2 style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>Roles & access</h2>
+          </div>
+          <button
+            type="button"
+            onClick={openNew}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white"
+            style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}
+          >
+            <Plus size={12} />New role
+          </button>
+        </div>
+        <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 14 }}>
+          Catalogue sample roles are the recommended starters. Custom roles grant any combination of catalogue capabilities.
+        </p>
+
+        <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', letterSpacing: '.05em', marginBottom: 10, textTransform: 'uppercase' }}>
+          From Access Catalogue · sample templates
+        </p>
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          {sampleRoles.map((r) => {
+            const caps = roleCapabilityIds(r);
+            const { show, more } = permChips(catalogue, caps);
+            return (
+              <div key={r.id} className="p-4 rounded-[22px]" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
+                <div className="flex items-start gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#0B0F1A' }}>
+                    <Award size={14} style={{ color: 'white' }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0B1220' }}>{r.name}</p>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: '#F3F4F6', color: '#374151' }}>catalogue</span>
+                    </div>
+                    <p style={{ fontSize: 12, color: '#6B7280', lineHeight: 1.5 }}>{r.description}</p>
+                    <code className="text-[10.5px]" style={{ color: '#9AA3AF' }}>{r.id}</code>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {show.map((l) => (
+                    <span key={l} className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#374151' }}>{l}</span>
+                  ))}
+                  {more > 0 && <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#9AA3AF' }}>+{more} more</span>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openDuplicate(r)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium"
+                  style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(0,0,0,0.02)' }}
+                >
+                  ⧉ Duplicate & customize
+                </button>
+              </div>
+            );
+          })}
+          {!sampleRoles.length && (
+            <div className="col-span-2 p-5 rounded-[22px] text-center" style={{ background: 'rgba(255,255,255,0.55)', border: '1px dashed rgba(0,0,0,0.1)' }}>
+              <p style={{ fontSize: 13, color: '#9AA3AF' }}>
+                No sample roles yet. Add them under Access Catalogue → Sample roles, then Save catalogue.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', letterSpacing: '.05em', marginBottom: 10, textTransform: 'uppercase' }}>
+          Custom roles in Bridge
+        </p>
+        {customRoles.length === 0 ? (
+          <div className="p-5 rounded-[22px] text-center" style={{ background: 'rgba(255,255,255,0.55)', border: '1px dashed rgba(0,0,0,0.1)' }}>
+            <p style={{ fontSize: 13, color: '#9AA3AF' }}>No custom roles yet. Duplicate a catalogue role above, or create one from scratch.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {customRoles.map((r) => {
+              const caps = roleCapabilityIds(r);
+              const { show, more } = permChips(catalogue, caps);
+              const demo = listPolicyDemoAccounts({ customOnly: true }).find((a) => a.policyRoleId === r.id);
+              return (
+                <div key={r.id} className="p-4 rounded-[22px]" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
+                  <div className="flex items-start gap-2 mb-2">
+                    <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#059669' }}>
+                      <Award size={14} style={{ color: 'white' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0B1220' }}>{r.name}</p>
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: 'rgba(5,150,105,0.1)', color: '#047857' }}>custom</span>
+                      </div>
+                      <p style={{ fontSize: 12, color: '#6B7280', lineHeight: 1.5 }}>{r.description}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {show.map((l) => <span key={l} className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#374151' }}>{l}</span>)}
+                    {more > 0 && <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#9AA3AF' }}>+{more} more</span>}
+                  </div>
+                  {demo && (
+                    <p style={{ fontSize: 12, color: '#047857', marginBottom: 8, fontFamily: 'ui-monospace, monospace' }}>
+                      Login: {demo.email} / {demo.password}
+                    </p>
+                  )}
+                  {(r.restrictedResourceTypes || []).length > 0 && (
+                    <p style={{ fontSize: 12, color: '#D97706', marginBottom: 8 }}>
+                      ⌗ Can create: {r.restrictedResourceTypes!.join(', ')}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => openEdit(r)} className="flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-medium" style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>✎ Edit</button>
+                    <button type="button" onClick={() => deleteCustom(r.id)} className="flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-medium" style={{ color: '#EA580C', borderColor: 'rgba(234,88,12,0.2)' }}>🗑 Delete</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+        <div className="flex items-center gap-2 mb-3">
+          <Users size={15} style={{ color: '#374151' }} />
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>People</h2>
+        </div>
+        <div className="rounded-[22px] overflow-hidden" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
+          <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500">
-                <th className="px-4 py-2.5 font-medium">Person</th>
-                <th className="px-4 py-2.5 font-medium">Role</th>
-                <th className="px-4 py-2.5 font-medium">Status</th>
-                <th className="px-4 py-2.5" />
+              <tr style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+                {['Person', 'Roles', 'Team', 'Active', ''].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left" style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF' }}>{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {people.map((p) => (
-                <tr key={p.email} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-2.5">
-                    <div className="font-medium text-slate-800">{p.display_name ?? p.email}</div>
-                    <div className="text-xs text-slate-500">{p.email}</div>
+              {PEOPLE.map((p, i) => (
+                <tr key={p.id} style={{ borderBottom: i < PEOPLE.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none' }}>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-[#0B0F1A] text-white flex items-center justify-center shrink-0" style={{ fontSize: 11, fontWeight: 700 }}>{p.initials}</div>
+                      <p style={{ fontSize: 13, fontWeight: 550, color: '#0B1220' }}>{p.name}</p>
+                    </div>
                   </td>
-                  <td className="px-4 py-2.5">
-                    {p.is_admin ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">
-                        <Shield className="h-3 w-3" /> Admin <span className="text-indigo-400">· managed in Nexus</span>
-                      </span>
-                    ) : (
-                      <select value={p.role_id ?? 'none'} disabled={busy === p.email}
-                        onChange={(e) => void assign(p, e.target.value === 'none' ? null : e.target.value)}
-                        className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700">
-                        <option value="none">No role</option>
-                        {(roles ?? []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                      </select>
-                    )}
+                  <td className="px-4 py-3">
+                    <span
+                      className="px-2.5 py-0.5 rounded-full text-xs font-medium"
+                      style={{
+                        background: p.role === 'student' ? 'rgba(6,182,212,0.1)' : 'rgba(0,0,0,0.05)',
+                        color: p.role === 'student' ? '#0E7490' : '#374151',
+                      }}
+                    >
+                      {ROLE_LABELS[p.role]}
+                    </span>
                   </td>
-                  <td className="px-4 py-2.5">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${p.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{p.status}</span>
+                  <td className="px-4 py-3">
+                    <p style={{ fontSize: 12.5, color: '#6B7280' }}>Bridge</p>
                   </td>
-                  <td className="px-4 py-2.5 text-right">
-                    {!p.is_admin && (p.membership_id || p.invitation_id) ? (
-                      <button type="button" onClick={() => void removePerson(p)} disabled={busy === p.email}
-                        title="Remove from program" className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
-                    ) : null}
+                  <td className="px-4 py-3">
+                    <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>today</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => fireToast(`Role assignment UI for ${p.name} — coming with assignments API`)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-medium"
+                      style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.9)' }}
+                    >
+                      ⚙ Roles
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      </motion.div>
+
+      {editorState.open && (
+        <RoleEditorModal
+          catalogue={catalogue}
+          initial={editorState.initial}
+          onSave={saveRole}
+          onClose={() => setEditorState({ open: false, initial: null })}
+        />
       )}
 
-      {editingRole ? (
-        <RoleBuilder role={editingRole === 'new' ? null : editingRole} onClose={() => setEditingRole(null)} onSaved={() => { setEditingRole(null); void load(); }} />
-      ) : null}
-      {inviteOpen ? (
-        <InvitePersonDialog programId={programId} roles={roles ?? []} onClose={() => setInviteOpen(false)} onInvited={() => void load()} />
-      ) : null}
-    </div>
-  );
-}
-
-/** Create/edit a custom role: name + per-area view/edit toggles. */
-function RoleBuilder({ role, onClose, onSaved }: { role: LearningRole | null; onClose: () => void; onSaved: () => void }) {
-  const [name, setName] = useState(role?.name ?? '');
-  const [perms, setPerms] = useState<Record<string, AreaLevel>>(role?.perms ?? {});
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  // One node row + its children, recursively. Checking a parent cascades to its
-  // subtree; picking "edit" cascades edit down where each child supports it.
-  function renderNode(node: AccessNode, depth: number): React.ReactNode {
-    const lvl = effectiveLevel(perms, false, node.id);
-    const on = lvl !== 'none';
-    const editable = isEditable(node);
-    return (
-      <div key={node.id}>
-        <div className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2" style={{ marginLeft: depth * 16 }}>
-          <input
-            type="checkbox"
-            checked={on}
-            className="h-4 w-4"
-            onChange={(e) => setPerms((p) => (e.target.checked ? cascadeSet(p, node.id, 'view') : cascadeClear(p, node.id)))}
-          />
-          <div className="flex-1">
-            <div className="text-sm text-slate-800">{node.label}</div>
-            {node.hint ? <div className="text-[11px] text-slate-400">{node.hint}</div> : null}
-          </div>
-          <div className="flex overflow-hidden rounded-lg border border-slate-300 text-xs">
-            {(['view', 'edit'] as AreaLevel[]).map((l) => {
-              const disabled = !on || (l === 'edit' && !editable);
-              return (
-                <button
-                  key={l}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => setPerms((p) => cascadeSet(p, node.id, l))}
-                  title={l === 'edit' && !editable ? 'This area is view-only' : undefined}
-                  className={`px-2.5 py-1 capitalize ${lvl === l ? 'bg-slate-800 text-white' : 'bg-white text-slate-500'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                >
-                  {l}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        {node.children?.length ? <div className="mt-1.5 space-y-1.5">{node.children.map((c) => renderNode(c, depth + 1))}</div> : null}
-      </div>
-    );
-  }
-
-  async function save() {
-    if (!name.trim()) return;
-    setBusy(true); setErr(null);
-    try {
-      if (role) await updateLearningRole(role.id, { name: name.trim(), perms });
-      else await createLearningRole(name.trim(), perms);
-      onSaved();
-    } catch (e) { setErr(e instanceof Error ? e.message : 'Failed to save role'); setBusy(false); }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-800">{role ? 'Edit role' : 'Create role'}</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
-        </div>
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Role name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Content Reviewer"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" autoFocus />
-          </div>
-          <div>
-            <div className="mb-1 text-xs font-medium text-slate-600">Access</div>
-            <p className="mb-2 text-xs text-slate-500">Turn on an area, then pick view or edit. Sub-areas nest under their tab — granting a tab cascades to everything below it. Only granted areas appear for this role.</p>
-            <div className="max-h-80 space-y-1.5 overflow-y-auto pr-1">
-              {LEARNING_MANIFEST.accessTree.map((n) => renderNode(n, 0))}
-            </div>
-          </div>
-          {err ? <p className="text-sm text-red-600">{err}</p> : null}
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Cancel</button>
-            <button type="button" onClick={() => void save()} disabled={busy || !name.trim()}
-              className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
-              {busy ? 'Saving…' : role ? 'Save role' : 'Create role'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Invite flow — create a Nexus invitation (link), then assign a custom role. */
-function InvitePersonDialog({ programId, roles, onClose, onInvited }: {
-  programId: string | null; roles: LearningRole[]; onClose: () => void; onInvited: () => void;
-}) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [roleId, setRoleId] = useState('none');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [link, setLink] = useState<string | null>(null);
-
-  async function submit() {
-    if (!programId || !email.trim()) return;
-    setBusy(true); setErr(null);
-    try {
-      const res = await nexusFetch(`/api/programs/${programId}/members`, {
-        method: 'POST', body: JSON.stringify({ email: email.trim(), display_name: name.trim() || undefined }),
-      });
-      if (!res.ok) throw new Error(`Invite failed (${res.status})`);
-      const inv = await res.json();
-      if (roleId !== 'none') await assignLearningRole(email.trim(), roleId);
-      setLink(inv.redeem_url || (inv.token ? `/invite/${inv.token}` : ''));
-      onInvited();
-    } catch (e) { setErr(e instanceof Error ? e.message : 'Invite failed'); }
-    finally { setBusy(false); }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-800">Invite person</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><X className="h-4 w-4" /></button>
-        </div>
-        {link ? (
-          <div className="space-y-3">
-            <p className="text-sm text-slate-600">Share this link with {email}. They set their own password, sign in, and land here in the role you gave them.</p>
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <code className="flex-1 truncate text-xs text-slate-700">{link}</code>
-              <button type="button" onClick={() => { void navigator.clipboard?.writeText(link); }} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-200" title="Copy link"><Copy className="h-3.5 w-3.5" /></button>
-            </div>
-            <div className="flex justify-end"><button type="button" onClick={onClose} className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Done</button></div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div><label className="mb-1 block text-xs font-medium text-slate-600">Name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jordan Lee" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div>
-            <div><label className="mb-1 block text-xs font-medium text-slate-600">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jordan@example.org" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div>
-            <div><label className="mb-1 block text-xs font-medium text-slate-600">Role</label>
-              <select value={roleId} onChange={(e) => setRoleId(e.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
-                <option value="none">No role yet</option>
-                {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select></div>
-            {err ? <p className="text-sm text-red-600">{err}</p> : null}
-            <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={onClose} className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Cancel</button>
-              <button type="button" onClick={() => void submit()} disabled={busy || !email.trim()}
-                className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">{busy ? 'Inviting…' : 'Send invite'}</button>
-            </div>
-          </div>
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full text-white z-50"
+            style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600, boxShadow: '0 8px 24px -8px rgba(0,0,0,0.3)' }}
+          >
+            ✓ {toast}
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
     </div>
   );
 }
-
-export default AdminPeopleRoles;

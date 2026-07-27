@@ -24,7 +24,7 @@ import { getStorage, orgKey } from "../storage";
 import { slugify } from "../platformLocalStore";
 import * as catalogue from "../accessCatalogue/store";
 import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
-import { resolveCapabilities, surfacesForCapabilities } from "../accessCatalogue/resolver";
+import { resolveCapabilities, surfacesForCapabilities, grantableCapabilities } from "../accessCatalogue/resolver";
 import { capabilitiesFor, requireCapability } from "../accessCatalogue/enforce";
 import type { ProviderId } from "../accessCatalogue/types";
 import { isOfferingAdmin } from "../permissions";
@@ -977,6 +977,18 @@ platformRouter.get("/learning/context", async (c) => {
   // everything); everyone else is confined to their role's granted areas.
   const isAdmin = access.level === "admin";
   const customRole = !isAdmin && user.email ? await graph.getLearningRoleForEmail(access.programId, user.email) : null;
+  // Effective learning capabilities — the app gates its screens on these:
+  //  • admin        → everything the catalogue grants (full access)
+  //  • custom role  → exactly the capabilities that role binds
+  //  • otherwise    → the launch level's sample-role capabilities (edit →
+  //                   content-developer, comment → reviewer, view → learner).
+  const learningDoc = await catalogue.getCatalogue("learning");
+  const roleCaps = (customRole?.perms as Row | undefined)?.capabilities;
+  const capabilities = isAdmin
+    ? _learningCapsForLevel(learningDoc, "admin")
+    : Array.isArray(roleCaps) && roleCaps.length
+      ? (roleCaps as string[])
+      : _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
   return c.json({
     nexusUserId: access.profileId,
     laicOrgId: access.orgId,
@@ -985,11 +997,12 @@ platformRouter.get("/learning/context", async (c) => {
     roles: mapped.roles,
     permissions: [`learning:${access.level}`],
     accessLevel: mapped.accessLevel,
+    capabilities, // effective learning-catalogue capability ids (screen gating)
     displayName: await _platformDisplayName(access.profileId, user),
     program_name: access.programName,
     role_name: access.roleName,
     is_admin: isAdmin,
-    learning_role: customRole, // { role_id, role_name, perms } or null
+    learning_role: customRole, // { role_id, role_name, perms:{...,capabilities} } or null
   });
 });
 
@@ -1019,9 +1032,31 @@ platformRouter.put("/learning/objects", async (c) => {
 
 // ── Learning Platform custom roles (the learning app's own People tab) ──────
 const _learningPerms = z.record(z.string(), z.enum(["view", "edit"]));
-const learningRoleCreateSchema = z.object({ program_id: z.string(), name: z.string().min(1), perms: _learningPerms.default({}) });
-const learningRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _learningPerms.optional() });
+// A learning role now binds fine-grained capability ids from the learning
+// catalogue (her capability-based model). The legacy per-area view/edit `perms`
+// stays for backward compatibility; capabilities are the new source of truth.
+const learningRoleCreateSchema = z.object({ program_id: z.string(), name: z.string().min(1), perms: _learningPerms.default({}), capabilities: z.array(z.string()).optional() });
+const learningRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _learningPerms.optional(), capabilities: z.array(z.string()).optional() });
 const learningAssignSchema = z.object({ program_id: z.string(), email: z.string().email(), role_id: z.string().nullable() });
+
+/** Fold sanitized learning-catalogue capabilities into a role's perms blob
+ *  (dropping unknown/reserved ids), mirroring the org/program role builders. */
+async function _learningPermsWithCaps(perms: Record<string, unknown>, capabilities: string[] | undefined): Promise<Record<string, unknown>> {
+  if (capabilities === undefined) return perms;
+  return { ...perms, capabilities: await catalogue.validGrantsAcross([{ providerId: "learning" }], capabilities) };
+}
+
+/** The capability ids a launch LEVEL implies, sourced from the learning
+ *  catalogue's own sample roles: admin → everything grantable; edit →
+ *  content-developer; comment → reviewer; view → learner. This is the coarse
+ *  Nexus access → learning capability bridge for people without a custom role. */
+function _learningCapsForLevel(doc: CapabilityCatalogueDocument, level: "admin" | "edit" | "comment" | "view"): string[] {
+  if (level === "admin") return grantableCapabilities(doc);
+  const sampleId = level === "edit" ? "learning-content-developer" : level === "comment" ? "learning-reviewer" : "learner";
+  const tmpl = (doc.sampleRoleTemplates ?? []).find((r) => r.id === sampleId);
+  const ids = tmpl?.grants?.flatMap((g) => g.capabilityIds) ?? [];
+  return [...new Set(ids)];
+}
 
 /** The caller must be a learning admin of the program. Returns the resolved access. */
 async function _learningAdmin(c: Context, programId: string) {
@@ -1030,6 +1065,29 @@ async function _learningAdmin(c: Context, programId: string) {
   if (access.level !== "admin") throw new HttpError(403, "Learning admin access required");
   return access;
 }
+
+// The shared learning catalogue — the app's own inventory of surfaces +
+// capabilities. Read: any learning member (the role builder + screen gating
+// need it). Write: a learning admin (it's the learning team's own catalogue).
+platformRouter.get("/learning/catalogue", async (c) => {
+  const user = await getCurrentUser(c);
+  // Any caller who can enter learning may read it (admins + members).
+  await resolvePlatformAccess(user, "learning", c.req.query("program_id") ?? null);
+  return c.json(await catalogue.getCatalogue("learning"));
+});
+platformRouter.put("/learning/catalogue", async (c) => {
+  await _learningAdmin(c, c.req.query("program_id") ?? "");
+  const doc = (await c.req.json()) as CapabilityCatalogueDocument;
+  if (doc?.documentType !== "capability_catalogue" || !Array.isArray(doc.capabilities) || !Array.isArray(doc.groups)) {
+    throw new HttpError(422, "Not a valid catalogue document");
+  }
+  if (doc.provider?.id !== "learning-platform") throw new HttpError(422, 'provider.id must equal "learning-platform"');
+  return c.json(await catalogue.saveCatalogue("learning", doc));
+});
+platformRouter.delete("/learning/catalogue", async (c) => {
+  await _learningAdmin(c, c.req.query("program_id") ?? "");
+  return c.json(await catalogue.resetCatalogue("learning"));
+});
 
 platformRouter.get("/learning/roles", async (c) => {
   const pid = c.req.query("program_id") ?? "";
@@ -1040,14 +1098,23 @@ platformRouter.get("/learning/roles", async (c) => {
 platformRouter.post("/learning/roles", async (c) => {
   const req = parseBody(learningRoleCreateSchema, await c.req.json());
   const access = await _learningAdmin(c, req.program_id);
-  return c.json(await graph.createLearningRole(access.orgId, access.programId, req.name, req.perms));
+  const perms = await _learningPermsWithCaps(req.perms, req.capabilities);
+  return c.json(await graph.createLearningRole(access.orgId, access.programId, req.name, perms));
 });
 
 platformRouter.patch("/learning/roles/:id", async (c) => {
   const body = parseBody(learningRoleUpdateSchema, await c.req.json());
   const pid = c.req.query("program_id") ?? "";
   await _learningAdmin(c, pid);
-  const row = await graph.updateLearningRole(c.req.param("id"), { name: body.name, perms: body.perms });
+  // Merge capabilities into whatever perms are being written (or the existing
+  // blob) so the area perms and capabilities don't clobber each other.
+  let perms = body.perms as Record<string, unknown> | undefined;
+  if (body.capabilities !== undefined) {
+    const existing = await graph.getLearningRole(c.req.param("id")).catch(() => null);
+    const base = (perms ?? (existing?.perms as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+    perms = await _learningPermsWithCaps(base, body.capabilities);
+  }
+  const row = await graph.updateLearningRole(c.req.param("id"), { name: body.name, perms });
   if (!row) throw new HttpError(404, "Role not found");
   return c.json(row);
 });

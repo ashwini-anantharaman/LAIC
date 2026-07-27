@@ -22,6 +22,7 @@ import {
   signOutToNexus,
 } from '../lib/nexus';
 import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
+import { defaultScreenForCapabilities } from '../lib/roleAccess';
 
 export interface AppState {
   role: Role;
@@ -34,6 +35,8 @@ export interface AppState {
   /** Custom-role area perms (null = admin/none); admins see everything. */
   learningPerms: Record<string, AreaLevel> | null;
   learningIsAdmin: boolean;
+  /** Effective learning-catalogue capability ids from Nexus (null = admin/demo). */
+  learningCapabilities: string[] | null;
   /** Admin "Test as" a role: preview the app confined to that role's perms. */
   previewName: string | null;
   startRolePreview: (name: string, perms: Record<string, AreaLevel>) => void;
@@ -96,6 +99,7 @@ export default function App() {
   const [nexusMode, setNexusMode] = useState(false);
   const [learningPerms, setLearningPerms] = useState<Record<string, AreaLevel> | null>(null);
   const [learningIsAdmin, setLearningIsAdmin] = useState(false);
+  const [learningCapabilities, setLearningCapabilities] = useState<string[] | null>(null);
   const [previewPerms, setPreviewPerms] = useState<Record<string, AreaLevel> | null>(null);
   const [previewName, setPreviewName] = useState<string | null>(null);
   const [nexusProgramName, setNexusProgramName] = useState<string | null>(null);
@@ -175,18 +179,22 @@ export default function App() {
         const uid = ctx.nexusUserId || 'nexus';
         const isAdmin = ctx.is_admin ?? r === 'administrator';
         const perms = ctx.learning_role?.perms ?? null;
+        const caps = isAdmin ? null : (ctx.capabilities ?? null);
         setNexusMode(true);
         setLearningIsAdmin(isAdmin);
         setLearningPerms(perms);
+        setLearningCapabilities(caps);
         setNexusProgramName(ctx.program_name ?? null);
         setNexusUserName(ctx.displayName ?? null);
         setNexusUserRole(isAdmin ? 'Administrator' : (ctx.learning_role?.role_name ?? ctx.role_name ?? 'Member'));
         setActiveUserId(uid);
         setRoleState(r);
-        // Land on the first screen the person's granted areas expose (admins:
-        // Program Overview), not the persona default.
+        // Land on the first screen the person's access exposes. Members are gated
+        // by their effective capabilities (Access Catalogue); admins land on the
+        // program overview. Fall back to the legacy area-perms nav.
         const nav = navItemsForPerms(perms, isAdmin);
-        setCurrentScreen(isAdmin ? 'admin-overview' : nav[0]?.id ?? DEFAULT_SCREEN[r]);
+        const memberLanding = caps?.length ? defaultScreenForCapabilities(caps) : (nav[0]?.id ?? DEFAULT_SCREEN[r]);
+        setCurrentScreen(isAdmin ? 'admin-overview' : memberLanding);
         setIsLoggedIn(true);
         void hydrateForUser(uid);
         setBooting(false);
@@ -358,6 +366,7 @@ export default function App() {
     // While previewing a role, the whole app runs confined to that role's perms.
     learningPerms: previewing ? previewPerms : learningPerms,
     learningIsAdmin: previewing ? false : learningIsAdmin,
+    learningCapabilities,
     previewName, startRolePreview, stopRolePreview,
     nexusProgramName, nexusUserName, nexusUserRole,
     readerObjectId, creatorObjectType, createdObjects, editingObjectId, pendingTemplateId,

@@ -13,6 +13,7 @@
  *   GET/PUT/DELETE /api/platform/platforms/learning/people…     (People & Roles)
  */
 import type { Role } from "./types";
+import type { CapabilityCatalogueDocument } from "./accessControlCatalogue";
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
@@ -38,8 +39,10 @@ export interface LearningContext {
   program_name?: string | null;
   role_name?: string | null;
   is_admin?: boolean;
+  /** The caller's effective learning-catalogue capability ids (screen gating). */
+  capabilities?: string[];
   /** The person's assigned custom Learning role (null for admins / unassigned). */
-  learning_role?: { role_id: string; role_name: string | null; perms: Record<string, 'view' | 'edit'> } | null;
+  learning_role?: { role_id: string; role_name: string | null; perms: Record<string, 'view' | 'edit'> & { capabilities?: string[] } } | null;
 }
 
 export function getToken(): string | null {
@@ -173,20 +176,40 @@ export async function listLearningRoles(): Promise<LearningRole[]> {
   if (!res.ok) return [];
   return (await res.json()) as LearningRole[];
 }
-export async function createLearningRole(name: string, perms: Record<string, 'view' | 'edit'>): Promise<LearningRole> {
+export async function createLearningRole(name: string, perms: Record<string, 'view' | 'edit'>, capabilities?: string[]): Promise<LearningRole> {
   const res = await nexusFetch('/api/platform/learning/roles', {
     method: 'POST',
-    body: JSON.stringify({ program_id: pid(), name, perms }),
+    body: JSON.stringify({ program_id: pid(), name, perms, capabilities }),
   });
   if (!res.ok) throw new Error(`Create role failed (${res.status})`);
   return (await res.json()) as LearningRole;
 }
-export async function updateLearningRole(id: string, patch: { name?: string; perms?: Record<string, 'view' | 'edit'> }): Promise<void> {
+export async function updateLearningRole(id: string, patch: { name?: string; perms?: Record<string, 'view' | 'edit'>; capabilities?: string[] }): Promise<void> {
   const res = await nexusFetch(`/api/platform/learning/roles/${id}?program_id=${encodeURIComponent(pid())}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error(`Update role failed (${res.status})`);
+}
+
+// ── Shared learning catalogue (the app's inventory of surfaces + capabilities) ──
+export async function fetchLearningCatalogue(): Promise<CapabilityCatalogueDocument> {
+  const res = await nexusFetch(`/api/platform/learning/catalogue?program_id=${encodeURIComponent(pid())}`);
+  if (!res.ok) throw new Error(`Fetch catalogue failed (${res.status})`);
+  return (await res.json()) as CapabilityCatalogueDocument;
+}
+export async function putLearningCatalogue(doc: CapabilityCatalogueDocument): Promise<CapabilityCatalogueDocument> {
+  const res = await nexusFetch(`/api/platform/learning/catalogue?program_id=${encodeURIComponent(pid())}`, {
+    method: 'PUT',
+    body: JSON.stringify(doc),
+  });
+  if (!res.ok) throw new Error(`Save catalogue failed (${res.status})`);
+  return (await res.json()) as CapabilityCatalogueDocument;
+}
+export async function resetLearningCatalogue(): Promise<CapabilityCatalogueDocument> {
+  const res = await nexusFetch(`/api/platform/learning/catalogue?program_id=${encodeURIComponent(pid())}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Reset catalogue failed (${res.status})`);
+  return (await res.json()) as CapabilityCatalogueDocument;
 }
 export async function deleteLearningRole(id: string): Promise<void> {
   const res = await nexusFetch(`/api/platform/learning/roles/${id}?program_id=${encodeURIComponent(pid())}`, { method: 'DELETE' });

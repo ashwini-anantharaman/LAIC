@@ -1,0 +1,572 @@
+{
+  "$schema": "./laic-access-control.schema.json",
+  "schemaVersion": "1.0",
+  "documentType": "capability_catalogue",
+  "id": "learning-platform-access",
+  "name": "Learning Platform Capability Catalogue",
+  "description": "Atomic capabilities and optional UI mappings published by the Learning Platform. Live program roles and assignments are defined by program administrators.",
+  "provider": {
+    "kind": "platform",
+    "id": "learning-platform"
+  },
+  "catalogueVersion": "1.0",
+  "capabilities": [
+    {
+      "id": "learning.object.read",
+      "label": "Browse learning and evaluation objects",
+      "description": "Browse learning and evaluation objects",
+      "group": "repository",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.object.create",
+      "label": "Create learning and evaluation objects",
+      "description": "Create learning and evaluation objects",
+      "group": "authoring",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.object.edit",
+      "label": "Edit learning and evaluation objects",
+      "description": "Edit learning and evaluation objects",
+      "group": "authoring",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.object.delete",
+      "label": "Delete learning and evaluation objects",
+      "description": "Delete learning and evaluation objects",
+      "group": "authoring",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.source.manage",
+      "label": "Manage source pools and source records",
+      "description": "Manage source pools and source records",
+      "group": "sources"
+    },
+    {
+      "id": "learning.source.extract",
+      "label": "Mark up sources and extract candidate content",
+      "description": "Mark up sources and extract candidate content",
+      "group": "sources"
+    },
+    {
+      "id": "learning.composition.create",
+      "label": "Create lessons, tutorials, courses, paths, and other compositions",
+      "description": "Create lessons, tutorials, courses, paths, and other compositions",
+      "group": "composition",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.composition.edit",
+      "label": "Edit learning compositions",
+      "description": "Edit learning compositions",
+      "group": "composition",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.review.submit",
+      "label": "Submit objects or compositions for review",
+      "description": "Submit objects or compositions for review",
+      "group": "review"
+    },
+    {
+      "id": "learning.review.comment",
+      "label": "Comment and provide feedback",
+      "description": "Comment and provide feedback",
+      "group": "review"
+    },
+    {
+      "id": "learning.review.object",
+      "label": "Approve or request changes to objects",
+      "description": "Approve or request changes to objects",
+      "group": "review"
+    },
+    {
+      "id": "learning.review.composition",
+      "label": "Approve or request changes to compositions",
+      "description": "Approve or request changes to compositions",
+      "group": "review"
+    },
+    {
+      "id": "learning.review.resolve",
+      "label": "Resolve review threads",
+      "description": "Resolve review threads",
+      "group": "review"
+    },
+    {
+      "id": "learning.publish.release",
+      "label": "Publish approved objects and compositions",
+      "description": "Publish approved objects and compositions",
+      "group": "publishing"
+    },
+    {
+      "id": "learning.publish.version",
+      "label": "Manage published versions",
+      "description": "Manage published versions",
+      "group": "publishing"
+    },
+    {
+      "id": "learning.publish.audience",
+      "label": "Set program, organization, cohort, or participant audience",
+      "description": "Set program, organization, cohort, or participant audience",
+      "group": "publishing"
+    },
+    {
+      "id": "learning.assignment.create",
+      "label": "Assign learning experiences to learners or cohorts",
+      "description": "Assign learning experiences to learners or cohorts",
+      "group": "teaching"
+    },
+    {
+      "id": "learning.cohort.configure",
+      "label": "Configure cohort learning and interaction settings",
+      "description": "Configure cohort learning and interaction settings",
+      "group": "teaching"
+    },
+    {
+      "id": "learning.progress.view",
+      "label": "View learner or cohort progress",
+      "description": "View learner or cohort progress",
+      "group": "teaching"
+    },
+    {
+      "id": "learning.runtime.use",
+      "label": "Use the learner runtime",
+      "description": "Use the learner runtime",
+      "group": "learner"
+    },
+    {
+      "id": "learning.runtime.ai_tools",
+      "label": "Use enabled AI study tools in the learner runtime",
+      "description": "Use enabled AI study tools in the learner runtime",
+      "group": "learner"
+    },
+    {
+      "id": "learning.repository.organize",
+      "label": "Organize repository collections and metadata",
+      "description": "Organize repository collections and metadata",
+      "group": "administration"
+    },
+    {
+      "id": "learning.analytics.view",
+      "label": "View learning and authoring analytics",
+      "description": "View learning and authoring analytics",
+      "group": "administration"
+    }
+  ],
+  "resourceTypes": [
+    {
+      "id": "learning_object",
+      "label": "Learning object",
+      "description": "Learning object",
+      "constraintFields": [
+        "object_type",
+        "status",
+        "owner_scope_id"
+      ]
+    },
+    {
+      "id": "evaluation_object",
+      "label": "Evaluation or assessment object",
+      "description": "Evaluation or assessment object",
+      "constraintFields": [
+        "evaluation_type",
+        "status",
+        "owner_scope_id"
+      ]
+    },
+    {
+      "id": "learning_composition",
+      "label": "Lesson, tutorial, course, path, or composite object",
+      "description": "Lesson, tutorial, course, path, or composite object",
+      "constraintFields": [
+        "composition_type",
+        "status",
+        "owner_scope_id"
+      ]
+    },
+    {
+      "id": "source_pool",
+      "label": "Source pool",
+      "description": "Source pool",
+      "constraintFields": [
+        "owner_scope_id"
+      ]
+    },
+    {
+      "id": "assignment",
+      "label": "Learning assignment",
+      "description": "Learning assignment",
+      "constraintFields": [
+        "cohort_id",
+        "learner_id"
+      ]
+    },
+    {
+      "id": "cohort",
+      "label": "Learner cohort",
+      "description": "Learner cohort",
+      "constraintFields": [
+        "owner_scope_id"
+      ]
+    },
+    {
+      "id": "learner_record",
+      "label": "Learner progress record",
+      "description": "Learner progress record",
+      "constraintFields": [
+        "learner_id",
+        "cohort_id"
+      ]
+    }
+  ],
+  "uiSurfaces": [
+    {
+      "id": "learning.home",
+      "label": "Home",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/home",
+      "requiredAnyCapabilities": []
+    },
+    {
+      "id": "learning.create",
+      "label": "Create",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/create",
+      "requiredAnyCapabilities": [
+        "learning.object.create",
+        "learning.composition.create"
+      ]
+    },
+    {
+      "id": "learning.sources",
+      "label": "Sources",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/sources",
+      "requiredAnyCapabilities": [
+        "learning.source.manage",
+        "learning.source.extract"
+      ]
+    },
+    {
+      "id": "learning.library",
+      "label": "Object Library",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/library",
+      "requiredAnyCapabilities": [
+        "learning.object.read"
+      ]
+    },
+    {
+      "id": "learning.submissions",
+      "label": "My Submissions",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/submissions",
+      "requiredAnyCapabilities": [
+        "learning.review.submit"
+      ]
+    },
+    {
+      "id": "learning.object_reviews",
+      "label": "Object Reviews",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/reviews/objects",
+      "requiredAnyCapabilities": [
+        "learning.review.object"
+      ]
+    },
+    {
+      "id": "learning.composition_reviews",
+      "label": "Composition Reviews",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/reviews/compositions",
+      "requiredAnyCapabilities": [
+        "learning.review.composition"
+      ]
+    },
+    {
+      "id": "learning.publishing",
+      "label": "Versions & Publishing",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/publishing",
+      "requiredAnyCapabilities": [
+        "learning.publish.release",
+        "learning.publish.version",
+        "learning.publish.audience"
+      ]
+    },
+    {
+      "id": "learning.assignments",
+      "label": "Assignments",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/assignments",
+      "requiredAnyCapabilities": [
+        "learning.assignment.create"
+      ]
+    },
+    {
+      "id": "learning.progress",
+      "label": "Progress",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/progress",
+      "requiredAnyCapabilities": [
+        "learning.progress.view"
+      ]
+    },
+    {
+      "id": "learning.today",
+      "label": "Today",
+      "kind": "navigation",
+      "group": "learner",
+      "routeOrComponent": "/learn/today",
+      "requiredAnyCapabilities": [
+        "learning.runtime.use"
+      ]
+    },
+    {
+      "id": "learning.my_learning",
+      "label": "My Learning",
+      "kind": "navigation",
+      "group": "learner",
+      "routeOrComponent": "/learn/library",
+      "requiredAnyCapabilities": [
+        "learning.runtime.use"
+      ]
+    },
+    {
+      "id": "learning.ai_tools",
+      "label": "AI Study Tools",
+      "kind": "component",
+      "group": "learner",
+      "routeOrComponent": "LearningAITools",
+      "requiredAnyCapabilities": [
+        "learning.runtime.ai_tools"
+      ]
+    },
+    {
+      "id": "learning.admin",
+      "label": "Learning Administration",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/admin",
+      "requiredAnyCapabilities": [
+        "learning.repository.organize",
+        "learning.analytics.view"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "id": "authoring",
+      "label": "Authoring",
+      "order": 1,
+      "capabilityIds": [
+        "learning.object.create",
+        "learning.object.edit",
+        "learning.object.delete"
+      ],
+      "uiSurfaceIds": [
+        "learning.home",
+        "learning.create"
+      ]
+    },
+    {
+      "id": "sources",
+      "label": "Sources",
+      "order": 2,
+      "capabilityIds": [
+        "learning.source.manage",
+        "learning.source.extract"
+      ],
+      "uiSurfaceIds": [
+        "learning.sources"
+      ]
+    },
+    {
+      "id": "repository",
+      "label": "Repository",
+      "order": 3,
+      "capabilityIds": [
+        "learning.object.read",
+        "learning.repository.organize"
+      ],
+      "uiSurfaceIds": [
+        "learning.library"
+      ]
+    },
+    {
+      "id": "composition",
+      "label": "Compositions",
+      "order": 4,
+      "capabilityIds": [
+        "learning.composition.create",
+        "learning.composition.edit"
+      ],
+      "uiSurfaceIds": []
+    },
+    {
+      "id": "review",
+      "label": "Review",
+      "order": 5,
+      "capabilityIds": [
+        "learning.review.submit",
+        "learning.review.comment",
+        "learning.review.object",
+        "learning.review.composition",
+        "learning.review.resolve"
+      ],
+      "uiSurfaceIds": [
+        "learning.submissions",
+        "learning.object_reviews",
+        "learning.composition_reviews"
+      ]
+    },
+    {
+      "id": "publishing",
+      "label": "Publishing",
+      "order": 6,
+      "capabilityIds": [
+        "learning.publish.release",
+        "learning.publish.version",
+        "learning.publish.audience"
+      ],
+      "uiSurfaceIds": [
+        "learning.publishing"
+      ]
+    },
+    {
+      "id": "teaching",
+      "label": "Teaching",
+      "order": 7,
+      "capabilityIds": [
+        "learning.assignment.create",
+        "learning.cohort.configure",
+        "learning.progress.view"
+      ],
+      "uiSurfaceIds": [
+        "learning.assignments",
+        "learning.progress"
+      ]
+    },
+    {
+      "id": "learner",
+      "label": "Learner Runtime",
+      "order": 8,
+      "capabilityIds": [
+        "learning.runtime.use",
+        "learning.runtime.ai_tools"
+      ],
+      "uiSurfaceIds": [
+        "learning.today",
+        "learning.my_learning",
+        "learning.ai_tools"
+      ]
+    },
+    {
+      "id": "administration",
+      "label": "Administration",
+      "order": 9,
+      "capabilityIds": [
+        "learning.analytics.view"
+      ],
+      "uiSurfaceIds": [
+        "learning.admin"
+      ]
+    }
+  ],
+  "sampleRoleTemplates": [
+    {
+      "id": "learning-content-developer",
+      "name": "Learning Content Developer",
+      "description": "Creates and prepares learning objects and compositions.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-learning-instance",
+          "capabilityIds": [
+            "learning.object.read",
+            "learning.object.create",
+            "learning.object.edit",
+            "learning.source.manage",
+            "learning.source.extract",
+            "learning.composition.create",
+            "learning.composition.edit",
+            "learning.review.submit",
+            "learning.review.comment"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "learning-reviewer",
+      "name": "Learning Reviewer",
+      "description": "Reviews objects and compositions.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-learning-instance",
+          "capabilityIds": [
+            "learning.object.read",
+            "learning.review.comment",
+            "learning.review.object",
+            "learning.review.composition",
+            "learning.review.resolve"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "learner",
+      "name": "Learner",
+      "description": "Uses assigned learning experiences.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-learning-instance",
+          "capabilityIds": [
+            "learning.runtime.use"
+          ]
+        }
+      ]
+    }
+  ]
+}

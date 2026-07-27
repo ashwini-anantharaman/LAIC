@@ -8,6 +8,7 @@ import { useApp } from '../App';
 import { USERS } from '../../lib/data';
 import type { Role } from '../../lib/types';
 import { navItemsForPerms } from '../../lib/learningAreas';
+import { navItemsForCapabilities } from '../../lib/roleAccess';
 
 interface NavItem {
   id: string;
@@ -74,12 +75,19 @@ const PROGRAM_COLORS: Record<string, string> = {
 };
 
 export function Sidebar() {
-  const { role, program, currentScreen, navigate, logout, activeUserId, nexusMode, learningPerms, learningIsAdmin, nexusProgramName, nexusUserName, nexusUserRole } = useApp();
+  const { role, program, currentScreen, navigate, logout, activeUserId, nexusMode, learningPerms, learningIsAdmin, learningCapabilities, nexusProgramName, nexusUserName, nexusUserRole } = useApp();
   const initialsOf = (name: string) => name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
-  // Nexus mode: nav is computed from the person's granted AREAS (custom role);
-  // admins see everything. Demo mode keeps the fixed per-persona nav.
+  // Nexus mode: admins see everything. Members are gated by their effective
+  // capabilities (Access Catalogue); the legacy area-perms nav is the fallback
+  // for older roles that carry per-area view/edit instead of capabilities. Demo
+  // mode keeps the fixed per-persona nav.
+  const nexusItems = learningIsAdmin
+    ? navItemsForPerms(learningPerms, true) // admin: full nav (unchanged)
+    : (learningCapabilities?.length
+        ? navItemsForCapabilities(learningCapabilities) // member: capability-gated
+        : navItemsForPerms(learningPerms, false)); // legacy per-area role
   const items: NavItem[] = nexusMode
-    ? navItemsForPerms(learningPerms, learningIsAdmin).map((it) => ({ ...it, icon: ICON_BY_ID[it.id] ?? <Home size={16} /> }))
+    ? nexusItems.map((it) => ({ ...it, icon: ICON_BY_ID[it.id] ?? <Home size={16} /> }))
     : NAV[role] ?? [];
   const user = USERS.find(u => u.id === activeUserId);
 
