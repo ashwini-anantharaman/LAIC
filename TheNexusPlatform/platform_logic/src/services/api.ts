@@ -1272,6 +1272,9 @@ export async function revokeInvitation(invitationId: string): Promise<void> {
 export interface ProgramTeamSummary {
   team: ProgramMember[];
   groups: { platform: string; role: string; count: number }[];
+  /** Platform-only members (hold a platform role, no core program role). They
+   *  can still be placed into groups (placement is email-keyed). */
+  platformMembers?: ProgramMember[];
 }
 
 export async function getProgramTeamSummary(programId: string): Promise<ProgramTeamSummary> {

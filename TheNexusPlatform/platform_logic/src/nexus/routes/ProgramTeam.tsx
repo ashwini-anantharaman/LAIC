@@ -97,6 +97,7 @@ export function ProgramTeam() {
   const [program, setProgram] = useState<Program | null>(null);
   const [roles, setRoles] = useState<ProgramRole[] | null>(null);
   const [members, setMembers] = useState<ProgramMember[] | null>(null);
+  const [platformMembers, setPlatformMembers] = useState<ProgramMember[]>([]);
   const [groups, setGroups] = useState<{ platform: string; role: string; count: number }[]>([]);
   const [groupsModel, setGroupsModel] = useState<ProgramGroupsModel | null>(null);
   const [editing, setEditing] = useState<ProgramRole | "new" | null>(null);
@@ -167,10 +168,12 @@ export function ProgramTeam() {
       .then((s) => {
         setMembers(s.team);
         setGroups(s.groups);
+        setPlatformMembers(s.platformMembers ?? []);
       })
       .catch(() => {
         setMembers([]);
         setGroups([]);
+        setPlatformMembers([]);
       });
   }, [programId]);
   useEffect(() => load(), [load]);
@@ -391,6 +394,10 @@ export function ProgramTeam() {
   // forest (groups.parent_id). A person appears under every group they're
   // directly placed in (no primary). Empty subtrees are hidden.
   const team = members ?? [];
+  // Group placement is email-keyed, so a placed platform-only member should
+  // surface under their group(s) even though they aren't a "core" member.
+  // groupPool = core members + platform-only members (disjoint by email).
+  const groupPool = [...team, ...platformMembers];
   const allGroups = groupsModel?.groups ?? [];
   const childrenByParent = new Map<string | null, typeof allGroups>();
   for (const g of allGroups) {
@@ -398,7 +405,7 @@ export function ProgramTeam() {
     childrenByParent.set(p, [...(childrenByParent.get(p) ?? []), g]);
   }
   const directMembersOf = (gid: string) =>
-    team.filter((m) => (groupsModel?.placements[(m.email ?? "").toLowerCase()] ?? []).includes(gid));
+    groupPool.filter((m) => (groupsModel?.placements[(m.email ?? "").toLowerCase()] ?? []).includes(gid));
   // Unique people in a group's whole subtree (direct + all descendants).
   function subtreeEmails(gid: string): Set<string> {
     const out = new Set<string>();
@@ -571,6 +578,19 @@ export function ProgramTeam() {
                 key={`${g.platform}:${g.role}`}
                 programId={programId}
                 group={g}
+                canManageGroups={hasPlacementGroups}
+                onManageGroups={(pm) =>
+                  setManagingGroups({
+                    membership_id: pm.membership_id,
+                    invitation_id: pm.invitation_id,
+                    email: pm.email,
+                    display_name: pm.display_name,
+                    membership_role: "member",
+                    status: pm.status,
+                    role_id: null,
+                    role_name: null,
+                  })
+                }
                 onTestAs={(email) => {
                   void devLoginAs(email, { id: orgId }).then(() => refresh()).then(() => navigate("/", { replace: true }));
                 }}
@@ -1219,11 +1239,15 @@ function PlatformGroup({
   group,
   onTestAs,
   onRemoved,
+  onManageGroups,
+  canManageGroups,
 }: {
   programId: string;
   group: { platform: string; role: string; count: number };
   onTestAs: (email: string) => void;
   onRemoved: () => void;
+  onManageGroups: (m: PlatformGroupMember) => void;
+  canManageGroups: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<PlatformGroupMember[]>([]);
@@ -1286,6 +1310,17 @@ function PlatformGroup({
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                {canManageGroups && m.email ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-1.5"
+                    onClick={() => onManageGroups(m)}
+                    title="Add to groups"
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                ) : null}
                 {DEV_ENABLED && m.email ? (
                   <Button size="sm" variant="ghost" onClick={() => onTestAs(m.email!)} title="Sign in as this person (dev)">
                     <Eye className="size-3.5" /> Test as

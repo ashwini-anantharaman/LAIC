@@ -496,12 +496,18 @@ export async function listProgramTeamSummary(orgId: string, programId: string): 
       .from(platformRoleAssignments)
       .where(eq(platformRoleAssignments.programId, programId));
     for (const a of assigned) platformEmails.add(a.email.toLowerCase());
-    const core = team.filter((m: Row) => {
+    const isCore = (m: Row) => {
       const email = ((m.email as string | null) ?? "").toLowerCase();
       const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
       return isAdmin || m.role_id || !platformEmails.has(email);
-    });
-    return { team: core, groups };
+    };
+    const core = team.filter(isCore);
+    // Platform-only members (anti-join of core). Returned separately so the
+    // console can render them under any groups they're placed into — group
+    // placement is email-keyed, so a platform member can belong to a group
+    // without being a "core" program member.
+    const platformMembers = team.filter((m: Row) => !isCore(m));
+    return { team: core, groups, platformMembers };
   });
 }
 
