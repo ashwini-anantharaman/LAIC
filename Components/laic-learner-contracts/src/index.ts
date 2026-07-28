@@ -141,4 +141,8 @@ export type NexusBridgeContext = {
   capabilities?: string[];
   /** True when the caller is a bridge admin (full access to every tab). */
   is_admin?: boolean;
+  /** Display name of the role the person actually holds — a custom role's own
+   *  name (e.g. "Bridge Knowledge + Partnerships"), "Administrator", or a
+   *  pre-built role label. Prefer this over `roles` for display. Additive. */
+  role_name?: string | null;
 };

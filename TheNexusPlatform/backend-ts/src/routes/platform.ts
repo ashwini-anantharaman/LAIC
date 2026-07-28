@@ -819,6 +819,16 @@ platformRouter.get("/bridge/context", async (c) => {
   } catch (e) {
     console.error("bridge/context capability computation failed (using empty set):", e);
   }
+  // The display name of the role the person actually holds — a custom
+  // capability-bound role's own name wins over the level→prebuilt fallback, so
+  // the app shows e.g. "Bridge Knowledge + Partnerships", not "Coach".
+  const isPrebuilt = !!(access.platformRole && platformRoleConfig("bridge")?.prebuilt.includes(access.platformRole));
+  let roleName: string | null = access.roleName;
+  if (isAdmin) {
+    roleName = "Administrator";
+  } else if (access.platformRole && !isPrebuilt) {
+    roleName = (await bridgeRoles.getBridgeRole(access.programId, access.platformRole).catch(() => null))?.name ?? roleName;
+  }
   return c.json({
     nexusUserId: access.profileId,
     laicOrgId: access.orgId,
@@ -827,18 +837,16 @@ platformRouter.get("/bridge/context", async (c) => {
     // A pre-built role picked in the Nexus role builder is authoritative;
     // a custom (capability-bound) role or graded grant falls back to the
     // level→role map so the emitted `roles` stays a valid BridgeRole set.
-    roles: access.platformRole && platformRoleConfig("bridge")?.prebuilt.includes(access.platformRole)
-      ? [access.platformRole]
-      : mapped.roles,
+    roles: isPrebuilt ? [access.platformRole] : mapped.roles,
     permissions: [`bridge:${access.level}`],
     accessLevel: mapped.accessLevel,
-    capabilities, // effective bridge-catalogue capability ids (tab gating)
+    capabilities, // effective bridge-catalogue capability ids (tab gating + display)
     is_admin: isAdmin,
     displayName: await _platformDisplayName(access.profileId, user),
     // Extensions beyond the contract (additive — Bridge's shape check ignores them).
     nexus_program_id: access.programId,
     program_name: access.programName,
-    role_name: access.roleName,
+    role_name: roleName,
   });
 });
 
