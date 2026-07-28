@@ -22,6 +22,7 @@ import * as db from "./platformDb";
 import * as graph from "./db/orgGraphRepo";
 import { dbEnabled } from "./db/client";
 import { normalizeProgramFeatures, type ProgramFeatureKey } from "./schemas";
+import { getBridgeRole as getBridgeRoleDef } from "./accessCatalogue/bridgeRoles";
 
 type Row = Record<string, any>;
 
@@ -306,6 +307,13 @@ async function _grantLevel(
     const assigned = await graph.getPlatformRoleForEmail(pid, area, user.email).catch(() => null);
     if (assigned && cfg.prebuilt.includes(assigned)) {
       return { level: cfg.level[assigned], platformRole: assigned };
+    }
+    // A custom capability-bound bridge role (defined per program, not a pre-built
+    // key): grants member-level entry; the role's capabilities gate the tabs.
+    // platformRole carries the custom id so the context can resolve its caps.
+    if (assigned && area === "bridge") {
+      const custom = await getBridgeRoleDef(pid, assigned);
+      if (custom) return { level: "edit", platformRole: assigned };
     }
   }
 

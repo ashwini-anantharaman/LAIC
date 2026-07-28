@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BookOpen, Clock, TrendingUp, MessageSquare, Play, UserPlus, X, Check, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PEOPLE, COURSES, LEARNER_PROGRESS } from '../../../lib/data';
+import { useApp } from '../../App';
 
 function ProgressRing({ percent, size = 40, stroke = 3.5 }: { percent: number; size?: number; stroke?: number }) {
   const r = (size - stroke * 2) / 2;
@@ -73,7 +74,12 @@ function AssignModal({ courseTitle, learners, onAssign, onClose }: {
 /* ─── main component ──────────────────────────────────────────── */
 
 export function CoachScreen() {
-  const learners = PEOPLE.filter(p => p.role === 'student');
+  const { nexusMode } = useApp();
+  // Program-scoped instance: no shared demo learners/courses in Nexus mode.
+  const seedPeople = nexusMode ? [] : PEOPLE;
+  const seedCourses = nexusMode ? [] : COURSES;
+  const seedProgress = nexusMode ? [] : LEARNER_PROGRESS;
+  const learners = seedPeople.filter(p => p.role === 'student');
   const [assignModal, setAssignModal] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [interactions, setInteractions] = useState({
@@ -93,7 +99,7 @@ export function CoachScreen() {
       <div>
         <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 10 }}>Available to assign</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {COURSES.filter(c => c.status === 'published').map((course, i) => {
+          {seedCourses.filter(c => c.status === "published").map((course, i) => {
             const totalLessons = course.modules.reduce((s, m) => s + m.lessons.length, 0);
             return (
               <motion.div key={course.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
@@ -120,7 +126,7 @@ export function CoachScreen() {
               </motion.div>
             );
           })}
-          {COURSES.filter(c => c.status === 'published').length === 0 && (
+          {seedCourses.filter(c => c.status === "published").length === 0 && (
             <p style={{ fontSize: 13, color: '#9AA3AF' }}>No published courses available to assign yet.</p>
           )}
         </div>
@@ -134,7 +140,7 @@ export function CoachScreen() {
             <p style={{ fontSize: 12, color: '#9AA3AF' }}>Progress is per-student: completion, quiz scores, and time on task.</p>
           </div>
           {learners.map((person, i) => {
-            const progress = LEARNER_PROGRESS.find(p => p.learnerId === person.id);
+            const progress = seedProgress.find(p => p.learnerId === person.id);
             const pct = progress?.overallPercent || 0;
             const needsNudge = pct < 20;
             return (
@@ -204,7 +210,7 @@ export function CoachScreen() {
       {/* Assign modal */}
       {assignModal && (
         <AssignModal
-          courseTitle={COURSES.find(c => c.id === assignModal)?.title || ''}
+          courseTitle={seedCourses.find(c => c.id === assignModal)?.title || ''}
           learners={learners}
           onAssign={(ids) => fireToast(`Assigned to ${ids.length} student${ids.length !== 1 ? 's' : ''}`)}
           onClose={() => setAssignModal(null)}

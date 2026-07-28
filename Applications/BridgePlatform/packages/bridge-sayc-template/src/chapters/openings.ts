@@ -7,6 +7,7 @@
 import {
   all,
   any,
+  not,
   auctionItem,
   bal,
   bid,
@@ -18,6 +19,7 @@ import {
   low,
   high,
   pass,
+  ptricks,
   quality,
   range,
   rule,
@@ -30,7 +32,7 @@ export const OPENINGS: TemplateItem[] = [
   auctionItem(
     "open-1nt",
     "1NT opening",
-    "Open 1NT with a balanced hand and 15–17 HCP (the range is a dial). Five-card majors inside a balanced hand still open 1NT.",
+    "Open 1NT with a balanced hand and 15–17 HCP (the range is a dial). Notrump openings may be made with a five-card major or a five-card minor inside the balanced shape.",
     "agreement",
     [
       rule(
@@ -102,7 +104,7 @@ export const OPENINGS: TemplateItem[] = [
   auctionItem(
     "open-minors",
     "Minor suit openings (better minor)",
-    "Without a five-card major, open the longer minor; with 3–3 in the minors open 1♣, with 4–4 open 1♦.",
+    "Without a five-card major, open the longer minor: 1♦ with 4–4 in the minors, 1♣ with 3–3. A 1♦ opening suggests four-plus diamonds — the one exception is the 4=4=3=2 hand (four spades, four hearts, three diamonds, two clubs), which opens 1♦.",
     "agreement",
     [
       rule(
@@ -127,27 +129,69 @@ export const OPENINGS: TemplateItem[] = [
   auctionItem(
     "open-weak-two",
     "Weak two-bids",
-    "Open 2♦/2♥/2♠ with a good six-card suit and 5–10 HCP. 2♣ is reserved for strong hands.",
+    "Open 2♦/2♥/2♠ with a good six-card suit and 5–11 HCP. On rare occasions a very good five-card suit qualifies, and a POOR seven-card suit (not good enough for a three-level preempt) opens a weak two instead. 2♣ is always reserved for strong hands. Discipline follows the two-three-four guideline: the playing-trick requirement rises from about 3½ at favorable vulnerability through 4½ at equal to 5½ when vulnerable against not.",
     "convention",
     [
       rule(
-        "open",
-        "Open a weak two",
-        ctx("opening"),
+        "open-fav",
+        "Open a weak two (favorable vulnerability)",
+        ctx("opening", { vulnerability: "favorable" }),
         all(
           hcp(low("weak2_range"), high("weak2_range")),
           longestAmong("D", "H", "S"),
           len("own_longest_suit", 6, 6),
           any(quality("own_longest_suit"), quality("own_longest_suit", "three_of_top_five")),
+          ptricks(3.5),
         ),
         bidLongest(["D", "H", "S"], 2),
         20,
+      ),
+      rule(
+        "open-eq",
+        "Open a weak two (equal vulnerability)",
+        ctx("opening", { vulnerability: "equal" }),
+        all(
+          hcp(low("weak2_range"), high("weak2_range")),
+          longestAmong("D", "H", "S"),
+          len("own_longest_suit", 6, 6),
+          any(quality("own_longest_suit"), quality("own_longest_suit", "three_of_top_five")),
+          ptricks(4.5),
+        ),
+        bidLongest(["D", "H", "S"], 2),
+        20,
+      ),
+      rule(
+        "open-unfav",
+        "Open a weak two (unfavorable vulnerability)",
+        ctx("opening", { vulnerability: "unfavorable" }),
+        all(
+          hcp(low("weak2_range"), high("weak2_range")),
+          longestAmong("D", "H", "S"),
+          len("own_longest_suit", 6, 6),
+          any(quality("own_longest_suit"), quality("own_longest_suit", "three_of_top_five")),
+          ptricks(5.5),
+        ),
+        bidLongest(["D", "H", "S"], 2),
+        20,
+      ),
+      rule(
+        "poor-seven",
+        "Weak two on a poor seven-card suit",
+        ctx("opening"),
+        all(
+          hcp(low("weak2_range"), high("weak2_range")),
+          longestAmong("D", "H", "S"),
+          len("own_longest_suit", 7, 7),
+          not(any(quality("own_longest_suit"), quality("own_longest_suit", "three_of_top_five"))),
+        ),
+        bidLongest(["D", "H", "S"], 2),
+        23,
       ),
     ],
     {
       settings: [
         toggle("weak2_on", "Weak two-bids"),
-        range("weak2_range", "Weak two range (HCP)", 5, 10, { min: 3, max: 12 }),
+        range("weak2_range", "Weak two range (HCP)", 5, 11, { min: 3, max: 12 }),
       ],
       sets: ["core", "conventions"],
     },
@@ -156,14 +200,30 @@ export const OPENINGS: TemplateItem[] = [
   auctionItem(
     "open-preempt-3",
     "Three-level preempts",
-    "Open at the three level with a good seven-card suit and less than opening values.",
+    "Open at the three level with a good seven-card suit and less than opening values. Discipline follows the two-three-four guideline — about 4½ playing tricks at favorable vulnerability, 5½ at equal, 6½ when vulnerable against not.",
     "convention",
     [
       rule(
-        "open",
-        "Preempt at the three level",
-        ctx("opening"),
-        all(hcp(undefined, 10), len("own_longest_suit", 7, 7), any(quality("own_longest_suit"), quality("own_longest_suit", "three_of_top_five"))),
+        "open-fav",
+        "Preempt at the three level (favorable vulnerability)",
+        ctx("opening", { vulnerability: "favorable" }),
+        all(hcp(undefined, 10), len("own_longest_suit", 7, 7), any(quality("own_longest_suit"), quality("own_longest_suit", "three_of_top_five")), ptricks(4.5)),
+        bidLongest(["S", "H", "D", "C"], 3),
+        21,
+      ),
+      rule(
+        "open-eq",
+        "Preempt at the three level (equal vulnerability)",
+        ctx("opening", { vulnerability: "equal" }),
+        all(hcp(undefined, 10), len("own_longest_suit", 7, 7), any(quality("own_longest_suit"), quality("own_longest_suit", "three_of_top_five")), ptricks(5.5)),
+        bidLongest(["S", "H", "D", "C"], 3),
+        21,
+      ),
+      rule(
+        "open-unfav",
+        "Preempt at the three level (unfavorable vulnerability)",
+        ctx("opening", { vulnerability: "unfavorable" }),
+        all(hcp(undefined, 10), len("own_longest_suit", 7, 7), any(quality("own_longest_suit"), quality("own_longest_suit", "three_of_top_five")), ptricks(6.5)),
         bidLongest(["S", "H", "D", "C"], 3),
         21,
       ),
@@ -174,14 +234,30 @@ export const OPENINGS: TemplateItem[] = [
   auctionItem(
     "open-preempt-4",
     "Four-level preempts",
-    "Open at the four level with an eight-card suit and less than opening values.",
+    "Open at the four level with an eight-card suit and less than opening values. Discipline follows the two-three-four guideline — about 5½ playing tricks at favorable vulnerability, 6½ at equal, 7½ when vulnerable against not.",
     "convention",
     [
       rule(
-        "open",
-        "Preempt at the four level",
-        ctx("opening"),
-        all(hcp(undefined, 10), len("own_longest_suit", 8)),
+        "open-fav",
+        "Preempt at the four level (favorable vulnerability)",
+        ctx("opening", { vulnerability: "favorable" }),
+        all(hcp(undefined, 10), len("own_longest_suit", 8), ptricks(5.5)),
+        bidLongest(["S", "H", "D", "C"], 4),
+        22,
+      ),
+      rule(
+        "open-eq",
+        "Preempt at the four level (equal vulnerability)",
+        ctx("opening", { vulnerability: "equal" }),
+        all(hcp(undefined, 10), len("own_longest_suit", 8), ptricks(6.5)),
+        bidLongest(["S", "H", "D", "C"], 4),
+        22,
+      ),
+      rule(
+        "open-unfav",
+        "Preempt at the four level (unfavorable vulnerability)",
+        ctx("opening", { vulnerability: "unfavorable" }),
+        all(hcp(undefined, 10), len("own_longest_suit", 8), ptricks(7.5)),
         bidLongest(["S", "H", "D", "C"], 4),
         22,
       ),

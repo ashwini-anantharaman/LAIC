@@ -54,8 +54,9 @@ async function call(
   auction: [Seat, string][],
   seat: Seat = "S",
   overrides: Record<string, SettingValue> = {},
+  vul: "none" | "ns" | "ew" | "both" = "none",
 ) {
-  const state = initialState("t", "N", "none", dealFor(seat, hand));
+  const state = initialState("t", "N", vul, dealFor(seat, hand));
   state.auction = auction.map(([s, c]) => ({ seat: s, call: c as never }));
   state.turn = seat;
   const decider = createKbDecider({
@@ -618,75 +619,502 @@ describe("booklet pass additions (2026-07-21)", () => {
 });
 
 // ---------------------------------------------------------------------------
-describe("slam machinery", () => {
-  const BLACKWOOD_AUCTION: [Seat, string][] = [
-    P("N"), ["E", "P"], ["S", "1S"], P("W"), ["N", "3S"], P("E"), ["S", "4N"], P("W"),
-  ];
-
-  it("asks with 4NT over the limit raise with slam values", async () => {
-    const d = await call(
-      "SA SK SQ S8 S6 HA HK H3 DA D4 D3 CQ C2",
-      [P("N"), ["E", "P"], ["S", "1S"], P("W"), ["N", "3S"], P("E")],
-      "S",
-    );
-    expect(d.action).toBe("4N");
+describe("maximal coverage pass (2026-07-21)", () => {
+  it("opens a weak two on a POOR seven-card suit (not good enough for three)", async () => {
+    const d = await call("S9 S8 S7 S6 S5 S3 S2 HK H3 DQ D4 C3 C2", [P("N"), P("E")]);
+    expect(d.action).toBe("2S"); // 5 HCP, ragged seven-carder
   });
 
-  it("answers 5♥ with two aces (classic)", async () => {
+  it("Unusual 2NT over 1♦ shows clubs and hearts", async () => {
     const d = await call(
-      "SK S9 S8 S4 HA H9 H2 DA D4 D2 C4 C3 C2",
-      [P("N"), ["E", "P"], ["S", "3S"], P("W"), ["N", "4N"], P("E")],
+      "S2 HK HQ H8 H6 H2 D3 CA CQ C8 C4 C2 C3".replace("C3", "C5"),
+      [P("N"), ["E", "1D"]],
       "S",
     );
-    expect(d.action).toBe("5H");
+    expect(d.action).toBe("2N");
   });
 
-  it("RKCB 1430 answers 5♣ with one keycard when enabled", async () => {
-    const d = await call(
-      "SK S9 S8 S4 HA H9 H2 DQ D4 D2 C4 C3 C2", // 1 keycard: HA (SK counts too → 2!)…
-      [P("N"), ["E", "P"], ["S", "3S"], P("W"), ["N", "4N"], P("E")],
-      "S",
-      { blackwood_on: false, rkcb1430_on: true },
-    );
-    // SK + HA = 2 keycards, no SQ → 5H under 1430.
-    expect(d.action).toBe("5H");
-  });
-
-  it("asker signs off at five missing two aces", async () => {
-    const d = await call(
-      "SA SK SQ S8 S6 HK HQ H3 DK D4 D3 CQ C2", // one ace
-      [...BLACKWOOD_AUCTION, ["N", "5D"], P("E")], // partner showed one
+  it("negative double of 1♦ needs BOTH majors", async () => {
+    const both = await call(
+      "SA SQ S8 S4 HK H8 H3 H2 D2 CQ C8 C3 C2",
+      [["N", "1C"], ["E", "1D"]],
       "S",
     );
-    expect(d.action).toBe("5S"); // two missing → stop
-  });
-
-  it("asker bids the slam missing at most one", async () => {
-    const d = await call(
-      "SA SK SQ S8 S6 HA HK H3 DA D4 D3 CQ C2", // three aces
-      [...BLACKWOOD_AUCTION, ["N", "5D"], P("E")], // partner showed one → all four
+    expect(both.action).toBe("X");
+    const oneMajor = await call(
+      "SA SQ S8 S4 H8 H3 H2 D4 D2 CQ C8 C3 C2",
+      [["N", "1C"], ["E", "1D"]],
       "S",
     );
-    expect(d.action).toBe("6S");
+    expect(oneMajor.action).not.toBe("X"); // only spades — no negative double
   });
 
-  it("DOPI: doubles with no aces over interference", async () => {
+  it("opener reverses into hearts with 17+", async () => {
     const d = await call(
-      "SK SQ S9 S8 S4 HK H9 H2 DQ D4 D2 C4 C3",
-      [P("N"), ["E", "P"], ["S", "3S"], P("W"), ["N", "4N"], ["E", "5C"]],
+      "SA S4 HA HK H9 H2 DK DQ D8 D4 D2 C3 C2",
+      [P("N"), ["E", "P"], ["S", "1D"], P("W"), ["N", "1S"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("2H");
+    expect(d.matchedRuleId).toContain("rev-2h");
+  });
+
+  it("opener shows a second suit at the one level with a minimum", async () => {
+    const d = await call(
+      "SA SQ S9 S4 H9 DK DQ DJ D4 C6 C4 C3 C2",
+      [P("N"), ["E", "P"], ["S", "1D"], P("W"), ["N", "1H"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("1S");
+  });
+
+  it("opener double-jump raises with a maximum", async () => {
+    const d = await call(
+      "SA SQ S9 S4 HA HK H2 DA DQ D4 C4 C3 C2",
+      [P("N"), ["E", "P"], ["S", "1C"], P("W"), ["N", "1S"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("4S");
+  });
+
+  it("responder's jump raise of opener's first suit after a 2/1 is game forcing", async () => {
+    const d = await call(
+      "SK S9 S4 H4 H2 DA D8 D3 CA CQ C8 C3 C2",
+      [["N", "1S"], P("E"), ["S", "2C"], P("W"), ["N", "2H"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("3S");
+  });
+
+  it("responder signs off in a six-card suit after opener's 1NT rebid", async () => {
+    const d = await call(
+      "SA SJ S9 S8 S6 S4 H8 H3 D9 D4 D3 C3 C2",
+      [["N", "1C"], P("E"), ["S", "1S"], P("W"), ["N", "1N"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("2S"); // weak, six spades — sign-off
+  });
+
+  it("responder rebids 3♣ over the Stayman reply as a slam try (five clubs)", async () => {
+    const d = await call(
+      "SA SQ S8 S4 H3 H2 DA D3 CK CQ C8 C4 C2",
+      [["N", "1N"], P("E"), ["S", "2C"], P("W"), ["N", "2H"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("3C");
+  });
+
+  it("responds to a 3NT opening with Texas-style transfers", async () => {
+    const d = await call(
+      "S7 S4 S2 HK HQ H8 H4 H2 DA D4 D3 CQ C2",
+      [["N", "3N"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("4D"); // transfer to hearts over 3NT
+  });
+
+  it("Grand Slam Force: 7 with two top honors, 6 without", async () => {
+    const seven = await call(
+      "SA SK S9 S8 S4 HK H9 H2 DQ D4 D2 C4 C3",
+      [P("N"), ["E", "P"], ["S", "3S"], P("W"), ["N", "5N"], P("E")],
+      "S",
+    );
+    expect(seven.action).toBe("7S");
+    const six = await call(
+      "SA SJ S9 S8 S4 HK H9 H2 DQ D4 D2 C4 C3",
+      [P("N"), ["E", "P"], ["S", "3S"], P("W"), ["N", "5N"], P("E")],
+      "S",
+    );
+    expect(six.action).toBe("6S");
+  });
+
+  it("advancer jumps invitationally over the takeout double", async () => {
+    const d = await call(
+      "SA SQ S8 S4 HK H8 H3 H2 D9 D4 CQ C3 C2",
+      [P("N"), ["E", "1D"], ["S", "X"], P("W")],
+      "N",
+    );
+    expect(d.action).toBe("2S"); // 9–11, jump advance
+  });
+
+  it("weak jump response over their takeout double", async () => {
+    const d = await call(
+      "SK SQ S9 S8 S7 S2 H8 H3 D9 D4 D3 C3 C2",
+      [["N", "1D"], ["E", "X"]],
+      "S",
+    );
+    expect(d.action).toBe("2S");
+  });
+
+  it("doubles a 4♥ opening for penalty", async () => {
+    const d = await call(
+      "SA SQ S8 S4 HK H9 H3 DA D4 D2 CQ C3 C2",
+      [P("N"), ["E", "4H"]],
       "S",
     );
     expect(d.action).toBe("X");
   });
 
-  it("answers the 5NT king ask", async () => {
-    const d = await call(
-      "SK S9 S8 S4 HK H9 H2 DK D4 D2 C4 C3 C2", // two kings outside +SK = 3? kings counts ALL kings
-      [...BLACKWOOD_AUCTION, ["N", "5H"], P("E"), ["S", "5N"], P("W")],
+  it("advancer uses Stayman over the 1NT overcall; overcaller answers", async () => {
+    const ask = await call(
+      "SA SQ S8 S4 H9 H3 H2 DQ D4 D3 CJ C3 C2",
+      [P("N"), ["E", "1D"], ["S", "1N"], P("W")],
       "N",
     );
-    // N is the responder to 5N here; N's hand is synthetic (round-robin), so
-    // just assert the ask machinery yields SOME king response at the 6 level.
-    expect(["6C", "6D", "6H", "6S"]).toContain(d.action);
+    expect(ask.action).toBe("2C");
+    const reply = await call(
+      "SA SK S9 S4 HA H9 H2 DQ DJ D2 CK C3 C2",
+      [P("N"), ["E", "1D"], ["S", "1N"], P("W"), ["N", "2C"], P("E")],
+      "S",
+    );
+    expect(reply.action).toBe("2S");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slam machinery on the partnership-inference language (Pillar C). Every
+// acceptance criterion below is a named case. The keycard scheme is Roman
+// Keycard (five keycards = four aces + the trump king), 1430 responses.
+describe("slam machinery (Roman Keycard on combined hands)", () => {
+  // S opens 1S, N limit-raises 3S (agrees spades, shows 3+♠ and ~10–12), and
+  // it is S's turn to ask.
+  const S_ASKS: [Seat, string][] = [
+    P("N"), ["E", "P"], ["S", "1S"], P("W"), ["N", "3S"], P("E"),
+  ];
+  // N opens 1S, S limit-raises 3S, N asks 4NT — S must REPLY.
+  const S_REPLIES: [Seat, string][] = [
+    ["N", "1S"], P("E"), ["S", "3S"], P("W"), ["N", "4N"], P("E"),
+  ];
+  // S asked 4NT and N answered `reply`; S must CONTINUE with the decoded count.
+  const sContinues = (reply: string): [Seat, string][] => [
+    P("N"), ["E", "P"], ["S", "1S"], P("W"), ["N", "3S"], P("E"),
+    ["S", "4N"], P("W"), ["N", reply], P("E"),
+  ];
+
+  // Criterion 1 — the trigger fires on the FIT plus combined slam values, not
+  // on "4+ cards in partner's suit + 18 TP".
+  it("C1: asks 4NT on an agreed fit and combined slam values", async () => {
+    // 22 HCP, five spades; partner's limit raise showed 3+♠ and 10+ → fit + 32.
+    const d = await call("SA SK SQ S8 S6 HA HK H3 DA D4 D3 CQ C2", S_ASKS, "S");
+    expect(d.action).toBe("4N");
+  });
+
+  it("C1: does NOT ask without the combined values (a bare fit)", async () => {
+    // Five spades but only ~12 HCP: fit yes, combined ~22 — no keycard ask.
+    const d = await call("SA S9 S8 S7 S6 H9 H8 H3 DK D4 D3 CQ C2", S_ASKS, "S");
+    expect(d.action).not.toBe("4N");
+  });
+
+  // Criterion 2 — responses carry machine meanings; replies count keycards for
+  // the AGREED suit by 1430 steps.
+  it("C2: replies 5♣ with one keycard (1430)", async () => {
+    // One ace, no ♠K → 1 keycard.
+    const d = await call("SQ S9 S8 HA H9 H2 D9 D4 D3 D2 C4 C3 C2", S_REPLIES, "S");
+    expect(d.action).toBe("5C");
+  });
+
+  it("C2: replies 5♥ with two keycards and no trump queen (1430)", async () => {
+    // ♠K + one ace, no ♠Q → 2 keycards without the queen.
+    const d = await call("SK S9 S8 HA H9 H2 D9 D4 D3 D2 C4 C3 C2", S_REPLIES, "S");
+    expect(d.action).toBe("5H");
+  });
+
+  it("C2: replies 5♠ with two keycards and the trump queen (1430)", async () => {
+    // ♠K ♠Q + one ace → 2 keycards WITH the queen.
+    const d = await call("SK SQ S8 HA H9 H2 D9 D4 D3 D2 C4 C3 C2", S_REPLIES, "S");
+    expect(d.action).toBe("5S");
+  });
+
+  // The exact Nitin scenarios ---------------------------------------------
+  it("C2 (Nitin): partner shows 5♥ = 2 keycards, two still missing → PASS/sign off, NOT slam", async () => {
+    // Asker holds ONE keycard (♠A); partner's 5♥ = 2 → combined 3, missing 2.
+    const d = await call("SA S9 S8 S7 S6 H9 H8 H2 D9 D4 D3 C3 C2", sContinues("5H"), "S");
+    expect(d.action).toBe("5S"); // sign off at five in the agreed suit
+    expect(d.matchedRuleId).toContain("cont-signoff");
+  });
+
+  it("C2: bids the small slam missing at most one keycard", async () => {
+    // Asker holds TWO keycards (♠A ♠K); partner's 5♥ = 2 → combined 4, missing 1.
+    const d = await call("SA SK S8 S7 S6 H9 H8 H2 D9 D4 D3 C3 C2", sContinues("5H"), "S");
+    expect(d.action).toBe("6S");
+    expect(d.matchedRuleId).toContain("cont-small-slam");
+  });
+
+  it("C2 (Nitin): holding all five keycards, tries for grand with the 5NT king ask", async () => {
+    // Asker holds THREE keycards (♠A ♠K ♥A); partner's 5♥ = 2 → combined 5.
+    const d = await call("SA SK S8 S7 S6 HA H8 H2 D9 D4 D3 C3 C2", sContinues("5H"), "S");
+    expect(d.action).toBe("5N");
+    expect(d.matchedRuleId).toContain("grand-try");
+  });
+
+  it("C2 (Nitin): a MINOR fit with 33+ combined prefers 6NT to six of the minor", async () => {
+    // S opens 1♦, N raises 2♦ (shows 4+♦, 6–9), S asks, N answers 5♥ (2 kc).
+    // S: 28 HCP, four diamonds incl ♦A ♦K → 2 keycards; combined 34, missing 1.
+    const auction: [Seat, string][] = [
+      P("N"), ["E", "P"], ["S", "1D"], P("W"), ["N", "2D"], P("E"),
+      ["S", "4N"], P("W"), ["N", "5H"], P("E"),
+    ];
+    const d = await call("DA DK DQ DJ SK SQ SJ HK HQ HJ CK CQ CJ", auction, "S");
+    expect(d.action).toBe("6N");
+    expect(d.matchedRuleId).toContain("cont-6nt-minor");
+  });
+
+  it("C2: signs off safely at five when the reply is two-way (count unclear)", async () => {
+    // Asker one keycard; partner's 5♣ = 1-or-4 → combined 2-or-5, ambiguous.
+    const d = await call("SA S9 S8 S7 S6 H9 H8 H2 D9 D4 D3 C3 C2", sContinues("5C"), "S");
+    expect(d.action).toBe("5S");
+  });
+
+  // Criterion 4 — the ask is unambiguous: a natural/quantitative 4NT (after a
+  // notrump bid, no suit fit) is NOT read as Blackwood, and its 5-level answer
+  // is not a keycard step.
+  it("C4: a quantitative 4NT over 1NT is not keycard Blackwood", async () => {
+    // 1NT–4NT is the quantitative raise (no agreed suit) — responder here is
+    // NOT answering a keycard ask, so no askInProgress reply fires.
+    const d = await call(
+      "SK S9 S4 HA H9 H2 DQ DJ D2 CA CK C3 C2",
+      [P("N"), ["E", "P"], ["S", "1N"], P("W"), ["N", "4N"], P("E")],
+      "S",
+    );
+    expect(["5C", "5D", "5H", "5S"]).not.toContain(d.action); // not a keycard step
+    expect(d.action).toBe("6N"); // accepts the quantitative invite with a max
+  });
+
+  // Criterion 3 — continuations target the AGREED suit, never "my first suit".
+  it("C3: the small-slam bid is in the agreed suit even when it is not opener's first suit", async () => {
+    // N opens 1♥, S responds 1♠, N raises to 3♠ (spades agreed), S asks, N 5♥.
+    // The continuation must bid 6♠ (the fit), not 6 of S's own first suit.
+    const auction: [Seat, string][] = [
+      ["N", "1H"], P("E"), ["S", "1S"], P("W"), ["N", "3S"], P("E"),
+      ["S", "4N"], P("W"), ["N", "5H"], P("E"),
+    ];
+    // S: ♠A ♠K + five spades → 2 keycards; partner 5♥ = 2 → missing one → 6♠.
+    const d = await call("SA SK S8 S7 S6 H9 H8 H2 D9 D4 D3 C3 C2", auction, "S");
+    expect(d.action).toBe("6S");
+  });
+
+  it("DOPI: doubles with no keycards over interference", async () => {
+    // N opens 1♠, S raises 3♠, N asks 4NT, E overcalls 5♣ — S has 0 keycards.
+    const d = await call(
+      "SQ SJ S9 S4 H9 H8 H2 D9 D4 D3 C9 C4 C3",
+      [["N", "1S"], P("E"), ["S", "3S"], P("W"), ["N", "4N"], ["E", "5C"]],
+      "S",
+    );
+    expect(d.action).toBe("X");
+  });
+
+  it("answers the 5NT king ask by steps", async () => {
+    // Grand-try 5NT posed by S; N (one king) answers 6♦.
+    const d = await call(
+      "SK S9 S8 S4 H9 H8 H2 D9 D4 D3 C9 C4 C3",
+      [
+        P("N"), ["E", "P"], ["S", "1S"], P("W"), ["N", "3S"], P("E"),
+        ["S", "4N"], P("W"), ["N", "5H"], P("E"), ["S", "5N"], P("W"),
+      ],
+      "N",
+    );
+    expect(d.action).toBe("6D"); // one king
+  });
+
+  it("Blackwood is dormant when toggled off (the ask never fires)", async () => {
+    const d = await call(
+      "SA SK SQ S8 S6 HA HK H3 DA D4 D3 CQ C2",
+      S_ASKS,
+      "S",
+      { blackwood_on: false },
+    );
+    expect(d.action).not.toBe("4N");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Judgment tier (2026-07-21): forcing-pass guard, fourth suit forcing,
+// Michaels minor ask + two-suit gate, preempt discipline by vulnerability,
+// the (default-off) business redouble.
+// ---------------------------------------------------------------------------
+
+describe("judgment tier", () => {
+  it("fourth suit forcing: game values, no fit, no stopper → bid the fourth suit", async () => {
+    // 1♦ – 1♥ – 1♠: three suits bid, responder has 12 HCP and no club stopper.
+    const d = await call(
+      "SQ S3 S2 HA HK HJ H9 H8 DQ D7 D6 C4 C3",
+      [["N", "1D"], P("E"), ["S", "1H"], P("W"), ["N", "1S"], P("E")],
+    );
+    expect(d.action).toBe("2C");
+    expect(d.reason).toContain("fourth suit");
+  });
+
+  it("…and stays off when the toggle is off", async () => {
+    const d = await call(
+      "SQ S3 S2 HA HK HJ H9 H8 DQ D7 D6 C4 C3",
+      [["N", "1D"], P("E"), ["S", "1H"], P("W"), ["N", "1S"], P("E")],
+      "S",
+      { fsf_on: false },
+    );
+    expect(d.action).not.toBe("2C");
+  });
+
+  it("Michaels minor ask: advancer bids 2NT without major support", async () => {
+    const d = await call(
+      "S4 S3 H2 DK DQ DJ D9 D8 D7 C9 C8 C7 C6",
+      [P("N"), ["E", "1H"], ["S", "2H"], P("W")],
+      "N",
+    );
+    expect(d.action).toBe("2N");
+  });
+
+  it("…and the cue-bidder shows the minor over the ask", async () => {
+    const d = await call(
+      "SA SK SQ S4 S3 H2 DQ DJ D9 D8 D7 C4 C2",
+      [P("N"), ["E", "1H"], ["S", "2H"], P("W"), ["N", "2N"], P("E")],
+    );
+    expect(d.action).toBe("3D");
+  });
+
+  it("the cue is natural once the opponents have shown two suits", async () => {
+    // E opened 1♣, W responded 1♦ — a 2♦ \"cue\" would be nonsense Michaels.
+    const d = await call(
+      "SA SK S8 S7 S2 HQ HJ H9 H8 H3 D4 D3 C2",
+      [P("N"), ["E", "1C"], P("S"), ["W", "1D"]],
+      "N",
+    );
+    expect(d.action).not.toBe("2D");
+  });
+
+  it("weak two obeys the two-three-four guideline", async () => {
+    const kqj987 = "SK SQ SJ S9 S8 S7 H4 H3 D4 D3 C4 C3 C2"; // 4.5 playing tricks
+    expect((await call(kqj987, [P("N"), P("E")])).action).toBe("2S"); // equal
+    expect((await call(kqj987, [P("N"), P("E")], "S", {}, "ew")).action).toBe("2S"); // favorable
+    expect((await call(kqj987, [P("N"), P("E")], "S", {}, "ns")).action).toBe("P"); // unfavorable
+  });
+
+  it("three-level preempt obeys the guideline too", async () => {
+    const seven = "SK SQ SJ S9 S8 S7 S6 H4 H3 D4 D3 C3 C2"; // 5.5 playing tricks
+    expect((await call(seven, [P("N"), P("E")])).action).toBe("3S"); // equal
+    expect((await call(seven, [P("N"), P("E")], "S", {}, "ew")).action).toBe("3S"); // favorable
+    expect((await call(seven, [P("N"), P("E")], "S", {}, "ns")).action).toBe("P"); // unfavorable
+  });
+
+  it("RONF: a new suit over the weak two forces the opener to bid", async () => {
+    // N opened 2♥, partner's 2♠ is forcing — with nothing to say, N rebids hearts.
+    const d = await call(
+      "HK HQ HJ H9 H8 H7 S4 S3 D8 D7 D6 C3 C2",
+      [["N", "2H"], P("E"), ["S", "2S"], P("W")],
+      "N",
+    );
+    expect(d.action).not.toBe("P");
+  });
+
+  it("a two-over-one response may not be passed out by opener", async () => {
+    const d = await call(
+      "SA SK S9 S8 S7 H4 H3 D8 D7 D6 C4 C3 C2",
+      [["N", "1S"], P("E"), ["S", "2C"], P("W")],
+      "N",
+    );
+    expect(d.action).not.toBe("P");
+  });
+
+  it("business redouble is present but OFF until an expert enables it", async () => {
+    const hand = "SA SK SQ S9 S8 HA H8 H7 DK D4 D3 C3 C2"; // 16 HCP, two aces
+    const auction: [Seat, string][] = [
+      ["N", "1S"], P("E"), ["S", "4S"], P("W"), P("N"), ["E", "X"],
+    ];
+    expect((await call(hand, auction)).action).toBe("P");
+    expect((await call(hand, auction, "S", { rdbl_4plus_on: true })).action).toBe("XX");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Delayed support + combined-range rebids (Pillar C, criteria 6 & 7).
+describe("delayed support & combined-range rebids", () => {
+  // 1♥ – 1♠ ; 1NT – ?  responder now shows the hidden 3-card heart support.
+  const DELAYED_H: [Seat, string][] = [
+    ["N", "1H"], P("E"), ["S", "1S"], P("W"), ["N", "1N"], P("E"),
+  ];
+
+  it("C6: delayed 3-card major support — game on combined values", async () => {
+    // 14 HCP, 3 hearts, 4 spades; opener's 1NT rebid showed 12–14 → combined 26.
+    const d = await call("SA SK S8 S4 HK H8 H2 DA D4 D3 C4 C3 C2", DELAYED_H, "S");
+    expect(d.action).toBe("4H");
+    expect(d.matchedRuleId).toContain("major-game");
+  });
+
+  it("C6: delayed 3-card major support — invitation on combined values", async () => {
+    // 11 HCP → combined 23 → invite three of the fit.
+    const d = await call("SA S8 S4 S2 HK H8 H2 DK DJ D3 C4 C3 C2", DELAYED_H, "S");
+    expect(d.action).toBe("3H");
+    expect(d.matchedRuleId).toContain("major-invite");
+  });
+
+  it("C6: delayed 3-card major support — partscore when weak", async () => {
+    // 7 HCP → combined ~19 → simple preference to the fit at the two level.
+    const d = await call("SA S8 S4 S2 HK H8 H2 D8 D4 D3 C4 C3 C2", DELAYED_H, "S");
+    expect(d.action).toBe("2H");
+    expect(d.matchedRuleId).toContain("major-partscore");
+  });
+
+  it("C6: delayed MINOR support forces game in 3NT while it is still reachable", async () => {
+    // 1♦ – 1♠ ; 1NT – ? with four diamonds and game values → 3NT, not a minor.
+    const d = await call(
+      "SA SK SQ S4 HA H3 DK D8 D4 D3 C4 C3 C2",
+      [["N", "1D"], P("E"), ["S", "1S"], P("W"), ["N", "1N"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("3N");
+    expect(d.matchedRuleId).toContain("minor-3nt");
+  });
+
+  it("C7: opener accepts the 2NT invitation on the combined count (26)", async () => {
+    // 1♣ – 1♠ ; 1NT – 2NT ; opener 14 balanced + partner's shown 11 = 25 → 3NT.
+    const accept = await call(
+      "SA S9 S4 HK H9 H2 DK D4 D2 CK CJ C3 C2",
+      [P("N"), ["E", "P"], ["S", "1C"], P("W"), ["N", "1S"], P("E"), ["S", "1N"], P("W"), ["N", "2N"], P("E")],
+      "S",
+    );
+    expect(accept.action).toBe("3N");
+    expect(accept.matchedRuleId).toContain("accept");
+  });
+
+  it("C7: opener declines the same invitation with a dead minimum", async () => {
+    const decline = await call(
+      "SQ S9 S4 HK H9 H2 DK D4 D2 CK CJ C3 C2", // 12 HCP → combined 23
+      [P("N"), ["E", "P"], ["S", "1C"], P("W"), ["N", "1S"], P("E"), ["S", "1N"], P("W"), ["N", "2N"], P("E")],
+      "S",
+    );
+    expect(decline.action).toBe("P");
+    expect(decline.matchedRuleId).toContain("decline");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The 2♣ family (Pillar C, criterion 5): minor positives, 2♣–2M follow-ups,
+// and interference over the strong 2♣.
+describe("the strong 2♣ family", () => {
+  it("C5: responds 3♦ as a positive with a good five-card minor", async () => {
+    const d = await call(
+      "SA S2 H3 H2 DA DK DQ DJ D9 C5 C4 C3 C2",
+      [["N", "2C"], P("E")],
+    );
+    expect(d.action).toBe("3D");
+    expect(d.matchedRuleId).toContain("positive-minor-d");
+  });
+
+  it("C5: opener raises the positive major (2♣–2♠ follow-up)", async () => {
+    const d = await call(
+      "SA SK SQ S2 HA HK DA DK DQ D2 CA C3 C2",
+      [P("N"), ["E", "P"], ["S", "2C"], P("W"), ["N", "2S"], P("E")],
+      "S",
+    );
+    expect(d.action).toBe("3S");
+    expect(d.matchedRuleId).toContain("after-pos-raise");
+  });
+
+  it("C5: doubles the opponents' overcall of our 2♣ with values", async () => {
+    const d = await call(
+      "SA SK S4 H4 H3 DA D4 D3 C9 C8 C4 C3 C2",
+      [["N", "2C"], ["E", "2H"]],
+      "S",
+    );
+    expect(d.action).toBe("X");
   });
 });

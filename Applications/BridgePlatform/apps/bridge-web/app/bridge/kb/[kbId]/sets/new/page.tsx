@@ -1,7 +1,28 @@
+import type { KnowledgeItem } from "@bridge/kb";
 import Link from "next/link";
 import { SetItemPicker } from "@/components/kb/SetItemPicker";
 import { kbStore } from "@/lib/kb";
+import { whenRoles } from "@/lib/whenFacet";
 import { savePackAction } from "../../../actions";
+
+/** Executable rules an item carries (0 = teaching prose) — mirrors the Master
+ *  viewer's ruleCount so the picker's "most rules" sort agrees with it. */
+function ruleCount(item: KnowledgeItem): number {
+  const p = item.payload;
+  switch (p.kind) {
+    case "auction_rules":
+    case "forcing_rules":
+    case "play_rules":
+      return p.rules.length;
+    case "lead_rules":
+      return p.leads.length;
+    case "signals":
+    case "fallback":
+      return 1;
+    default:
+      return 0;
+  }
+}
 
 /** Dedicated set-creation page — the roster picker needs room to breathe. */
 export default async function NewSetPage({
@@ -19,10 +40,18 @@ export default async function NewSetPage({
     store.listItemsForKb(kbId),
   ]);
   const base = `/bridge/kb/${kbId}`;
+  const hiddenDeprecatedCount = items.filter((i) => i.status === "deprecated").length;
   const pickerItems = items
     .filter((i) => i.status !== "deprecated")
     .sort((a, b) => a.title.localeCompare(b.title))
-    .map((i) => ({ itemId: i.itemId, title: i.title, knowledgeType: i.knowledgeType }));
+    .map((i) => ({
+      itemId: i.itemId,
+      title: i.title,
+      knowledgeType: i.knowledgeType,
+      roles: [...whenRoles(i)],
+      phase: i.phase,
+      ruleCount: ruleCount(i),
+    }));
 
   return (
     <div className="max-w-3xl space-y-4">
@@ -72,7 +101,11 @@ export default async function NewSetPage({
 
         <fieldset>
           <legend className="mb-2 text-sm font-medium">Knowledge items in this set</legend>
-          <SetItemPicker items={pickerItems} packs={packs} />
+          <SetItemPicker
+            items={pickerItems}
+            packs={packs}
+            hiddenDeprecatedCount={hiddenDeprecatedCount}
+          />
         </fieldset>
 
         <button

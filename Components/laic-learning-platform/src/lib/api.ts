@@ -285,7 +285,7 @@ export interface TutorialExtract {
 /** Any editor-renderable part produced by generation. */
 export interface GeneratedPart {
   id: string;
-  type: 'rich-text' | 'concept-card' | 'question' | 'media';
+  type: 'rich-text' | 'concept-card' | 'question' | 'media' | 'section-quiz';
   label: string;
   body?: string;
   heading?: string;
@@ -299,6 +299,18 @@ export interface GeneratedPart {
   exp?: string;
   /** For a `media` placeholder — references author-supplied media by id. */
   ref?: string;
+  /** section-quiz (embedded Quiz slot) */
+  sourceMode?: string;
+  authoringNote?: string;
+  required?: boolean;
+  questions?: {
+    question: string;
+    options?: string[];
+    correct?: number;
+    explanation?: string;
+    hints?: string[];
+    label?: string;
+  }[];
 }
 
 export type TutorialGenEvent =

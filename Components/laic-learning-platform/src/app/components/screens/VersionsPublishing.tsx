@@ -1,11 +1,14 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { VERSIONS, OBJECTS, COURSES } from '../../../lib/data';
+import { useApp } from '../../App';
 import { StatusPill } from './StatusPill';
 
 export function VersionsPublishing() {
-  // Combine objects and courses into a flat version history
-  const rows = VERSIONS.map(v => {
+  const { nexusMode } = useApp();
+  // Combine objects and courses into a flat version history. Program-scoped:
+  // no shared demo version history in Nexus mode.
+  const rows = (nexusMode ? [] : VERSIONS).map(v => {
     const obj = OBJECTS.find(o => o.id === v.objectId);
     const course = COURSES.find(c => c.id === v.objectId);
     return {

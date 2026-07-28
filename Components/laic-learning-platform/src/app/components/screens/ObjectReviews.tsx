@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MessageSquare, Check, RotateCcw, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { REVIEWS, OBJECTS } from '../../../lib/data';
+import { useApp } from '../../App';
 import { StatusPill } from './StatusPill';
 import type { ReviewItem } from '../../../lib/types';
 
@@ -100,8 +101,10 @@ function ReviewDetail({ review, onClose }: { review: ReviewItem; onClose: () => 
 }
 
 export function ObjectReviews() {
+  const { nexusMode } = useApp();
   const [selected, setSelected] = useState<ReviewItem | null>(null);
-  const queue = REVIEWS.filter(r => r.type === 'object');
+  // Each program is its own instance: no shared demo review queue in Nexus mode.
+  const queue = (nexusMode ? [] : REVIEWS).filter(r => r.type === 'object');
 
   return (
     <div className="px-6 py-6 w-full flex gap-5">

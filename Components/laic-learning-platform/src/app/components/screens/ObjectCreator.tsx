@@ -24,7 +24,7 @@ import type {
   SummaryContent, ReflectionContent, AssignmentContent, DrillContent, VideoScriptContent,
 } from '../../../lib/types';
 import { MarkupFlagReview, highlightsFromFlag } from './MarkupFlagReview';
-import { getTutorialTemplate, DEFAULT_TUTORIAL_TEMPLATE_ID } from '../../../lib/tutorialTemplates';
+import { getTutorialTemplate, DEFAULT_TUTORIAL_TEMPLATE_ID, templateUsesCompositeRecipe } from '../../../lib/tutorialTemplates';
 import { orderTutorialParts } from '../../../lib/tutorialOrder.js';
 import {
   ensureFourHints, ensureHints, attachHintsToQuestionParts,
@@ -99,9 +99,37 @@ function blocksToParts(blocks: Block[]): any[] {
       return { id, type: 'concept-card', label: c.term || 'Concept', concept: c.term || '', plain: c.definition || '', misc: c.example || '' };
     }
     if (b.type === 'quiz' || b.type === 'question') {
-      const q = b.type === 'quiz'
-        ? (b.content as any)?.questions?.[0]
-        : b.content as any;
+      if (b.type === 'quiz') {
+        const c = (b.content || {}) as any;
+        const qs = Array.isArray(c.questions) ? c.questions : [];
+        // Multi-question quiz block → section-quiz part (composite embed shape).
+        if (qs.length > 1 || c.embeddedQuiz || c.authoringNote) {
+          return {
+            id,
+            type: 'section-quiz',
+            label: c.label || 'Section quiz',
+            sourceMode: c.sourceMode || 'generate',
+            authoringNote: c.authoringNote,
+            required: c.required !== false,
+            questions: qs.map((q: any) => ({
+              question: q.question || '',
+              options: q.options || ['', '', '', ''],
+              correct: q.correct ?? 0,
+              explanation: q.explanation || '',
+              hints: Array.isArray(q.hints) ? q.hints : undefined,
+              label: q.label,
+            })),
+          };
+        }
+        const q = qs[0];
+        return {
+          id, type: 'question', label: q?.label || 'Knowledge check',
+          prompt: q?.question || '', options: q?.options || ['', '', '', ''],
+          correct: q?.correct ?? 0, exp: q?.explanation || '',
+          hints: Array.isArray(q?.hints) ? q.hints : undefined,
+        };
+      }
+      const q = b.content as any;
       return {
         id, type: 'question', label: q?.label || 'Knowledge check',
         prompt: q?.question || '', options: q?.options || ['', '', '', ''],
@@ -132,10 +160,19 @@ function blocksToParts(blocks: Block[]): any[] {
   });
 }
 
-/** Sequential Question 1…N for tutorial checks. */
+/** Sequential Question 1…N for tutorial checks (inline + section-quiz). */
 function renumberQuestionParts(parts: any[]): any[] {
   let n = 0;
   return parts.map((p) => {
+    if (p.type === 'section-quiz' && Array.isArray(p.questions)) {
+      return {
+        ...p,
+        questions: p.questions.map((q: any) => {
+          n += 1;
+          return { ...q, label: `Question ${n}` };
+        }),
+      };
+    }
     if (p.type !== 'question') return p;
     n += 1;
     return { ...p, label: `Question ${n}` };
@@ -151,6 +188,20 @@ function buildTutorialSectionPlans(
 ): TutorialSectionPlan[] {
   const clusters = kb.clusters.slice(0, Math.max(1, secs));
   const unused = [...mediaItems];
+  const useComposite = templateUsesCompositeRecipe(template);
+
+  if (useComposite) {
+    for (const item of template.recipe) {
+      if (item.kind === 'embedded' && item.objectType !== 'quiz') {
+        // Visible deferral — not a silent skip like the old flat projection.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[tutorial] embedded ${item.objectType} slot is deferred (not yet wired for generation); quiz embeds are live.`,
+        );
+      }
+    }
+  }
+
   return clusters.map((cluster, index) => {
     const mediaPlacements: { slotId: string; mediaRef: string }[] = [];
     for (const slot of template.mediaSlots || []) {
@@ -163,6 +214,8 @@ function buildTutorialSectionPlans(
       index,
       title: cluster.name || `Section ${index + 1}`,
       clusterId: cluster.id,
+      sectionRecipe: useComposite ? template.recipe : undefined,
+      // Flat shadow always kept for legacy consumers / fallback.
       recipe: template.sectionBlockRecipe,
       mediaPlacements,
     };
@@ -195,6 +248,8 @@ function scaffoldTutorialFromTemplate(
   const rid = () => `manual-${Date.now()}-${++n}`;
   const sectionCount = Math.max(1, secs || template.knobDefaults.secs || 3);
   const endWith = end || template.knobDefaults.end || 'Recap only';
+  const checksPerSection = Math.max(1, Number(template.knobDefaults.chks) || 1);
+  const useComposite = templateUsesCompositeRecipe(template);
 
   parts.push({
     id: rid(),
@@ -207,39 +262,111 @@ function scaffoldTutorialFromTemplate(
   for (let s = 0; s < sectionCount; s += 1) {
     const sectionTitle = `Section ${s + 1}`;
     let headingEmitted = false;
-    for (const item of template.sectionBlockRecipe) {
-      if (item.type === 'media') continue;
-      if (item.type === 'section-heading') {
+
+    if (useComposite) {
+      for (const item of template.recipe) {
+        if (item.kind === 'atomic') {
+          if (item.blockType === 'media') continue;
+          if (item.blockType === 'section-heading') {
+            parts.push({
+              id: rid(),
+              type: 'rich-text',
+              label: sectionTitle,
+              heading: sectionTitle,
+              body: '',
+            });
+            headingEmitted = true;
+            continue;
+          }
+          if (item.blockType === 'try-it') {
+            parts.push({
+              id: rid(),
+              type: 'question',
+              label: 'Question',
+              prompt: '',
+              options: ['', '', '', ''],
+              correct: 0,
+              exp: '',
+              hints: ensureFourHints([], { sectionTitle }),
+            });
+            continue;
+          }
+          const label = RECIPE_PART_LABELS[item.blockType] || item.blockType;
+          const part: any = { id: rid(), type: 'rich-text', label, body: '' };
+          if (!headingEmitted) {
+            part.heading = sectionTitle;
+            headingEmitted = true;
+          }
+          parts.push(part);
+          continue;
+        }
+
+        if (item.objectType === 'quiz') {
+          const questions = Array.from({ length: checksPerSection }, (_, qi) => ({
+            question: '',
+            options: ['', '', '', ''],
+            correct: 0,
+            explanation: '',
+            hints: ensureFourHints([], { sectionTitle }),
+            label: `Question ${qi + 1}`,
+          }));
+          parts.push({
+            id: rid(),
+            type: 'section-quiz',
+            label: `Section quiz · ${sectionTitle}`,
+            sourceMode: item.sourceMode,
+            authoringNote: item.authoringNote || "test only this section's concept",
+            required: item.required,
+            questions,
+          });
+          continue;
+        }
+
         parts.push({
           id: rid(),
           type: 'rich-text',
-          label: sectionTitle,
-          heading: sectionTitle,
-          body: '',
+          label: `Embedded ${item.objectType} (not yet wired)`,
+          body: `[TODO] Embedded ${item.objectType} slot is deferred — not scaffolded as a nested object yet.`,
+          heading: headingEmitted ? undefined : sectionTitle,
         });
-        headingEmitted = true;
-        continue;
+        if (!headingEmitted) headingEmitted = true;
       }
-      if (item.type === 'knowledge-check' || item.type === 'try-it') {
-        parts.push({
-          id: rid(),
-          type: 'question',
-          label: 'Question',
-          prompt: '',
-          options: ['', '', '', ''],
-          correct: 0,
-          exp: '',
-          hints: ensureFourHints([], { sectionTitle }),
-        });
-        continue;
+    } else {
+      // Legacy flat path — unchanged.
+      for (const item of template.sectionBlockRecipe) {
+        if (item.type === 'media') continue;
+        if (item.type === 'section-heading') {
+          parts.push({
+            id: rid(),
+            type: 'rich-text',
+            label: sectionTitle,
+            heading: sectionTitle,
+            body: '',
+          });
+          headingEmitted = true;
+          continue;
+        }
+        if (item.type === 'knowledge-check' || item.type === 'try-it') {
+          parts.push({
+            id: rid(),
+            type: 'question',
+            label: 'Question',
+            prompt: '',
+            options: ['', '', '', ''],
+            correct: 0,
+            exp: '',
+            hints: ensureFourHints([], { sectionTitle }),
+          });
+          continue;
+        }
+        const label = RECIPE_PART_LABELS[item.type] || item.type;
+        const part: any = { id: rid(), type: 'rich-text', label, body: '' };
+        if (!headingEmitted) {
+          part.heading = sectionTitle;
+          headingEmitted = true;
+        }
+        parts.push(part);
       }
-      const label = RECIPE_PART_LABELS[item.type] || item.type;
-      const part: any = { id: rid(), type: 'rich-text', label, body: '' };
-      if (!headingEmitted) {
-        part.heading = sectionTitle;
-        headingEmitted = true;
-      }
-      parts.push(part);
     }
   }
 
@@ -932,13 +1059,16 @@ function TutorialSource(props: any) {
 }
 
 function S1({ selected, setSelected, roles, setRoles, urlRefs, setUrlRefs }: any) {
+  const { nexusMode } = useApp();
   const [url, setUrl] = useState('');
+  // Program-scoped instance: no shared demo source pool in Nexus mode.
+  const seedSources = nexusMode ? [] : SOURCES;
   return (
     <div className="flex gap-5 p-5">
       <div className="flex-1 min-w-0">
         <p style={{ fontSize: 11.5, fontWeight: 700, color: '#6B7280', letterSpacing: '.06em', marginBottom: 10 }}>SOURCE POOL — Bridge</p>
         <div className="space-y-2">
-          {SOURCES.map(s => {
+          {seedSources.map(s => {
             const on = selected.includes(s.id);
             return (
               <div key={s.id} onClick={() => setSelected((p: string[]) => on ? p.filter((x: string) => x !== s.id) : [...p, s.id])}
@@ -1943,6 +2073,73 @@ function EditPanel({ part, onChange, onClose }: any) {
         </>
       )}
 
+      {part.type === 'section-quiz' && (
+        <>
+          <p style={{ fontSize: 12, color: '#6B7280' }}>
+            Embedded section quiz · sourceMode={part.sourceMode || 'generate'}
+            {part.required === false ? ' · optional' : ' · required'}
+          </p>
+          <div>
+            <label style={lbl}>Authoring note</label>
+            <input
+              value={part.authoringNote || ''}
+              onChange={(e) => onChange({ authoringNote: e.target.value })}
+              className="w-full rounded-xl px-3 py-2"
+              style={field}
+            />
+          </div>
+          {(part.questions || []).map((q: any, qi: number) => (
+            <div key={qi} className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'rgba(0,0,0,0.08)' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#9AA3AF' }}>Question {qi + 1}</p>
+              <textarea
+                value={q.question || ''}
+                onChange={(e) => {
+                  const questions = (part.questions || []).map((qq: any, i: number) =>
+                    (i === qi ? { ...qq, question: e.target.value } : qq));
+                  onChange({ questions });
+                }}
+                rows={2}
+                className="w-full rounded-xl px-3 py-2 resize-y"
+                style={field}
+              />
+              <div className="space-y-1.5">
+                {(q.options || ['', '', '', '']).map((o: string, oi: number) => {
+                  const isCorrect = oi === (q.correct ?? 0);
+                  return (
+                    <div key={oi} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const questions = (part.questions || []).map((qq: any, i: number) =>
+                            (i === qi ? { ...qq, correct: oi } : qq));
+                          onChange({ questions });
+                        }}
+                        className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0"
+                        style={{ borderColor: isCorrect ? '#059669' : '#D1D5DB', background: isCorrect ? 'rgba(5,150,105,0.1)' : 'transparent' }}
+                      >
+                        {isCorrect && <Check size={11} style={{ color: '#059669' }} />}
+                      </button>
+                      <input
+                        value={o}
+                        onChange={(e) => {
+                          const options = (q.options || ['', '', '', '']).map((oo: string, i: number) =>
+                            (i === oi ? e.target.value : oo));
+                          const questions = (part.questions || []).map((qq: any, i: number) =>
+                            (i === qi ? { ...qq, options } : qq));
+                          onChange({ questions });
+                        }}
+                        className="flex-1 rounded-xl px-3 py-1.5"
+                        style={field}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
       <button onClick={onClose} className="px-3 py-1.5 rounded-full text-white text-xs font-semibold" style={{ background: '#059669' }}>✓ Done</button>
     </div>
   );
@@ -2115,6 +2312,34 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
             }],
           },
         };
+      if (p.type === 'section-quiz') {
+        const qs = Array.isArray(p.questions) ? p.questions : [];
+        return {
+          id,
+          type: 'quiz',
+          content: {
+            passMark: tutorialPassMark,
+            embeddedQuiz: true,
+            sourceMode: p.sourceMode || 'generate',
+            authoringNote: p.authoringNote,
+            required: p.required !== false,
+            label: p.label || 'Section quiz',
+            questions: qs.map((q: any) => ({
+              question: q.question || q.prompt || '',
+              type: 'multiple-choice',
+              options: q.options || [],
+              correct: q.correct ?? 0,
+              explanation: q.explanation || q.exp || '',
+              label: q.label || undefined,
+              hints: ensureHints(q.hints, {
+                explanation: q.explanation || q.exp,
+                enabled: hintSettings.enabled,
+                count: hintSettings.count,
+              }),
+            })),
+          },
+        };
+      }
       if (p.type === 'image')
         return { id, type: 'image', content: { url: p.url || '', caption: p.caption || '', alt: p.caption || '' } };
       if (p.type === 'video')
@@ -2347,6 +2572,35 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
                           })}
                         </div>
                       )}
+                      {p.type === 'section-quiz' && (
+                        <div>
+                          <p style={{ fontSize: 11.5, fontWeight: 700, color: '#7C3AED', marginBottom: 4, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                            Section quiz · {p.sourceMode || 'generate'}
+                          </p>
+                          {p.authoringNote && (
+                            <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 8, fontStyle: 'italic' }}>{p.authoringNote}</p>
+                          )}
+                          {(p.questions || []).map((q: any, qi: number) => (
+                            <div key={qi} className="mb-3 last:mb-0">
+                              <p style={{ fontSize: 13.5, color: '#0B1220', marginBottom: 4 }}>
+                                {q.label ? `${q.label}: ` : ''}{q.question || '(empty question)'}
+                              </p>
+                              {(q.options || []).map((o: string, oi: number) => {
+                                const isCorrect = oi === (q.correct ?? -1);
+                                return (
+                                  <p key={oi} className="mb-1 flex items-center gap-2" style={{ fontSize: 12.5 }}>
+                                    <span className="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
+                                      style={{ borderColor: isCorrect ? '#059669' : '#D1D5DB', background: isCorrect ? 'rgba(5,150,105,0.1)' : 'transparent' }}>
+                                      {isCorrect && <Check size={10} style={{ color: '#059669' }} />}
+                                    </span>
+                                    <span style={{ color: isCorrect ? '#059669' : '#374151' }}>{o}</span>
+                                  </p>
+                                );
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2384,7 +2638,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
           {mode === 'edit' ? <><Eye size={13} />Student preview</> : <><Pencil size={13} />Back to edit</>}
         </button>
         <span style={{ fontSize: 11.5, color: savedNote ? '#059669' : '#9AA3AF' }}>
-          {savedNote ? '✓ Saved to Object Library' : `${parts.length} parts · save to add it to the Object Library`}
+          {savedNote ? '✓ Saved to Activity objects' : `${parts.length} parts · save to add it to Activity objects`}
         </span>
         <div className="flex items-center gap-2">
           <button onClick={handleSaveDraft} className="flex items-center gap-1.5 px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>

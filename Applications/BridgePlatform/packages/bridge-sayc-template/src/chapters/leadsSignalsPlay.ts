@@ -9,7 +9,7 @@ export const LEADS_SIGNALS_PLAY: TemplateItem[] = [
   item(
     "leads",
     "Opening leads",
-    "Lead the top of a sequence when you have one; otherwise fourth-best from your longest and strongest against both suits and notrump.",
+    "Leads are fourth best, with the top of touching honors and the top of an interior sequence; against suits the ace is led from A-K-x. From three low cards lead LOW against a suit contract and HIGH against notrump; from four or more low cards without an honor, lead the second highest. (The engine currently realizes the sequence-then-fourth-best core of this table.)",
     "lead_agreement",
     "opening_lead",
     {
@@ -25,7 +25,7 @@ export const LEADS_SIGNALS_PLAY: TemplateItem[] = [
   item(
     "signals",
     "Defensive signals",
-    "Standard signals: high encourages and low discourages (attitude); high-low shows an even count. The first discard is attitude.",
+    "Standard signals: high encourages, low discourages (attitude); when giving count, high-low shows an even number and low-high odd. The first discard is attitude. (The engine treats this as declared policy — partner-facing card selection to signal is a future engine tier.)",
     "signal_agreement",
     "defense",
     {

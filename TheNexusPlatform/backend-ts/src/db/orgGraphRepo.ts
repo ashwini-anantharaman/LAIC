@@ -1965,15 +1965,31 @@ export async function upsertAppUserData(opts: {
 // app now goes through Nexus: these run privileged (bypassing RLS) and scope
 // every read/write to the caller's org, resolved server-side from the session.
 
-export async function listLearningObjects(orgId: string): Promise<Row[]> {
+/**
+ * Content Studio objects are scoped to a PROGRAM (each program is its own
+ * instance). When a programId is given, only that program's objects are
+ * returned; passing null keeps the legacy org-wide behavior (e.g. an org-level
+ * admin with no program pinned).
+ */
+export async function listLearningObjects(orgId: string, programId?: string | null): Promise<Row[]> {
   return asPrivileged(async (tx) => {
-    const rows = await tx.execute(sql`
+    const rows = await tx.execute(
+      programId
+        ? sql`
+      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
+             description, estimated_time, blocks, tags, source_ids, pipeline_draft,
+             created_at::text as created_at, updated_at::text as updated_at
+      from learning_objects
+      where organization_id = ${orgId} and program_id = ${programId}
+      order by updated_at desc nulls last`
+        : sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, blocks, tags, source_ids, pipeline_draft,
              created_at::text as created_at, updated_at::text as updated_at
       from learning_objects
       where organization_id = ${orgId}
-      order by updated_at desc nulls last`);
+      order by updated_at desc nulls last`,
+    );
     return rows as unknown as Row[];
   });
 }
@@ -1981,15 +1997,25 @@ export async function listLearningObjects(orgId: string): Promise<Row[]> {
 /** Metadata-only listing: everything except the (potentially huge) content
  *  columns (blocks, pipeline_draft). For list screens; content comes from
  *  getLearningObject. */
-export async function listLearningObjectsMeta(orgId: string): Promise<Row[]> {
+export async function listLearningObjectsMeta(orgId: string, programId?: string | null): Promise<Row[]> {
   return asPrivileged(async (tx) => {
-    const rows = await tx.execute(sql`
+    const rows = await tx.execute(
+      programId
+        ? sql`
+      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
+             description, estimated_time, tags, source_ids,
+             created_at::text as created_at, updated_at::text as updated_at
+      from learning_objects
+      where organization_id = ${orgId} and program_id = ${programId}
+      order by updated_at desc nulls last`
+        : sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, tags, source_ids,
              created_at::text as created_at, updated_at::text as updated_at
       from learning_objects
       where organization_id = ${orgId}
-      order by updated_at desc nulls last`);
+      order by updated_at desc nulls last`,
+    );
     return rows as unknown as Row[];
   });
 }
@@ -2009,7 +2035,7 @@ export async function getLearningObject(orgId: string, id: string): Promise<Row 
 }
 
 /** Insert-or-update one learning object, always stamped to the caller's org. */
-export async function upsertLearningObject(orgId: string, r: Row): Promise<void> {
+export async function upsertLearningObject(orgId: string, r: Row, programId?: string | null): Promise<void> {
   await asPrivileged(async (tx) => {
     await tx.execute(sql`
       insert into learning_objects
@@ -2017,7 +2043,7 @@ export async function upsertLearningObject(orgId: string, r: Row): Promise<void>
          reuse_count, description, estimated_time, blocks, tags, source_ids, pipeline_draft,
          created_at, updated_at)
       values (
-        ${r.id}, ${orgId}, null, ${r.type}, ${r.title ?? ""}, ${r.owner_id ?? null},
+        ${r.id}, ${orgId}, ${programId ?? (r.program_id as string) ?? null}, ${r.type}, ${r.title ?? ""}, ${r.owner_id ?? null},
         ${r.owner_name ?? null}, ${r.status ?? "draft"}, ${r.scope ?? "bridge"},
         ${r.reuse_count ?? 0}, ${r.description ?? ""}, ${r.estimated_time ?? ""},
         ${JSON.stringify(r.blocks ?? [])}::jsonb, ${JSON.stringify(r.tags ?? [])}::jsonb,
@@ -2025,6 +2051,7 @@ export async function upsertLearningObject(orgId: string, r: Row): Promise<void>
         ${r.pipeline_draft != null ? JSON.stringify(r.pipeline_draft) : null}::jsonb,
         coalesce(${r.created_at ?? null}::timestamptz, now()), now())
       on conflict (id) do update set
+        program_id = coalesce(excluded.program_id, learning_objects.program_id),
         title = excluded.title, type = excluded.type, owner_id = excluded.owner_id,
         owner_name = excluded.owner_name, status = excluded.status, scope = excluded.scope,
         reuse_count = excluded.reuse_count, description = excluded.description,

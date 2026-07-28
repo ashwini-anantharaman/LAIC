@@ -4,13 +4,16 @@ import { DealEditor } from "@/components/library/DealEditor";
 import { getBridgeContext } from "@/lib/nexus";
 import { createDealAction } from "../actions";
 
-/** Author a board by hand (2026-07-17, prototype-inspired deal editor). */
+/** Author a deal or board by hand (2026-07-17, prototype-inspired editor).
+ *  ?kind=deal saves the bare card distribution; the default is a board. */
 export default async function NewDealPage({
   searchParams,
-}: Readonly<{ searchParams: Promise<{ error?: string }> }>) {
+}: Readonly<{ searchParams: Promise<{ kind?: string; error?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  const { error } = await searchParams;
+  const { kind: rawKind, error } = await searchParams;
+  const kind = rawKind === "deal" ? "deal" : "board";
+  const noun = kind === "deal" ? "deal" : "board";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -19,12 +22,12 @@ export default async function NewDealPage({
           <Link href="/bridge/library" className="text-neutral-500 underline-offset-4 hover:underline">
             Library
           </Link>{" "}
-          <span className="text-neutral-400">/ new board</span>
+          <span className="text-neutral-400">/ new {noun}</span>
         </p>
-        <h1 className="mt-1 text-3xl font-medium">Deal editor</h1>
+        <h1 className="mt-1 text-3xl font-medium">New {noun}</h1>
         <p className="mt-2 max-w-xl text-sm text-neutral-600">
           Type each hand suit by suit — duplicates are flagged as you go, and the last hand is
-          one click. The saved board lands in the library, ready to deal onto a table.
+          one click. The saved {noun} lands in the library, ready to deal onto a table.
         </p>
       </header>
 
@@ -35,7 +38,11 @@ export default async function NewDealPage({
       )}
 
       <form action={createDealAction}>
-        <DealEditor />
+        <input type="hidden" name="kind" value={kind} />
+        <DealEditor
+          hideBoardFacts={kind === "deal"}
+          submitLabel={kind === "deal" ? "Save deal" : "Save board"}
+        />
       </form>
     </div>
   );

@@ -5,6 +5,8 @@
 
 import type { CompiledKb } from "./compiled";
 import type {
+  KbBenchmarkMarking,
+  KbBenchmarkRun,
   KbEdge,
   KbExtractionJob,
   KbMembership,
@@ -116,6 +118,15 @@ export interface KbStore {
   getCompile(compileId: string): Promise<CompiledKb | null>;
   listCompilesForKb(kbId: string, limit?: number): Promise<CompiledKb[]>;
   deleteCompilesForKb(kbId: string): Promise<void>;
+
+  // benchmark runs (append-only artifacts) + markings (mutable, signature-keyed)
+  putBenchmarkRun(run: KbBenchmarkRun): Promise<void>;
+  getBenchmarkRun(runId: string): Promise<KbBenchmarkRun | null>;
+  /** Runs for the KB, newest first. */
+  listBenchmarkRunsForKb(kbId: string): Promise<KbBenchmarkRun[]>;
+  putBenchmarkMarking(m: KbBenchmarkMarking): Promise<void>;
+  /** Markings for the KB, newest first. */
+  listBenchmarkMarkingsForKb(kbId: string): Promise<KbBenchmarkMarking[]>;
 }
 
 export interface KbStoreData {
@@ -135,6 +146,8 @@ export interface KbStoreData {
   passages: KbSourcePassage[];
   jobs: KbExtractionJob[];
   compiles: CompiledKb[];
+  benchmarkRuns: KbBenchmarkRun[];
+  benchmarkMarkings: KbBenchmarkMarking[];
 }
 
 export function emptyKbStoreData(): KbStoreData {
@@ -155,6 +168,8 @@ export function emptyKbStoreData(): KbStoreData {
     passages: [],
     jobs: [],
     compiles: [],
+    benchmarkRuns: [],
+    benchmarkMarkings: [],
   };
 }
 
@@ -473,5 +488,26 @@ export class InMemoryKbStore implements KbStore {
   async deleteCompilesForKb(kbId: string) {
     this.data.compiles = this.data.compiles.filter((c) => c.kbId !== kbId);
     this.persist();
+  }
+
+  // benchmark runs + markings
+  async putBenchmarkRun(run: KbBenchmarkRun) {
+    this.upsert(this.data.benchmarkRuns, (r) => r.runId, run);
+  }
+  async getBenchmarkRun(runId: string) {
+    return this.data.benchmarkRuns.find(byId((r) => r.runId, runId)) ?? null;
+  }
+  async listBenchmarkRunsForKb(kbId: string) {
+    return this.data.benchmarkRuns
+      .filter((r) => r.kbId === kbId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async putBenchmarkMarking(m: KbBenchmarkMarking) {
+    this.upsert(this.data.benchmarkMarkings, (x) => x.markingId, m);
+  }
+  async listBenchmarkMarkingsForKb(kbId: string) {
+    return this.data.benchmarkMarkings
+      .filter((m) => m.kbId === kbId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 }

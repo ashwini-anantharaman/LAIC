@@ -12,9 +12,10 @@ const OBJECT_TYPE_ICONS: Record<string, string> = {
 };
 
 export function CDHome() {
-  const { navigate, activeUserId, createdObjects } = useApp();
+  const { navigate, activeUserId, createdObjects, nexusMode } = useApp();
 
-  const seedMine = OBJECTS.filter(o => o.ownerId === activeUserId || o.ownerId === 'sam' || o.ownerId === 'chen');
+  // Nexus mode: only the program's real objects; no demo seed.
+  const seedMine = nexusMode ? [] : OBJECTS.filter(o => o.ownerId === activeUserId || o.ownerId === 'sam' || o.ownerId === 'chen');
   const myObjects = [...createdObjects, ...seedMine.filter(o => !createdObjects.some(c => c.id === o.id))];
   const inReview = myObjects.filter(o => o.status === 'in-review').length;
   const published = myObjects.filter(o => o.status === 'published').length;
@@ -24,7 +25,7 @@ export function CDHome() {
     { id: 'cd-templates',   icon: <LayoutTemplate size={20} />, label: 'Template Library',         desc: 'Recommended & custom templates for every object', color: '#0EA5E9' },
     { id: 'cd-wizard',      icon: <GraduationCap size={20} />,  label: 'Build a course',            desc: 'Assemble objects into a structured course', color: '#1D4ED8' },
     { id: 'cd-sources',     icon: <Database size={20} />,       label: 'Bring in sources',          desc: 'Manage collections and per-object pools', color: '#7C3AED' },
-    { id: 'cd-library',     icon: <BookOpen size={20} />,       label: 'Object Library',            desc: `${myObjects.length} objects in this program`, color: '#059669' },
+    { id: 'cd-library',     icon: <BookOpen size={20} />,       label: 'Activity objects',          desc: `${myObjects.length} objects in this program`, color: '#059669' },
     { id: 'cd-submissions', icon: <ClipboardCheck size={20} />, label: 'My Submissions',            desc: `${inReview} in review`, color: '#D97706' },
     { id: 'cd-versions',    icon: <GitBranch size={20} />,      label: 'Versions & Publishing',     desc: 'Version history and publish status', color: '#6B7280' },
   ];
@@ -87,7 +88,7 @@ export function CDHome() {
           <div className="flex items-center justify-between mb-3">
             <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>Recent objects</p>
             <button onClick={() => navigate('cd-library')} className="flex items-center gap-1 transition-colors hover:text-[#0B1220]" style={{ fontSize: 12, color: '#9AA3AF' }}>
-              Object Library → <ArrowRight size={11} />
+              Activity objects → <ArrowRight size={11} />
             </button>
           </div>
           <div className="rounded-[22px] overflow-hidden" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>

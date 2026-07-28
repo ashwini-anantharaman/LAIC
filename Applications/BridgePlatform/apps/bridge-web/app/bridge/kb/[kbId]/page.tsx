@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { kbService, kbStore } from "@/lib/kb";
 import { scopeSources } from "@/lib/sources";
-import { deleteKbAction } from "../actions";
+import { setKbArchivedAction } from "../actions";
 
 /** Overview: where to go next, and what needs attention. */
 export default async function KbOverviewPage({
@@ -9,10 +9,10 @@ export default async function KbOverviewPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ kbId: string }>;
-  searchParams: Promise<{ deleteError?: string }>;
+  searchParams: Promise<{ augmentKept?: string; augmentDiscarded?: string }>;
 }>) {
   const { kbId } = await params;
-  const { deleteError } = await searchParams;
+  const { augmentKept, augmentDiscarded } = await searchParams;
   const store = kbStore();
   const [kb, items, packs, allSources, jobs, compiled] = await Promise.all([
     store.getKb(kbId),
@@ -46,7 +46,61 @@ export default async function KbOverviewPage({
   );
 
   return (
+    <div>
+      {augmentKept && (
+        <p className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Augmentation draft kept — this is now an ordinary knowledge base. Rename it below if
+          you like.
+        </p>
+      )}
+      {augmentDiscarded && (
+        <p className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Augmentation draft discarded. This knowledge base was never touched by it.
+        </p>
+      )}
+      {kb?.augmentation?.status === "review" && (
+        <Link
+          href={`${base}/augment`}
+          className="mb-4 block rounded-xl border border-emerald-400 bg-emerald-50 px-5 py-4 hover:bg-emerald-100"
+        >
+          <p className="text-xs uppercase tracking-[0.25em] text-emerald-700">
+            Augmentation in review
+          </p>
+          <p className="mt-1 text-sm text-neutral-700">
+            This is a draft merging “{allSources.find((s) => s.sourceId === kb?.augmentation?.sourceId)?.title ?? kb.augmentation.sourceId}” into{" "}
+            <b>{kb.augmentation.baseKbName}</b> — open the review board to see modified items,
+            new items, and conflicts, then keep or discard. →
+          </p>
+        </Link>
+      )}
     <div className="grid gap-4 sm:grid-cols-2">
+      {items.length > 0 && (
+        <section className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-[var(--card)] p-5 sm:col-span-2">
+          <h2 className="font-medium">Try the knowledge</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <p className="text-sm text-neutral-600">
+              <Link
+                href={`${base}/test`}
+                className="font-medium text-emerald-700 underline-offset-4 hover:underline"
+              >
+                Test a decision →
+              </Link>
+              <br />
+              Type a hand and auction and see the exact call the knowledge makes, and why.
+            </p>
+            <p className="text-sm text-neutral-600">
+              <Link
+                href={`${base}/coverage`}
+                className="font-medium text-emerald-700 underline-offset-4 hover:underline"
+              >
+                Run a 100-deal coverage check →
+              </Link>
+              <br />
+              Play a knowledge set across random deals to find rules that never fire.
+            </p>
+          </div>
+        </section>
+      )}
       {items.length === 0 &&
         card(
           "Sources",
@@ -98,44 +152,24 @@ export default async function KbOverviewPage({
           "Manage sources",
         )}
 
-      {/* Danger zone */}
-      <details className="rounded-lg border border-red-200 sm:col-span-2">
-        <summary className="cursor-pointer px-5 py-3 text-sm font-medium text-red-800 hover:bg-red-50/50">
-          Delete this knowledge base…
-        </summary>
-        <div className="border-t border-red-100 px-5 py-4">
-          {deleteError && (
-            <p className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-              {deleteError}
-            </p>
-          )}
-          <p className="text-sm text-neutral-600">
-            This permanently removes the knowledge base with its {items.length} knowledge item
-            {items.length === 1 ? "" : "s"} (except any shared with another KB), sets,
-            players, suggestions, compiles, and every board played on it. There is no undo.
-          </p>
-          <form action={deleteKbAction} className="mt-3 flex flex-wrap items-end gap-2">
-            <input type="hidden" name="kbId" value={kbId} />
-            <input type="hidden" name="from" value="overview" />
-            <label className="text-sm">
-              <span className="mb-1 block text-xs text-neutral-500">
-                Type <span className="font-mono font-medium">{kb?.name}</span> to confirm
-              </span>
-              <input
-                name="confirmName"
-                autoComplete="off"
-                className="w-64 rounded border border-neutral-300 px-2 py-1.5"
-              />
-            </label>
-            <button
-              type="submit"
-              className="rounded border border-red-300 bg-red-50 px-4 py-1.5 text-sm font-medium text-red-800 hover:bg-red-100"
-            >
-              Delete forever
-            </button>
-          </form>
-        </div>
-      </details>
+      {/* Retire, don't delete */}
+      <section className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 p-5 sm:col-span-2">
+        <p className="flex-1 text-sm text-neutral-600">
+          Done with this one? Hidden everywhere, reversibly — knowledge bases are never
+          deleted. Unhide it any time from the knowledge-base list.
+        </p>
+        <form action={setKbArchivedAction}>
+          <input type="hidden" name="kbId" value={kbId} />
+          <input type="hidden" name="archived" value="true" />
+          <button
+            type="submit"
+            className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-600 hover:border-emerald-400"
+          >
+            Hide this knowledge base
+          </button>
+        </form>
+      </section>
+    </div>
     </div>
   );
 }

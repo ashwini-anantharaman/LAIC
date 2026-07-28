@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Search, Filter, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video, BookMarked } from 'lucide-react';
+import { Search, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video, BookMarked, Link2, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { OBJECTS, COURSES } from '../../../lib/data';
 import { StatusPill } from './StatusPill';
 import type { ObjectType, ObjectStatus } from '../../../lib/types';
 import { useApp } from '../../App';
+import { objectEmbedUrl } from '../../../lib/objectUrls';
 
 const TYPE_ICONS: Record<ObjectType | 'course', React.ReactNode> = {
   lesson:        <BookOpen size={14} />,
@@ -39,12 +40,28 @@ const TYPE_GROUPS: { type: ObjectType | 'course'; label: string }[] = [
 export function ObjectLibrary() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<ObjectStatus | 'all'>('all');
-  const { openReader, openEditor, createdObjects } = useApp();
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const { openReader, openEditor, createdObjects, nexusMode } = useApp();
+  // In Nexus mode the library shows ONLY this program's real objects (from the
+  // backend, program-scoped). The demo seed catalog is standalone-only.
+  const seedObjects = nexusMode ? [] : OBJECTS;
+  const seedCourses = nexusMode ? [] : COURSES;
+
+  const copyObjectUrl = async (objectId: string) => {
+    const url = objectEmbedUrl(objectId);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(objectId);
+      window.setTimeout(() => setCopiedId((id) => (id === objectId ? null : id)), 1600);
+    } catch {
+      window.prompt('Copy this activity object URL:', url);
+    }
+  };
 
   // Saved objects first (account library), then seed catalog without duplicates.
   const allObjects = [
     ...createdObjects,
-    ...OBJECTS.filter(o => !createdObjects.some(c => c.id === o.id)),
+    ...seedObjects.filter(o => !createdObjects.some(c => c.id === o.id)),
   ];
 
   const filtered = allObjects.filter(o => {
@@ -55,7 +72,7 @@ export function ObjectLibrary() {
 
   const savedCount = createdObjects.length;
 
-  const courseFiltered = COURSES.filter(c => {
+  const courseFiltered = seedCourses.filter(c => {
     const matchSearch = c.title.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || c.status === filterStatus;
     return matchSearch && matchStatus;
@@ -139,6 +156,16 @@ export function ObjectLibrary() {
                     {item.isCourse ? `${(item as typeof items[0]).reuseCount} learners` : `×${(item as typeof items[0]).reuseCount}`}
                   </span>
                   <div className="flex items-center gap-1">
+                    {!item.isCourse && (
+                      <button
+                        type="button"
+                        onClick={() => void copyObjectUrl(item.id)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
+                        title={copiedId === item.id ? 'Copied' : 'Copy object URL'}
+                      >
+                        {copiedId === item.id ? <Check size={13} className="text-emerald-600" /> : <Link2 size={13} />}
+                      </button>
+                    )}
                     {!item.isCourse && (
                       <button
                         onClick={() => openReader(item.id)}

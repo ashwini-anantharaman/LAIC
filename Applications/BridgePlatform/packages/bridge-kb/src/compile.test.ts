@@ -3,7 +3,7 @@
 // protection and forks shared items on divergence; the static capability
 // checker distinguishes minimally complete from incomplete players.
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FIXTURE_EDGES, FIXTURE_ITEMS, fixturePacks } from "./fixture";
 import type { KbPlayer, KnowledgeBase } from "./model";
 import { KbService } from "./service";
@@ -170,6 +170,62 @@ describe("compileKb via KbService", () => {
     expect(compiled.version).toBeGreaterThan(before);
     const rule = compiled.auctionRules.find((r) => r.ruleId === "ki_open_2c.open")!;
     expect(rule.conditions).toEqual({ hcp: { max: 9 } });
+  });
+});
+
+describe("setItemsStatus", () => {
+  let store: InMemoryKbStore;
+  let service: KbService;
+  let kb: KnowledgeBase;
+
+  beforeEach(async () => {
+    store = new InMemoryKbStore();
+    service = new KbService(store, { now: () => NOW });
+    kb = await seedKb(store, service);
+  });
+
+  it("persists the status across items with ONE recompile", async () => {
+    const recompile = vi.spyOn(service, "recompile");
+    const { changed } = await service.setItemsStatus(
+      kb.kbId,
+      ["ki_open_1nt", "ki_open_2c"],
+      "reviewed",
+      "u_editor",
+    );
+    expect(changed.map((c) => c.itemId).sort()).toEqual(["ki_open_1nt", "ki_open_2c"]);
+    expect(recompile).toHaveBeenCalledTimes(1);
+    expect((await store.getItem("ki_open_1nt"))?.status).toBe("reviewed");
+    expect((await store.getItem("ki_open_2c"))?.status).toBe("reviewed");
+  });
+
+  it("skips items already at the target status", async () => {
+    await service.setItemsStatus(kb.kbId, ["ki_open_1nt"], "reviewed", "u_editor");
+    const recompile = vi.spyOn(service, "recompile");
+    const { changed } = await service.setItemsStatus(kb.kbId, ["ki_open_1nt"], "reviewed", "u_editor");
+    expect(changed).toEqual([]);
+    expect(recompile).not.toHaveBeenCalled();
+  });
+
+  it("forks a shared item for the editing KB only", async () => {
+    const other = await service.createKb({
+      name: "Other system",
+      systemLabel: "2/1",
+      createdBy: "u_test",
+    });
+    await service.shareItem(other.kbId, "ki_open_1nt");
+
+    const { changed } = await service.setItemsStatus(other.kbId, ["ki_open_1nt"], "reviewed", "u_editor");
+    expect(changed).toHaveLength(1);
+    const forkedId = changed[0]!.itemId;
+    expect(forkedId).not.toBe("ki_open_1nt");
+    const forked = (await store.getItem(forkedId))!;
+    expect(forked.forkedFromItemId).toBe("ki_open_1nt");
+    expect(forked.status).toBe("reviewed");
+
+    // The original KB keeps the original, untouched.
+    const original = (await store.getItem("ki_open_1nt"))!;
+    expect(original.status).not.toBe("reviewed");
+    expect((await store.listItemsForKb(other.kbId)).map((i) => i.itemId)).toEqual([forkedId]);
   });
 });
 

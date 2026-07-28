@@ -24,10 +24,9 @@ export default async function PlayersPage({
 
   const store = kbStore();
   const kbs = (await store.listKbs()).filter((k) => !k.archived);
-  const withPlayers: { kb: KnowledgeBase; players: KbPlayer[] }[] = [];
-  for (const kb of kbs) {
-    withPlayers.push({ kb, players: await store.listPlayersForKb(kb.kbId) });
-  }
+  const withPlayers: { kb: KnowledgeBase; players: KbPlayer[] }[] = await Promise.all(
+    kbs.map(async (kb) => ({ kb, players: await store.listPlayersForKb(kb.kbId) })),
+  );
 
   const aiTab = tab === "ai";
   const activeKb =

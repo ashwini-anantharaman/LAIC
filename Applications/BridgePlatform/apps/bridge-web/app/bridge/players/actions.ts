@@ -103,6 +103,9 @@ export async function tryPlayerAction(formData: FormData): Promise<void> {
   await ensureSeeds();
   const playerId = String(formData.get("playerId"));
   const watch = formData.get("watch") === "1";
+  // Additive, inert by default: the mobile UI posts mobile=1 to open the
+  // resulting board in the /m/table chrome.
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   await assertAiAllowed(context);
 
   const store = kbStore();
@@ -127,5 +130,5 @@ export async function tryPlayerAction(formData: FormData): Promise<void> {
     kbId: player.kbId,
     tryPlayer: playerId,
   });
-  redirect(`/bridge/table/${record.sessionId}`);
+  redirect(`${tableBase}${record.sessionId}`);
 }

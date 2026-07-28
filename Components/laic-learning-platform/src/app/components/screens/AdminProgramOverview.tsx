@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronRight, GitBranch } from 'lucide-react';
 import { motion } from 'motion/react';
 import { OBJECTS, COURSES, PEOPLE } from '../../../lib/data';
+import { useApp } from '../../App';
 
 const STATUS_COLORS: Record<string, { bg: string; bar: string; label: string }> = {
   draft:              { bg: '#F3F4F6', bar: '#D1D5DB', label: 'Draft' },
@@ -19,10 +20,12 @@ const ACTIVITY = [
 ];
 
 export function AdminProgramOverview() {
-  const objects = OBJECTS;
-  const courses = COURSES;
-  const people  = PEOPLE;
-  const teams   = [...new Set(PEOPLE.map(p => p.team).filter(Boolean))];
+  const { nexusMode } = useApp();
+  // Program-scoped instance: no shared demo objects/courses/people in Nexus mode.
+  const objects = nexusMode ? [] : OBJECTS;
+  const courses = nexusMode ? [] : COURSES;
+  const people  = nexusMode ? [] : PEOPLE;
+  const teams   = [...new Set(people.map(p => p.team).filter(Boolean))];
 
   const statusCounts = objects.reduce<Record<string, number>>((acc, o) => {
     acc[o.status] = (acc[o.status] || 0) + 1;

@@ -196,10 +196,16 @@ export interface TutorialTemplate {
   /** Composite-aware ordered recipe (source of truth for the template editor). */
   recipe: SectionRecipe;
   /**
-   * Flat projection for existing generation / scaffold consumers.
+   * Flat projection for legacy generation / scaffold consumers.
    * Derived from `recipe` on save; do not treat as independently authored.
+   * @deprecated Prefer `recipe` / `TutorialSectionPlan.sectionRecipe` when `usesCompositeRecipe` is true.
    */
   sectionBlockRecipe: SectionBlockRecipe;
+  /**
+   * When true, ObjectCreator / generate read `recipe` (composite).
+   * When false/undefined, generation uses the flat `sectionBlockRecipe` path unchanged (legacy).
+   */
+  usesCompositeRecipe?: boolean;
   sectionConnection: SectionConnectionRule;
   assessmentPlacement: AssessmentPlacement;
   /** Derived from atomic media items in `recipe` on save. */
@@ -245,6 +251,15 @@ export interface TutorialSectionPlan {
   title: string;
   subheads?: string[];
   clusterId: string;
+  /**
+   * Preferred when the template was authored as composite (`usesCompositeRecipe`).
+   * Section-local view of `template.recipe` (same ordered items for every section in v1).
+   */
+  sectionRecipe?: SectionRecipe;
+  /**
+   * @deprecated Flat shadow for legacy templates / consumers not yet on composite.
+   * Always populated for backward compatibility; generation prefers `sectionRecipe` when present.
+   */
   recipe: SectionBlockRecipe;
   mediaPlacements: { slotId: string; mediaRef: string }[];
 }
@@ -495,13 +510,137 @@ export interface AssignmentContent {
   level?: string;
 }
 
+/** Author Define — Recognition / Recall / Application. */
+export type DrillCognitiveFormat = 'Recognition' | 'Recall' | 'Application';
+export type DrillDifficultyMode = 'Flat' | 'Easy → hard';
+export type DrillFeedbackTiming = 'Immediate' | 'End only';
+export type DrillItemDifficulty = 'easy' | 'medium' | 'hard';
+
+/** Learner mechanic — what the player renders. */
+export type DrillInteractiveKind =
+  | 'label_place'
+  | 'order'
+  | 'categorize'
+  | 'match'
+  | 'compute'
+  | 'multi_step'
+  | 'choice';
+
+export interface DrillRegion {
+  id: string;
+  label?: string;
+  /** Normalized 0–1 box relative to image. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export type DrillInteractivePayload =
+  | {
+      kind: 'label_place';
+      imageUrl: string;
+      imageAlt?: string;
+      regions: DrillRegion[];
+      terms: { id: string; text: string }[];
+      /** termId → regionId */
+      mapping: Record<string, string>;
+    }
+  | {
+      kind: 'order';
+      steps: { id: string; text: string }[];
+      correctOrder: string[];
+    }
+  | {
+      kind: 'categorize';
+      buckets: { id: string; label: string }[];
+      items: { id: string; text: string }[];
+      /** itemId → bucketId */
+      assignments: Record<string, string>;
+    }
+  | {
+      kind: 'match';
+      left: { id: string; text: string }[];
+      right: { id: string; text: string }[];
+      /** leftId → rightId */
+      pairs: Record<string, string>;
+    }
+  | {
+      kind: 'compute';
+      prompt: string;
+      expected: string;
+      tolerance?: number;
+      unit?: string;
+    }
+  | {
+      kind: 'multi_step';
+      steps: {
+        id: string;
+        prompt: string;
+        interaction: Extract<DrillInteractivePayload, { kind: 'compute' | 'choice' }>;
+        whyCorrect?: string;
+        corrections?: Record<string, string>;
+      }[];
+    }
+  | {
+      kind: 'choice';
+      prompt: string;
+      choices: { id: string; text: string; correct: boolean; correction?: string }[];
+    };
+
+export interface DrillItemResult {
+  correct: boolean;
+  wrongParts?: string[];
+  committed: unknown;
+  why?: string;
+  correction?: string;
+}
+
+export interface DrillRuntimeRules {
+  feedbackTiming: DrillFeedbackTiming;
+  timed: boolean;
+  secondsPerItem?: number;
+  repeatUntilMastery: boolean;
+  requeueOffset?: number;
+}
+
+export interface DrillTier {
+  id: string;
+  label: string;
+  difficulty: DrillItemDifficulty | 'mixed';
+  itemIds: string[];
+}
+
 export interface DrillItem {
   id: string;
+  /**
+   * Legacy stem — kept for storage compat. Runtime reads `interactive` only
+   * (after normalizeDrillItem maps legacy → interactive).
+   */
   prompt: string;
+  /** Legacy canonical answer — mapped into interactive answer keys. */
   answer: string;
+  /** Legacy Recognition options — mapped to interactive.kind = 'choice'. */
   choices?: string[];
+  whyCorrect?: string;
+  corrections?: Record<string, string>;
   hint?: string;
-  difficulty?: 'easy' | 'medium' | 'hard';
+  difficulty?: DrillItemDifficulty;
+  skillTag?: string;
+  /** Canonical interactive mechanic + answer key (runtime source of truth). */
+  interactive?: DrillInteractivePayload;
+}
+
+export interface DrillBlueprint {
+  skill: string;
+  level: string;
+  cognitiveFormat: DrillCognitiveFormat | string;
+  difficultyMode: DrillDifficultyMode | string;
+  itemCount: number;
+  items: DrillItem[];
+  tiers: DrillTier[];
+  runtime: DrillRuntimeRules;
+  grounding?: { sourceCount: number; extractCount: number; clusterCount?: number };
 }
 
 export interface DrillContent {
@@ -510,9 +649,14 @@ export interface DrillContent {
   difficultyCurve: string;
   feedback: string;
   timed?: boolean;
+  secondsPerItem?: number;
   repeatUntilMastery?: boolean;
+  requeueOffset?: number;
   level?: string;
   items: DrillItem[];
+  /** Compiled blueprint when present; runtime prefers this over flat fields. */
+  blueprint?: DrillBlueprint;
+  tiers?: DrillTier[];
 }
 
 export type BlockContent =

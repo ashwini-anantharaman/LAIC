@@ -136,4 +136,9 @@ export type NexusBridgeContext = {
   accessLevel: BridgeAccessLevel;
   /** The person's display name in this org (Nexus profile). Additive; UI-only. */
   displayName?: string;
+  /** Effective bridge-catalogue capability ids — the source of truth the app
+   *  gates tabs/actions on (admin → all). Additive. */
+  capabilities?: string[];
+  /** True when the caller is a bridge admin (full access to every tab). */
+  is_admin?: boolean;
 };

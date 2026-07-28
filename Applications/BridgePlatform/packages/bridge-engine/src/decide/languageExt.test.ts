@@ -1,14 +1,18 @@
 // Language extensions for the curated SAYC build (2026-07-21): ace/king/
 // keycard/specific-card predicates, first-bid + LHO auction memory, the
-// contextual bid_suit action, and the CallPattern `level` shorthand.
+// contextual bid_suit action, the CallPattern `level` shorthand — and the
+// judgment-tier extensions (vulnerability, opponents' suits, cue detection,
+// the fourth suit, playing tricks, forcing rules).
 
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
-import type { HandCondition } from "@bridge/kb";
+import type { HandCondition, KnowledgeItem } from "@bridge/kb";
+import { InMemoryKbStore, KbService } from "@bridge/kb";
 import { describe, expect, it } from "vitest";
 import { initialState, type GameState } from "../state";
 import { realizeAuctionAction } from "./actions";
 import { analyzeSeat, matchCallPattern, matchContext } from "./auctionContext";
-import { evalCondition, type ConditionEnv } from "./handConditions";
+import { createKbDecider, type KbPlayerConfig } from "./decider";
+import { evalCondition, explainFailures, type ConditionEnv } from "./handConditions";
 
 const rankOf: Record<string, number> = {
   "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
@@ -150,5 +154,317 @@ describe("bid_suit action", () => {
         analyzeSeat([], "S"),
       ),
     ).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Judgment-tier extensions (2026-07-21)
+// ---------------------------------------------------------------------------
+
+describe("vulnerability facts", () => {
+  it("is relative to the seat", () => {
+    expect(analyzeSeat([], "N", "ns").vulnerability).toBe("unfavorable");
+    expect(analyzeSeat([], "E", "ns").vulnerability).toBe("favorable");
+    expect(analyzeSeat([], "N", "none").vulnerability).toBe("equal");
+    expect(analyzeSeat([], "N", "both").vulnerability).toBe("equal");
+    expect(analyzeSeat([], "N").vulnerability).toBe("equal"); // default: none
+  });
+
+  it("matchContext gates on it", () => {
+    const facts = analyzeSeat([], "E", "ns");
+    expect(matchContext({ role: "any", vulnerability: "favorable" }, facts)).toBe(true);
+    expect(matchContext({ role: "any", vulnerability: "unfavorable" }, facts)).toBe(false);
+  });
+});
+
+describe("opponents' suits and cue detection", () => {
+  it("counts DISTINCT opponent suits only", () => {
+    // E bid spades, W diamonds; S's 2S is our side and doesn't count.
+    const auction = calls(["E", "1S"], ["S", "2S"], ["W", "3D"], ["N", "P"], ["E", "3S"]);
+    const facts = analyzeSeat(auction, "S");
+    expect(facts.oppSuitsBid).toBe(2);
+    expect(facts.suitsBid).toEqual(["S", "D"]);
+    expect(matchContext({ role: "any", oppSuitsBidMax: 1 }, facts)).toBe(false);
+    expect(matchContext({ role: "any", oppSuitsBidMin: 2 }, facts)).toBe(true);
+  });
+
+  it("partnerCued: partner's suit was bid FIRST by the opponents", () => {
+    // Michaels: E opens 1S, partner (S) cue-bids 2S — N sees a cue.
+    const cue = calls(["E", "1S"], ["S", "2S"], ["W", "P"]);
+    expect(analyzeSeat(cue, "N").partnerCued).toBe(true);
+    expect(matchContext({ role: "any", partnerCued: true }, analyzeSeat(cue, "N"))).toBe(true);
+    // A fresh-suit overcall is not a cue.
+    const natural = calls(["E", "1S"], ["S", "2H"], ["W", "P"]);
+    expect(analyzeSeat(natural, "N").partnerCued).toBe(false);
+    // Partner bid the suit before the opponents echoed it — still not a cue.
+    const oursFirst = calls(["S", "1H"], ["W", "P"], ["N", "P"], ["E", "2H"], ["S", "3H"]);
+    expect(analyzeSeat(oursFirst, "N").partnerCued).toBe(false);
+  });
+});
+
+describe("only_unbid_suit", () => {
+  const FOUR_CLUBS = hand("SA S4 S3 HA H7 H6 DK D8 D5 C7 C4 C3 C2");
+
+  it("resolves the fourth suit when exactly three are bid", () => {
+    const auction = calls(["N", "1D"], ["E", "P"], ["S", "1H"], ["W", "P"], ["N", "1S"], ["E", "P"]);
+    const env = envFor(auction, "S");
+    expect(
+      evalCondition({ suitLength: { suit: "only_unbid_suit", min: 4 } }, FOUR_CLUBS, env),
+    ).toBe(true);
+    expect(
+      evalCondition({ suitLength: { suit: "only_unbid_suit", min: 5 } }, FOUR_CLUBS, env),
+    ).toBe(false);
+  });
+
+  it("does not resolve with fewer or more than three suits bid", () => {
+    const two = calls(["N", "1D"], ["E", "P"], ["S", "1H"], ["W", "P"], ["N", "2H"], ["E", "P"]);
+    expect(
+      evalCondition({ suitLength: { suit: "only_unbid_suit", min: 1 } }, FOUR_CLUBS, envFor(two, "S")),
+    ).toBe(false);
+  });
+});
+
+describe("playingTricks", () => {
+  // Spades AKQxxxx = 1 + 1 + 0.5 + 4 length = 6.5; hearts Ax = 1. Total 7.5.
+  const SEVEN_AND_A_HALF = hand("SA SK SQ S5 S4 S3 S2 HA H2 D3 D2 C3 C2");
+  const env = envFor([], "S");
+
+  it("counts honor + length tricks per suit", () => {
+    expect(evalCondition({ playingTricks: { min: 7.5, max: 7.5 } }, SEVEN_AND_A_HALF, env)).toBe(true);
+    expect(evalCondition({ playingTricks: { min: 8 } }, SEVEN_AND_A_HALF, env)).toBe(false);
+  });
+
+  it("a bare king is half a trick", () => {
+    const bareK = hand("SK H8 H7 H6 H5 D8 D7 D6 D5 C5 C4 C3 C2");
+    expect(evalCondition({ playingTricks: { min: 0.5, max: 0.5 } }, bareK, env)).toBe(true);
+  });
+});
+
+describe("explainFailures: needed vs held", () => {
+  // TWO_ACES: 13 HCP, 4-3-3-3.
+  const env = envFor([], "S");
+  const explain = (cond: HandCondition) => explainFailures(cond, TWO_ACES, env);
+
+  it("hcp: range and min-only formats", () => {
+    expect(explain({ hcp: { min: 15, max: 17 } })).toEqual(["needed 15–17 HCP, held 13"]);
+    expect(explain({ hcp: { min: 15 } })).toEqual(["needed 15+ HCP, held 13"]);
+  });
+
+  it("suitLength with a contextual ref, resolved and unresolvable", () => {
+    // Partner (N) bid hearts; S holds three of them.
+    const auction = calls(["N", "1H"], ["E", "P"]);
+    expect(
+      explainFailures(
+        { suitLength: { suit: "partner_last_bid_suit", min: 5 } },
+        TWO_ACES,
+        envFor(auction, "S"),
+      ),
+    ).toEqual(["needed 5+ cards in partner's suit, held 3"]);
+    // No partner bid yet — the ref does not resolve.
+    expect(explain({ suitLength: { suit: "partner_last_bid_suit", min: 5 } })).toEqual([
+      "needed 5+ cards in partner's suit (no such suit yet)",
+    ]);
+  });
+
+  it("balanced reports the held shape", () => {
+    const FIVE_FOUR = hand("SA SK SQ S5 S4 HA H7 H6 H5 D8 D7 D6 C2");
+    expect(explainFailures({ balanced: true }, FIVE_FOUR, env)).toEqual([
+      "needed a balanced hand, held 5-4-3-1",
+    ]);
+  });
+
+  it("any-combinator collapses to one 'needed one of' string", () => {
+    expect(
+      explain({ any: [{ hcp: { min: 15 } }, { suitLength: { suit: "S", min: 6 } }] }),
+    ).toEqual(["needed one of: 15+ HCP / 6+ cards in ♠"]);
+  });
+
+  it("returns [] for a condition that passes", () => {
+    expect(explain({ hcp: { min: 10, max: 15 } })).toEqual([]);
+    expect(explain({ all: [{ balanced: true }, { aces: { min: 2 } }] })).toEqual([]);
+  });
+
+  it("a condition-rejected rule's trace entry carries failedChecks", async () => {
+    const NOW = "2026-07-21T00:00:00.000Z";
+    const item: KnowledgeItem = {
+      sourceReferences: [{ sourceId: "src_claude", anchor: "test" }],
+      supportedLevels: [],
+      status: "approved",
+      version: 1,
+      createdBy: "u",
+      createdAt: NOW,
+      updatedAt: NOW,
+      settings: [],
+      itemId: "ki_strong",
+      title: "Strong 2C",
+      humanReadableText: "Open 2C with 22+ HCP.",
+      knowledgeType: "agreement",
+      phase: "auction",
+      payload: {
+        kind: "auction_rules",
+        rules: [
+          {
+            key: "strong2c",
+            label: "Strong 2C opening",
+            context: { role: "any" },
+            conditions: { hcp: { min: 22 } },
+            action: { type: "pass" },
+            priority: 10,
+          },
+        ],
+      },
+    };
+    const store = new InMemoryKbStore();
+    const service = new KbService(store, { now: () => NOW });
+    const kb = await service.createKb({ name: "E", systemLabel: "SAYC", createdBy: "u" });
+    await store.putItem(item);
+    await store.addMembership({ kbId: kb.kbId, itemId: item.itemId });
+    await service.recompile(kb.kbId);
+    const compiled = (await service.liveCompile(kb.kbId))!;
+
+    const hands: Record<Seat, Card[]> = { N: [], E: [], S: TWO_ACES, W: [] };
+    const state = initialState("t1", "S", "none", hands);
+    const decider = createKbDecider({
+      compiled,
+      player: { enabledPackIds: [], settingOverrides: {}, decisionPolicyId: "first_match" },
+    });
+    const d = await decider.decideBid(state, "S");
+    const rejected = d.trace.find((t) => t.ruleId === "ki_strong.strong2c")!;
+    expect(rejected.matched).toBe(false);
+    expect(rejected.failedChecks).toEqual(["needed 22+ HCP, held 13"]);
+  });
+});
+
+describe("forcing rules suppress pass", () => {
+  const NOW = "2026-07-21T00:00:00.000Z";
+  const base = {
+    sourceReferences: [{ sourceId: "src_claude", anchor: "test" }],
+    supportedLevels: [],
+    status: "approved" as const,
+    version: 1,
+    createdBy: "u",
+    createdAt: NOW,
+    updatedAt: NOW,
+    settings: [],
+  };
+  const ITEMS: KnowledgeItem[] = [
+    {
+      ...base,
+      itemId: "ki_forcing",
+      title: "Forcing situations",
+      humanReadableText: "A two-over-one response forces opener to bid again.",
+      knowledgeType: "agreement",
+      phase: "auction",
+      settings: [
+        { key: "forcing_on", label: "Forcing rules", control: "toggle", role: "enable", default: true },
+      ],
+      payload: {
+        kind: "forcing_rules",
+        rules: [
+          {
+            key: "two_over_one",
+            label: "Two-over-one response forces a rebid",
+            context: {
+              role: "opener",
+              partnerLast: { kind: "bid", level: 2, strains: ["C", "D", "H"] },
+              contested: false,
+            },
+            priority: 10,
+          },
+        ],
+      },
+    },
+    {
+      ...base,
+      itemId: "ki_minpass",
+      title: "Pass a minimum",
+      humanReadableText: "With nothing more to say, pass.",
+      knowledgeType: "agreement",
+      phase: "auction",
+      payload: {
+        kind: "auction_rules",
+        rules: [
+          {
+            key: "minpass",
+            label: "Pass a minimum",
+            context: { role: "opener" },
+            conditions: { hcp: { min: 0 } },
+            action: { type: "pass" },
+            priority: 50,
+          },
+        ],
+      },
+    },
+    {
+      ...base,
+      itemId: "ki_fb",
+      title: "Auction fallback: pass",
+      humanReadableText: "With no agreement, pass.",
+      knowledgeType: "fallback_rule",
+      phase: "auction",
+      payload: { kind: "fallback", fallback: { phase: "auction", behavior: "pass" } },
+    },
+  ];
+
+  const player: KbPlayerConfig = {
+    enabledPackIds: [],
+    settingOverrides: {},
+    decisionPolicyId: "first_match",
+  };
+
+  async function compileItems() {
+    const store = new InMemoryKbStore();
+    const service = new KbService(store, { now: () => NOW });
+    const kb = await service.createKb({ name: "F", systemLabel: "SAYC", createdBy: "u" });
+    for (const item of ITEMS) {
+      await store.putItem(item);
+      await store.addMembership({ kbId: kb.kbId, itemId: item.itemId });
+    }
+    await service.recompile(kb.kbId);
+    return (await service.liveCompile(kb.kbId))!;
+  }
+
+  // N opened 1S, partner responded 2C (a two-over-one): N may not pass.
+  const forcingState = (): GameState => {
+    const hands: Record<Seat, Card[]> = {
+      N: hand("SA SK S7 S6 S5 H8 H7 H6 D8 D7 D6 C3 C2"),
+      E: [], S: [], W: [],
+    };
+    const s = initialState("t1", "N", "none", hands);
+    s.auction = calls(["N", "1S"], ["E", "P"], ["S", "2C"], ["W", "P"]);
+    s.turn = "N";
+    return s;
+  };
+
+  it("suppresses a matched pass and bids the longest suit instead", async () => {
+    const compiled = await compileItems();
+    const decider = createKbDecider({ compiled, player });
+    const d = await decider.decideBid(forcingState(), "N");
+    expect(d.action).toBe("2S"); // cheapest legal in the 5-card spade suit
+    expect(d.fallback).toBe(true);
+    expect(d.matchedRuleId).toBe("ki_forcing.two_over_one");
+    expect(d.reason).toContain("Two-over-one response forces a rebid");
+    expect(d.trace.some((t) => t.reason?.includes("pass suppressed"))).toBe(true);
+  });
+
+  it("the enable gate turns the guard off", async () => {
+    const compiled = await compileItems();
+    const decider = createKbDecider({
+      compiled,
+      player: { ...player, settingOverrides: { forcing_on: false } },
+    });
+    const d = await decider.decideBid(forcingState(), "N");
+    expect(d.action).toBe("P");
+    expect(d.matchedRuleId).toBe("ki_minpass.minpass");
+  });
+
+  it("does not fire outside its context", async () => {
+    const compiled = await compileItems();
+    const decider = createKbDecider({ compiled, player });
+    // Partner responded 1NT — not a two-over-one; passing is fine.
+    const s = forcingState();
+    s.auction = calls(["N", "1S"], ["E", "P"], ["S", "1N"], ["W", "P"]);
+    const d = await decider.decideBid(s, "N");
+    expect(d.action).toBe("P");
   });
 });

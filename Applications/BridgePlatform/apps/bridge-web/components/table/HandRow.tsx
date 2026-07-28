@@ -107,8 +107,8 @@ export function HandRow({
     // Side hands fan tighter so 13 backs stay compact next to the trick area
     // (tighter still on phones, where the center band needs the width).
     const overlap = vertical
-      ? "[&>*:not(:first-child)]:-ml-7 sm:[&>*:not(:first-child)]:-ml-[26px]"
-      : "[&>*:not(:first-child)]:-ml-6";
+      ? "[&>*:not(:first-child)]:ml-[calc(clamp(20px,2.2vw,34px)*-1)]"
+      : "[&>*:not(:first-child)]:ml-[calc(clamp(18px,2vw,32px)*-1)]";
     return (
       <div className="flex flex-col items-center gap-0.5">
         <div className={`flex ${overlap}`}>
@@ -130,7 +130,7 @@ export function HandRow({
   const legal = new Set((playable ?? []).map((c) => `${c.suit}${c.rank}`));
   const cards = sortedHand(hand);
   return (
-    <div className="flex pt-2 [&>*:not(:first-child)]:-ml-6 sm:[&>*:not(:first-child)]:-ml-7 xl:[&>*:not(:first-child)]:-ml-8">
+    <div className="flex pt-2 [&>*:not(:first-child)]:ml-[calc(clamp(17px,2.1vw,34px)*-1)]">
       {cards.map((card) => {
         const id = `${card.suit}${card.rank}`;
         if (playable && legal.has(id)) {

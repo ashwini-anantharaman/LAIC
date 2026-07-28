@@ -10,6 +10,7 @@ import { scopeSources } from "@/lib/sources";
 import {
   deleteSourceAction,
   registerSourceAction,
+  startAugmentationAction,
   uploadExtractedTextAction,
 } from "../../actions";
 
@@ -120,6 +121,16 @@ export default async function SourcesPage({
 
   return (
     <div className="space-y-8">
+      <p className="rounded border border-neutral-200 bg-[var(--card)] px-3 py-2 text-sm text-neutral-600">
+        Once items are extracted, run the{" "}
+        <Link
+          href={`${base}/source-audit`}
+          className="font-medium text-emerald-700 underline-offset-2 hover:underline"
+        >
+          source-fidelity audit →
+        </Link>{" "}
+        to check whether each item&apos;s compiled rules faithfully capture the source it cites.
+      </p>
       {uploadError && (
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--color-invalid)]">
           {uploadError}
@@ -276,6 +287,19 @@ export default async function SourcesPage({
                   </p>
                 ) : (
                   <p className="mt-1 text-sm italic text-neutral-500">No document yet.</p>
+                )}
+                {doc && (
+                  <form action={startAugmentationAction} className="mt-2">
+                    <input type="hidden" name="kbId" value={kbId} />
+                    <input type="hidden" name="sourceId" value={source.sourceId} />
+                    <button
+                      type="submit"
+                      title="Merge this source into a DRAFT COPY of the knowledge base — review modified/new items and conflicts, then keep or discard. This KB is not touched."
+                      className="rounded border border-emerald-400 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+                    >
+                      ⇄ Augment into a new draft…
+                    </button>
+                  </form>
                 )}
                 <div className="mt-3 space-y-3">
                   <PdfUploadForm

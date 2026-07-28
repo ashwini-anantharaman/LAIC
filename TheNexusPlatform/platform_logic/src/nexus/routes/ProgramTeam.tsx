@@ -28,7 +28,7 @@ import {
   deleteGroup,
   deleteProgramRole,
   devLoginAs,
-  inviteProgramMember,
+  inviteProgramLink,
   getProgramGroupsModel,
   updateGroup,
   getProgramTeamSummary,
@@ -41,7 +41,6 @@ import {
   setProgramMemberRole,
   updateProgramRole,
   type AccessLevel,
-  type MemberEnrollResult,
   type PlatformGroupMember,
   type ProgramGroupsModel,
   type ProgramMember,
@@ -909,7 +908,7 @@ function InviteMemberDialog({
   const [roleId, setRoleId] = useState<string>("none");
   const [groupIds, setGroupIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<MemberEnrollResult | null>(null);
+  const [result, setResult] = useState<{ redeem_url: string } | null>(null);
 
   function reset() {
     setName("");
@@ -923,7 +922,7 @@ function InviteMemberDialog({
     if (!email.trim()) return;
     setBusy(true);
     try {
-      const res = await inviteProgramMember(programId, {
+      const res = await inviteProgramLink(programId, {
         email: email.trim(),
         display_name: name.trim() || undefined,
         role_id: roleId === "none" ? undefined : roleId,
@@ -931,9 +930,9 @@ function InviteMemberDialog({
       });
       setResult(res);
       onInvited();
-      toast.success(`${res.email} is now an active member.`);
+      toast.success(`Invitation created for ${email.trim()}.`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to add member");
+      toast.error(e instanceof Error ? e.message : "Failed to create invitation");
     } finally {
       setBusy(false);
     }
@@ -949,37 +948,30 @@ function InviteMemberDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add member</DialogTitle>
+          <DialogTitle>Invite member</DialogTitle>
         </DialogHeader>
         {result ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{result.email}</span> is now an active member of
-              this program{result.created ? " and a new account was created for them" : ""}.
+              Invitation created. Share this activation link — they open it, set their own password at the org
+              portal, and accept. Their role and groups apply on acceptance.
             </p>
-            {result.created && result.temp_password ? (
-              <div className="space-y-1.5 rounded-lg border border-border bg-muted/40 px-3 py-2">
-                <p className="text-xs text-muted-foreground">Temporary password — share it so they can sign in:</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 truncate text-xs font-mono">{result.temp_password}</code>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(result.temp_password ?? "");
-                      toast.success("Copied");
-                    }}
-                    className="grid size-7 place-items-center rounded-md hover:bg-accent"
-                    title="Copy password"
-                  >
-                    <Copy className="size-3.5" />
-                  </button>
-                </div>
+            <div className="space-y-1.5 rounded-lg border border-border bg-muted/40 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate text-xs font-mono">{result.redeem_url}</code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(result.redeem_url);
+                    toast.success("Copied");
+                  }}
+                  className="grid size-7 place-items-center rounded-md hover:bg-accent"
+                  title="Copy activation link"
+                >
+                  <Copy className="size-3.5" />
+                </button>
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                They already had an account — they can sign in with their existing password.
-              </p>
-            )}
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
@@ -1055,7 +1047,7 @@ function InviteMemberDialog({
                 Cancel
               </Button>
               <Button onClick={submit} disabled={busy || !email.trim()}>
-                {busy ? "Adding…" : "Add member"}
+                {busy ? "Creating…" : "Send invite"}
               </Button>
             </>
           )}

@@ -17,7 +17,18 @@ export function hasAnyRole(
 }
 
 export function canAccessAdminArea(context: NexusBridgeContext): boolean {
-  return hasAnyRole(context, ADMIN_AREA_ROLES);
+  return context.is_admin === true || hasAnyRole(context, ADMIN_AREA_ROLES);
+}
+
+/** Capability gate (Access Catalogue model): an admin holds everything, else the
+ *  context must carry one of the given capability ids. Mirrors learning. */
+export function hasAnyCapability(
+  context: NexusBridgeContext,
+  capabilityIds: readonly string[],
+): boolean {
+  if (context.is_admin) return true;
+  const held = new Set(context.capabilities ?? []);
+  return capabilityIds.some((id) => held.has(id));
 }
 
 const ROLE_LABELS: Record<BridgeRole, string> = {

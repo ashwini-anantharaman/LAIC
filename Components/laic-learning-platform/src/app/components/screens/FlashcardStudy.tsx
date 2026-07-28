@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../App';
 import { editFlashcard, errorMessage } from '../../../lib/api';
+import { resolveSessionQueueItem } from '../../../lib/sessionMasteryQueue';
 
 export interface StudyCard {
   id?: string;
@@ -534,11 +535,13 @@ export function FlashcardStudy({
 
     // Again (Not Very) → back of this session's queue. Hard → re-enters when due.
     // Good/Somewhat & Easy/Very leave until a future due date.
-    setQueue((q) => {
-      const rest = q.filter((i) => i !== cardIdx);
-      if (grade === 'again') return [...rest, cardIdx];
-      return rest;
-    });
+    // Shared session-queue helper (same end-append behavior as before).
+    setQueue((q) => resolveSessionQueueItem(
+      q,
+      cardIdx,
+      grade === 'again' ? 'requeue' : 'leave',
+      { requeueMode: 'end' },
+    ));
 
     setFlipped(false);
     setNow(t);

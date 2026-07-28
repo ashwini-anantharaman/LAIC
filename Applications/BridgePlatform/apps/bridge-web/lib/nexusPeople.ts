@@ -24,7 +24,7 @@ export function nexusProgramId(context: NexusBridgeContext): string | null {
   return ext.nexus_program_id ?? null;
 }
 
-async function nexusFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function nexusFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const baseUrl = process.env.NEXUS_API_BASE_URL;
   if (!baseUrl) throw new Error("People & Roles requires NEXUS_API_BASE_URL (http mode)");
   const cookieStore = await cookies();
@@ -62,31 +62,36 @@ export async function setBridgeRole(
 }
 
 export interface BridgeInviteResult {
-  token: string;
+  /** Activation link — the person opens it at the org portal, sets their own
+   *  password, and accepts. Their pre-assigned role applies on acceptance. */
   redeem_url: string;
 }
 
 /**
- * Invite a person into the program (a normal Nexus invitation — they activate
- * at the org portal) and optionally pre-assign their Bridge role, which is
- * email-keyed and therefore waits for them. Authorized by the caller's own
- * Nexus session (program-admin level).
+ * Invite a person to the program via the true Nexus link flow: creates a
+ * PENDING invitation and returns an activation link. The person opens it, sets
+ * their OWN password at the org portal, and becomes a program member. The bridge
+ * role (if any) is pre-assigned email-keyed and applies when they accept.
  */
 export async function inviteBridgePerson(
   programId: string,
   opts: { email: string; displayName?: string; role?: string | null },
 ): Promise<BridgeInviteResult> {
-  const res = await nexusFetch(`/api/programs/${encodeURIComponent(programId)}/members`, {
+  const res = await nexusFetch(`/api/programs/${encodeURIComponent(programId)}/invite`, {
     method: "POST",
-    body: JSON.stringify({ email: opts.email, display_name: opts.displayName || undefined }),
+    body: JSON.stringify({
+      email: opts.email,
+      display_name: opts.displayName || undefined,
+      platform: "bridge",
+      role_id: opts.role || undefined,
+    }),
   });
   if (!res.ok) {
     const err = (await res.json().catch(() => null)) as { detail?: string } | null;
     throw new Error(err?.detail ?? `Nexus invitation failed: ${res.status}`);
   }
-  const inv = (await res.json()) as BridgeInviteResult;
-  if (opts.role) await setBridgeRole(programId, opts.email, opts.role);
-  return inv;
+  const inv = (await res.json()) as { redeem_url: string };
+  return { redeem_url: inv.redeem_url };
 }
 
 /** Remove a person from the program (Bridge admin action). */

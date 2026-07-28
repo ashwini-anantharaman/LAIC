@@ -2,12 +2,16 @@ import { roleLabel, STUB_USERS } from "@bridge/nexus-client";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { setDevUser } from "@/app/actions";
-import { getBridgeContext, nexusMode } from "@/lib/nexus";
+import { getBridgeContext, isFellowDemo, isMobileSite, nexusMode } from "@/lib/nexus";
 import { NEXUS_RETURN_COOKIE, safeReturnUrl } from "@/lib/nexusToken";
 
 export default async function WelcomePage() {
+  // The mobile host has its own auto-signed-in phone UI — never show the login.
+  if (await isMobileSite()) redirect("/m/play");
   const context = await getBridgeContext();
-  if (context) redirect("/bridge/home");
+  // On the fellows-testing host everyone is auto-signed-in as "Fellow"; there
+  // is no login, and Home is hidden — land straight on Play.
+  if (context) redirect((await isFellowDemo()) ? "/bridge/table" : "/bridge/home");
 
   // A person who arrived from Nexus but was refused (no bridge grant, expired
   // session) lands here — give them the way back to the console.

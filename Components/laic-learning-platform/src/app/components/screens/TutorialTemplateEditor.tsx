@@ -154,11 +154,11 @@ function LibraryPickerModal({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Pick from Object Library"
+        aria-label="Pick from Activity objects"
       >
         <div className="flex items-center justify-between mb-3">
           <div>
-            <p style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>Pick from Object Library</p>
+            <p style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>Pick from Activity objects</p>
             <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>
               Choose a learning object and pin a version.
             </p>
@@ -195,7 +195,7 @@ function LibraryPickerModal({
           Learning object
         </label>
         {libraryStatus === 'loading' ? (
-          <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 12 }}>Loading Object Library…</p>
+          <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 12 }}>Loading Activity objects…</p>
         ) : filtered.length === 0 ? (
           <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 12 }}>
             {library.length === 0
@@ -314,7 +314,7 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
         if (cancelled) return;
         setLibrary([]);
         setLibraryStatus('error');
-        setLibraryError(err instanceof Error ? err.message : 'Object Library unavailable');
+        setLibraryError(err instanceof Error ? err.message : 'Activity objects unavailable');
       });
     return () => { cancelled = true; };
   }, [createdObjects]);
@@ -403,7 +403,7 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
         if (!item.versionPin?.objectId || !item.versionPin?.versionId) {
           rows[item.id] = 'Pick a library object and pin a version, or change the source mode.';
         } else if (libraryStatus === 'empty' || libraryStatus === 'error') {
-          rows[item.id] = 'Object Library is unavailable — required pick slots cannot be resolved yet.';
+          rows[item.id] = 'Activity objects is unavailable — required pick slots cannot be resolved yet.';
         } else if (!versionPinResolves(item.versionPin, library)) {
           rows[item.id] = 'Pinned object or version no longer resolves (dangling reference).';
         }
@@ -500,10 +500,10 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
   };
 
   const libraryEmptyCopy = libraryStatus === 'error'
-    ? (libraryError || 'Object Library unavailable.')
+    ? (libraryError || 'Activity objects unavailable.')
     : libraryStatus === 'loading'
-      ? 'Loading Object Library…'
-      : 'No objects in the Object Library yet.';
+      ? 'Loading Activity objects…'
+      : 'No objects in the Activity objects yet.';
 
   const pickerItem = pickerForId
     ? recipe.find((r): r is EmbeddedObjectItem => r.kind === 'embedded' && r.id === pickerForId)
@@ -791,7 +791,7 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
                       className="px-3 py-1.5 rounded-full border"
                       style={{ fontSize: 12, fontWeight: 600, color: '#047857', borderColor: 'rgba(5,150,105,0.35)', background: 'rgba(5,150,105,0.06)' }}
                     >
-                      {item.versionPin ? 'Change library object…' : 'Browse Object Library…'}
+                      {item.versionPin ? 'Change library object…' : 'Browse Activity objects…'}
                     </button>
                   </div>
                 )}

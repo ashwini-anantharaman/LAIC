@@ -2,12 +2,10 @@ import { canAccessAdminArea } from "@bridge/nexus-client";
 import type { KnowledgeBase, KnowledgeItem } from "@bridge/kb";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { DeleteKbButton } from "@/components/kb/DeleteKbButton";
 import { getBridgeContext } from "@/lib/nexus";
 import { ensureSeeds, kbStore } from "@/lib/kb";
 import {
   createKbAction,
-  deleteKbAction,
   deriveKbAction,
   duplicateKbAction,
   installSaycTemplateAction,
@@ -15,13 +13,11 @@ import {
 } from "./actions";
 
 /** The knowledge-base list: one tree (masters with their limited derivatives
- *  nested underneath), branch/duplicate/delete inline per base. */
+ *  nested underneath), branch/duplicate/hide inline per base. */
 export default async function KbListPage({
   searchParams,
 }: Readonly<{
   searchParams: Promise<{
-    deleted?: string;
-    deleteError?: string;
     hidden?: string;
     unhidden?: string;
   }>;
@@ -30,7 +26,7 @@ export default async function KbListPage({
   if (!context) redirect("/welcome");
   if (!canAccessAdminArea(context)) redirect("/bridge/home");
   await ensureSeeds();
-  const { deleted, deleteError, hidden, unhidden } = await searchParams;
+  const { hidden, unhidden } = await searchParams;
 
   const store = kbStore();
   const allKbs = await store.listKbs();
@@ -83,7 +79,6 @@ export default async function KbListPage({
 
   function card(kb: KnowledgeBase): React.ReactNode {
     const items = itemsByKb.get(kb.kbId) ?? [];
-    const kids = childrenOf.get(kb.kbId) ?? [];
     return (
       <div className="rounded-xl border border-neutral-200 bg-[var(--card)] p-6 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -211,13 +206,6 @@ export default async function KbListPage({
                 Hide
               </button>
             </form>
-
-            <DeleteKbButton
-              kbId={kb.kbId}
-              name={kb.name}
-              hasChildren={kids.length > 0}
-              action={deleteKbAction}
-            />
           </div>
         </div>
     );
@@ -236,11 +224,6 @@ export default async function KbListPage({
         </p>
       </header>
 
-      {deleted && (
-        <p className="mb-6 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          Knowledge base deleted.
-        </p>
-      )}
       {hidden && (
         <p className="mb-6 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           Knowledge base hidden. It disappears from every list; nothing was deleted — unhide it
@@ -252,12 +235,6 @@ export default async function KbListPage({
           Knowledge base restored.
         </p>
       )}
-      {deleteError && (
-        <p className="mb-6 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-[color:var(--color-invalid)]">
-          {deleteError}
-        </p>
-      )}
-
       {kbs.length === 0 ? (
         <section className="rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
           No knowledge bases yet. Create one below, then upload its source
@@ -341,6 +318,25 @@ export default async function KbListPage({
             Install curated SAYC
           </button>
         </form>
+      </section>
+
+      <section className="mt-6 rounded-lg border border-neutral-200 p-5">
+        <h2 className="font-medium">Build one from a slide deck or PDF</h2>
+        <p className="mt-1 max-w-2xl text-xs text-neutral-600">
+          For a document whose meaning lives in its <em>pictures</em> — bidding tables,
+          color-coded rows, support matrices, card diagrams, deal figures. The pages are read as
+          images (so a table stays a table), then you extract the deck one named section at a
+          time and settle each before the next. Ends with a playable knowledge base whose every
+          rule cites the slide it came from.
+        </p>
+        <p className="mt-3">
+          <Link
+            href="/bridge/kb/new-from-document"
+            className="inline-block rounded border border-emerald-400 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+          >
+            New knowledge base from a document →
+          </Link>
+        </p>
       </section>
 
       <section className="mt-6 rounded-lg border border-neutral-200 p-5">

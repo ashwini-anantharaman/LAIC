@@ -14,6 +14,7 @@ import { fileToText, uploadDocument } from "@/lib/documents";
 import { createClaudeExtractor, extractionAvailable } from "@/lib/extraction";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { parseCommon, parsePayload, parseSettings } from "@/lib/itemForm";
+import { B2F3_COLLECTIONS, draftB2f3Collections } from "@/lib/b2f3";
 
 const kbPath = (kbId: string, rest = "") => `/bridge/kb/${kbId}${rest}`;
 
@@ -49,6 +50,83 @@ export async function installSaycTemplateAction(formData: FormData): Promise<voi
   redirect(kbPath(result.kbId));
 }
 
+/**
+ * Start a source augmentation (2026-07-21): derive a full DRAFT COPY of the
+ * KB, stamp it with the augmentation ledger, and open the review board. The
+ * base KB is never touched — the draft is kept or discarded at the end.
+ */
+export async function startAugmentationAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  await ensureSeeds();
+  const kbId = String(formData.get("kbId"));
+  const sourceId = String(formData.get("sourceId"));
+  const base = await kbService().getKb(kbId);
+  const source = await kbStore().getSource(sourceId);
+  if (!source) redirect(kbPath(kbId, "/sources?uploadError=Source%20not%20found"));
+
+  const draft = await kbService().deriveKb(kbId, {
+    mode: "copied",
+    name: `${base.name} + ${source!.title}`.slice(0, 80) + " (draft)",
+    createdBy: context.nexusUserId,
+    includePacks: true,
+  });
+  await kbStore().putKb({
+    ...(await kbService().getKb(draft.kbId)),
+    description: `Augmentation draft: merging “${source!.title}” into ${base.name}. Review, then keep or discard.`,
+    augmentation: {
+      baseKbId: kbId,
+      baseKbName: base.name,
+      sourceId,
+      status: "review",
+      newItemIds: [],
+      modified: [],
+      startedAt: new Date().toISOString(),
+    },
+    updatedAt: new Date().toISOString(),
+  });
+  await audit(context, "kb.derive", "kb", draft.kbId, {
+    baseKbId: kbId,
+    augmentation: true,
+    sourceId,
+  });
+  revalidatePath("/bridge/kb", "layout");
+  redirect(kbPath(draft.kbId, "/augment?start=auto"));
+}
+
+/** Close the review: the draft becomes an ordinary KB (ledger kept). */
+export async function finishAugmentationAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const kb = await kbService().getKb(kbId);
+  if (!kb.augmentation) redirect(kbPath(kbId));
+  await kbStore().putKb({
+    ...kb,
+    augmentation: { ...kb.augmentation!, status: "kept", finishedAt: new Date().toISOString() },
+    updatedAt: new Date().toISOString(),
+  });
+  await audit(context, "kb.derive", "kb", kbId, { augmentation: "kept" });
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, "?augmentKept=1"));
+}
+
+/** Throw the draft away entirely — the base KB was never touched. */
+export async function discardAugmentationAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const kb = await kbService().getKb(kbId);
+  // Augmentation drafts are the ONE intentionally deletable KB — a draft
+  // lifecycle, guarded by kb.augmentation. Real KBs are never deleted;
+  // archive (Hide) is their removal path.
+  if (!kb.augmentation) redirect(kbPath(kbId));
+  const baseKbId = kb.augmentation!.baseKbId;
+  await kbService().deleteKb(kbId);
+  const { sessionService } = await import("@/lib/sessions");
+  await sessionService().deleteForKb(kbId);
+  await audit(context, "kb.delete", "kb", kbId, { augmentationDraft: true, baseKbId });
+  revalidatePath("/bridge/kb", "layout");
+  redirect(kbPath(baseKbId, "?augmentDiscarded=1"));
+}
+
 /** Hide/unhide a KB everywhere. Nothing is deleted — fully reversible. */
 export async function setKbArchivedAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
@@ -71,41 +149,6 @@ export async function createKbAction(formData: FormData): Promise<void> {
   });
   await audit(context, "kb.create", "kb", kb.kbId, { name: kb.name });
   redirect(kbPath(kb.kbId));
-}
-
-/**
- * Delete a knowledge base and everything scoped to it — memberships, items
- * that belong only to this KB (with their edges), packs, players, sandboxes,
- * suggestions, jobs, compiles, and the KB's play sessions. Irreversible.
- * The typed-name confirmation is checked server-side.
- */
-export async function deleteKbAction(formData: FormData): Promise<void> {
-  const context = await requireAdminContext("bridge.knowledge.edit");
-  const kbId = String(formData.get("kbId"));
-  const kb = await kbService().getKb(kbId);
-  // Two confirmed entry points share this action: the Overview danger zone
-  // (the fellow types the KB's name) and the list-row button (client-side
-  // confirm + hidden name). The name check is the server-side bar for both.
-  const confirm = String(formData.get("confirmName") ?? "").trim();
-  const from = String(formData.get("from") ?? "list");
-  if (confirm !== kb.name) {
-    redirect(kbPath(kbId, `?deleteError=${encodeURIComponent("Type the knowledge base's exact name to confirm deletion.")}`));
-  }
-  try {
-    await kbService().deleteKb(kbId); // refuses while derived KBs exist
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Could not delete this knowledge base.";
-    redirect(
-      from === "overview"
-        ? kbPath(kbId, `?deleteError=${encodeURIComponent(message)}`)
-        : `/bridge/kb?deleteError=${encodeURIComponent(message)}`,
-    );
-  }
-  const { sessionService } = await import("@/lib/sessions");
-  await sessionService().deleteForKb(kbId);
-  await audit(context, "kb.delete", "kb", kbId, { name: kb.name });
-  revalidatePath("/bridge/kb");
-  redirect("/bridge/kb?deleted=1");
 }
 
 export async function createItemAction(formData: FormData): Promise<void> {
@@ -148,6 +191,10 @@ export async function deleteItemsAction(formData: FormData): Promise<void> {
   const returnTo = returnToRaw.startsWith(`/bridge/kb/${kbId}`)
     ? returnToRaw
     : kbPath(kbId, "/items");
+  // Bulk delete only exists inside augmentation drafts (the review board's
+  // cleanup sweep). Real KBs never delete knowledge — deprecate instead.
+  const kb = await kbService().getKb(kbId);
+  if (!kb.augmentation) redirect(returnTo);
   if (!itemIds.length) redirect(returnTo);
 
   const result = await kbService().deleteItems(kbId, itemIds, context.nexusUserId);
@@ -170,6 +217,37 @@ export async function deleteItemsAction(formData: FormData): Promise<void> {
   redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}${params.toString()}`);
 }
 
+/**
+ * Bulk deprecate — the removal path for real KBs (knowledge is never
+ * deleted): deprecated items stop compiling and drop out of the default view,
+ * fully reversibly from the item editor.
+ */
+export async function deprecateItemsAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const itemIds = formData.getAll("itemIds").map(String).filter(Boolean);
+  const returnToRaw = String(formData.get("returnTo") ?? "");
+  const returnTo = returnToRaw.startsWith(`/bridge/kb/${kbId}`)
+    ? returnToRaw
+    : kbPath(kbId, "/items");
+  if (!itemIds.length) redirect(returnTo);
+
+  const result = await kbService().setItemsStatus(
+    kbId,
+    itemIds,
+    "deprecated",
+    context.nexusUserId,
+  );
+  await audit(context, "kb.item.edit", "kb", kbId, {
+    deprecated: result.changed.length,
+    itemIds: result.changed.map((c) => c.itemId),
+  });
+
+  revalidatePath(kbPath(kbId), "layout");
+  const params = new URLSearchParams({ bulkDeprecated: String(result.changed.length) });
+  redirect(`${returnTo}${returnTo.includes("?") ? "&" : "?"}${params.toString()}`);
+}
+
 export async function saveItemAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
   const kbId = String(formData.get("kbId"));
@@ -180,6 +258,10 @@ export async function saveItemAction(formData: FormData): Promise<void> {
     payload: parsePayload(formData, common.knowledgeType),
     settings: parseSettings(formData),
   };
+  // Where the editor was opened from (e.g. the deprecated view) — carried
+  // through the redirect so the item page can offer a way back.
+  const from = String(formData.get("from") ?? "").trim();
+  const fromSuffix = from ? `&from=${encodeURIComponent(from)}` : "";
 
   // "Save as a new knowledge item" branches: a fresh item with lineage — the
   // original (a template) is never touched.
@@ -208,7 +290,7 @@ export async function saveItemAction(formData: FormData): Promise<void> {
       savedAsNew: true,
     });
     revalidatePath(kbPath(kbId), "layout");
-    redirect(kbPath(kbId, `/items/${created.itemId}?saved=1`));
+    redirect(kbPath(kbId, `/items/${created.itemId}?saved=1${fromSuffix}`));
   }
 
   const saved = await kbService().saveItem(kbId, itemId, content, context.nexusUserId);
@@ -217,6 +299,12 @@ export async function saveItemAction(formData: FormData): Promise<void> {
     forkedFrom: saved.forkedFromItemId,
     version: saved.version,
   });
+
+  // Editor saves land on the working DRAFT only — committing a version is a
+  // separate, deliberate act (the Versions panel's "Save as new version"),
+  // and committed versions are never modified.
+  const committedNumber = undefined;
+
   revalidatePath(kbPath(kbId), "layout");
 
   // Fix-at-the-table flow: saving from the session overlay re-pins the
@@ -224,7 +312,8 @@ export async function saveItemAction(formData: FormData): Promise<void> {
   // returns to the board instead of the item page.
   const repinSessionId = String(formData.get("repinSessionId") ?? "");
   const returnToRaw = String(formData.get("returnTo") ?? "");
-  if (returnToRaw.startsWith("/bridge/")) {
+  // The mobile felt posts a /m/table returnTo — same repin-and-return flow.
+  if (returnToRaw.startsWith("/bridge/") || returnToRaw.startsWith("/m/")) {
     let flag = "fixed=1";
     if (repinSessionId) {
       const kb = await kbService().getKb(kbId);
@@ -236,11 +325,46 @@ export async function saveItemAction(formData: FormData): Promise<void> {
         if (compiled) await sessionService().repinCompile(repinSessionId, compiled);
       }
       revalidatePath(`/bridge/table/${repinSessionId}`);
+      revalidatePath(`/m/table/${repinSessionId}`);
     }
     redirect(`${returnToRaw}${returnToRaw.includes("?") ? "&" : "?"}${flag}`);
   }
 
-  redirect(kbPath(kbId, `/items/${saved.itemId}?saved=1`));
+  const committedSuffix = committedNumber ? `&committed=${committedNumber}` : "";
+  redirect(kbPath(kbId, `/items/${saved.itemId}?saved=1${committedSuffix}${fromSuffix}`));
+}
+
+/**
+ * Flip a single item's trust status (draft → reviewed → approved, or
+ * deprecate). Status is a badge, never a play gate; deprecate is the reversible
+ * removal path for real KBs. Recompiles via setItemsStatus.
+ */
+export async function setItemStatusAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  const kbId = String(formData.get("kbId"));
+  const itemId = String(formData.get("itemId"));
+  const status = String(formData.get("status"));
+  if (!["draft", "reviewed", "approved", "deprecated"].includes(status))
+    redirect(kbPath(kbId, `/items/${itemId}`));
+  const { changed } = await kbService().setItemsStatus(
+    kbId,
+    [itemId],
+    status as "draft" | "reviewed" | "approved" | "deprecated",
+    context.nexusUserId,
+  );
+  await audit(context, "kb.item.edit", "kb_item", itemId, {
+    kbId,
+    status,
+    changed: changed.length,
+  });
+  revalidatePath(kbPath(kbId), "layout");
+  // Row-approve controls pass a returnTo (the Master list url) so the fellow
+  // lands back on the list with a statusSet banner instead of the item page.
+  const returnToRaw = String(formData.get("returnTo") ?? "");
+  if (returnToRaw.startsWith(`/bridge/kb/${kbId}`)) {
+    redirect(`${returnToRaw}${returnToRaw.includes("?") ? "&" : "?"}statusSet=${status}`);
+  }
+  redirect(kbPath(kbId, `/items/${itemId}?statusSet=${status}`));
 }
 
 export async function addEdgeAction(formData: FormData): Promise<void> {
@@ -301,6 +425,86 @@ export async function savePackAction(formData: FormData): Promise<void> {
   await audit(context, "kb.pack.save", "kb_pack", pack.packId, { kbId, version });
   revalidatePath(kbPath(kbId), "layout");
   redirect(kbPath(kbId, `/sets/${pack.packId}?saved=1`));
+}
+
+/**
+ * Draft the three B2F3 CURRICULUM COLLECTIONS (Pillar E). A deterministic
+ * classifier (lib/b2f3) reads every item's own content and buckets it into
+ * Beginner / Advanced Beginner / Intermediate; this action materializes those
+ * buckets as three chained knowledge sets (Advanced Beginner includes
+ * Beginner; Intermediate includes Advanced Beginner) and adds matching ladder
+ * levels to the KB. IDEMPOTENT: the sets are matched by name, so re-running
+ * regenerates the SAME three sets (never duplicates). Fellows then adjust
+ * membership in the ordinary set builder — every save is version-snapshotted,
+ * so a regenerate is recoverable. Drafts from standard teaching progressions;
+ * no syllabus document exists (owner decision).
+ */
+export async function createB2F3CollectionsAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  await ensureSeeds();
+  const kbId = String(formData.get("kbId"));
+  try {
+    const [kb, items, existing] = await Promise.all([
+      kbService().getKb(kbId),
+      kbStore().listItemsForKb(kbId),
+      kbStore().listPacksForKb(kbId),
+    ]);
+    const draft = draftB2f3Collections(items);
+
+    // Ladder levels on the KB (idempotent — merge by levelId, never duplicate).
+    const knownLevelIds = new Set(kb.levels.map((l) => l.levelId));
+    const addedLevels = B2F3_COLLECTIONS.filter((c) => !knownLevelIds.has(c.levelId)).map((c) => ({
+      levelId: c.levelId,
+      name: c.name,
+      ordinal: c.ordinal,
+    }));
+    if (addedLevels.length) {
+      await kbStore().putKb({
+        ...kb,
+        levels: [...kb.levels, ...addedLevels],
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    // Create/update the three packs IN LADDER ORDER so each Includes the one
+    // below it. savePack matches by packId; reuse the existing pack of that
+    // name to keep re-runs idempotent.
+    const idByName = new Map(existing.map((p) => [p.name, p.packId]));
+    const packIdByLevel = new Map<string, string>();
+    let created = 0;
+    for (const bucket of draft.buckets) {
+      const def = bucket.def;
+      const extendsPackId = def.extendsLevel ? packIdByLevel.get(def.extendsLevel) : undefined;
+      const saved = await kbService().savePack({
+        packId: idByName.get(def.name),
+        kbId,
+        name: def.name,
+        description: def.description,
+        extendsPackId,
+        levelId: def.levelId,
+        ordinal: def.ordinal,
+        itemIds: bucket.itemIds,
+        intendedComplete: true,
+        createdBy: context.nexusUserId,
+      });
+      packIdByLevel.set(def.level, saved.packId);
+      if (!idByName.has(def.name)) created += 1;
+    }
+
+    await audit(context, "kb.pack.save", "kb_pack", kbId, {
+      kbId,
+      b2f3: true,
+      created,
+      updated: draft.buckets.length - created,
+      counts: Object.fromEntries(draft.buckets.map((b) => [b.def.level, b.itemIds.length])),
+      outOfScope: draft.outOfScopeItemIds.length,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Could not create the B2F3 collections.";
+    redirect(kbPath(kbId, `/sets?error=${encodeURIComponent(message)}`));
+  }
+  revalidatePath(kbPath(kbId), "layout");
+  redirect(kbPath(kbId, "/sets?b2f3created=1"));
 }
 
 export async function restorePackVersionAction(formData: FormData): Promise<void> {

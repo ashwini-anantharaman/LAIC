@@ -26,6 +26,7 @@ import * as catalogue from "../accessCatalogue/store";
 import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
 import { resolveCapabilities, surfacesForCapabilities, grantableCapabilities } from "../accessCatalogue/resolver";
 import { capabilitiesFor, requireCapability } from "../accessCatalogue/enforce";
+import * as bridgeRoles from "../accessCatalogue/bridgeRoles";
 import type { ProviderId } from "../accessCatalogue/types";
 import { isOfferingAdmin } from "../permissions";
 import {
@@ -792,16 +793,39 @@ platformRouter.get("/bridge/context", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
   const mapped = BRIDGE_ROLE_MAP[access.level];
+  const isAdmin = access.level === "admin";
+  // Effective bridge capabilities — the app gates its tabs on these, exactly
+  // like learning:
+  //   • admin        → everything the bridge catalogue grants (all tabs)
+  //   • assigned role→ that role's capabilities (custom role id or pre-built)
+  //   • otherwise    → the launch level's sample-role capabilities
+  const bridgeDoc = await catalogue.getCatalogue("bridge");
+  let capabilities: string[];
+  if (isAdmin) {
+    capabilities = bridgeRoles.bridgeCapsForLevel(bridgeDoc, "admin");
+  } else {
+    const assignedCaps = access.platformRole
+      ? await bridgeRoles.capsForAssignedRole(access.programId, access.platformRole)
+      : null;
+    capabilities = assignedCaps && assignedCaps.length
+      ? assignedCaps
+      : bridgeRoles.bridgeCapsForLevel(bridgeDoc, access.level as "edit" | "comment" | "view");
+  }
   return c.json({
     nexusUserId: access.profileId,
     laicOrgId: access.orgId,
     programId: "bridge_program",
     appId: await platformAppSlug(access.programId, "bridge-platform", "bridge_ai_coach"),
     // A pre-built role picked in the Nexus role builder is authoritative;
-    // graded grants fall back to the level→role map.
-    roles: access.platformRole ? [access.platformRole] : mapped.roles,
+    // a custom (capability-bound) role or graded grant falls back to the
+    // level→role map so the emitted `roles` stays a valid BridgeRole set.
+    roles: access.platformRole && platformRoleConfig("bridge")?.prebuilt.includes(access.platformRole)
+      ? [access.platformRole]
+      : mapped.roles,
     permissions: [`bridge:${access.level}`],
     accessLevel: mapped.accessLevel,
+    capabilities, // effective bridge-catalogue capability ids (tab gating)
+    is_admin: isAdmin,
     displayName: await _platformDisplayName(access.profileId, user),
     // Extensions beyond the contract (additive — Bridge's shape check ignores them).
     nexus_program_id: access.programId,
@@ -869,8 +893,11 @@ async function _platformRolePut(user: PlatformUser, platform: string, body: Row)
     role: z.string().nullable(),
   });
   const req = parseBody(schema, body);
+  // A role is assignable if it's a pre-built assignable role OR (for bridge) a
+  // custom capability-bound role defined for this program.
   if (req.role !== null && !cfg.assignable.includes(req.role)) {
-    throw new HttpError(400, `Not an assignable ${platform} role`);
+    const custom = platform === "bridge" ? await bridgeRoles.getBridgeRole(req.program_id, req.role) : null;
+    if (!custom) throw new HttpError(400, `Not an assignable ${platform} role`);
   }
   const access = await _requirePlatformRoleAdmin(user, platform, req.program_id);
   const members = await graph.listProgramMembers(access.orgId, req.program_id);
@@ -950,6 +977,65 @@ platformRouter.delete("/bridge/people", async (c) => {
   return c.json(await _platformPersonDelete(user, "bridge", programId, email));
 });
 
+// ── Bridge access catalogue + custom roles (parity with learning) ───────────
+/** The caller must be a bridge admin of the program. Returns the resolved access. */
+async function _bridgeAdmin(c: Context, programId: string) {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", programId);
+  if (access.level !== "admin") throw new HttpError(403, "Bridge admin access required");
+  return access;
+}
+
+// Shared bridge catalogue — the app's inventory of surfaces + capabilities.
+// Read: any bridge member; Write: a bridge admin.
+platformRouter.get("/bridge/catalogue", async (c) => {
+  const user = await getCurrentUser(c);
+  await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  return c.json(await catalogue.getCatalogue("bridge"));
+});
+platformRouter.put("/bridge/catalogue", async (c) => {
+  await _bridgeAdmin(c, c.req.query("program_id") ?? "");
+  const doc = (await c.req.json()) as CapabilityCatalogueDocument;
+  if (doc?.documentType !== "capability_catalogue" || !Array.isArray(doc.capabilities) || !Array.isArray(doc.groups)) {
+    throw new HttpError(422, "Not a valid catalogue document");
+  }
+  if (doc.provider?.id !== "bridge-platform") throw new HttpError(422, 'provider.id must equal "bridge-platform"');
+  return c.json(await catalogue.saveCatalogue("bridge", doc));
+});
+platformRouter.delete("/bridge/catalogue", async (c) => {
+  await _bridgeAdmin(c, c.req.query("program_id") ?? "");
+  return c.json(await catalogue.resetCatalogue("bridge"));
+});
+
+// Custom bridge roles (capability-bound), stored per program. Admin only.
+const bridgeRoleCreateSchema = z.object({ program_id: z.string(), name: z.string().min(1), capabilities: z.array(z.string()).default([]) });
+const bridgeRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), capabilities: z.array(z.string()).optional() });
+
+platformRouter.get("/bridge/roles", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _bridgeAdmin(c, pid);
+  return c.json(await bridgeRoles.listBridgeRoles(pid));
+});
+platformRouter.post("/bridge/roles", async (c) => {
+  const req = parseBody(bridgeRoleCreateSchema, await c.req.json());
+  await _bridgeAdmin(c, req.program_id);
+  return c.json(await bridgeRoles.createBridgeRole(req.program_id, req.name, req.capabilities));
+});
+platformRouter.patch("/bridge/roles/:id", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _bridgeAdmin(c, pid);
+  const body = parseBody(bridgeRoleUpdateSchema, await c.req.json());
+  const row = await bridgeRoles.updateBridgeRole(pid, c.req.param("id"), body);
+  if (!row) throw new HttpError(404, "Role not found");
+  return c.json(row);
+});
+platformRouter.delete("/bridge/roles/:id", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _bridgeAdmin(c, pid);
+  await bridgeRoles.deleteBridgeRole(pid, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
 // The person's display name in THIS org (their org-scoped profile), falling
 // back to the session-level name/email so platforms never render a raw id.
 async function _platformDisplayName(profileId: string, user: PlatformUser): Promise<string> {
@@ -1018,10 +1104,11 @@ platformRouter.get("/learning/objects", async (c) => {
   // ?meta=1 → metadata only (no blocks/pipeline_draft). The full listing can
   // run to tens of MB once authored content accumulates; list screens should
   // never pay that — fetch one object's content via GET /learning/objects/:id.
+  // Program-scoped either way: each program is its own Content Studio instance.
   if (c.req.query("meta") === "1") {
-    return c.json(await graph.listLearningObjectsMeta(access.orgId));
+    return c.json(await graph.listLearningObjectsMeta(access.orgId, access.programId));
   }
-  return c.json(await graph.listLearningObjects(access.orgId));
+  return c.json(await graph.listLearningObjects(access.orgId, access.programId));
 });
 
 platformRouter.get("/learning/objects/:object_id", async (c) => {
@@ -1043,7 +1130,7 @@ platformRouter.put("/learning/objects", async (c) => {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   if (!body.id || !body.type) throw new HttpError(422, "id and type are required");
-  await graph.upsertLearningObject(access.orgId, body);
+  await graph.upsertLearningObject(access.orgId, body, access.programId);
   return c.json({ ok: true });
 });
 

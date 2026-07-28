@@ -1,6 +1,7 @@
 import {
   ADMIN_AREA_ROLES,
   hasAnyRole,
+  hasAnyCapability,
   type NexusBridgeContext,
 } from "@bridge/nexus-client";
 import type { BridgeRole } from "@laic/learner-contracts";
@@ -10,6 +11,9 @@ export type NavItem = {
   label: string;
   /** When set, the item renders only for contexts holding one of these roles. */
   requiresRoles?: readonly BridgeRole[];
+  /** Access-Catalogue gating: renders when the context holds one of these
+   *  capabilities (an admin holds all). Takes precedence when present. */
+  requiresCapabilities?: readonly string[];
 };
 
 /**
@@ -28,9 +32,14 @@ export const NAV_ITEMS: readonly NavItem[] = [
     requiresRoles: ADMIN_AREA_ROLES,
   },
   {
-    href: "/bridge/people",
+    href: "/bridge/teams",
     label: "People",
-    requiresRoles: ["bridge_program_admin", "bridge_org_admin", "bridge_club_admin"],
+    requiresRoles: ADMIN_AREA_ROLES,
+  },
+  {
+    href: "/bridge/catalogue",
+    label: "Access Catalogue",
+    requiresRoles: ADMIN_AREA_ROLES,
   },
   {
     href: "/bridge/org",
@@ -45,7 +54,12 @@ export const NAV_ITEMS: readonly NavItem[] = [
 ];
 
 export function navForContext(context: NexusBridgeContext): NavItem[] {
-  return NAV_ITEMS.filter(
-    (item) => !item.requiresRoles || hasAnyRole(context, item.requiresRoles),
-  );
+  // Admins see every tab. Otherwise an item shows when the context satisfies its
+  // capability gate (Access Catalogue) if present, else its legacy role gate.
+  return NAV_ITEMS.filter((item) => {
+    if (context.is_admin) return true;
+    if (item.requiresCapabilities) return hasAnyCapability(context, item.requiresCapabilities);
+    if (item.requiresRoles) return hasAnyRole(context, item.requiresRoles);
+    return true;
+  });
 }
