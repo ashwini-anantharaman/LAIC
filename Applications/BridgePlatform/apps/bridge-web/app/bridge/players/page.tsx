@@ -5,10 +5,11 @@ import { redirect } from "next/navigation";
 import { ChipRow, UnderlineTabs } from "@/components/ChipTabs";
 import { ValidityBadge } from "@/components/kb/badges";
 import { ConfirmButton } from "@/components/kb/ConfirmButton";
+import { benAvailable, BEN_SEAT_LABEL } from "@/lib/benSeat";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { suggestPlayersAction } from "../kb/actions";
-import { createRungPlayerAction, deletePlayerAction, tryPlayerAction } from "./actions";
+import { createRungPlayerAction, deletePlayerAction, tryBenAction, tryPlayerAction } from "./actions";
 
 /** Players area (2026-07-16 rework): Configured (per-system, per-creator
  *  facets, one-click rung creation) | AI (reserved for BEN). */
@@ -93,17 +94,60 @@ export default async function PlayersPage({
       />
 
       {aiTab ? (
-        <section className="mt-8 rounded-lg border border-dashed border-neutral-300 p-8 text-center">
-          <p className="font-serif text-lg text-neutral-600">Neural players arrive here.</p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-neutral-500">
-            This tab is reserved for engine-backed players (BEN). They won&apos;t be assembled
-            from knowledge packs — they play from a trained model, and the platform will label
-            their decisions accordingly.
-          </p>
-          <span className="mt-4 inline-block rounded-full border border-neutral-300 px-3 py-1 text-xs uppercase tracking-wide text-neutral-400">
-            coming later
-          </span>
-        </section>
+        benAvailable() ? (
+          <ul className="mt-8 grid gap-3 sm:grid-cols-2">
+            <li className="rounded-lg border border-neutral-200 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-medium">{BEN_SEAT_LABEL} engine</p>
+                <span className="rounded-full border border-neutral-300 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-500">
+                  neural
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-neutral-500">
+                Engine-backed, not assembled from knowledge packs — bids and plays from BEN&apos;s
+                trained models (github.com/lorserker/ben). Its decisions are labeled
+                &ldquo;BEN neural engine&rdquo; in the trace; if the engine can&apos;t be reached
+                the seat degrades to the knowledge-base fallback and says so.
+              </p>
+              <p className="mt-0.5 text-xs text-neutral-400">
+                Also seatable anywhere from a live board&apos;s seat menus.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <form action={tryBenAction}>
+                  {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                  <button
+                    type="submit"
+                    className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+                  >
+                    Play
+                  </button>
+                </form>
+                <form action={tryBenAction}>
+                  {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                  <input type="hidden" name="watch" value="1" />
+                  <button
+                    type="submit"
+                    className="rounded border border-neutral-300 px-3 py-1 text-xs hover:border-emerald-400"
+                  >
+                    Watch 4 copies
+                  </button>
+                </form>
+              </div>
+            </li>
+          </ul>
+        ) : (
+          <section className="mt-8 rounded-lg border border-dashed border-neutral-300 p-8 text-center">
+            <p className="font-serif text-lg text-neutral-600">Neural players arrive here.</p>
+            <p className="mx-auto mt-2 max-w-md text-sm text-neutral-500">
+              This tab hosts engine-backed players (BEN) — they play from a trained model, not
+              from knowledge packs. BEN_ENDPOINT isn&apos;t configured on this server, so no
+              engine is available to seat.
+            </p>
+            <span className="mt-4 inline-block rounded-full border border-neutral-300 px-3 py-1 text-xs uppercase tracking-wide text-neutral-400">
+              not configured
+            </span>
+          </section>
+        )
       ) : !activeKb ? (
         <p className="mt-8 rounded-lg border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">
           No knowledge bases yet — players are assembled from a knowledge base.{" "}

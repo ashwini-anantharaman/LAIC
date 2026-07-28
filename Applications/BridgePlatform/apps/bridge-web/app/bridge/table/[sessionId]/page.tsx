@@ -16,6 +16,7 @@ import { DealEditor } from "@/components/library/DealEditor";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { BboTable } from "@/components/table/bbo/BboTable";
 import { DecisionEntry } from "@/components/table/DecisionEntry";
+import { benAvailable } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
@@ -160,6 +161,29 @@ export default async function SessionPage({
         : "human"
       : config.label;
   };
+  // BEN in every seat's swap menu — the neural engine is a character any seat
+  // can hold, not a North-only fixture. Offered only when the server has an
+  // endpoint; swapSeatAction re-checks so a stale form can't seat a dead BEN.
+  const benOffered = benAvailable();
+  const benSwapEntry = (seat: Seat) => {
+    if (!benOffered) return null;
+    const seated = record.seats[seat].kind === "ben";
+    return (
+      <form action={swapSeatAction}>
+        <input type="hidden" name="sessionId" value={sessionId} />
+        <input type="hidden" name="seat" value={seat} />
+        <input type="hidden" name="playerId" value="ben" />
+        <button
+          type="submit"
+          disabled={seated}
+          className="w-full rounded px-1.5 py-1 text-left text-xs enabled:hover:bg-emerald-50 disabled:cursor-default"
+        >
+          <span className={seated ? "font-semibold" : ""}>BEN · neural engine</span>
+          {seated && <span className="ml-1 text-[9px] uppercase text-neutral-400">seated</span>}
+        </button>
+      </form>
+    );
+  };
   // BBO-style name bar: full width of its hand, gold while the seat is on
   // turn, with the seat letter in a petrol badge. Fellows get the swap/edit
   // dropdown behind it; learners get the plain bar.
@@ -241,6 +265,7 @@ export default async function SessionPage({
             )}
           </div>
           <div className="mt-1 space-y-0.5 border-t border-[var(--line)] pt-1">
+            {benSwapEntry(seat)}
             {!iAmHere && (
               <form action={swapSeatAction}>
                 <input type="hidden" name="sessionId" value={sessionId} />
@@ -349,6 +374,7 @@ export default async function SessionPage({
             )}
           </div>
           <div className="mt-1 space-y-0.5 border-t border-[var(--line)] pt-1">
+            {benSwapEntry(seat)}
             {!iAmHere && (
               <form action={swapSeatAction}>
                 <input type="hidden" name="sessionId" value={sessionId} />
