@@ -1273,6 +1273,9 @@ export function LearnerReader({
   const app = useApp();
   const closeReader = app.closeReader || (() => {});
   const createdObjects = app.createdObjects || [];
+  // Chrome-less rendering: either the host passed `embedded` (prop) or the app
+  // booted as an embedded viewer (?embed=1 → app.embedMode).
+  const embedMode = embedded || app.embedMode;
   const obj = objectProp
     || createdObjects.find(o => o.id === objectId)
     || OBJECTS.find(o => o.id === objectId)
@@ -1345,7 +1348,7 @@ export function LearnerReader({
         className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3"
         style={{ background: 'rgba(242,245,248,0.85)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.5)' }}
       >
-        {!embedded && (
+        {!embedMode && (
           <button
             onClick={closeReader}
             className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-black/5"

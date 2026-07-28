@@ -2003,6 +2003,46 @@ export async function listLearningObjects(orgId: string, programId?: string | nu
   });
 }
 
+/** Metadata-only listing: everything except the (potentially huge) content
+ *  columns (blocks, pipeline_draft). For list screens; content comes from
+ *  getLearningObject. */
+export async function listLearningObjectsMeta(orgId: string, programId?: string | null): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(
+      programId
+        ? sql`
+      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
+             description, estimated_time, tags, source_ids,
+             created_at::text as created_at, updated_at::text as updated_at
+      from learning_objects
+      where organization_id = ${orgId} and program_id = ${programId}
+      order by updated_at desc nulls last`
+        : sql`
+      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
+             description, estimated_time, tags, source_ids,
+             created_at::text as created_at, updated_at::text as updated_at
+      from learning_objects
+      where organization_id = ${orgId}
+      order by updated_at desc nulls last`,
+    );
+    return rows as unknown as Row[];
+  });
+}
+
+/** One learning object, full row — org-scoped like the list. */
+export async function getLearningObject(orgId: string, id: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
+             description, estimated_time, blocks, tags, source_ids, pipeline_draft,
+             created_at::text as created_at, updated_at::text as updated_at
+      from learning_objects
+      where organization_id = ${orgId} and id = ${id}
+      limit 1`);
+    return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+  });
+}
+
 /** Insert-or-update one learning object, always stamped to the caller's org. */
 export async function upsertLearningObject(orgId: string, r: Row, programId?: string | null): Promise<void> {
   await asPrivileged(async (tx) => {

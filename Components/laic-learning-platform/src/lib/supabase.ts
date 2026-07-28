@@ -91,3 +91,14 @@ export async function listObjects(): Promise<LearningObject[]> {
   const data = await res.json();
   return (Array.isArray(data) ? data : []).map(fromRow);
 }
+
+/** Fetch ONE learning object (full content) — used by the embedded viewer so
+ *  it never downloads the whole org library to render a single object. */
+export async function fetchObject(id: string): Promise<LearningObject | null> {
+  if (!getToken()) return null;
+  const pid = getProgramId();
+  const qs = pid ? `?program_id=${encodeURIComponent(pid)}` : '';
+  const res = await nexusFetch(`/api/platform/learning/objects/${encodeURIComponent(id)}${qs}`);
+  if (!res.ok) return null;
+  return fromRow(await res.json());
+}

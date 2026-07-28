@@ -79,10 +79,23 @@ function ScreenRouter() {
 }
 
 export function Layout() {
-  const { currentScreen, readerObjectId, navigate } = useApp();
+  const { embedMode, currentScreen, readerObjectId, navigate } = useApp();
   // Isolate each screen so a crash (e.g. the student-preview crash) shows a
   // recoverable boundary instead of blanking the whole app.
   const boundaryKey = readerObjectId ? `reader:${readerObjectId}` : currentScreen || 'unknown';
+
+  // Embedded viewer (host app WebView): content only — no sidebar, no topbar,
+  // no navigation chrome. The host app owns the surrounding navigation.
+  if (embedMode) {
+    return (
+      <main className="min-h-screen overflow-y-auto">
+        <ScreenErrorBoundary key={boundaryKey} onReset={() => navigate(currentScreen || 'cd-library')}>
+          <ScreenRouter />
+        </ScreenErrorBoundary>
+      </main>
+    );
+  }
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />

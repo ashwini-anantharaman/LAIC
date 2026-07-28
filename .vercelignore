@@ -1,4 +1,6 @@
-# Deploy only the Bridge Platform workspace + the shared contracts package
+# Shared by EVERY Vercel project built from this repo — the whitelist must
+# cover each project's tree, not just Bridge. Builds clone from git, so a
+# whitelisted directory only adds TRACKED files (no node_modules weight).
 /*
 !Applications
 Applications/*
@@ -6,6 +8,9 @@ Applications/*
 !Components
 Components/*
 !Components/laic-learner-contracts
+!Components/laic-learning-platform
+# TheNexusPlatform: app_shell (App Studio), platform_logic (console), backend-ts (API)
+!TheNexusPlatform
 Applications/BridgePlatform/apps/bridge-web/.data
 Applications/BridgePlatform/apps/bridge-web/e2e
 Applications/BridgePlatform/apps/bridge-web/test-results
