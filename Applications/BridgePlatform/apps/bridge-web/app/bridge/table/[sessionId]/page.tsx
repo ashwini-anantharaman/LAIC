@@ -57,20 +57,11 @@ export default async function SessionPage({
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
 
-  // HIDDEN 2026-07-25: the table moved to /bridge/table2, built on the reusable
-  // <PlayTable/> component. This page is kept intact behind ?legacy=1 so the
-  // decisions rail, fix-at-the-table overlay and deal editor stay reachable
-  // while the new page grows them. Delete this block to restore it as default.
+  // 2026-07-28: this page is the main table again. The redirect to
+  // /bridge/table2 (the <PlayTable/> rewrite, 2026-07-25) is off until that UI
+  // transition finishes — table2 still works at its own URL, and the ?legacy=1
+  // plumbing below is kept inert so flipping the redirect back on is one block.
   const sp = await searchParams;
-  // ?fix and ?editDeal are legacy-only overlays (the fix-at-the-table editor
-  // and the deal editor); a request carrying them must stay here even without
-  // legacy=1, or the overlay silently never opens.
-  if (sp.legacy !== "1" && !sp.fix && !sp.editDeal) {
-    const q = new URLSearchParams();
-    for (const [k, v] of Object.entries(sp)) if (v && k !== "legacy") q.set(k, String(v));
-    const qs = q.toString();
-    redirect(`/bridge/table2/${sessionId}${qs ? `?${qs}` : ""}`);
-  }
   const {
     mode,
     hands: handsParam,
