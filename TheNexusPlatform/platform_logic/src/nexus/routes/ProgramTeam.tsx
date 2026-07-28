@@ -30,6 +30,7 @@ import {
   devLoginAs,
   inviteProgramLink,
   getProgramGroupsModel,
+  getOrgCapabilities,
   updateGroup,
   getProgramTeamSummary,
   listProgramPlatformGroup,
@@ -41,6 +42,7 @@ import {
   setProgramMemberRole,
   updateProgramRole,
   type AccessLevel,
+  type OrgCapabilities,
   type PlatformGroupMember,
   type ProgramGroupsModel,
   type ProgramMember,
@@ -124,22 +126,36 @@ export function ProgramTeam() {
     listPrograms(orgId).then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null)).catch(() => {});
   }, [orgId, programId]);
 
+  // Org entitlements (the Nexus capability envelope) — a platform area must not
+  // appear in the role builder if the ORG isn't entitled to that platform, even
+  // when the program's feature flag is on. Mirrors the program overview's gate.
+  const [orgCaps, setOrgCaps] = useState<OrgCapabilities | null>(null);
+  useEffect(() => {
+    if (orgId) getOrgCapabilities(orgId).then(setOrgCaps).catch(() => setOrgCaps(null));
+  }, [orgId]);
+
   // The program's accessible features gate which areas roles can grant/show.
   const enabledFeatures = program?.features ?? DEFAULT_PROGRAM_FEATURES;
+  const orgAllows = (cap: string) => (orgCaps ? orgCaps.features[cap] !== false : true);
 
-  // Shared Roles & Groups panel adapter — enabled areas + role "Test as".
+  // Shared Roles & Groups panel adapter — enabled areas + role "Test as". An
+  // area shows only if the program's feature is on AND (for platform areas) the
+  // org is entitled to that platform.
   const programRg = useMemo(
     () =>
       programRgAdapter(
         orgId,
         programId,
-        (Object.keys(enabledFeatures) as (keyof typeof enabledFeatures)[]).filter((k) => enabledFeatures[k] !== false),
+        (Object.keys(enabledFeatures) as (keyof typeof enabledFeatures)[]).filter(
+          (k) => enabledFeatures[k] !== false && orgAllows(k as string),
+        ),
         (role: RgRole) => {
           startImpersonation({ roleName: role.name, perms: role.perms, orgId, programId });
           navigate(`/o/${orgId}/p/${programId}`);
         },
       ),
-    [orgId, programId, enabledFeatures, startImpersonation, navigate],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orgId, programId, enabledFeatures, orgCaps, startImpersonation, navigate],
   );
 
   const load = useCallback(() => {
