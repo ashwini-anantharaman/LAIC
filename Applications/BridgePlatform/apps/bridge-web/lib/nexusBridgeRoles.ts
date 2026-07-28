@@ -8,19 +8,24 @@ import { cookies } from "next/headers";
 import { nexusFetch } from "./nexusPeople";
 import { NEXUS_TOKEN_COOKIE } from "./nexusToken";
 
-// ── Catalogue shapes (subset of the backend CapabilityCatalogueDocument) ──────
+// ── Catalogue shapes (mirror the backend CapabilityCatalogueDocument) ─────────
+export type BridgeReservedTier = "owner" | "full_operator" | "program_admin";
+export type BridgeUiSurfaceKind = "navigation" | "screen" | "component" | "action";
 export interface BridgeCapability {
   id: string;
   label: string;
   description?: string;
   group: string;
-  reserved?: string;
+  reserved?: BridgeReservedTier;
+  supportsResourceConstraints?: boolean;
+  resourceTypes?: string[];
 }
 export interface BridgeUiSurface {
   id: string;
   label: string;
-  kind: string;
+  kind: BridgeUiSurfaceKind;
   group?: string;
+  routeOrComponent?: string;
   requiredAnyCapabilities?: string[];
 }
 export interface BridgeCatalogueGroup {
@@ -28,16 +33,27 @@ export interface BridgeCatalogueGroup {
   label: string;
   description?: string;
   order: number;
+  capabilityIds?: string[];
+  uiSurfaceIds?: string[];
+}
+export interface BridgeResourceType {
+  id: string;
+  label: string;
+  description?: string;
 }
 export interface BridgeCatalogue {
+  $schema?: string;
+  schemaVersion?: string;
   documentType: "capability_catalogue";
   id: string;
   name: string;
+  description?: string;
   provider: { kind: string; id: string };
   catalogueVersion?: string;
   capabilities: BridgeCapability[];
   uiSurfaces: BridgeUiSurface[];
   groups: BridgeCatalogueGroup[];
+  resourceTypes: BridgeResourceType[];
   sampleRoleTemplates?: { id: string; name: string; description?: string; grants: { capabilityIds: string[] }[] }[];
 }
 
@@ -60,6 +76,14 @@ export async function saveBridgeCatalogue(programId: string, doc: BridgeCatalogu
     body: JSON.stringify(doc),
   });
   if (!res.ok) throw new Error(`Bridge catalogue save failed: ${res.status}`);
+  return (await res.json()) as BridgeCatalogue;
+}
+
+export async function resetBridgeCatalogue(programId: string): Promise<BridgeCatalogue> {
+  const res = await nexusFetch(`/api/platform/bridge/catalogue?program_id=${encodeURIComponent(programId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Bridge catalogue reset failed: ${res.status}`);
   return (await res.json()) as BridgeCatalogue;
 }
 
