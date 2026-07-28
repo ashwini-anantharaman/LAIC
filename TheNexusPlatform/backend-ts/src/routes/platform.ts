@@ -799,17 +799,25 @@ platformRouter.get("/bridge/context", async (c) => {
   //   • admin        → everything the bridge catalogue grants (all tabs)
   //   • assigned role→ that role's capabilities (custom role id or pre-built)
   //   • otherwise    → the launch level's sample-role capabilities
-  const bridgeDoc = await catalogue.getCatalogue("bridge");
-  let capabilities: string[];
-  if (isAdmin) {
-    capabilities = bridgeRoles.bridgeCapsForLevel(bridgeDoc, "admin");
-  } else {
-    const assignedCaps = access.platformRole
-      ? await bridgeRoles.capsForAssignedRole(access.programId, access.platformRole)
-      : null;
-    capabilities = assignedCaps && assignedCaps.length
-      ? assignedCaps
-      : bridgeRoles.bridgeCapsForLevel(bridgeDoc, access.level as "edit" | "comment" | "view");
+  // Capability computation must NEVER break context resolution — a corrupted
+  // catalogue or role blob would otherwise 500 here and bounce the user back to
+  // "sign in through Nexus". Compute defensively; on any failure, fall back to
+  // an empty set (the coarse role/level still governs the app).
+  let capabilities: string[] = [];
+  try {
+    const bridgeDoc = await catalogue.getCatalogue("bridge");
+    if (isAdmin) {
+      capabilities = bridgeRoles.bridgeCapsForLevel(bridgeDoc, "admin");
+    } else {
+      const assignedCaps = access.platformRole
+        ? await bridgeRoles.capsForAssignedRole(access.programId, access.platformRole)
+        : null;
+      capabilities = assignedCaps && assignedCaps.length
+        ? assignedCaps
+        : bridgeRoles.bridgeCapsForLevel(bridgeDoc, access.level as "edit" | "comment" | "view");
+    }
+  } catch (e) {
+    console.error("bridge/context capability computation failed (using empty set):", e);
   }
   return c.json({
     nexusUserId: access.profileId,
@@ -1068,13 +1076,19 @@ platformRouter.get("/learning/context", async (c) => {
   //  • custom role  → exactly the capabilities that role binds
   //  • otherwise    → the launch level's sample-role capabilities (edit →
   //                   content-developer, comment → reviewer, view → learner).
-  const learningDoc = await catalogue.getCatalogue("learning");
-  const roleCaps = (customRole?.perms as Row | undefined)?.capabilities;
-  const capabilities = isAdmin
-    ? _learningCapsForLevel(learningDoc, "admin")
-    : Array.isArray(roleCaps) && roleCaps.length
-      ? (roleCaps as string[])
-      : _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
+  // Defensive: never let capability computation break context resolution.
+  let capabilities: string[] = [];
+  try {
+    const learningDoc = await catalogue.getCatalogue("learning");
+    const roleCaps = (customRole?.perms as Row | undefined)?.capabilities;
+    capabilities = isAdmin
+      ? _learningCapsForLevel(learningDoc, "admin")
+      : Array.isArray(roleCaps) && roleCaps.length
+        ? (roleCaps as string[])
+        : _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
+  } catch (e) {
+    console.error("learning/context capability computation failed (using empty set):", e);
+  }
   return c.json({
     nexusUserId: access.profileId,
     laicOrgId: access.orgId,
