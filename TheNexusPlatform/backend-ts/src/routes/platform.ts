@@ -796,9 +796,11 @@ platformRouter.get("/bridge/context", async (c) => {
   const isAdmin = access.level === "admin";
   // Effective bridge capabilities — the app gates its tabs on these, exactly
   // like learning:
-  //   • admin        → everything the bridge catalogue grants (all tabs)
-  //   • assigned role→ that role's capabilities (custom role id or pre-built)
-  //   • otherwise    → the launch level's sample-role capabilities
+  //   • admin         → everything the bridge catalogue grants (all tabs)
+  //   • assigned role → that role's capabilities (custom role id or pre-built)
+  //   • program role  → a "partial" program-role grant binds specific bridge
+  //                     capabilities (filtered to the bridge catalogue)
+  //   • otherwise     → the launch level's sample-role capabilities
   // Capability computation must NEVER break context resolution — a corrupted
   // catalogue or role blob would otherwise 500 here and bounce the user back to
   // "sign in through Nexus". Compute defensively; on any failure, fall back to
@@ -812,9 +814,14 @@ platformRouter.get("/bridge/context", async (c) => {
       const assignedCaps = access.platformRole
         ? await bridgeRoles.capsForAssignedRole(access.programId, access.platformRole)
         : null;
+      const programCaps = access.programRoleCapabilities?.length
+        ? await catalogue.validGrantsAcross([{ providerId: "bridge" }], access.programRoleCapabilities)
+        : [];
       capabilities = assignedCaps && assignedCaps.length
         ? assignedCaps
-        : bridgeRoles.bridgeCapsForLevel(bridgeDoc, access.level as "edit" | "comment" | "view");
+        : programCaps.length
+          ? programCaps
+          : bridgeRoles.bridgeCapsForLevel(bridgeDoc, access.level as "edit" | "comment" | "view");
     }
   } catch (e) {
     console.error("bridge/context capability computation failed (using empty set):", e);
@@ -1081,7 +1088,9 @@ platformRouter.get("/learning/context", async (c) => {
   const customRole = !isAdmin && user.email ? await graph.getLearningRoleForEmail(access.programId, user.email) : null;
   // Effective learning capabilities — the app gates its screens on these:
   //  • admin        → everything the catalogue grants (full access)
-  //  • custom role  → exactly the capabilities that role binds
+  //  • custom role  → exactly the capabilities that Content Studio role binds
+  //  • program role → a "partial" program-role grant binds specific learning
+  //                   capabilities (filtered to the learning catalogue)
   //  • otherwise    → the launch level's sample-role capabilities (edit →
   //                   content-developer, comment → reviewer, view → learner).
   // Defensive: never let capability computation break context resolution.
@@ -1089,11 +1098,16 @@ platformRouter.get("/learning/context", async (c) => {
   try {
     const learningDoc = await catalogue.getCatalogue("learning");
     const roleCaps = (customRole?.perms as Row | undefined)?.capabilities;
+    const programCaps = access.programRoleCapabilities?.length
+      ? await catalogue.validGrantsAcross([{ providerId: "learning" }], access.programRoleCapabilities)
+      : [];
     capabilities = isAdmin
       ? _learningCapsForLevel(learningDoc, "admin")
       : Array.isArray(roleCaps) && roleCaps.length
         ? (roleCaps as string[])
-        : _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
+        : programCaps.length
+          ? programCaps
+          : _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
   } catch (e) {
     console.error("learning/context capability computation failed (using empty set):", e);
   }

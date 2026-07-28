@@ -40,6 +40,12 @@ export interface ResolvedPlatformAccess {
   platformRole: string | null;
   /** The custom role's name when the grant came from one (null for admins). */
   roleName: string | null;
+  /** Fine-grained capabilities carried by the granting PROGRAM role (its
+   *  `perms.capabilities`), when access came from a program role with a
+   *  "partial" (capability-bound) platform grant. The platform context filters
+   *  these to its own catalogue. Null for admins / pre-built / platform-role
+   *  grants. */
+  programRoleCapabilities: string[] | null;
 }
 
 // ── Pre-built Bridge roles (§21 contract vocabulary) ────────────────────────
@@ -222,6 +228,7 @@ export async function resolvePlatformAccess(
           level: "view",
           platformRole: null,
           roleName: "Student",
+          programRoleCapabilities: null,
         };
       }
       continue; // not this caller's org
@@ -243,6 +250,7 @@ export async function resolvePlatformAccess(
       level: level.level,
       platformRole: level.platformRole ?? null,
       roleName: level.level === "admin" && !level.platformRole ? null : await _roleName(user, pid),
+      programRoleCapabilities: level.programRoleCapabilities ?? null,
     };
   }
 
@@ -263,7 +271,7 @@ async function _grantLevel(
   user: PlatformUser,
   program: Row,
   area: ProgramFeatureKey,
-): Promise<{ level: AreaGrantLevel; platformRole?: string } | null> {
+): Promise<{ level: AreaGrantLevel; platformRole?: string; programRoleCapabilities?: string[] } | null> {
   const orgId = program.org_id as string;
   const pid = program.id as string;
   const isAdminRole = (m: Row) => m.org_id === orgId && ["owner", "administrator"].includes(m.role);
@@ -319,13 +327,22 @@ async function _grantLevel(
 
   const role = await graph.getProgramRoleForEmail(pid, user.email).catch(() => null);
   const level = role ? ((role.perms as Row)?.[area] as string | undefined) : undefined;
+  // Fine-grained capabilities this program role carries (partial platform grants
+  // bind specific platform capabilities here — the platform context filters them
+  // to its own catalogue).
+  const roleCaps = Array.isArray((role?.perms as Row)?.capabilities)
+    ? ((role!.perms as Row).capabilities as string[])
+    : undefined;
   // An exact pre-built platform role named in the custom role.
   if (cfg && level && cfg.prebuilt.includes(level)) {
     return { level: cfg.level[level], platformRole: level };
   }
   // Platform areas granted as a single "administrator" toggle — full access.
   if (level === "administrator") return { level: "admin" };
-  if (level === "view" || level === "comment" || level === "edit") return { level };
+  // Partial (capability-bound) platform grant: member-level entry; the role's
+  // platform capabilities gate the app.
+  if (level === "partial") return { level: "edit", programRoleCapabilities: roleCaps };
+  if (level === "view" || level === "comment" || level === "edit") return { level, programRoleCapabilities: roleCaps };
   // A custom Learning role (the learning app's own People tab) grants base
   // access to the platform; its per-area perms then gate the app internally.
   if (area === "learning" && user.email) {
