@@ -98,8 +98,17 @@ export function createBenTableClient(opts?: {
   const endpoint = opts?.endpoint ?? process.env.BEN_ENDPOINT;
   if (!endpoint) throw new Error("BEN needs BEN_ENDPOINT configured on the server");
   const base = endpoint.replace(/\/$/, "");
+  // Measured against BEN on Vercel: /bid ~1.5s warm, but /lead and /play run
+  // full simulations (20-45s) and a cold start adds model loading — so the
+  // default budget is generous. Override with BEN_TIMEOUT_MS.
   const timeoutMs =
-    opts?.timeoutMs ?? (Number(process.env.BEN_TIMEOUT_MS || "") || 20_000);
+    opts?.timeoutMs ?? (Number(process.env.BEN_TIMEOUT_MS || "") || 120_000);
+  // When BEN itself lives behind Vercel deployment protection, the standard
+  // bypass header lets this server through (BEN_PROTECTION_BYPASS = the
+  // project's protection-bypass-for-automation secret).
+  const headers: Record<string, string> = process.env.BEN_PROTECTION_BYPASS
+    ? { "x-vercel-protection-bypass": process.env.BEN_PROTECTION_BYPASS }
+    : {};
 
   const get = async (path: string, params: Record<string, string>) => {
     const controller = new AbortController();
@@ -107,7 +116,7 @@ export function createBenTableClient(opts?: {
     const url = `${base}${path}?${new URLSearchParams({ ...params, details: "true" })}`;
     let res: Response;
     try {
-      res = await fetch(url, { signal: controller.signal });
+      res = await fetch(url, { signal: controller.signal, headers });
     } catch (e) {
       throw new Error(
         `BEN is unreachable at ${base} — is the container running? (${(e as Error).message})`,
