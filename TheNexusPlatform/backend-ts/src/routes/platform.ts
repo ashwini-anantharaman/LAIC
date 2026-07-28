@@ -1015,7 +1015,24 @@ platformRouter.get("/learning/objects", async (c) => {
   if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
+  // ?meta=1 → metadata only (no blocks/pipeline_draft). The full listing can
+  // run to tens of MB once authored content accumulates; list screens should
+  // never pay that — fetch one object's content via GET /learning/objects/:id.
+  if (c.req.query("meta") === "1") {
+    return c.json(await graph.listLearningObjectsMeta(access.orgId));
+  }
   return c.json(await graph.listLearningObjects(access.orgId));
+});
+
+platformRouter.get("/learning/objects/:object_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", c.req.query("program_id") ?? null);
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  const row = await graph.getLearningObject(access.orgId, c.req.param("object_id"));
+  if (!row) throw new HttpError(404, "Learning object not found");
+  return c.json(row);
 });
 
 platformRouter.put("/learning/objects", async (c) => {

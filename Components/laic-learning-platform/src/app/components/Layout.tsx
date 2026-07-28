@@ -76,6 +76,18 @@ function ScreenRouter() {
 }
 
 export function Layout() {
+  const { embedMode } = useApp();
+
+  // Embedded viewer (host app WebView): content only — no sidebar, no topbar,
+  // no navigation chrome. The host app owns the surrounding navigation.
+  if (embedMode) {
+    return (
+      <main className="min-h-screen overflow-y-auto">
+        <ScreenRouter />
+      </main>
+    );
+  }
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />

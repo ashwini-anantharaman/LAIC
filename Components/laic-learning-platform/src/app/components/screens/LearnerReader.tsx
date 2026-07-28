@@ -1249,7 +1249,7 @@ export function LearningBlocksPreview({
 }
 
 export function LearnerReader({ objectId }: { objectId: string }) {
-  const { closeReader, createdObjects } = useApp();
+  const { closeReader, createdObjects, embedMode } = useApp();
   const obj = createdObjects.find(o => o.id === objectId) || OBJECTS.find(o => o.id === objectId);
   const [showAsk, setShowAsk] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
@@ -1296,13 +1296,15 @@ export function LearnerReader({ objectId }: { objectId: string }) {
         className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3"
         style={{ background: 'rgba(242,245,248,0.85)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.5)' }}
       >
-        <button
-          onClick={closeReader}
-          className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-black/5"
-          style={{ background: 'rgba(255,255,255,0.7)' }}
-        >
-          <ArrowLeft size={15} className="text-[#374151]" />
-        </button>
+        {!embedMode && (
+          <button
+            onClick={closeReader}
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-black/5"
+            style={{ background: 'rgba(255,255,255,0.7)' }}
+          >
+            <ArrowLeft size={15} className="text-[#374151]" />
+          </button>
+        )}
         <div className="flex-1 min-w-0">
           <p style={{ fontSize: 14, fontWeight: 600, color: '#0B1220' }} className="truncate">{obj.title}</p>
           <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>{obj.estimatedTime} · {obj.type}</p>

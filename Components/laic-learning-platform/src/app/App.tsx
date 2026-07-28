@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import type { Role, Program, LearningObject, ObjectType } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
-import { supabaseEnabled, listObjects, saveObject } from '../lib/supabase';
+import { supabaseEnabled, listObjects, fetchObject, saveObject } from '../lib/supabase';
 import {
   loadUserObjects,
   saveUserObjects,
@@ -32,6 +32,10 @@ export interface AppState {
   isLoggedIn: boolean;
   /** True when the session came from a Nexus launch (vs the demo picker). */
   nexusMode: boolean;
+  /** Embedded viewer (?embed=1): render ONLY the reader — no sidebar/topbar,
+   *  no back navigation. Used when a host app (e.g. the mobile app) shows one
+   *  object in a WebView and owns the surrounding navigation itself. */
+  embedMode: boolean;
   /** Custom-role area perms (null = admin/none); admins see everything. */
   learningPerms: Record<string, AreaLevel> | null;
   learningIsAdmin: boolean;
@@ -97,6 +101,7 @@ export default function App() {
   /** Only persist to localStorage after the library for this user has been loaded. */
   const [libraryReady, setLibraryReady] = useState(false);
   const [nexusMode, setNexusMode] = useState(false);
+  const [embedMode, setEmbedMode] = useState(false);
   const [learningPerms, setLearningPerms] = useState<Record<string, AreaLevel> | null>(null);
   const [learningIsAdmin, setLearningIsAdmin] = useState(false);
   const [learningCapabilities, setLearningCapabilities] = useState<string[] | null>(null);
@@ -171,7 +176,17 @@ export default function App() {
   useEffect(() => {
     let live = true;
     (async () => {
+      // Deep link (?object=<id>) — e.g. the mobile app opening one object in a
+      // WebView. Capture before consumeLaunchFromUrl strips the query string.
+      const bootParams = new URLSearchParams(window.location.search);
+      const deepLinkObjectId = bootParams.get('object');
+      const embedBoot = bootParams.get('embed') === '1';
+      if (embedBoot) setEmbedMode(true);
       await consumeLaunchFromUrl();
+      // Embed boot renders exactly one object — fetch just that object (not
+      // the whole org library), in parallel with the context read.
+      const embedObjectPromise =
+        deepLinkObjectId && embedBoot ? fetchObject(deepLinkObjectId).catch(() => null) : null;
       const ctx = await fetchLearningContext();
       if (!live) return;
       if (ctx) {
@@ -196,7 +211,28 @@ export default function App() {
         const memberLanding = caps?.length ? defaultScreenForCapabilities(caps) : (nav[0]?.id ?? DEFAULT_SCREEN[r]);
         setCurrentScreen(isAdmin ? 'admin-overview' : memberLanding);
         setIsLoggedIn(true);
-        void hydrateForUser(uid);
+        if (deepLinkObjectId && embedObjectPromise) {
+          // Embedded viewer: one object is all we render — skip the authoring
+          // library hydration entirely; the fetch started before the context.
+          const found = await embedObjectPromise;
+          if (!live) return;
+          if (found) setCreatedObjects([found]);
+          setReaderObjectId(deepLinkObjectId);
+        } else if (deepLinkObjectId) {
+          // Full-app deep link: hydrate first, then resolve the object from the
+          // org library (a learner rarely OWNS the object) and open the reader.
+          await hydrateForUser(uid);
+          if (!live) return;
+          try {
+            const found = (await listObjects()).find((o) => o.id === deepLinkObjectId);
+            if (found) setCreatedObjects((prev) => mergeObjects(prev, [found]));
+          } catch {
+            /* reader still falls back to seed objects */
+          }
+          setReaderObjectId(deepLinkObjectId);
+        } else {
+          void hydrateForUser(uid);
+        }
         setBooting(false);
         return;
       }
@@ -209,6 +245,7 @@ export default function App() {
         setCurrentScreen(DEFAULT_SCREEN[user.role]);
         setIsLoggedIn(true);
         void hydrateForUser(uid);
+        if (deepLinkObjectId) setReaderObjectId(deepLinkObjectId);
       } else if (uid) {
         writeSessionUserId(null);
       }
@@ -362,7 +399,7 @@ export default function App() {
 
   const previewing = previewPerms !== null;
   const ctx: AppState = {
-    role, program, currentScreen, activeUserId, isLoggedIn, nexusMode,
+    role, program, currentScreen, activeUserId, isLoggedIn, nexusMode, embedMode,
     // While previewing a role, the whole app runs confined to that role's perms.
     learningPerms: previewing ? previewPerms : learningPerms,
     learningIsAdmin: previewing ? false : learningIsAdmin,
