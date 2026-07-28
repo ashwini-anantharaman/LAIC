@@ -17,6 +17,10 @@ export const nexusConsoleCatalogue: CapabilityCatalogueDocument = {
     { id: "nexus.operators.manage", label: "Manage operators & operator roles", group: "operators", reserved: "full_operator" },
     { id: "nexus.settings.branding", label: "Edit platform branding", group: "settings" },
     { id: "nexus.audit.view", label: "View platform audit", group: "audit" },
+    // Demo capabilities for two throwaway operator tabs — show the full
+    // "add a feature" flow (catalogue → role builder → nav gating).
+    { id: "nexus.test1.view", label: "View Test 1", group: "test1" },
+    { id: "nexus.test2.view", label: "View Test 2", group: "test2" },
   ],
   resourceTypes: [{ id: "organization", label: "Organization" }],
   uiSurfaces: [
@@ -24,12 +28,16 @@ export const nexusConsoleCatalogue: CapabilityCatalogueDocument = {
     { id: "team", label: "People", kind: "navigation", group: "operators", routeOrComponent: "/team", requiredAnyCapabilities: ["nexus.operators.manage"] },
     { id: "settings", label: "Settings", kind: "navigation", group: "settings", routeOrComponent: "/settings", requiredAnyCapabilities: ["nexus.settings.branding"] },
     { id: "audit", label: "Platform audit", kind: "navigation", group: "audit", routeOrComponent: "/audit", requiredAnyCapabilities: ["nexus.audit.view"] },
+    { id: "test1", label: "Test 1", kind: "navigation", group: "test1", routeOrComponent: "/test1", requiredAnyCapabilities: ["nexus.test1.view"] },
+    { id: "test2", label: "Test 2", kind: "navigation", group: "test2", routeOrComponent: "/test2", requiredAnyCapabilities: ["nexus.test2.view"] },
   ],
   groups: [
     { id: "organizations", label: "Organizations", order: 1, capabilityIds: ["nexus.orgs.provision", "nexus.orgs.envelope", "nexus.orgs.assign_admins"], uiSurfaceIds: ["orgs"] },
     { id: "operators", label: "Operators", order: 2, capabilityIds: ["nexus.operators.manage"], uiSurfaceIds: ["team"] },
     { id: "settings", label: "Settings", order: 3, capabilityIds: ["nexus.settings.branding"], uiSurfaceIds: ["settings"] },
     { id: "audit", label: "Audit", order: 4, capabilityIds: ["nexus.audit.view"], uiSurfaceIds: ["audit"] },
+    { id: "test1", label: "Test 1", order: 5, capabilityIds: ["nexus.test1.view"], uiSurfaceIds: ["test1"] },
+    { id: "test2", label: "Test 2", order: 6, capabilityIds: ["nexus.test2.view"], uiSurfaceIds: ["test2"] },
   ],
   sampleRoleTemplates: [],
 };

@@ -145,6 +145,8 @@ export function nexusRgAdapter(): RgAdapter {
       { key: "organizations", label: "Organizations", kind: "graded", levels: ["view", "edit"], capabilityGroup: { catalogueId: "nexus-console", groupId: "organizations" } },
       { key: "audit", label: "Platform audit", kind: "toggle", grant: "view", capabilityGroup: { catalogueId: "nexus-console", groupId: "audit" } },
       { key: "settings", label: "Settings", kind: "toggle", grant: "edit", capabilityGroup: { catalogueId: "nexus-console", groupId: "settings" } },
+      { key: "test1", label: "Test 1", kind: "toggle", grant: "view", capabilityGroup: { catalogueId: "nexus-console", groupId: "test1" } },
+      { key: "test2", label: "Test 2", kind: "toggle", grant: "view", capabilityGroup: { catalogueId: "nexus-console", groupId: "test2" } },
     ],
     loadCatalogues: catalogueLoader([() => getCatalogue("nexus-console")]),
   };

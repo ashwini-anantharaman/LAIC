@@ -21,6 +21,7 @@ import {
   Waypoints,
   ScrollText,
   ListTree,
+  FlaskConical,
   ChevronRight,
   ChevronLeft,
   Moon,
@@ -572,6 +573,8 @@ export function AppShell() {
       { to: "/access-catalogue", label: "Access Catalogue", icon: ListTree },
       { to: "/nexus-gates", label: "Gates", icon: DoorOpen },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
+      { to: "/test1", label: "Test 1", icon: FlaskConical },
+      { to: "/test2", label: "Test 2", icon: FlaskConical },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
     ];
     // A confined operator (custom platform-scope role) sees only granted areas;
@@ -580,6 +583,7 @@ export function AppShell() {
       const perms = user?.nexus_role?.perms ?? {};
       const NEXUS_NAV_AREAS: Record<string, string | null> = {
         orgs: "organizations", team: "__admin__", "access-catalogue": "__admin__", "nexus-gates": "__admin__", audit: "audit", settings: "settings",
+        test1: "test1", test2: "test2",
       };
       items = items.filter((it) => {
         const area = NEXUS_NAV_AREAS[navKey(it.to)];
