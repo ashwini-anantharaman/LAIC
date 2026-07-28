@@ -1,4 +1,6 @@
-// BBO view (2026-07-25): a Bridge Base Online table skin behind ?skin=bbo.
+// The table (2026-07-25): a Bridge Base Online replica, and the ONLY view —
+// it began as an optional skin behind ?skin=bbo alongside a "classic" felt,
+// and that fork was removed once this replaced it outright.
 // The felt is FLUID — it grows and shrinks with the window (container-query
 // units) — but every part whose CONTENT changes has RESERVED space so the
 // layout never jumps:

@@ -237,12 +237,19 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
       .selectOption({ label: "Minimal complete — Floor" });
   }
   await dealForm.getByRole("button", { name: "Deal a board" }).click();
-  await page.waitForURL(/\/bridge\/table\/bs_/);
+  await page.waitForURL(/\/bridge\/table2?\/bs_/);
+  // The verification surfaces this test exercises (Decisions rail, trace
+  // drawer, flag) live on the legacy table; /bridge/table redirects to the
+  // new component page, so pin the legacy view explicitly.
+  const sid = /bs_[a-z0-9]+/.exec(page.url())![0];
+  await page.goto(`/bridge/table/${sid}?legacy=1`);
 
   // Boards never self-start: hit ▶ start, then dealer N and E play to us.
   await page.getByRole("button", { name: "▶ start" }).click();
   await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("Your call")).toBeVisible();
+  // It is our turn: the BBO bid box is live. (The classic view's "Your call"
+  // heading went with the classic view on 2026-07-25.)
+  await expect(page.getByRole("button", { name: "Pass", exact: true })).toBeVisible();
   const firstDecision = page.locator("details").filter({ hasText: "#0" }).last();
   await firstDecision.locator("summary").click();
   // The summary's honest reason (the body also names the item "Auction
@@ -261,8 +268,9 @@ test("table: session pins, trace drawer, flag lands in the KB queue", async ({
     firstDecision.getByRole("button", { name: "Suggest" }).click(),
   ]);
 
-  // We act as South: pass.
-  await page.getByRole("button", { name: "P", exact: true }).click();
+  // We act as South: pass. (The BBO bid box labels it "Pass"; the classic
+  // BiddingBox used a bare "P".)
+  await page.getByRole("button", { name: "Pass", exact: true }).click();
 
   await page.goto(`${kbUrl}/suggestions`);
   await expect(page.getByText("Passing here looks wrong to me.")).toBeVisible();
@@ -287,14 +295,18 @@ test("Play offers Quickplay and Customize; Quickplay deals in one click", async 
     .or(page.getByRole("link", { name: /^Resume / }))
     .first()
     .click();
-  await page.waitForURL(/\/bridge\/table\/bs_/, { timeout: 30_000 });
+  await page.waitForURL(/\/bridge\/table2?\/bs_/, { timeout: 30_000 });
   // A fresh board sits paused behind ▶ start; a resumed one may already be
-  // at OUR turn (no AI to act → no start button, the bid pad is up).
+  // at OUR turn. Either way the new table is live: our seat plate reads
+  // "you" and, in an auction, the bid box's Pass button is on the felt.
   const start = page.getByRole("button", { name: /▶ (start|resume)/ });
   if (await start.isVisible().catch(() => false)) await start.click();
-  await expect(page.getByText(/Decisions \(\d+\)|Your call/).first()).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(
+    page
+      .getByRole("button", { name: "Pass", exact: true })
+      .or(page.getByText("you", { exact: true }))
+      .first(),
+  ).toBeVisible({ timeout: 15_000 });
 });
 
 test("constrained drill: an incomplete player never hits the engine floor", async ({
@@ -312,7 +324,10 @@ test("constrained drill: an incomplete player never hits the engine floor", asyn
     .selectOption({ label: "Minimal incomplete — Openings (incomplete) (incomplete)" });
   await drillForm.locator('input[name="seed"]').fill("1");
   await drillForm.getByRole("button", { name: "Find a safe deal" }).click();
-  await page.waitForURL(/\/bridge\/table\/bs_/, { timeout: 90_000 });
+  await page.waitForURL(/\/bridge\/table2?\/bs_/, { timeout: 90_000 });
+  // "Play to end" and the Decisions rail live on the legacy table page.
+  const drillSid = /bs_[a-z0-9]+/.exec(page.url())![0];
+  await page.goto(`/bridge/table/${drillSid}?legacy=1`);
 
   await page.getByRole("button", { name: "Play to end" }).click();
   await expect(page.getByText(/Passed out|made|down/).first()).toBeVisible({ timeout: 60_000 });
@@ -395,7 +410,10 @@ test("fix at the table: undo pauses, overlay edits the item, session re-pins", a
       .selectOption({ label: "Minimal complete — Floor" });
   }
   await dealForm.getByRole("button", { name: "Deal a board" }).click();
-  await page.waitForURL(/\/bridge\/table\/bs_/);
+  await page.waitForURL(/\/bridge\/table2?\/bs_/);
+  // Undo, the Decisions rail and the fix overlay live on the legacy table.
+  const fixSid = /bs_[a-z0-9]+/.exec(page.url())![0];
+  await page.goto(`/bridge/table/${fixSid}?legacy=1`);
   await page.getByRole("button", { name: "▶ start" }).click();
   await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
 
@@ -481,7 +499,10 @@ test("curated SAYC template: install, complete sets, and a traced board", async 
   await page.goto(`/bridge/players?kb=${kbId}`);
   const card = page.locator("li").filter({ hasText: /Full SAYC — / }).first();
   await card.getByRole("button", { name: "Watch 4 copies" }).click();
-  await page.waitForURL(/\/bridge\/table\/bs_/);
+  await page.waitForURL(/\/bridge\/table2?\/bs_/);
+  // The trace drawer and fix link live on the legacy table.
+  const watchSid = /bs_[a-z0-9]+/.exec(page.url())![0];
+  await page.goto(`/bridge/table/${watchSid}?legacy=1`);
 
   // The AIs bid from the curated knowledge once started; the trace cites a
   // curated item.
@@ -490,6 +511,39 @@ test("curated SAYC template: install, complete sets, and a traced board", async 
   const first = page.locator("details").filter({ hasText: "#0" }).last();
   await first.locator("summary").click();
   await expect(first.getByRole("link", { name: "fix at the table →" })).toBeVisible();
+});
+
+test("teaching-deck template: installs complete, and every item cites its slide", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+
+  await page.goto("/bridge/kb");
+  const name = `Teaching deck e2e ${Date.now().toString(36)}`;
+  const installSection = page
+    .locator("section")
+    .filter({ hasText: "Start from the teaching deck" });
+  await installSection.getByRole("textbox").fill(name);
+  await installSection.getByRole("button", { name: "Install the teaching deck" }).click();
+  await expect(page.getByRole("heading", { name })).toBeVisible({ timeout: 30_000 });
+  const kbUrl = page.url();
+
+  // The Full set landed and scores 17/17 on the completeness checklist.
+  await page.goto(`${kbUrl}/sets`);
+  await expect(page.getByText("Full teaching deck")).toBeVisible();
+  await page.getByRole("link", { name: /Full teaching deck/ }).click();
+  await expect(page.getByText("Completeness · 17/17")).toBeVisible();
+
+  await page.goto(`${kbUrl}/versions`);
+  await expect(page.getByText(/Base — teaching deck/)).toBeVisible();
+
+  // The point of this template: an item's provenance names the SLIDE, so a
+  // reviewer can open the deck at that page and check the rule against the
+  // picture it came from.
+  await page.goto(`${kbUrl}/items`);
+  await page.getByRole("link", { name: /Roman keycard/i }).first().click();
+  await expect(page.getByText(/slide \d+/).first()).toBeVisible();
 });
 
 test("B2F3 curriculum collections: one click drafts three chained sets (idempotent)", async ({
@@ -670,7 +724,10 @@ test("benchmark: parked — tab hidden and route redirects (BRIDGE_BENCHMARK uns
   await expect(page.getByRole("heading", { name: "Benchmark", exact: true })).toHaveCount(0);
 });
 
-test("BBO view: the skin toggles on and preserves the table", async ({ page, context }) => {
+test("the table renders the BBO felt — the only view, no skin toggle", async ({
+  page,
+  context,
+}) => {
   await signInAs(context, "user_reviewer_rhea");
   // Reuse any active session via the Play landing quickplay flow.
   await page.goto("/bridge/table");
@@ -679,14 +736,21 @@ test("BBO view: the skin toggles on and preserves the table", async ({ page, con
     .or(page.getByRole("link", { name: /^Resume / }))
     .first()
     .click();
-  await page.waitForURL(/\/bridge\/table\/bs_/);
-  await page.getByRole("link", { name: "Switch to BBO view" }).click();
-  await page.waitForURL(/skin=bbo/);
-  // The iconic bits: W N E S auction header on the green felt + the toggle back.
-  await expect(page.getByRole("link", { name: "Switch to platform view" })).toBeVisible();
-  await expect(page.getByText("Rules considered", { exact: false }).first())
-    .toBeVisible({ timeout: 10_000 })
-    .catch(() => {}); // decisions rail only present after a decision — non-fatal
+  await page.waitForURL(/\/bridge\/table2?\/bs_/);
+
+  // The component table (table2) is what loads, with no ?skin round-trip and
+  // no way back to a "classic" view — that fork was removed on 2026-07-25.
+  await expect(page.getByRole("link", { name: "Switch to BBO view" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Switch to platform view" })).toHaveCount(0);
+  expect(page.url()).not.toContain("skin=");
+
+  // The legacy page is still reachable behind ?legacy=1 and kept its
+  // auction-display toggle ("bids: centre" / "bids: at seats").
+  const feltSid = /bs_[a-z0-9]+/.exec(page.url())![0];
+  await page.goto(`/bridge/table/${feltSid}?legacy=1`);
+  await expect(page.getByRole("link", { name: /^bids:/ }).first()).toBeVisible({
+    timeout: 10_000,
+  });
 });
 
 test("auction rules explorer: lists the rules at a decision point", async ({

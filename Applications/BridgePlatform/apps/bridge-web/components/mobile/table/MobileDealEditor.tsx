@@ -62,7 +62,6 @@ const cid = (suit: Suit, rank: Rank) => `${suit}${rank}`;
 
 export function MobileDealEditor({
   sessionId,
-  bbo,
   initialName,
   initialDealer,
   initialVul,
@@ -70,7 +69,6 @@ export function MobileDealEditor({
   locked,
 }: Readonly<{
   sessionId: string;
-  bbo?: boolean;
   initialName: string;
   initialDealer: Seat;
   initialVul: Vul;
@@ -242,7 +240,6 @@ export function MobileDealEditor({
     >
       <input type="hidden" name="sessionId" value={sessionId} />
       <input type="hidden" name="mobile" value="1" />
-              {bbo && <input type="hidden" name="skin" value="bbo" />}
       {SEATS.map((seat) => (
         <input key={seat} type="hidden" name={`hand:${seat}`} value={serialized(seat)} />
       ))}

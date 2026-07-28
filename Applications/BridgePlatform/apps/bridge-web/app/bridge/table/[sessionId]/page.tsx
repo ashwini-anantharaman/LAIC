@@ -3,7 +3,6 @@ import {
   isLogicEvent,
   type Card,
   type Seat,
-  type Suit,
 } from "@bridge/events";
 import { legalCalls, legalPlays, resultLabel, scoreBoard } from "@bridge/engine";
 import { canAccessAdminArea } from "@bridge/nexus-client";
@@ -15,11 +14,8 @@ import { ItemEditor } from "@/components/kb/ItemEditor";
 import { ItemView } from "@/components/kb/ItemView";
 import { DealEditor } from "@/components/library/DealEditor";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
-import { BiddingBox } from "@/components/table/BiddingBox";
 import { BboTable } from "@/components/table/bbo/BboTable";
 import { DecisionEntry } from "@/components/table/DecisionEntry";
-import { HandRow } from "@/components/table/HandRow";
-import { PlayingCard } from "@/components/table/PlayingCard";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
@@ -53,13 +49,28 @@ export default async function SessionPage({
     fixed?: string;
     fixError?: string;
     editDeal?: string;
-    skin?: string;
     bboAuction?: string;
+    legacy?: string;
   }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
+
+  // HIDDEN 2026-07-25: the table moved to /bridge/table2, built on the reusable
+  // <PlayTable/> component. This page is kept intact behind ?legacy=1 so the
+  // decisions rail, fix-at-the-table overlay and deal editor stay reachable
+  // while the new page grows them. Delete this block to restore it as default.
+  const sp = await searchParams;
+  // ?fix and ?editDeal are legacy-only overlays (the fix-at-the-table editor
+  // and the deal editor); a request carrying them must stay here even without
+  // legacy=1, or the overlay silently never opens.
+  if (sp.legacy !== "1" && !sp.fix && !sp.editDeal) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) if (v && k !== "legacy") q.set(k, String(v));
+    const qs = q.toString();
+    redirect(`/bridge/table2/${sessionId}${qs ? `?${qs}` : ""}`);
+  }
   const {
     mode,
     hands: handsParam,
@@ -71,16 +82,14 @@ export default async function SessionPage({
     fixed,
     fixError,
     editDeal,
-    skin,
     bboAuction,
-  } = await searchParams;
-  // Optional BBO-view skin (2026-07-23): ?skin=bbo swaps the felt/seats/auction/
-  // bidbox presentation for a Bridge Base Online replica. Purely presentational
-  // — same server actions, same params, same overlays; absent it, everything
-  // renders exactly as before.
-  const bbo = skin === "bbo";
-  // Within the BBO skin, where to show the auction: the central box (default)
-  // or a call bubble beside each player (?bboAuction=seats).
+  } = sp;
+  // The BBO replica is the ONLY table view (2026-07-25). It used to sit behind
+  // ?skin=bbo alongside a "classic" felt; that fork and its round-tripping are
+  // gone, so there is no skin param and no toggle.
+  //
+  // Still a choice: where the auction shows — the central box (default) or a
+  // call bubble beside each player (?bboAuction=seats).
   const bboSeats = bboAuction === "seats";
 
   let view;
@@ -126,7 +135,7 @@ export default async function SessionPage({
   // Fix-at-the-table overlay: ?fix=<itemId> opens the real item editor over
   // the board; saving re-pins this session to the fresh compile and returns
   // here paused, so the corrected rule can be stepped through immediately.
-  const overlayReturn = `/bridge/table/${sessionId}?paused=${Date.now()}${bbo ? "&skin=bbo" : ""}`;
+  const overlayReturn = `/bridge/table/${sessionId}?paused=${Date.now()}&legacy=1`;
   const logicEvents = record.events.filter(isLogicEvent);
   const aiToAct = !actingIsHuman && state.phase !== "complete";
 
@@ -268,12 +277,9 @@ export default async function SessionPage({
     );
   };
 
-  // BBO-view nameplate: BBO's grey name bar with the small teal seat-letter
-  // badge at its left end — gold while the seat is to act. For fellows it
-  // stays a swap/edit dropdown — same roster, same swapSeatAction the classic
-  // seatTag posts — so BBO view keeps full parity. Only rendered under
-  // skin=bbo, so the swap forms always carry skin=bbo to round-trip the fork
-  // back into BBO view.
+  // The nameplate: BBO's grey name bar with the small teal seat-letter badge
+  // at its left end — gold while the seat is to act. For fellows it doubles as
+  // the swap/edit dropdown, posting the same swapSeatAction as everywhere else.
   const bboPlate = (seat: Seat) => {
     const acting = seat === actingSeat && state.phase !== "complete";
     const config = record.seats[seat];
@@ -329,7 +335,6 @@ export default async function SessionPage({
                   <input type="hidden" name="sessionId" value={sessionId} />
                   <input type="hidden" name="seat" value={seat} />
                   <input type="hidden" name="playerId" value={p.playerId} />
-                  <input type="hidden" name="skin" value="bbo" />
                   <button
                     type="submit"
                     disabled={current}
@@ -358,7 +363,6 @@ export default async function SessionPage({
                 <input type="hidden" name="sessionId" value={sessionId} />
                 <input type="hidden" name="seat" value={seat} />
                 <input type="hidden" name="playerId" value="me" />
-                <input type="hidden" name="skin" value="bbo" />
                 <button
                   type="submit"
                   className="w-full rounded px-1.5 py-1 text-left text-xs hover:bg-emerald-50"
@@ -399,8 +403,7 @@ export default async function SessionPage({
   const toggleHref = (params: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
     if (learnerMode && isFellow) q.set("mode", "learner");
-    if (bbo) q.set("skin", "bbo");
-    if (bbo && bboSeats) q.set("bboAuction", "seats");
+    if (bboSeats) q.set("bboAuction", "seats");
     for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table/${sessionId}?${s}` : `/bridge/table/${sessionId}`;
@@ -410,24 +413,11 @@ export default async function SessionPage({
   const auctionToggleHref = (() => {
     const q = new URLSearchParams();
     if (learnerMode && isFellow) q.set("mode", "learner");
-    q.set("skin", "bbo");
     if (handsParam) q.set("hands", handsParam);
     if (paused) q.set("paused", paused);
     if (!bboSeats) q.set("bboAuction", "seats");
     return `/bridge/table/${sessionId}?${q.toString()}`;
   })();
-  // The BBO-view toggle preserves every other param (mode, hands, paused) and
-  // only flips skin. Building it here keeps the toolbar control declarative.
-  const skinToggleHref = (() => {
-    const q = new URLSearchParams();
-    if (learnerMode && isFellow) q.set("mode", "learner");
-    if (handsParam) q.set("hands", handsParam);
-    if (paused) q.set("paused", paused);
-    if (!bbo) q.set("skin", "bbo");
-    const s = q.toString();
-    return s ? `/bridge/table/${sessionId}?${s}` : `/bridge/table/${sessionId}`;
-  })();
-
   return (
     <div className="mx-auto max-w-7xl">
       {/* Status bar */}
@@ -506,22 +496,6 @@ export default async function SessionPage({
           seq={record.events.length}
           complete={state.phase === "complete"}
         />
-        <Link
-          href={skinToggleHref}
-          aria-label={bbo ? "Switch to platform view" : "Switch to BBO view"}
-          title={
-            bbo
-              ? "Platform view — the standard table"
-              : "BBO view — the classic Bridge Base Online table"
-          }
-          className={
-            bbo
-              ? "rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-emerald-800"
-              : "rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
-          }
-        >
-          🃏<span className="ml-1 hidden lg:inline text-[10px]">{bbo ? "classic" : "bbo"}</span>
-        </Link>
         {!learnerMode && (
           <Link
             href={toggleHref({ hands: showAll ? "mine" : "all" })}
@@ -551,7 +525,6 @@ export default async function SessionPage({
               className="absolute z-10 mt-1 flex w-64 flex-col gap-1.5 rounded-lg border border-neutral-200 bg-white p-2 shadow-md"
             >
               <input type="hidden" name="sessionId" value={sessionId} />
-              {bbo && <input type="hidden" name="skin" value="bbo" />}
               <select
                 name="kind"
                 defaultValue="board"
@@ -597,7 +570,7 @@ export default async function SessionPage({
         )}
         <form action={undoAction}>
           <input type="hidden" name="sessionId" value={sessionId} />
-          {bbo && <input type="hidden" name="skin" value="bbo" />}
+          <input type="hidden" name="legacy" value="1" />
           <button
             type="submit"
             aria-label="Undo the last decision"
@@ -609,7 +582,6 @@ export default async function SessionPage({
         </form>
         <form action={rewindAction}>
           <input type="hidden" name="sessionId" value={sessionId} />
-          {bbo && <input type="hidden" name="skin" value="bbo" />}
           <button
             type="submit"
             disabled={record.events.length === 0}
@@ -623,7 +595,6 @@ export default async function SessionPage({
         {!learnerMode && (
           <form action={newDealAction}>
             <input type="hidden" name="sessionId" value={sessionId} />
-            {bbo && <input type="hidden" name="skin" value="bbo" />}
             <button
               type="submit"
               aria-label="New deal"
@@ -648,12 +619,8 @@ export default async function SessionPage({
           <Link
             href={
               learnerMode
-                ? bbo
-                  ? `/bridge/table/${sessionId}?skin=bbo`
-                  : `/bridge/table/${sessionId}`
-                : bbo
-                  ? `/bridge/table/${sessionId}?mode=learner&skin=bbo`
-                  : `/bridge/table/${sessionId}?mode=learner`
+                ? `/bridge/table/${sessionId}`
+                : `/bridge/table/${sessionId}?mode=learner`
             }
             aria-label={learnerMode ? "Switch to verification view" : "Switch to learner view"}
             title={learnerMode ? "Verification view — show the decisions rail" : "Learner view — hide the decisions rail"}
@@ -669,200 +636,24 @@ export default async function SessionPage({
 
       <div className={`grid gap-6 ${learnerMode ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"}`}>
         <div>
-          {bbo ? (
-            <BboTable
-              sessionId={sessionId}
-              state={state}
-              score={score}
-              visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
-              legalNow={legalNow ? [...legalNow] : null}
-              callsNow={callsNow ? [...callsNow] : null}
-              myTurn={myTurn}
-              mySeat={mySeat}
-              dummy={dummy}
-              actingSeat={actingSeat}
-              actingIsHuman={actingIsHuman}
-              dealer={record.board.dealer}
-              auctionRows={auctionRows as never}
-              plate={bboPlate}
-              auctionDisplay={bboSeats ? "seats" : "box"}
-              auctionToggleHref={auctionToggleHref}
-            />
-          ) : (
-          <>
-          {/* The table — green felt, BBO-style */}
-          <div className="rounded-2xl border border-emerald-950/60 bg-[radial-gradient(120%_120%_at_50%_30%,#35825e_0%,#256a49_65%,#1c573a_100%)] p-3 shadow-md sm:p-6 xl:p-8">
-            {/* North */}
-            <div className="flex flex-col items-center gap-1">
-              <HandRow
-                hand={state.hands.N}
-                hidden={!canSee("N")}
-                playable={legalNow && state.turn === "N" ? legalNow : null}
-                sessionId={sessionId}
-                size="lg"
-              />
-              <div className="w-full">{seatTag("N")}</div>
-            </div>
-
-            {/* West · center · East */}
-            <div className="my-3 grid grid-cols-[minmax(2rem,auto)_minmax(0,1fr)_minmax(2rem,auto)] items-center gap-1.5 sm:my-4 sm:gap-4">
-              <div className="flex w-fit flex-col items-center gap-1 justify-self-start">
-                <HandRow
-                  hand={state.hands.W}
-                  hidden={!canSee("W")}
-                  playable={legalNow && state.turn === "W" ? legalNow : null}
-                  sessionId={sessionId}
-                  vertical
-                  size="sm"
-                />
-                {seatTag("W", "left")}
-              </div>
-
-              {/* Center: auction, live trick, or the result */}
-              <div className="flex min-h-44 items-center justify-center self-stretch px-0.5 py-3 sm:px-2 xl:min-h-56">
-                {state.phase === "auction" ? (
-                  <table className="w-full max-w-60 rounded-lg bg-white/95 py-1 text-center text-sm shadow-sm">
-                    <thead>
-                      <tr className="text-[10px] uppercase tracking-wide text-neutral-400">
-                        {["W", "N", "E", "S"].map((s) => (
-                          <th key={s} className="pb-1 pt-1.5 font-normal">
-                            {s}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {auctionRows.map((row, i) => (
-                        <tr key={i}>
-                          {[0, 1, 2, 3].map((j) => {
-                            const entry = row[j];
-                            return (
-                              <td key={j} className="py-0.5 tabular-nums">
-                                {entry ? callLabel(entry.call) : ""}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                      {state.auction.length === 0 && (
-                        <tr>
-                          <td colSpan={4} className="pb-2 pt-1 text-xs text-neutral-400">
-                            {seatLabel(record.board.dealer) === "you"
-                              ? "you deal"
-                              : `${seatLabel(record.board.dealer)} deals`}
-                          </td>
-                        </tr>
-                      )}
-                      <tr>
-                        <td colSpan={4} className="pb-1" />
-                      </tr>
-                    </tbody>
-                  </table>
-                ) : state.phase === "complete" && score ? (
-                  <div className="rounded-lg bg-white/95 px-6 py-4 text-center shadow-sm">
-                    <p className="font-serif text-xl">{resultLabel(score)}</p>
-                    {score.contract && (
-                      <p className="mt-1 text-sm text-neutral-500">
-                        {score.declarerScore >= 0 ? "+" : ""}
-                        {score.declarerScore} for{" "}
-                        {["N", "S"].includes(score.contract.declarer) ? "NS" : "EW"}
-                      </p>
-                    )}
-                    <p className="mt-2 text-xs text-neutral-400">
-                      NS {state.trickCount.NS} · EW {state.trickCount.EW}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="relative h-40 w-full max-w-56 sm:h-44 xl:h-52 xl:max-w-64">
-                    {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
-                      const pos =
-                        seat === "N"
-                          ? "left-1/2 top-0 -translate-x-1/2"
-                          : seat === "S"
-                            ? "bottom-0 left-1/2 -translate-x-1/2"
-                            : seat === "W"
-                              ? "left-0 top-1/2 -translate-y-1/2"
-                              : "right-0 top-1/2 -translate-y-1/2";
-                      const card = trickCards[seat];
-                      return (
-                        <div key={seat} className={`absolute ${pos}`}>
-                          {card ? (
-                            <PlayingCard card={card} size="sm" />
-                          ) : (
-                            <span
-                              className={`block aspect-[5/7] w-8 rounded-md border border-dashed xl:w-10 ${
-                                seat === state.turn ? "border-amber-300" : "border-white/30"
-                              }`}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                    <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] uppercase tracking-wide text-white/50">
-                      trick {state.tricks.length}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex w-fit flex-col items-center gap-1 justify-self-end">
-                <HandRow
-                  hand={state.hands.E}
-                  hidden={!canSee("E")}
-                  playable={legalNow && state.turn === "E" ? legalNow : null}
-                  sessionId={sessionId}
-                  vertical
-                  size="sm"
-                />
-                {seatTag("E", "right")}
-              </div>
-            </div>
-
-            {/* South */}
-            <div className="flex flex-col items-center gap-1">
-              <HandRow
-                hand={state.hands.S}
-                hidden={!canSee("S")}
-                playable={legalNow && state.turn === "S" ? legalNow : null}
-                sessionId={sessionId}
-                size="lg"
-              />
-              <div className="w-full">{seatTag("S")}</div>
-            </div>
-          </div>
-
-          {/* Action strip below the table */}
-          <div className="mt-4 flex flex-col items-center gap-2">
-            {myTurn && callsNow && (
-              <>
-                <p className="text-sm font-medium">Your call</p>
-                <BiddingBox sessionId={sessionId} legal={[...callsNow]} />
-              </>
-            )}
-            {myTurn && legalNow && (
-              <p className="text-sm text-neutral-600">
-                Your play — tap a raised card{state.turn !== mySeat ? ` (dummy, seat ${state.turn})` : ""}.
-              </p>
-            )}
-            {actingIsHuman && !myTurn && state.phase !== "complete" && (
-              <p className="text-sm text-neutral-500">
-                Waiting for the human in seat {actingSeat}.
-              </p>
-            )}
-            {state.phase === "complete" && (
-              <p className="text-sm text-neutral-500">
-                Board complete.{" "}
-                <Link
-                  href="/bridge/table"
-                  className="text-emerald-700 underline-offset-4 hover:underline"
-                >
-                  Play another →
-                </Link>
-              </p>
-            )}
-          </div>
-          </>
-          )}
+          <BboTable
+            sessionId={sessionId}
+            state={state}
+            score={score}
+            visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
+            legalNow={legalNow ? [...legalNow] : null}
+            callsNow={callsNow ? [...callsNow] : null}
+            myTurn={myTurn}
+            mySeat={mySeat}
+            dummy={dummy}
+            actingSeat={actingSeat}
+            actingIsHuman={actingIsHuman}
+            dealer={record.board.dealer}
+            auctionRows={auctionRows as never}
+            plate={bboPlate}
+            auctionDisplay={bboSeats ? "seats" : "box"}
+            auctionToggleHref={auctionToggleHref}
+          />
         </div>
 
         {/* The verification rail */}
@@ -953,7 +744,7 @@ export default async function SessionPage({
       {editDeal && !learnerMode && (
         <div className="fixed inset-0 z-50">
           <Link
-            href={`/bridge/table/${sessionId}?paused=${Date.now()}${bbo ? "&skin=bbo" : ""}`}
+            href={`/bridge/table/${sessionId}?paused=${Date.now()}`}
             aria-label="Close the deal editor"
             className="absolute inset-0 bg-black/50"
           />
@@ -971,7 +762,7 @@ export default async function SessionPage({
                 </p>
               </div>
               <Link
-                href={`/bridge/table/${sessionId}?paused=${Date.now()}${bbo ? "&skin=bbo" : ""}`}
+                href={`/bridge/table/${sessionId}?paused=${Date.now()}`}
                 className="flex-none rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-600 hover:border-emerald-400"
               >
                 ✕ back to the board
@@ -984,7 +775,6 @@ export default async function SessionPage({
             )}
             <form action={redealEditedAction}>
               <input type="hidden" name="sessionId" value={sessionId} />
-              {bbo && <input type="hidden" name="skin" value="bbo" />}
               <DealEditor
                 initialName={
                   record.board.name.endsWith("(edited)")
