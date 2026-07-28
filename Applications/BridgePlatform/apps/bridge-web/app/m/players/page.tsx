@@ -1,9 +1,10 @@
 import type { KbPlayer, KnowledgeBase, PlayerValidationStatus } from "@bridge/kb";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { benAvailable, BEN_SEAT_LABEL } from "@/lib/benSeat";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
-import { tryPlayerAction } from "@/app/bridge/players/actions";
+import { tryBenAction, tryPlayerAction } from "@/app/bridge/players/actions";
 
 const F = "var(--font-fraunces), serif";
 const K = "var(--font-karla), sans-serif";
@@ -30,11 +31,12 @@ const actionBtn: React.CSSProperties = {
  *  live-compile pack names), re-skinned per the design. */
 export default async function MobilePlayersPage({
   searchParams,
-}: Readonly<{ searchParams: Promise<{ kb?: string }> }>) {
+}: Readonly<{ searchParams: Promise<{ kb?: string; tab?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   await ensureSeeds();
-  const { kb: kbParam } = await searchParams;
+  const { kb: kbParam, tab } = await searchParams;
+  const aiTab = tab === "ai";
 
   const store = kbStore();
   const kbs = (await store.listKbs()).filter((k) => !k.archived);
@@ -70,7 +72,7 @@ export default async function MobilePlayersPage({
         Players
       </h1>
 
-      {/* Tabs (AI players is a reserved shelf — static here) */}
+      {/* Tabs: Configured (KB-assembled) | AI (engine-backed — BEN) */}
       <div
         style={{
           display: "flex",
@@ -79,28 +81,118 @@ export default async function MobilePlayersPage({
           marginBottom: 14,
         }}
       >
-        <span
+        <Link
+          href="/m/players"
           style={{
-            borderBottom: "2px solid #205e63",
+            borderBottom: `2px solid ${aiTab ? "transparent" : "#205e63"}`,
             paddingBottom: 8,
-            font: `600 13px ${K}`,
-            color: "#173c40",
+            font: `${aiTab ? 400 : 600} 13px ${K}`,
+            color: aiTab ? "#a49d8e" : "#173c40",
+            textDecoration: "none",
           }}
         >
           Configured players
-        </span>
-        <span
+        </Link>
+        <Link
+          href="/m/players?tab=ai"
           style={{
-            borderBottom: "2px solid transparent",
+            borderBottom: `2px solid ${aiTab ? "#205e63" : "transparent"}`,
             paddingBottom: 8,
-            font: `400 13px ${K}`,
-            color: "#a49d8e",
+            font: `${aiTab ? 600 : 400} 13px ${K}`,
+            color: aiTab ? "#173c40" : "#a49d8e",
+            textDecoration: "none",
           }}
         >
           AI players
-        </span>
+        </Link>
       </div>
 
+      {aiTab ? (
+        benAvailable() ? (
+          <div
+            style={{
+              border: "1px solid #e7e1d3",
+              borderRadius: 12,
+              background: "#fffefa",
+              padding: "13px 14px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span style={{ font: `600 14px ${K}`, color: "#1d1a15" }}>
+                {BEN_SEAT_LABEL} engine
+              </span>
+              <span
+                style={{
+                  flex: "none",
+                  font: `700 8px ${K}`,
+                  letterSpacing: ".05em",
+                  textTransform: "uppercase",
+                  color: "#205e63",
+                  background: "#e2ecec",
+                  padding: "3px 7px",
+                  borderRadius: 6,
+                }}
+              >
+                neural
+              </span>
+            </div>
+            <p style={{ margin: "5px 0 0", font: `400 11px ${K}`, color: "#7b7466" }}>
+              Engine-backed — bids and plays from BEN&apos;s trained models, not from
+              knowledge packs. Also seatable anywhere from a live board&apos;s seat menus.
+            </p>
+            <div style={{ marginTop: 11, display: "flex", gap: 7 }}>
+              <form action={tryBenAction}>
+                {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                <input type="hidden" name="mobile" value="1" />
+                <button
+                  type="submit"
+                  style={{
+                    border: "none",
+                    background: "#205e63",
+                    color: "#fff",
+                    borderRadius: 8,
+                    padding: "6px 14px",
+                    font: `600 12px ${K}`,
+                    cursor: "pointer",
+                  }}
+                >
+                  Play
+                </button>
+              </form>
+              <form action={tryBenAction}>
+                {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                <input type="hidden" name="watch" value="1" />
+                <input type="hidden" name="mobile" value="1" />
+                <button type="submit" style={actionBtn}>
+                  Watch 4
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : (
+          <p
+            style={{
+              border: "1px dashed #d3ccbb",
+              borderRadius: 10,
+              padding: 16,
+              textAlign: "center",
+              font: `400 12px ${K}`,
+              color: "#a49d8e",
+            }}
+          >
+            Engine-backed players (BEN) live here — BEN_ENDPOINT isn&apos;t configured on
+            this server, so no engine is available to seat.
+          </p>
+        )
+      ) : (
+        <>
       {/* KB chips */}
       <div
         style={{
@@ -232,6 +324,8 @@ export default async function MobilePlayersPage({
           </p>
         )}
       </div>
+        </>
+      )}
     </main>
   );
 }
