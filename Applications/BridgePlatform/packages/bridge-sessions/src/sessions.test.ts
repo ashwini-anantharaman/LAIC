@@ -91,6 +91,59 @@ describe("SessionService", () => {
     expect(logic.some((e) => e.matchedRuleId)).toBe(true);
   });
 
+  it("a BEN seat acts through the injected decider; unwired BEN fails loudly", async () => {
+    const compiled = (await kbService.liveCompile(kbId))!;
+    // The injected decider stands in for the HTTP client: always bids Pass
+    // with a BEN-styled reason. (The real one lives in the web app.)
+    const benCalls: Seat[] = [];
+    const withBen = new SessionService(new InMemorySessionStore(), kbStore, {
+      now: () => NOW,
+      benDecider: ({ seat }) => ({
+        decideBid: async () => {
+          benCalls.push(seat);
+          return {
+            action: "P",
+            candidates: ["P"],
+            trace: [],
+            citedSettings: [],
+            facts: {},
+            reason: "BEN: nothing to say",
+            rejected: [],
+            fallback: false,
+          };
+        },
+        decidePlay: async () => {
+          throw new Error("not reached in this test");
+        },
+      }),
+    });
+    const record = await withBen.createSession({
+      kbId,
+      compiled,
+      seats: { ...allAi, N: { kind: "ben", label: "BEN · neural" } },
+      seed: 7,
+      createdBy: "u_rhea",
+    });
+
+    // Dealer is N (BEN): the first step must have come from the injection.
+    const view = await withBen.step(record.sessionId);
+    expect(benCalls).toEqual(["N"]);
+    const logic = view.record.events.filter(isLogicEvent);
+    expect(logic[0]?.reason).toBe("BEN: nothing to say");
+    expect(logic[0]?.seat).toBe("N");
+
+    // Without the injection, a BEN seat asked to act errors clearly instead
+    // of silently passing.
+    const bare = await service.createSession({
+      kbId,
+      compiled,
+      seats: { ...allAi, N: { kind: "ben", label: "BEN · neural" } },
+      seed: 7,
+      createdBy: "u_rhea",
+    });
+    await expect(service.step(bare.sessionId)).rejects.toThrow(/no BEN decider/);
+  });
+
   it("human seats block step, accept legal actions, reject illegal ones", async () => {
     const compiled = (await kbService.liveCompile(kbId))!;
     const record = await service.createSession({
