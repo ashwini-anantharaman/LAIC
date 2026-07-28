@@ -283,7 +283,7 @@ export function ProgramTeam() {
         <TableCell>
           {isAdmin ? (
             <div>
-              <Pill tone="accent">Admin</Pill>
+              <Pill tone="accent">Super Admin</Pill>
               <div className="text-[11px] text-muted-foreground mt-0.5">Program-level access</div>
             </div>
           ) : heldPlatform(m) ? (

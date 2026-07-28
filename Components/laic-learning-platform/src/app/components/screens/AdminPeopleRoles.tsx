@@ -555,8 +555,8 @@ export function AdminPeopleRoles() {
                         </td>
                         <td className="px-4 py-3">
                           {p.is_admin ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: 'rgba(0,0,0,0.05)', color: '#374151' }}>
-                              <Shield size={11} /> Administrator
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ background: 'rgba(0,0,0,0.05)', color: '#374151' }} title="Program-level access">
+                              <Shield size={11} /> Super Admin
                             </span>
                           ) : (
                             <select

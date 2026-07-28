@@ -36,11 +36,18 @@ export function ProgramSettings() {
 
   if (branding === undefined) return <Spinner />;
 
-  // Effective values shown in the editor: the program's own, else the org's.
+  // Effective values shown in the editor: the program's OWN branding first,
+  // then this program's shell cache (what the sidebar is actually painting —
+  // keeps the preview in sync even if the fresh fetch was empty/failed), and
+  // only then the organization's. Reading the program cache before the org's
+  // is what stops a program with its own logo from previewing the org's.
+  const progCache = readBranding(programId);
   const orgB = readBranding(orgId);
-  const accent = branding?.accent ?? orgB?.accent ?? null;
-  const logo = branding?.logo ? resolveAssetUrl(branding.logo) : orgB?.logo ?? null;
-  const favicon = branding?.favicon ? resolveAssetUrl(branding.favicon) : orgB?.favicon ?? null;
+  const accent = branding?.accent ?? progCache?.accent ?? orgB?.accent ?? null;
+  const logo =
+    (branding?.logo ? resolveAssetUrl(branding.logo) : null) ?? progCache?.logo ?? orgB?.logo ?? null;
+  const favicon =
+    (branding?.favicon ? resolveAssetUrl(branding.favicon) : null) ?? progCache?.favicon ?? orgB?.favicon ?? null;
 
   function broadcast(next: Brand | null) {
     setBranding(next);
