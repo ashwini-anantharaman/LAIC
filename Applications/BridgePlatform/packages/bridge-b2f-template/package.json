@@ -1,0 +1,26 @@
+{
+  "name": "@bridge/b2f-template",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Bridge 2 Fun training notes as knowledge: Standard American 2/1 Game Force with Texas transfers, minor-suit transfers, Gerber, and conventions switched OFF under interference. Hand-authored page by page; every item cites its page.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./install": { "types": "./src/install.ts", "default": "./src/install.ts" }
+  },
+  "scripts": { "build": "tsc --noEmit", "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "dependencies": {
+    "@bridge/config": "workspace:*",
+    "@bridge/events": "workspace:*",
+    "@bridge/kb": "workspace:*",
+    "@bridge/sayc-template": "workspace:*"
+  },
+  "devDependencies": {
+    "@bridge/engine": "workspace:*",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

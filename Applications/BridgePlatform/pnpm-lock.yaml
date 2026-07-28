@@ -35,6 +35,9 @@ importers:
       '@bridge/audit':
         specifier: workspace:*
         version: link:../../packages/bridge-audit
+      '@bridge/b2f-template':
+        specifier: workspace:*
+        version: link:../../packages/bridge-b2f-template
       '@bridge/config':
         specifier: workspace:*
         version: link:../../packages/bridge-config
@@ -47,6 +50,9 @@ importers:
       '@bridge/formats':
         specifier: workspace:*
         version: link:../../packages/bridge-formats
+      '@bridge/girkar-template':
+        specifier: workspace:*
+        version: link:../../packages/bridge-girkar-template
       '@bridge/kb':
         specifier: workspace:*
         version: link:../../packages/bridge-kb
@@ -128,6 +134,34 @@ importers:
         specifier: ^24.13.2
         version: 24.13.2
 
+  packages/bridge-b2f-template:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+      '@bridge/kb':
+        specifier: workspace:*
+        version: link:../bridge-kb
+      '@bridge/sayc-template':
+        specifier: workspace:*
+        version: link:../bridge-sayc-template
+    devDependencies:
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)
+
   packages/bridge-config: {}
 
   packages/bridge-engine:
@@ -159,6 +193,34 @@ importers:
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
+
+  packages/bridge-girkar-template:
+    dependencies:
+      '@bridge/config':
+        specifier: workspace:*
+        version: link:../bridge-config
+      '@bridge/events':
+        specifier: workspace:*
+        version: link:../bridge-events
+      '@bridge/kb':
+        specifier: workspace:*
+        version: link:../bridge-kb
+      '@bridge/sayc-template':
+        specifier: workspace:*
+        version: link:../bridge-sayc-template
+    devDependencies:
+      '@bridge/engine':
+        specifier: workspace:*
+        version: link:../bridge-engine
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)
 
   packages/bridge-kb:
     dependencies:

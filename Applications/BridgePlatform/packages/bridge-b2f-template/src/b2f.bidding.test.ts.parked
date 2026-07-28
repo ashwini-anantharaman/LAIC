@@ -1,0 +1,332 @@
+// Conformance suite for the training notes: hand + auction → the call the NOTES
+// prescribe, through the real pipeline (template → install → compile → decide).
+// Each test names its page, so a failure reads as "page N says X, we bid Y".
+//
+// Deliberately weighted toward the places this system DIFFERS from the sibling
+// girkar template, because that is where a rule copied from the wrong sibling
+// would slip through: opener's bands (12-15/16-19/20-21), Texas transfers, the
+// minor-suit transfer, inverted minors at 10+, standard rather than upside-down
+// signals, 1NT opened WITH a five-card major, and the big one — conventions
+// switched off under interference.
+
+import type { Card, Seat, Suit } from "@bridge/events";
+import { InMemoryKbStore, KbService, type CompiledKb, type SettingValue } from "@bridge/kb";
+import { createKbDecider, initialState } from "@bridge/engine";
+import { beforeAll, describe, expect, it } from "vitest";
+import { installB2fTemplate } from "./install";
+
+const rankOf: Record<string, number> = {
+  "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
+  T: 10, J: 11, Q: 12, K: 13, A: 14,
+};
+
+/** "AKQ2.T94.532.A87" in ♠.♥.♦.♣ order → the seat's 13 cards. */
+function dealFor(seat: Seat, spec: string): Record<Seat, Card[]> {
+  const suits: Suit[] = ["S", "H", "D", "C"];
+  const mine: Card[] = spec
+    .split(".")
+    .flatMap((holding, i) =>
+      [...holding].map((r) => ({ suit: suits[i]!, rank: rankOf[r]! as Card["rank"] })),
+    );
+  if (mine.length !== 13) throw new Error(`hand spec has ${mine.length} cards: ${spec}`);
+  const used = new Set(mine.map((c) => `${c.suit}${c.rank}`));
+  const rest: Card[] = [];
+  for (const suit of suits) {
+    for (let rank = 2; rank <= 14; rank++) {
+      if (!used.has(`${suit}${rank}`)) rest.push({ suit, rank: rank as Card["rank"] });
+    }
+  }
+  const others: Seat[] = (["N", "E", "S", "W"] as Seat[]).filter((s) => s !== seat);
+  const hands: Record<Seat, Card[]> = { N: [], E: [], S: [], W: [] };
+  hands[seat] = mine;
+  rest.forEach((card, i) => hands[others[i % 3]!]!.push(card));
+  return hands;
+}
+
+let compiled: CompiledKb;
+let fullPackId: string;
+
+beforeAll(async () => {
+  const store = new InMemoryKbStore();
+  const service = new KbService(store);
+  const result = await installB2fTemplate(store, service, { createdBy: "u_test" });
+  expect(result.compileError).toBeNull();
+  compiled = (await service.liveCompile(result.kbId))!;
+  fullPackId = result.packIdByKey.get("full")!;
+});
+
+async function call(
+  hand: string,
+  auction: [Seat, string][],
+  seat: Seat = "S",
+  overrides: Record<string, SettingValue> = {},
+) {
+  const state = initialState("t", "N", "none", dealFor(seat, hand));
+  state.auction = auction.map(([s, c]) => ({ seat: s, call: c as never }));
+  state.turn = seat;
+  const decider = createKbDecider({
+    compiled,
+    player: {
+      enabledPackIds: [fullPackId],
+      settingOverrides: overrides,
+      decisionPolicyId: "first_match",
+    },
+  });
+  return (await decider.decideBid(state, seat)).action;
+}
+
+const P = (s: Seat): [Seat, string] => [s, "P"];
+/** South opens after two passes. */
+const OPEN: [Seat, string][] = [P("N"), P("E")];
+const after = (...calls: [Seat, string][]): [Seat, string][] => calls;
+
+// ---------------------------------------------------------------------------
+// Page 10 — the opening list.
+// ---------------------------------------------------------------------------
+describe("page 10 — opening bids", () => {
+  it("opens 2C with 22+", async () => {
+    // AKQJ.AK5.AK5.A75 — 25 HCP
+    expect(await call("AKQJ.AK5.AK5.A75", OPEN)).toBe("2C");
+  });
+
+  it("opens 1NT with a balanced 15-17", async () => {
+    // AQ84.KJ5.AQ7.K84 — 17 HCP, 4=3=3=3
+    expect(await call("AQ84.KJ5.AQ7.K84", OPEN)).toBe("1N");
+  });
+
+  it("opens 1NT even holding a FIVE-CARD MAJOR — page 10 says so outright", async () => {
+    // AQJ86.K4.KJ5.Q86 — 16 HCP, 5=2=3=3. This is the sharpest difference from
+    // the sibling girkar template, which routes this hand to 1S.
+    expect(await call("AQJ86.K4.KJ5.Q86", OPEN)).toBe("1N");
+  });
+
+  it("opens 2NT with a balanced 20-21", async () => {
+    // AKQ8.KJ5.AQ7.K84 — 21 HCP
+    expect(await call("AKQ8.KJ5.AQ7.K84", OPEN)).toBe("2N");
+  });
+
+  it("opens the longer suit first with 5+ in a suit", async () => {
+    // AQJ87.K42.KJ4.Q8 — 14 HCP, five spades, unbalanced for 1NT? 5=3=3=2 is
+    // balanced but 14 is below the 1NT range, so the suit ladder applies.
+    expect(await call("AQJ87.K42.KJ4.Q8", OPEN)).toBe("1S");
+  });
+
+  it("prefers the higher-ranking suit when 5-5", async () => {
+    // AQJ87.KQJ87.K4.2 — five spades and five hearts → the higher, 1S
+    expect(await call("AQJ87.KQJ87.K4.2", OPEN)).toBe("1S");
+  });
+
+  it("opens the LONGER minor by default", async () => {
+    // AQ85.KJ87.K42.Q4 — 13 HCP, 4=4=3=2: three diamonds against two clubs, so
+    // the longer minor is diamonds.
+    expect(await call("AQ85.KJ87.K42.Q4", OPEN)).toBe("1D");
+  });
+
+  it("opens 1C when the minors are 3-3", async () => {
+    // AQ85.K42.K87.Q94 — 13 HCP, 4=3=3=3. Page 10: "1c with 3-3".
+    expect(await call("AQ85.K42.K87.Q94", OPEN)).toBe("1C");
+  });
+
+  it("opens 1D with 4-4 in the minors", async () => {
+    // AQ8.KJ8.K942.Q42 — page 10: "1d with 4-4 ... in minors"
+    expect(await call("AQ8.KJ8.K942.Q42", OPEN)).toBe("1D");
+  });
+
+  it("opens a weak two with 6-11 and a six-card suit", async () => {
+    // AQ9753.J4.862.73 — 7 HCP, six spades
+    expect(await call("AQ9753.J4.862.73", OPEN)).toBe("2S");
+  });
+
+  it("opens at the three level with a seven-card suit", async () => {
+    // 83.KJT9754.9.Q62 — 7 HCP, seven hearts
+    expect(await call("83.KJT9754.9.Q62", OPEN)).toBe("3H");
+  });
+
+  it("passes below 6", async () => {
+    // K74.83.Q9642.973 — 5 HCP
+    expect(await call("K74.83.Q9642.973", OPEN)).toBe("P");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pages 1-2 and 10-11 — responses to 1NT. Texas, Jacoby and the minor transfer.
+// ---------------------------------------------------------------------------
+describe("pages 1-2, 10 — responses to 1NT", () => {
+  const over1N = (): [Seat, string][] => [P("E"), ["N", "1N"], P("E")];
+
+  it("TEXAS transfers with a six-card major and 10-14", async () => {
+    // 4.AKJ976.KQ4.873 — 13 HCP, six hearts → 4D (Texas), not 2D (Jacoby)
+    expect(await call("4.AKJ976.KQ4.873", over1N())).toBe("4D");
+  });
+
+  it("JACOBY transfers with a five-card major and next to nothing", async () => {
+    // 94.A9753.862.953 — 4 HCP, five hearts → 2D with 0+ points
+    expect(await call("94.A9753.862.953", over1N())).toBe("2D");
+  });
+
+  it("Jacoby transfers with a six-card major at 15-16 — the Texas hole", async () => {
+    // AKJ976.4.KQ4.AJ3 — 16 HCP, six spades. Page 2 routes 15-16 through
+    // Jacoby (then a jump to 4M), NOT through Texas.
+    expect(await call("AKJ976.4.KQ4.AJ3", over1N())).toBe("2H");
+  });
+
+  it("bids Stayman with 8+ and a four-card major", async () => {
+    // A864.93.KQ5.9752 — 9 HCP, four spades
+    expect(await call("A864.93.KQ5.9752", over1N())).toBe("2C");
+  });
+
+  it("transfers to clubs with 2S holding a long weak minor", async () => {
+    // 94.86.53.KQ97542 — 5 HCP, seven clubs → 2S (pages 2 and 10)
+    expect(await call("94.86.53.KQ97542", over1N())).toBe("2S");
+  });
+
+  it("transfers to diamonds with 2NT holding a long weak minor", async () => {
+    // 94.86.KQ97542.53 — 5 HCP, seven diamonds → 2NT (pages 2 and 10)
+    expect(await call("94.86.KQ97542.53", over1N())).toBe("2N");
+  });
+
+  it("bids 3NT with 10-14 and no major interest", async () => {
+    // A86.Q3.KQ752.972 — 12 HCP, no four-card major, no five-card major
+    expect(await call("A86.Q3.KQ752.972", over1N())).toBe("3N");
+  });
+
+  it("passes with 0-7 and nothing to show", async () => {
+    // K86.Q3.9742.9752 — 6 HCP, no five-card major, no six-card minor
+    expect(await call("K86.Q3.9742.9752", over1N())).toBe("P");
+  });
+
+  it("opener completes a Jacoby transfer", async () => {
+    expect(
+      await call("AQ84.KJ5.AQ7.K84", after(P("E"), ["N", "1N"], P("E"), ["S", "2D"], P("W")), "N"),
+    ).toBe("2H");
+  });
+
+  it("opener completes a Texas transfer at the four level", async () => {
+    expect(
+      await call("AQ84.KJ5.AQ7.K84", after(P("E"), ["N", "1N"], P("E"), ["S", "4D"], P("W")), "N"),
+    ).toBe("4H");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Page 10 — responses to a major, and the forcing 1NT.
+// ---------------------------------------------------------------------------
+describe("page 10 — responses to 1S", () => {
+  const over1S = (): [Seat, string][] => [P("E"), ["N", "1S"], P("E")];
+
+  it("bids Jacoby 2NT with 12+ and four-card support", async () => {
+    // AQ86.KJ74.K93.95 — 14 HCP, four spades, no singleton
+    expect(await call("AQ86.KJ74.K93.95", over1S())).toBe("2N");
+  });
+
+  it("makes a limit raise to 3S with 10-11 and four-card support", async () => {
+    // A864.KJ74.93.Q95 — 11 HCP, four spades
+    expect(await call("A864.KJ74.93.Q95", over1S())).toBe("3S");
+  });
+
+  it("raises to 2S with 6-9 and three-card support", async () => {
+    // K74.Q83.964.J853 — 7 HCP, three spades
+    expect(await call("K74.Q83.964.J853", over1S())).toBe("2S");
+  });
+
+  it("bids 4S with five-card support and 0-9 — preemptive and constructive", async () => {
+    // K9753.83.962.963 — 3 HCP, five spades
+    expect(await call("K9753.83.962.963", over1S())).toBe("4S");
+  });
+
+  it("bids the FORCING 1NT with 6-11 and no support", async () => {
+    // 96.83.AQJ975.952 — 8 HCP, two spades
+    expect(await call("96.83.AQJ975.952", over1S())).toBe("1N");
+  });
+
+  it("makes a 2/1 game force with 12+ and its own suit", async () => {
+    // 95.K4.AQJ86.KQ73 — 16 HCP, two spades → 2D (one of the notes' six 2/1s)
+    expect(await call("95.K4.AQJ86.KQ73", over1S())).toBe("2D");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Page 10 — responses to a minor. Inverted minors at 10+, NOT 9+.
+// ---------------------------------------------------------------------------
+describe("page 10 — responses to 1C, inverted minors", () => {
+  const over1C = (): [Seat, string][] => [P("E"), ["N", "1C"], P("E")];
+
+  it("makes the STRONG inverted raise 2C with 10+ and five-card support", async () => {
+    // K74.K83.A5.98652 — 10 HCP exactly, five clubs. The notes set this
+    // threshold at 10+; the sibling template uses 9+.
+    expect(await call("K74.K83.A5.98652", over1C())).toBe("2C");
+  });
+
+  it("makes the WEAK raise 3C with 6-9 and five-card support", async () => {
+    // K74.83.975.KJ862 — 8 HCP, five clubs
+    expect(await call("K74.83.975.KJ862", over1C())).toBe("3C");
+  });
+
+  it("a nine-count with five-card support is WEAK here — 3C, not 2C", async () => {
+    // K74.83.Q75.KJ862 — 9 HCP. The sibling template's inverted raise starts at
+    // 9 and would bid 2C; these notes start at 10, so nine is still the weak raise.
+    expect(await call("K74.83.Q75.KJ862", over1C())).toBe("3C");
+  });
+
+  it("prefers showing a major over showing support", async () => {
+    // KQ86.93.A9752.94 — 11 HCP with four spades and five diamonds: page 10
+    // says prioritize the major.
+    expect(await call("KQ86.93.A9752.94", over1C())).toBe("1S");
+  });
+
+  it("bids a NON-forcing 1NT with 6-9 and no major", async () => {
+    // K86.953.A75.J974 — 9 HCP
+    expect(await call("K86.953.A75.J974", over1C())).toBe("1N");
+  });
+
+  it("bids 2NT with 10-11 and no major", async () => {
+    // K86.K53.A75.J974 — 11 HCP
+    expect(await call("K86.K53.A75.J974", over1C())).toBe("2N");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Page 11 — opener's rebids. The bands are 12-15 / 16-19 / 20-21.
+// ---------------------------------------------------------------------------
+describe("page 11 — opener's bands after 1S-2S", () => {
+  const raised = (): [Seat, string][] => [P("E"), ["N", "1S"], P("E"), ["S", "2S"], P("W")];
+
+  it("passes 2S with 12-15", async () => {
+    // AQ874.K42.KJ4.83 — 13 HCP. Girkar's low band tops at 14; here it is 15.
+    expect(await call("AQ874.K42.KJ4.83", raised(), "N")).toBe("P");
+  });
+
+  it("still passes 2S with 15 — the top of THIS system's low band", async () => {
+    // AQ874.KQ2.KJ4.83 — 15 HCP. In the sibling template 15 is medium and would
+    // invite; here it is a minimum and passes.
+    expect(await call("AQ874.KQ2.KJ4.83", raised(), "N")).toBe("P");
+  });
+
+  it("raises to 4S with 20-21", async () => {
+    // AQJ84.AKQ.KJ4.A3 — 21 HCP
+    expect(await call("AQJ84.AKQ.KJ4.A3", raised(), "N")).toBe("4S");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Page 15 — the systemic rule: conventions are OFF under interference.
+// ---------------------------------------------------------------------------
+describe("page 15 — conventions switch off when the opponents interfere", () => {
+  it("Jacoby 2NT is OFF over an overcall — the hand cuebids instead", async () => {
+    // The same 14-count with four-card spade support that bids 2NT uncontested.
+    const contested = await call("AQ86.KJ74.K93.95", after(P("E"), ["N", "1S"], ["E", "2C"]));
+    expect(contested).not.toBe("2N");
+    expect(contested).toBe("3C");
+  });
+
+  it("2M over interference shows weak 3-card support (6-9), not a limit raise", async () => {
+    // K74.Q83.964.J853 — 7 HCP, three spades
+    expect(await call("K74.Q83.964.J853", after(P("E"), ["N", "1S"], ["E", "2C"]))).toBe("2S");
+  });
+
+  it("1NT over a one-level overcall is natural 6-9 with a control, not forcing", async () => {
+    // 1H-(1S): 1NT is still available. KJ6.94.Q8752.K73 — 9 HCP, a spade control
+    // and no heart support, which is exactly the hand page 15 assigns to 1NT.
+    expect(await call("KJ6.94.Q8752.K73", after(P("E"), ["N", "1H"], ["E", "1S"]))).toBe("1N");
+  });
+});

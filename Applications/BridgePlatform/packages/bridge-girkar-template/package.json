@@ -1,0 +1,26 @@
+{
+  "name": "@bridge/girkar-template",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The teaching-deck system: Standard American 2/1 Game Force as taught in Milind Girkar's \"Introduction to Bridge\" slides, hand-authored from the deck slide by slide. Every item cites the slide it came from and stays fully editable in the workspace.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./install": { "types": "./src/install.ts", "default": "./src/install.ts" }
+  },
+  "scripts": { "build": "tsc --noEmit", "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "dependencies": {
+    "@bridge/config": "workspace:*",
+    "@bridge/events": "workspace:*",
+    "@bridge/kb": "workspace:*",
+    "@bridge/sayc-template": "workspace:*"
+  },
+  "devDependencies": {
+    "@bridge/engine": "workspace:*",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

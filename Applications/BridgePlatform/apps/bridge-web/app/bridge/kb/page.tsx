@@ -8,6 +8,7 @@ import {
   createKbAction,
   deriveKbAction,
   duplicateKbAction,
+  installGirkarTemplateAction,
   installSaycTemplateAction,
   setKbArchivedAction,
 } from "./actions";
@@ -316,6 +317,35 @@ export default async function KbListPage({
             className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
           >
             Install curated SAYC
+          </button>
+        </form>
+      </section>
+
+      <section className="mt-6 rounded-lg border border-amber-300 bg-amber-50/40 p-5">
+        <h2 className="font-medium">Start from the teaching deck</h2>
+        <p className="mt-1 max-w-2xl text-xs text-neutral-600">
+          Standard American 2/1 Game Force as taught in Milind Girkar&apos;s{" "}
+          <em>Introduction to Bridge</em> — authored by reading all 88 slides one at a time,
+          so the bidding tables, the orange forcing rows and the support&#8239;×&#8239;strength
+          matrices came through intact. Includes the opening table, the full 1NT and 2NT
+          response tables, 2/1 game-force responses and rebids, competitive bidding, Roman
+          keycards, fourth-best leads and upside-down count and attitude. Every item cites the
+          slide it came from, so a reviewer can check the rule against the picture.
+        </p>
+        <form action={installGirkarTemplateAction} className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-neutral-500">Template KB name (optional)</span>
+            <input
+              name="name"
+              placeholder="Introduction to Bridge (teaching deck)"
+              className="w-72 rounded border border-neutral-300 px-2 py-1.5"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded bg-amber-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-amber-800"
+          >
+            Install the teaching deck
           </button>
         </form>
       </section>
