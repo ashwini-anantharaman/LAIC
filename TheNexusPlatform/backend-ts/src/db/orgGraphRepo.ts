@@ -1280,6 +1280,15 @@ export async function acceptInvitation(
       await tx.execute(
         sql`insert into org_memberships (org_id, profile_id, role, program_id) values (${orgId}, ${profileId}, 'member', null) on conflict do nothing`,
       );
+    } else if (inv.programId && inv.role === "member") {
+      // Program-scoped plain member (a program / Content Studio / Bridge invite):
+      // add them to THIS program so they gain access; their pre-assigned
+      // program/platform role (email-keyed at invite time) then governs what
+      // they can do. Without this branch the invitation accepted but created no
+      // membership — the person never appeared in the program.
+      await tx.execute(
+        sql`insert into org_memberships (org_id, profile_id, role, program_id) values (${orgId}, ${profileId}, 'member', ${inv.programId}) on conflict do nothing`,
+      );
     } else if (inv.offeringId) {
       await tx.insert(participants).values({
         organizationId: orgId, programId: inv.programId, offeringId: inv.offeringId,
