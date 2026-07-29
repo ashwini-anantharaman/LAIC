@@ -72,6 +72,9 @@ export interface RgAdapter {
   areas: RgArea[];
   /** Optional: preview the platform as a holder of this role ("Test as"). */
   testAsRole?: (role: RgRole) => void;
+  /** Optional: read-only structural tiers (Super Admin, etc.) that aren't custom
+   *  roles but should still be visible in the "roles (non grouped)" panel. */
+  structuralRoles?: { name: string; description?: string }[];
   /** Optional: load the Access Catalogue(s) whose fine-grained capabilities this
    *  level's roles can grant. When present, the builder shows a capabilities
    *  section (reserved capabilities are hidden). */
@@ -411,6 +414,7 @@ export function RolesAndGroups({ adapter }: { adapter: RgAdapter }) {
   const [editing, setEditing] = useState<{ kind: Kind; role?: RgRole; group?: RgGroup } | "new" | null>(null);
   const [drag, setDrag] = useState<DragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
+  const [nonGroupedOpen, setNonGroupedOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [rs, gs] = await Promise.all([adapter.loadRoles(), adapter.loadGroups()]);
@@ -487,35 +491,19 @@ export function RolesAndGroups({ adapter }: { adapter: RgAdapter }) {
     );
   };
 
-  // Roles that don't surface as their own group node — easy to overlook in the
-  // tree, so we also expose them in a dedicated dropdown to edit / stay aware of.
+  // Roles that don't surface as their own group node — both editable custom
+  // roles and read-only structural tiers (Super Admin, etc.). Collected at the
+  // bottom in a collapsible so they're discoverable even though they aren't in
+  // the tree.
   const plainRoles = roles.filter((r) => !r.display_as_group);
+  const structural = adapter.structuralRoles ?? [];
+  const nonGroupedCount = plainRoles.length + structural.length;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">Drag a role or group onto a group to nest it — or onto the top zone to lift it out.</p>
-        <div className="flex items-center gap-2">
-          {plainRoles.length ? (
-            <Select
-              value=""
-              onValueChange={(id) => {
-                const r = plainRoles.find((x) => x.id === id);
-                if (r) setEditing({ kind: "role", role: r });
-              }}
-            >
-              <SelectTrigger className="h-8 w-64" title="Roles that aren't shown as their own group">
-                <SelectValue placeholder={`Edit a role · ${plainRoles.length} not shown as groups`} />
-              </SelectTrigger>
-              <SelectContent>
-                {plainRoles.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : null}
-          <Button size="sm" onClick={() => setEditing("new")}><Plus className="size-3.5" /> Create role or group</Button>
-        </div>
+        <Button size="sm" onClick={() => setEditing("new")}><Plus className="size-3.5" /> Create role or group</Button>
       </div>
 
       {/* Top-level drop zone */}
@@ -532,6 +520,63 @@ export function RolesAndGroups({ adapter }: { adapter: RgAdapter }) {
       ) : (
         <div className="space-y-1">{tree.map((n) => renderNode(n, 0))}</div>
       )}
+
+      {/* Roles that aren't shown as their own group — editable customs + read-only
+          structural tiers, so their existence is visible even off the tree. */}
+      {nonGroupedCount > 0 ? (
+        <div className="rounded-lg border border-border">
+          <button
+            type="button"
+            onClick={() => setNonGroupedOpen((v) => !v)}
+            className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+            aria-expanded={nonGroupedOpen}
+          >
+            <ChevronRight className={`size-4 text-muted-foreground transition-transform ${nonGroupedOpen ? "rotate-90" : ""}`} />
+            <span className="text-sm font-medium text-foreground">roles (non grouped)</span>
+            <span className="text-xs text-muted-foreground">{nonGroupedCount}</span>
+          </button>
+          {nonGroupedOpen ? (
+            <div className="space-y-1 border-t border-border p-2">
+              {plainRoles.map((r) => (
+                <div key={`plain:${r.id}`} className="group flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+                  <Shield className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{r.name}</span>
+                  <Pill tone="neutral">role</Pill>
+                  {adapter.testAsRole ? (
+                    <button type="button" title="Preview as a holder of this role"
+                      onClick={() => adapter.testAsRole!(r)}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100">
+                      <Eye className="size-3.5" /> Test as
+                    </button>
+                  ) : null}
+                  <button type="button" title="Edit"
+                    onClick={() => setEditing({ kind: "role", role: r })}
+                    className="text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100">
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <ConfirmButton
+                    title={`Delete role "${r.name}"?`} description="People holding it lose the role." actionLabel="Delete"
+                    onConfirm={async () => { try { await adapter.deleteRole(r.id); await load(); } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); } }}
+                    buttonTitle="Delete"
+                  >
+                    <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                  </ConfirmButton>
+                </div>
+              ))}
+              {structural.map((s) => (
+                <div key={`struct:${s.name}`} className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  <Shield className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="text-sm font-medium text-foreground">{s.name}</span>
+                    {s.description ? <span className="block text-xs text-muted-foreground">{s.description}</span> : null}
+                  </span>
+                  <Pill tone="accent">view only</Pill>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <EditorDialog open={editing !== null} onClose={() => setEditing(null)} adapter={adapter} groups={groups} editing={editing} onDone={load} />
     </div>

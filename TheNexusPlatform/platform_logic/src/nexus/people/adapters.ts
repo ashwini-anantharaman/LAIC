@@ -99,6 +99,9 @@ export function programRgAdapter(
             ...(PROGRAM_AREA_GROUP[key] ? { capabilityGroup: { catalogueId: "program-console", groupId: PROGRAM_AREA_GROUP[key] } } : {}),
           },
     ),
+    structuralRoles: [
+      { name: "Super Admin", description: "Program administrator (full access) — holds every capability; not editable." },
+    ],
     // A program role grants THIS program's console capabilities + the platforms it
     // opens (learning/bridge inventory is platform-global).
     loadCatalogues: catalogueLoader([
@@ -127,6 +130,10 @@ export function orgRgAdapter(orgId: string): RgAdapter {
       { key: "audit", label: "Audit", kind: "toggle", grant: "view", capabilityGroup: { catalogueId: "org-console", groupId: "audit" } },
       { key: "gates", label: "Gates", kind: "toggle", grant: "edit", capabilityGroup: { catalogueId: "org-console", groupId: "gates" } },
     ],
+    structuralRoles: [
+      { name: "Super Admin", description: "Organization owner (full access) — holds every capability; not editable." },
+      { name: "Admin", description: "Organization administrator — full workspace, set by the owner." },
+    ],
     loadCatalogues: catalogueLoader([() => getOrgCatalogue(orgId)]),
   };
 }
@@ -149,6 +156,9 @@ export function nexusRgAdapter(): RgAdapter {
       { key: "settings", label: "Settings", kind: "toggle", grant: "edit", capabilityGroup: { catalogueId: "nexus-console", groupId: "settings" } },
       { key: "test1", label: "Test 1", kind: "toggle", grant: "view", capabilityGroup: { catalogueId: "nexus-console", groupId: "test1" } },
       { key: "test2", label: "Test 2", kind: "toggle", grant: "view", capabilityGroup: { catalogueId: "nexus-console", groupId: "test2" } },
+    ],
+    structuralRoles: [
+      { name: "Super Admin", description: "Platform operator (full access) — holds every capability; not editable." },
     ],
     loadCatalogues: catalogueLoader([() => getCatalogue("nexus-console")]),
   };
