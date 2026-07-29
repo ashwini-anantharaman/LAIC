@@ -71,7 +71,7 @@ function emptyPolicy(catalogue?: CapabilityCatalogueDocument): AccessPolicyDocum
     id: 'bridge-learning-access-policy',
     name: 'Bridge Learning Access Policy',
     description:
-      'Live roles for the Bridge Content Studio instance. Sample roles sync from the Learning capability catalogue on Save.',
+      'Sample roles sync from the Access Catalog on save.',
     rootOrganizationId: 'life-in-ai-center',
     scopeRef: { type: 'program', id: BRIDGE_PROGRAM_ID },
     platformInstances: [

@@ -489,7 +489,7 @@ export function AdminPeopleRoles() {
         </p>
         {customRoles.length === 0 ? (
           <div className="p-5 rounded-[22px] text-center" style={{ background: 'rgba(255,255,255,0.55)', border: '1px dashed rgba(0,0,0,0.1)' }}>
-            <p style={{ fontSize: 13, color: '#9AA3AF' }}>No custom roles yet. Duplicate a catalogue role above, or create one from scratch.</p>
+            <p style={{ fontSize: 13, color: '#9AA3AF' }}>No custom roles yet. Duplicate a sample role above, or create one from scratch.</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
