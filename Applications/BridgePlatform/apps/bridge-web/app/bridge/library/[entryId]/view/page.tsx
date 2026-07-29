@@ -40,7 +40,7 @@ export default async function LibraryHandViewerPage({
       </p>
       <div className="overflow-hidden rounded-lg" style={{ height: "calc(100vh - 7.5rem)" }}>
         <HandViewer
-          boardLabel={/(\d+)\s*$/.exec(entry.name)?.[1] ?? entry.name}
+          boardLabel={/(\d+)(?!.*\d)/.exec(entry.name)?.[1] ?? entry.name}
           dealer={entry.dealer ?? "N"}
           vul={entry.vul ?? "none"}
           hands={entry.hands}

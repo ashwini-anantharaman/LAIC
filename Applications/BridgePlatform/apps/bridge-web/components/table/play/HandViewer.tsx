@@ -104,7 +104,7 @@ export function HandViewer({
       {vulArm("N")}
       <div style={{ background: "#000" }} />
       {vulArm("W")}
-      <div title={String(boardLabel)} style={{ background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: String(boardLabel).length > 3 ? 40 : 104, fontWeight: 700, color: "#000", overflow: "hidden", padding: "0 4px", textAlign: "center", lineHeight: 1, wordBreak: "break-all" }}>{boardLabel}</div>
+      <div title={String(boardLabel)} style={{ background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: String(boardLabel).length > 8 ? 24 : String(boardLabel).length > 3 ? 40 : 104, fontWeight: 700, color: "#000", overflow: "hidden", padding: "0 4px", textAlign: "center", lineHeight: 1.05, wordBreak: "break-all" }}>{boardLabel}</div>
       {vulArm("E")}
       <div style={{ background: "#000" }} />
       {vulArm("S")}
