@@ -63,6 +63,11 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
   const [busy, setBusy] = useState(false);
   const [capEdit, setCapEdit] = useState<Capability | "new" | null>(null);
   const [surfEdit, setSurfEdit] = useState<UiSurface | "new" | null>(null);
+  // When adding a cap/surface from inside a group, pre-scope the dialog to it.
+  const [capDefaultGroup, setCapDefaultGroup] = useState<string | null>(null);
+  const [surfDefaultGroup, setSurfDefaultGroup] = useState<string | null>(null);
+  const addCapToGroup = (gid: string) => { setCapDefaultGroup(gid); setCapEdit("new"); };
+  const addSurfToGroup = (gid: string) => { setSurfDefaultGroup(gid); setSurfEdit("new"); };
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const toggleGroup = (id: string) =>
     setExpandedGroups((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -244,14 +249,25 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
                           {caps.length ? (
                             <div className="flex flex-col gap-1">
                               {caps.map((c) => (
-                                <div key={c.id} className="flex items-center gap-2 text-sm">
+                                <div key={c.id} className="group/row flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-accent/40">
                                   <span className="text-foreground">{c.label}</span>
                                   <span className="font-mono text-xs text-muted-foreground">{c.id}</span>
                                   {c.reserved ? <Pill tone="accent">reserved · {c.reserved}</Pill> : null}
+                                  {canEdit ? (
+                                    <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover/row:opacity-100">
+                                      <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => setCapEdit(c)}>Edit</Button>
+                                      <ConfirmButton title={`Delete "${c.label}"?`} description="Removed from roles and surfaces too." actionLabel="Delete" onConfirm={() => removeCap(c.id)} buttonTitle="Delete capability">
+                                        <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                                      </ConfirmButton>
+                                    </div>
+                                  ) : null}
                                 </div>
                               ))}
                             </div>
                           ) : <p className="text-xs text-muted-foreground">None in this group.</p>}
+                          {canEdit ? (
+                            <Button size="sm" variant="outline" className="mt-1.5 h-7" onClick={() => addCapToGroup(g.id)}><Plus className="size-3.5" /> Add capability</Button>
+                          ) : null}
                         </div>
                         <div>
                           <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -260,14 +276,25 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
                           {surfs.length ? (
                             <div className="flex flex-col gap-1">
                               {surfs.map((s) => (
-                                <div key={s.id} className="flex items-center gap-2 text-sm">
+                                <div key={s.id} className="group/row flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-accent/40">
                                   <span className="text-foreground">{s.label}</span>
                                   <span className="font-mono text-xs text-muted-foreground">{s.id}</span>
                                   <Pill tone="neutral">{s.kind}</Pill>
+                                  {canEdit ? (
+                                    <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover/row:opacity-100">
+                                      <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => setSurfEdit(s)}>Edit</Button>
+                                      <ConfirmButton title={`Delete surface "${s.label}"?`} description="" actionLabel="Delete" onConfirm={() => removeSurf(s.id)} buttonTitle="Delete surface">
+                                        <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                                      </ConfirmButton>
+                                    </div>
+                                  ) : null}
                                 </div>
                               ))}
                             </div>
                           ) : <p className="text-xs text-muted-foreground">None in this group.</p>}
+                          {canEdit ? (
+                            <Button size="sm" variant="outline" className="mt-1.5 h-7" onClick={() => addSurfToGroup(g.id)}><Plus className="size-3.5" /> Add surface</Button>
+                          ) : null}
                         </div>
                       </div>
                     ) : null}
@@ -364,8 +391,8 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
         </>
       )}
 
-      {capEdit && doc ? <CapabilityDialog doc={doc} initial={capEdit === "new" ? null : capEdit} onClose={() => setCapEdit(null)} onSave={upsertCap} /> : null}
-      {surfEdit && doc ? <SurfaceDialog doc={doc} initial={surfEdit === "new" ? null : surfEdit} onClose={() => setSurfEdit(null)} onSave={upsertSurf} /> : null}
+      {capEdit && doc ? <CapabilityDialog doc={doc} initial={capEdit === "new" ? null : capEdit} defaultGroup={capDefaultGroup} onClose={() => { setCapEdit(null); setCapDefaultGroup(null); }} onSave={upsertCap} /> : null}
+      {surfEdit && doc ? <SurfaceDialog doc={doc} initial={surfEdit === "new" ? null : surfEdit} defaultGroup={surfDefaultGroup} onClose={() => { setSurfEdit(null); setSurfDefaultGroup(null); }} onSave={upsertSurf} /> : null}
     </div>
   );
 }
@@ -393,10 +420,10 @@ function JsonView({ title, value }: { title: string; value: unknown }) {
   );
 }
 
-function CapabilityDialog({ doc, initial, onClose, onSave }: { doc: CapabilityCatalogueDocument; initial: Capability | null; onClose: () => void; onSave: (c: Capability) => void }) {
+function CapabilityDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc: CapabilityCatalogueDocument; initial: Capability | null; defaultGroup?: string | null; onClose: () => void; onSave: (c: Capability) => void }) {
   const [id, setId] = useState(initial?.id ?? "");
   const [label, setLabel] = useState(initial?.label ?? "");
-  const [group, setGroup] = useState(initial?.group ?? doc.groups[0]?.id ?? "");
+  const [group, setGroup] = useState(initial?.group ?? defaultGroup ?? doc.groups[0]?.id ?? "");
   const [reserved, setReserved] = useState<ReservedTier | "none">(initial?.reserved ?? "none");
   const [typeScoped, setTypeScoped] = useState(!!initial?.supportsResourceConstraints);
   const effId = initial ? initial.id : (id.trim() || slug(label));
@@ -433,11 +460,11 @@ function CapabilityDialog({ doc, initial, onClose, onSave }: { doc: CapabilityCa
   );
 }
 
-function SurfaceDialog({ doc, initial, onClose, onSave }: { doc: CapabilityCatalogueDocument; initial: UiSurface | null; onClose: () => void; onSave: (s: UiSurface) => void }) {
+function SurfaceDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc: CapabilityCatalogueDocument; initial: UiSurface | null; defaultGroup?: string | null; onClose: () => void; onSave: (s: UiSurface) => void }) {
   const [id, setId] = useState(initial?.id ?? "");
   const [label, setLabel] = useState(initial?.label ?? "");
   const [kind, setKind] = useState<UiSurfaceKind>(initial?.kind ?? "navigation");
-  const [group, setGroup] = useState(initial?.group ?? doc.groups[0]?.id ?? "");
+  const [group, setGroup] = useState(initial?.group ?? defaultGroup ?? doc.groups[0]?.id ?? "");
   const [route, setRoute] = useState(initial?.routeOrComponent ?? "");
   const [req, setReq] = useState<Set<string>>(new Set(initial?.requiredAnyCapabilities ?? []));
   const effId = initial ? initial.id : (id.trim() || slug(label));

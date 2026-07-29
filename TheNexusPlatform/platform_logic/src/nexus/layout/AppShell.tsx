@@ -582,7 +582,7 @@ export function AppShell() {
     if (user?.role !== "platform_admin") {
       const perms = user?.nexus_role?.perms ?? {};
       const NEXUS_NAV_AREAS: Record<string, string | null> = {
-        orgs: "organizations", team: "__admin__", "access-catalogue": "__admin__", "nexus-gates": "__admin__", audit: "audit", settings: "settings",
+        orgs: "organizations", team: "__admin__", "access-catalogue": "__admin__", "nexus-gates": "nexus-gates", audit: "audit", settings: "settings",
         test1: "test1", test2: "test2",
       };
       items = items.filter((it) => {

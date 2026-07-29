@@ -45,6 +45,11 @@ export function CatalogueEditor({ initial, canEdit }: { initial: BridgeCatalogue
   const [toast, setToast] = useState("");
   const [capEdit, setCapEdit] = useState<BridgeCapability | "new" | null>(null);
   const [surfEdit, setSurfEdit] = useState<BridgeUiSurface | "new" | null>(null);
+  // When adding a cap/surface from inside a group, pre-scope the dialog to it.
+  const [capDefaultGroup, setCapDefaultGroup] = useState<string | null>(null);
+  const [surfDefaultGroup, setSurfDefaultGroup] = useState<string | null>(null);
+  const addCapToGroup = (gid: string) => { setCapDefaultGroup(gid); setCapEdit("new"); };
+  const addSurfToGroup = (gid: string) => { setSurfDefaultGroup(gid); setSurfEdit("new"); };
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const fire = (m: string) => { setToast(m); window.setTimeout(() => setToast(""), 2400); };
@@ -180,22 +185,36 @@ export function CatalogueEditor({ initial, canEdit }: { initial: BridgeCatalogue
                     <div>
                       <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Capabilities</p>
                       {caps.length ? caps.map((c) => (
-                        <div key={c.id} className="flex flex-wrap items-baseline gap-2 py-0.5 text-sm">
+                        <div key={c.id} className="flex flex-wrap items-center gap-2 py-0.5 text-sm">
                           <span className="text-neutral-800">{c.label}</span>
                           <span className="font-mono text-xs text-neutral-400">{c.id}</span>
                           {c.reserved ? <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">reserved · {c.reserved}</span> : null}
+                          {canEdit ? (
+                            <span className="ml-auto flex items-center gap-2">
+                              <button type="button" onClick={() => setCapEdit(c)} className="text-xs text-neutral-600 hover:underline">Edit</button>
+                              <button type="button" onClick={() => removeCap(c.id)} className="text-xs text-red-600 hover:underline">Delete</button>
+                            </span>
+                          ) : null}
                         </div>
                       )) : <p className="text-xs text-neutral-400">None in this group.</p>}
+                      {canEdit ? <button type="button" onClick={() => addCapToGroup(g.id)} className="mt-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100">+ Add capability</button> : null}
                     </div>
                     <div>
                       <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Surfaces</p>
                       {surfs.length ? surfs.map((s) => (
-                        <div key={s.id} className="flex flex-wrap items-baseline gap-2 py-0.5 text-sm">
+                        <div key={s.id} className="flex flex-wrap items-center gap-2 py-0.5 text-sm">
                           <span className="text-neutral-800">{s.label}</span>
                           <span className="font-mono text-xs text-neutral-400">{s.id}</span>
                           <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-500">{s.kind}</span>
+                          {canEdit ? (
+                            <span className="ml-auto flex items-center gap-2">
+                              <button type="button" onClick={() => setSurfEdit(s)} className="text-xs text-neutral-600 hover:underline">Edit</button>
+                              <button type="button" onClick={() => removeSurf(s.id)} className="text-xs text-red-600 hover:underline">Delete</button>
+                            </span>
+                          ) : null}
                         </div>
                       )) : <p className="text-xs text-neutral-400">None in this group.</p>}
+                      {canEdit ? <button type="button" onClick={() => addSurfToGroup(g.id)} className="mt-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100">+ Add surface</button> : null}
                     </div>
                   </div>
                 ) : null}
@@ -286,8 +305,8 @@ export function CatalogueEditor({ initial, canEdit }: { initial: BridgeCatalogue
       {tab === "json" && <JsonView title="Live catalogue document" value={doc} />}
       {tab === "schema" && <JsonView title="JSON Schema" value={schemaJson} />}
 
-      {capEdit && canEdit ? <CapabilityDialog doc={doc} initial={capEdit === "new" ? null : capEdit} onClose={() => setCapEdit(null)} onSave={upsertCap} /> : null}
-      {surfEdit && canEdit ? <SurfaceDialog doc={doc} initial={surfEdit === "new" ? null : surfEdit} onClose={() => setSurfEdit(null)} onSave={upsertSurf} /> : null}
+      {capEdit && canEdit ? <CapabilityDialog doc={doc} initial={capEdit === "new" ? null : capEdit} defaultGroup={capDefaultGroup} onClose={() => { setCapEdit(null); setCapDefaultGroup(null); }} onSave={upsertCap} /> : null}
+      {surfEdit && canEdit ? <SurfaceDialog doc={doc} initial={surfEdit === "new" ? null : surfEdit} defaultGroup={surfDefaultGroup} onClose={() => { setSurfEdit(null); setSurfDefaultGroup(null); }} onSave={upsertSurf} /> : null}
 
       {toast ? (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white shadow-lg">{toast}</div>
@@ -331,10 +350,10 @@ function Modal({ title, children, footer }: { title: string; children: React.Rea
   );
 }
 
-function CapabilityDialog({ doc, initial, onClose, onSave }: { doc: BridgeCatalogue; initial: BridgeCapability | null; onClose: () => void; onSave: (c: BridgeCapability) => void }) {
+function CapabilityDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc: BridgeCatalogue; initial: BridgeCapability | null; defaultGroup?: string | null; onClose: () => void; onSave: (c: BridgeCapability) => void }) {
   const [id, setId] = useState(initial?.id ?? "");
   const [label, setLabel] = useState(initial?.label ?? "");
-  const [group, setGroup] = useState(initial?.group ?? doc.groups[0]?.id ?? "");
+  const [group, setGroup] = useState(initial?.group ?? defaultGroup ?? doc.groups[0]?.id ?? "");
   const [reserved, setReserved] = useState<BridgeReservedTier | "none">(initial?.reserved ?? "none");
   const [typeScoped, setTypeScoped] = useState(!!initial?.supportsResourceConstraints);
   const effId = initial ? initial.id : (id.trim() || slug(label));
@@ -362,11 +381,11 @@ function CapabilityDialog({ doc, initial, onClose, onSave }: { doc: BridgeCatalo
   );
 }
 
-function SurfaceDialog({ doc, initial, onClose, onSave }: { doc: BridgeCatalogue; initial: BridgeUiSurface | null; onClose: () => void; onSave: (s: BridgeUiSurface) => void }) {
+function SurfaceDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc: BridgeCatalogue; initial: BridgeUiSurface | null; defaultGroup?: string | null; onClose: () => void; onSave: (s: BridgeUiSurface) => void }) {
   const [id, setId] = useState(initial?.id ?? "");
   const [label, setLabel] = useState(initial?.label ?? "");
   const [kind, setKind] = useState<BridgeUiSurfaceKind>(initial?.kind ?? "navigation");
-  const [group, setGroup] = useState(initial?.group ?? doc.groups[0]?.id ?? "");
+  const [group, setGroup] = useState(initial?.group ?? defaultGroup ?? doc.groups[0]?.id ?? "");
   const [route, setRoute] = useState(initial?.routeOrComponent ?? "");
   const [req, setReq] = useState<Set<string>>(new Set(initial?.requiredAnyCapabilities ?? []));
   const effId = initial ? initial.id : (id.trim() || slug(label));
