@@ -52,7 +52,6 @@ const NAV: Record<Role, NavItem[]> = {
     { id: 'admin-people', label: 'People', icon: <Users size={16} /> },
     { id: 'admin-courses', label: 'Courses & Assignments', icon: <BookMarked size={16} /> },
     { id: 'admin-publishing', label: 'Publishing & Governance', icon: <GitBranch size={16} /> },
-    { id: 'admin-access-catalogue', label: 'Access Catalogue', icon: <ListTree size={16} /> },
   ],
   'coach': [
     { id: 'coach', label: 'Coach', icon: <UserCheck size={16} /> },

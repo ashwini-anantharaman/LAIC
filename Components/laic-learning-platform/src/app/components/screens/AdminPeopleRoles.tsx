@@ -3,6 +3,7 @@ import { Shield, Users, Lock, Plus, Award, Check, X, Eye, UserPlus } from 'lucid
 import { motion, AnimatePresence } from 'motion/react';
 import { PEOPLE } from '../../../lib/data';
 import type { Role } from '../../../lib/types';
+import { PlatformAccessCatalogue } from './PlatformAccessCatalogue';
 import {
   type CapabilityCatalogueDocument,
   groupsSorted,
@@ -83,7 +84,7 @@ function RoleEditorModal({
               {initial?.name ? `Edit “${initial.name}”` : 'New role'}
             </h3>
             <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>
-              Grants use Content Studio catalogue capability ids.
+              Grants use Content Studio catalog capability ids.
             </p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
@@ -234,6 +235,9 @@ function permChips(
 /* ─── main ────────────────────────────────────────────────────── */
 
 export function AdminPeopleRoles() {
+  // Sub-tab switch: the People/Roles roster, or the (consolidated) Access
+  // Catalog editor — mirrors the console's People → Access Catalog tab.
+  const [view, setView] = useState<'people' | 'catalog'>('people');
   const [catalogue, setCatalogue] = useState<CapabilityCatalogueDocument>(() => loadCatalogue());
   const [policy, setPolicy] = useState<AccessPolicyDocument>(() => loadPolicy());
 
@@ -327,7 +331,30 @@ export function AdminPeopleRoles() {
   const ENABLED_TYPES = catalogue.resourceTypes.map((rt) => rt.label);
 
   return (
-    <div className="px-6 py-6 w-full space-y-8">
+    <div className="w-full">
+      <div className="px-6 pt-6 flex items-end gap-4 border-b" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+        {([['people', 'People & Roles'], ['catalog', 'Access Catalog']] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setView(id)}
+            style={{
+              paddingBottom: 10,
+              marginBottom: -1,
+              fontSize: view === id ? 20 : 14,
+              fontWeight: view === id ? 750 : 600,
+              color: view === id ? '#0B1220' : '#9AA3AF',
+              borderBottom: view === id ? '2px solid #0B1220' : '2px solid transparent',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === 'catalog' ? (
+        <PlatformAccessCatalogue />
+      ) : (
+      <div className="px-6 py-6 w-full space-y-8">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -340,7 +367,7 @@ export function AdminPeopleRoles() {
             <div>
               <p style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }}>Bridge — Learning access policy</p>
               <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>
-                Roles sync from Access Catalogue sample templates on Save. Custom roles persist in the program policy.
+                Roles sync from Access Catalog sample templates on Save. Custom roles persist in the program policy.
               </p>
             </div>
           </div>
@@ -354,7 +381,7 @@ export function AdminPeopleRoles() {
               ENABLED CAPABILITIES ({enabledCount})
             </p>
             <p style={{ fontSize: 13, color: '#374151' }}>
-              From catalogue · refreshed when you Save catalogue
+              From catalog · refreshed when you Save catalog
             </p>
           </div>
           <div className="p-3.5 rounded-2xl" style={{ background: 'rgba(0,0,0,0.025)' }}>
@@ -391,7 +418,7 @@ export function AdminPeopleRoles() {
         <div className="flex items-center gap-2 mt-4 pt-4 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <Lock size={12} style={{ color: '#9AA3AF' }} />
           <p style={{ fontSize: 12, color: '#9AA3AF' }}>
-            Edit the Access Catalogue, then Save — sample roles and enabled capabilities update here automatically.
+            Edit the Access Catalog, then Save — sample roles and enabled capabilities update here automatically.
           </p>
         </div>
       </motion.div>
@@ -412,11 +439,11 @@ export function AdminPeopleRoles() {
           </button>
         </div>
         <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 14 }}>
-          Catalogue sample roles are the recommended starters. Custom roles grant any combination of catalogue capabilities.
+          Catalog sample roles are the recommended starters. Custom roles grant any combination of catalog capabilities.
         </p>
 
         <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', letterSpacing: '.05em', marginBottom: 10, textTransform: 'uppercase' }}>
-          From Access Catalogue · sample templates
+          From Access Catalog · sample templates
         </p>
         <div className="grid grid-cols-2 gap-3 mb-6">
           {sampleRoles.map((r) => {
@@ -431,7 +458,7 @@ export function AdminPeopleRoles() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0B1220' }}>{r.name}</p>
-                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: '#F3F4F6', color: '#374151' }}>catalogue</span>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: '#F3F4F6', color: '#374151' }}>catalog</span>
                     </div>
                     <p style={{ fontSize: 12, color: '#6B7280', lineHeight: 1.5 }}>{r.description}</p>
                     <code className="text-[10.5px]" style={{ color: '#9AA3AF' }}>{r.id}</code>
@@ -652,6 +679,8 @@ export function AdminPeopleRoles() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
+      )}
     </div>
   );
 }

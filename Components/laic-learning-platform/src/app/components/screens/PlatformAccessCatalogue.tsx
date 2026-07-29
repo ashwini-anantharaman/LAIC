@@ -458,7 +458,7 @@ export function PlatformAccessCatalogue() {
   const patch = (next: CapabilityCatalogueDocument) => { setCatalogue(next); setDirty(true); };
 
   const persist = async (doc: CapabilityCatalogueDocument, toastMsg: string) => {
-    if (readOnly) { fireToast('Read-only — ask a learning admin to edit the catalogue'); return; }
+    if (readOnly) { fireToast('Read-only — ask a learning admin to edit the catalog'); return; }
     try {
       const policy = await saveCatalogueAndSyncRoles(doc);
       setDirty(false);
@@ -468,7 +468,7 @@ export function PlatformAccessCatalogue() {
     }
   };
 
-  const handleSave = () => { void persist(catalogue, 'Catalogue saved'); };
+  const handleSave = () => { void persist(catalogue, 'Catalog saved'); };
   const handleReset = async () => {
     const fresh = await resetCatalogue().catch(() => createDefaultCatalogue());
     setCatalogue(fresh);
@@ -488,7 +488,7 @@ export function PlatformAccessCatalogue() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
-        persist(catalogue, 'Catalogue saved');
+        persist(catalogue, 'Catalog saved');
       }
     };
     window.addEventListener('keydown', onKey);
@@ -656,7 +656,7 @@ export function PlatformAccessCatalogue() {
               <RotateCcw size={13} /> Reset v1 defaults
             </button>
             <button type="button" onClick={handleSave} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
-              <Save size={13} /> Save catalogue
+              <Save size={13} /> Save catalog
             </button>
           </div>
         </div>
@@ -891,7 +891,7 @@ export function PlatformAccessCatalogue() {
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <p style={{ fontSize: 13, color: '#6B7280', maxWidth: 520 }}>
-              Sample role templates. On <strong>Save catalogue</strong>, these upsert into the live Bridge Learning access policy (People & Roles).
+              Sample role templates. On <strong>Save catalog</strong>, these upsert into the live Bridge Learning access policy (People & Roles).
             </p>
             <button
               type="button"
@@ -954,7 +954,7 @@ export function PlatformAccessCatalogue() {
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <p style={{ fontSize: 13, color: '#6B7280' }}>LAIC cross-platform schema (catalogue + access_policy).</p>
+              <p style={{ fontSize: 13, color: '#6B7280' }}>LAIC cross-platform schema (catalog + access_policy).</p>
               <p style={{ fontSize: 12, color: '#9AA3AF', marginTop: 4 }}>docs/laic-access-control.schema.json</p>
             </div>
             <button type="button" onClick={handleCopySchema} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full shrink-0" style={{ background: '#0B0F1A', color: 'white', fontSize: 12.5, fontWeight: 600 }}>
