@@ -143,19 +143,13 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
     <div className={embedded ? "space-y-5" : "mx-auto max-w-4xl space-y-5"}>
       {embedded ? (
         canEdit ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-neutral-600">The inventory of what Bridge can permission-control. Roles bind these capability ids.</p>
+          <div className="flex flex-wrap items-center justify-end gap-3">
             {actions}
           </div>
         ) : null
       ) : (
         <header className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">Access Catalog</h1>
-            <p className="text-sm text-neutral-600">
-              The inventory of what Bridge can permission-control. Roles (Teams &amp; roles) bind these capability ids.
-            </p>
-          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">Access Catalog</h1>
           {actions}
         </header>
       )}
@@ -178,7 +172,7 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
 
       {tab === "groups" && (
         <div className="space-y-2">
-          <p className="text-sm text-neutral-500">Groups organize the role UI. Each holds capabilities (enforcement keys) and surfaces (nav items).</p>
+          <p className="text-sm text-neutral-500">Groups bucket capabilities and the surfaces they unlock.</p>
           {groupsSorted.map((g) => {
             const caps = capsByGroup(g.id); const surfs = surfsByGroup(g.id); const open = expanded.has(g.id);
             return (
@@ -285,7 +279,7 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
 
       {tab === "resources" && (
         <div className="space-y-2">
-          <p className="text-sm text-neutral-500">Resource types a capability can be scoped to (enforcement deferred).</p>
+          <p className="text-sm text-neutral-500">Resource types a capability can be scoped to.</p>
           {(doc.resourceTypes ?? []).map((r) => (
             <div key={r.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 px-4 py-2.5">
               <span className="text-sm text-neutral-800">{r.label}</span>

@@ -254,13 +254,13 @@ export default async function TeamsPage({
             Access Catalog
           </Link>
         </nav>
-        <p className="text-sm text-neutral-600">
-          {activeTab === "people"
-            ? "Everyone in this Bridge program. Assign a role, or invite someone new — assignments are stored in Nexus, so the same person signs in with the same access from their portal."
-            : activeTab === "catalog"
-              ? "The inventory of what this Bridge program's roles can grant, and the UI those grants unlock. Seeded from the platform default until you customize it."
-              : "Build capability-based roles from the Access Catalog. People holding a role can do exactly what its capabilities allow; admins can do everything."}
-        </p>
+        {activeTab !== "catalog" ? (
+          <p className="text-sm text-neutral-600">
+            {activeTab === "people"
+              ? "Everyone in this Bridge program."
+              : "Build capability-based roles from the Access Catalog."}
+          </p>
+        ) : null}
       </header>
 
       {/* You */}
@@ -362,11 +362,7 @@ export default async function TeamsPage({
         <>
           {/* Custom roles */}
           <section className="rounded-lg border border-[var(--line)] p-4">
-            <h2 className="mb-1 font-medium">Roles</h2>
-            <p className="mb-3 text-xs text-neutral-500">
-              Each role grants a set of capabilities from the Access Catalog. People holding a
-              role can do exactly what its capabilities allow; admins can do everything.
-            </p>
+            <h2 className="mb-3 font-medium">Roles</h2>
 
             <div className="space-y-2">
               {roles.map((role: BridgeRole) => {
@@ -469,7 +465,7 @@ export default async function TeamsPage({
           {/* Area visibility — truthful, computed from the live nav gates */}
           <section className="rounded-lg border border-[var(--line)] p-4">
             <h2 className="mb-2 font-medium">Area visibility</h2>
-            <p className="mb-3 text-xs text-neutral-500">Which navigation areas each pre-built role can see today — computed from the live nav gates.</p>
+            <p className="mb-3 text-xs text-neutral-500">Which navigation areas each pre-built role can see.</p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
