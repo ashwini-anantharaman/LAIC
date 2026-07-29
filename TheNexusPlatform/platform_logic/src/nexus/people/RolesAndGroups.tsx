@@ -487,11 +487,35 @@ export function RolesAndGroups({ adapter }: { adapter: RgAdapter }) {
     );
   };
 
+  // Roles that don't surface as their own group node — easy to overlook in the
+  // tree, so we also expose them in a dedicated dropdown to edit / stay aware of.
+  const plainRoles = roles.filter((r) => !r.display_as_group);
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">Drag a role or group onto a group to nest it — or onto the top zone to lift it out.</p>
-        <Button size="sm" onClick={() => setEditing("new")}><Plus className="size-3.5" /> Create role or group</Button>
+        <div className="flex items-center gap-2">
+          {plainRoles.length ? (
+            <Select
+              value=""
+              onValueChange={(id) => {
+                const r = plainRoles.find((x) => x.id === id);
+                if (r) setEditing({ kind: "role", role: r });
+              }}
+            >
+              <SelectTrigger className="h-8 w-64" title="Roles that aren't shown as their own group">
+                <SelectValue placeholder={`Edit a role · ${plainRoles.length} not shown as groups`} />
+              </SelectTrigger>
+              <SelectContent>
+                {plainRoles.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+          <Button size="sm" onClick={() => setEditing("new")}><Plus className="size-3.5" /> Create role or group</Button>
+        </div>
       </div>
 
       {/* Top-level drop zone */}

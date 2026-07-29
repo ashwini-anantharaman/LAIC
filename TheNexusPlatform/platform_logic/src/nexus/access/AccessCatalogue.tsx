@@ -5,8 +5,8 @@
  * so one screen edits every catalogue: nexus/org/program consoles + learning +
  * bridge. See ACCESS_CATALOGUE_DESIGN.md.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Copy, FileJson, KeyRound, LayoutList, Plus, RotateCcw, Save, Shield, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { BookOpen, ChevronDown, ChevronRight, Copy, FileJson, KeyRound, LayoutList, Plus, RotateCcw, Save, Shield, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -69,6 +69,7 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
   const addCapToGroup = (gid: string) => { setCapDefaultGroup(gid); setCapEdit("new"); };
   const addSurfToGroup = (gid: string) => { setSurfDefaultGroup(gid); setSurfEdit("new"); };
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [guideOpen, setGuideOpen] = useState(false);
   const toggleGroup = (id: string) =>
     setExpandedGroups((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -384,7 +385,7 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
           {tab === "samples" && (
             <div className="space-y-2">
               {(doc.sampleRoleTemplates ?? []).length === 0 ? (
-                <EmptyState>No sample roles in this catalogue.</EmptyState>
+                <EmptyState>No sample roles in this catalog.</EmptyState>
               ) : (
                 (doc.sampleRoleTemplates ?? []).map((r) => (
                   <div key={r.id} className="glass-card px-4 py-3">
@@ -399,14 +400,124 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
             </div>
           )}
 
-          {tab === "json" && <JsonView title="Live catalogue document" value={doc} />}
+          {tab === "json" && <JsonView title="Live catalog document" value={doc} />}
           {tab === "schema" && <JsonView title="JSON Schema" value={schemaJson} />}
         </>
       )}
 
+      {/* Bottom-of-page guide entry. */}
+      <div className="mt-8 flex justify-center border-t border-border pt-5">
+        <Button variant="outline" size="sm" onClick={() => setGuideOpen(true)}>
+          <BookOpen className="size-3.5" /> Access Catalog Guide
+        </Button>
+      </div>
+
       {capEdit && doc ? <CapabilityDialog doc={doc} initial={capEdit === "new" ? null : capEdit} defaultGroup={capDefaultGroup} onClose={() => { setCapEdit(null); setCapDefaultGroup(null); }} onSave={upsertCap} /> : null}
       {surfEdit && doc ? <SurfaceDialog doc={doc} initial={surfEdit === "new" ? null : surfEdit} defaultGroup={surfDefaultGroup} onClose={() => { setSurfEdit(null); setSurfDefaultGroup(null); }} onSave={upsertSurf} /> : null}
+      {guideOpen ? <AccessCatalogGuide onClose={() => setGuideOpen(false)} /> : null}
     </div>
+  );
+}
+
+/**
+ * Access Catalog Guide — an in-app explainer of the whole model. Kept as static
+ * copy (not editable) so every level shows the same canonical explanation.
+ */
+function AccessCatalogGuide({ onClose }: { onClose: () => void }) {
+  const H = ({ children }: { children: ReactNode }) => (
+    <h3 className="mt-5 text-sm font-semibold text-foreground">{children}</h3>
+  );
+  const P = ({ children }: { children: ReactNode }) => (
+    <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{children}</p>
+  );
+  const Code = ({ children }: { children: ReactNode }) => (
+    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px] text-foreground">{children}</code>
+  );
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><BookOpen className="size-4" /> Access Catalog Guide</DialogTitle>
+        </DialogHeader>
+
+        <div className="pb-2">
+          <P>
+            The Access Catalog is the <strong>inventory</strong> of everything that can be
+            permission-controlled at this level. It does not assign anyone — it defines the
+            vocabulary that <em>roles</em> are built from. Roles bind to items in here; people get roles.
+          </P>
+
+          <H>The three building blocks</H>
+          <P>
+            <strong>1. Capabilities</strong> — the atomic units of permission (e.g.{" "}
+            <Code>nexus.audit.view</Code>). A role is, underneath, just a <strong>set of capability ids</strong>.
+            Capabilities are the only thing actually granted and enforced.
+          </P>
+          <P>
+            <strong>2. Groups</strong> — labeled folders that bucket related capabilities (and surfaces).
+            Their job is twofold: they tidy the UI, and each group can back <strong>one coarse toggle</strong> in
+            the role builder — flipping that toggle on seeds every capability in the folder onto the role.
+            Groups are never stored on a role; they’re the design-time bridge between the simple toggle and the
+            underlying capabilities.
+          </P>
+          <P>
+            <strong>3. Surfaces</strong> — the UI a capability unlocks (a nav tab, screen, or action), each with{" "}
+            <Code>requiredAnyCapabilities</Code>. Holding one of those capabilities reveals the surface; lacking
+            them hides it. This is what makes “turn a capability off → the tab disappears” work.
+          </P>
+          <P>
+            <strong>Resource types</strong> scope a capability to kinds of objects (enforcement is still being
+            layered in), and <strong>sample roles</strong> are starter bundles of capabilities.
+          </P>
+
+          <H>How a role is actually built</H>
+          <P>
+            A saved role stores two things — and a group id is in neither: a set of <strong>coarse area levels</strong>{" "}
+            (No / View / Edit, or No / Partial / Full for platforms) and a flat list of{" "}
+            <strong>capability ids</strong>. Setting an area’s coarse level is a preset: the top level seeds every
+            capability in that area’s group; “Partial” lets you hand-pick a subset. The capability list is the{" "}
+            <strong>enforced source of truth</strong> — the backend validates it against this catalog and drops
+            anything not in the inventory.
+          </P>
+
+          <H>Reserved (structural) capabilities</H>
+          <P>
+            A capability marked <Code>reserved</Code> is held implicitly by a structural tier — a Super Admin /
+            owner, a full operator, or a program admin — and can <strong>never</strong> be granted to a custom
+            role. Those tiers bypass the catalog and hold everything; the reserved flag just hides such a
+            capability from the role builder so no one can hand it out.
+          </P>
+
+          <H>Per-level catalogs</H>
+          <P>
+            Each level has its own catalog: the platform (Nexus), each organization, each program, and each
+            runtime (Content Studio, Bridge). An org/program starts from the shipped default and only diverges
+            once you edit it here (a “·edited” marker appears). Editing one level never touches another.
+          </P>
+
+          <H>Adding a new feature end-to-end</H>
+          <P>
+            1) Add a <strong>capability</strong> to a group here; 2) add a <strong>surface</strong> for the UI it
+            unlocks; 3) the role builder’s toggle for that group now grants it; 4) the nav/screen gated by that
+            surface appears for anyone who holds it. A brand-new group is purely organizational until a role-builder
+            area is wired to it — that wiring is what turns a folder into a working, grantable feature.
+          </P>
+
+          <H>Editing here</H>
+          <P>
+            Use the <strong>Groups</strong> tab to add capabilities/surfaces inline within a folder, or the
+            dedicated <strong>Capabilities</strong> / <strong>Surfaces</strong> tabs. <strong>Save catalog</strong>{" "}
+            persists your changes for this level; <strong>Reset defaults</strong> restores the shipped catalog.
+            The <strong>Export JSON</strong> and <strong>JSON Schema</strong> tabs show the live document and the
+            shape it must follow.
+          </P>
+        </div>
+
+        <DialogFooter>
+          <Button onClick={onClose}>Got it</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
