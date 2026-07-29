@@ -11,10 +11,11 @@ import type { Seat } from "@bridge/events";
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { HandViewer } from "@/components/table/play/HandViewer";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
-import { benAvailable } from "@/lib/benSeat";
+import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
@@ -24,12 +25,13 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; paused?: string; saved?: string; error?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { hands: handsParam, bboAuction, speed, paused, saved, error } = await searchParams;
+  const { hands: handsParam, bboAuction, speed, view: viewParam, paused, saved, error } = await searchParams;
+  const handsView = viewParam === "hands";
 
   let view;
   try {
@@ -98,7 +100,7 @@ export default async function PlayTablePage({
   const beatMs = speed === "fast" ? 350 : speed === "slow" ? 1500 : 750;
   const settingsHref = (patch: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const current = { hands: handsParam, bboAuction, speed, paused };
+    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused };
     for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
@@ -121,8 +123,40 @@ export default async function PlayTablePage({
     },
   ];
 
+  // The hand-record view (HandViewer design): all four panels big, the full
+  // auction, and honest info panels. Mid-play it shows the REMAINING cards
+  // (and respects visibility); a completed board shows the original deal.
+  const complete = state.phase === "complete";
+  const viewerHands = complete
+    ? { N: originalHand(state, "N"), E: originalHand(state, "E"), S: originalHand(state, "S"), W: originalHand(state, "W") }
+    : state.hands;
+  const contractText = state.contract
+    ? `${state.contract.level}${({ S: "♠", H: "♥", D: "♦", C: "♣", N: "NT" } as Record<string, string>)[state.contract.strain]}${state.contract.doubled === 1 ? "X" : state.contract.doubled === 2 ? "XX" : ""} by ${state.contract.declarer}`
+    : state.phase === "auction"
+      ? "Auction in progress"
+      : "Passed out";
+  const handViewer = (
+    <HandViewer
+      boardLabel={boardNumber}
+      dealer={record.board.dealer}
+      vul={state.vul}
+      hands={viewerHands}
+      names={{ N: seatName("N"), E: seatName("E"), S: seatName("S"), W: seatName("W") }}
+      visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
+      auction={state.auction}
+      highlightSeat={complete ? (state.contract?.declarer ?? null) : state.turn}
+      info={[
+        { label: `NS · ${seatName("N")} & ${seatName("S")}`, value: `${state.trickCount.NS} tricks` },
+        { label: `EW · ${seatName("E")} & ${seatName("W")}`, value: `${state.trickCount.EW} tricks` },
+      ]}
+      result={[
+        { label: contractText, value: score ? `${resultLabel(score)} · ${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : "" },
+      ]}
+    />
+  );
+
   return (
-    <div className="mx-auto w-full max-w-[1040px]">
+    <div className="mx-auto w-full">
       {error && (
         <p className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}
@@ -151,32 +185,45 @@ export default async function PlayTablePage({
           complete={state.phase === "complete"}
           beatMs={beatMs}
         />
+        {handsView && (
+          <Link
+            href={settingsHref({ view: undefined })}
+            className="rounded-full border border-neutral-300 px-3 py-1 text-xs font-medium hover:border-emerald-500 hover:bg-emerald-50"
+          >
+            ⟵ table
+          </Link>
+        )}
       </div>
       <div
         className="overflow-hidden rounded-lg"
-        style={{ height: "min(590px, calc(100vh - 7rem))" }}
+        style={{ height: "calc(100vh - 7.5rem)" }}
       >
-        <LivePlayTable
-          sessionId={sessionId}
-          state={{ ...state, dealer: record.board.dealer, vul: state.vul }}
-          seats={{
-            N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "" },
-            E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "" },
-            S: { name: seatName("S"), tag: dummy === "S" ? "dummy" : "" },
-            W: { name: seatName("W"), tag: dummy === "W" ? "dummy" : "" },
-          }}
-          visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
-          mySeat={mySeat}
-          legalCalls={state.phase === "auction" && myTurn ? [...legalCalls(state.auction, state.turn)] : []}
-          legalPlays={state.phase === "play" && myTurn ? legalPlays(state, state.turn) : []}
-          myTurn={myTurn}
-          boardLabel={boardNumber}
-          auctionDisplay={bboAuction === "seats" ? "seats" : "box"}
-          resultLine={score ? resultLabel(score) : ""}
-          resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
-          railExtra={seatsPanel}
-          settings={settings}
-        />
+        {handsView ? (
+          handViewer
+        ) : (
+          <LivePlayTable
+            sessionId={sessionId}
+            state={{ ...state, dealer: record.board.dealer, vul: state.vul }}
+            seats={{
+              N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "" },
+              E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "" },
+              S: { name: seatName("S"), tag: dummy === "S" ? "dummy" : "" },
+              W: { name: seatName("W"), tag: dummy === "W" ? "dummy" : "" },
+            }}
+            visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
+            mySeat={mySeat}
+            legalCalls={state.phase === "auction" && myTurn ? [...legalCalls(state.auction, state.turn)] : []}
+            legalPlays={state.phase === "play" && myTurn ? legalPlays(state, state.turn) : []}
+            myTurn={myTurn}
+            boardLabel={boardNumber}
+            auctionDisplay={bboAuction === "seats" ? "seats" : "box"}
+            resultLine={score ? resultLabel(score) : ""}
+            resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
+            railExtra={seatsPanel}
+            settings={settings}
+            viewHref={{ label: "Hands", href: settingsHref({ view: "hands" }) }}
+          />
+        )}
       </div>
     </div>
   );

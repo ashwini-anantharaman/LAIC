@@ -34,6 +34,13 @@ test("deal editor: author a board on the card grid and save it", async ({ page, 
   await page.waitForURL(/\/bridge\/library\/le_/);
   await expect(page.getByRole("heading", { name: "E2E authored board" })).toBeVisible();
   await expect(page.getByText(/authored · /)).toBeVisible();
+
+  // The full-screen hand record (HandViewer design): North's spades read
+  // AKQJ, and the info panel names the shelf.
+  await page.getByRole("link", { name: "Hand viewer" }).click();
+  await page.waitForURL(/\/view$/);
+  await expect(page.getByText(/Library · (deal|board)/)).toBeVisible();
+  await expect(page.getByText("AKQJ", { exact: true })).toBeVisible();
 });
 
 test("save a play from a live board, then resume it from the library", async ({

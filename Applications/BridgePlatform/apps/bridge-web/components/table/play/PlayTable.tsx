@@ -15,6 +15,7 @@
 // action goes back out through callbacks, so the caller owns the rules. That is
 // what lets the demo page run three independent tables side by side.
 
+import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
@@ -102,6 +103,8 @@ export interface PlayTableProps {
    * present (and onMenu isn't), the ☰ opens the overlay itself.
    */
   settings?: readonly { label: string; value: string; href: string }[];
+  /** Rail chip above Claim (the SideRail design's view toggle), e.g. "Hands". */
+  viewHref?: { label: string; href: string };
 }
 
 export function PlayTable({
@@ -125,6 +128,7 @@ export function PlayTable({
   onNewDeal,
   railExtra,
   settings,
+  viewHref,
 }: Readonly<PlayTableProps>) {
   // --- per-instance sizing. The prototype watched `window`; this watches the
   // element, which is what makes a second instance possible at all.
@@ -156,9 +160,11 @@ export function PlayTable({
       : []),
   ];
 
-  // Scale DOWN to fit, never up: the design is pixel-drawn at 1040x590 and
-  // magnifying it past that only coarsens it.
-  const scale = Math.min(1, Math.min(box.w / BASE.w, box.h / BASE.h) || 1);
+  // Scale to FIT — down or up. The stage is DOM text and vectors, so a
+  // transform scale stays crisp, and the table should use whatever space its
+  // container gives it (2026-07-29: the ≤1 cap made big screens waste most of
+  // the viewport).
+  const scale = Math.min(box.w / BASE.w, box.h / BASE.h) || 1;
   const stageW = Math.max(BASE.w, box.w / scale);
   const stageH = Math.max(BASE.h, box.h / scale);
 
@@ -471,6 +477,9 @@ export function PlayTable({
       )}
       {railExtra}
       <div style={{ flex: 1 }} />
+      {viewHref && (
+        <Link href={viewHref.href} title="Switch the view" style={{ width: 100, height: 32, background: PANEL, border: "2px solid #f2f4f4", borderRadius: 7, color: "#000", fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>{viewHref.label}</Link>
+      )}
       {onClaim && inPlay && (
         <button type="button" onClick={onClaim} style={{ width: 100, height: 36, background: RAIL_BLUE, border: "2px solid #dfe4f4", borderRadius: 7, color: "#fff", fontSize: 17, fontWeight: 700, cursor: "pointer" }}>Claim</button>
       )}

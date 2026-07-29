@@ -789,6 +789,16 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   const header = (await page.getByText("Table settings").boundingBox())!;
   await page.mouse.click(header.x + header.width + 400, header.y + header.height / 2);
   await expect(page.getByText("Table settings")).toHaveCount(0);
+
+  // The rail's "Hands" chip switches to the HandViewer record view: big seat
+  // panels, the full auction, honest info panels — and a way back.
+  await page.getByRole("link", { name: "Hands" }).click();
+  await page.waitForURL(/view=hands/);
+  await expect(page.getByText(/^NS · /)).toBeVisible();
+  await expect(page.getByText(/^EW · /)).toBeVisible();
+  await page.getByRole("link", { name: "⟵ table" }).click();
+  await expect(page).not.toHaveURL(/view=hands/);
+  await expect(page.getByRole("button", { name: "Table menu" })).toBeVisible();
 });
 
 test("auction rules explorer: lists the rules at a decision point", async ({
