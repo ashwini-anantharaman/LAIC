@@ -3,7 +3,7 @@
   "schemaVersion": "1.0",
   "documentType": "capability_catalogue",
   "id": "learning-platform-access",
-  "name": "Content Studio Capability Catalogue",
+  "name": "Content Studio Capability Catalog",
   "description": "Atomic capabilities and optional UI mappings published by the Content Studio. Live program roles and assignments are defined by program administrators.",
   "provider": {
     "kind": "platform",

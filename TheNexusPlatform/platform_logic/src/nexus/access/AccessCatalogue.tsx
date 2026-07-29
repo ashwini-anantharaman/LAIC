@@ -52,7 +52,7 @@ export interface CatalogueSource {
   canEdit?: boolean;
 }
 
-export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
+export function AccessCatalogue({ source, embedded = false }: { source?: CatalogueSource; embedded?: boolean } = {}) {
   const multi = !source;
   const canEdit = source ? source.canEdit !== false : true;
   const [providers, setProviders] = useState<CatalogueListEntry[]>([]);
@@ -165,32 +165,45 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
   const capsByGroup = (gid: string) => (doc?.capabilities ?? []).filter((c) => c.group === gid);
   const surfsByGroup = (gid: string) => (doc?.uiSurfaces ?? []).filter((s) => s.group === gid);
 
+  // The provider selector + Save/Reset actions — shared between the standalone
+  // PageHeader and the compact embedded row (People → Access Catalog sub-tab).
+  const actionBar = (
+    <div className="flex flex-wrap items-center gap-2">
+      {multi ? (
+        <Select value={providerId} onValueChange={setProviderId}>
+          <SelectTrigger className="h-9 w-52"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {providers.map((p) => (
+              <SelectItem key={p.providerId} value={p.providerId}>{p.name}{p.customized ? " ·edited" : ""}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+      {canEdit ? (
+        <>
+          <Button variant="outline" size="sm" onClick={reset} disabled={busy || !doc}><RotateCcw className="size-3.5" /> Reset defaults</Button>
+          <Button size="sm" onClick={save} disabled={busy || !doc || !dirty}><Save className="size-3.5" /> {busy ? "Saving…" : "Save catalog"}</Button>
+        </>
+      ) : null}
+    </div>
+  );
+
   return (
     <div>
-      <PageHeader
-        title={source?.title ?? "Access Catalogue"}
-        subtitle={source?.subtitle ?? "The platform inventory of what can be permission-controlled. Roles bind against these ids."}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {multi ? (
-              <Select value={providerId} onValueChange={setProviderId}>
-                <SelectTrigger className="h-9 w-52"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {providers.map((p) => (
-                    <SelectItem key={p.providerId} value={p.providerId}>{p.name}{p.customized ? " ·edited" : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
-            {canEdit ? (
-              <>
-                <Button variant="outline" size="sm" onClick={reset} disabled={busy || !doc}><RotateCcw className="size-3.5" /> Reset defaults</Button>
-                <Button size="sm" onClick={save} disabled={busy || !doc || !dirty}><Save className="size-3.5" /> {busy ? "Saving…" : "Save catalogue"}</Button>
-              </>
-            ) : null}
-          </div>
-        }
-      />
+      {embedded ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            {source?.subtitle ?? "The inventory of what this level's roles can grant, and the UI those grants unlock."}
+          </p>
+          {actionBar}
+        </div>
+      ) : (
+        <PageHeader
+          title={source?.title ?? "Access Catalog"}
+          subtitle={source?.subtitle ?? "The platform inventory of what can be permission-controlled. Roles bind against these ids."}
+          actions={actionBar}
+        />
+      )}
 
       {!doc ? (
         <Spinner />

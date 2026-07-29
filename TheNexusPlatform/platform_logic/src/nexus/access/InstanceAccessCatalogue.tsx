@@ -15,24 +15,24 @@ import {
 } from "./catalogue";
 import { useSession } from "@/nexus/session";
 
-export function OrgAccessCatalogue() {
+export function OrgAccessCatalogue({ embedded = false }: { embedded?: boolean } = {}) {
   const { orgId = "" } = useParams();
   const { user } = useSession();
   const isOwner =
     user?.role === "platform_admin" ||
     (user?.memberships ?? []).some((m) => m.org_id === orgId && m.role === "owner" && !m.program_id);
   const source = useMemo<CatalogueSource>(() => ({
-    title: "Access Catalogue",
+    title: "Access Catalog",
     subtitle: "What this organization's roles can grant, and the UI those grants unlock. Seeded from the platform default until you customize it.",
     canEdit: isOwner,
     load: () => getOrgCatalogue(orgId),
     save: (doc) => saveOrgCatalogue(orgId, doc),
     reset: () => resetOrgCatalogue(orgId),
   }), [orgId, isOwner]);
-  return <AccessCatalogue source={source} />;
+  return <AccessCatalogue source={source} embedded={embedded} />;
 }
 
-export function ProgramAccessCatalogue() {
+export function ProgramAccessCatalogue({ embedded = false }: { embedded?: boolean } = {}) {
   const { orgId = "", programId = "" } = useParams();
   const { user } = useSession();
   const isAdmin =
@@ -41,12 +41,12 @@ export function ProgramAccessCatalogue() {
       (m) => m.org_id === orgId && ["owner", "administrator"].includes(m.role) && (!m.program_id || m.program_id === programId),
     );
   const source = useMemo<CatalogueSource>(() => ({
-    title: "Access Catalogue",
+    title: "Access Catalog",
     subtitle: "What this program's roles can grant, and the UI those grants unlock. Seeded from the platform default until you customize it.",
     canEdit: isAdmin,
     load: () => getProgramCatalogue(programId),
     save: (doc) => saveProgramCatalogue(programId, doc),
     reset: () => resetProgramCatalogue(programId),
   }), [programId, isAdmin]);
-  return <AccessCatalogue source={source} />;
+  return <AccessCatalogue source={source} embedded={embedded} />;
 }

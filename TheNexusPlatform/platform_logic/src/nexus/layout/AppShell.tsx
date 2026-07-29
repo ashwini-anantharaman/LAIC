@@ -20,7 +20,6 @@ import {
   Rocket,
   Waypoints,
   ScrollText,
-  ListTree,
   FlaskConical,
   ChevronRight,
   ChevronLeft,
@@ -72,7 +71,6 @@ function orgNav(orgId: string): NavItem[] {
     { to: `${base}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `${base}/programs`, label: "Programs", icon: Boxes },
     { to: `${base}/team`, label: "People", icon: KeyRound },
-    { to: `${base}/access-catalogue`, label: "Access Catalogue", icon: ListTree },
     { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/settings`, label: "Settings", icon: Settings },
     { to: `${base}/audit`, label: "Audit", icon: ScrollText },
@@ -90,7 +88,6 @@ function programNav(orgId: string, programId: string): NavItem[] {
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
     { to: `${base}/team`, label: "People", icon: KeyRound },
-    { to: `${base}/access-catalogue`, label: "Access Catalogue", icon: ListTree },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
     { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
   ];
@@ -570,7 +567,6 @@ export function AppShell() {
     items = [
       { to: "/orgs", label: "Organizations", icon: Building2 },
       { to: "/team", label: "People", icon: KeyRound },
-      { to: "/access-catalogue", label: "Access Catalogue", icon: ListTree },
       { to: "/nexus-gates", label: "Gates", icon: DoorOpen },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
       { to: "/test1", label: "Test 1", icon: FlaskConical },
@@ -637,7 +633,7 @@ export function AppShell() {
     orgs: "Organizations", offerings: "Offerings", shells: "App",
     registrations: "Registrations", groups: "Participants & Groups", community: "Community",
     team: "People", partners: "Partners", learning: "Content Studio",
-    "access-catalogue": "Access Catalogue",
+    "access-catalogue": "Access Catalog",
   };
   const segments = pathname.split("/").filter(Boolean);
   const last = segments[segments.length - 1] ?? "";

@@ -1163,9 +1163,9 @@ export function ProgramShells() {
               <Button
                 variant={showCatalogue ? "secondary" : "outline"}
                 onClick={() => setShowCatalogue((v) => !v)}
-                title="The capability catalogue the App Studio publishes — what roles can grant for the Studio and published apps"
+                title="The capability catalog the App Studio publishes — what roles can grant for the Studio and published apps"
               >
-                <ShieldCheck className="size-4" /> Access Catalogue
+                <ShieldCheck className="size-4" /> Access Catalog
               </Button>
             )}
             <Button onClick={() => setOpen(true)}>

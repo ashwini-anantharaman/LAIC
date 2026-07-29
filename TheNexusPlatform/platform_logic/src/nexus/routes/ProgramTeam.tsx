@@ -57,6 +57,7 @@ import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { PeoplePage, CollapsibleSection } from "@/nexus/people/PeoplePage";
 import { RolesAndGroups, type RgRole } from "@/nexus/people/RolesAndGroups";
+import { ProgramAccessCatalogue } from "@/nexus/access/InstanceAccessCatalogue";
 import { programRgAdapter } from "@/nexus/people/adapters";
 import { useSession } from "@/nexus/session";
 
@@ -610,6 +611,7 @@ export function ProgramTeam() {
         actions={peopleActions}
         people={peopleContent}
         rolesGroups={<RolesAndGroups adapter={programRg} />}
+        accessCatalog={<ProgramAccessCatalogue embedded />}
       />
 
       {editing ? (

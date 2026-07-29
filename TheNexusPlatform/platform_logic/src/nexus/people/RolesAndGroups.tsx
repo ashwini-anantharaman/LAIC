@@ -373,7 +373,7 @@ function EditorDialog({
             {catalogues.some((c) => !c.provider || !platformProviderIds.has(c.provider)) ? (
               <div className="space-y-2">
                 <Label>Fine-grained capabilities</Label>
-                <p className="-mt-1 text-xs text-muted-foreground">From the Access Catalogue. Layered on top of the areas above.</p>
+                <p className="-mt-1 text-xs text-muted-foreground">From the Access Catalog. Layered on top of the areas above.</p>
                 {catalogues.filter((c) => !c.provider || !platformProviderIds.has(c.provider)).map((cat) => (
                   <div key={cat.id} className="rounded-lg border border-border p-2">
                     <div className="mb-1 px-1 text-xs font-semibold text-muted-foreground">{cat.name}</div>
