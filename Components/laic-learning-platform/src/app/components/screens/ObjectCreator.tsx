@@ -1,15 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, ChevronRight, Database, Highlighter, Layers, Settings2,
   Plus, X, Check, Sparkles, FileText, ChevronDown, Minus,
   ToggleLeft, ToggleRight, Trash2, Save, Send, BookOpen,
   Upload, Loader2, AlertTriangle, RefreshCw,
-  Youtube, ClipboardPaste, MessageSquare, Image as ImageIcon, PenLine, Eye, Pencil, Link2,
+  Youtube, ClipboardPaste, MessageSquare, Image as ImageIcon, PenLine, Eye, Pencil, Link2, Play,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../../App';
-import { SOURCES, OBJECTS } from '../../../lib/data';
-import { parsePdf, docFromText, type ParsedDoc } from '../../../lib/pdf';
+import { OBJECTS } from '../../../lib/data';
+import { SourceLibrary, PullFromLibraryButton, type PickedLibrarySource } from './CDSources';
+import { MarkupWorkspace, type MarkupSource } from './MarkupWorkspace';
+import { parsePdf, docFromText, mergeDocs, type ParsedDoc } from '../../../lib/pdf';
 import {
   suggestTutorialHighlights, suggestTutorialMarkupFlags, generateTutorial, generateFlashcards, generateQuiz, generateConceptCard, suggestConceptIntents,
   generateStructuredObject, generateVideoScript, ingestYoutube, ingestWeb, editTutorialBlock, errorMessage,
@@ -19,17 +21,32 @@ import {
 } from '../../../lib/api';
 import { supabaseEnabled, uploadImage } from '../../../lib/supabase';
 import type {
-  Block, CreatorPipelineDraft, ObjectStatus, ClusteredKnowledgeBase, ContentUnit,
+  Block, CreatorPipelineDraft, ObjectStatus, ClusteredKnowledgeBase, ConceptCluster, ContentUnit,
   TutorialSectionPlan, TutorialTemplate, ObjectSelection, EditAction, MarkupFlag,
   SummaryContent, ReflectionContent, AssignmentContent, DrillContent, VideoScriptContent,
+  LearningObject,
 } from '../../../lib/types';
-import { MarkupFlagReview, highlightsFromFlag } from './MarkupFlagReview';
-import { getTutorialTemplate, DEFAULT_TUTORIAL_TEMPLATE_ID, templateUsesCompositeRecipe } from '../../../lib/tutorialTemplates';
+import {
+  getTutorialTemplate,
+  DEFAULT_TUTORIAL_TEMPLATE_ID,
+  templateUsesCompositeRecipe,
+  listEmbeddableLibraryObjects,
+  isTutorialStructureLocked,
+  TEMPLATE_LOCKED_KNOB_IDS,
+  type LibraryObjectChoice,
+} from '../../../lib/tutorialTemplates';
 import { orderTutorialParts } from '../../../lib/tutorialOrder.js';
 import {
   ensureFourHints, ensureHints, attachHintsToQuestionParts,
   parsePassMark, resolveHintSettings,
 } from '../../../lib/questionHints.js';
+import { attachSourcesToQuestionParts } from '../../../lib/mcqSources.js';
+import {
+  findLibraryLearningObject,
+  libraryEmbedPartToBlock,
+  makeLibraryEmbedPart,
+} from '../../../lib/libraryEmbed';
+import { LibraryPickerModal } from '../LibraryPickerModal';
 import {
   applyEditActionsToParts,
   buildAssistantContext,
@@ -54,6 +71,7 @@ import { TutorialTemplatePicker } from './TutorialTemplatePicker';
 import { ObjectTemplatePicker } from './ObjectTemplatePicker';
 import { LearningBlocksPreview } from './LearnerReader';
 import { AssistantPanel, AssistantOpenButton } from './AssistantPanel';
+import { assignmentDefineSummary } from '../../../lib/assignmentRuntime';
 import {
   getObjectTemplate,
   type TemplateObjectType,
@@ -90,10 +108,102 @@ function fmtTimestamp(sec?: number): string {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
+/** Convert editor parts into library blocks (mirror of ObjEditor.buildBlocks). */
+function partsToBlocks(parts: any[], fv: Record<string, any> = {}): Block[] {
+  const hintSettings = resolveHintSettings(fv || {});
+  const tutorialPassMark = parsePassMark(fv?.pass, 70);
+  return (parts || []).map((p: any, i: number) => {
+    const id = String(p.id || `blk-${i}`);
+    if (p.type === 'concept-card')
+      return { id, type: 'concept-card', content: { term: p.concept || p.label || '', definition: p.plain || '', example: p.misc || '' } };
+    if (p.type === 'question')
+      return {
+        id,
+        type: 'quiz',
+        content: {
+          passMark: tutorialPassMark,
+          questions: [{
+            question: p.prompt || '',
+            type: 'multiple-choice',
+            options: p.options || [],
+            correct: p.correct ?? 0,
+            explanation: p.exp || '',
+            label: p.label || undefined,
+            sources: Array.isArray(p.sources) ? p.sources : undefined,
+            hints: ensureHints(p.hints, {
+              explanation: p.exp,
+              singleHint: p.hint,
+              enabled: hintSettings.enabled,
+              count: hintSettings.count,
+            }),
+          }],
+        },
+      };
+    if (p.type === 'section-quiz') {
+      const qs = Array.isArray(p.questions) ? p.questions : [];
+      return {
+        id,
+        type: 'quiz',
+        content: {
+          passMark: tutorialPassMark,
+          embeddedQuiz: true,
+          sourceMode: p.sourceMode || 'generate',
+          authoringNote: p.authoringNote,
+          required: p.required !== false,
+          label: p.label || 'Section quiz',
+          questions: qs.map((q: any) => ({
+            question: q.question || q.prompt || '',
+            type: 'multiple-choice',
+            options: q.options || [],
+            correct: q.correct ?? 0,
+            explanation: q.explanation || q.exp || '',
+            label: q.label || undefined,
+            sources: Array.isArray(q.sources) ? q.sources : undefined,
+            hints: ensureHints(q.hints, {
+              explanation: q.explanation || q.exp,
+              enabled: hintSettings.enabled,
+              count: hintSettings.count,
+            }),
+          })),
+        },
+      };
+    }
+    if (p.type === 'image')
+      return { id, type: 'image', content: { url: p.url || '', caption: p.caption || '', alt: p.caption || '' } };
+    if (p.type === 'video')
+      return { id, type: 'video-embed', content: { provider: 'youtube', url: p.url || '', videoId: p.videoId || parseYtId(p.url || ''), start: parseTimestamp(p.startText || ''), end: parseTimestamp(p.endText || ''), caption: p.caption || '' } };
+    if (p.type === 'library-embed')
+      return libraryEmbedPartToBlock({ ...p, id });
+    return {
+      id,
+      type: 'rich-text',
+      content: {
+        text: p.body || p.plain || p.label || '',
+        heading: p.heading || undefined,
+        subheads: Array.isArray(p.subheads) && p.subheads.length ? p.subheads : undefined,
+      },
+    };
+  }) as Block[];
+}
+
 /** Convert saved library blocks back into editor parts. */
 function blocksToParts(blocks: Block[]): any[] {
   return (blocks || []).map((b, i) => {
     const id = b.id || `edit-${i}`;
+    if (b.type === 'library-embed') {
+      const c = (b.content || {}) as any;
+      return {
+        id,
+        type: 'library-embed',
+        label: c.label || `Embedded · ${c.libraryTitle || 'object'}`,
+        libraryTitle: c.libraryTitle || '',
+        objectType: c.objectType,
+        versionPin: c.versionPin,
+        snapshotBlocks: Array.isArray(c.snapshotBlocks) ? c.snapshotBlocks : [],
+        authoringNote: c.authoringNote,
+        required: c.required !== false,
+      };
+    }
     if (b.type === 'concept-card') {
       const c = b.content as { term?: string; definition?: string; example?: string };
       return { id, type: 'concept-card', label: c.term || 'Concept', concept: c.term || '', plain: c.definition || '', misc: c.example || '' };
@@ -118,6 +228,7 @@ function blocksToParts(blocks: Block[]): any[] {
               explanation: q.explanation || '',
               hints: Array.isArray(q.hints) ? q.hints : undefined,
               label: q.label,
+              sources: Array.isArray(q.sources) ? q.sources : undefined,
             })),
           };
         }
@@ -127,6 +238,7 @@ function blocksToParts(blocks: Block[]): any[] {
           prompt: q?.question || '', options: q?.options || ['', '', '', ''],
           correct: q?.correct ?? 0, exp: q?.explanation || '',
           hints: Array.isArray(q?.hints) ? q.hints : undefined,
+          sources: Array.isArray(q?.sources) ? q.sources : undefined,
         };
       }
       const q = b.content as any;
@@ -135,6 +247,7 @@ function blocksToParts(blocks: Block[]): any[] {
         prompt: q?.question || '', options: q?.options || ['', '', '', ''],
         correct: q?.correct ?? 0, exp: q?.explanation || '',
         hints: Array.isArray(q?.hints) ? q.hints : undefined,
+        sources: Array.isArray(q?.sources) ? q.sources : undefined,
       };
     }
     if (b.type === 'image') {
@@ -186,7 +299,7 @@ function buildTutorialSectionPlans(
   secs: number,
   mediaItems: { id: string; kind: string }[],
 ): TutorialSectionPlan[] {
-  const clusters = kb.clusters.slice(0, Math.max(1, secs));
+  const secsN = Math.max(1, secs);
   const unused = [...mediaItems];
   const useComposite = templateUsesCompositeRecipe(template);
 
@@ -201,6 +314,68 @@ function buildTutorialSectionPlans(
       }
     }
   }
+
+  const unitById = new Map(kb.units.map((u) => [u.id, u]));
+  const sourceKey = (cluster: ConceptCluster): string => {
+    const counts = new Map<string, number>();
+    for (const id of cluster.unitIds) {
+      const u = unitById.get(id);
+      if (!u) continue;
+      const from = String(u.from || '');
+      const cut = from.indexOf(' · ');
+      const key = cut >= 0 ? from.slice(0, cut) : (from || 'unknown');
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    let best = 'unknown';
+    let n = -1;
+    for (const [k, v] of counts) {
+      if (v > n) { best = k; n = v; }
+    }
+    return best;
+  };
+
+  /** Prefer covering every source before filling remaining slots by cluster size. */
+  const pickClusters = (): ConceptCluster[] => {
+    const pools = new Map<string, ConceptCluster[]>();
+    for (const c of kb.clusters) {
+      const key = sourceKey(c);
+      if (!pools.has(key)) pools.set(key, []);
+      pools.get(key)!.push(c);
+    }
+    for (const list of pools.values()) {
+      list.sort((a, b) => b.unitIds.length - a.unitIds.length);
+    }
+    const keys = [...pools.keys()];
+    const selected: ConceptCluster[] = [];
+    const used = new Set<string>();
+    // Round-robin: one cluster per source first
+    let progressed = true;
+    while (selected.length < secsN && progressed) {
+      progressed = false;
+      for (const key of keys) {
+        if (selected.length >= secsN) break;
+        const list = pools.get(key) || [];
+        const next = list.find((c) => !used.has(c.id));
+        if (!next) continue;
+        used.add(next.id);
+        selected.push(next);
+        progressed = true;
+      }
+    }
+    // Fill remaining by size across leftovers
+    if (selected.length < secsN) {
+      const rest = kb.clusters
+        .filter((c) => !used.has(c.id))
+        .sort((a, b) => b.unitIds.length - a.unitIds.length);
+      for (const c of rest) {
+        if (selected.length >= secsN) break;
+        selected.push(c);
+      }
+    }
+    return selected.length ? selected : kb.clusters.slice(0, secsN);
+  };
+
+  const clusters = pickClusters();
 
   return clusters.map((cluster, index) => {
     const mediaPlacements: { slotId: string; mediaRef: string }[] = [];
@@ -242,6 +417,7 @@ function scaffoldTutorialFromTemplate(
   template: TutorialTemplate,
   secs: number,
   end?: string,
+  libraryObjects: LearningObject[] = [],
 ): any[] {
   const parts: any[] = [];
   let n = 0;
@@ -301,7 +477,7 @@ function scaffoldTutorialFromTemplate(
           continue;
         }
 
-        if (item.objectType === 'quiz') {
+        if (item.objectType === 'quiz' && item.sourceMode !== 'pick_from_library') {
           const questions = Array.from({ length: checksPerSection }, (_, qi) => ({
             question: '',
             options: ['', '', '', ''],
@@ -322,11 +498,42 @@ function scaffoldTutorialFromTemplate(
           continue;
         }
 
+        if (item.sourceMode === 'pick_from_library' && item.versionPin?.objectId) {
+          const obj = findLibraryLearningObject(item.versionPin.objectId, libraryObjects);
+          if (obj) {
+            parts.push(makeLibraryEmbedPart({
+              id: rid(),
+              object: obj,
+              versionId: item.versionPin.versionId || `${obj.id}__v1`,
+              authoringNote: item.authoringNote,
+              required: item.required,
+            }));
+            continue;
+          }
+        }
+
+        if (item.sourceMode === 'pick_from_library') {
+          parts.push({
+            id: rid(),
+            type: 'library-embed',
+            label: `Embedded · ${item.libraryTitle || item.objectType}`,
+            libraryTitle: item.libraryTitle || '',
+            objectType: item.objectType === 'reused-from-library' ? 'concept-card' : item.objectType,
+            versionPin: item.versionPin || { objectId: '', versionId: '' },
+            snapshotBlocks: [],
+            authoringNote: item.authoringNote || 'Pick a library object for this slot.',
+            required: item.required,
+          });
+          continue;
+        }
+
         parts.push({
           id: rid(),
           type: 'rich-text',
-          label: `Embedded ${item.objectType} (not yet wired)`,
-          body: `[TODO] Embedded ${item.objectType} slot is deferred — not scaffolded as a nested object yet.`,
+          label: `Embedded ${item.objectType}`,
+          body: item.authoringNote
+            ? `[Authoring note] ${item.authoringNote}`
+            : `Embedded ${item.objectType} — generate or pick from library when editing.`,
           heading: headingEmitted ? undefined : sectionTitle,
         });
         if (!headingEmitted) headingEmitted = true;
@@ -441,7 +648,8 @@ const CFG: Record<string, GDef[]> = {
       { id: 'lvl', label: 'Level', type: 'pick', options: LVL, default: 'Basic' },
     ]},
     { title: 'Structure', fields: [
-      { id: 'secs', label: 'Sections / sub-lessons', type: 'num', min: 2, max: 8, default: 3 },
+      { id: 'secs', label: 'Sections / sub-lessons', type: 'num', min: 2, max: 20, default: 3 },
+      { id: 'words', label: 'Target length (words)', type: 'num', min: 0, default: 0, hint: '0 = auto · long targets generate section-by-section' },
       { id: 'prog', label: 'Progression', type: 'pick', options: ['Linear build-up', 'Prerequisite chain', 'Themed clusters'], default: 'Linear build-up' },
       { id: 'dpth', label: 'Depth per section', type: 'pick', options: ['Overview', 'Standard', 'In-depth'], default: 'Standard' },
       { id: 'end', label: 'End with', type: 'pick', options: ['End quiz', 'End assignment', 'Recap only', 'None'], default: 'Recap only' },
@@ -554,7 +762,7 @@ const CFG: Record<string, GDef[]> = {
     ]},
   ],
   assignment: [
-    { title: 'Intent', fields: [
+    { title: 'Intent', note: 'What are you actually asking the learner to demonstrate?', fields: [
       { id: 'obj', label: 'Learning objective', type: 'area', hint: 'What the learner demonstrates by doing this' },
       { id: 'aud', label: 'Audience', type: 'pick', options: AUD, default: 'High school' },
       { id: 'lvl', label: 'Level', type: 'pick', options: LVL, default: 'Intermediate' },
@@ -565,7 +773,7 @@ const CFG: Record<string, GDef[]> = {
       { id: 'el', label: 'Expected length', type: 'sel', options: ['~150 words', '~300 words', '~500 words', '~800 words'], default: '~300 words' },
       { id: 'cite', label: 'Require source citations', type: 'bool', default: true },
     ]},
-    { title: 'Requirements & rubric', fields: [
+    { title: 'Requirements & rubric', note: 'Requirements are checkable; rubric criteria map back to the objective and those requirements.', fields: [
       { id: 'req', label: 'Requirements', type: 'num', min: 2, max: 6, default: 3 },
       { id: 'rubric', label: 'Rubric criteria', type: 'num', min: 2, max: 6, default: 3 },
     ]},
@@ -705,6 +913,32 @@ function Field({ f, val, set }: { f: FDef; val: any; set: (v: any) => void }) {
   }
   if (f.type === 'num') {
     const n = typeof v === 'number' ? v : (f.default ?? 0);
+    const hasMax = typeof f.max === 'number';
+    // Free / large ranges (e.g. target word count): editable number, no hard cap when max omitted.
+                if (!hasMax || Number(f.max) > 99) {
+      return (
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="number"
+            min={f.min ?? 0}
+            max={hasMax ? f.max : undefined}
+            value={n}
+            onChange={(e) => {
+              const raw = e.target.value === '' ? (f.min ?? 0) : Number(e.target.value);
+              if (!Number.isFinite(raw)) return;
+              let next = Math.max(f.min ?? 0, Math.round(raw));
+              if (hasMax) next = Math.min(Number(f.max), next);
+              set(next);
+            }}
+            className="w-28 rounded-xl px-3 py-2"
+            style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)', outline: 'none' }}
+          />
+          <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+            {f.hint || (hasMax ? `${f.min}–${f.max}` : f.min != null ? `${f.min}+ · no upper limit` : 'no upper limit')}
+          </span>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center gap-2">
         <button onClick={() => set(Math.max(f.min ?? 0, n - 1))}
@@ -727,14 +961,20 @@ function Field({ f, val, set }: { f: FDef; val: any; set: (v: any) => void }) {
 
 /* ─── step content ────────────────────────────────────────────── */
 
-const SOURCE_MODES = [
+/** Material source types — more than one can be attached at once. */
+const MATERIAL_SOURCE_MODES = [
   { id: 'pdf', label: 'Upload PDF', icon: <Upload size={15} /> },
   { id: 'text', label: 'Paste text', icon: <ClipboardPaste size={15} /> },
   { id: 'web', label: 'Website link', icon: <Link2 size={15} /> },
   { id: 'youtube', label: 'YouTube link', icon: <Youtube size={15} /> },
+] as const;
+
+const PATH_SOURCE_MODES = [
   { id: 'prompt', label: 'No source — AI prompt', icon: <MessageSquare size={15} /> },
   { id: 'manual', label: 'Write myself', icon: <PenLine size={15} /> },
 ] as const;
+
+type MaterialSourceKind = (typeof MATERIAL_SOURCE_MODES)[number]['id'];
 
 /* Shared "source is ready" summary card (pdf file pending parse / parsed doc). */
 function SourceReadyCard({
@@ -787,18 +1027,21 @@ function ErrorNote({ text }: { text: string }) {
   );
 }
 
-/* Tutorial Step 1 — choose a source: PDF, pasted text, YouTube, or a prompt. */
+/* Tutorial Step 1 — attach one or more source types (PDF, paste, web, YouTube). */
 function TutorialSource(props: any) {
   const {
-    mode, setMode, doc, pdfFile, onReplace,
-    onFile,
-    pasteText, setPasteText, onLoadText,
-    ytUrl, setYtUrl, ytLoading, ytError, onFetchYoutube,
-    webUrl, setWebUrl, webLoading, webError, onFetchWeb,
+    pathMode, setPathMode,
+    enabledTypes, toggleMaterialType,
+    pdfFile, pdfDoc, onReplacePdf, onFile,
+    textDoc, pasteText, setPasteText, onLoadText, onReplaceText,
+    ytDoc, ytUrl, setYtUrl, ytLoading, ytError, onFetchYoutube, onReplaceYoutube,
+    webDoc, webUrl, setWebUrl, webLoading, webError, onFetchWeb, onReplaceWeb,
     promptText, setPromptText, showMedia, imagesOnly,
     media, addImage, addImagesFromFiles, addVideo, updateMedia, removeMedia, pickImageAsset,
     showManualWrite,
     objectNoun = 'object',
+    librarySource,
+    onPickLibrarySource,
   } = props;
   const inputRef = useRef<HTMLInputElement>(null);
   const bulkImageRef = useRef<HTMLInputElement>(null);
@@ -812,128 +1055,211 @@ function TutorialSource(props: any) {
     );
     if (files.length) addImagesFromFiles(files);
   };
-  const modes = SOURCE_MODES.filter((m) => m.id !== 'manual' || showManualWrite);
+
+  const materialOn = pathMode === 'material';
+  const attachedCount = [
+    !!(pdfFile || pdfDoc),
+    !!textDoc,
+    !!webDoc,
+    !!ytDoc,
+    !!librarySource,
+  ].filter(Boolean).length;
 
   const INTRO: Record<string, string> = {
-    pdf: 'Attach the PDF this object is built from. We only store the file here — text is extracted in Mark up.',
-    text: 'Paste the text this object is built from — notes, an article, a transcript. You will mark up its sentences next.',
-    web: 'Paste a public website link. We fetch the page, extract readable text, and open it for Mark up — same as a pasted article.',
-    youtube: 'Paste a YouTube link and we will pull its transcript to build from. The video needs captions available.',
+    pdf: 'Attach a PDF. We only store the file here — text is extracted in Mark up.',
+    text: 'Paste notes, an article, or a transcript. You will mark up its sentences next.',
+    web: 'Paste a public website link. We fetch readable text for Mark up — same as pasted text.',
+    youtube: 'Paste a YouTube link and we pull its transcript. The video needs captions available.',
     prompt: 'No source? Describe what the object should teach. AI generation builds from your prompt — you skip Mark up and Extract.',
     manual: 'No source? Pick a pedagogical template next, then write every section yourself. Nothing is generated — you fill the skeleton.',
   };
 
   return (
     <div className="p-5 max-w-2xl">
-      {/* mode picker */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        {modes.map((m) => {
-          const on = mode === m.id;
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {MATERIAL_SOURCE_MODES.map((m) => {
+          const on = materialOn && enabledTypes.has(m.id);
           return (
-            <button key={m.id} onClick={() => setMode(m.id)}
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => toggleMaterialType(m.id)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all"
-              style={{ fontSize: 12.5, fontWeight: on ? 650 : 500, background: on ? '#7C3AED' : 'rgba(255,255,255,0.8)', color: on ? '#fff' : '#374151', borderColor: on ? '#7C3AED' : 'rgba(0,0,0,0.1)' }}>
+              style={{
+                fontSize: 12.5,
+                fontWeight: on ? 650 : 500,
+                background: on ? '#7C3AED' : 'rgba(255,255,255,0.8)',
+                color: on ? '#fff' : '#374151',
+                borderColor: on ? '#7C3AED' : 'rgba(0,0,0,0.1)',
+              }}
+            >
               {m.icon}{m.label}
             </button>
           );
         })}
-      </div>
-
-      <div className="rounded-2xl p-4 mb-4" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.2)' }}>
-        <p style={{ fontSize: 13, color: '#4C1D95', lineHeight: 1.6 }}>{INTRO[mode]}</p>
-      </div>
-
-      {/* ── PDF — attach only; parse happens in Mark up ── */}
-      {mode === 'pdf' && (
-        <>
-          <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => pick(e.target.files)} />
-          {!pdfFile && !doc ? (
-            <button type="button" onClick={() => inputRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files); }}
-              className="w-full flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-all"
-              style={{ padding: '40px 20px', borderColor: dragOver ? '#7C3AED' : 'rgba(0,0,0,0.14)', background: dragOver ? 'rgba(124,58,237,0.05)' : 'rgba(255,255,255,0.7)', cursor: 'pointer' }}>
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white" style={{ background: '#7C3AED' }}><Upload size={22} /></div>
-              <p style={{ fontSize: 14, fontWeight: 650, color: '#0B1220' }}>Drop a PDF here or click to attach</p>
-              <p style={{ fontSize: 12, color: '#9AA3AF' }}>PDF only · stays on this device · parsed in Mark up</p>
+        {PATH_SOURCE_MODES.filter((m) => m.id !== 'manual' || showManualWrite).map((m) => {
+          const on = pathMode === m.id;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setPathMode(m.id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all"
+              style={{
+                fontSize: 12.5,
+                fontWeight: on ? 650 : 500,
+                background: on ? '#0B0F1A' : 'rgba(255,255,255,0.8)',
+                color: on ? '#fff' : '#374151',
+                borderColor: on ? '#0B0F1A' : 'rgba(0,0,0,0.1)',
+              }}
+            >
+              {m.icon}{m.label}
             </button>
-          ) : <SourceReadyCard doc={doc} file={pdfFile} onReplace={onReplace} />}
-        </>
+          );
+        })}
+        {onPickLibrarySource && (
+          <PullFromLibraryButton
+            onPick={(src) => onPickLibrarySource(src)}
+          />
+        )}
+      </div>
+
+      {materialOn && (
+        <div className="rounded-2xl p-4 mb-4" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.2)' }}>
+          <p style={{ fontSize: 13, color: '#4C1D95', lineHeight: 1.6 }}>
+            Toggle on every source type this {objectNoun} should draw from — PDF, paste, website, and YouTube can all be used together.
+            Mark up combines them into one document.
+            {attachedCount > 0 ? ` · ${attachedCount} source type${attachedCount === 1 ? '' : 's'} attached.` : ''}
+          </p>
+        </div>
       )}
 
-      {/* ── Paste text ── */}
-      {mode === 'text' && (
-        <>
-          {!doc ? (
-            <>
-              <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={9}
-                placeholder="Paste your source text here…"
-                className="w-full rounded-2xl px-3 py-2.5 resize-y"
-                style={{ fontSize: 13, lineHeight: 1.6, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }} />
-              <div className="flex items-center justify-between mt-2">
-                <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>{pasteText.trim() ? `${pasteText.trim().split(/\s+/).length} words` : 'Notes, an article, a transcript…'}</span>
-                <button type="button" onClick={onLoadText} disabled={!pasteText.trim()}
-                  className="px-4 py-2 rounded-full transition-all"
-                  style={{ fontSize: 12.5, fontWeight: 600, background: pasteText.trim() ? '#0B0F1A' : '#E5E7EB', color: pasteText.trim() ? '#fff' : '#9AA3AF' }}>
-                  Use this text →
-                </button>
-              </div>
-            </>
-          ) : <SourceReadyCard doc={doc} onReplace={onReplace} />}
-        </>
-      )}
-
-      {/* ── Website ── */}
-      {mode === 'web' && (
-        <>
-          {!doc ? (
-            <>
-              <div className="flex gap-2">
-                <input value={webUrl || ''} onChange={(e) => setWebUrl(e.target.value)} placeholder="https://example.com/article…"
-                  className="flex-1 rounded-xl px-3 py-2.5"
-                  style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && webUrl?.trim() && !webLoading) onFetchWeb(); }} />
-                <button type="button" onClick={onFetchWeb} disabled={!webUrl?.trim() || webLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white shrink-0"
-                  style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600, opacity: (!webUrl?.trim() || webLoading) ? 0.7 : 1 }}>
-                  {webLoading ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={14} />}{webLoading ? 'Fetching…' : 'Fetch page'}
-                </button>
-              </div>
-              <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>
-                Public pages only · paywalled or heavily scripted sites may need Paste text instead.
+      {librarySource && (
+        <div className="mb-4 rounded-2xl border p-4" style={{ background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(124,58,237,0.25)' }}>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0" style={{ background: '#7C3AED' }}>
+              <FileText size={18} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }} className="truncate">{librarySource.title}</p>
+              <p style={{ fontSize: 12, color: '#6B7280', fontFamily: 'monospace' }}>
+                From Source Library · {librarySource.kind}
+                {librarySource.pages ? ` · ${librarySource.pages}p` : ''}
               </p>
-              {webError && <ErrorNote text={webError} />}
-            </>
-          ) : <SourceReadyCard doc={doc} onReplace={onReplace} />}
-        </>
+            </div>
+            <button
+              type="button"
+              onClick={() => onPickLibrarySource?.(null)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border shrink-0"
+              style={{ fontSize: 12, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}
+            >
+              <RefreshCw size={12} />Remove
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* ── YouTube ── */}
-      {mode === 'youtube' && (
-        <>
-          {!doc ? (
-            <>
-              <div className="flex gap-2">
-                <input value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=…"
-                  className="flex-1 rounded-xl px-3 py-2.5"
-                  style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && ytUrl.trim() && !ytLoading) onFetchYoutube(); }} />
-                <button type="button" onClick={onFetchYoutube} disabled={!ytUrl.trim() || ytLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white shrink-0"
-                  style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600, opacity: (!ytUrl.trim() || ytLoading) ? 0.7 : 1 }}>
-                  {ytLoading ? <Loader2 size={13} className="animate-spin" /> : <Youtube size={14} />}{ytLoading ? 'Fetching…' : 'Fetch transcript'}
+      {materialOn && (
+        <div className="stack" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {enabledTypes.has('pdf') && (
+            <div>
+              <p style={{ fontSize: 12.5, fontWeight: 650, color: '#6B7280', marginBottom: 8 }}>PDF</p>
+              <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 8, lineHeight: 1.5 }}>{INTRO.pdf}</p>
+              <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => pick(e.target.files)} />
+              {!pdfFile && !pdfDoc ? (
+                <button type="button" onClick={() => inputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(e) => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files); }}
+                  className="w-full flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-all"
+                  style={{ padding: '40px 20px', borderColor: dragOver ? '#7C3AED' : 'rgba(0,0,0,0.14)', background: dragOver ? 'rgba(124,58,237,0.05)' : 'rgba(255,255,255,0.7)', cursor: 'pointer' }}>
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white" style={{ background: '#7C3AED' }}><Upload size={22} /></div>
+                  <p style={{ fontSize: 14, fontWeight: 650, color: '#0B1220' }}>Drop a PDF here or click to attach</p>
+                  <p style={{ fontSize: 12, color: '#9AA3AF' }}>PDF only · stays on this device · parsed in Mark up</p>
                 </button>
-              </div>
-              {ytError && <ErrorNote text={ytError} />}
-            </>
-          ) : <SourceReadyCard doc={doc} onReplace={onReplace} />}
-        </>
+              ) : <SourceReadyCard doc={pdfDoc} file={pdfFile} onReplace={onReplacePdf} />}
+            </div>
+          )}
+
+          {enabledTypes.has('text') && (
+            <div>
+              <p style={{ fontSize: 12.5, fontWeight: 650, color: '#6B7280', marginBottom: 8 }}>Paste text</p>
+              <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 8, lineHeight: 1.5 }}>{INTRO.text}</p>
+              {!textDoc ? (
+                <>
+                  <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={7}
+                    placeholder="Paste your source text here…"
+                    className="w-full rounded-2xl px-3 py-2.5 resize-y"
+                    style={{ fontSize: 13, lineHeight: 1.6, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }} />
+                  <div className="flex items-center justify-between mt-2">
+                    <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>{pasteText.trim() ? `${pasteText.trim().split(/\s+/).length} words` : 'Notes, an article, a transcript…'}</span>
+                    <button type="button" onClick={onLoadText} disabled={!pasteText.trim()}
+                      className="px-4 py-2 rounded-full transition-all"
+                      style={{ fontSize: 12.5, fontWeight: 600, background: pasteText.trim() ? '#0B0F1A' : '#E5E7EB', color: pasteText.trim() ? '#fff' : '#9AA3AF' }}>
+                      Use this text →
+                    </button>
+                  </div>
+                </>
+              ) : <SourceReadyCard doc={textDoc} onReplace={onReplaceText} />}
+            </div>
+          )}
+
+          {enabledTypes.has('web') && (
+            <div>
+              <p style={{ fontSize: 12.5, fontWeight: 650, color: '#6B7280', marginBottom: 8 }}>Website</p>
+              <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 8, lineHeight: 1.5 }}>{INTRO.web}</p>
+              {!webDoc ? (
+                <>
+                  <div className="flex gap-2">
+                    <input value={webUrl || ''} onChange={(e) => setWebUrl(e.target.value)} placeholder="https://example.com/article…"
+                      className="flex-1 rounded-xl px-3 py-2.5"
+                      style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && webUrl?.trim() && !webLoading) onFetchWeb(); }} />
+                    <button type="button" onClick={onFetchWeb} disabled={!webUrl?.trim() || webLoading}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white shrink-0"
+                      style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600, opacity: (!webUrl?.trim() || webLoading) ? 0.7 : 1 }}>
+                      {webLoading ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={14} />}{webLoading ? 'Fetching…' : 'Fetch page'}
+                    </button>
+                  </div>
+                  <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>
+                    Public pages only · paywalled or heavily scripted sites may need Paste text instead.
+                  </p>
+                  {webError && <ErrorNote text={webError} />}
+                </>
+              ) : <SourceReadyCard doc={webDoc} onReplace={onReplaceWeb} />}
+            </div>
+          )}
+
+          {enabledTypes.has('youtube') && (
+            <div>
+              <p style={{ fontSize: 12.5, fontWeight: 650, color: '#6B7280', marginBottom: 8 }}>YouTube</p>
+              <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 8, lineHeight: 1.5 }}>{INTRO.youtube}</p>
+              {!ytDoc ? (
+                <>
+                  <div className="flex gap-2">
+                    <input value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=…"
+                      className="flex-1 rounded-xl px-3 py-2.5"
+                      style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && ytUrl.trim() && !ytLoading) onFetchYoutube(); }} />
+                    <button type="button" onClick={onFetchYoutube} disabled={!ytUrl.trim() || ytLoading}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white shrink-0"
+                      style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600, opacity: (!ytUrl.trim() || ytLoading) ? 0.7 : 1 }}>
+                      {ytLoading ? <Loader2 size={13} className="animate-spin" /> : <Youtube size={14} />}{ytLoading ? 'Fetching…' : 'Fetch transcript'}
+                    </button>
+                  </div>
+                  {ytError && <ErrorNote text={ytError} />}
+                </>
+              ) : <SourceReadyCard doc={ytDoc} onReplace={onReplaceYoutube} />}
+            </div>
+          )}
+        </div>
       )}
 
-      {/* ── Prompt only (AI) ── */}
-      {mode === 'prompt' && (
+      {pathMode === 'prompt' && (
         <>
+          <div className="rounded-2xl p-4 mb-4" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.2)' }}>
+            <p style={{ fontSize: 13, color: '#4C1D95', lineHeight: 1.6 }}>{INTRO.prompt}</p>
+          </div>
           <textarea value={promptText} onChange={(e) => setPromptText(e.target.value)} rows={7}
             placeholder={`Describe what this ${objectNoun} should teach, e.g. 'A beginner ${objectNoun} on how contract bridge bidding works, covering opening bids, responses, and basic conventions.'`}
             className="w-full rounded-2xl px-3 py-2.5 resize-y"
@@ -944,18 +1270,22 @@ function TutorialSource(props: any) {
         </>
       )}
 
-      {/* ── Write myself (manual template scaffold) ── */}
-      {mode === 'manual' && (
-        <div className="rounded-2xl p-4 border" style={{ background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.08)' }}>
-          <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220', marginBottom: 6 }}>Hand-write from a template</p>
-          <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
-            Next you’ll pick a pedagogical template and section count in Define. We open a blank {objectNoun} shaped like that template — headings, explanations, examples, and checks — for you to fill in. No AI draft.
-          </p>
-        </div>
+      {pathMode === 'manual' && (
+        <>
+          <div className="rounded-2xl p-4 mb-4" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.2)' }}>
+            <p style={{ fontSize: 13, color: '#4C1D95', lineHeight: 1.6 }}>{INTRO.manual}</p>
+          </div>
+          <div className="rounded-2xl p-4 border" style={{ background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.08)' }}>
+            <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220', marginBottom: 6 }}>Hand-write from a template</p>
+            <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
+              Next you’ll pick a pedagogical template and section count in Define. We open a blank {objectNoun} shaped like that template — headings, explanations, examples, and checks — for you to fill in. No AI draft.
+            </p>
+          </div>
+        </>
       )}
 
       {/* ── Media to include (images + optional YouTube clips) ── */}
-      {showMedia && (
+      {showMedia && pathMode === 'material' && (
       <div className="mt-6 pt-5" style={{ borderTop: '1px solid rgba(0,0,0,0.08)' }}>
         <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0B1220', marginBottom: 2 }}>
           {imagesOnly ? 'Images for Image → label' : 'Media to include'}{' '}
@@ -1058,408 +1388,33 @@ function TutorialSource(props: any) {
   );
 }
 
-function S1({ selected, setSelected, roles, setRoles, urlRefs, setUrlRefs }: any) {
-  const { nexusMode } = useApp();
-  const [url, setUrl] = useState('');
-  // Program-scoped instance: no shared demo source pool in Nexus mode.
-  const seedSources = nexusMode ? [] : SOURCES;
+function S1({ selected, setSelected }: { selected: string[]; setSelected: React.Dispatch<React.SetStateAction<string[]>> }) {
   return (
-    <div className="flex gap-5 p-5">
-      <div className="flex-1 min-w-0">
-        <p style={{ fontSize: 11.5, fontWeight: 700, color: '#6B7280', letterSpacing: '.06em', marginBottom: 10 }}>SOURCE POOL — Bridge</p>
-        <div className="space-y-2">
-          {seedSources.map(s => {
-            const on = selected.includes(s.id);
-            return (
-              <div key={s.id} onClick={() => setSelected((p: string[]) => on ? p.filter((x: string) => x !== s.id) : [...p, s.id])}
-                className="flex items-start gap-3 p-3 rounded-2xl border cursor-pointer transition-all"
-                style={{ background: on ? 'rgba(124,58,237,0.06)' : 'rgba(255,255,255,0.7)', borderColor: on ? '#7C3AED' : 'rgba(0,0,0,0.08)' }}>
-                <div className="mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all"
-                  style={{ borderColor: on ? '#7C3AED' : '#D1D5DB', background: on ? '#7C3AED' : 'transparent' }}>
-                  {on && <Check size={11} color="white" />}
-                </div>
-                <FileText size={15} style={{ color: '#7C3AED', marginTop: 2, flexShrink: 0 }} />
-                <div className="flex-1 min-w-0">
-                  <p style={{ fontSize: 13, fontWeight: 600, color: '#0B1220' }}>{s.title}</p>
-                  <p style={{ fontSize: 11.5, color: '#9AA3AF', fontFamily: 'monospace' }}>{s.kind}{s.pages ? ` · ${s.pages}p` : ''}{s.duration ? ` · ${s.duration}` : ''}</p>
-                  {on && (
-                    <div className="flex gap-1.5 mt-1.5" onClick={e => e.stopPropagation()}>
-                      {(['Primary', 'Supporting', 'Reference'] as const).map(r => (
-                        <button key={r} onClick={() => setRoles((p: any) => ({ ...p, [s.id]: r }))}
-                          className="px-2 py-0.5 rounded-full text-xs border transition-all"
-                          style={{ background: roles[s.id] === r ? '#0B0F1A' : 'rgba(255,255,255,0.8)', color: roles[s.id] === r ? '#fff' : '#6B7280', borderColor: roles[s.id] === r ? '#0B0F1A' : 'rgba(0,0,0,0.1)' }}>
-                          {r}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <span className="shrink-0 px-1.5 py-0.5 rounded text-xs" style={{ background: '#F3F4F6', color: '#6B7280' }}>{s.kind}</span>
-              </div>
-            );
-          })}
-        </div>
-        <div className="mt-4">
-          <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 6 }}>References — extra links</p>
-          <div className="flex gap-2 mb-2">
-            <input value={url} onChange={e => setUrl(e.target.value)} placeholder="Paste a URL…"
-              className="flex-1 rounded-xl px-3 py-2" style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.8)', outline: 'none' }}
-              onKeyDown={e => { if (e.key === 'Enter' && url) { setUrlRefs((p: string[]) => [...p, url]); setUrl(''); } }} />
-            <button onClick={() => { if (url) { setUrlRefs((p: string[]) => [...p, url]); setUrl(''); } }}
-              className="px-3 py-2 rounded-xl text-white" style={{ background: '#0B0F1A', fontSize: 12 }}>＋ Add</button>
-          </div>
-          {urlRefs.map((u: string, i: number) => (
-            <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-xl mb-1" style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.06)' }}>
-              <span style={{ fontSize: 12, flex: 1 }} className="truncate">{u}</span>
-              <button onClick={() => setUrlRefs((p: string[]) => p.filter((_: any, j: number) => j !== i))}><X size={12} style={{ color: '#9AA3AF' }} /></button>
-            </div>
-          ))}
-        </div>
+    <div className="p-5 max-w-2xl">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <PullFromLibraryButton
+          onPick={(src) => {
+            setSelected((p) => (p.includes(src.id) ? p : [...p, src.id]));
+          }}
+        />
+        <span style={{ fontSize: 12.5, color: '#9AA3AF' }}>
+          Or pick from your library — same Sources tab collections.
+        </span>
       </div>
-      <div className="w-60 shrink-0">
-        <div className="rounded-2xl p-4 border border-white/50" style={{ background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(8px)' }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>Add a source</p>
-          <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Upload PDF / DOCX / slides / text. Saved to your library — upload once, use many times.</p>
-          <div className="border-2 border-dashed rounded-xl p-4 text-center mb-3" style={{ borderColor: 'rgba(0,0,0,0.12)' }}>
-            <p style={{ fontSize: 12, color: '#9AA3AF' }}>Drop files or click to upload</p>
-          </div>
-          <p style={{ fontSize: 12, color: '#9AA3AF', marginBottom: 6 }}>or name a source…</p>
-          <div className="flex gap-2">
-            <input placeholder="e.g. Bridge rulebook" className="flex-1 rounded-xl px-2 py-1.5"
-              style={{ fontSize: 12, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.8)', outline: 'none' }} />
-            <button className="px-2 py-1.5 rounded-xl text-white" style={{ background: '#0B0F1A' }}><Plus size={13} /></button>
-          </div>
-        </div>
-        <p style={{ fontSize: 12, color: '#6B7280', marginTop: 8 }}>
-          <strong style={{ color: '#0B1220' }}>{selected.length}</strong> selected · pick several to combine into one build.
-        </p>
+      <div className="h-[min(60vh,560px)] rounded-2xl overflow-hidden border" style={{ borderColor: 'rgba(0,0,0,0.08)' }}>
+        <SourceLibrary
+          heading="Choose your source(s)"
+          subheading="Select sources for this object, or pull one in with From Source Library above."
+          selectedIds={selected}
+          onToggleSelect={(id) => setSelected((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))}
+        />
       </div>
     </div>
   );
 }
 
-function S2({
-  highlights, setHighlights, activeTag, setActiveTag, aiSuggestions, setAiSuggestions,
-  docParas, docTitle, pages, query, setQuery, onSuggest, suggesting, suggestError,
-  parsing, parseProgress, parseError,
-  markupFlags, setMarkupFlags, flagSummary, onScanFlags, scanningFlags, flagError, pageCount,
-}: any) {
-  const [aiThinking, setAiThinking] = useState(false);
-  const [aiQuery, setAiQuery] = useState('');
-  const [showSentenceSuggest, setShowSentenceSuggest] = useState(false);
-  const paras: string[] = docParas;
-  const busy = onSuggest ? suggesting : aiThinking;
-  const flagBusy = !!scanningFlags;
-  const flaggedIdx = new Set<number>();
-  for (const f of (markupFlags || []) as MarkupFlag[]) {
-    if (f.status === 'rejected') continue;
-    for (let i = f.startIdx; i <= f.endIdx; i += 1) flaggedIdx.add(i);
-  }
-
-  if (parsing) {
-    return (
-      <div className="p-5 max-w-2xl flex flex-col items-center justify-center text-center" style={{ minHeight: 320 }}>
-        <Loader2 size={28} className="animate-spin mb-3" style={{ color: '#7C3AED' }} />
-        <p style={{ fontSize: 15, fontWeight: 650, color: '#0B1220' }}>Extracting text for Mark up…</p>
-        <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 6 }}>{parseProgress || 'Reading your PDF in the browser'}</p>
-      </div>
-    );
-  }
-  if (parseError) {
-    return (
-      <div className="p-5 max-w-2xl">
-        <ErrorNote text={parseError} />
-        <p style={{ fontSize: 13, color: '#6B7280', marginTop: 12 }}>Go back to Sources and attach a different PDF, or use Paste text.</p>
-      </div>
-    );
-  }
-
-  const toggle = (idx: number) => {
-    const exists = highlights.find((h: any) => h.idx === idx);
-    if (exists) setHighlights((p: any[]) => p.filter((h: any) => h.idx !== idx));
-    else setHighlights((p: any[]) => [...p, { idx, tag: activeTag, text: paras[idx], page: pages?.[idx] ?? 1, comment: '' }]);
-  };
-
-  const suggest = () => {
-    // Tutorial: real server-side LLM call (key stays on the backend).
-    if (onSuggest) { onSuggest(aiQuery); return; }
-    // Other object types (no uploaded doc / no backend): local heuristic fallback.
-    setAiThinking(true);
-    setTimeout(() => {
-      const SIGNAL = /\b(is|are|means|refers?|defined|definition|key|important|must|always|never|first|because|therefore|consists?|includes?)\b/i;
-      const scored = paras
-        .map((text, idx) => {
-          const words = text.split(/\s+/).length;
-          let score = 0;
-          if (SIGNAL.test(text)) score += 3;
-          if (words >= 8 && words <= 40) score += 2;
-          if (/\d/.test(text)) score += 1;
-          return { idx, score, words };
-        })
-        .filter((s) => !highlights.find((h: any) => h.idx === s.idx))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, Math.min(6, Math.max(3, Math.round(paras.length / 6))))
-        .map((s) => s.idx)
-        .sort((a, b) => a - b);
-      setAiSuggestions(scored);
-      setAiThinking(false);
-    }, 700);
-  };
-
-  const highlightAll = () => {
-    const q = (query || '').trim().toLowerCase();
-    if (!q) return;
-    const matches = paras
-      .map((text, idx) => ({ text, idx }))
-      .filter((p) => p.text.toLowerCase().includes(q) && !highlights.find((h: any) => h.idx === p.idx))
-      .map((p) => ({ idx: p.idx, tag: activeTag, text: p.text, page: pages?.[p.idx] ?? 1, comment: '' }));
-    if (matches.length) setHighlights((p: any[]) => [...p, ...matches]);
-  };
-
-  // Highlight every sentence in the document with the active tag.
-  const selectAll = () => {
-    const additions = paras
-      .map((text, idx) => ({ text, idx }))
-      .filter((p) => !highlights.find((h: any) => h.idx === p.idx))
-      .map((p) => ({ idx: p.idx, tag: activeTag, text: p.text, page: pages?.[p.idx] ?? 1, comment: '' }));
-    if (additions.length) setHighlights((p: any[]) => [...p, ...additions]);
-  };
-
-  const clearAll = () => setHighlights([]);
-
-  const acceptAll = () => {
-    const newHl = aiSuggestions
-      .filter((i: number) => !highlights.find((h: any) => h.idx === i))
-      .map((i: number) => ({ idx: i, tag: 'Use', text: paras[i], page: pages?.[i] ?? 1, comment: '' }));
-    setHighlights((p: any[]) => [...p, ...newHl]);
-    setAiSuggestions([]);
-  };
-
-  const q = (query || '').trim().toLowerCase();
-
-  return (
-    <div className="flex gap-5 p-5">
-      <div className="flex-1 min-w-0">
-        <div className="rounded-2xl p-4 mb-4" style={{ background: '#FEF3C7', border: '1px solid #FCD34D' }}>
-          <p style={{ fontSize: 12.5, color: '#92400E', lineHeight: 1.6 }}>
-            Prefer <strong>Scan document</strong> — AI reads the whole source once and returns a short review list
-            (core concepts, confusion spots, diagrams, out-of-scope). Accept, reject, or adjust each item instead of hundreds of sentence clicks.
-            You can still highlight manually or use sentence suggestions. Optional — you can skip.
-          </p>
-        </div>
-
-        {/* Document-level flag scan — always available */}
-        {onScanFlags && paras.length > 0 && (
-          <div className="mb-4 p-3 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.75)', borderColor: 'rgba(0,0,0,0.08)' }}>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                value={aiQuery}
-                onChange={(e) => setAiQuery(e.target.value)}
-                placeholder="Optional focus for the scan (e.g. scoring rules, bidding)…"
-                className="flex-1 min-w-[200px] rounded-xl px-3 py-2"
-                style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.9)', outline: 'none' }}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !flagBusy) onScanFlags(aiQuery); }}
-              />
-              <button
-                type="button"
-                onClick={() => onScanFlags(aiQuery)}
-                disabled={flagBusy}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white"
-                style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 650, opacity: flagBusy ? 0.7 : 1 }}
-              >
-                {flagBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                {flagBusy ? 'Scanning document…' : 'Scan document for review items'}
-              </button>
-            </div>
-            <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>
-              {typeof pageCount === 'number' && pageCount >= 10
-                ? `Longer source (${pageCount} pages) — scan is recommended so you review ~20 decisions, not every sentence.`
-                : 'Works on short and long sources. Returns a compact list to accept, reject, or adjust.'}
-            </p>
-            {flagError && (
-              <div className="flex items-start gap-1.5 mt-2" style={{ fontSize: 11.5, color: '#B91C1C' }}>
-                <AlertTriangle size={12} style={{ marginTop: 1 }} />{flagError}
-              </div>
-            )}
-          </div>
-        )}
-
-        {Array.isArray(markupFlags) && markupFlags.length > 0 && (
-          <MarkupFlagReview
-            flags={markupFlags}
-            summary={flagSummary}
-            onChange={setMarkupFlags}
-            onAccept={(flag: MarkupFlag) => {
-              const additions = highlightsFromFlag(flag, paras, pages)
-                .filter((h) => !highlights.find((x: any) => x.idx === h.idx));
-              if (additions.length) setHighlights((p: any[]) => [...p, ...additions]);
-              setMarkupFlags((prev: MarkupFlag[]) =>
-                prev.map((f) => (f.id === flag.id ? { ...f, status: 'accepted' as const } : f)));
-            }}
-            onReject={(id: string) => {
-              setMarkupFlags((prev: MarkupFlag[]) =>
-                prev.map((f) => (f.id === id ? { ...f, status: 'rejected' as const } : f)));
-            }}
-            onAcceptAllPending={() => {
-              const pending = (markupFlags as MarkupFlag[]).filter((f) => f.status === 'pending' || f.status === 'adjusted');
-              const additions: any[] = [];
-              const used = new Set(highlights.map((h: any) => h.idx));
-              for (const flag of pending) {
-                for (const h of highlightsFromFlag(flag, paras, pages)) {
-                  if (used.has(h.idx)) continue;
-                  used.add(h.idx);
-                  additions.push(h);
-                }
-              }
-              if (additions.length) setHighlights((p: any[]) => [...p, ...additions]);
-              setMarkupFlags((prev: MarkupFlag[]) =>
-                prev.map((f) =>
-                  (f.status === 'pending' || f.status === 'adjusted')
-                    ? { ...f, status: 'accepted' as const }
-                    : f));
-            }}
-            onRejectAllPending={() => {
-              setMarkupFlags((prev: MarkupFlag[]) =>
-                prev.map((f) =>
-                  (f.status === 'pending' || f.status === 'adjusted')
-                    ? { ...f, status: 'rejected' as const }
-                    : f));
-            }}
-            onClear={() => setMarkupFlags([])}
-          />
-        )}
-
-        {/* Tag selector */}
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <span style={{ fontSize: 12, color: '#6B7280' }}>Highlight as:</span>
-          {Object.keys(TAG).map(tag => {
-            const c = TAG[tag];
-            return (
-              <button key={tag} onClick={() => setActiveTag(tag)}
-                className="px-3 py-1 rounded-full border-2 transition-all"
-                style={{ fontSize: 12, background: c.bg, color: c.text, borderColor: activeTag === tag ? c.border : 'transparent', textDecoration: tag === 'Ignore' ? 'line-through' : 'none' }}>
-                {tag}
-              </button>
-            );
-          })}
-          <span style={{ fontSize: 10.5, color: '#C4CBD4' }}>Click sentence to highlight · click again to clear</span>
-          <div className="flex items-center gap-1.5 ml-auto">
-            <button onClick={selectAll} disabled={paras.length === 0}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all"
-              style={{ fontSize: 11.5, fontWeight: 600, color: paras.length === 0 ? '#C4CBD4' : '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.85)' }}>
-              <Check size={11} />Select all
-            </button>
-            {highlights.length > 0 && (
-              <button onClick={clearAll}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all"
-                style={{ fontSize: 11.5, fontWeight: 500, color: '#6B7280', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.85)' }}>
-                <X size={11} />Clear all
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Find */}
-        <div className="flex gap-2 mb-3">
-          <input value={query || ''} onChange={e => setQuery(e.target.value)} placeholder="Find in document…" className="flex-1 rounded-xl px-3 py-2"
-            style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.8)', outline: 'none' }}
-            onKeyDown={e => { if (e.key === 'Enter') highlightAll(); }} />
-          <button onClick={highlightAll} className="px-3 py-2 rounded-xl text-white text-xs font-semibold" style={{ background: '#0B0F1A' }}>Highlight all</button>
-        </div>
-
-        {/* Legacy per-sentence suggest (secondary) */}
-        <div className="mb-4">
-          <button
-            type="button"
-            onClick={() => setShowSentenceSuggest((v) => !v)}
-            style={{ fontSize: 11.5, fontWeight: 600, color: '#6B7280' }}
-          >
-            {showSentenceSuggest ? '▾' : '▸'} Sentence-level suggest (optional)
-          </button>
-          {showSentenceSuggest && (
-            <div className="flex flex-col gap-2 mt-2 p-3 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.6)', borderColor: 'rgba(0,0,0,0.08)' }}>
-              <div className="flex gap-2">
-                <input value={aiQuery} onChange={e => setAiQuery(e.target.value)} placeholder="What should AI look for? (optional)"
-                  className="flex-1 bg-transparent outline-none" style={{ fontSize: 12.5 }}
-                  onKeyDown={e => { if (e.key === 'Enter' && !busy) suggest(); }} />
-                <button onClick={suggest} disabled={busy}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white"
-                  style={{ background: '#0B0F1A', fontSize: 12, fontWeight: 600, opacity: busy ? 0.7 : 1 }}>
-                  {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}{busy ? 'Thinking…' : '✦ Suggest sentences'}
-                </button>
-              </div>
-              {suggestError && (
-                <div className="flex items-start gap-1.5" style={{ fontSize: 11.5, color: '#B91C1C' }}>
-                  <AlertTriangle size={12} style={{ marginTop: 1 }} />{suggestError}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {aiSuggestions.length > 0 && (
-          <div className="flex items-center gap-3 mb-3 px-4 py-2 rounded-2xl" style={{ background: '#FEF3C7', border: '1px solid #FCD34D' }}>
-            <Sparkles size={13} style={{ color: '#D97706' }} />
-            <span style={{ fontSize: 12, color: '#92400E', flex: 1 }}>AI suggested {aiSuggestions.length} sentence highlights (dashed) — review, then</span>
-            <button onClick={acceptAll} className="px-3 py-1 rounded-full text-white text-xs font-semibold" style={{ background: '#D97706' }}>Accept all</button>
-            <button onClick={() => setAiSuggestions([])} style={{ fontSize: 12, color: '#92400E' }}>Dismiss</button>
-          </div>
-        )}
-
-        {/* Document */}
-        <div className="rounded-2xl p-4 border" style={{ background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.08)' }}>
-          <div className="flex items-center justify-between mb-3">
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#0B1220' }} className="truncate">{docTitle}</span>
-            <span className="px-2 py-0.5 rounded text-xs shrink-0" style={{ background: '#F3F4F6', color: '#6B7280', fontFamily: 'monospace' }}>
-              {pages?.length ? `p. ${pages[0]}–${pages[pages.length - 1]}` : `${paras.length} sentences`}
-            </span>
-          </div>
-          {paras.length === 0 && (
-            <p style={{ fontSize: 13, color: '#9AA3AF' }}>No document text to mark up. Go back to step 1 and upload a text-based PDF.</p>
-          )}
-          {paras.map((para, idx) => {
-            const hl = highlights.find((h: any) => h.idx === idx);
-            const isAi = aiSuggestions.includes(idx);
-            const isFlagged = flaggedIdx.has(idx);
-            const isMatch = q.length > 0 && para.toLowerCase().includes(q);
-            const c = hl ? TAG[hl.tag] : null;
-            return (
-              <p key={idx} onClick={() => toggle(idx)}
-                className="mb-1.5 rounded px-1 py-0.5 cursor-pointer transition-all"
-                style={{
-                  fontSize: 13.5, lineHeight: 1.7, fontFamily: 'Georgia, serif', color: '#1F2937',
-                  background: hl ? c!.bg : isAi ? 'rgba(254,243,199,0.5)' : isFlagged ? 'rgba(37,99,235,0.07)' : isMatch ? 'rgba(14,165,233,0.12)' : 'transparent',
-                  borderBottom: (isAi || isFlagged) && !hl ? `2px dashed ${isAi ? '#F59E0B' : '#2563EB'}` : 'none',
-                  textDecoration: hl?.tag === 'Ignore' ? 'line-through' : 'none',
-                }}>{para}</p>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Side panel */}
-      <div className="w-60 shrink-0">
-        <p style={{ fontSize: 12, fontWeight: 700, color: '#0B1220', marginBottom: 8 }}>Highlights & comments</p>
-        {highlights.length === 0 && <p style={{ fontSize: 12, color: '#9AA3AF' }}>No highlights yet. Click any sentence in the document.</p>}
-        {highlights.map((h: any, i: number) => {
-          const c = TAG[h.tag];
-          return (
-            <div key={i} className="mb-2 rounded-xl p-3 border" style={{ background: c.bg, borderColor: c.border }}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="px-2 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: c.border }}>{h.tag}</span>
-                <button onClick={() => setHighlights((p: any[]) => p.filter((_: any, j: number) => j !== i))}><X size={12} style={{ color: c.text }} /></button>
-              </div>
-              <p style={{ fontSize: 11.5, color: c.text, lineHeight: 1.5, marginBottom: 5 }} className="line-clamp-3">{h.text}</p>
-              <input value={h.comment}
-                onChange={e => setHighlights((p: any[]) => p.map((x: any, j: number) => j === i ? { ...x, comment: e.target.value } : x))}
-                placeholder="Comment…" className="w-full rounded-lg px-2 py-1"
-                style={{ fontSize: 11, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.7)', outline: 'none' }} />
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+function S2(props: any) {
+  return <MarkupWorkspace {...props} />;
 }
 
 function S3({ extracts, setExtracts, markHighlights, docTitle, typeNoun }: any) {
@@ -1666,6 +1621,17 @@ function ConceptCategoryEditor({
   );
 }
 
+function formatLockedKnob(f: FDef, val: any): string {
+  const v = val ?? f.default;
+  if (f.type === 'bool') return v ? 'On' : 'Off';
+  if (f.id === 'words') {
+    const n = typeof v === 'number' ? v : 0;
+    return n > 0 ? `~${n} words` : 'Auto from depth × sections';
+  }
+  if (f.type === 'num') return String(v ?? 0);
+  return String(v ?? '—');
+}
+
 function S4({
   typeId, title, setTitle, scope, setScope, fv, setF, srcCount, extCount, hlCount,
   intentSuggestions, suggestingIntents, suggestIntentError, onSuggestIntents,
@@ -1673,6 +1639,10 @@ function S4({
 }: any) {
   const groups = CFG[typeId] || [];
   const showObjectTemplatePicker = typeId !== 'tutorial' && typeof onPickObjectTemplate === 'function';
+  const tutorialTemplate = typeId === 'tutorial'
+    ? getTutorialTemplate(fv.templateId || DEFAULT_TUTORIAL_TEMPLATE_ID)
+    : null;
+  const structureLocked = tutorialTemplate ? isTutorialStructureLocked(tutorialTemplate) : false;
   const blueprint = (() => {
     const chips: string[] = [];
     groups.forEach((g: GDef) => g.fields.forEach((f: FDef) => {
@@ -1691,8 +1661,27 @@ function S4({
       const more = cats.length > 4 ? ` +${cats.length - 4} more` : '';
       return `Concept card sheet with ${cats.length} categor${cats.length === 1 ? 'y' : 'ies'}${names ? `: ${names}${more}` : ''}. Drawing on ${srcCount} source${srcCount !== 1 ? 's' : ''}${extCount > 0 ? ` · ${extCount} extract${extCount !== 1 ? 's' : ''}` : ''}.`;
     }
+    if (typeId === 'assignment') {
+      return assignmentDefineSummary(
+        {
+          obj: fv.obj,
+          aud: fv.aud ?? 'High school',
+          lvl: fv.lvl ?? 'Intermediate',
+          tt: fv.tt ?? 'Short essay',
+          del: fv.del ?? 'Written text',
+          el: fv.el ?? '~300 words',
+          cite: fv.cite !== false,
+          req: typeof fv.req === 'number' ? fv.req : 3,
+          rubric: typeof fv.rubric === 'number' ? fv.rubric : 3,
+        },
+        { srcCount, extCount, title },
+      );
+    }
     const clusterBit = clusterCount > 0 ? ` · ${clusterCount} cluster${clusterCount !== 1 ? 's' : ''}` : '';
-    return `${tpl ? `${tpl} · ` : ''}Drawing on ${srcCount} source${srcCount !== 1 ? 's' : ''}${extCount > 0 ? ` · ${extCount} extract${extCount !== 1 ? 's' : ''}` : ''}${clusterBit}${chips.length > 0 ? ' · ' + chips.slice(0, 3).join(' · ') : ''}. Everything editable after generating.`;
+    const wordsBit = typeId === 'tutorial' && typeof fv.words === 'number' && fv.words > 0
+      ? ` · ~${fv.words} words`
+      : '';
+    return `${tpl ? `${tpl} · ` : ''}Drawing on ${srcCount} source${srcCount !== 1 ? 's' : ''}${extCount > 0 ? ` · ${extCount} extract${extCount !== 1 ? 's' : ''}` : ''}${clusterBit}${wordsBit}${chips.length > 0 ? ' · ' + chips.slice(0, 3).join(' · ') : ''}. Everything editable after generating. Long drafts paginate in student preview.`;
   })();
 
   const renderConceptIntent = (f: FDef) => {
@@ -1776,6 +1765,11 @@ function S4({
               onChange={onPickTutorialTemplate}
             />
           )}
+          {typeId === 'tutorial' && g.title === 'Structure' && structureLocked && (
+            <p style={{ fontSize: 12, color: '#9AA3AF', marginBottom: 10 }}>
+              Structure below is set by the template. Pick <span style={{ fontWeight: 650, color: '#6B7280' }}>Freeform</span> if you need to choose sections and length yourself.
+            </p>
+          )}
           {showObjectTemplatePicker && gi === 0 && (
             <ObjectTemplatePicker
               objectType={typeId}
@@ -1785,17 +1779,33 @@ function S4({
           )}
           {g.fields.map((f: FDef) => {
             if (typeId === 'tutorial' && f.id === 'hintN' && fv.hintsOn === false) return null;
+            const locked = typeId === 'tutorial'
+              && structureLocked
+              && (TEMPLATE_LOCKED_KNOB_IDS as readonly string[]).includes(f.id);
             return (
               <div key={f.id} className="mb-4">
                 <div className="flex items-center justify-between mb-1.5">
                   <p style={{ fontSize: 12.5, fontWeight: 500, color: '#374151' }}>{f.label}</p>
-                  {f.type === 'bool' && <Field f={f} val={fv[f.id]} set={v => setF(f.id, v)} />}
+                  {f.type === 'bool' && !locked && <Field f={f} val={fv[f.id]} set={v => setF(f.id, v)} />}
                 </div>
-                {f.type !== 'bool' && (
+                {locked ? (
+                  <p
+                    className="rounded-xl px-3 py-2"
+                    style={{
+                      fontSize: 13, fontWeight: 550, color: '#0B1220',
+                      background: 'rgba(249,250,251,0.95)', border: '1px solid rgba(0,0,0,0.06)',
+                    }}
+                  >
+                    {formatLockedKnob(f, fv[f.id])}
+                    <span style={{ fontSize: 11.5, fontWeight: 500, color: '#9AA3AF', marginLeft: 8 }}>
+                      set by template
+                    </span>
+                  </p>
+                ) : f.type !== 'bool' ? (
                   typeId === 'concept-card' && f.id === 'concept'
                     ? renderConceptIntent(f)
                     : <Field f={f} val={fv[f.id]} set={v => setF(f.id, v)} />
-                )}
+                ) : null}
               </div>
             );
           })}
@@ -1874,7 +1884,20 @@ function VideoPartEditor({ part, onChange }: any) {
   const params = new URLSearchParams();
   if (start) params.set('start', String(start));
   if (end && !badRange) params.set('end', String(end));
-  const embedSrc = id ? `https://www.youtube.com/embed/${id}${params.toString() ? `?${params}` : ''}` : '';
+  // Only load the iframe after an explicit play click — mounting it right after
+  // Generate can inherit that user gesture and YouTube will start playing on its own.
+  const [activated, setActivated] = useState(false);
+  useEffect(() => { setActivated(false); }, [id, start, end]);
+  const embedSrc = id
+    ? `https://www.youtube.com/embed/${id}?${new URLSearchParams({
+        ...Object.fromEntries(params),
+        autoplay: '1',
+        rel: '0',
+        modestbranding: '1',
+        playsinline: '1',
+      }).toString()}`
+    : '';
+  const thumb = id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : '';
   const field: React.CSSProperties = { fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.8)', outline: 'none' };
   const lbl: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 3, display: 'block' };
   return (
@@ -1899,7 +1922,33 @@ function VideoPartEditor({ part, onChange }: any) {
         className="w-full rounded-xl px-3 py-2" style={field} />
       {embedSrc ? (
         <div className="mt-3" style={{ position: 'relative', width: '100%', paddingTop: '56.25%', borderRadius: 14, overflow: 'hidden', background: '#000' }}>
-          <iframe src={embedSrc} title="preview" allowFullScreen style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }} />
+          {activated ? (
+            <iframe
+              src={embedSrc}
+              title="preview"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setActivated(true)}
+              aria-label="Play video"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, padding: 0, cursor: 'pointer', background: '#000' }}
+            >
+              {thumb && (
+                <img
+                  src={thumb}
+                  alt=""
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.85 }}
+                />
+              )}
+              <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 58, height: 58, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Play size={24} fill="#fff" color="#fff" />
+              </span>
+            </button>
+          )}
         </div>
       ) : part.url ? (
         <p style={{ fontSize: 11.5, color: '#DC2626', marginTop: 6 }}>Couldn't read a YouTube video id from that link.</p>
@@ -2146,10 +2195,14 @@ function EditPanel({ part, onChange, onClose }: any) {
 }
 
 function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCount, hlCount, initialId, initialStatus, pipelineDraft, onBack, onDone }: any) {
-  const { addObject } = useApp();
+  const { addObject, createdObjects } = useApp();
   const [parts, setParts] = useState(
     Array.isArray(generatedParts) && generatedParts.length ? generatedParts : DRAFT_PARTS,
   );
+  const [embedPickerOpen, setEmbedPickerOpen] = useState(false);
+  const [embedReplaceId, setEmbedReplaceId] = useState<string | null>(null);
+  const [library, setLibrary] = useState<LibraryObjectChoice[]>([]);
+  const [libraryStatus, setLibraryStatus] = useState<'idle' | 'loading' | 'empty' | 'error'>('idle');
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [editId, setEditId] = useState<string | null>(null);
   const [aiId, setAiId] = useState<string | null>(null);
@@ -2269,6 +2322,48 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
     selectBlock(id);
   };
 
+  const openEmbedPicker = (replaceId?: string | null) => {
+    setEmbedReplaceId(replaceId || null);
+    setEmbedPickerOpen(true);
+  };
+
+  useEffect(() => {
+    if (!embedPickerOpen) return;
+    let cancelled = false;
+    setLibraryStatus('loading');
+    void listEmbeddableLibraryObjects({ extraObjects: createdObjects || [] })
+      .then((rows) => {
+        if (cancelled) return;
+        setLibrary(rows);
+        setLibraryStatus(rows.length ? 'idle' : 'empty');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLibrary([]);
+        setLibraryStatus('error');
+      });
+    return () => { cancelled = true; };
+  }, [embedPickerOpen, createdObjects]);
+
+  const confirmEmbedFromLibrary = (objectId: string, versionId: string, _title: string) => {
+    const obj = findLibraryLearningObject(objectId, createdObjects || []);
+    if (!obj) return;
+    pushUndo();
+    const part = makeLibraryEmbedPart({ object: obj, versionId });
+    if (embedReplaceId) {
+      setParts((prev: any[]) => prev.map((p) => (p.id === embedReplaceId ? { ...part, id: embedReplaceId } : p)));
+      setEditId(embedReplaceId);
+      selectBlock(embedReplaceId);
+    } else {
+      setParts((prev: any[]) => [...prev, part]);
+      setEditId(part.id);
+      selectBlock(part.id);
+    }
+    setEmbedPickerOpen(false);
+    setEmbedReplaceId(null);
+    setMode('edit');
+  };
+
   const assistantContext = buildAssistantContext({
     objectId: savedId.current || `draft-${typeId}`,
     objectType: typeId,
@@ -2303,6 +2398,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
               correct: p.correct ?? 0,
               explanation: p.exp || '',
               label: p.label || undefined,
+              sources: Array.isArray(p.sources) ? p.sources : undefined,
               hints: ensureHints(p.hints, {
                 explanation: p.exp,
                 singleHint: p.hint,
@@ -2331,6 +2427,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
               correct: q.correct ?? 0,
               explanation: q.explanation || q.exp || '',
               label: q.label || undefined,
+              sources: Array.isArray(q.sources) ? q.sources : undefined,
               hints: ensureHints(q.hints, {
                 explanation: q.explanation || q.exp,
                 enabled: hintSettings.enabled,
@@ -2344,6 +2441,8 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
         return { id, type: 'image', content: { url: p.url || '', caption: p.caption || '', alt: p.caption || '' } };
       if (p.type === 'video')
         return { id, type: 'video-embed', content: { provider: 'youtube', url: p.url || '', videoId: p.videoId || parseYtId(p.url || ''), start: parseTimestamp(p.startText || ''), end: parseTimestamp(p.endText || ''), caption: p.caption || '' } };
+      if (p.type === 'library-embed')
+        return libraryEmbedPartToBlock({ ...p, id });
       return {
         id,
         type: 'rich-text',
@@ -2428,7 +2527,10 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   return (
     <div className="flex flex-col h-full min-h-0 relative">
       <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium shrink-0" style={{ color: '#6B7280' }}>
+        <button onClick={() => {
+          save('draft');
+          onBack?.(parts);
+        }} className="flex items-center gap-1.5 text-sm font-medium shrink-0" style={{ color: '#6B7280' }}>
           <ArrowLeft size={14} />Back to pipeline
         </button>
         {[fmtType(typeId), scope].map((chip, i) => (
@@ -2459,8 +2561,8 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
       <div className="flex-1 overflow-y-auto p-5 max-w-2xl w-full mx-auto">
         {mode === 'preview' ? (
           <>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>{docTitle || displayTitle}</h1>
-            <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 16 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1220', marginBottom: 10 }}>{docTitle || displayTitle}</h1>
+            <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 22, lineHeight: 1.5 }}>
               Student preview · how learners will see this tutorial · {parts.length} part{parts.length !== 1 ? 's' : ''}
               {glossaryEntries.length > 0 ? ' · open Glossary from the right edge' : ''}
             </p>
@@ -2471,6 +2573,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
               maxHints={hintSettings.count}
               hintsEnabled={hintSettings.enabled}
               glossary={glossaryEntries}
+              sourceUnits={pipelineDraft?.knowledgeBase?.units}
             />
           </>
         ) : (
@@ -2507,11 +2610,20 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
               >
                 <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: 'rgba(0,0,0,0.06)', background: 'rgba(255,255,255,0.5)' }}>
                   <div className="flex items-center gap-2">
-                    {p.type === 'image' ? <ImageIcon size={13} style={{ color: '#6B7280' }} /> : p.type === 'video' ? <Youtube size={13} style={{ color: '#EF4444' }} /> : <BookOpen size={13} style={{ color: '#6B7280' }} />}
-                    <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: '#F3F4F6', color: '#374151' }}>{p.type}</span>
-                    {p.type === 'image' || p.type === 'video'
-                      ? <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#EFF6FF', color: '#2563EB' }}>added by you</span>
-                      : <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#FEF3C7', color: '#92400E' }}>✦ AI-drafted</span>}
+                    {p.type === 'image' ? <ImageIcon size={13} style={{ color: '#6B7280' }} /> : p.type === 'video' ? <Youtube size={13} style={{ color: '#EF4444' }} /> : p.type === 'library-embed' ? <Link2 size={13} style={{ color: '#059669' }} /> : <BookOpen size={13} style={{ color: '#6B7280' }} />}
+                    <span
+                      className="px-2 py-0.5 rounded text-xs font-medium"
+                      style={p.type === 'library-embed'
+                        ? { background: 'rgba(5,150,105,0.12)', color: '#047857' }
+                        : { background: '#F3F4F6', color: '#374151' }}
+                    >
+                      {p.type === 'library-embed' ? 'EMBEDDED OBJECT' : p.type}
+                    </span>
+                    {p.type === 'library-embed'
+                      ? <span style={{ fontSize: 13, fontWeight: 650, color: '#0B1220' }}>{p.libraryTitle || p.label}</span>
+                      : p.type === 'image' || p.type === 'video'
+                        ? <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#EFF6FF', color: '#2563EB' }}>added by you</span>
+                        : <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#FEF3C7', color: '#92400E' }}>✦ AI-drafted</span>}
                   </div>
                   <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     {p.type !== 'image' && p.type !== 'video' && (
@@ -2530,6 +2642,44 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
                     <ImagePartEditor part={p} onChange={patch => updatePart(p.id, patch)} onPickImage={file => onPickImage(p.id, file)} />
                   ) : p.type === 'video' ? (
                     <VideoPartEditor part={p} onChange={patch => updatePart(p.id, patch)} />
+                  ) : p.type === 'library-embed' ? (
+                    <div style={{ borderLeft: '3px solid #059669', paddingLeft: 12 }}>
+                      <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 4 }}>Library object + version pin</p>
+                      <div
+                        className="rounded-xl px-3.5 py-3 mb-2"
+                        style={{ border: '1px solid rgba(0,0,0,0.1)', background: '#fff' }}
+                      >
+                        <p style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>
+                          {p.libraryTitle || p.label || 'Untitled object'}
+                        </p>
+                        <p style={{ fontSize: 12, color: '#9AA3AF', marginTop: 2 }}>
+                          {p.objectType || 'object'}
+                          {p.versionPin?.versionId
+                            ? ` · pinned ${String(p.versionPin.versionId).includes('__v') ? String(p.versionPin.versionId).split('__').pop() : p.versionPin.versionId}`
+                            : ' · no version pinned'}
+                          {` · ${(p.snapshotBlocks || []).length} block${(p.snapshotBlocks || []).length !== 1 ? 's' : ''}`}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openEmbedPicker(p.id); }}
+                        className="px-3 py-1.5 rounded-full border mb-2"
+                        style={{ fontSize: 12, fontWeight: 600, color: '#059669', borderColor: 'rgba(5,150,105,0.4)', background: 'rgba(5,150,105,0.06)' }}
+                      >
+                        {p.versionPin?.objectId ? 'Change library object…' : 'Browse Activity objects…'}
+                      </button>
+                      <div>
+                        <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 4 }}>Authoring note</p>
+                        <input
+                          value={p.authoringNote || ''}
+                          onChange={(e) => updatePart(p.id, { authoringNote: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
+                          placeholder="Optional note for this embed…"
+                          className="w-full rounded-xl px-3 py-2"
+                          style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.9)', outline: 'none' }}
+                        />
+                      </div>
+                    </div>
                   ) : editId === p.id ? (
                     <EditPanel part={p} onChange={patch => updatePart(p.id, patch)} onClose={() => setEditId(null)} />
                   ) : (
@@ -2621,6 +2771,16 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
                 style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
                 <Plus size={12} />Question
               </button>
+              {typeId === 'tutorial' && (
+                <button
+                  type="button"
+                  onClick={() => openEmbedPicker(null)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
+                  style={{ fontSize: 12, fontWeight: 600, color: '#059669', borderColor: 'rgba(5,150,105,0.35)', background: 'rgba(5,150,105,0.06)' }}
+                >
+                  <Link2 size={12} />Embed from library
+                </button>
+              )}
             </div>
           </>
         )}
@@ -2664,6 +2824,26 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
         canRedo={redoStack.length > 0}
         onUndo={undo}
         onRedo={redo}
+      />
+
+      <LibraryPickerModal
+        open={embedPickerOpen}
+        onClose={() => { setEmbedPickerOpen(false); setEmbedReplaceId(null); }}
+        library={library}
+        libraryStatus={libraryStatus}
+        libraryEmptyCopy="No Activity objects yet. Create a concept card, quiz, or other object in the library first."
+        slotObjectType="reused-from-library"
+        initialObjectId={
+          embedReplaceId
+            ? parts.find((x: any) => x.id === embedReplaceId)?.versionPin?.objectId
+            : undefined
+        }
+        initialVersionId={
+          embedReplaceId
+            ? parts.find((x: any) => x.id === embedReplaceId)?.versionPin?.versionId
+            : undefined
+        }
+        onConfirm={(objectId, versionId, title) => confirmEmbedFromLibrary(objectId, versionId, title)}
       />
     </div>
   );
@@ -2710,7 +2890,7 @@ function GeneratingView({ progress, parts, onCancel, noun = 'tutorial' }: { prog
 export function ObjectCreator() {
   const {
     navigate, creatorObjectType, editingObjectId, clearEditingObject, createdObjects,
-    pendingTemplateId, setPendingTemplateId,
+    pendingTemplateId, setPendingTemplateId, addObject,
   } = useApp();
   const typeId = creatorObjectType || 'lesson';
   const isTutorial = typeId === 'tutorial';
@@ -2749,8 +2929,8 @@ export function ObjectCreator() {
   const [editObjectId, setEditObjectId] = useState<string | null>(null);
   const [editObjectStatus, setEditObjectStatus] = useState<ObjectStatus | undefined>(undefined);
 
-  const [sel, setSel] = useState<string[]>(SOURCES.filter(s => s.primary).map(s => s.id));
-  const [roles, setRoles] = useState<Record<string, string>>(Object.fromEntries(SOURCES.map(s => [s.id, s.primary ? 'Primary' : 'Supporting'])));
+  const [sel, setSel] = useState<string[]>([]);
+  const [roles, setRoles] = useState<Record<string, string>>({});
   const [urlRefs, setUrlRefs] = useState<string[]>([]);
   const [highlights, setHighlights] = useState<any[]>([]);
   const [activeTag, setActiveTag] = useState('Use');
@@ -2813,14 +2993,69 @@ export function ObjectCreator() {
     })));
   };
 
-  // Tutorial Step 1 — source can be a PDF, pasted text, a YouTube link, or a prompt.
-  // PDF: attach File in Sources; parse into `doc` only when entering Mark up.
+  // Tutorial Step 1 — one or more material source types (PDF + paste + web + YouTube),
+  // or an exclusive prompt / write-myself path.
+  // PDF: attach File in Sources; parse into `pdfDoc` only when entering Mark up.
   // Video scripts default to YouTube so the interactive player has a video URL.
-  const [srcMode, setSrcMode] = useState<'pdf' | 'text' | 'youtube' | 'web' | 'prompt' | 'manual'>(
-    typeId === 'video-script' ? 'youtube' : 'pdf',
+  const [pathMode, setPathModeState] = useState<'material' | 'prompt' | 'manual'>(
+    typeId === 'video-script' ? 'material' : 'material',
   );
+  const [enabledTypes, setEnabledTypes] = useState<Set<MaterialSourceKind>>(
+    () => new Set(typeId === 'video-script' ? (['youtube'] as MaterialSourceKind[]) : (['pdf'] as MaterialSourceKind[])),
+  );
+  /** Compat alias for drafts / generate paths that still key off a single srcMode. */
+  const srcMode: 'pdf' | 'text' | 'youtube' | 'web' | 'prompt' | 'manual' =
+    pathMode === 'prompt' || pathMode === 'manual'
+      ? pathMode
+      : enabledTypes.has('pdf')
+        ? 'pdf'
+        : enabledTypes.has('text')
+          ? 'text'
+          : enabledTypes.has('web')
+            ? 'web'
+            : enabledTypes.has('youtube')
+              ? 'youtube'
+              : 'pdf';
+
+  const setSrcMode = (m: 'pdf' | 'text' | 'youtube' | 'web' | 'prompt' | 'manual') => {
+    if (m === 'prompt' || m === 'manual') {
+      setPathModeState(m);
+      return;
+    }
+    setPathModeState('material');
+    setEnabledTypes(new Set([m]));
+  };
+
+  const setPathMode = (m: 'material' | 'prompt' | 'manual') => {
+    setPathModeState(m);
+    if (m === 'material' && enabledTypes.size === 0) {
+      setEnabledTypes(new Set(['pdf']));
+    }
+  };
+
+  const toggleMaterialType = (kind: MaterialSourceKind) => {
+    setPathModeState('material');
+    setEnabledTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(kind)) {
+        if (next.size > 1) next.delete(kind);
+      } else {
+        next.add(kind);
+      }
+      return next;
+    });
+  };
+
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [doc, setDoc] = useState<ParsedDoc | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<ParsedDoc | null>(null);
+  const [textDoc, setTextDoc] = useState<ParsedDoc | null>(null);
+  const [ytDoc, setYtDoc] = useState<ParsedDoc | null>(null);
+  const [webDoc, setWebDoc] = useState<ParsedDoc | null>(null);
+  const [libraryDoc, setLibraryDoc] = useState<ParsedDoc | null>(null);
+  const doc = useMemo(
+    () => mergeDocs([pdfDoc, textDoc, ytDoc, webDoc, libraryDoc].filter(Boolean) as ParsedDoc[]),
+    [pdfDoc, textDoc, ytDoc, webDoc, libraryDoc],
+  );
   const [ytSegments, setYtSegments] = useState<YtTranscriptSegment[]>([]);
   const [ytVideoId, setYtVideoId] = useState('');
   const [ytVideoTitle, setYtVideoTitle] = useState('');
@@ -2835,6 +3070,7 @@ export function ObjectCreator() {
   const [webLoading, setWebLoading] = useState(false);
   const [webError, setWebError] = useState<string | null>(null);
   const [promptText, setPromptText] = useState('');
+  const [librarySource, setLibrarySource] = useState<PickedLibrarySource | null>(null);
 
   // Media attachments added in the Sources step — images + cropped YouTube clips.
   // These are showcased (with captions) in the generated tutorial.
@@ -2907,21 +3143,34 @@ export function ObjectCreator() {
     return renumberQuestionParts(attachHintsToQuestionParts(ordered, hintOpts));
   };
 
-  // Switching source type clears the committed source + any markup built on it.
-  const changeMode = (m: 'pdf' | 'text' | 'youtube' | 'web' | 'prompt' | 'manual') => {
-    setSrcMode(m);
-    setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setWebError(null); setParseProgress(null);
-    setHighlights([]); setAiSuggestions([]); setExtracts([]);
-    setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
-    autoFlagScannedFor.current = null;
-    setKnowledgeBase(null); setShapeIntent('');
+  // Switching path / clearing a type no longer wipes every other attached source.
+  const replacePdf = () => {
+    setPdfFile(null); setPdfDoc(null); setParseError(null); setParseProgress(null);
+    clearMarkupDerived();
   };
+  const replaceText = () => { setTextDoc(null); setPasteText(''); clearMarkupDerived(); };
+  const replaceYoutube = () => {
+    setYtDoc(null); setYtUrl(''); setYtError(null); setYtSegments([]); setYtVideoId(''); setYtVideoTitle('');
+    clearMarkupDerived();
+  };
+  const replaceWeb = () => { setWebDoc(null); setWebUrl(''); setWebError(null); clearMarkupDerived(); };
   const replaceSource = () => {
-    setPdfFile(null); setDoc(null); setParseError(null); setYtError(null); setWebError(null); setParseProgress(null);
-    setHighlights([]); setAiSuggestions([]); setExtracts([]);
-    setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
-    autoFlagScannedFor.current = null;
-    setKnowledgeBase(null); setShapeIntent('');
+    setLibrarySource(null); setLibraryDoc(null);
+    setPdfFile(null); setPdfDoc(null); setTextDoc(null); setYtDoc(null); setWebDoc(null);
+    setParseError(null); setYtError(null); setWebError(null); setParseProgress(null);
+    clearMarkupDerived();
+  };
+  const pickLibrarySource = (src: PickedLibrarySource | null) => {
+    if (!src) {
+      setLibrarySource(null);
+      setLibraryDoc(null);
+      clearMarkupDerived();
+      return;
+    }
+    setPathModeState('material');
+    setLibrarySource(src);
+    setLibraryDoc(docFromText(src.note || src.title, src.title));
+    clearMarkupDerived();
   };
 
   // Tutorial: real LLM — suggest highlights + streamed generation.
@@ -2931,6 +3180,12 @@ export function ObjectCreator() {
   const [flagError, setFlagError] = useState<string | null>(null);
   const flagScanAbort = useRef<AbortController | null>(null);
   const autoFlagScannedFor = useRef<string | null>(null);
+  const clearMarkupDerived = () => {
+    setHighlights([]); setAiSuggestions([]); setExtracts([]);
+    setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
+    autoFlagScannedFor.current = null;
+    setKnowledgeBase(null); setShapeIntent('');
+  };
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const [intentSuggestions, setIntentSuggestions] = useState<string[]>([]);
@@ -2956,16 +3211,13 @@ export function ObjectCreator() {
       setParseError('That file is not a PDF. Please upload a PDF.');
       return;
     }
+    setPathModeState('material');
+    setEnabledTypes((prev) => new Set(prev).add('pdf'));
     setPdfFile(file);
-    setDoc(null);
+    setPdfDoc(null);
     setParseError(null);
     setParseProgress(null);
-    setHighlights([]);
-    setAiSuggestions([]);
-    setExtracts([]);
-    setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
-    autoFlagScannedFor.current = null;
-    setKnowledgeBase(null);
+    clearMarkupDerived();
     if (!title) setTitle(file.name.replace(/\.pdf$/i, ''));
   };
 
@@ -2980,13 +3232,13 @@ export function ObjectCreator() {
       });
       if (!parsed.sentences.length) {
         setParseError('No readable text found in that PDF (it may be scanned images only). Try Paste text, or a text-based PDF.');
-        setDoc(null);
+        setPdfDoc(null);
         return;
       }
-      setDoc(parsed);
+      setPdfDoc(parsed);
     } catch (e) {
       setParseError(e instanceof Error ? `Could not read that PDF: ${e.message}` : 'Could not read that PDF.');
-      setDoc(null);
+      setPdfDoc(null);
     } finally {
       setParsing(false);
       setParseProgress(null);
@@ -2996,21 +3248,21 @@ export function ObjectCreator() {
   // Parse PDF when the author reaches Mark up (not in Sources).
   useEffect(() => {
     if (step !== 2 || !usesPipeline) return;
-    if (srcMode !== 'pdf') return;
-    if (doc || parsing) return;
+    if (pathMode !== 'material') return;
+    if (!enabledTypes.has('pdf')) return;
+    if (pdfDoc || parsing) return;
     if (!pdfFile) return;
     void parseAttachedPdf(pdfFile);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, srcMode, pdfFile]);
+  }, [step, pathMode, enabledTypes, pdfFile, pdfDoc]);
 
   const handleLoadText = () => {
     if (!pasteText.trim()) return;
-    setHighlights([]); setAiSuggestions([]); setExtracts([]);
-    setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
-    autoFlagScannedFor.current = null;
-    setKnowledgeBase(null);
+    setPathModeState('material');
+    setEnabledTypes((prev) => new Set(prev).add('text'));
+    clearMarkupDerived();
     if (!title) setTitle('Pasted source');
-    setDoc(docFromText(pasteText, 'Pasted source'));
+    setTextDoc(docFromText(pasteText, 'Pasted source'));
   };
 
   const handleFetchYoutube = async () => {
@@ -3019,15 +3271,14 @@ export function ObjectCreator() {
     setYtLoading(true);
     try {
       const out = await ingestYoutube(ytUrl.trim());
-      setHighlights([]); setAiSuggestions([]); setExtracts([]);
-      setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
-      autoFlagScannedFor.current = null;
-      setKnowledgeBase(null);
+      setPathModeState('material');
+      setEnabledTypes((prev) => new Set(prev).add('youtube'));
+      clearMarkupDerived();
       if (!title && out.title) setTitle(out.title);
       setYtSegments(out.segments || []);
       setYtVideoId(out.videoId || parseYtId(ytUrl.trim()));
       setYtVideoTitle(out.title || '');
-      setDoc({ fileName: out.title || 'YouTube transcript', pageCount: 1, sentences: (out.sentences || []).map((t) => ({ text: t, page: 1 })) });
+      setYtDoc({ fileName: out.title || 'YouTube transcript', pageCount: 1, sentences: (out.sentences || []).map((t) => ({ text: t, page: 1 })) });
     } catch (e) {
       setYtError(errorMessage(e, 'Could not fetch that transcript.'));
     } finally {
@@ -3041,12 +3292,11 @@ export function ObjectCreator() {
     setWebLoading(true);
     try {
       const out = await ingestWeb(webUrl.trim());
-      setHighlights([]); setAiSuggestions([]); setExtracts([]);
-      setMarkupFlags([]); setFlagSummary(''); setFlagError(null);
-      autoFlagScannedFor.current = null;
-      setKnowledgeBase(null);
+      setPathModeState('material');
+      setEnabledTypes((prev) => new Set(prev).add('web'));
+      clearMarkupDerived();
       if (!title && out.title) setTitle(out.title);
-      setDoc({
+      setWebDoc({
         fileName: out.title || 'Web page',
         pageCount: 1,
         sentences: (out.sentences || []).map((t) => ({ text: t, page: 1 })),
@@ -3059,10 +3309,38 @@ export function ObjectCreator() {
   };
 
   // Document the Mark up / Extract steps operate on.
+  const markupSources: MarkupSource[] = useMemo(() => {
+    const list: MarkupSource[] = [];
+    let offset = 0;
+    const push = (
+      id: string,
+      label: string,
+      kind: MarkupSource['kind'],
+      d: ParsedDoc | null,
+    ) => {
+      if (!d?.sentences?.length) return;
+      list.push({
+        id,
+        label: d.fileName || label,
+        kind,
+        sentences: d.sentences,
+        offset,
+      });
+      offset += d.sentences.length;
+    };
+    // Order must match mergeDocs([...]) so global highlight/scan indices stay stable.
+    push('pdf', pdfFile?.name || 'PDF', 'pdf', pdfDoc);
+    push('text', 'Pasted notes', 'text', textDoc);
+    push('youtube', 'YouTube transcript', 'youtube', ytDoc);
+    push('web', 'Website', 'web', webDoc);
+    push('library', librarySource?.title || 'Library source', 'library', libraryDoc);
+    return list;
+  }, [pdfDoc, textDoc, ytDoc, webDoc, libraryDoc, pdfFile?.name, librarySource?.title]);
+
   const docParas: string[] = usesPipeline ? (doc ? doc.sentences.map(s => s.text) : []) : DOC_PARAS;
   const docPages: number[] | undefined = usesPipeline && doc ? doc.sentences.map(s => s.page) : undefined;
   const docTitle = usesPipeline
-    ? (doc?.fileName ?? pdfFile?.name ?? (srcMode === 'manual' ? 'Written by hand' : srcMode === 'prompt' ? 'Prompt only' : 'Your source'))
+    ? (doc?.fileName ?? pdfFile?.name ?? (pathMode === 'manual' ? 'Written by hand' : pathMode === 'prompt' ? 'Prompt only' : 'Your sources'))
     : 'How to Play Bridge';
 
   const goTo = (n: number) => { if (n >= 1 && n <= 4 && n <= reached) setStep(n); };
@@ -3086,7 +3364,18 @@ export function ObjectCreator() {
       if (d.pasteText != null) setPasteText(d.pasteText);
       if (d.ytUrl != null) setYtUrl(d.ytUrl);
       if (d.webUrl != null) setWebUrl(d.webUrl);
-      if (d.doc) setDoc(d.doc as ParsedDoc);
+      if (d.doc) {
+        const restored = d.doc as ParsedDoc;
+        // Place restored merged/single doc into the slot matching saved srcMode.
+        if (d.srcMode === 'text') setTextDoc(restored);
+        else if (d.srcMode === 'youtube') setYtDoc(restored);
+        else if (d.srcMode === 'web') setWebDoc(restored);
+        else if (d.srcMode === 'pdf') setPdfDoc(restored);
+        else {
+          setTextDoc(restored);
+          setPathModeState('material');
+        }
+      }
       if (d.highlights) setHighlights(d.highlights);
       if (Array.isArray(d.markupFlags)) {
         setMarkupFlags(d.markupFlags as MarkupFlag[]);
@@ -3207,8 +3496,42 @@ export function ObjectCreator() {
     step,
   });
 
+  /** Persist generated/edited content as a library draft so Back→pipeline and Library can reopen it. */
+  const saveGeneratedDraft = (blocks: Block[], description?: string) => {
+    const keepStatus: ObjectStatus = editObjectStatus === 'in-review' ? 'in-review' : 'draft';
+    const id = addObject({
+      id: editObjectId || undefined,
+      type: typeId as any,
+      title: (title || `Untitled ${fmtType(typeId)}`).trim() || `Untitled ${fmtType(typeId)}`,
+      status: keepStatus,
+      description: description || '',
+      estimatedTime: '10 min',
+      blocks: blocks as any,
+      tags: [],
+      sourceIds: [],
+      pipelineDraft: snapshotPipeline(),
+      scope: scope as any,
+    });
+    setEditObjectId(id);
+    setEditObjectStatus(keepStatus);
+    return id;
+  };
+
   /** Leave the draft editor and reopen the full create pipeline (same object). */
-  const backToPipeline = () => {
+  const backToPipeline = (synced?: {
+    parts?: any[];
+    cards?: GeneratedCard[];
+    questions?: GeneratedQuizQuestion[];
+    conceptCard?: GeneratedConceptCard | null;
+    structured?: SummaryContent | ReflectionContent | AssignmentContent | DrillContent | null;
+    videoScript?: VideoScriptContent | null;
+  }) => {
+    if (synced?.parts) setGenParts(synced.parts);
+    if (synced?.cards) setGenCards(synced.cards);
+    if (synced?.questions) setGenQuestions(synced.questions);
+    if (synced && 'conceptCard' in synced) setGenConceptCard(synced.conceptCard || null);
+    if (synced && 'structured' in synced) setGenStructured(synced.structured || null);
+    if (synced && 'videoScript' in synced) setGenVideoScript(synced.videoScript || null);
     setShowEditor(false);
     setReached(4);
     setStep(4);
@@ -3264,21 +3587,7 @@ export function ObjectCreator() {
     }
   };
 
-  // Longer PDFs: auto-scan once when Mark up opens after parse (always optional to re-run).
-  useEffect(() => {
-    if (step !== 2 || !usesPipeline || !doc?.sentences?.length || parsing || scanningFlags) return;
-    const key = doc.fileName || 'doc';
-    if (autoFlagScannedFor.current === key) return;
-    if (markupFlags.length > 0) {
-      autoFlagScannedFor.current = key;
-      return;
-    }
-    const longDoc = (doc.pageCount || 0) >= 10 || doc.sentences.length >= 80;
-    if (!longDoc) return;
-    autoFlagScannedFor.current = key;
-    void handleScanFlags();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, doc, parsing]);
+  // Document-level scan is USER-TRIGGERED only (toolbar button) — never auto-fires on Mark up entry.
 
   /** Marked-up units for concept cards: extracts first, else Use/Support highlights. */
   const conceptMarkupUnits = () => {
@@ -3375,16 +3684,21 @@ export function ObjectCreator() {
     setGenProgress('Starting…');
     setGenerating(true);
     try {
-      const secs = typeof fv.secs === 'number' ? fv.secs : (template.knobDefaults.secs ?? 3);
-      const hintOpts = resolveHintSettings(fv);
+      // Locked templates always generate from org-defined knobs, not author edits.
+      const knobs = isTutorialStructureLocked(template)
+        ? { ...fv, ...template.knobDefaults }
+        : fv;
+      const secs = typeof knobs.secs === 'number' ? knobs.secs : (template.knobDefaults.secs ?? 3);
+      const hintOpts = resolveHintSettings(knobs);
       const config = {
-        obj: fv.obj, topic: fv.topic || title, aud: fv.aud, lvl: fv.lvl,
-        secs, prog: fv.prog, dpth: fv.dpth, end: fv.end,
-        chks: fv.chks, excpts: fv.excpts, wex: fv.wex,
-        pass: fv.pass || '70%',
+        obj: knobs.obj, topic: knobs.topic || title, aud: knobs.aud, lvl: knobs.lvl,
+        secs, prog: knobs.prog, dpth: knobs.dpth, end: knobs.end,
+        words: typeof knobs.words === 'number' ? knobs.words : 0,
+        chks: knobs.chks, excpts: knobs.excpts, wex: knobs.wex,
+        pass: knobs.pass || '70%',
         hintsOn: hintOpts.enabled,
         hintN: hintOpts.count,
-        aiExtra: fv.aiExtra === true,
+        aiExtra: knobs.aiExtra === true,
         templateId: template.id,
       };
       const mediaPayload = media.map((m: any) => ({ ref: m.id, kind: m.kind as 'image' | 'video', caption: m.caption }));
@@ -3419,10 +3733,15 @@ export function ObjectCreator() {
         assessmentPlacement: template.assessmentPlacement || 'after_each_section',
         checksPerSection: typeof config.chks === 'number' ? config.chks : 1,
       });
-      setGenParts(renumberQuestionParts(attachHintsToQuestionParts(ordered, {
-        enabled: config.hintsOn,
-        count: config.hintN,
-      })));
+      const finalParts = renumberQuestionParts(attachSourcesToQuestionParts(
+        attachHintsToQuestionParts(ordered, {
+          enabled: config.hintsOn,
+          count: config.hintN,
+        }),
+        knowledgeBase,
+      ));
+      setGenParts(finalParts);
+      saveGeneratedDraft(partsToBlocks(finalParts, { ...fv, ...config }), config.obj || title);
       setGenerating(false);
       setShowEditor(true);
     } catch (e) {
@@ -3521,6 +3840,20 @@ export function ObjectCreator() {
       const finalCards = attachUploadedImages(collected);
       if (finalCards.length === 0) throw new Error('No cards were generated.');
       setGenCards(finalCards);
+      saveGeneratedDraft([{
+        id: `blk-${Date.now()}`,
+        type: 'flashcard-set',
+        content: {
+          cards: finalCards.map((c) => ({
+            front: c.front,
+            back: c.back,
+            ...(c.hook ? { hook: c.hook } : {}),
+            ...(c.hint ? { hint: c.hint } : {}),
+            ...(c.imageUrl ? { imageUrl: c.imageUrl } : {}),
+          })),
+          direction: 'front-to-back',
+        },
+      } as Block], fv?.mem || title);
       setGenerating(false);
       setShowEditor(true);
     } catch (e) {
@@ -3566,6 +3899,7 @@ export function ObjectCreator() {
         shapeIntent: shapeIntent || undefined,
       };
       const collected: GeneratedQuizQuestion[] = [];
+      let doneMeta: { passMark?: number; showExplanations?: boolean; adaptive?: boolean } = {};
       for await (const ev of generateQuiz(payload, ctrl.signal) as AsyncGenerator<QuizGenEvent>) {
         if (ev.type === 'progress') setGenProgress(ev.message);
         else if (ev.type === 'question') {
@@ -3574,15 +3908,34 @@ export function ObjectCreator() {
         }
         else if (ev.type === 'error') throw new Error(ev.message);
         else if (ev.type === 'done') {
-          setQuizMeta({
+          doneMeta = {
             passMark: ev.passMark,
             showExplanations: ev.showExplanations,
             adaptive: !!ev.adaptive,
-          });
+          };
+          setQuizMeta(doneMeta);
           break;
         }
       }
       if (collected.length === 0) throw new Error('No questions were generated.');
+      setGenQuestions(collected);
+      saveGeneratedDraft([{
+        id: `blk-${Date.now()}`,
+        type: 'quiz',
+        content: {
+          questions: collected.map((q) => ({
+            question: q.question,
+            type: q.type || 'multiple-choice',
+            options: q.options || [],
+            correct: q.correct ?? 0,
+            explanation: q.explanation || '',
+            ...(Array.isArray((q as any).hints) ? { hints: (q as any).hints } : {}),
+          })),
+          passMark: doneMeta.passMark,
+          showExplanations: doneMeta.showExplanations,
+          adaptive: doneMeta.adaptive,
+        },
+      } as Block], fv?.verify || title);
       setGenerating(false);
       setShowEditor(true);
     } catch (e) {
@@ -3641,6 +3994,12 @@ export function ObjectCreator() {
       if (!card?.term || !(card.oneSentenceMeaning || card.definition || card.coreIdea)) {
         throw new Error('No concept card was generated.');
       }
+      setGenConceptCard(card);
+      saveGeneratedDraft([{
+        id: `blk-${Date.now()}`,
+        type: 'concept-card',
+        content: card,
+      } as Block], fv?.concept || card.term || title);
       setGenerating(false);
       setShowEditor(true);
     } catch (e) {
@@ -3713,6 +4072,12 @@ export function ObjectCreator() {
         else if (ev.type === 'done') break;
       }
       if (!content) throw new Error(`No ${kind} was generated.`);
+      setGenStructured(content);
+      saveGeneratedDraft([{
+        id: `blk-${Date.now()}`,
+        type: typeId as any,
+        content,
+      } as Block], (content as any).tldr || (content as any).topic || (content as any).skill || (content as any).objective || (content as any).goal || title);
       setGenerating(false);
       setShowEditor(true);
     } catch (e) {
@@ -3728,7 +4093,9 @@ export function ObjectCreator() {
     const template = getTutorialTemplate(fv.templateId || DEFAULT_TUTORIAL_TEMPLATE_ID);
     const secs = typeof fv.secs === 'number' ? fv.secs : (template.knobDefaults.secs ?? 3);
     setGenError(null);
-    setGenParts(scaffoldTutorialFromTemplate(template, secs, fv.end));
+    const scaffold = scaffoldTutorialFromTemplate(template, secs, fv.end, createdObjects || []);
+    setGenParts(scaffold);
+    saveGeneratedDraft(partsToBlocks(scaffold, fv), fv.obj || title);
     setShowEditor(true);
   };
 
@@ -3785,6 +4152,11 @@ export function ObjectCreator() {
         requireAnswer: true,
       };
       setGenVideoScript(content);
+      saveGeneratedDraft([{
+        id: `blk-${Date.now()}`,
+        type: 'video-script',
+        content,
+      } as Block], fv?.obj || title);
       setGenerating(false);
       setShowEditor(true);
     } catch (e) {
@@ -3796,8 +4168,17 @@ export function ObjectCreator() {
     }
   };
 
+  const hasDraftContent = () =>
+    genParts.length > 0 || genCards.length > 0 || genQuestions.length > 0
+    || !!genConceptCard || !!genStructured || !!genVideoScript;
+
   const advance = () => {
     if (step >= 4) {
+      if (hasDraftContent()) {
+        const noun = NOUNS[typeId] || typeId;
+        const ok = window.confirm(`Regenerate this ${noun}? The current draft will be replaced.`);
+        if (!ok) return;
+      }
       if (isTutorial && srcMode === 'manual') { openManualTutorialEditor(); return; }
       if (isTutorial) { runGenerate(); return; }
       if (isFlashcard) { runGenerateFlashcards(); return; }
@@ -3826,7 +4207,10 @@ export function ObjectCreator() {
         initialId={editObjectId || undefined}
         initialStatus={editObjectStatus}
         pipelineDraft={draft}
-        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+        onBack={(cards?: GeneratedCard[]) => {
+          if (Array.isArray(cards)) setGenCards(cards);
+          backToPipeline(cards ? { cards } : undefined);
+        }} onDone={() => navigate('cd-library')} />
     );
     if (isQuiz) return (
       <QuizEditor typeId={typeId} title={title} scope={scope} fv={fv} questions={genQuestions}
@@ -3836,48 +4220,63 @@ export function ObjectCreator() {
         initialId={editObjectId || undefined}
         initialStatus={editObjectStatus}
         pipelineDraft={draft}
-        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+        onBack={(questions?: GeneratedQuizQuestion[]) => {
+          if (Array.isArray(questions)) setGenQuestions(questions);
+          backToPipeline(questions ? { questions } : undefined);
+        }} onDone={() => navigate('cd-library')} />
     );
     if (isConceptCard) return (
       <ConceptCardEditor typeId={typeId} title={title} scope={scope} fv={fv} card={genConceptCard}
         initialId={editObjectId || undefined}
         initialStatus={editObjectStatus}
         pipelineDraft={draft}
-        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+        onBack={(card?: GeneratedConceptCard | null) => {
+          if (card) setGenConceptCard(card);
+          backToPipeline({ conceptCard: card || null });
+        }} onDone={() => navigate('cd-library')} />
     );
     if (isSummary) return (
       <SummaryEditor typeId={typeId} title={title} scope={scope} fv={fv} content={genStructured as SummaryContent | null}
         initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
-        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+        onBack={(content?: SummaryContent | null) => backToPipeline({ structured: content || null })} onDone={() => navigate('cd-library')} />
     );
     if (isReflection) return (
       <ReflectionEditor typeId={typeId} title={title} scope={scope} fv={fv} content={genStructured as ReflectionContent | null}
         initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
-        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+        onBack={(content?: ReflectionContent | null) => backToPipeline({ structured: content || null })} onDone={() => navigate('cd-library')} />
     );
     if (isAssignment) return (
       <AssignmentEditor typeId={typeId} title={title} scope={scope} fv={fv} content={genStructured as AssignmentContent | null}
         initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
-        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+        onBack={(content?: AssignmentContent | null) => backToPipeline({ structured: content || null })} onDone={() => navigate('cd-library')} />
     );
     if (isDrill) return (
       <DrillEditor typeId={typeId} title={title} scope={scope} fv={fv} content={genStructured as DrillContent | null}
         initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
-        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+        onBack={(content?: DrillContent | null) => backToPipeline({ structured: content || null })} onDone={() => navigate('cd-library')} />
     );
     if (isVideoScript) return (
       <VideoScriptEditor typeId={typeId} title={title} scope={scope} fv={fv} content={genVideoScript}
         initialId={editObjectId || undefined} initialStatus={editObjectStatus} pipelineDraft={draft}
-        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+        onBack={(content?: VideoScriptContent | null) => {
+          if (content) setGenVideoScript(content);
+          backToPipeline({ videoScript: content || null });
+        }} onDone={() => navigate('cd-library')} />
     );
     return (
       <ObjEditor typeId={typeId} title={title} scope={scope} fv={fv}
-        generatedParts={isTutorial ? assembleParts() : (editObjectId ? genParts : undefined)}
+        generatedParts={isTutorial ? assembleParts() : ((editObjectId || genParts.length) ? genParts : undefined)}
         initialId={editObjectId || undefined}
         initialStatus={editObjectStatus}
         pipelineDraft={draft}
-        srcCount={usesPipeline ? ((doc || pdfFile) ? 1 : 0) : sel.length} extCount={extracts.length} hlCount={highlights.length}
-        onBack={backToPipeline} onDone={() => navigate('cd-library')} />
+        srcCount={usesPipeline ? [pdfFile || pdfDoc, textDoc, ytDoc, webDoc, librarySource].filter(Boolean).length : sel.length} extCount={extracts.length} hlCount={highlights.length}
+        onBack={(parts?: any[]) => {
+          if (Array.isArray(parts) && parts.length) {
+            setGenParts(parts);
+            saveGeneratedDraft(partsToBlocks(parts, fv), fv.obj || title);
+          }
+          backToPipeline(parts ? { parts } : undefined);
+        }} onDone={() => navigate('cd-library')} />
     );
   }
 
@@ -3902,16 +4301,11 @@ export function ObjectCreator() {
       onCancel={cancelGenerate} />
   );
 
-  const sourceReady = srcMode === 'manual'
+  const sourceReady = pathMode === 'manual'
     ? true
-    : srcMode === 'prompt'
+    : pathMode === 'prompt'
       ? promptText.trim().length > 0
-      : srcMode === 'pdf'
-        ? !!(pdfFile || (doc && doc.sentences.length > 0))
-        : srcMode === 'text'
-          ? !!(pasteText.trim() || (doc && doc.sentences.length > 0))
-          : !!(doc && doc.sentences.length > 0); // youtube / web — already fetched
-
+      : !!(librarySource || pdfFile || pdfDoc || textDoc || ytDoc || webDoc);
   const canNext = step === 1
     ? (usesPipeline ? sourceReady : sel.length > 0)
     : step === 2
@@ -3919,20 +4313,20 @@ export function ObjectCreator() {
       : true;
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0 flex-1">
       {/* Header */}
       <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={() => navigate(editObjectId ? 'cd-library' : 'cd-create')} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
-          <ArrowLeft size={14} />{editObjectId ? 'Back to library' : 'Back to Create'}
+        <button onClick={() => navigate(editObjectId || hasDraft ? 'cd-library' : 'cd-create')} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
+          <ArrowLeft size={14} />{editObjectId || hasDraft ? 'Back to library' : 'Back to Create'}
         </button>
         <ChevronRight size={13} style={{ color: '#C4CBD4' }} />
         <span className="px-3 py-1 rounded-full text-sm font-semibold text-white" style={{ background: '#0B0F1A' }}>
-          {editObjectId ? `Edit ${fmtType(typeId)}` : `New ${fmtType(typeId)}`}
+          {editObjectId || hasDraft ? `Edit ${fmtType(typeId)}` : `New ${fmtType(typeId)}`}
         </span>
         <span style={{ fontSize: 12, color: '#9AA3AF', marginLeft: 2 }}>
-          {editObjectId ? 'revise sources, markup, extracts, or define — then regenerate' : 'every object starts from its sources'}
+          {hasDraft ? 'revise sources, markup, extracts, or define — then regenerate' : 'every object starts from its sources'}
         </span>
-        {editObjectId && hasDraft && (
+        {hasDraft && (
           <button
             onClick={() => setShowEditor(true)}
             className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold"
@@ -3962,30 +4356,40 @@ export function ObjectCreator() {
         })}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Content — all steps page-scroll; Mark up grows with document content */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <AnimatePresence mode="wait">
-          <motion.div key={step} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+          <motion.div
+            key={step}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          >
             {step === 1 && (usesPipeline
               ? <TutorialSource
-                  mode={srcMode} setMode={changeMode} doc={doc} pdfFile={pdfFile} onReplace={replaceSource}
-                  onFile={handleFile}
-                  pasteText={pasteText} setPasteText={setPasteText} onLoadText={handleLoadText}
-                  ytUrl={ytUrl} setYtUrl={setYtUrl} ytLoading={ytLoading} ytError={ytError} onFetchYoutube={handleFetchYoutube}
-                  webUrl={webUrl} setWebUrl={setWebUrl} webLoading={webLoading} webError={webError} onFetchWeb={handleFetchWeb}
+                  pathMode={pathMode} setPathMode={setPathMode}
+                  enabledTypes={enabledTypes} toggleMaterialType={toggleMaterialType}
+                  pdfFile={pdfFile} pdfDoc={pdfDoc} onReplacePdf={replacePdf} onFile={handleFile}
+                  textDoc={textDoc} pasteText={pasteText} setPasteText={setPasteText} onLoadText={handleLoadText} onReplaceText={replaceText}
+                  ytDoc={ytDoc} ytUrl={ytUrl} setYtUrl={setYtUrl} ytLoading={ytLoading} ytError={ytError} onFetchYoutube={handleFetchYoutube} onReplaceYoutube={replaceYoutube}
+                  webDoc={webDoc} webUrl={webUrl} setWebUrl={setWebUrl} webLoading={webLoading} webError={webError} onFetchWeb={handleFetchWeb} onReplaceWeb={replaceWeb}
                   promptText={promptText} setPromptText={setPromptText}
                   showMedia={!isVideoScript} imagesOnly={isFlashcard}
                   showManualWrite={isTutorial}
                   objectNoun={typeNoun}
+                  librarySource={librarySource}
+                  onPickLibrarySource={pickLibrarySource}
                   media={media} addImage={addImageAsset} addImagesFromFiles={addImagesFromFiles}
                   addVideo={addVideoAsset} updateMedia={updateMedia} removeMedia={removeMedia} pickImageAsset={pickImageAsset} />
-              : <S1 selected={sel} setSelected={setSel} roles={roles} setRoles={setRoles} urlRefs={urlRefs} setUrlRefs={setUrlRefs} />)}
+              : <S1 selected={sel} setSelected={setSel} />)}
             {step === 2 && (
               <S2
+                sources={markupSources}
                 highlights={highlights} setHighlights={setHighlights}
                 activeTag={activeTag} setActiveTag={setActiveTag}
                 aiSuggestions={aiSuggestions} setAiSuggestions={setAiSuggestions}
-                docParas={docParas} docTitle={docTitle || pdfFile?.name || 'Your source'}
+                docParas={docParas}
                 pages={docPages} pageCount={doc?.pageCount}
                 query={query} setQuery={setQuery}
                 onSuggest={usesPipeline ? handleSuggest : undefined}
@@ -4011,12 +4415,13 @@ export function ObjectCreator() {
                   syncExtracts={syncExtractsFromUnits}
                   typeNoun={typeNoun}
                   clusterOutcome={clusterOutcome}
+                  markupSources={markupSources}
                 />
               )
               : <S3 extracts={extracts} setExtracts={setExtracts} markHighlights={highlights} docTitle={docTitle} typeNoun={typeNoun} />)}
             {step === 4 && (
               <S4 typeId={typeId} title={title} setTitle={setTitle} scope={scope} setScope={setScope} fv={fv} setF={setF}
-                srcCount={usesPipeline ? ((doc || pdfFile) ? 1 : 0) : sel.length} extCount={extracts.length} hlCount={highlights.length}
+                srcCount={usesPipeline ? [pdfFile || pdfDoc, textDoc, ytDoc, webDoc, librarySource].filter(Boolean).length : sel.length} extCount={extracts.length} hlCount={highlights.length}
                 clusterCount={knowledgeBase?.clusters?.length || 0}
                 onPickTutorialTemplate={isTutorial ? pickTutorialTemplate : undefined}
                 onPickObjectTemplate={!isTutorial && usesPipeline ? pickObjectTemplate : undefined}
@@ -4050,7 +4455,7 @@ export function ObjectCreator() {
         <span style={{ fontSize: 12, color: '#9AA3AF' }}>
           Step {step} of 4 · {STEP_META[step - 1].label}
           {(STEP_META[step - 1] as any).skip && ' · you can skip'}
-          {step === 1 && usesPipeline && !canNext && (srcMode === 'prompt' ? ' · describe what to generate to continue' : ' · add a source to continue')}
+          {step === 1 && usesPipeline && !canNext && (pathMode === 'prompt' ? ' · describe what to generate to continue' : ' · add at least one source to continue')}
           {step === 2 && usesPipeline && parsing && ' · extracting text…'}
         </span>
         <div className="flex items-center gap-2">
@@ -4060,7 +4465,7 @@ export function ObjectCreator() {
               Skip
             </button>
           )}
-          {editObjectId && hasDraft && (
+          {hasDraft && (
             <button onClick={() => setShowEditor(true)} className="px-3 py-2 rounded-full border"
               style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
               Keep current draft →
@@ -4071,8 +4476,8 @@ export function ObjectCreator() {
             style={{ fontSize: 13, fontWeight: 600, background: canNext ? (step === 4 ? '#059669' : '#0B0F1A') : '#E5E7EB', color: canNext ? '#fff' : '#9AA3AF' }}>
             {step === 4
               ? (isTutorial && srcMode === 'manual'
-                ? <><PenLine size={13} />{editObjectId ? 'Rebuild blank from template' : 'Start writing'} →</>
-                : <><Sparkles size={13} />✦ {editObjectId ? 'Regenerate' : 'Generate'} {NOUNS[typeId] || typeId}</>)
+                ? <><PenLine size={13} />{hasDraft ? 'Rebuild blank from template' : 'Start writing'} →</>
+                : <><Sparkles size={13} />✦ {hasDraft ? 'Regenerate' : 'Generate'} {NOUNS[typeId] || typeId}</>)
               : 'Next →'}
           </button>
         </div>

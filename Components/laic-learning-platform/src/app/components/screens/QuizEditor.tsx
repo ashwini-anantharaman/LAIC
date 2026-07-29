@@ -313,7 +313,10 @@ export function QuizEditor({
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
+        <button onClick={() => {
+          save('draft');
+          onBack?.(localQs.map(({ _id, ...rest }) => rest));
+        }} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
           <ChevronLeft size={15} />Back to pipeline
         </button>
         <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)}

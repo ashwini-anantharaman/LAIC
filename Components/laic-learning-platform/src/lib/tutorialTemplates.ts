@@ -410,6 +410,23 @@ export function formatRecipeItemForPrompt(item: RecipeItem, index: number): stri
   );
 }
 
+/** Built-in freeform template — course developers may edit structure knobs. */
+export const FREEFORM_TUTORIAL_TEMPLATE_ID = 'author-freeform';
+
+/** Structure / scoring knobs owned by the template when `structureLocked` is true. */
+export const TEMPLATE_LOCKED_KNOB_IDS = [
+  'secs', 'words', 'prog', 'dpth', 'end',
+  'chks', 'excpts', 'wex',
+  'pass', 'hintsOn', 'hintN', 'aiExtra',
+] as const;
+
+export function isTutorialStructureLocked(template: TutorialTemplate): boolean {
+  // Freeform builtin is always editable for authors, even if a local override
+  // tried to lock it.
+  if (template.id === FREEFORM_TUTORIAL_TEMPLATE_ID) return false;
+  return template.structureLocked !== false;
+}
+
 /** Built-in pedagogical templates. Custom templates use the same shape. */
 export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
   packTemplate({
@@ -418,11 +435,12 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
     description:
       "Each section explains one concept, shows a worked example, optionally attaches matched media, then embeds a real Quiz object to check understanding.",
     builtin: true,
+    structureLocked: true,
     sectionConnection: 'sequential',
     assessmentPlacement: 'after_each_section',
     recipe: CEP_RECIPE,
     knobDefaults: {
-      secs: 6, prog: 'Linear build-up', dpth: 'Standard', end: 'Recap only',
+      secs: 6, words: 4200, prog: 'Linear build-up', dpth: 'Standard', end: 'Recap only',
       chks: 2, excpts: 1, wex: true, pass: '70%', hintsOn: true, hintN: 4, aiExtra: false,
     },
   }),
@@ -431,6 +449,7 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
     name: 'Guided Walkthrough',
     description: 'Step-by-step how-to: instruction, optional excerpt, then a try-it checkpoint.',
     builtin: true,
+    structureLocked: true,
     sectionConnection: 'prerequisite_chain',
     assessmentPlacement: 'checkpoints_after_each',
     recipe: [
@@ -444,7 +463,7 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
       makeAtomicItem('try-it', { required: true, preferKinds: ['Fact', 'Procedure'] }),
     ],
     knobDefaults: {
-      secs: 5, prog: 'Prerequisite chain', dpth: 'Standard', end: 'Recap only',
+      secs: 5, words: 3000, prog: 'Prerequisite chain', dpth: 'Standard', end: 'Recap only',
       chks: 1, excpts: 1, wex: false, pass: '70%', hintsOn: true, hintN: 4, aiExtra: false,
     },
   }),
@@ -453,6 +472,7 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
     name: 'Worked Example First',
     description: 'Open with a full source example, then name the principle, then check with an embedded Quiz.',
     builtin: true,
+    structureLocked: true,
     sectionConnection: 'standalone',
     assessmentPlacement: 'after_each_section',
     recipe: [
@@ -466,7 +486,7 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
       }),
     ],
     knobDefaults: {
-      secs: 3, prog: 'Themed clusters', dpth: 'In-depth', end: 'Recap only',
+      secs: 3, words: 2700, prog: 'Themed clusters', dpth: 'In-depth', end: 'Recap only',
       chks: 1, excpts: 0, wex: true, pass: '70%', hintsOn: true, hintN: 4, aiExtra: false,
     },
   }),
@@ -475,6 +495,7 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
     name: 'Explain, Misconception, Correct',
     description: 'Explain an idea, surface a common mistake, correct it, then probe with an embedded Quiz.',
     builtin: true,
+    structureLocked: true,
     sectionConnection: 'sequential',
     assessmentPlacement: 'after_each_section',
     recipe: [
@@ -489,7 +510,7 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
       }),
     ],
     knobDefaults: {
-      secs: 3, prog: 'Linear build-up', dpth: 'Standard', end: 'Recap only',
+      secs: 3, words: 2100, prog: 'Linear build-up', dpth: 'Standard', end: 'Recap only',
       chks: 1, excpts: 0, wex: false, pass: '70%', hintsOn: true, hintN: 4, aiExtra: false,
     },
   }),
@@ -498,6 +519,7 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
     name: 'Scenario Driven',
     description: 'One running case threads every section; cumulative assessment at the end.',
     builtin: true,
+    structureLocked: true,
     sectionConnection: 'sequential',
     assessmentPlacement: 'end_only',
     recipe: [
@@ -513,7 +535,7 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
       }),
     ],
     knobDefaults: {
-      secs: 4, prog: 'Linear build-up', dpth: 'Standard', end: 'End quiz',
+      secs: 4, words: 2800, prog: 'Linear build-up', dpth: 'Standard', end: 'End quiz',
       chks: 0, excpts: 1, wex: true, pass: '70%', hintsOn: true, hintN: 4, aiExtra: false,
     },
   }),
@@ -522,6 +544,7 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
     name: 'Reference / Cheat Sheet',
     description: 'Dense, example-light review sections; minimal or no checks.',
     builtin: true,
+    structureLocked: true,
     sectionConnection: 'standalone',
     assessmentPlacement: 'end_only',
     recipe: [
@@ -533,8 +556,23 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
       makeAtomicItem('source-excerpt', { preferKinds: ['Quote', 'Fact'] }),
     ],
     knobDefaults: {
-      secs: 4, prog: 'Themed clusters', dpth: 'Overview', end: 'None',
+      secs: 4, words: 1600, prog: 'Themed clusters', dpth: 'Overview', end: 'None',
       chks: 0, excpts: 2, wex: false, pass: '70%', hintsOn: false, hintN: 0, aiExtra: false,
+    },
+  }),
+  packTemplate({
+    id: FREEFORM_TUTORIAL_TEMPLATE_ID,
+    name: 'Freeform',
+    description:
+      'Course developers choose section count, word target, progression, and related structure themselves.',
+    builtin: true,
+    structureLocked: false,
+    sectionConnection: 'sequential',
+    assessmentPlacement: 'after_each_section',
+    recipe: CEP_RECIPE,
+    knobDefaults: {
+      secs: 3, words: 0, prog: 'Linear build-up', dpth: 'Standard', end: 'Recap only',
+      chks: 1, excpts: 1, wex: true, pass: '70%', hintsOn: true, hintN: 4, aiExtra: false,
     },
   }),
 ];
@@ -553,7 +591,7 @@ function slugify(name: string): string {
 
 function defaultKnobDefaults(): TutorialTemplate['knobDefaults'] {
   return {
-    secs: 3, prog: 'Linear build-up', dpth: 'Standard', end: 'Recap only',
+    secs: 3, words: 0, prog: 'Linear build-up', dpth: 'Standard', end: 'Recap only',
     chks: 1, excpts: 0, wex: true, pass: '70%', hintsOn: true, hintN: 4, aiExtra: false,
   };
 }
@@ -582,11 +620,14 @@ function normalizeCustom(raw: unknown): TutorialTemplate | null {
     && (t.recipe as unknown[]).length > 0
     && (t.recipe as unknown[]).some(isRecipeItem);
 
+  const isFreeform = t.id === FREEFORM_TUTORIAL_TEMPLATE_ID;
   return packTemplate({
     id: t.id,
     name: t.name.trim() || 'Untitled template',
     description: typeof t.description === 'string' ? t.description : '',
     builtin: false,
+    // Customs default locked; freeform id always stays unlocked for authors.
+    structureLocked: isFreeform ? false : t.structureLocked !== false,
     sectionConnection: (CONNECTION_OPTIONS.some((o) => o.id === t.sectionConnection)
       ? t.sectionConnection
       : 'sequential') as SectionConnectionRule,
@@ -599,6 +640,9 @@ function normalizeCustom(raw: unknown): TutorialTemplate | null {
       ...defaultKnobDefaults(),
       ...(t.knobDefaults || {}),
       secs: typeof t.knobDefaults?.secs === 'number' ? t.knobDefaults.secs : 3,
+      words: typeof t.knobDefaults?.words === 'number' && t.knobDefaults.words >= 0
+        ? t.knobDefaults.words
+        : 0,
       chks: typeof t.knobDefaults?.chks === 'number' ? t.knobDefaults.chks : 1,
       wex: t.knobDefaults?.wex !== false,
       hintsOn: t.knobDefaults?.hintsOn !== false,
@@ -642,6 +686,9 @@ export function saveCustomTutorialTemplate(
     builtin: false,
     name: input.name.trim() || 'Untitled template',
     description: (input.description || '').trim(),
+    structureLocked: id === FREEFORM_TUTORIAL_TEMPLATE_ID
+      ? false
+      : input.structureLocked !== false,
     recipe: recipe.length
       ? recipe
       : [
@@ -677,7 +724,12 @@ export function listTutorialTemplates(): TutorialTemplate[] {
   const byId = new Map(customs.map((c) => [c.id, c]));
   const mergedBuiltins = BUILTIN_TUTORIAL_TEMPLATES.map((b) => {
     const override = byId.get(b.id);
-    return override ? { ...override, builtin: false } : b;
+    if (!override) return b;
+    // Freeform must remain author-editable even if a local override exists.
+    if (b.id === FREEFORM_TUTORIAL_TEMPLATE_ID) {
+      return { ...override, builtin: false, structureLocked: false };
+    }
+    return { ...override, builtin: false };
   });
   const pureCustom = customs.filter((c) => !isBuiltinTemplateId(c.id));
   return [...mergedBuiltins, ...pureCustom];
@@ -706,13 +758,14 @@ export function blankCustomTemplateDraft(): Omit<TutorialTemplate, 'id' | 'built
   return {
     name: '',
     description: '',
+    structureLocked: true,
     sectionConnection: 'sequential',
     assessmentPlacement: 'after_each_section',
     recipe,
     sectionBlockRecipe: toFlatSectionBlockRecipe(recipe),
     mediaSlots: deriveMediaSlots(recipe),
     knobDefaults: {
-      secs: 6, prog: 'Linear build-up', dpth: 'Standard', end: 'Recap only',
+      secs: 6, words: 4200, prog: 'Linear build-up', dpth: 'Standard', end: 'Recap only',
       chks: 2, excpts: 0, wex: true, pass: '70%', hintsOn: true, hintN: 4, aiExtra: false,
     },
   };

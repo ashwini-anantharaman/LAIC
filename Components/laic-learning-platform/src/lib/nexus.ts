@@ -15,7 +15,15 @@
 import type { Role } from "./types";
 import type { CapabilityCatalogueDocument } from "./accessControlCatalogue";
 
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+// Nexus identity/launch lives on the Nexus platform API — not the Content
+// Studio Node server (sources/extract/generate). Locally those are different
+// ports (8000 vs 8001). Prefer VITE_NEXUS_URL; fall back to VITE_API_BASE_URL
+// for deploys that only point at the Nexus backend.
+const BASE_URL = (
+  import.meta.env.VITE_NEXUS_URL ??
+  import.meta.env.VITE_API_BASE_URL ??
+  ""
+).replace(/\/$/, "");
 
 const TOKEN_KEY = "laic_nexus_token";
 const PROGRAM_KEY = "laic_nexus_program";

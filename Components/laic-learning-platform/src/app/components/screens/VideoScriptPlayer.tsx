@@ -402,6 +402,7 @@ export function VideoScriptPlayer({
         height: '100%',
         videoId: id,
         playerVars: {
+          autoplay: 0,
           controls: 0, disablekb: 1, rel: 0, modestbranding: 1,
           playsinline: 1, iv_load_policy: 3, fs: 0,
         },
@@ -418,6 +419,9 @@ export function VideoScriptPlayer({
             }
             const d = e.target.getDuration?.();
             if (d) setDuration(d);
+            // Stay paused until the learner hits play — opening the object must not start audio.
+            try { e.target.pauseVideo?.(); } catch { /* noop */ }
+            setPlaying(false);
             setReady(true);
           },
           onStateChange: (e: any) => {

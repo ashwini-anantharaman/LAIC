@@ -84,12 +84,12 @@ export function Layout() {
   // recoverable boundary instead of blanking the whole app.
   const boundaryKey = readerObjectId ? `reader:${readerObjectId}` : currentScreen || 'unknown';
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen min-h-0 overflow-hidden">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <TopBar />
         <ReadOnlyBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
           <ScreenErrorBoundary key={boundaryKey} onReset={() => navigate(currentScreen || 'cd-library')}>
             <ScreenRouter />
           </ScreenErrorBoundary>

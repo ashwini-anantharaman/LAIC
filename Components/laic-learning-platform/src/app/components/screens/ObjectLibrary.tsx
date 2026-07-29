@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { Search, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video, BookMarked, Link2, Check } from 'lucide-react';
+import { Search, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video, BookMarked, Link2, Check, FolderOpen } from 'lucide-react';
 import { motion } from 'motion/react';
 import { OBJECTS, COURSES } from '../../../lib/data';
 import { StatusPill } from './StatusPill';
-import type { ObjectType, ObjectStatus } from '../../../lib/types';
+import type { LearningObject, ObjectType, ObjectStatus } from '../../../lib/types';
 import { useApp } from '../../App';
 import { objectEmbedUrl } from '../../../lib/objectUrls';
 
-const TYPE_ICONS: Record<ObjectType | 'course', React.ReactNode> = {
+const TYPE_ICONS: Record<ObjectType | 'course' | 'drafts', React.ReactNode> = {
   lesson:        <BookOpen size={14} />,
   tutorial:      <Layers size={14} />,
   quiz:          <HelpCircle size={14} />,
@@ -20,6 +20,7 @@ const TYPE_ICONS: Record<ObjectType | 'course', React.ReactNode> = {
   drill:         <Zap size={14} />,
   'video-script':  <Video size={14} />,
   course:        <BookMarked size={14} />,
+  drafts:        <FolderOpen size={14} />,
 };
 
 const TYPE_GROUPS: { type: ObjectType | 'course'; label: string }[] = [
@@ -37,15 +38,17 @@ const TYPE_GROUPS: { type: ObjectType | 'course'; label: string }[] = [
   { type: 'video-script', label: 'Video scripts' },
 ];
 
+const DRAFT_STATUSES: ObjectStatus[] = ['draft', 'changes-requested'];
+
+function isDraftStatus(status: ObjectStatus) {
+  return DRAFT_STATUSES.includes(status);
+}
+
 export function ObjectLibrary() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<ObjectStatus | 'all'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const { openReader, openEditor, createdObjects, nexusMode } = useApp();
-  // In Nexus mode the library shows ONLY this program's real objects (from the
-  // backend, program-scoped). The demo seed catalog is standalone-only.
-  const seedObjects = nexusMode ? [] : OBJECTS;
-  const seedCourses = nexusMode ? [] : COURSES;
+  const { openReader, openEditor, createdObjects } = useApp();
 
   const copyObjectUrl = async (objectId: string) => {
     const url = objectEmbedUrl(objectId);
@@ -61,7 +64,7 @@ export function ObjectLibrary() {
   // Saved objects first (account library), then seed catalog without duplicates.
   const allObjects = [
     ...createdObjects,
-    ...seedObjects.filter(o => !createdObjects.some(c => c.id === o.id)),
+    ...OBJECTS.filter(o => !createdObjects.some(c => c.id === o.id)),
   ];
 
   const filtered = allObjects.filter(o => {
@@ -70,20 +73,106 @@ export function ObjectLibrary() {
     return matchSearch && matchStatus;
   });
 
-  const savedCount = createdObjects.length;
+  const draftItems = filtered.filter(o => isDraftStatus(o.status));
+  // When browsing "all", keep drafts in the Drafts folder only (not duplicated under type).
+  const typedFiltered = filterStatus === 'all'
+    ? filtered.filter(o => !isDraftStatus(o.status))
+    : filtered;
 
-  const courseFiltered = seedCourses.filter(c => {
+  const savedCount = createdObjects.length;
+  const draftCount = createdObjects.filter(o => isDraftStatus(o.status)).length;
+
+  const courseFiltered = COURSES.filter(c => {
     const matchSearch = c.title.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || c.status === filterStatus;
     return matchSearch && matchStatus;
   });
+
+  const canEdit = (item: { id: string; type?: ObjectType }) =>
+    !!item.type && (
+      item.type === 'tutorial'
+      || item.type === 'flashcard-set'
+      || item.type === 'quiz'
+      || item.type === 'concept-card'
+      || item.type === 'summary'
+      || item.type === 'reflection'
+      || item.type === 'assignment'
+      || item.type === 'drill'
+      || item.type === 'video-script'
+      || createdObjects.some(o => o.id === item.id)
+    );
+
+  const renderObjectRows = (
+    items: Array<(LearningObject | { id: string; title: string; ownerName: string; status: ObjectStatus; reuseCount: number; scope: string; isCourse: true }) & { isCourse?: boolean; type?: ObjectType }>,
+  ) => (
+    <div
+      className="rounded-[22px] overflow-hidden"
+      style={{ background: 'white', boxShadow: '0 4px 20px -8px rgba(30,50,80,0.12)' }}
+    >
+      {items.map((item, idx) => (
+        <div
+          key={item.id}
+          className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/80"
+          style={{ borderBottom: idx < items.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none' }}
+        >
+          <div className="flex-1 min-w-0">
+            <p style={{ fontSize: 13.5, fontWeight: 550, color: '#0B1220' }}>{item.title}</p>
+            <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+              {item.ownerName}
+              {'type' in item && item.type ? ` · ${item.type}` : ''}
+            </p>
+          </div>
+          <StatusPill status={item.status} />
+          <span style={{ fontSize: 11.5, color: '#C4CBD4', minWidth: 32, textAlign: 'right' }}>
+            {item.isCourse ? `${item.reuseCount} learners` : `×${item.reuseCount}`}
+          </span>
+          <div className="flex items-center gap-1">
+            {!item.isCourse && (
+              <button
+                type="button"
+                onClick={() => void copyObjectUrl(item.id)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
+                title={copiedId === item.id ? 'Copied' : 'Copy object URL'}
+              >
+                {copiedId === item.id ? <Check size={13} className="text-emerald-600" /> : <Link2 size={13} />}
+              </button>
+            )}
+            {!item.isCourse && (
+              <button
+                onClick={() => openReader(item.id)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
+                title="Student preview"
+              >
+                <Eye size={13} />
+              </button>
+            )}
+            {!item.isCourse && canEdit(item) && (
+              <button
+                onClick={() => openEditor(item.id)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
+                title="Continue editing"
+              >
+                <PenLine size={13} />
+              </button>
+            )}
+            <button className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]" title="New draft">
+              <GitBranch size={13} />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div className="px-6 py-6 w-full">
       {savedCount > 0 && (
         <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 12 }}>
           <span style={{ fontWeight: 650, color: '#0B1220' }}>{savedCount} saved</span>
-          {' '}in your account library (shown first)
+          {' '}in your account library
+          {draftCount > 0 && (
+            <> · <span style={{ fontWeight: 650, color: '#0B1220' }}>{draftCount} draft{draftCount === 1 ? '' : 's'}</span></>
+          )}
         </p>
       )}
       {/* Search + filter bar */}
@@ -110,17 +199,35 @@ export function ObjectLibrary() {
           <option value="all">All statuses</option>
           <option value="draft">Draft</option>
           <option value="in-review">In review</option>
+          <option value="changes-requested">Changes requested</option>
           <option value="approved">Approved</option>
           <option value="published">Published</option>
           <option value="archived">Archived</option>
         </select>
       </div>
 
+      {/* Drafts folder — continue unpublished work */}
+      {(filterStatus === 'all' || filterStatus === 'draft' || filterStatus === 'changes-requested') && draftItems.length > 0 && (
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="mb-6"
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[#9AA3AF]">{TYPE_ICONS.drafts}</span>
+            <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>Drafts</p>
+            <span style={{ fontSize: 11, color: '#C4CBD4' }}>{draftItems.length}</span>
+          </div>
+          {renderObjectRows(draftItems.map(o => ({ ...o, isCourse: false as const })))}
+        </motion.section>
+      )}
+
       {/* Groups */}
       {TYPE_GROUPS.map(({ type, label }) => {
         const items = type === 'course'
-          ? courseFiltered.map(c => ({ id: c.id, title: c.title, ownerName: c.authorName, status: c.status as ObjectStatus, reuseCount: c.learnerCount, scope: c.scope, isCourse: true }))
-          : filtered.filter(o => o.type === type).map(o => ({ ...o, isCourse: false }));
+          ? courseFiltered.map(c => ({ id: c.id, title: c.title, ownerName: c.authorName, status: c.status as ObjectStatus, reuseCount: c.learnerCount, scope: c.scope, isCourse: true as const }))
+          : typedFiltered.filter(o => o.type === type).map(o => ({ ...o, isCourse: false as const }));
 
         if (items.length === 0) return null;
 
@@ -137,60 +244,7 @@ export function ObjectLibrary() {
               <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>{label}</p>
               <span style={{ fontSize: 11, color: '#C4CBD4' }}>{items.length}</span>
             </div>
-            <div
-              className="rounded-[22px] overflow-hidden"
-              style={{ background: 'white', boxShadow: '0 4px 20px -8px rgba(30,50,80,0.12)' }}
-            >
-              {items.map((item, idx) => (
-                <div
-                  key={item.id}
-                  className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/80"
-                  style={{ borderBottom: idx < items.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none' }}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p style={{ fontSize: 13.5, fontWeight: 550, color: '#0B1220' }}>{item.title}</p>
-                    <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>{item.ownerName}</p>
-                  </div>
-                  <StatusPill status={item.status} />
-                  <span style={{ fontSize: 11.5, color: '#C4CBD4', minWidth: 32, textAlign: 'right' }}>
-                    {item.isCourse ? `${(item as typeof items[0]).reuseCount} learners` : `×${(item as typeof items[0]).reuseCount}`}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {!item.isCourse && (
-                      <button
-                        type="button"
-                        onClick={() => void copyObjectUrl(item.id)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
-                        title={copiedId === item.id ? 'Copied' : 'Copy object URL'}
-                      >
-                        {copiedId === item.id ? <Check size={13} className="text-emerald-600" /> : <Link2 size={13} />}
-                      </button>
-                    )}
-                    {!item.isCourse && (
-                      <button
-                        onClick={() => openReader(item.id)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
-                        title="Student preview"
-                      >
-                        <Eye size={13} />
-                      </button>
-                    )}
-                    {!item.isCourse && ('type' in item) && (item.type === 'tutorial' || item.type === 'flashcard-set' || createdObjects.some(o => o.id === item.id)) && (
-                      <button
-                        onClick={() => openEditor(item.id)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
-                        title="Edit (available even in review)"
-                      >
-                        <PenLine size={13} />
-                      </button>
-                    )}
-                    <button className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]" title="New draft">
-                      <GitBranch size={13} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            {renderObjectRows(items)}
           </motion.section>
         );
       })}

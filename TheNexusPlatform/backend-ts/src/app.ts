@@ -51,13 +51,15 @@ export function createApp(): Hono {
   // Local dev ports + any Vercel preview/production deployment.
   const vercelRe = /^https:\/\/.*\.vercel\.app$/;
   const localhostRe = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
+  // Phone on same Wi‑Fi hitting Mac LAN IP (mobile org app :5181 / CS :5173).
+  const lanRe = /^http:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):\d+$/;
 
   app.use(
     "*",
     cors({
       origin: (origin) => {
         if (!origin) return settings.frontendOrigin;
-        if (allowed.has(origin) || vercelRe.test(origin) || localhostRe.test(origin)) {
+        if (allowed.has(origin) || vercelRe.test(origin) || localhostRe.test(origin) || lanRe.test(origin)) {
           return origin;
         }
         return null;

@@ -4,13 +4,20 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../../App';
 import { OBJECTS } from '../../../lib/data';
 import type {
-  Block, QuizContent, FlashcardSetContent, BridgePlayContent, BiddingSequenceContent,
+  Block, QuizContent, QuestionContent, FlashcardSetContent, BridgePlayContent, BiddingSequenceContent,
   ImageContent, VideoEmbedContent, VideoScriptContent, ConceptCardContent, SummaryContent, ReflectionContent,
   AssignmentContent, DrillContent, LearningObject,
 } from '../../../lib/types';
 import { resolveLearningObject } from '../../../lib/objectUrls';
 import { renumberBlockQuestionLabels } from '../../../lib/tutorialOrder.js';
 import { hintsForQuestion, parsePassMark, resolveHintSettings } from '../../../lib/questionHints.js';
+import { enrichQuizQuestionsWithSources } from '../../../lib/mcqSources.js';
+import {
+  paginateTutorialBlocks,
+  TUTORIAL_WORDS_PER_PAGE,
+  countBlocksWords,
+} from '../../../lib/tutorialPages.js';
+import { expandTutorialBlocks } from '../../../lib/libraryEmbed';
 import { buildGlossary, type GlossaryEntry } from '../../../lib/glossary';
 import { FlashcardStudy, type StudyCard } from './FlashcardStudy';
 import { AskAIChat } from './AskAIChat';
@@ -19,7 +26,85 @@ import { ConceptCardTemplate } from './ConceptCardTemplate';
 import { VideoScriptPlayer } from './VideoScriptPlayer';
 import { mockDrillContent } from '../../../lib/mockDrillBlueprint';
 
-export type QuizResolveStatus = 'correct' | 'revealed';
+import { McqClusterExperience, type McqClusterQuestion, type QuizResolveStatus } from './McqClusterExperience';
+
+export type { QuizResolveStatus };
+
+function isMcqPreviewBlock(b: Block) {
+  return b.type === 'quiz' || b.type === 'question';
+}
+
+function richTextHeading(b: Block): string | undefined {
+  if (b.type !== 'rich-text') return undefined;
+  const h = (b.content as { heading?: string })?.heading;
+  return typeof h === 'string' && h.trim() ? h.trim() : undefined;
+}
+
+function questionsFromMcqBlocks(cluster: Block[], sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[]): McqClusterQuestion[] {
+  const out: McqClusterQuestion[] = [];
+  for (const b of cluster) {
+    if (b.type === 'quiz') {
+      const qs = (b.content as QuizContent)?.questions || [];
+      for (const q of qs) out.push(q as McqClusterQuestion);
+    } else if (b.type === 'question') {
+      out.push(b.content as QuestionContent as McqClusterQuestion);
+    }
+  }
+  if (sourceUnits?.length) {
+    return enrichQuizQuestionsWithSources(out, sourceUnits) as McqClusterQuestion[];
+  }
+  return out;
+}
+
+/** Consecutive quiz/question blocks → one “Enter MCQ” cluster; adaptive quizzes stay inline. */
+function buildPreviewSegments(
+  blocks: Block[],
+  sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[],
+): Array<
+  | { kind: 'block'; block: Block }
+  | { kind: 'cluster'; key: string; title: string; fromLabel?: string; questions: McqClusterQuestion[]; blocks: Block[] }
+> {
+  const segments: Array<
+    | { kind: 'block'; block: Block }
+    | { kind: 'cluster'; key: string; title: string; fromLabel?: string; questions: McqClusterQuestion[]; blocks: Block[] }
+  > = [];
+  let lastHeading: string | undefined;
+  let i = 0;
+  while (i < blocks.length) {
+    const b = blocks[i];
+    const heading = richTextHeading(b);
+    if (heading) lastHeading = heading;
+
+    const quiz = b.type === 'quiz' ? (b.content as QuizContent) : null;
+    const adaptive = !!quiz?.adaptive;
+    if (!isMcqPreviewBlock(b) || adaptive) {
+      segments.push({ kind: 'block', block: b });
+      i += 1;
+      continue;
+    }
+
+    const clusterBlocks: Block[] = [];
+    while (i < blocks.length) {
+      const cur = blocks[i];
+      if (!isMcqPreviewBlock(cur)) break;
+      if (cur.type === 'quiz' && (cur.content as QuizContent)?.adaptive) break;
+      clusterBlocks.push(cur);
+      i += 1;
+    }
+    const questions = questionsFromMcqBlocks(clusterBlocks, sourceUnits);
+    if (!questions.length) continue;
+    const fromLabel = lastHeading;
+    segments.push({
+      kind: 'cluster',
+      key: clusterBlocks.map((x) => x.id).join('+') || `cluster-${segments.length}`,
+      title: fromLabel ? `Practice: ${fromLabel}` : 'Check your understanding',
+      fromLabel,
+      questions,
+      blocks: clusterBlocks,
+    });
+  }
+  return segments;
+}
 
 function scrollToGlossaryBlock(blockId: string) {
   const el = document.querySelector(`[data-block-id="${CSS.escape(blockId)}"]`);
@@ -252,6 +337,7 @@ function VideoEmbed({ content }: { content: VideoEmbedContent }) {
         videoId: id,
         playerVars: {
           start, end: endRaw,
+          autoplay: 0,
           controls: 0, disablekb: 1, rel: 0, modestbranding: 1,
           playsinline: 1, iv_load_policy: 3, fs: 0,
         },
@@ -265,6 +351,9 @@ function VideoEmbed({ content }: { content: VideoEmbedContent }) {
             }
             if (endRaw == null) { const d = e.target.getDuration?.(); if (d) setEnd(Math.floor(d)); }
             e.target.seekTo(start, true);
+            // Never autoplay on open — only the custom play control should start audio.
+            try { e.target.pauseVideo?.(); } catch { /* noop */ }
+            setPlaying(false);
             setReady(true);
           },
           onStateChange: (e: any) => {
@@ -364,21 +453,30 @@ function RichText({ text, heading, subheads }: { text: string; heading?: string;
   const html = text
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^## (.+)$/gm, '<h3 style="font-size:17px;font-weight:700;color:#0B1220;margin:20px 0 8px;letter-spacing:-0.3px">$1</h3>')
-    .replace(/\n\n/g, '<br/><br/>');
+    .replace(/^## (.+)$/gm, '<h3 style="font-size:17px;font-weight:700;color:#0B1220;margin:22px 0 10px;letter-spacing:-0.3px">$1</h3>')
+    .replace(/\n\n+/g, '</p><p style="margin:0 0 14px">')
+    .replace(/\n/g, '<br/>');
+  const body = text.trim()
+    ? `<p style="margin:0 0 14px">${html}</p>`
+    : '';
   return (
-    <div>
+    <div style={{ marginBottom: 4 }}>
       {heading && (
-        <h2 style={{ fontSize: 19, fontWeight: 700, color: '#0B1220', margin: '0 0 8px', letterSpacing: '-0.35px' }}>
+        <h2 style={{ fontSize: 19, fontWeight: 700, color: '#0B1220', margin: '0 0 14px', letterSpacing: '-0.35px', lineHeight: 1.3 }}>
           {heading}
         </h2>
       )}
       {subheads && subheads.length > 0 && (
-        <ul style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 13.5, color: '#6B7280', lineHeight: 1.5 }}>
-          {subheads.map((s) => <li key={s}>{s}</li>)}
+        <ul style={{ margin: '0 0 14px', paddingLeft: 18, fontSize: 13.5, color: '#6B7280', lineHeight: 1.55 }}>
+          {subheads.map((s) => <li key={s} style={{ marginBottom: 4 }}>{s}</li>)}
         </ul>
       )}
-      <div style={{ fontSize: 14.5, lineHeight: 1.72, color: '#374151' }} dangerouslySetInnerHTML={{ __html: html }} />
+      {body && (
+        <div
+          style={{ fontSize: 14.5, lineHeight: 1.75, color: '#374151' }}
+          dangerouslySetInnerHTML={{ __html: body }}
+        />
+      )}
     </div>
   );
 }
@@ -1115,6 +1213,8 @@ function AssessedBlocks({
   maxHints = 4,
   hintsEnabled = true,
   animate = false,
+  sourceUnits,
+  paginate = false,
 }: {
   blocks: Block[];
   objectId: string;
@@ -1123,10 +1223,26 @@ function AssessedBlocks({
   maxHints?: number;
   hintsEnabled?: boolean;
   animate?: boolean;
+  sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[];
+  /** When true, long tutorials split into pages (~520 words) after generation. */
+  paginate?: boolean;
 }) {
   const total = countQuizQuestionsInBlocks(blocks);
   const [byBlock, setByBlock] = useState<Record<string, Record<number, QuizResolveStatus>>>({});
   const [showFinal, setShowFinal] = useState(false);
+  const [pageIdx, setPageIdx] = useState(0);
+
+  const pages = paginate
+    ? paginateTutorialBlocks(blocks, { wordsPerPage: TUTORIAL_WORDS_PER_PAGE })
+    : [blocks];
+  const pageCount = pages.length;
+  const safePage = Math.min(pageIdx, Math.max(0, pageCount - 1));
+
+  useEffect(() => {
+    setPageIdx(0);
+    // Reset when the block set identity changes (ids), not on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocks.map((b) => b.id).join('|')]);
 
   const onResolvedChange = (info: {
     keyPrefix: string;
@@ -1141,6 +1257,8 @@ function AssessedBlocks({
         Object.keys(prevMap).length === Object.keys(info.byIndex).length
         && Object.keys(info.byIndex).every((k) => prevMap[Number(k)] === info.byIndex[Number(k)]);
       if (same) return prev;
+      // Don't wipe saved progress when a remount briefly reports {}.
+      if (Object.keys(info.byIndex).length === 0 && Object.keys(prevMap).length > 0) return prev;
       return { ...prev, [info.keyPrefix]: { ...info.byIndex } };
     });
   };
@@ -1159,49 +1277,153 @@ function AssessedBlocks({
     if (allDone) setShowFinal(true);
   }, [allDone]);
 
-  const quizProps = cumulative
-    ? {
-        deferPassScore: true,
-        maxHints: hintsEnabled ? maxHints : 0,
-        hintsEnabled,
-        onResolvedChange,
-      }
-    : {
-        maxHints: hintsEnabled ? maxHints : undefined,
-        hintsEnabled,
-      };
+  const quizProps = {
+    deferPassScore: cumulative,
+    maxHints: hintsEnabled ? maxHints : 0,
+    hintsEnabled,
+    ...(cumulative ? { onResolvedChange } : {}),
+  };
 
-  return (
-    <>
-      {blocks.map((block, i) => {
-        const inner = (
-          <BlockRenderer block={block} objectId={objectId} quizProps={quizProps} />
-        );
-        if (!animate) {
-          return <div key={block.id} data-block-id={block.id}>{inner}</div>;
+  const renderPage = (pageBlocks: Block[], pageIndex: number, visible: boolean) => (
+    <div
+      key={`page-${pageIndex}`}
+      // Keep mounted so MCQ progress isn't lost when flipping pages
+      className="flex flex-col gap-7"
+      style={{ display: visible ? 'flex' : 'none' }}
+      aria-hidden={!visible}
+    >
+      {buildPreviewSegments(pageBlocks, sourceUnits).map((seg, i) => {
+        const wrap = (key: string, node: React.ReactNode) => {
+          if (!animate || !visible) {
+            return <div key={key} data-block-id={key} className="w-full">{node}</div>;
+          }
+          return (
+            <motion.div
+              key={key}
+              data-block-id={key}
+              className="w-full"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.12 + i * 0.06 }}
+            >
+              {node}
+            </motion.div>
+          );
+        };
+
+        if (seg.kind === 'cluster') {
+          return wrap(
+            seg.key,
+            <McqClusterExperience
+              title={seg.title}
+              fromLabel={seg.fromLabel}
+              questions={seg.questions}
+              maxHints={quizProps.maxHints}
+              hintsEnabled={quizProps.hintsEnabled}
+              onResolvedChange={quizProps.onResolvedChange}
+              resultKeyPrefix={seg.key}
+            />,
+          );
         }
-        return (
-          <motion.div
-            key={block.id}
-            data-block-id={block.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.12 + i * 0.06 }}
-          >
-            {inner}
-          </motion.div>
+
+        return wrap(
+          seg.block.id,
+          <BlockRenderer block={seg.block} objectId={objectId} quizProps={quizProps} />,
         );
       })}
-      {cumulative && total > 0 && (
-        <CumulativePassBanner
-          total={total}
-          correct={correct}
-          resolved={resolved}
-          passMark={passMark}
-          showFinal={showFinal}
-        />
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-6">
+      {pages.map((pageBlocks, pi) => renderPage(pageBlocks, pi, pi === safePage))}
+
+      {pageCount > 1 && (
+        <nav
+          aria-label="Tutorial pages"
+          className="sticky bottom-3 z-[5] mt-2"
+        >
+          <div
+            className="rounded-2xl px-3 py-3"
+            style={{
+              background: 'rgba(255,255,255,0.92)',
+              border: '1px solid rgba(0,0,0,0.08)',
+              boxShadow: '0 10px 28px -14px rgba(30,50,80,0.35)',
+              backdropFilter: 'blur(12px)',
+            }}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                disabled={safePage <= 0}
+                onClick={() => {
+                  setPageIdx((p) => Math.max(0, p - 1));
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="shrink-0 px-3 py-2 rounded-full text-xs font-semibold border disabled:opacity-35"
+                style={{ borderColor: 'rgba(0,0,0,0.12)', color: '#374151', background: '#fff' }}
+              >
+                ← Prev
+              </button>
+
+              <div className="min-w-0 flex-1 text-center px-1">
+                <p style={{ fontSize: 12.5, fontWeight: 650, color: '#0B1220', letterSpacing: '-0.01em' }}>
+                  Page {safePage + 1} of {pageCount}
+                </p>
+                <p style={{ fontSize: 11, color: '#9AA3AF', marginTop: 2 }} className="truncate">
+                  ~{countBlocksWords(blocks)} words
+                </p>
+                <div className="flex justify-center gap-1.5 mt-2.5">
+                  {pages.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      aria-label={`Go to page ${i + 1}`}
+                      aria-current={i === safePage ? 'page' : undefined}
+                      onClick={() => {
+                        setPageIdx(i);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className="rounded-full transition-all"
+                      style={{
+                        width: i === safePage ? 16 : 7,
+                        height: 7,
+                        background: i === safePage ? '#0B0F1A' : '#D1D5DB',
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={safePage >= pageCount - 1}
+                onClick={() => {
+                  setPageIdx((p) => Math.min(pageCount - 1, p + 1));
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="shrink-0 px-3 py-2 rounded-full text-xs font-semibold text-white disabled:opacity-35"
+                style={{ background: '#0B0F1A' }}
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        </nav>
       )}
-    </>
+
+      {cumulative && total > 0 && (safePage === pageCount - 1 || allDone) && (
+        <div>
+          <CumulativePassBanner
+            total={total}
+            correct={correct}
+            resolved={resolved}
+            passMark={passMark}
+            showFinal={showFinal}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1213,6 +1435,8 @@ export function LearningBlocksPreview({
   maxHints = 4,
   hintsEnabled = true,
   glossary,
+  sourceUnits,
+  paginate = true,
 }: {
   blocks: Block[];
   objectId?: string;
@@ -1222,6 +1446,10 @@ export function LearningBlocksPreview({
   hintsEnabled?: boolean;
   /** When provided, shows a right-side glossary drawer over the preview. */
   glossary?: GlossaryEntry[];
+  /** Knowledge-base units used to fill FROM YOUR SOURCES when questions lack quotes. */
+  sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[];
+  /** Split long tutorials into pages after generation (default on). */
+  paginate?: boolean;
 }) {
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
@@ -1229,7 +1457,7 @@ export function LearningBlocksPreview({
   if (!blocks.length) {
     return <p style={{ fontSize: 13.5, color: '#9AA3AF' }}>Nothing to preview yet — add or generate parts first.</p>;
   }
-  const numbered = renumberBlockQuestionLabels(blocks) as Block[];
+  const numbered = renumberBlockQuestionLabels(expandTutorialBlocks(blocks)) as Block[];
   const cumulative = typeof cumulativePassMark === 'number' && countQuizQuestionsInBlocks(numbered) > 0;
   const entries = glossary || [];
 
@@ -1240,7 +1468,7 @@ export function LearningBlocksPreview({
 
   return (
     <>
-      <div className="space-y-5">
+      <div className="space-y-6">
         <AssessedBlocks
           blocks={numbered}
           objectId={objectId}
@@ -1248,6 +1476,8 @@ export function LearningBlocksPreview({
           passMark={cumulativePassMark ?? 70}
           maxHints={maxHints}
           hintsEnabled={hintsEnabled}
+          sourceUnits={sourceUnits}
+          paginate={paginate}
         />
       </div>
       <GlossarySidebar
@@ -1291,7 +1521,7 @@ export function LearnerReader({
       ?? (obj.blocks.find((b) => b.type === 'quiz')?.content as QuizContent | undefined)?.passMark,
     70,
   );
-  const numbered = renumberBlockQuestionLabels(obj.blocks) as Block[];
+  const numbered = renumberBlockQuestionLabels(expandTutorialBlocks(obj.blocks)) as Block[];
   const useCumulative = obj.type === 'tutorial' && countQuizQuestionsInBlocks(numbered) > 0;
   const glossaryEntries = buildGlossary({
     knowledgeBase: draft?.knowledgeBase,
@@ -1389,7 +1619,7 @@ export function LearnerReader({
       </div>
 
       {/* Content stays visible; glossary opens as a right sidebar */}
-      <div className={`px-5 py-6 mx-auto space-y-5 ${obj.type === 'video-script' ? 'max-w-6xl' : obj.type === 'drill' ? 'max-w-2xl' : 'max-w-xl'}`}>
+      <div className={`px-5 py-6 mx-auto space-y-6 ${obj.type === 'video-script' ? 'max-w-6xl' : obj.type === 'drill' ? 'max-w-2xl' : 'max-w-xl'}`}>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
           <div className="flex items-center gap-2 mb-1">
             <BookOpen size={13} style={{ color: '#9AA3AF' }} />
@@ -1406,10 +1636,10 @@ export function LearnerReader({
                                 : 'Lesson'}
             </span>
           </div>
-          <h1 style={{ fontSize: 24, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.4px', lineHeight: 1.15, marginBottom: 6 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.4px', lineHeight: 1.2, marginBottom: 10 }}>
             {obj.title}
           </h1>
-          <p style={{ fontSize: 13.5, color: '#6B7280', lineHeight: 1.6 }}>{obj.description}</p>
+          <p style={{ fontSize: 13.5, color: '#6B7280', lineHeight: 1.6, marginBottom: 8 }}>{obj.description}</p>
         </motion.div>
 
         {videoScript ? (
@@ -1425,6 +1655,8 @@ export function LearnerReader({
             maxHints={hintOpts.count}
             hintsEnabled={hintOpts.enabled}
             animate
+            sourceUnits={draft?.knowledgeBase?.units}
+            paginate={obj.type === 'tutorial'}
           />
         ) : (
           <div className="flex flex-col items-center py-12 text-center">

@@ -264,6 +264,8 @@ export function reingestSource(id: string, signal?: AbortSignal): Promise<Wizard
 export interface TutorialConfig {
   obj?: string; topic?: string; aud?: string; lvl?: string;
   secs?: number; prog?: string; dpth?: string; end?: string;
+  /** Target teaching length in words (0 / omit = derive from depth × sections). No upper cap. */
+  words?: number;
   chks?: number; excpts?: number; wex?: boolean;
   templateId?: string;
   /** Pass mark across all checks combined, e.g. "70%". */
@@ -434,7 +436,7 @@ export function editFlashcard(
  * markup into a knowledge base for template-shaped generation.
  */
 export async function buildTutorialKnowledgeBase(payload: {
-  highlights?: { text: string; tag: string; from?: string; page?: number }[];
+  highlights?: { text: string; tag: string; from?: string; page?: number; idx?: number; comment?: string; sourceLabel?: string }[];
   extracts?: TutorialExtract[];
   shapeIntent?: string;
   objective?: string;

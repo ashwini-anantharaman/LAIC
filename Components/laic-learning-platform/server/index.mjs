@@ -18,6 +18,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { orderTutorialParts } from '../src/lib/tutorialOrder.js';
 import { attachHintsToQuestionParts, ensureFourHints, resolveHintSettings } from '../src/lib/questionHints.js';
+import { attachSourcesToQuestionParts, normalizeMcqSources } from '../src/lib/mcqSources.js';
+import { resolveTutorialWordTarget } from '../src/lib/tutorialPages.js';
 
 const PYTHON = process.env.PYTHON || 'python3';
 
@@ -31,12 +33,8 @@ const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 /* ─── Course-Wizard Step 1 source stubs (unchanged) ───────────────── */
 
 /** @type {Array<Record<string, any>>} */
-let sources = [
-  { id: 'src-1', title: 'How to Play Bridge', filename: 'how-to-play-bridge.pdf', kind: 'pdf', pages: 6, domain: 'ACBL Bridge Guide', primary: true, ingestionStatus: 'ready', collectionId: 'col-1' },
-  { id: 'src-2', title: 'Bridge Basics — Video Transcript', filename: 'bridge-basics.vtt', kind: 'video-transcript', duration: '5 min', domain: 'Bridge Education Network', primary: false, ingestionStatus: 'processing' },
-  { id: 'src-3', title: 'Scanned Rulebook (legacy)', filename: 'rulebook-scan.pdf', kind: 'pdf', pages: 42, domain: 'Legacy import', primary: false, ingestionStatus: 'failed', ingestionError: 'Text extraction failed — the file appears to be image-only.' },
-];
-const collections = [{ id: 'col-1', name: 'Bridge core', sourceIds: ['src-1'] }];
+let sources = [];
+const collections = [];
 
 function scheduleReady(id) {
   setTimeout(() => {
@@ -903,9 +901,17 @@ function buildClusteredKnowledgeBase({ highlights, extracts, shapeIntent, object
       const text = h.comment ? `${h.text} — ${h.comment}` : h.text;
       raw.push({
         text,
-        from: h.page != null ? `p.${h.page}` : undefined,
+        from: (() => {
+          const label = h.sourceLabel || h.from || null;
+          const pageBit = h.page != null ? `p.${h.page}` : null;
+          if (label && pageBit) return `${label} · ${pageBit}`;
+          if (label) return String(label);
+          if (pageBit) return pageBit;
+          return undefined;
+        })(),
         fromHl: true,
         sourceHighlightIds: [h.idx].filter((n) => n != null),
+        sourceLabel: h.sourceLabel || undefined,
       });
     }
   } else if (Array.isArray(extracts)) {
@@ -950,6 +956,7 @@ function buildClusteredKnowledgeBase({ highlights, extracts, shapeIntent, object
     from: p.from,
     fromHl: !!p.fromHl,
     sourceHighlightIds: p.sourceHighlightIds || [],
+    sourceLabel: p.sourceLabel || undefined,
   }));
 
   // Cluster by name heuristic
@@ -965,10 +972,10 @@ function buildClusteredKnowledgeBase({ highlights, extracts, shapeIntent, object
     name,
     unitIds: list.map((u) => u.id),
   }));
-  if (clusters.length > 8) {
+  if (clusters.length > 20) {
     clusters = clusters
       .sort((a, b) => b.unitIds.length - a.unitIds.length)
-      .slice(0, 8);
+      .slice(0, 20);
   }
   // Assign clusterId on units
   const idToCluster = new Map();
@@ -1017,16 +1024,27 @@ function buildClusteredKnowledgeBase({ highlights, extracts, shapeIntent, object
 
 async function refineClustersWithLlm(kb, { objective, topic, shapeIntent }) {
   if (!ANTHROPIC_API_KEY || !kb.units.length) return kb;
-  const sample = kb.units.slice(0, 40).map((u, i) => `(${i}) [${u.kind}] ${u.text.slice(0, 220)}`).join('\n');
+  const sample = kb.units.slice(0, 80).map((u, i) => (
+    `(${i}) [${u.kind}]${u.from ? ` (${u.from})` : ''} ${u.text.slice(0, 200)}`
+  )).join('\n');
+  const sourceNames = [...new Set(kb.units.map((u) => {
+    const from = String(u.from || '');
+    const cut = from.indexOf(' · ');
+    return cut >= 0 ? from.slice(0, cut) : (u.sourceLabel || '');
+  }).filter(Boolean))];
   const system = [
     'You organize tutorial source units into concept clusters.',
     'Return ONLY JSON: {"clusters":[{"name":string,"unitIndices":number[]}]}',
-    'Every unit index 0..n-1 must appear in exactly one cluster. Prefer 3–6 clusters with clear topic names.',
+    'Every unit index 0..n-1 must appear in exactly one cluster.',
+    'Prefer 3–12 clusters with clear topic names.',
+    'CRITICAL: When units come from multiple sources, keep material from EVERY source — do not drop a source because the title/topic names only one subject.',
+    'If sources are unrelated topics, make separate clusters per source/topic rather than forcing one theme.',
   ].join(' ');
   const user = [
     `Objective: ${objective || '(none)'}`,
     `Topic: ${topic || '(none)'}`,
     shapeIntent ? `Shape intent: ${shapeIntent}` : '',
+    sourceNames.length ? `Sources present (must all be represented): ${sourceNames.join(' · ')}` : '',
     '',
     'Units:',
     sample,
@@ -1077,6 +1095,29 @@ function buildGeneratePrompt(body) {
   const end = c.end || 'Recap only';
   const authorPrompt = prompt || (config && config.prompt) || '';
   const mediaList = Array.isArray(media) ? media.filter((m) => m && m.ref) : [];
+  const wordTarget = resolveTutorialWordTarget(c);
+  const wordsPerSection = Math.max(80, Math.round(wordTarget / Math.max(1, secs)));
+  const explicitWords = Number(c.words) > 0;
+  const lengthRule = explicitWords
+    ? [
+      `HARD LENGTH REQUIREMENT: The author set an explicit target of ${wordTarget} teaching words.`,
+      `MINIMUM: Produce at least ${Math.round(wordTarget * 0.9)} words of rich-text "body" text across the tutorial (quiz options, hints, and explanations do NOT count toward this).`,
+      `Budget about ~${wordsPerSection} teaching words per section (plus a short intro/recap).`,
+      'Meet the minimum by elaborating grounded content: stepwise walkthroughs, worked examples, common mistakes, "why it matters", and clear restatements of the source units — never invent facts that contradict the units.',
+      wordTarget >= 1500
+        ? 'Long-form: each major rich-text body must be multiple paragraphs (not 2–5 short sentences). Prefer several teaching parts per section if needed to hit the budget.'
+        : 'Use full short paragraphs, not one-liners.',
+    ].filter(Boolean).join(' ')
+    : [
+      `LENGTH TARGET: Aim for about ${wordTarget} words of teaching prose across the whole tutorial (rich-text bodies; exclude quiz option lists).`,
+      `That is roughly ~${wordsPerSection} words of teaching per section (plus intro/recap).`,
+      `No explicit word count was set — use depth "${c.dpth || 'Standard'}" to size bodies toward ~${wordTarget} total words.`,
+      wordTarget >= 1200
+        ? 'Long form: rich-text bodies may be multiple short paragraphs (not just 2–5 sentences). Prefer clear section structure.'
+        : wordTarget <= 500
+          ? 'Short form: keep rich-text bodies tight (2–5 short sentences each).'
+          : 'Standard form: rich-text bodies of a short paragraph or two each is fine.',
+    ].join(' ');
 
   // Template + cluster path (preferred)
   if (template && Array.isArray(sectionPlans) && sectionPlans.length && knowledgeBase?.units?.length) {
@@ -1138,18 +1179,22 @@ function buildGeneratePrompt(body) {
     const allowExtra = c.aiExtra === true;
     const groundingStrict = [
       'CRITICAL: Each section must be built ONLY from that section\'s listed source units. Do not use general encyclopedia knowledge.',
-      'If a cluster is thin, write a short grounded note — do not invent facts outside those units.',
+      explicitWords
+        ? 'If a cluster is thin but a HARD word target was set: expand with stepwise teaching, examples, and restatements drawn from those units until the section word budget is met — do not invent contradicting facts.'
+        : 'If a cluster is thin, write a short grounded note — do not invent facts outside those units.',
     ].join(' ');
     const groundingExtra = [
       'PRIMARY SOURCE: Prefer each section\'s listed source units as the backbone of the teaching.',
-      'AI EXTRAS ALLOWED: You MAY add brief bridging explanations, standard prerequisites, or clarifying background you judge a learner needs for the objective — even if not explicitly in the units.',
-      'Keep extras clearly helpful and on-topic; do not contradict the source units; do not turn the tutorial into a generic encyclopedia article.',
-      'When you add material not in the units, keep it short and label the part with a normal pedagogical label (e.g. Explanation) — do not claim it is a source excerpt.',
+      'AI EXTRAS ALLOWED: You MAY add bridging explanations, prerequisites, worked examples, and clarifying background learners need — even if not explicitly in the units.',
+      explicitWords
+        ? 'Because an explicit word target was set, use AI extras freely to reach the MINIMUM teaching-word count while staying on-topic and consistent with the units.'
+        : 'Keep extras clearly helpful and on-topic; do not contradict the source units; do not turn the tutorial into a generic encyclopedia article.',
+      'When you add material not in the units, keep it clearly pedagogical — do not claim it is a source excerpt.',
     ].join(' ');
 
     const compositeQuizRules = anyComposite ? [
       'EMBEDDED QUIZ (composite templates): When a recipe line is EMBEDDED_QUIZ, emit exactly ONE part of type "section-quiz" after that section\'s teaching — a nested quiz *object* for the section, NOT a loose "question" part.',
-      'section-quiz shape: {"type":"section-quiz","label":string,"sourceMode":"generate","authoringNote":string,"required":true,"questions":[{"question":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings]}]}',
+      'section-quiz shape: {"type":"section-quiz","label":string,"sourceMode":"generate","authoringNote":string,"required":true,"questions":[{"question":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings],"sources":[{"quote":string,"cite":string}]}]}',
       'Honor sourceMode, authoringNote, and required from the recipe line. Ground every question in THAT section\'s units only (e.g. authoringNote "test only this section\'s concept").',
       'Emit about ' + Math.max(chks, 1) + ' question(s) inside the section-quiz questions array (from the checks-per-section knob).',
       'Do NOT emit separate top-level "question" parts for an EMBEDDED_QUIZ slot. Atomic try-it (if any) may still use a single "question" part.',
@@ -1165,32 +1210,47 @@ function buildGeneratePrompt(body) {
       'CHECK PLACEMENT: finish ALL teaching for a section, then the section-quiz (or try-it question), IMMEDIATELY before the next section heading.',
     ].join('\n');
 
+    const sourceNames = [...new Set((knowledgeBase.units || []).map((u) => {
+      const from = String(u.from || '');
+      const cut = from.indexOf(' · ');
+      return cut >= 0 ? from.slice(0, cut) : (u.sourceLabel || '');
+    }).filter(Boolean))];
+
     const system = [
       'You generate a tutorial as STRUCTURED JSON from a FIXED pedagogical template and CLUSTERED source units.',
       allowExtra ? groundingExtra : groundingStrict,
+      sourceNames.length > 1
+        ? `MULTI-SOURCE: This tutorial draws on ${sourceNames.length} sources (${sourceNames.join('; ')}). You MUST include teaching from EVERY listed source that appears in the section plans — do not ignore a source because the title or objective names only one topic. If topics differ, teach them as distinct sections (or clearly labeled parts) rather than discarding one.`
+        : '',
       'Output ONLY a JSON array of part objects. No markdown fences.',
+      lengthRule,
       'Part shapes:',
       '  {"type":"rich-text","label":string,"heading":string|null,"subheads":string[]|null,"body":string}',
-      '  {"type":"question","label":string,"prompt":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings]}',
-      '  {"type":"section-quiz","label":string,"sourceMode":"generate","authoringNote":string,"required":boolean,"questions":[{"question":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings]}]}',
+      '  {"type":"question","label":string,"prompt":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings],"sources":[{"quote":string,"cite":string}]}',
+      '  {"type":"section-quiz","label":string,"sourceMode":"generate","authoringNote":string,"required":boolean,"questions":[{"question":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings],"sources":[{"quote":string,"cite":string}]}]}',
       '  {"type":"media","ref":string}',
       'For each section: emit a rich-text with heading set to the section title (and subheads if given), then follow the recipe order.',
       legacyCheckRules,
       compositeQuizRules,
       'HINTS: Follow the author\'s hint settings below. If hints are ON, every question (inline or inside section-quiz) must include exactly that many progressive strings in "hints". Hint 1 lightly points; later hints get more specific; at least one must tell the learner which section/passage to re-read (use that section\'s title). Never reveal the correct option letter/text. If hints are OFF, set "hints" to [].',
-      'Place media parts only where section media slots specify. Keep bodies 2–5 short sentences.',
+      'SOURCES: Every question should include 1–3 "sources" entries — short verbatim quotes from the content units that justify the correct answer, each with cite like "Bridge.pdf · p.4" or the unit\'s from label. Prefer units from THIS section.',
+      'Place media parts only where section media slots specify.',
     ].filter(Boolean).join('\n');
 
     const assess = template.assessmentPlacement || 'after_each_section';
     const hintOpts = resolveHintSettings(c);
     const user = [
       `Tutorial title: ${title || '(untitled)'}`,
+      sourceNames.length > 1
+        ? `Note: the title may reflect one source filename; still cover ALL sources in the section plans: ${sourceNames.join(' · ')}`
+        : '',
       `Template: ${template.name || template.id} (${template.id})`,
       `Section connection: ${template.sectionConnection || 'sequential'}`,
       `Assessment placement: ${assess}`,
       `Learning objective: ${c.obj || '(none)'}`,
       `Overall topic: ${c.topic || title || '(none)'}`,
       `Audience: ${c.aud || 'High school'} · Level: ${c.lvl || 'Basic'} · Depth: ${c.dpth || 'Standard'}`,
+      `Target length: ~${wordTarget} words of teaching text (author words knob: ${Number(c.words) > 0 ? c.words : 'auto'})`,
       `Checks per section knob: ${chks} (honor template assessment placement; if after_each_section / checkpoints, emit ~${Math.max(chks, 1)} check(s) per section from THAT section's units)`,
       `Pass mark (all checks combined): ${c.pass || '70%'}`,
       `Progressive hints: ${hintOpts.enabled ? `ON — exactly ${hintOpts.count} per question` : 'OFF — set hints to []'}`,
@@ -1218,7 +1278,7 @@ function buildGeneratePrompt(body) {
       'Return the JSON array now.',
     ].filter(Boolean).join('\n');
 
-    return { system, user, secs: sectionPlans.length };
+    return { system, user, secs: sectionPlans.length, wordTarget, explicitWords };
   }
 
   // Legacy flat-extract fallback
@@ -1238,13 +1298,14 @@ function buildGeneratePrompt(body) {
     'You are an instructional designer generating a tutorial as STRUCTURED JSON.',
     groundingRule,
     'Output ONLY a JSON array of "part" objects. No prose, no markdown fences.',
-    'Keep rich-text bodies concise (2–5 short sentences).',
+    lengthRule,
     'Allowed part shapes:',
     '  {"type":"rich-text","label":string,"heading":string|null,"subheads":string[]|null,"body":string}',
-    '  {"type":"question","label":string,"prompt":string,"options":[four strings],"correct":integer 0-3,"exp":string,"hints":[four strings]}',
+    '  {"type":"question","label":string,"prompt":string,"options":[four strings],"correct":integer 0-3,"exp":string,"hints":[four strings],"sources":[{"quote":string,"cite":string}]}',
     mediaList.length ? '  {"type":"media","ref":string}' : '',
     'Number questions sequentially: Question 1, Question 2, …',
     'Follow author hint settings in the user message for how many progressive hints to include (or none).',
+    'Each question should include 1–3 "sources" with short quotes from the units and a cite (unit from label).',
   ].filter(Boolean).join('\n');
 
   const hintOptsLegacy = resolveHintSettings(c);
@@ -1256,6 +1317,7 @@ function buildGeneratePrompt(body) {
     `Level: ${c.lvl || 'Basic'}`,
     `Progression: ${c.prog || 'Linear build-up'}`,
     `Depth per section: ${c.dpth || 'Standard'}`,
+    `Target length: ~${wordTarget} words of teaching text (author words knob: ${Number(c.words) > 0 ? c.words : 'auto'})`,
     `Pass mark (all checks combined): ${c.pass || '70%'}`,
     `Progressive hints: ${hintOptsLegacy.enabled ? `ON — exactly ${hintOptsLegacy.count} per question` : 'OFF — set hints to []'}`,
     `AI extras beyond source: ${allowExtraLegacy ? 'ON' : 'OFF'}`,
@@ -1278,10 +1340,230 @@ function buildGeneratePrompt(body) {
     'Return the JSON array now.',
   ].filter(Boolean).join('\n');
 
-  return { system, user, secs };
+  return { system, user, secs, wordTarget, explicitWords };
+}
+
+/** Rough output token budget from a teaching-word target (JSON overhead included). */
+function tokensForWordBudget(words, floor = 4096) {
+  const w = Math.max(0, Number(words) || 0);
+  const estimate = Math.ceil(w * 2.2) + 3500;
+  return Math.min(32768, Math.max(floor, estimate));
+}
+
+function countTeachingWordsInParts(parts) {
+  let n = 0;
+  for (const p of parts || []) {
+    if (!p || typeof p !== 'object') continue;
+    if (p.type === 'rich-text') {
+      n += String(p.body || '').trim().split(/\s+/).filter(Boolean).length;
+    } else if (p.type === 'concept-card') {
+      n += String(p.plain || '').trim().split(/\s+/).filter(Boolean).length;
+      n += String(p.misc || '').trim().split(/\s+/).filter(Boolean).length;
+    }
+  }
+  return n;
+}
+
+/**
+ * For large explicit word targets, generate intro / each section / closing in separate LLM calls
+ * so a single max_tokens ceiling cannot silently truncate a 5–10k word draft.
+ */
+function buildTutorialChunkJobs(body) {
+  const { title, config, template, knowledgeBase, sectionPlans, prompt, media } = body || {};
+  const c = config || {};
+  const wordTarget = resolveTutorialWordTarget(c);
+  const explicitWords = Number(c.words) > 0;
+  const plans = Array.isArray(sectionPlans) ? sectionPlans : [];
+  if (!explicitWords || wordTarget < 1800 || !template || !plans.length || !knowledgeBase?.units?.length) {
+    return null;
+  }
+
+  const n = plans.length;
+  const introWords = Math.min(600, Math.max(180, Math.round(wordTarget * 0.07)));
+  const closeWords = Math.min(500, Math.max(120, Math.round(wordTarget * 0.05)));
+  const sectionPool = Math.max(n * 200, wordTarget - introWords - closeWords);
+  const perSection = Math.round(sectionPool / n);
+  const chks = typeof c.chks === 'number' ? c.chks : 1;
+  const end = c.end || 'Recap only';
+  const allowExtra = c.aiExtra === true;
+  const hintOpts = resolveHintSettings(c);
+  const authorPrompt = prompt || c.prompt || '';
+  const mediaList = Array.isArray(media) ? media.filter((m) => m && m.ref) : [];
+  const unitsById = new Map((knowledgeBase.units || []).map((u) => [u.id, u]));
+  const anyComposite = plans.some((sp) => Array.isArray(sp.sectionRecipe) && sp.sectionRecipe.length > 0);
+
+  const formatCompositeRecipe = (items) =>
+    (items || []).map((item, i) => {
+      if (item.kind === 'atomic') {
+        const prefer = item.preferKinds?.length ? ` (prefer: ${item.preferKinds.join(', ')})` : '';
+        return `${i + 1}. atomic:${item.blockType}${prefer}`;
+      }
+      if (item.objectType === 'quiz') {
+        return `${i + 1}. EMBEDDED_QUIZ → emit ONE section-quiz for THIS section only`;
+      }
+      return `${i + 1}. EMBEDDED_${String(item.objectType || 'object').toUpperCase()} [skip if deferred]`;
+    }).join('; ');
+
+  const formatFlatRecipe = (rows) =>
+    (rows || []).map((r, i) => `${i + 1}. ${r.type}`).join('; ');
+
+  const sharedSystem = [
+    'You generate ONE chunk of a tutorial as STRUCTURED JSON (a JSON array of part objects only).',
+    allowExtra
+      ? 'PRIMARY SOURCE: section units are the backbone. AI EXTRAS ALLOWED to reach the HARD word minimum with examples and stepwise teaching — do not contradict the units.'
+      : 'CRITICAL: Use ONLY the listed source units. Expand with stepwise restatements and examples drawn from those units to hit the word minimum — do not invent contradicting facts.',
+    'Output ONLY a JSON array. No markdown fences.',
+    'Part shapes: rich-text {type,label,heading,subheads,body}; question {type,label,prompt,options,correct,exp,hints,sources}; section-quiz {type,label,sourceMode,authoringNote,required,questions:[{question,options,correct,exp,hints,sources}]}.',
+    `HINTS: ${hintOpts.enabled ? `ON — exactly ${hintOpts.count} progressive hints per question` : 'OFF — hints: []'}.`,
+    'SOURCES: 1–3 short quotes per question with cite from unit from-labels when possible.',
+  ].join('\n');
+
+  const jobs = [];
+
+  jobs.push({
+    label: 'Writing introduction…',
+    maxTokens: tokensForWordBudget(introWords, 3072),
+    system: sharedSystem,
+    user: [
+      `Tutorial title: ${title || '(untitled)'}`,
+      `Learning objective: ${c.obj || '(none)'}`,
+      `Audience: ${c.aud || 'High school'} · Level: ${c.lvl || 'Basic'}`,
+      authorPrompt ? `Author note:\n${authorPrompt}` : '',
+      '',
+      `CHUNK: Introduction only.`,
+      `HARD MINIMUM: at least ${Math.round(introWords * 0.85)} words in rich-text body text.`,
+      'Emit exactly one rich-text part with heading "Introduction" (and optional extra rich-text parts if needed to hit the word budget).',
+      'Do NOT emit section quizzes or other sections.',
+      'Return the JSON array now.',
+    ].filter(Boolean).join('\n'),
+  });
+
+  plans.forEach((sp, idx) => {
+    const cluster = (knowledgeBase.clusters || []).find((x) => x.id === sp.clusterId);
+    const units = (cluster?.unitIds || [])
+      .map((id) => unitsById.get(id))
+      .filter(Boolean)
+      .map((u, i) => `  (${i + 1}) [${u.kind}] ${u.text}${u.from ? ` — ${u.from}` : ''}`)
+      .join('\n');
+    const useComposite = Array.isArray(sp.sectionRecipe) && sp.sectionRecipe.length > 0;
+    const recipe = useComposite
+      ? formatCompositeRecipe(sp.sectionRecipe)
+      : formatFlatRecipe(sp.recipe || template.sectionBlockRecipe || []);
+    const minWords = Math.round(perSection * 0.9);
+
+    jobs.push({
+      label: `Writing section ${idx + 1} of ${n}: ${sp.title}…`,
+      maxTokens: tokensForWordBudget(perSection, 6144),
+      system: sharedSystem + (anyComposite
+        ? '\nIf recipe includes EMBEDDED_QUIZ, end with ONE section-quiz for this section only.'
+        : `\nAfter teaching, emit ~${Math.max(chks, 1)} question part(s) testing ONLY this section.`),
+      user: [
+        `Tutorial title: ${title || '(untitled)'}`,
+        `Overall objective: ${c.obj || '(none)'}`,
+        `CHUNK: Section ${idx + 1} of ${n} only — "${sp.title}".`,
+        sp.subheads?.length ? `Subheads: ${sp.subheads.join(' · ')}` : '',
+        `Recipe: ${recipe}`,
+        `HARD MINIMUM: at least ${minWords} words of rich-text body text in THIS chunk (target ~${perSection}).`,
+        'Start with a rich-text whose heading is exactly the section title. Add more rich-text teaching parts as needed to hit the word minimum (multiple paragraphs each).',
+        'SOURCE UNITS FOR THIS SECTION ONLY:',
+        units || '  (empty — say so; still write pedagogical scaffolding without inventing contradicting facts)',
+        mediaList.length ? `Media refs available: ${mediaList.map((m) => m.ref).join(', ')}` : '',
+        'Do NOT emit Introduction, other sections, or Recap.',
+        'Return the JSON array now.',
+      ].filter(Boolean).join('\n'),
+    });
+  });
+
+  if (end && end !== 'None') {
+    jobs.push({
+      label: 'Writing closing…',
+      maxTokens: tokensForWordBudget(closeWords, 3072),
+      system: sharedSystem,
+      user: [
+        `Tutorial title: ${title || '(untitled)'}`,
+        `CHUNK: Closing only — End with: ${end}.`,
+        end === 'Recap only'
+          ? `Emit a Recap rich-text (heading "Recap") with at least ${Math.round(closeWords * 0.8)} words summarizing the tutorial.`
+          : end === 'End quiz'
+            ? 'Emit 2–3 knowledge-check question parts that span the whole tutorial.'
+            : end === 'End assignment'
+              ? 'Emit one assignment-style rich-text (heading Assignment).'
+              : 'Emit an appropriate short closing rich-text.',
+        'Do NOT emit earlier sections.',
+        'Return the JSON array now.',
+      ].join('\n'),
+    });
+  }
+
+  return { jobs, wordTarget };
+}
+
+/**
+ * Expand the shortest rich-text bodies when a draft badly undershoots an explicit word target.
+ */
+async function expandUnderLengthTutorial(parts, body, target) {
+  const list = Array.isArray(parts) ? [...parts] : [];
+  const richIdx = list
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => p?.type === 'rich-text' && String(p.body || '').trim())
+    .sort((a, b) => String(a.p.body).length - String(b.p.body).length);
+
+  // Expand up to 6 thinnest teaching parts.
+  const toExpand = richIdx.slice(0, 6);
+  if (!toExpand.length) return list;
+
+  const remaining = Math.max(400, target - countTeachingWordsInParts(list));
+  const per = Math.round(remaining / toExpand.length);
+  const c = body?.config || {};
+  const allowExtra = c.aiExtra === true;
+
+  for (const { p, i } of toExpand) {
+    const minWords = Math.max(220, per);
+    const system = [
+      'You expand ONE tutorial rich-text part to meet a HARD teaching-word minimum.',
+      'Return ONLY a JSON object: {"type":"rich-text","label":string,"heading":string|null,"subheads":string[]|null,"body":string}.',
+      'Keep the same heading/label. Lengthen the body with stepwise teaching and examples.',
+      allowExtra
+        ? 'You may add helpful pedagogical elaboration; do not contradict the existing body.'
+        : 'Stay faithful to the existing body — elaborate and exemplify, do not invent contradicting facts.',
+    ].join(' ');
+    const user = [
+      `HARD MINIMUM for this body: at least ${minWords} words.`,
+      'Current part JSON:',
+      JSON.stringify({
+        type: 'rich-text',
+        label: p.label,
+        heading: p.heading || null,
+        subheads: p.subheads || null,
+        body: p.body,
+      }, null, 2),
+      '',
+      'Return the expanded rich-text object now.',
+    ].join('\n');
+    try {
+      const raw = await callAnthropic({
+        system,
+        user,
+        maxTokens: tokensForWordBudget(minWords, 4096),
+      });
+      const parsed = extractJson(raw);
+      const obj = Array.isArray(parsed) ? parsed[0] : parsed;
+      const normalized = normalizePart({ ...obj, type: 'rich-text' }, i);
+      if (normalized?.type === 'rich-text' && String(normalized.body || '').length > String(p.body || '').length) {
+        list[i] = { ...normalized, id: p.id };
+      }
+    } catch {
+      /* keep original part if expand fails */
+    }
+  }
+  return list;
 }
 
 const ALLOWED_TYPES = new Set(['rich-text', 'concept-card', 'question', 'section-quiz']);
+
+function normalizeQuestionSources(raw) {
+  return normalizeMcqSources(raw);
+}
 
 function normalizePart(raw, idx) {
   if (!raw || typeof raw !== 'object') return null;
@@ -1318,6 +1600,7 @@ function normalizePart(raw, idx) {
         : [];
       const question = String(q.question || q.prompt || '').trim();
       if (!question) return null;
+      const sources = normalizeQuestionSources(q.sources);
       return {
         question,
         options,
@@ -1325,6 +1608,7 @@ function normalizePart(raw, idx) {
         explanation: String(q.explanation || q.exp || ''),
         hints,
         label: typeof q.label === 'string' ? q.label : undefined,
+        ...(sources ? { sources } : {}),
       };
     }).filter(Boolean);
     if (!questions.length) return null;
@@ -1345,10 +1629,12 @@ function normalizePart(raw, idx) {
   const hints = Array.isArray(raw.hints)
     ? raw.hints.map((h) => String(h || '').trim()).filter(Boolean)
     : (typeof raw.hint === 'string' && raw.hint.trim() ? [raw.hint.trim()] : []);
+  const sources = normalizeQuestionSources(raw.sources);
   return {
     id, type: 'question', label, prompt: String(raw.prompt || ''), options, correct,
     exp: String(raw.exp || ''),
     hints,
+    ...(sources ? { sources } : {}),
   };
 }
 
@@ -3143,22 +3429,69 @@ const server = createServer(async (req, res) => {
           ? 'Mapping template sections to source clusters…'
           : 'Reading your extracts and settings…',
       });
-      const { system, user, secs } = buildGeneratePrompt(body);
-      const sectionCount = secs || (typeof body?.config?.secs === 'number' ? body.config.secs : 3);
-      const maxTokens = sectionCount >= 6 ? 16384 : sectionCount >= 4 ? 12288 : 8192;
-      sseSend(res, { type: 'progress', message: 'Drafting the tutorial from your template and clusters…' });
-      const raw = await callAnthropic({ system, user, maxTokens });
-      const parsed = extractJson(raw);
-      const arr = Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? [parsed] : []);
-      let parts = arr.map((p, i) => normalizePart(p, i)).filter(Boolean);
+
+      const chunked = buildTutorialChunkJobs(body);
+      let parts = [];
+
+      if (chunked?.jobs?.length) {
+        sseSend(res, {
+          type: 'progress',
+          message: `Long target (~${chunked.wordTarget} words) — writing section-by-section so length isn’t truncated…`,
+        });
+        for (const job of chunked.jobs) {
+          sseSend(res, { type: 'progress', message: job.label });
+          const raw = await callAnthropic({
+            system: job.system,
+            user: job.user,
+            maxTokens: job.maxTokens,
+          });
+          const parsed = extractJson(raw);
+          const arr = Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? [parsed] : []);
+          const chunkParts = arr.map((p, i) => normalizePart(p, parts.length + i)).filter(Boolean);
+          parts.push(...chunkParts);
+        }
+      } else {
+        const { system, user, secs, wordTarget } = buildGeneratePrompt(body);
+        const sectionCount = secs || (typeof body?.config?.secs === 'number' ? body.config.secs : 3);
+        const words = typeof wordTarget === 'number' ? wordTarget : resolveTutorialWordTarget(body?.config || {});
+        let maxTokens = sectionCount >= 12 ? 32768 : sectionCount >= 6 ? 16384 : sectionCount >= 4 ? 12288 : 8192;
+        maxTokens = Math.max(maxTokens, tokensForWordBudget(words, maxTokens));
+        sseSend(res, {
+          type: 'progress',
+          message: words >= 1200
+            ? `Drafting ~${words} words from your template and clusters…`
+            : 'Drafting the tutorial from your template and clusters…',
+        });
+        const raw = await callAnthropic({ system, user, maxTokens });
+        const parsed = extractJson(raw);
+        const arr = Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? [parsed] : []);
+        parts = arr.map((p, i) => normalizePart(p, i)).filter(Boolean);
+      }
+
       const assess = body?.template?.assessmentPlacement || 'after_each_section';
       const chks = typeof body?.config?.chks === 'number' ? body.config.chks : 1;
       parts = orderTutorialParts(parts, { assessmentPlacement: assess, checksPerSection: chks });
       const hintOpts = resolveHintSettings(body?.config || {});
       parts = attachHintsToQuestionParts(parts, hintOpts);
+      parts = attachSourcesToQuestionParts(parts, body?.knowledgeBase);
       parts = renumberQuestionLabels(parts);
       if (parts.length === 0) throw new LlmError(502, 'llm_no_parts', 'The model did not return any usable parts. Try again.');
-      sseSend(res, { type: 'progress', message: `Assembling ${parts.length} parts…` });
+
+      const taught = countTeachingWordsInParts(parts);
+      const target = resolveTutorialWordTarget(body?.config || {});
+      if (Number(body?.config?.words) > 0 && taught < target * 0.7) {
+        sseSend(res, {
+          type: 'progress',
+          message: `Draft is ~${taught} teaching words (target ${target}). Expanding under-length sections…`,
+        });
+        parts = await expandUnderLengthTutorial(parts, body, target);
+        parts = renumberQuestionLabels(parts);
+      }
+
+      sseSend(res, {
+        type: 'progress',
+        message: `Assembling ${parts.length} parts (~${countTeachingWordsInParts(parts)} teaching words)…`,
+      });
       for (const part of parts) {
         sseSend(res, { type: 'part', part });
         await sleep(80);

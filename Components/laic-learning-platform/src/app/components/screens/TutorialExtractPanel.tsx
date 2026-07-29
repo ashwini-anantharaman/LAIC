@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Loader2, AlertTriangle, GitMerge, Split } from 'lucide-react';
 import { buildTutorialKnowledgeBase, errorMessage } from '../../../lib/api';
 import type { ClusteredKnowledgeBase, ConceptCluster, ContentUnit, ContentUnitKind } from '../../../lib/types';
@@ -20,6 +20,8 @@ interface Props {
   typeNoun?: string;
   /** How clusters map into this object (one short sentence). */
   clusterOutcome?: string;
+  /** Per-source docs so Pull can seed unmarked sources. */
+  markupSources?: { id: string; label: string; offset: number; sentences: { text: string; page: number }[] }[];
 }
 
 function unitsOf(kb: ClusteredKnowledgeBase, cluster: ConceptCluster): ContentUnit[] {
@@ -39,33 +41,95 @@ export function TutorialExtractPanel({
   syncExtracts,
   typeNoun = 'object',
   clusterOutcome,
+  markupSources = [],
 }: Props) {
   const pullable = (markHighlights || []).filter((h: any) => h.tag === 'Use' || h.tag === 'Support');
   const hlCount = pullable.length;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [seedNote, setSeedNote] = useState<string | null>(null);
+  const [activeClusterId, setActiveClusterId] = useState<string>('');
   const outcome = clusterOutcome
     || (typeNoun === 'tutorial'
       ? 'Each cluster becomes one tutorial section.'
       : `Each cluster groups related material for this ${typeNoun}.`);
+
+  useEffect(() => {
+    const ids = knowledgeBase?.clusters.map((c) => c.id) || [];
+    if (!ids.length) {
+      setActiveClusterId('');
+      return;
+    }
+    if (!ids.includes(activeClusterId)) setActiveClusterId(ids[0]);
+  }, [knowledgeBase, activeClusterId]);
 
   const applyKb = (kb: ClusteredKnowledgeBase) => {
     setKnowledgeBase(kb);
     syncExtracts(kb.units);
   };
 
+  const resolveSourceId = (h: any): string | null => {
+    if (h.sourceId) return h.sourceId;
+    if (typeof h.idx !== 'number') return null;
+    const src = markupSources.find((s) => h.idx >= s.offset && h.idx < s.offset + s.sentences.length);
+    return src?.id || null;
+  };
+
+  /** Sources with no Use/Support marks still contribute seeded units so generation can cover them. */
+  const seedUnmarkedSources = (marked: any[]) => {
+    if (!markupSources.length) return { seeds: [] as any[], labels: [] as string[] };
+    const covered = new Set<string>();
+    for (const h of marked) {
+      const id = resolveSourceId(h);
+      if (id) covered.add(id);
+    }
+    const seeds: any[] = [];
+    const labels: string[] = [];
+    for (const s of markupSources) {
+      if (covered.has(s.id) || !s.sentences?.length) continue;
+      labels.push(s.label);
+      const ranked = [...s.sentences]
+        .map((sent, localIdx) => ({ sent, localIdx, score: sent.text.length }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+      for (const { sent, localIdx } of ranked) {
+        seeds.push({
+          text: sent.text,
+          tag: 'Use',
+          page: sent.page,
+          idx: s.offset + localIdx,
+          sourceId: s.id,
+          sourceLabel: s.label,
+          comment: '',
+        });
+      }
+    }
+    return { seeds, labels };
+  };
+
   const runBuild = async (opts?: { refineWithLlm?: boolean; intent?: string }) => {
     setErr(null);
+    setSeedNote(null);
     setBusy(true);
     try {
       const intent = opts?.intent ?? shapeIntent;
+      const { seeds, labels } = seedUnmarkedSources(pullable);
+      if (labels.length) {
+        setSeedNote(
+          `Also pulled sample passages from unmarked source${labels.length === 1 ? '' : 's'}: ${labels.join(', ')}. Mark Use/Support on those tabs for tighter control.`,
+        );
+      }
+      const combined = [...pullable, ...seeds];
       const { knowledgeBase: kb } = await buildTutorialKnowledgeBase({
-        highlights: pullable.map((h: any) => ({
+        highlights: combined.map((h: any) => ({
           text: h.text,
           comment: h.comment,
           tag: h.tag,
           page: h.page,
           idx: h.idx,
+          sourceLabel: h.sourceLabel
+            || markupSources.find((s) => s.id === resolveSourceId(h))?.label
+            || undefined,
         })),
         shapeIntent: intent || undefined,
         objective,
@@ -73,6 +137,7 @@ export function TutorialExtractPanel({
         refineWithLlm: opts?.refineWithLlm !== false,
       });
       applyKb(kb);
+      if (kb.clusters[0]) setActiveClusterId(kb.clusters[0].id);
     } catch (e) {
       setErr(errorMessage(e, 'Could not build the knowledge base.'));
     } finally {
@@ -132,6 +197,7 @@ export function TutorialExtractPanel({
       from.unitIds.includes(u.id) ? { ...u, clusterId: intoId } : u
     ));
     applyKb({ ...knowledgeBase, clusters, units });
+    setActiveClusterId(intoId);
   };
 
   const splitCluster = (clusterId: string) => {
@@ -157,7 +223,7 @@ export function TutorialExtractPanel({
 
   const addManual = () => {
     const id = `u-${Date.now()}`;
-    const clusterId = knowledgeBase?.clusters[0]?.id || `cl-${Date.now()}`;
+    const clusterId = activeClusterId || knowledgeBase?.clusters[0]?.id || `cl-${Date.now()}`;
     const unit: ContentUnit = {
       id, kind: 'Key point', text: '', from: '', fromHl: false, clusterId,
     };
@@ -168,94 +234,92 @@ export function TutorialExtractPanel({
         rawHighlightCount: 0,
         mergedUnitCount: 1,
       });
+      setActiveClusterId(clusterId);
       return;
     }
-    const clusters = knowledgeBase.clusters.length
-      ? knowledgeBase.clusters.map((c, i) => (
-        i === 0 ? { ...c, unitIds: [...c.unitIds, id] } : c
+    const hasCluster = knowledgeBase.clusters.some((c) => c.id === clusterId);
+    const clusters = hasCluster
+      ? knowledgeBase.clusters.map((c) => (
+        c.id === clusterId ? { ...c, unitIds: [...c.unitIds, id] } : c
       ))
-      : [{ id: clusterId, name: 'Topic 1', unitIds: [id] }];
+      : [...knowledgeBase.clusters, { id: clusterId, name: 'Topic 1', unitIds: [id] }];
     applyKb({
       ...knowledgeBase,
       units: [...knowledgeBase.units, unit],
       clusters,
       mergedUnitCount: knowledgeBase.units.length + 1,
     });
+    setActiveClusterId(clusterId);
   };
 
   const mergeNote = knowledgeBase
-    ? `Merged ${knowledgeBase.rawHighlightCount} highlight${knowledgeBase.rawHighlightCount !== 1 ? 's' : ''} → ${knowledgeBase.mergedUnitCount} unit${knowledgeBase.mergedUnitCount !== 1 ? 's' : ''} · ${knowledgeBase.clusters.length} cluster${knowledgeBase.clusters.length !== 1 ? 's' : ''}`
+    ? `${knowledgeBase.rawHighlightCount} hl → ${knowledgeBase.mergedUnitCount} units · ${knowledgeBase.clusters.length} clusters`
     : null;
 
-  return (
-    <div className="p-5 max-w-3xl">
-      <div className="rounded-2xl p-4 mb-4" style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)' }}>
-        <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
-          <strong>Extract classifies, dedupes, and clusters your markup into teaching material for this {typeNoun}.</strong>{' '}
-          {outcome} Shape with AI steers how units are grouped — nothing is invented from general knowledge.
-        </p>
-      </div>
+  const activeCluster = knowledgeBase?.clusters.find((c) => c.id === activeClusterId) || knowledgeBase?.clusters[0] || null;
+  const activeUnits = knowledgeBase && activeCluster ? unitsOf(knowledgeBase, activeCluster) : [];
+  const otherClusters = knowledgeBase?.clusters.filter((c) => c.id !== activeCluster?.id) || [];
 
-      <div className="space-y-2 mb-4">
-        <div className="flex items-center justify-between p-4 rounded-2xl border gap-3" style={{ background: 'rgba(255,255,255,0.7)', borderColor: 'rgba(0,0,0,0.08)' }}>
-          <div>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#0B1220' }}>
-              {hlCount} highlight{hlCount !== 1 ? 's' : ''} carried from Mark up
+  return (
+    <div className="px-4 py-3 w-full pb-8" style={{ background: '#EEF0F3' }}>
+      {/* Compact top bar */}
+      <div
+        className="rounded-2xl border px-3.5 py-3 mb-3"
+        style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.06)', boxShadow: '0 1px 2px rgba(15,23,42,0.04)' }}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <p style={{ fontSize: 13, fontWeight: 650, color: '#0B1220' }}>
+              {hlCount} highlight{hlCount !== 1 ? 's' : ''} from Mark up
+              {mergeNote ? <span style={{ color: '#059669', fontWeight: 600 }}> · {mergeNote}</span> : null}
             </p>
-            <p style={{ fontSize: 12, color: '#6B7280' }}>
-              {hlCount > 0
-                ? 'Classify, merge near-duplicates, and cluster into section topics'
-                : 'Go back to Mark up and tag sentences as Use or Support'}
+            <p style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }} className="truncate">
+              {outcome} Nothing is invented from general knowledge.
             </p>
-            {mergeNote && (
-              <p style={{ fontSize: 11.5, color: '#059669', marginTop: 4, fontWeight: 600 }}>{mergeNote}</p>
-            )}
           </div>
+          <button
+            type="button"
+            onClick={addManual}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-full border"
+            style={{ fontSize: 12, fontWeight: 600, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: '#fff' }}
+          >
+            <Plus size={13} /> Add
+          </button>
           <button
             type="button"
             onClick={() => runBuild({ refineWithLlm: true })}
             disabled={hlCount === 0 || busy}
-            className="px-4 py-2 rounded-full transition-all shrink-0"
+            className="px-3.5 py-1.5 rounded-full transition-all shrink-0"
             style={{
               background: hlCount === 0 || busy ? '#E5E7EB' : '#0B0F1A',
               color: hlCount === 0 || busy ? '#9AA3AF' : '#fff',
-              fontSize: 12.5, fontWeight: 600,
+              fontSize: 12.5, fontWeight: 650,
             }}
           >
             {busy ? <span className="flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" />Building…</span> : '→ Pull & cluster'}
           </button>
         </div>
-
-        <div className="p-4 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.7)', borderColor: 'rgba(0,0,0,0.08)' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: '#0B1220', marginBottom: 8 }}>Shape with AI</p>
-          <div className="flex gap-2">
-            <input
-              value={shapeIntent}
-              onChange={(e) => setShapeIntent(e.target.value)}
-              placeholder="e.g. one definition + one example per topic, short"
-              className="flex-1 rounded-xl px-3 py-2"
-              style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.8)', outline: 'none' }}
-            />
-            <button
-              type="button"
-              disabled={hlCount === 0 || busy}
-              onClick={() => runBuild({ refineWithLlm: true, intent: shapeIntent })}
-              className="px-4 py-2 rounded-xl text-white disabled:opacity-50"
-              style={{ background: '#0B0F1A', fontSize: 13 }}
-            >
-              Extract
-            </button>
-          </div>
+        <div className="flex gap-2 mt-2.5">
+          <input
+            value={shapeIntent}
+            onChange={(e) => setShapeIntent(e.target.value)}
+            placeholder="Shape with AI — e.g. one definition + one example per topic"
+            className="flex-1 rounded-xl px-3 py-1.5"
+            style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.1)', background: '#FAFBFC', outline: 'none' }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && hlCount > 0 && !busy) runBuild({ refineWithLlm: true, intent: shapeIntent });
+            }}
+          />
+          <button
+            type="button"
+            disabled={hlCount === 0 || busy}
+            onClick={() => runBuild({ refineWithLlm: true, intent: shapeIntent })}
+            className="px-3.5 py-1.5 rounded-xl text-white disabled:opacity-50"
+            style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}
+          >
+            Extract
+          </button>
         </div>
-
-        <button
-          type="button"
-          onClick={addManual}
-          className="flex items-center gap-2 w-full px-4 py-3 rounded-2xl border border-dashed"
-          style={{ fontSize: 13, color: '#6B7280', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.5)' }}
-        >
-          <Plus size={14} />Write one yourself → + Add manually
-        </button>
       </div>
 
       {err && (
@@ -265,131 +329,206 @@ export function TutorialExtractPanel({
         </div>
       )}
 
+      {seedNote && (
+        <div className="flex items-start gap-2 mb-3 rounded-2xl p-3" style={{ background: '#EEF2FF', border: '1px solid #C7D2FE' }}>
+          <AlertTriangle size={14} style={{ color: '#4338CA', marginTop: 2 }} />
+          <p style={{ fontSize: 12.5, color: '#3730A3' }}>{seedNote}</p>
+        </div>
+      )}
+
       {knowledgeBase?.gaps && knowledgeBase.gaps.length > 0 && (
-        <div className="mb-3 space-y-1.5">
+        <div className="mb-3 flex flex-wrap gap-1.5">
           {knowledgeBase.gaps.map((g) => (
             <div
               key={g.id}
-              className="flex items-start gap-2 rounded-2xl px-3 py-2"
+              className="flex items-start gap-1.5 rounded-xl px-2.5 py-1.5"
               style={{
                 background: g.severity === 'error' ? '#FEE2E2' : '#FEF3C7',
                 border: `1px solid ${g.severity === 'error' ? '#FCA5A5' : '#FCD34D'}`,
+                maxWidth: '100%',
               }}
             >
-              <AlertTriangle size={13} style={{ color: g.severity === 'error' ? '#B91C1C' : '#92400E', marginTop: 2 }} />
-              <p style={{ fontSize: 12.5, color: g.severity === 'error' ? '#991B1B' : '#92400E' }}>{g.message}</p>
+              <AlertTriangle size={12} style={{ color: g.severity === 'error' ? '#B91C1C' : '#92400E', marginTop: 2 }} />
+              <p style={{ fontSize: 12, color: g.severity === 'error' ? '#991B1B' : '#92400E' }}>{g.message}</p>
             </div>
           ))}
         </div>
       )}
 
       {!knowledgeBase || knowledgeBase.units.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#9AA3AF' }}>
-          No content units yet. <strong>Pull & cluster</strong> from your highlights, shape with AI, or add one by hand.
-        </p>
-      ) : (
-        <div className="space-y-4">
-          <p style={{ fontSize: 11.5, fontWeight: 700, color: '#6B7280', letterSpacing: '.06em' }}>
-            CONCEPT CLUSTERS
+        <div
+          className="rounded-2xl border px-5 py-10 text-center"
+          style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.06)' }}
+        >
+          <p style={{ fontSize: 13, color: '#9AA3AF' }}>
+            No content units yet. <strong style={{ color: '#6B7280' }}>Pull & cluster</strong> from your highlights, shape with AI, or add one by hand.
           </p>
-          {knowledgeBase.clusters.map((cluster) => {
-            const units = unitsOf(knowledgeBase, cluster);
-            const others = knowledgeBase.clusters.filter((c) => c.id !== cluster.id);
-            return (
-              <div key={cluster.id} className="p-4 rounded-2xl border" style={{ background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.08)' }}>
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
+        </div>
+      ) : (
+        <div
+          className="extract-two-pane grid gap-2.5 items-start"
+          style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}
+        >
+          <style>{`
+            @media (min-width: 768px) {
+              .extract-two-pane {
+                grid-template-columns: 240px minmax(0, 1fr) !important;
+              }
+            }
+          `}</style>
+
+          {/* LEFT — cluster list */}
+          <div
+            className="rounded-2xl border bg-white overflow-hidden md:sticky md:top-2"
+            style={{ borderColor: 'rgba(0,0,0,0.06)', boxShadow: '0 1px 2px rgba(15,23,42,0.04)' }}
+          >
+            <div className="px-3 py-2.5" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: '.06em' }}>
+                CLUSTERS ({knowledgeBase.clusters.length})
+              </p>
+            </div>
+            <div className="max-h-[420px] overflow-y-auto py-1">
+              {knowledgeBase.clusters.map((cluster) => {
+                const on = cluster.id === activeCluster?.id;
+                const count = cluster.unitIds.length;
+                return (
+                  <button
+                    key={cluster.id}
+                    type="button"
+                    onClick={() => setActiveClusterId(cluster.id)}
+                    className="w-full text-left px-3 py-2.5 transition-colors"
+                    style={{
+                      background: on ? 'rgba(11,15,26,0.05)' : 'transparent',
+                      borderLeft: on ? '2px solid #0B0F1A' : '2px solid transparent',
+                    }}
+                  >
+                    <p
+                      className="truncate"
+                      style={{ fontSize: 13, fontWeight: on ? 650 : 500, color: on ? '#0B1220' : '#374151' }}
+                    >
+                      {cluster.name || 'Untitled'}
+                    </p>
+                    <p style={{ fontSize: 11, color: '#9AA3AF', marginTop: 2 }}>
+                      {count} unit{count !== 1 ? 's' : ''}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="px-3 py-2 flex items-center gap-1.5" style={{ fontSize: 11, color: '#9AA3AF', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+              <GitMerge size={11} />
+              Template sections draw from these
+            </p>
+          </div>
+
+          {/* RIGHT — active cluster units */}
+          <div
+            className="rounded-2xl border bg-white overflow-hidden"
+            style={{ borderColor: 'rgba(0,0,0,0.06)', boxShadow: '0 1px 2px rgba(15,23,42,0.04)' }}
+          >
+            {activeCluster && (
+              <>
+                <div
+                  className="flex items-center gap-2 px-3 py-2.5 flex-wrap"
+                  style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', background: '#FAFBFC' }}
+                >
                   <input
-                    value={cluster.name}
-                    onChange={(e) => renameCluster(cluster.id, e.target.value)}
-                    className="rounded-xl px-3 py-1.5 font-semibold flex-1 min-w-[140px]"
-                    style={{ fontSize: 13.5, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.9)', outline: 'none', color: '#0B1220' }}
+                    value={activeCluster.name}
+                    onChange={(e) => renameCluster(activeCluster.id, e.target.value)}
+                    className="rounded-lg px-2.5 py-1 font-semibold flex-1 min-w-[120px]"
+                    style={{ fontSize: 13.5, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', outline: 'none', color: '#0B1220' }}
                   />
-                  <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>{units.length} unit{units.length !== 1 ? 's' : ''}</span>
-                  {others.length > 0 && (
+                  <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+                    {activeUnits.length} unit{activeUnits.length !== 1 ? 's' : ''}
+                  </span>
+                  {otherClusters.length > 0 && (
                     <select
                       defaultValue=""
                       onChange={(e) => {
-                        if (e.target.value) mergeClusterInto(cluster.id, e.target.value);
+                        if (e.target.value) mergeClusterInto(activeCluster.id, e.target.value);
                         e.target.value = '';
                       }}
                       className="rounded-lg px-2 py-1"
-                      style={{ fontSize: 11.5, border: '1px solid rgba(0,0,0,0.08)', background: '#fff', color: '#374151' }}
+                      style={{ fontSize: 11.5, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#374151' }}
                     >
                       <option value="">Merge into…</option>
-                      {others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                      {otherClusters.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                     </select>
                   )}
                   <button
                     type="button"
                     title="Split cluster"
-                    disabled={units.length < 2}
-                    onClick={() => splitCluster(cluster.id)}
+                    disabled={activeUnits.length < 2}
+                    onClick={() => splitCluster(activeCluster.id)}
                     className="p-1.5 rounded-lg disabled:opacity-40"
-                    style={{ border: '1px solid rgba(0,0,0,0.08)' }}
+                    style={{ border: '1px solid rgba(0,0,0,0.1)' }}
                   >
                     <Split size={13} style={{ color: '#6B7280' }} />
                   </button>
                 </div>
 
-                <div className="space-y-2">
-                  {units.map((u, i) => (
-                    <div key={u.id} className="p-3 rounded-xl border" style={{ background: 'rgba(249,250,251,0.9)', borderColor: 'rgba(0,0,0,0.06)' }}>
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <span style={{ fontSize: 11, color: '#9AA3AF', fontFamily: 'monospace' }}>#{i + 1}</span>
+                <div className="divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
+                  {activeUnits.length === 0 && (
+                    <p className="px-4 py-8 text-center" style={{ fontSize: 13, color: '#9AA3AF' }}>
+                      No units in this cluster.
+                    </p>
+                  )}
+                  {activeUnits.map((u, i) => (
+                    <div key={u.id} className="px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                        <span style={{ fontSize: 11, color: '#9AA3AF', fontFamily: 'ui-monospace, Menlo, monospace' }}>#{i + 1}</span>
                         <select
                           value={u.kind}
                           onChange={(e) => updateUnit(u.id, { kind: e.target.value as ContentUnitKind })}
-                          className="rounded-lg px-2 py-1"
-                          style={{ fontSize: 12, border: '1px solid rgba(0,0,0,0.08)', background: '#fff', outline: 'none' }}
+                          className="rounded-md px-1.5 py-0.5"
+                          style={{ fontSize: 11.5, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', outline: 'none' }}
                         >
                           {KINDS.map((k) => <option key={k}>{k}</option>)}
                         </select>
                         {u.fromHl && (
-                          <span className="px-2 py-0.5 rounded text-xs" style={{ background: '#FEF3C7', color: '#92400E' }}>✎ from highlight</span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: '#FEF3C7', color: '#92400E' }}>
+                            from highlight
+                          </span>
                         )}
-                        {others.length > 0 && (
+                        <input
+                          value={u.from || ''}
+                          onChange={(e) => updateUnit(u.id, { from: e.target.value })}
+                          placeholder="source…"
+                          className="rounded-md px-1.5 py-0.5 flex-1 min-w-[100px]"
+                          style={{ fontSize: 11.5, border: '1px solid rgba(0,0,0,0.08)', background: '#FAFBFC', outline: 'none' }}
+                        />
+                        {otherClusters.length > 0 && (
                           <select
                             defaultValue=""
                             onChange={(e) => {
                               if (e.target.value) moveUnit(u.id, e.target.value);
                               e.target.value = '';
                             }}
-                            className="rounded-lg px-2 py-1"
-                            style={{ fontSize: 11.5, border: '1px solid rgba(0,0,0,0.08)', background: '#fff' }}
+                            className="rounded-md px-1.5 py-0.5"
+                            style={{ fontSize: 11, border: '1px solid rgba(0,0,0,0.1)', background: '#fff' }}
                           >
-                            <option value="">Move to…</option>
-                            {others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                            <option value="">Move…</option>
+                            {otherClusters.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                           </select>
                         )}
-                        <button type="button" onClick={() => removeUnit(u.id)} className="ml-auto">
-                          <Trash2 size={13} style={{ color: '#EF4444' }} />
+                        <button type="button" onClick={() => removeUnit(u.id)} className="p-1 ml-auto">
+                          <Trash2 size={12} style={{ color: '#EF4444' }} />
                         </button>
                       </div>
-                      <input
-                        value={u.from || ''}
-                        onChange={(e) => updateUnit(u.id, { from: e.target.value })}
-                        placeholder="from which source…"
-                        className="w-full rounded-lg px-2 py-1 mb-2"
-                        style={{ fontSize: 12, border: '1px solid rgba(0,0,0,0.08)', background: '#fff', outline: 'none' }}
-                      />
                       <textarea
                         value={u.text}
                         onChange={(e) => updateUnit(u.id, { text: e.target.value })}
                         rows={2}
                         placeholder="Passage or note…"
-                        className="w-full rounded-lg px-2 py-1 resize-none"
-                        style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: '#fff', outline: 'none' }}
+                        className="w-full rounded-lg px-2 py-1.5 resize-y"
+                        style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: '#fff', outline: 'none', lineHeight: 1.45 }}
                       />
                     </div>
                   ))}
                 </div>
-              </div>
-            );
-          })}
-          <p style={{ fontSize: 12, color: '#6B7280' }} className="flex items-center gap-1.5">
-            <GitMerge size={13} />
-            These clusters are the material each template section is generated from.
-          </p>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>

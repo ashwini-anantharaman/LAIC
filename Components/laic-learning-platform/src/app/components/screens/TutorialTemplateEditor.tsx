@@ -5,7 +5,6 @@ import type {
   AtomicBlockType,
   EmbeddedObjectItem,
   EmbeddableObjectType,
-  ObjectType,
   RecipeItem,
   SectionConnectionRule,
   TutorialTemplate,
@@ -19,7 +18,7 @@ import {
   SOURCE_MODE_OPTIONS,
   blankCustomTemplateDraft,
   deriveMediaSlots,
-  embedTypeToLibraryTypes,
+  FREEFORM_TUTORIAL_TEMPLATE_ID,
   isContentBearing,
   isKnowledgeCheckStyle,
   listEmbeddableLibraryObjects,
@@ -32,6 +31,7 @@ import {
   type LibraryObjectChoice,
 } from '../../../lib/tutorialTemplates';
 import { useApp } from '../../App';
+import { LibraryPickerModal } from '../LibraryPickerModal';
 
 interface Props {
   initial?: TutorialTemplate | null;
@@ -45,21 +45,6 @@ const field: React.CSSProperties = {
   background: 'rgba(255,255,255,0.9)',
   outline: 'none',
 };
-
-const LIBRARY_TYPE_FILTERS: { type: ObjectType | 'all'; label: string }[] = [
-  { type: 'all', label: 'All types' },
-  { type: 'tutorial', label: 'Tutorials' },
-  { type: 'lesson', label: 'Lessons' },
-  { type: 'quiz', label: 'Quizzes' },
-  { type: 'flashcard-set', label: 'Flashcard sets' },
-  { type: 'concept-card', label: 'Concept cards' },
-  { type: 'scenario', label: 'Scenarios' },
-  { type: 'assignment', label: 'Assignments' },
-  { type: 'reflection', label: 'Reflections' },
-  { type: 'summary', label: 'Summaries' },
-  { type: 'drill', label: 'Drills' },
-  { type: 'video-script', label: 'Video scripts' },
-];
 
 function cloneRecipe(recipe: RecipeItem[]): RecipeItem[] {
   return recipe.map((item) => {
@@ -85,198 +70,15 @@ function embeddedLabel(type: EmbeddableObjectType): string {
   return EMBEDDED_OBJECT_OPTIONS.find((o) => o.type === type)?.label || type;
 }
 
-function LibraryPickerModal({
-  open,
-  onClose,
-  library,
-  libraryStatus,
-  libraryEmptyCopy,
-  slotObjectType,
-  initialObjectId,
-  initialVersionId,
-  onConfirm,
-}: {
-  open: boolean;
-  onClose: () => void;
-  library: LibraryObjectChoice[];
-  libraryStatus: 'idle' | 'loading' | 'empty' | 'error';
-  libraryEmptyCopy: string;
-  slotObjectType: EmbeddableObjectType;
-  initialObjectId?: string;
-  initialVersionId?: string;
-  onConfirm: (objectId: string, versionId: string, title: string) => void;
-}) {
-  const lockedTypes = embedTypeToLibraryTypes(slotObjectType);
-  const [typeFilter, setTypeFilter] = useState<ObjectType | 'all'>(lockedTypes?.[0] ?? 'all');
-  const [objectId, setObjectId] = useState(initialObjectId || '');
-  const [versionId, setVersionId] = useState(initialVersionId || '');
-
-  useEffect(() => {
-    if (!open) return;
-    setTypeFilter(lockedTypes?.[0] ?? 'all');
-    setObjectId(initialObjectId || '');
-    setVersionId(initialVersionId || '');
-  }, [open, slotObjectType, initialObjectId, initialVersionId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const filtered = useMemo(() => {
-    let rows = library;
-    if (lockedTypes) {
-      rows = rows.filter((o) => lockedTypes.includes(o.type));
-    } else if (typeFilter !== 'all') {
-      rows = rows.filter((o) => o.type === typeFilter);
-    }
-    return rows;
-  }, [library, lockedTypes, typeFilter]);
-
-  const selected = filtered.find((o) => o.id === objectId) || library.find((o) => o.id === objectId);
-
-  useEffect(() => {
-    if (!objectId) return;
-    if (filtered.some((o) => o.id === objectId)) return;
-    setObjectId('');
-    setVersionId('');
-  }, [filtered, objectId]);
-
-  if (!open) return null;
-
-  const typeLocked = !!lockedTypes;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(15,23,42,0.45)' }}
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        className="w-full max-w-md rounded-2xl border p-4 shadow-lg"
-        style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.1)' }}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Pick from Activity objects"
-      >
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <p style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>Pick from Activity objects</p>
-            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>
-              Choose a learning object and pin a version.
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="p-1 rounded-lg" aria-label="Close">
-            <X size={15} style={{ color: '#6B7280' }} />
-          </button>
-        </div>
-
-        <label style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
-          Object type
-        </label>
-        <select
-          value={typeLocked ? (lockedTypes![0]) : typeFilter}
-          disabled={typeLocked}
-          onChange={(e) => {
-            const next = e.target.value as ObjectType | 'all';
-            setTypeFilter(next);
-            setObjectId('');
-            setVersionId('');
-          }}
-          className="w-full rounded-xl px-3 py-2 mb-3"
-          style={field}
-        >
-          {(typeLocked
-            ? LIBRARY_TYPE_FILTERS.filter((t) => t.type === lockedTypes![0])
-            : LIBRARY_TYPE_FILTERS
-          ).map((t) => (
-            <option key={t.type} value={t.type}>{t.label}</option>
-          ))}
-        </select>
-
-        <label style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
-          Learning object
-        </label>
-        {libraryStatus === 'loading' ? (
-          <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 12 }}>Loading Activity objects…</p>
-        ) : filtered.length === 0 ? (
-          <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 12 }}>
-            {library.length === 0
-              ? libraryEmptyCopy
-              : 'No objects of this type in the library yet.'}
-          </p>
-        ) : (
-          <select
-            value={objectId}
-            onChange={(e) => {
-              const id = e.target.value;
-              setObjectId(id);
-              const obj = filtered.find((o) => o.id === id);
-              const vid = obj?.versions.find((v) => v.isLive)?.versionId
-                || obj?.versions[0]?.versionId
-                || '';
-              setVersionId(vid);
-            }}
-            className="w-full rounded-xl px-3 py-2 mb-3"
-            style={field}
-          >
-            <option value="">Select object…</option>
-            {filtered.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.title} · {o.status}
-              </option>
-            ))}
-          </select>
-        )}
-
-        <label style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
-          Version pin
-        </label>
-        <select
-          value={versionId}
-          disabled={!selected}
-          onChange={(e) => setVersionId(e.target.value)}
-          className="w-full rounded-xl px-3 py-2 mb-4"
-          style={field}
-        >
-          <option value="">Select version…</option>
-          {(selected?.versions || []).map((v) => (
-            <option key={v.versionId} value={v.versionId}>
-              v{v.versionNumber}{v.isLive ? ' (live)' : ''} — {v.status}
-            </option>
-          ))}
-        </select>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={!objectId || !versionId}
-            onClick={() => {
-              if (!objectId || !versionId || !selected) return;
-              onConfirm(objectId, versionId, selected.title);
-            }}
-            className="px-4 py-2 rounded-full text-white disabled:opacity-40"
-            style={{ background: '#059669', fontSize: 13, fontWeight: 600 }}
-          >
-            Use this object
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-full border"
-            style={{ fontSize: 13, color: '#6B7280', borderColor: 'rgba(0,0,0,0.1)' }}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
   const { createdObjects } = useApp();
   const seed = initial
     ? {
         name: initial.name,
         description: initial.description,
+        structureLocked: initial.id === FREEFORM_TUTORIAL_TEMPLATE_ID
+          ? false
+          : initial.structureLocked !== false,
         sectionConnection: initial.sectionConnection,
         assessmentPlacement: initial.assessmentPlacement,
         recipe: cloneRecipe(initial.recipe?.length ? initial.recipe : []),
@@ -286,12 +88,20 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
 
   const [name, setName] = useState(seed.name);
   const [description, setDescription] = useState(seed.description);
+  const [structureLocked, setStructureLocked] = useState(seed.structureLocked !== false);
   const [sectionConnection, setSectionConnection] = useState<SectionConnectionRule>(seed.sectionConnection);
   const [assessmentPlacement, setAssessmentPlacement] = useState<AssessmentPlacement>(seed.assessmentPlacement);
   const [recipe, setRecipe] = useState<RecipeItem[]>(seed.recipe);
   const [secs, setSecs] = useState(seed.knobDefaults.secs ?? 6);
+  const [words, setWords] = useState(
+    typeof seed.knobDefaults.words === 'number' && seed.knobDefaults.words >= 0
+      ? seed.knobDefaults.words
+      : 0,
+  );
+  const [dpth, setDpth] = useState(seed.knobDefaults.dpth || 'Standard');
   const [end, setEnd] = useState(seed.knobDefaults.end || 'Recap only');
   const [chks, setChks] = useState(seed.knobDefaults.chks ?? 2);
+  const isFreeformBuiltin = initial?.id === FREEFORM_TUTORIAL_TEMPLATE_ID;
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [library, setLibrary] = useState<LibraryObjectChoice[]>([]);
@@ -451,19 +261,22 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
       id: initial?.id,
       name: name.trim(),
       description: description.trim(),
+      structureLocked: isFreeformBuiltin ? false : structureLocked,
       sectionConnection,
       assessmentPlacement,
       recipe,
       sectionBlockRecipe,
       mediaSlots,
       knobDefaults: {
+        ...seed.knobDefaults,
         secs,
+        words,
         prog: sectionConnection === 'prerequisite_chain' ? 'Prerequisite chain'
           : sectionConnection === 'standalone' ? 'Themed clusters' : 'Linear build-up',
-        dpth: 'Standard',
+        dpth,
         end,
         chks,
-        excpts: 0,
+        excpts: typeof seed.knobDefaults.excpts === 'number' ? seed.knobDefaults.excpts : 0,
         wex: recipe.some((r) => r.kind === 'atomic' && r.blockType === 'worked-example'),
       },
     });
@@ -572,16 +385,30 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
       <div className="flex flex-wrap gap-3 mb-3">
         <div>
           <label style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
-            Default sections
+            Sections
           </label>
           <input
             type="number"
             min={2}
-            max={8}
+            max={20}
             value={secs}
-            onChange={(e) => setSecs(Math.max(2, Math.min(8, Number(e.target.value) || 3)))}
+            onChange={(e) => setSecs(Math.max(2, Math.min(20, Number(e.target.value) || 3)))}
             className="w-20 rounded-xl px-3 py-2"
             style={field}
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
+            Target words
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={words}
+            onChange={(e) => setWords(Math.max(0, Number(e.target.value) || 0))}
+            className="w-28 rounded-xl px-3 py-2"
+            style={field}
+            title="0 = auto from depth × sections"
           />
         </div>
         <div>
@@ -598,6 +425,21 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
             style={field}
           />
         </div>
+        <div className="flex-1 min-w-[120px]">
+          <label style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
+            Depth
+          </label>
+          <select
+            value={dpth}
+            onChange={(e) => setDpth(e.target.value)}
+            className="w-full rounded-xl px-3 py-2"
+            style={field}
+          >
+            {['Overview', 'Standard', 'In-depth'].map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+        </div>
         <div className="flex-1 min-w-[140px]">
           <label style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
             End with
@@ -613,6 +455,32 @@ export function TutorialTemplateEditor({ initial, onSave, onCancel }: Props) {
             ))}
           </select>
         </div>
+      </div>
+
+      <div
+        className="mb-3 px-3 py-2.5 rounded-xl border flex items-start gap-3"
+        style={{ borderColor: 'rgba(0,0,0,0.08)', background: 'rgba(249,250,251,0.95)' }}
+      >
+        <input
+          id="structure-locked"
+          type="checkbox"
+          checked={isFreeformBuiltin ? false : structureLocked}
+          disabled={isFreeformBuiltin}
+          onChange={(e) => setStructureLocked(e.target.checked)}
+          className="mt-0.5"
+        />
+        <label htmlFor="structure-locked" style={{ fontSize: 12.5, color: '#374151', cursor: isFreeformBuiltin ? 'default' : 'pointer' }}>
+          <span style={{ fontWeight: 650, color: '#0B1220' }}>
+            Lock structure for course developers
+          </span>
+          <span style={{ display: 'block', marginTop: 2, color: '#9AA3AF', fontSize: 12 }}>
+            {isFreeformBuiltin
+              ? 'The Freeform template always lets authors choose sections, words, and related knobs.'
+              : structureLocked
+                ? 'Authors see these values but cannot change section count, word target, progression, checks, or scoring.'
+                : 'Authors may change structure knobs when creating a tutorial (same freedom as Freeform).'}
+          </span>
+        </label>
       </div>
 
       <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 4 }}>

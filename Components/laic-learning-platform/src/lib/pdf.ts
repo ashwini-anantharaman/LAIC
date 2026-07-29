@@ -41,6 +41,31 @@ export function docFromText(text: string, title: string): ParsedDoc {
 }
 
 /**
+ * Combine multiple sources (PDF + paste + YouTube + web, etc.) into one Mark-up doc.
+ * Each source keeps its own page numbering; titles are joined for the combined name.
+ */
+export function mergeDocs(docs: ParsedDoc[]): ParsedDoc | null {
+  const usable = docs.filter((d) => d && (d.sentences?.length || d.fileName));
+  if (!usable.length) return null;
+  if (usable.length === 1) return usable[0];
+
+  const sentences: DocSentence[] = [];
+  let pageOffset = 0;
+  for (const d of usable) {
+    const localMax = d.sentences.reduce((m, s) => Math.max(m, s.page || 1), d.pageCount || 1);
+    for (const s of d.sentences) {
+      sentences.push({ text: s.text, page: pageOffset + (s.page || 1) });
+    }
+    pageOffset += Math.max(localMax, d.pageCount || 1);
+  }
+  return {
+    fileName: usable.map((d) => d.fileName).filter(Boolean).join(' · '),
+    pageCount: pageOffset || usable.length,
+    sentences,
+  };
+}
+
+/**
  * Extract text from a PDF File entirely in the browser (no upload/backend).
  * Copies the buffer and tears down the loading task so a hung Vite worker
  * can't leave the UI stuck on "Reading your PDF…".

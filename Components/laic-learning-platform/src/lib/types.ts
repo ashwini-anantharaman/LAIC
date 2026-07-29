@@ -169,6 +169,8 @@ export type SectionRecipe = RecipeItem[];
 
 export interface TutorialKnobDefaults {
   secs?: number;
+  /** Target teaching length in words (0 = auto from depth × sections). No upper cap. */
+  words?: number;
   prog?: string;
   dpth?: string;
   end?: string;
@@ -206,6 +208,12 @@ export interface TutorialTemplate {
    * When false/undefined, generation uses the flat `sectionBlockRecipe` path unchanged (legacy).
    */
   usesCompositeRecipe?: boolean;
+  /**
+   * When true (default), course developers cannot change structure knobs
+   * (sections, words, progression, checks, scoring, …) — values come from `knobDefaults`.
+   * When false, authors may edit those fields (the built-in Freeform template).
+   */
+  structureLocked?: boolean;
   sectionConnection: SectionConnectionRule;
   assessmentPlacement: AssessmentPlacement;
   /** Derived from atomic media items in `recipe` on save. */
@@ -222,6 +230,8 @@ export interface ContentUnit {
   clusterId?: string;
   structured?: { columns: string[]; rows: string[][] };
   sourceHighlightIds?: number[];
+  /** Originating source label when known (PDF name, website, etc.). */
+  sourceLabel?: string;
 }
 
 export interface ConceptCluster {
@@ -363,6 +373,8 @@ export interface QuestionContent {
   label?: string;
   cognitiveLevel?: string;
   difficulty?: string;
+  /** Short grounded quotes shown after answer reveal ("FROM YOUR SOURCES"). */
+  sources?: { quote: string; cite: string }[];
 }
 export interface QuizContent {
   questions: QuestionContent[];
@@ -659,6 +671,18 @@ export interface DrillContent {
   tiers?: DrillTier[];
 }
 
+/** Pinned Activity object embedded inside a parent tutorial. */
+export interface LibraryEmbedContent {
+  libraryTitle: string;
+  objectType: ObjectType;
+  versionPin: VersionPin;
+  /** Nested blocks snapshot (same shape as LearningObject.blocks). */
+  snapshotBlocks: Array<{ id: string; type: string; content: any }>;
+  authoringNote?: string;
+  required?: boolean;
+  label?: string;
+}
+
 export type BlockContent =
   | RichTextContent
   | ConceptCardContent
@@ -674,7 +698,8 @@ export type BlockContent =
   | SummaryContent
   | ReflectionContent
   | AssignmentContent
-  | DrillContent;
+  | DrillContent
+  | LibraryEmbedContent;
 
 export interface Block {
   id: string;
@@ -694,7 +719,9 @@ export interface Block {
     | 'video-embed'
     | 'video-script'
     | 'bridge-play'
-    | 'bidding-sequence';
+    | 'bidding-sequence'
+    /** Pinned Activity-library object embedded inside a tutorial. */
+    | 'library-embed';
   content: BlockContent;
 }
 
