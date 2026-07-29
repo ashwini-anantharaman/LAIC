@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Check, ChevronDown, ChevronRight, Copy, FileJson, GitBranch, KeyRound,
+  BookOpen, Check, ChevronDown, ChevronRight, Copy, FileJson, GitBranch, KeyRound,
   LayoutList, Layers, PanelLeft, Plus, RotateCcw, Save, Shield, Trash2, X, Boxes,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -424,6 +424,107 @@ function SampleRoleModal({
   );
 }
 
+/* ─── Access Catalog Guide modal ───────────────────────────────── */
+
+function GuideModal({ onClose }: { onClose: () => void }) {
+  const H = ({ children }: { children: React.ReactNode }) => (
+    <h4 style={{ fontSize: 12.5, fontWeight: 750, color: '#0B1220', letterSpacing: '.02em', marginTop: 18, marginBottom: 4 }}>{children}</h4>
+  );
+  const P = ({ children }: { children: React.ReactNode }) => (
+    <p style={{ fontSize: 13, lineHeight: 1.6, color: '#4B5563', marginTop: 6 }}>{children}</p>
+  );
+  const Code = ({ children }: { children: React.ReactNode }) => (
+    <code style={{ background: '#F3F4F6', color: '#0B1220', borderRadius: 4, padding: '1px 5px', fontSize: 12 }}>{children}</code>
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(11,18,32,0.5)', backdropFilter: 'blur(4px)' }}>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-2xl rounded-[28px] overflow-hidden flex flex-col bg-white" style={{ boxShadow: '0 24px 64px -16px rgba(30,50,80,0.3)', maxHeight: '88vh' }}>
+        <div className="p-5 border-b flex items-start justify-between shrink-0" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>Access Catalog Guide</h3>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>How the access catalog system works.</p>
+          </div>
+          <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-5">
+          <P>
+            The Access Catalog is the <strong>inventory</strong> of everything that can be permission-controlled
+            at this level. It does not assign anyone — it defines the vocabulary that <em>roles</em> are built
+            from. Roles bind to items in here; people get roles.
+          </P>
+
+          <H>The three building blocks</H>
+          <P>
+            <strong>1. Capabilities</strong> — the atomic units of permission (e.g. <Code>nexus.audit.view</Code>).
+            A role is, underneath, just a <strong>set of capability ids</strong>. Capabilities are the only thing
+            actually granted and enforced.
+          </P>
+          <P>
+            <strong>2. Groups</strong> — labeled folders that bucket related capabilities (and surfaces). Their job
+            is twofold: they tidy the UI, and each group can back <strong>one coarse toggle</strong> in the role
+            builder — flipping that toggle on seeds every capability in the folder onto the role. Groups are never
+            stored on a role; they're the design-time bridge between the simple toggle and the underlying
+            capabilities.
+          </P>
+          <P>
+            <strong>3. Surfaces</strong> — the UI a capability unlocks (a nav tab, screen, or action), each with{' '}
+            <Code>requiredAnyCapabilities</Code>. Holding one of those capabilities reveals the surface; lacking
+            them hides it. This is what makes "turn a capability off → the tab disappears" work.
+          </P>
+          <P>
+            <strong>Resource types</strong> scope a capability to kinds of objects (enforcement is still being
+            layered in), and <strong>sample roles</strong> are starter bundles of capabilities.
+          </P>
+
+          <H>How a role is actually built</H>
+          <P>
+            A saved role stores two things — and a group id is in neither: a set of <strong>coarse area levels</strong>{' '}
+            (No / View / Edit, or No / Partial / Full for platforms) and a flat list of <strong>capability ids</strong>.
+            Setting an area's coarse level is a preset: the top level seeds every capability in that area's group;
+            "Partial" lets you hand-pick a subset. The capability list is the <strong>enforced source of truth</strong>{' '}
+            — the backend validates it against this catalog and drops anything not in the inventory.
+          </P>
+
+          <H>Reserved (structural) capabilities</H>
+          <P>
+            A capability marked <Code>reserved</Code> is held implicitly by a structural tier — a Super Admin /
+            owner, a full operator, or a program admin — and can <strong>never</strong> be granted to a custom role.
+            Those tiers bypass the catalog and hold everything; the reserved flag just hides such a capability from
+            the role builder so no one can hand it out.
+          </P>
+
+          <H>Per-level catalogs</H>
+          <P>
+            Each level has its own catalog: the platform (Nexus), each organization, each program, and each runtime
+            (Content Studio, Bridge). An org/program starts from the shipped default and only diverges once you edit
+            it (a "·edited" marker appears). Editing one level never touches another.
+          </P>
+
+          <H>Adding a new feature end-to-end</H>
+          <P>
+            1) Add a <strong>capability</strong> to a group here; 2) add a <strong>surface</strong> for the UI it
+            unlocks; 3) the role builder's toggle for that group now grants it; 4) the nav/screen gated by that
+            surface appears for anyone who holds it. A brand-new group is purely organizational until a role-builder
+            area is wired to it — that wiring is what turns a folder into a working, grantable feature.
+          </P>
+
+          <H>Editing here</H>
+          <P>
+            Use the <strong>Groups</strong> tab to add capabilities/surfaces inline within a folder, or the dedicated{' '}
+            <strong>Capabilities</strong> / <strong>UI surfaces</strong> tabs. <strong>Save catalog</strong> persists
+            your changes for this level; <strong>Reset defaults</strong> restores the shipped catalog. The{' '}
+            <strong>Export JSON</strong> and <strong>JSON Schema</strong> tabs show the live document and the shape
+            it must follow.
+          </P>
+        </div>
+        <div className="flex justify-end gap-2 p-4 border-t shrink-0" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+          <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}>Got it</button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 /* ─── Main ─────────────────────────────────────────────────────── */
 
 export function PlatformAccessCatalogue() {
@@ -436,6 +537,7 @@ export function PlatformAccessCatalogue() {
   const [capModal, setCapModal] = useState<{ open: boolean; initial: Capability | null }>({ open: false, initial: null });
   const [surfaceModal, setSurfaceModal] = useState<{ open: boolean; initial: UiSurface | null }>({ open: false, initial: null });
   const [roleModal, setRoleModal] = useState<SampleRoleTemplate | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   // The catalogue is CENTRALIZED in Nexus; a learning admin may edit it, everyone
   // else sees it read-only. In standalone demo (no Nexus session) editing is open.
@@ -965,7 +1067,15 @@ export function PlatformAccessCatalogue() {
         </motion.div>
       )}
 
+      {/* Bottom-of-page guide entry. */}
+      <div className="flex justify-center pt-4 mt-2 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+        <button type="button" onClick={() => setGuideOpen(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-full" style={{ background: 'rgba(0,0,0,0.04)', fontSize: 12.5, fontWeight: 600, color: '#374151' }}>
+          <BookOpen size={13} /> Access Catalog Guide
+        </button>
+      </div>
+
       <AnimatePresence>
+        {guideOpen && <GuideModal onClose={() => setGuideOpen(false)} />}
         {groupModal.open && (
           <GroupModal
             initial={groupModal.initial}
