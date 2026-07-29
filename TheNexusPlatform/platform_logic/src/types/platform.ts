@@ -191,6 +191,8 @@ export interface ProgramOrgAffiliation {
   visibility?: string;
   status: string; // invited | active | paused | archived
   created_at?: string;
+  // The partner's granted, catalog-based access to the program (a gated view).
+  metadata_json?: { access?: { capabilities?: string[]; perms?: Record<string, unknown>; updatedAt?: string } } & Record<string, unknown>;
   // Enriched on the incoming-requests inbox only:
   program_name?: string;
   from_organization_id?: string; // the inviting org (Org A)

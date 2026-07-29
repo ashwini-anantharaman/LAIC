@@ -3395,6 +3395,39 @@ platformRouter.post("/programs/:program_id/org-affiliations", async (c) => {
   });
   return c.json(row);
 });
+
+// Grant a partner org a catalog-based, gated view of this program — the same
+// capability vocabulary we provision to people. Stored on the affiliation's
+// metadata; capabilities are validated against THIS program's console catalog.
+platformRouter.put("/programs/:program_id/org-affiliations/:affiliation_id/access", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const programId = c.req.param("program_id");
+  const affiliationId = c.req.param("affiliation_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, program.org_id, programId);
+  const body = (await c.req.json()) as { capabilities?: string[]; perms?: Record<string, unknown> };
+  const requested = Array.isArray(body?.capabilities) ? body.capabilities : [];
+  // Only capabilities that exist in this program's catalog survive.
+  const capabilities = await catalogue.validGrantsAcross(
+    [{ providerId: "program-console", instanceId: programId }],
+    requested,
+  );
+  const perms = (body?.perms && typeof body.perms === "object") ? body.perms : {};
+  const clearing = capabilities.length === 0 && Object.keys(perms).length === 0;
+  const updated = await graph.setProgramOrgAffiliationAccess(
+    affiliationId,
+    clearing ? null : { perms, capabilities, updatedAt: new Date().toISOString() },
+  );
+  if (!updated) throw new HttpError(404, "Affiliation not found");
+  await db.recordAuditEvent("program.org_affiliation_access_set", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    targetType: "program_org_affiliation", targetId: affiliationId,
+    metadata: { capabilities },
+  });
+  return c.json(updated);
+});
 // Incoming affiliation requests addressed to an org (Org B's inbox).
 platformRouter.get("/orgs/:org_id/incoming-affiliations", async (c) => {
   const user = await getCurrentUser(c);

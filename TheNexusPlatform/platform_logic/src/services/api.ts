@@ -500,6 +500,18 @@ export async function createProgramOrgAffiliation(
 export async function updateProgramOrgAffiliation(id: string, status: string): Promise<ProgramOrgAffiliation> {
   return request<ProgramOrgAffiliation>(`/api/platform/org-affiliations/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
 }
+/** Grant a partner org a catalog-based, gated view of a program (capabilities
+ *  validated server-side against the program's Access Catalog). */
+export async function setProgramOrgAffiliationAccess(
+  programId: string,
+  affiliationId: string,
+  payload: { capabilities: string[]; perms?: Record<string, unknown> },
+): Promise<ProgramOrgAffiliation> {
+  return request<ProgramOrgAffiliation>(
+    `/api/platform/programs/${programId}/org-affiliations/${affiliationId}/access`,
+    { method: "PUT", body: JSON.stringify(payload) },
+  );
+}
 export async function listIncomingOrgAffiliations(orgId: string): Promise<ProgramOrgAffiliation[]> {
   return request<ProgramOrgAffiliation[]>(`/api/platform/orgs/${orgId}/incoming-affiliations`);
 }

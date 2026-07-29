@@ -1204,7 +1204,23 @@ offeringsRouter.get("/programs/:program_id/my-role", async (c) => {
   const programId = c.req.param("program_id");
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _requireOrgMember(user, program.org_id);
+  // Direct org members resolve their own program role below. A PARTNER-org
+  // member (not in this program's org) instead inherits their org's affiliation
+  // grant — a catalog-based gated view of the program (see Partners).
+  const isOrgMember = user.role === "platform_admin" || user.memberships.some((m) => m.org_id === program.org_id);
+  if (!isOrgMember) {
+    const orgIds = [...new Set(user.memberships.map((m) => m.org_id as string))];
+    const partner = await graph.getActivePartnerAccessForOrgs(programId, orgIds).catch(() => null);
+    if (!partner) throw new HttpError(403, "Not a member of this organization");
+    return c.json({
+      role_id: null,
+      role_name: "Partner access",
+      perms: { ...(partner.access.perms ?? {}), capabilities: partner.access.capabilities ?? [] },
+      bridge_role: null,
+      learning_role: null,
+      partner: true,
+    });
+  }
   if (!user.email) return c.json(null);
   // A person's effective grants = their custom program role (Team & Roles)
   // merged with platform-role assignments made inside the platforms (e.g.

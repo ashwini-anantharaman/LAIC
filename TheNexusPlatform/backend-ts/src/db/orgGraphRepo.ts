@@ -770,6 +770,50 @@ export async function listProgramOrgAffiliations(programId: string): Promise<Row
   return scoped(async (tx) => (await tx.select().from(programOrganizationAffiliations).where(eq(programOrganizationAffiliations.programId, programId))).map(poaRow));
 }
 
+/** A partner org's granted access to a program: a role's shape (perms + fine
+ *  capabilities), stored migration-free under the affiliation's metadata_json.
+ *  This is the "provision a partner org like a person" grant. */
+export interface PartnerAccessGrant { perms?: Record<string, unknown>; capabilities?: string[]; updatedAt?: string }
+
+/** Set (or clear) a partner org affiliation's granted access. Scoped — the
+ *  program's admin (an org member) performs this. */
+export async function setProgramOrgAffiliationAccess(id: string, access: PartnerAccessGrant | null): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(programOrganizationAffiliations).where(eq(programOrganizationAffiliations.id, id)).limit(1);
+    if (!r.length) return null;
+    const meta: Row = { ...((r[0].metadataJson as Row) ?? {}) };
+    if (access === null) delete meta.access; else meta.access = access as unknown as Row;
+    const [updated] = await tx.update(programOrganizationAffiliations).set({ metadataJson: meta }).where(eq(programOrganizationAffiliations.id, id)).returning();
+    return updated ? poaRow(updated) : null;
+  });
+}
+
+/** Enforcement read: the ACTIVE partner grant a set of orgs holds on a program,
+ *  if any. Privileged — the caller is a partner-org member, not an org member of
+ *  the program's owner, so RLS would otherwise hide the affiliation row. Returns
+ *  the first active affiliation carrying a non-empty capability grant. */
+export async function getActivePartnerAccessForOrgs(
+  programId: string,
+  orgIds: string[],
+): Promise<{ affiliationId: string; organizationId: string; access: PartnerAccessGrant } | null> {
+  if (!orgIds.length) return null;
+  return asPrivileged(async (tx) => {
+    const rows = await tx.select().from(programOrganizationAffiliations)
+      .where(and(
+        eq(programOrganizationAffiliations.programId, programId),
+        inArray(programOrganizationAffiliations.organizationId, orgIds),
+        eq(programOrganizationAffiliations.status, "active"),
+      ));
+    for (const r of rows) {
+      const access = (r.metadataJson as Row | undefined)?.access as PartnerAccessGrant | undefined;
+      if (access && (Array.isArray(access.capabilities) ? access.capabilities.length : Object.keys(access.perms ?? {}).length)) {
+        return { affiliationId: r.id, organizationId: r.organizationId, access };
+      }
+    }
+    return null;
+  });
+}
+
 // Incoming affiliation requests addressed to an org (Org B's inbox). Privileged
 // read enriched with the program name + inviting org id — the route verifies the
 // caller belongs to `orgId` first, and RLS would otherwise hide the program row

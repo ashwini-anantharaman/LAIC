@@ -39,6 +39,7 @@ import {
   listOfferings,
   listPrograms,
   listProgramOrgAffiliations,
+  setProgramOrgAffiliationAccess,
   listProgramGateRequests,
   approveProgramGateRequest,
   rejectProgramGateRequest,
@@ -70,6 +71,7 @@ import { DEFAULT_PROGRAM_FEATURES } from "@/types/platform";
 import type { ProgramFeatureKey, ProgramFeatures } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Section, Spinner, StatPill, statusTone } from "@/nexus/ui/kit";
 import { AppShellAccessCatalogue } from "@/nexus/appshell/AccessCatalogue";
+import { getProgramCatalogue, type CapabilityCatalogueDocument } from "@/nexus/access/catalogue";
 import { openInStudio } from "@/services/studio";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useProgramAccess } from "@/nexus/access";
@@ -1008,18 +1010,20 @@ export function ProgramPartners() {
   const { program, orgId, programId } = useProgram();
   const [affiliations, setAffiliations] = useState<ProgramOrgAffiliation[] | null>(null);
   const [affiliated, setAffiliated] = useState<AffiliatedProgram[]>([]);
+  const [editing, setEditing] = useState<ProgramOrgAffiliation | null>(null);
 
-  useEffect(() => {
+  const loadAffiliations = useCallback(() => {
     if (!programId) return;
     listProgramOrgAffiliations(programId).then(setAffiliations).catch(() => setAffiliations([]));
   }, [programId]);
+  useEffect(() => { loadAffiliations(); }, [loadAffiliations]);
   useEffect(() => {
     if (orgId) listAffiliatedPrograms(orgId).then(setAffiliated).catch(() => setAffiliated([]));
   }, [orgId]);
 
   return (
     <div>
-      <Head program={program} subtitle="Organizations affiliated with this program, governed here inside it." />
+      <Head program={program} subtitle="Organizations affiliated with this program, governed here inside it. Grant a partner org a gated, catalog-based view — the same way you provision roles to people." />
       {!affiliations ? (
         <Spinner />
       ) : affiliations.length === 0 && affiliated.length === 0 ? (
@@ -1034,18 +1038,38 @@ export function ProgramPartners() {
                     <TableHead>Affiliated org</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Granted access</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {affiliations.map((a) => (
-                    <TableRow key={a.id}>
-                      <TableCell className="font-mono text-xs">{a.organization_id}</TableCell>
-                      <TableCell>{a.affiliation_type}</TableCell>
-                      <TableCell>
-                        <Pill tone={statusTone(a.status)}>{a.status}</Pill>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {affiliations.map((a) => {
+                    const caps = a.metadata_json?.access?.capabilities ?? [];
+                    return (
+                      <TableRow key={a.id}>
+                        <TableCell className="font-mono text-xs">{a.organization_id}</TableCell>
+                        <TableCell>{a.affiliation_type}</TableCell>
+                        <TableCell>
+                          <Pill tone={statusTone(a.status)}>{a.status}</Pill>
+                        </TableCell>
+                        <TableCell>
+                          {caps.length ? (
+                            <div className="flex flex-wrap gap-1">
+                              {caps.slice(0, 3).map((c) => <Pill key={c} tone="neutral">{c}</Pill>)}
+                              {caps.length > 3 ? <span className="text-xs text-muted-foreground">+{caps.length - 3} more</span> : null}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No access granted</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" onClick={() => setEditing(a)}>
+                            <ShieldCheck className="size-3.5" /> Edit access
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -1065,7 +1089,93 @@ export function ProgramPartners() {
           ) : null}
         </div>
       )}
+      {editing && programId ? (
+        <PartnerAccessDialog
+          programId={programId}
+          affiliation={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); loadAffiliations(); }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * Grant a partner org a gated, catalog-based view of this program — the same
+ * capability vocabulary we provision to people. Capabilities come from the
+ * program's own Access Catalog; the server re-validates on save.
+ */
+function PartnerAccessDialog({
+  programId, affiliation, onClose, onSaved,
+}: {
+  programId: string;
+  affiliation: ProgramOrgAffiliation;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [doc, setDoc] = useState<CapabilityCatalogueDocument | null>(null);
+  const [caps, setCaps] = useState<Set<string>>(new Set(affiliation.metadata_json?.access?.capabilities ?? []));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    getProgramCatalogue(programId).then(setDoc).catch(() => setDoc(null));
+  }, [programId]);
+
+  const toggle = (id: string) => setCaps((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const grantable = (doc?.capabilities ?? []).filter((c) => !c.reserved);
+  const groups = [...(doc?.groups ?? [])].sort((a, b) => a.order - b.order);
+
+  async function save() {
+    setBusy(true);
+    try {
+      await setProgramOrgAffiliationAccess(programId, affiliation.id, { capabilities: [...caps] });
+      toast.success("Partner access updated");
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update access");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Partner access · {affiliation.organization_id}</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          Pick the program capabilities this partner org’s members get — a gated view of the program.
+          Every active member of the partner org inherits this grant.
+        </p>
+        {!doc ? (
+          <Spinner />
+        ) : grantable.length === 0 ? (
+          <EmptyState>This program’s Access Catalog has no grantable capabilities.</EmptyState>
+        ) : (
+          <div className="space-y-3">
+            {groups.map((g) => {
+              const groupCaps = grantable.filter((c) => c.group === g.id);
+              if (!groupCaps.length) return null;
+              return (
+                <div key={g.id} className="rounded-lg border border-border p-2">
+                  <div className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{g.label}</div>
+                  {groupCaps.map((c) => (
+                    <label key={c.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
+                      <Switch checked={caps.has(c.id)} onCheckedChange={() => toggle(c.id)} />
+                      <span className="min-w-0"><span className="text-foreground">{c.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{c.id}</span></span>
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={busy || !doc}>{busy ? "Saving…" : "Save access"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
