@@ -125,6 +125,7 @@ export function orgRgAdapter(orgId: string): RgAdapter {
       { key: "team", label: "People", kind: "graded", levels: ["view", "edit"], capabilityGroup: { catalogueId: "org-console", groupId: "people" } },
       { key: "settings", label: "Settings", kind: "graded", levels: ["view", "edit"], capabilityGroup: { catalogueId: "org-console", groupId: "settings" } },
       { key: "audit", label: "Audit", kind: "toggle", grant: "view", capabilityGroup: { catalogueId: "org-console", groupId: "audit" } },
+      { key: "gates", label: "Gates", kind: "toggle", grant: "edit", capabilityGroup: { catalogueId: "org-console", groupId: "gates" } },
     ],
     loadCatalogues: catalogueLoader([() => getOrgCatalogue(orgId)]),
   };

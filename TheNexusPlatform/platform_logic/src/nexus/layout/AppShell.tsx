@@ -63,7 +63,7 @@ interface NavItem {
 
 // Org nav — each item names the org-role area that gates it (null = always).
 const ORG_NAV_AREAS: Record<string, string | null> = {
-  dashboard: null, programs: "programs", team: "team", "access-catalogue": "team", gates: "team", settings: "settings", audit: "audit",
+  dashboard: null, programs: "programs", team: "team", "access-catalogue": "team", gates: "gates", settings: "settings", audit: "audit",
 };
 function orgNav(orgId: string): NavItem[] {
   const base = `/o/${orgId}`;

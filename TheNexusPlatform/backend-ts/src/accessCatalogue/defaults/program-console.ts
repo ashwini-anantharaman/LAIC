@@ -22,6 +22,7 @@ export const programConsoleCatalogue: CapabilityCatalogueDocument = {
     { id: "program.roles.manage", label: "Create / edit / delete custom roles", group: "people" },
     { id: "program.groups.manage", label: "Manage groups & participants", group: "people" },
     { id: "program.partners.manage", label: "Manage partner affiliations", group: "partners" },
+    { id: "program.gates.manage", label: "Manage sign-in gates", group: "gates" },
     { id: "program.settings.branding", label: "Edit program branding", group: "settings" },
     { id: "program.community.participate", label: "Participate in community", group: "community" },
     { id: "program.platforms.open_learning", label: "Open the Learning platform", group: "platforms" },
@@ -38,6 +39,7 @@ export const programConsoleCatalogue: CapabilityCatalogueDocument = {
     { id: "community", label: "Community", kind: "navigation", group: "community", routeOrComponent: "/community", requiredAnyCapabilities: ["program.community.participate"] },
     { id: "team", label: "People", kind: "navigation", group: "people", routeOrComponent: "/team", requiredAnyCapabilities: ["program.people.manage", "program.roles.manage", "program.groups.manage"] },
     { id: "partners", label: "Partners", kind: "navigation", group: "partners", routeOrComponent: "/partners", requiredAnyCapabilities: ["program.partners.manage"] },
+    { id: "gates", label: "Gates", kind: "navigation", group: "gates", routeOrComponent: "/gates", requiredAnyCapabilities: ["program.gates.manage"] },
     { id: "settings", label: "Settings", kind: "navigation", group: "settings", routeOrComponent: "/settings", requiredAnyCapabilities: ["program.settings.branding"] },
     { id: "learning", label: "Learning Platform", kind: "navigation", group: "platforms", routeOrComponent: "/learning", requiredAnyCapabilities: ["program.platforms.open_learning"] },
     { id: "bridge", label: "Bridge Platform", kind: "navigation", group: "platforms", routeOrComponent: "/bridge", requiredAnyCapabilities: ["program.platforms.open_bridge"] },
@@ -51,6 +53,7 @@ export const programConsoleCatalogue: CapabilityCatalogueDocument = {
     { id: "settings", label: "Settings", order: 6, capabilityIds: ["program.settings.branding"], uiSurfaceIds: ["settings"] },
     { id: "community", label: "Community", order: 7, capabilityIds: ["program.community.participate"], uiSurfaceIds: ["community"] },
     { id: "platforms", label: "Platforms", order: 8, capabilityIds: ["program.platforms.open_learning", "program.platforms.open_bridge", "program.platforms.open_appshells"], uiSurfaceIds: ["learning", "bridge", "shells"] },
+    { id: "gates", label: "Gates", order: 9, capabilityIds: ["program.gates.manage"], uiSurfaceIds: ["gates"] },
   ],
   sampleRoleTemplates: [],
 };
