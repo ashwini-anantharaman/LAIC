@@ -2624,10 +2624,17 @@ platformRouter.post("/programs/:program_id/cover", async (c) => {
 });
 
 // ── Org-defined program categories (Settings → Categories) ──────────────────
-const categoryNameSchema = z.object({ name: z.string().trim().min(1).max(60) });
+const categoryNameSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  parent: z.string().trim().min(1).max(60).nullable().optional(),
+});
 const categoryRenameSchema = z.object({
   from: z.string().trim().min(1).max(60),
   to: z.string().trim().min(1).max(60),
+});
+const categoryParentSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  parent: z.string().trim().min(1).max(60).nullable(),
 });
 
 platformRouter.get("/orgs/:org_id/categories", async (c) => {
@@ -2645,11 +2652,31 @@ platformRouter.post("/orgs/:org_id/categories", async (c) => {
   await _requireOrgCap(user, orgId, "org.settings.categories");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(categoryNameSchema, await c.req.json());
-  const list = await db.addOrgCategory(orgId, req.name);
+  const list = await db.addOrgCategory(orgId, req.name, req.parent ?? null);
   await db.recordAuditEvent("organization.category.added", {
     orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { name: req.name },
   });
   return c.json(list);
+});
+
+// Reparent a category (nesting). parent=null lifts it to a root.
+platformRouter.put("/orgs/:org_id/categories/parent", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "settings", "edit");
+  await _requireOrgCap(user, orgId, "org.settings.categories");
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(categoryParentSchema, await c.req.json());
+  try {
+    const list = await db.setOrgCategoryParent(orgId, req.name, req.parent);
+    await db.recordAuditEvent("organization.category.reparented", {
+      orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+      metadata: { name: req.name, parent: req.parent },
+    });
+    return c.json(list);
+  } catch (e) {
+    throw new HttpError(409, e instanceof Error ? e.message : "Can't reparent");
+  }
 });
 
 platformRouter.delete("/orgs/:org_id/categories", async (c) => {

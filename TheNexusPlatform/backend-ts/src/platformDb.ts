@@ -399,17 +399,21 @@ export async function updateProgramName(programId: string, name: string): Promis
   return tpg.updateProgramName(programId, name);
 }
 
-// Org-defined program categories (DB-backed; routes guard dbEnabled).
-export async function listOrgCategories(orgId: string): Promise<string[]> {
+// Org-defined program categories (DB-backed; routes guard dbEnabled). Categories
+// are name-identified with an optional `parent` for nesting (CategoryNode).
+export async function listOrgCategories(orgId: string): Promise<tpg.CategoryNode[]> {
   return tpg.listOrgCategories(orgId);
 }
-export async function addOrgCategory(orgId: string, name: string): Promise<string[]> {
-  return tpg.addOrgCategory(orgId, name);
+export async function addOrgCategory(orgId: string, name: string, parent?: string | null): Promise<tpg.CategoryNode[]> {
+  return tpg.addOrgCategory(orgId, name, parent);
 }
-export async function removeOrgCategory(orgId: string, name: string): Promise<string[]> {
+export async function setOrgCategoryParent(orgId: string, name: string, parent: string | null): Promise<tpg.CategoryNode[]> {
+  return tpg.setOrgCategoryParent(orgId, name, parent);
+}
+export async function removeOrgCategory(orgId: string, name: string): Promise<tpg.CategoryNode[]> {
   return tpg.removeOrgCategory(orgId, name);
 }
-export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<string[]> {
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<tpg.CategoryNode[]> {
   return tpg.renameOrgCategory(orgId, from, to);
 }
 

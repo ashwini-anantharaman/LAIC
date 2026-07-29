@@ -564,22 +564,31 @@ export async function deleteProgram(programId: string): Promise<void> {
 }
 
 // ── Org-defined program categories (Settings → Categories) ──────────────────
-export async function listOrgCategories(orgId: string): Promise<string[]> {
-  return request<string[]>(`/api/platform/orgs/${orgId}/categories`);
+// Categories are name-identified with an optional `parent` for nesting (a
+// folder tree). Programs still reference a category by name (primary + secondary).
+export interface CategoryNode { name: string; parent: string | null }
+export async function listOrgCategories(orgId: string): Promise<CategoryNode[]> {
+  return request<CategoryNode[]>(`/api/platform/orgs/${orgId}/categories`);
 }
-export async function addOrgCategory(orgId: string, name: string): Promise<string[]> {
-  return request<string[]>(`/api/platform/orgs/${orgId}/categories`, {
+export async function addOrgCategory(orgId: string, name: string, parent?: string | null): Promise<CategoryNode[]> {
+  return request<CategoryNode[]>(`/api/platform/orgs/${orgId}/categories`, {
     method: "POST",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, parent: parent ?? null }),
   });
 }
-export async function removeOrgCategory(orgId: string, name: string): Promise<string[]> {
-  return request<string[]>(`/api/platform/orgs/${orgId}/categories?name=${encodeURIComponent(name)}`, {
+export async function setOrgCategoryParent(orgId: string, name: string, parent: string | null): Promise<CategoryNode[]> {
+  return request<CategoryNode[]>(`/api/platform/orgs/${orgId}/categories/parent`, {
+    method: "PUT",
+    body: JSON.stringify({ name, parent }),
+  });
+}
+export async function removeOrgCategory(orgId: string, name: string): Promise<CategoryNode[]> {
+  return request<CategoryNode[]>(`/api/platform/orgs/${orgId}/categories?name=${encodeURIComponent(name)}`, {
     method: "DELETE",
   });
 }
-export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<string[]> {
-  return request<string[]>(`/api/platform/orgs/${orgId}/categories`, {
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<CategoryNode[]> {
+  return request<CategoryNode[]>(`/api/platform/orgs/${orgId}/categories`, {
     method: "PATCH",
     body: JSON.stringify({ from, to }),
   });

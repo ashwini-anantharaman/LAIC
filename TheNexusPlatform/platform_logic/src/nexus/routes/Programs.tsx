@@ -35,6 +35,7 @@ import {
   updateProgramCategories,
   updateProgramFeatures,
   uploadProgramCover,
+  type CategoryNode,
   type MemberEnrollResult,
   type OrgCapabilities,
   type ProgramAdministrator,
@@ -68,20 +69,46 @@ export function Programs() {
     setOpenCategory(null);
   }
 
-  const [orgCategories, setOrgCategories] = useState<string[]>([]);
+  const [orgCategories, setOrgCategories] = useState<CategoryNode[]>([]);
   useEffect(() => {
     listOrgCategories(orgId).then(setOrgCategories).catch(() => setOrgCategories([]));
   }, [orgId]);
-  // The stack view groups by PRIMARY category; the org's defined taxonomy is
-  // the backbone (managed in Settings → Categories), with any legacy program
-  // primaries unioned in so nothing disappears.
+  // Flat category NAMES (for the primary/secondary pickers in the dialogs), with
+  // any legacy program primaries unioned in so nothing disappears.
   const categories = useMemo(
     () =>
-      [...new Set([...orgCategories, ...(programs ?? []).map((p) => p.category)])].sort((a, b) =>
+      [...new Set([...orgCategories.map((c) => c.name), ...(programs ?? []).map((p) => p.category)])].sort((a, b) =>
         a.localeCompare(b),
       ),
     [orgCategories, programs],
   );
+  // The stack view is a folder tree: categories nest, and a program lives under
+  // its PRIMARY category. `parentOf` drives drill-down + subtree program counts.
+  const parentOf = useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const c of orgCategories) m.set(c.name, c.parent);
+    for (const name of categories) if (!m.has(name)) m.set(name, null); // legacy primaries → roots
+    return m;
+  }, [orgCategories, categories]);
+  const childrenOf = useMemo(() => {
+    const m = new Map<string | null, string[]>();
+    for (const name of categories) {
+      const p = parentOf.get(name) ?? null;
+      m.set(p, [...(m.get(p) ?? []), name]);
+    }
+    for (const [, kids] of m) kids.sort((a, b) => a.localeCompare(b));
+    return m;
+  }, [categories, parentOf]);
+  // Programs whose primary is `cat` or any descendant category (folder count).
+  const subtreeProgramCount = useMemo(() => {
+    return (cat: string): number => {
+      const seen = new Set<string>([cat]);
+      const stack = [cat];
+      while (stack.length) { const cur = stack.pop()!; for (const ch of childrenOf.get(cur) ?? []) if (!seen.has(ch)) { seen.add(ch); stack.push(ch); } }
+      return (programs ?? []).filter((p) => seen.has(p.category)).length;
+    };
+  }, [childrenOf, programs]);
+  const parentCategory = openCategory ? parentOf.get(openCategory) ?? null : null;
 
   async function load() {
     setPrograms(await listPrograms(orgId));
@@ -157,12 +184,20 @@ export function Programs() {
         <div>
           <button
             type="button"
-            onClick={() => setOpenCategory(null)}
+            onClick={() => setOpenCategory(parentCategory)}
             className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ChevronLeft className="size-4" /> All categories
+            <ChevronLeft className="size-4" /> {parentCategory ?? "All categories"}
           </button>
           <h2 className="mb-3 text-lg font-semibold tracking-tight">{openCategory}</h2>
+          {/* Subfolders first, then programs whose primary IS this category. */}
+          {(childrenOf.get(openCategory) ?? []).length ? (
+            <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {(childrenOf.get(openCategory) ?? []).map((cat) => (
+                <CategoryFolder key={cat} name={cat} count={subtreeProgramCount(cat)} onOpen={() => setOpenCategory(cat)} />
+              ))}
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             {programs
               .filter((p) => p.category === openCategory)
@@ -178,37 +213,15 @@ export function Programs() {
                 />
               ))}
           </div>
+          {(childrenOf.get(openCategory) ?? []).length === 0 && programs.filter((p) => p.category === openCategory).length === 0 ? (
+            <EmptyState>Nothing in this category yet.</EmptyState>
+          ) : null}
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {categories.map((cat) => {
-            const inCat = programs.filter((p) => p.category === cat);
-            return (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setOpenCategory(cat)}
-                className="glass-card p-5 text-left hover:border-foreground/20 transition-colors"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-foreground truncate">{cat}</span>
-                  <Pill tone="neutral">
-                    {inCat.length} program{inCat.length !== 1 ? "s" : ""}
-                  </Pill>
-                </div>
-                <div className="mt-2 space-y-0.5">
-                  {inCat.slice(0, 3).map((p) => (
-                    <div key={p.id} className="truncate text-xs text-muted-foreground">
-                      {p.name}
-                    </div>
-                  ))}
-                  {inCat.length > 3 ? (
-                    <div className="text-xs text-muted-foreground/70">+{inCat.length - 3} more</div>
-                  ) : null}
-                </div>
-              </button>
-            );
-          })}
+          {(childrenOf.get(null) ?? []).map((cat) => (
+            <CategoryFolder key={cat} name={cat} count={subtreeProgramCount(cat)} onOpen={() => setOpenCategory(cat)} />
+          ))}
         </div>
       )}
 
@@ -216,6 +229,22 @@ export function Programs() {
       <AssignAdminsDialog program={assigning} onClose={() => setAssigning(null)} />
       <EditFeaturesDialog program={editingFeatures} onClose={() => setEditingFeatures(null)} onDone={load} allowedFeatureKeys={allowedFeatureKeys} categories={categories} />
     </div>
+  );
+}
+
+/** A category folder in the stack view. Count is the whole subtree (programs
+ * directly under it plus those under any nested category). */
+function CategoryFolder({ name, count, onOpen }: { name: string; count: number; onOpen: () => void }) {
+  return (
+    <button type="button" onClick={onOpen} className="glass-card p-5 text-left hover:border-foreground/20 transition-colors">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          <Layers className="size-4 shrink-0 text-muted-foreground" />
+          <span className="font-medium text-foreground truncate">{name}</span>
+        </span>
+        <Pill tone="neutral">{count} program{count !== 1 ? "s" : ""}</Pill>
+      </div>
+    </button>
   );
 }
 
