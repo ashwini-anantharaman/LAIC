@@ -788,6 +788,21 @@ export async function setProgramOrgAffiliationAccess(id: string, access: Partner
   });
 }
 
+/** Resolve a program within an org by its slugified name — privileged, for the
+ *  partner portal (the viewer is a partner-org member, not an org member). */
+export async function getProgramByOrgAndSlug(orgId: string, programSlug: string): Promise<Row | null> {
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return asPrivileged(async (tx) => {
+    const rows = await tx.select().from(programs).where(eq(programs.orgId, orgId));
+    const m = rows.find((p) => slug(p.name) === programSlug);
+    if (!m) return null;
+    return {
+      id: m.id, org_id: m.orgId, name: m.name, description: m.description,
+      branding: ((m.metadataJson as Row)?.branding as Row) ?? null,
+    };
+  });
+}
+
 /** Enforcement read: the ACTIVE partner grant a set of orgs holds on a program,
  *  if any. Privileged — the caller is a partner-org member, not an org member of
  *  the program's owner, so RLS would otherwise hide the affiliation row. Returns

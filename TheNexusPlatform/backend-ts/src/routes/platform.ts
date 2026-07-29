@@ -3428,6 +3428,39 @@ platformRouter.put("/programs/:program_id/org-affiliations/:affiliation_id/acces
   });
   return c.json(updated);
 });
+// Partner portal context — a partner-org member entering a program's gated view
+// through the /partner/:orgSlug/:programSlug slug. One-directional: authorized by
+// the caller's own org holding an ACTIVE affiliation grant on the program. Returns
+// the program summary + the granted capabilities and the program surfaces they
+// unlock. Privileged lookups (caller isn't a member of the program's org).
+platformRouter.get("/partner/context", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgSlug = c.req.query("org_slug");
+  const programSlug = c.req.query("program_slug");
+  if (!orgSlug || !programSlug) throw new HttpError(400, "org_slug and program_slug required");
+  const org = await db.getOrganizationBySlug(orgSlug);
+  if (!org) throw new HttpError(404, "Program not found");
+  const program = await graph.getProgramByOrgAndSlug(org.id as string, programSlug);
+  if (!program) throw new HttpError(404, "Program not found");
+  const orgIds = [...new Set(user.memberships.map((m) => m.org_id as string))];
+  const partner = await graph.getActivePartnerAccessForOrgs(program.id as string, orgIds);
+  if (!partner) throw new HttpError(403, "No partner access to this program");
+  const capsSet = new Set(partner.access.capabilities ?? []);
+  const doc = await catalogue.getCatalogue("program-console", program.id as string);
+  const unlocked = new Set(surfacesForCapabilities(doc, capsSet));
+  const surfaces = doc.uiSurfaces
+    .filter((s) => unlocked.has(s.id))
+    .map((s) => ({ id: s.id, label: s.label, group: s.group ?? null }));
+  return c.json({
+    program: { id: program.id, name: program.name, description: program.description ?? null, branding: program.branding ?? null },
+    org_name: org.name,
+    org_slug: orgSlug,
+    program_slug: programSlug,
+    capabilities: [...capsSet],
+    surfaces,
+  });
+});
 // Incoming affiliation requests addressed to an org (Org B's inbox).
 platformRouter.get("/orgs/:org_id/incoming-affiliations", async (c) => {
   const user = await getCurrentUser(c);

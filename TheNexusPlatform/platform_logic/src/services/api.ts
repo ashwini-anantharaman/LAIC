@@ -500,6 +500,20 @@ export async function createProgramOrgAffiliation(
 export async function updateProgramOrgAffiliation(id: string, status: string): Promise<ProgramOrgAffiliation> {
   return request<ProgramOrgAffiliation>(`/api/platform/org-affiliations/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
 }
+/** Partner portal: the gated program view a partner-org member is entitled to,
+ *  resolved by the caller's own org affiliation. 403 if no active grant. */
+export interface PartnerProgramContext {
+  program: { id: string; name: string; description: string | null; branding: { accent: string | null; logo: string | null } | null };
+  org_name: string;
+  org_slug: string;
+  program_slug: string;
+  capabilities: string[];
+  surfaces: { id: string; label: string; group: string | null }[];
+}
+export async function getPartnerProgramContext(orgSlug: string, programSlug: string): Promise<PartnerProgramContext> {
+  return request<PartnerProgramContext>(`/api/platform/partner/context?org_slug=${encodeURIComponent(orgSlug)}&program_slug=${encodeURIComponent(programSlug)}`);
+}
+
 /** Grant a partner org a catalog-based, gated view of a program (capabilities
  *  validated server-side against the program's Access Catalog). */
 export async function setProgramOrgAffiliationAccess(

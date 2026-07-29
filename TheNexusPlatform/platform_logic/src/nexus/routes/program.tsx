@@ -72,6 +72,7 @@ import type { ProgramFeatureKey, ProgramFeatures } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Section, Spinner, StatPill, statusTone } from "@/nexus/ui/kit";
 import { AppShellAccessCatalogue } from "@/nexus/appshell/AccessCatalogue";
 import { getProgramCatalogue, type CapabilityCatalogueDocument } from "@/nexus/access/catalogue";
+import { readBranding } from "@/nexus/branding";
 import { openInStudio } from "@/services/studio";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useProgramAccess } from "@/nexus/access";
@@ -1021,9 +1022,21 @@ export function ProgramPartners() {
     if (orgId) listAffiliatedPrograms(orgId).then(setAffiliated).catch(() => setAffiliated([]));
   }, [orgId]);
 
+  const orgSlug = readBranding(orgId)?.slug ?? null;
+  const programSlug = program?.name ? program.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") : "";
+  const partnerUrl = orgSlug && programSlug ? `${window.location.origin}/partner/${orgSlug}/${programSlug}` : null;
+  const anyGranted = (affiliations ?? []).some((a) => (a.metadata_json?.access?.capabilities ?? []).length);
+
   return (
     <div>
       <Head program={program} subtitle="Organizations affiliated with this program, governed here inside it. Grant a partner org a gated, catalog-based view — the same way you provision roles to people." />
+      {partnerUrl && anyGranted ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">Partner entry link:</span>
+          <code className="font-mono text-xs text-foreground">{partnerUrl}</code>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => { void navigator.clipboard?.writeText(partnerUrl); toast.success("Copied"); }}>Copy</Button>
+        </div>
+      ) : null}
       {!affiliations ? (
         <Spinner />
       ) : affiliations.length === 0 && affiliated.length === 0 ? (

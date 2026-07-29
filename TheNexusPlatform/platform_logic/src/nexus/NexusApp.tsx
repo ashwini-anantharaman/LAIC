@@ -21,6 +21,7 @@ import { OperatorSettings } from "@/nexus/routes/OperatorSettings";
 import { NexusTeam } from "@/nexus/routes/NexusTeam";
 import { Test1 } from "@/nexus/routes/Test1";
 import { Test2 } from "@/nexus/routes/Test2";
+import { PartnerProgram } from "@/nexus/routes/PartnerProgram";
 import { AccessCatalogue } from "@/nexus/access/AccessCatalogue";
 import { OrgAccessCatalogue, ProgramAccessCatalogue } from "@/nexus/access/InstanceAccessCatalogue";
 import { OperatorGates } from "@/nexus/routes/OperatorGates";
@@ -127,6 +128,15 @@ function Routed() {
       {/* Nexus (operator) gate — no org slug; GatePage resolves it as nexus. */}
       <Route path="/op/:gateSlug" element={<GatePage />} />
       <Route path="/invite/:token" element={<AcceptInvite />} />
+      {/* Partner portal — a partner-org member's gated view of a program. */}
+      <Route
+        path="/partner/:orgSlug/:programSlug"
+        element={
+          <RequireAuth>
+            <PartnerProgram />
+          </RequireAuth>
+        }
+      />
       {/* Full-screen launch surface — deliberately outside the AppShell chrome. */}
       <Route
         path="/o/:orgId/p/:programId/learning"
