@@ -115,7 +115,7 @@ export function OrgSettings() {
 
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Your organization's profile, theme, and people." />
+      <PageHeader title="Settings" />
 
       <Section title="Branding">
         <ThemeEditor

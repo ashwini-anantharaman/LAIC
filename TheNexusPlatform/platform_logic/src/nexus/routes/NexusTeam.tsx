@@ -145,7 +145,6 @@ export function NexusTeam() {
   return (
     <>
       <PeoplePage
-        subtitle="Who operates Nexus, and what each operator role can see and do."
         actions={peopleActions}
         people={peopleContent}
         rolesGroups={<RolesAndGroups adapter={rg} />}

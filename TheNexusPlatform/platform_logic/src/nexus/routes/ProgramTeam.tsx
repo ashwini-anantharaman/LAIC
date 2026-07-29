@@ -607,7 +607,6 @@ export function ProgramTeam() {
   return (
     <>
       <PeoplePage
-        subtitle="Invite people, place them in groups, and test exactly what each role sees."
         actions={peopleActions}
         people={peopleContent}
         rolesGroups={<RolesAndGroups adapter={programRg} />}

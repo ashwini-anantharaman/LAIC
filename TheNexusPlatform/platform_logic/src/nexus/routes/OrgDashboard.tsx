@@ -41,7 +41,7 @@ export function OrgDashboard() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle="Everything your organization runs, in one place." />
+      <PageHeader title="Dashboard" />
 
       <div className="mb-8 flex flex-wrap gap-2">
         <StatPill label="Programs" value={programs.length} />

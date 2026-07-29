@@ -90,7 +90,7 @@ function useProgram(): { program: Program | null; orgId: string; programId: stri
   return { program, orgId, programId };
 }
 
-function Head({ program, subtitle, actions }: { program: Program | null; subtitle: string; actions?: React.ReactNode }) {
+function Head({ program, subtitle, actions }: { program: Program | null; subtitle?: string; actions?: React.ReactNode }) {
   return <PageHeader title={program?.name ?? "Program"} subtitle={subtitle} actions={actions} />;
 }
 
@@ -344,7 +344,6 @@ export function ProgramOfferings() {
     <div>
       <Head
         program={program}
-        subtitle="Courses, challenges, and applications people join."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> New offering
@@ -528,7 +527,7 @@ export function ProgramRegistrations() {
     <div>
       <Head
         program={program}
-        subtitle="Students in this program — from the app, or added here. Staff go through Team & Roles."
+        subtitle="Students in this program. Staff are managed under People."
         actions={
           <Button onClick={() => setInviteOpen(true)} disabled={!programId}>
             <Plus className="size-4" /> Invite participant
@@ -693,7 +692,7 @@ export function ProgramGates() {
     <div>
       <Head
         program={program}
-        subtitle="Sign-up / sign-in pages for this program, each at its own URL."
+        subtitle="Sign-up pages for this program, each at its own URL."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> Add a gate
@@ -888,7 +887,7 @@ export function ProgramGroups() {
     <div>
       <Head
         program={program}
-        subtitle="Classes, clubs, chapters, regions — one freeform group concept with nesting."
+        subtitle="Nestable groups: classes, clubs, chapters, or regions."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> New group
@@ -1029,7 +1028,7 @@ export function ProgramPartners() {
 
   return (
     <div>
-      <Head program={program} subtitle="Organizations affiliated with this program, governed here inside it. Grant a partner org a gated, catalog-based view — the same way you provision roles to people." />
+      <Head program={program} subtitle="Grant a partner organization a gated view of this program, the way you provision roles to people." />
       {partnerUrl && anyGranted ? (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
           <span className="text-muted-foreground">Partner entry link:</span>
@@ -1157,8 +1156,7 @@ function PartnerAccessDialog({
           <DialogTitle>Partner access · {affiliation.organization_id}</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground">
-          Pick the program capabilities this partner org’s members get — a gated view of the program.
-          Every active member of the partner org inherits this grant.
+          The capabilities you pick apply to every active member of this partner organization.
         </p>
         {!doc ? (
           <Spinner />
@@ -1203,7 +1201,6 @@ export function ProgramCommunity() {
     <div>
       <Head
         program={program}
-        subtitle="A hub for participants and coaches."
         actions={
           <Button variant="ghost" onClick={() => toast("Discord integration isn\u2019t available yet.")}>
             Connect Discord
@@ -1279,7 +1276,6 @@ export function ProgramShells() {
     <div>
       <Head
         program={program}
-        subtitle="Configurable app containers — one runtime renders every shell's config."
         actions={
           <>
             {access.isAdmin && (

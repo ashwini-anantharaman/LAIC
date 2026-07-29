@@ -65,7 +65,7 @@ export function ProgramSettings() {
     <div>
       <PageHeader
         title={`${programName} · Settings`}
-        subtitle="This program's own theme and logo. Until customized, it inherits the organization's."
+        subtitle="Inherits the organization's theme until you customize it."
       />
       <Section title="Branding">
         <ThemeEditor

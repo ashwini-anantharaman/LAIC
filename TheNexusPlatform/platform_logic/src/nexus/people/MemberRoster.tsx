@@ -255,7 +255,7 @@ function ManageGroupsDialog({
         <DialogHeader><DialogTitle>Groups · {member.name ?? member.email}</DialogTitle></DialogHeader>
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
-            Place this person into any group. Roles shown as their own group are handled by the role itself.
+            Place this person into any group.
           </p>
           {allGroups.length === 0 ? (
             <EmptyState>No groups yet. Create groups in the Roles &amp; Groups tab.</EmptyState>

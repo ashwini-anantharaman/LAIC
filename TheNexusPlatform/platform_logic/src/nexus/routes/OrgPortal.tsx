@@ -196,9 +196,6 @@ export function OrgPortal() {
           </div>
         ) : null}
 
-        <p className="mt-8 text-center text-xs text-muted-foreground">
-          This is {org?.name ?? "the organization"}'s space. Nothing here reveals other organizations.
-        </p>
       </div>
     </div>
   );

@@ -336,7 +336,7 @@ function EditorDialog({
             <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-foreground">Display role as its own group</span>
-                <span className="block text-xs text-muted-foreground">Holders of this role also form a group by that name.</span>
+                <span className="block text-xs text-muted-foreground">Holders also appear as a group by this name.</span>
               </span>
               <Switch checked={displayAsGroup} onCheckedChange={setDisplayAsGroup} />
             </label>
@@ -376,7 +376,7 @@ function EditorDialog({
             {catalogues.some((c) => !c.provider || !platformProviderIds.has(c.provider)) ? (
               <div className="space-y-2">
                 <Label>Fine-grained capabilities</Label>
-                <p className="-mt-1 text-xs text-muted-foreground">From the Access Catalog. Layered on top of the areas above.</p>
+                <p className="-mt-1 text-xs text-muted-foreground">From the Access Catalog.</p>
                 {catalogues.filter((c) => !c.provider || !platformProviderIds.has(c.provider)).map((cat) => (
                   <div key={cat.id} className="rounded-lg border border-border p-2">
                     <div className="mb-1 px-1 text-xs font-semibold text-muted-foreground">{cat.name}</div>
@@ -502,7 +502,7 @@ export function RolesAndGroups({ adapter }: { adapter: RgAdapter }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">Drag a role or group onto a group to nest it — or onto the top zone to lift it out.</p>
+        <p className="text-sm text-muted-foreground">Drag a role or group onto a group to nest it, or onto the top zone to lift it out.</p>
         <Button size="sm" onClick={() => setEditing("new")}><Plus className="size-3.5" /> Create role or group</Button>
       </div>
 

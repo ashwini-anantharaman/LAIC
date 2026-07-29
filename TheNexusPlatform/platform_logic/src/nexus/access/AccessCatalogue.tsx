@@ -193,15 +193,13 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
     <div>
       {embedded ? (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">
-            {source?.subtitle ?? "The inventory of what this level's roles can grant, and the UI those grants unlock."}
-          </p>
+          {source?.subtitle ? <p className="text-sm text-muted-foreground">{source.subtitle}</p> : <span />}
           {actionBar}
         </div>
       ) : (
         <PageHeader
           title={source?.title ?? "Access Catalog"}
-          subtitle={source?.subtitle ?? "The platform inventory of what can be permission-controlled. Roles bind against these ids."}
+          subtitle={source?.subtitle}
           actions={actionBar}
         />
       )}
@@ -230,7 +228,7 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
 
           {tab === "groups" && (
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Groups organize the role UI. Each holds capabilities (enforcement keys) and surfaces (nav items).</p>
+              <p className="text-sm text-muted-foreground">Groups bucket capabilities and the surfaces they unlock.</p>
               {groupsSorted.map((g) => {
                 const caps = capsByGroup(g.id);
                 const surfs = surfsByGroup(g.id);
@@ -367,7 +365,7 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
 
           {tab === "resources" && (
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Resource types a capability can be scoped to (enforcement deferred).</p>
+              <p className="text-sm text-muted-foreground">Resource types a capability can be scoped to.</p>
               {doc.resourceTypes.map((r) => (
                 <div key={r.id} className="glass-card flex items-center gap-3 px-4 py-2.5">
                   <span className="text-sm text-foreground">{r.label}</span>

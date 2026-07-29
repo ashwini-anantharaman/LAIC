@@ -19,7 +19,7 @@ export function OperatorAudit() {
 
   return (
     <div>
-      <PageHeader title="Platform audit" subtitle="Provisioning, governance, and entitlement changes across every space." />
+      <PageHeader title="Platform audit" />
       {!events ? (
         <Spinner />
       ) : events.length === 0 ? (

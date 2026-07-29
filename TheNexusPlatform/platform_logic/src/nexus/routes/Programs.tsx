@@ -119,7 +119,6 @@ export function Programs() {
     <div>
       <PageHeader
         title="Programs"
-        subtitle="Each program produces offerings — courses, challenges, and apps."
         actions={
           <div className="flex items-center gap-2">
             <button

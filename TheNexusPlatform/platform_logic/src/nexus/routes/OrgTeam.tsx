@@ -173,7 +173,6 @@ export function OrgTeam() {
   return (
     <>
       <PeoplePage
-        subtitle="Who runs this organization, and what each role can see and do."
         actions={peopleActions}
         people={peopleContent}
         rolesGroups={<RolesAndGroups adapter={rg} />}

@@ -23,7 +23,6 @@ export function OrgAccessCatalogue({ embedded = false }: { embedded?: boolean } 
     (user?.memberships ?? []).some((m) => m.org_id === orgId && m.role === "owner" && !m.program_id);
   const source = useMemo<CatalogueSource>(() => ({
     title: "Access Catalog",
-    subtitle: "What this organization's roles can grant, and the UI those grants unlock. Seeded from the platform default until you customize it.",
     canEdit: isOwner,
     load: () => getOrgCatalogue(orgId),
     save: (doc) => saveOrgCatalogue(orgId, doc),
@@ -42,7 +41,6 @@ export function ProgramAccessCatalogue({ embedded = false }: { embedded?: boolea
     );
   const source = useMemo<CatalogueSource>(() => ({
     title: "Access Catalog",
-    subtitle: "What this program's roles can grant, and the UI those grants unlock. Seeded from the platform default until you customize it.",
     canEdit: isAdmin,
     load: () => getProgramCatalogue(programId),
     save: (doc) => saveProgramCatalogue(programId, doc),

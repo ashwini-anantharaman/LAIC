@@ -38,9 +38,8 @@ export function PartnerProgram() {
           <Lock className="mx-auto size-8 text-muted-foreground" />
           <h1 className="mt-3 text-lg font-semibold text-foreground">No partner access</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your organization doesn’t have an active partner grant to this program, or you’re not
-            signed in with an account that does. Ask the program’s admins to grant your organization
-            access under Partners.
+            Your organization doesn’t have access to this program. Ask its admins to grant your
+            organization access under Partners.
           </p>
         </div>
       </div>
@@ -76,8 +75,7 @@ export function PartnerProgram() {
             <p className="mt-1 text-sm text-muted-foreground">{ctx.program.description}</p>
           ) : null}
           <p className="mt-2 text-xs text-muted-foreground">
-            You’re viewing this program as a partner. You can access the areas your organization was
-            granted below — a gated slice of the program, not the owning organization’s workspace.
+            You’re viewing this program as a partner. Your organization was granted the areas below.
           </p>
         </div>
 

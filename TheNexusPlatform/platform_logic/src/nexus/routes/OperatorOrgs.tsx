@@ -68,7 +68,6 @@ export function OperatorOrgs() {
     <div>
       <PageHeader
         title="Organizations"
-        subtitle="Top-level tenants provisioned on Nexus."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> Provision
