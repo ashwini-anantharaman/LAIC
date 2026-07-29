@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ChevronLeft, ChevronRight, Copy, ImageIcon, Layers, LayoutGrid, Lock, Plus, SlidersHorizontal, Trash2, UserCog, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Handshake, ImageIcon, Layers, LayoutGrid, Lock, Plus, SlidersHorizontal, Trash2, UserCog, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/app/components/ui/switch";
 import {
   assignProgramAdministrator,
+  createPartner,
   createProgram,
   deleteProgram,
   getOrgCapabilities,
@@ -54,6 +55,7 @@ export function Programs() {
   const [programs, setPrograms] = useState<Program[] | null>(null);
   const [caps, setCaps] = useState<OrgCapabilities | null>(null);
   const [open, setOpen] = useState(false);
+  const [partnerOpen, setPartnerOpen] = useState(false);
   const [assigning, setAssigning] = useState<Program | null>(null);
   const [editingFeatures, setEditingFeatures] = useState<Program | null>(null);
   // Grid shows everything (category tag on each card); stack groups by
@@ -158,6 +160,9 @@ export function Programs() {
             >
               {view === "grid" ? <Layers className="size-4" /> : <LayoutGrid className="size-4" />}
             </button>
+            <Button variant="outline" onClick={() => setPartnerOpen(true)} disabled={programs.length === 0} title={programs.length === 0 ? "Create a program first — partners connect to one" : undefined}>
+              <Handshake className="size-4" /> New partner
+            </Button>
             <Button onClick={() => setOpen(true)}>
               <Plus className="size-4" /> New program
             </Button>
@@ -227,6 +232,7 @@ export function Programs() {
       )}
 
       <NewProgramDialog orgId={orgId} open={open} onOpenChange={setOpen} onDone={load} allowedFeatureKeys={allowedFeatureKeys} categories={categories} />
+      <NewPartnerDialog orgId={orgId} open={partnerOpen} onOpenChange={setPartnerOpen} onDone={load} allowedFeatureKeys={allowedFeatureKeys} programs={programs} />
       <AssignAdminsDialog program={assigning} onClose={() => setAssigning(null)} />
       <EditFeaturesDialog program={editingFeatures} onClose={() => setEditingFeatures(null)} onDone={load} allowedFeatureKeys={allowedFeatureKeys} categories={categories} />
     </div>
@@ -895,6 +901,171 @@ function NewProgramDialog({
             </>
           )}
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * New Partner — a "sister program" connected to one of the org's programs. Same
+ * provisioning as a program, but with a required connecting program instead of a
+ * category. Its Content Studio / Bridge / App Studio tabs are restricted views
+ * into the connected program (provisioned via No/Partial/Full); its People /
+ * Community / Partners are its own.
+ */
+function NewPartnerDialog({
+  orgId,
+  open,
+  onOpenChange,
+  onDone,
+  allowedFeatureKeys,
+  programs,
+}: {
+  orgId: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onDone: () => void;
+  allowedFeatureKeys: string[];
+  programs: Program[];
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [connectedId, setConnectedId] = useState<string>("");
+  const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
+  const [featureAccess, setFeatureAccess] = useState<FeatureAccessMap>({});
+  const [admins, setAdmins] = useState<AdminDraft[]>([{ email: "", displayName: "" }]);
+  const [invites, setInvites] = useState<CreatedInvite[] | null>(null);
+  const [createdSlug, setCreatedSlug] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (open) setConnectedId(programs[0]?.id ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  function reset() {
+    setName(""); setDescription(""); setConnectedId(programs[0]?.id ?? "");
+    setFeatures({ ...DEFAULT_PROGRAM_FEATURES }); setFeatureAccess({});
+    setAdmins([{ email: "", displayName: "" }]); setInvites(null); setCreatedSlug(null);
+  }
+  const updateAdmin = (i: number, patch: Partial<AdminDraft>) =>
+    setAdmins((cur) => cur.map((a, idx) => (idx === i ? { ...a, ...patch } : a)));
+  const validAdmins = admins.filter((a) => a.email.trim());
+  const partnerUrl = createdSlug ? `${window.location.origin}/partner/${createdSlug}` : null;
+
+  async function submit() {
+    if (!name.trim() || !connectedId) return;
+    setBusy(true);
+    try {
+      const partner = await createPartner(orgId, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        connected_program_id: connectedId,
+        features,
+        feature_access: Object.keys(featureAccess).length ? featureAccess : undefined,
+      });
+      const created: CreatedInvite[] = [];
+      for (const a of validAdmins) {
+        try {
+          const res = await assignProgramAdministrator(partner.id, a.email.trim(), a.displayName.trim() || undefined);
+          created.push({ email: res.email, created: res.created, temp_password: res.temp_password });
+        } catch (e) {
+          toast.error(`Couldn't assign ${a.email}: ${e instanceof Error ? e.message : "failed"}`);
+        }
+      }
+      toast.success("Partner created");
+      onDone();
+      setCreatedSlug(partner.slug ?? null);
+      setInvites(created);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create partner");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>New partner</DialogTitle></DialogHeader>
+        {invites ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Partner created. Share its login link and any temporary passwords.</p>
+            {partnerUrl ? (
+              <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
+                <span className="text-xs text-muted-foreground shrink-0">Partner login:</span>
+                <code className="flex-1 truncate text-xs font-mono">{partnerUrl}</code>
+                <button type="button" onClick={() => { void navigator.clipboard?.writeText(partnerUrl); toast.success("Copied"); }} className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"><Copy className="size-3.5" /></button>
+              </div>
+            ) : null}
+            {invites.map((inv) => (
+              <div key={inv.email} className="rounded-lg border border-border p-3 space-y-1.5">
+                <div className="text-sm font-medium text-foreground">{inv.email}</div>
+                {inv.created && inv.temp_password ? (
+                  <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
+                    <span className="text-xs text-muted-foreground shrink-0">Temp password:</span>
+                    <code className="flex-1 truncate text-xs font-mono">{inv.temp_password}</code>
+                    <button type="button" onClick={() => { void navigator.clipboard?.writeText(inv.temp_password!); toast.success("Copied"); }} className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"><Copy className="size-3.5" /></button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Signs in with their existing password.</p>
+                )}
+              </div>
+            ))}
+            <DialogFooter>
+              <Button onClick={() => { onOpenChange(false); reset(); }}>Done</Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="pn-name">Name</Label>
+              <Input id="pn-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. CS Club at Lincoln High" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pn-desc">Description</Label>
+              <Input id="pn-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Who is this partner?" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Connecting program</Label>
+              <p className="text-xs text-muted-foreground -mt-1">The program this partner is tied to. Its platforms are shown to the partner as a restricted view.</p>
+              <Select value={connectedId} onValueChange={setConnectedId}>
+                <SelectTrigger><SelectValue placeholder="Select a program" /></SelectTrigger>
+                <SelectContent>
+                  {programs.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Features</Label>
+              <p className="text-xs text-muted-foreground -mt-1">
+                Partial limits a platform to the capabilities you pick — the partner sees only that slice of the connected program. People and Community are the partner's own.
+              </p>
+              <FeatureAccessControls
+                features={features}
+                featureAccess={featureAccess}
+                allowedKeys={allowedFeatureKeys}
+                onChangeFeatures={(next) => setFeatures(next as ProgramFeatures)}
+                onChangeAccess={setFeatureAccess}
+                disabled={busy}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Administrators</Label>
+              {admins.map((a, i) => (
+                <div key={i} className="flex gap-2">
+                  <Input value={a.email} onChange={(e) => updateAdmin(i, { email: e.target.value })} placeholder="admin@email.com" className="flex-1" />
+                  <Input value={a.displayName} onChange={(e) => updateAdmin(i, { displayName: e.target.value })} placeholder="Name (optional)" className="flex-1" />
+                </div>
+              ))}
+              <Button size="sm" variant="ghost" onClick={() => setAdmins((c) => [...c, { email: "", displayName: "" }])}><Plus className="size-3.5" /> Add another</Button>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => { onOpenChange(false); reset(); }}>Cancel</Button>
+              <Button onClick={submit} disabled={busy || !name.trim() || !connectedId}>{busy ? "Creating…" : "Create partner"}</Button>
+            </DialogFooter>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -418,6 +418,20 @@ export async function renameOrgCategory(orgId: string, from: string, to: string)
   return tpg.renameOrgCategory(orgId, from, to);
 }
 
+// ── Partners ("sister programs"; DB-backed only) ────────────────────────────
+export async function createPartner(orgId: string, opts: {
+  name: string; connectedProgramId: string; description?: string | null;
+  features?: Row; featureAccess?: Record<string, { capabilities: string[] }> | null;
+}): Promise<Row> {
+  return tpg.createPartner(orgId, opts);
+}
+export async function listPartnersForProgram(programId: string): Promise<Row[]> {
+  return tpg.listPartnersForProgram(programId);
+}
+export async function getPartnerBySlug(slug: string): Promise<Row | null> {
+  return tpg.getPartnerBySlug(slug);
+}
+
 /** Per-program platform enablement — DB-backed only (route guards dbEnabled). */
 export async function updateProgramFeatures(
   programId: string,

@@ -601,6 +601,36 @@ export async function createProgram(orgId: string, program: DraftProgramInput): 
   });
 }
 
+// ── Partners ("sister programs") ────────────────────────────────────────────
+/** Create a partner connected to one of the org's programs. A partner is a
+ *  program with its own slug/login and restricted platform views. */
+export async function createPartner(
+  orgId: string,
+  input: {
+    name: string;
+    description?: string;
+    connected_program_id: string;
+    features?: Record<string, boolean>;
+    feature_access?: Record<string, { capabilities: string[] }>;
+  },
+): Promise<Program> {
+  return request<Program>(`/api/platform/orgs/${orgId}/partners`, { method: "POST", body: JSON.stringify(input) });
+}
+/** The partners connected to a program (its Partners tab). */
+export async function listPartnersForProgram(programId: string): Promise<Program[]> {
+  return request<Program[]>(`/api/platform/programs/${programId}/partners`);
+}
+export interface PartnerPortal {
+  partner: Program;
+  connected_program: { id: string; name: string } | null;
+  org_id: string;
+  org_slug: string | null;
+}
+/** Resolve a partner by its login slug (partner portal). */
+export async function getPartnerPortal(slug: string): Promise<PartnerPortal> {
+  return request<PartnerPortal>(`/api/platform/partner-portal/${encodeURIComponent(slug)}`);
+}
+
 /** Update which feature-areas are accessible inside a program (org-admin config).
  *  `featureAccess` carries per-platform Partial capability subsets. */
 export async function updateProgramFeatures(

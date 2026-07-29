@@ -137,6 +137,10 @@ function _programResponse(row: Row): Row {
     secondary_categories: row.secondary_categories ?? [],
     branding: row.branding ?? null,
     platforms_open: row.platforms_open !== false,
+    feature_access: row.feature_access ?? null,
+    is_partner: row.is_partner ?? false,
+    connected_program_id: row.connected_program_id ?? null,
+    slug: row.slug ?? null,
   };
 }
 
@@ -1355,7 +1359,9 @@ platformRouter.get("/orgs/:org_id/programs", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
   _assertOrgStaff(user, orgId);
-  return c.json((await db.listPrograms(orgId)).map(_programResponse));
+  // Partners are program rows too, but they belong on a program's Partners tab —
+  // never in the org's main Programs list.
+  return c.json((await db.listPrograms(orgId)).filter((p) => !p.is_partner).map(_programResponse));
 });
 
 platformRouter.post("/orgs/:org_id/programs", async (c) => {
@@ -1408,6 +1414,68 @@ platformRouter.post("/orgs/:org_id/programs", async (c) => {
     metadata: { name: row.name, category: row.category },
   });
   return c.json(_programResponse((await db.getProgram(row.id)) ?? row));
+});
+
+// ── Partners ("sister programs") ────────────────────────────────────────────
+const partnerCreateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(2000).optional(),
+  connected_program_id: z.string().uuid(),
+  features: z.record(z.string(), z.boolean()).optional(),
+  feature_access: z.record(z.string(), z.object({ capabilities: z.array(z.string()) })).optional(),
+});
+
+// Create a partner connected to one of the org's programs. Same provisioning
+// path as a program (org-admin), plus a required connecting program.
+platformRouter.post("/orgs/:org_id/partners", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "programs", "edit");
+  await _requireOrgCap(user, orgId, "org.programs.create");
+  const req = parseBody(partnerCreateSchema, await c.req.json());
+  const connected = await db.getProgram(req.connected_program_id);
+  if (!connected || connected.org_id !== orgId) throw new HttpError(422, "Connecting program not found in this organization");
+  const featureAccess = req.feature_access ? await _sanitizeFeatureAccess(req.feature_access) : undefined;
+  const row = await db.createPartner(orgId, {
+    name: req.name,
+    connectedProgramId: req.connected_program_id,
+    description: req.description ?? null,
+    features: req.features,
+    featureAccess,
+  });
+  await db.addStageNodes(orgId, [{ stage_type: "national", name: req.name }], null, row.id as string);
+  await db.recordAuditEvent("partner.created", {
+    orgId, actorUserId: user.id, scopeType: "program", scopeId: row.id as string,
+    metadata: { name: row.name, connected_program_id: req.connected_program_id },
+  });
+  return c.json(_programResponse(row));
+});
+
+// A program's partners (its Partners tab).
+platformRouter.get("/programs/:program_id/partners", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _assertOrgStaff(user, program.org_id);
+  return c.json((await db.listPartnersForProgram(programId)).map(_programResponse));
+});
+
+// Partner login-portal context — resolve a partner by its slug (privileged, the
+// visitor is a partner member). Returns the partner + connected program summary.
+platformRouter.get("/partner-portal/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  _requireDb();
+  const partner = await db.getPartnerBySlug(slug);
+  if (!partner) throw new HttpError(404, "Partner not found");
+  const connected = partner.connected_program_id ? await db.getProgram(partner.connected_program_id as string) : null;
+  const org = await db.getOrganization(partner.org_id as string).catch(() => null);
+  return c.json({
+    partner: _programResponse(partner),
+    connected_program: connected ? { id: connected.id, name: connected.name } : null,
+    org_id: partner.org_id,
+    org_slug: org?.slug ?? null,
+  });
 });
 
 platformRouter.delete("/programs/:program_id", async (c) => {

@@ -41,6 +41,12 @@ const programRow = (p: typeof programs.$inferSelect): Row => ({
   // Per-platform "Partial" provisioning: a capability subset for a platform area
   // (learning/bridge) that clamps what roles can grant. Absent = No/Full.
   feature_access: ((p.metadataJson as Row)?.feature_access as Row) ?? null,
+  // Partner ("sister program") fields — a partner is a program row connected to
+  // another program, with its own slug/login and restricted platform views into
+  // the connected program's instances. Absent/false = an ordinary program.
+  is_partner: ((p.metadataJson as Row)?.is_partner as boolean | undefined) ?? false,
+  connected_program_id: ((p.metadataJson as Row)?.connected_program_id as string | undefined) ?? null,
+  slug: ((p.metadataJson as Row)?.slug as string | undefined) ?? null,
   secondary_categories: ((p.metadataJson as Row)?.secondary_categories as string[]) ?? [],
   branding: ((p.metadataJson as Row)?.branding as Row) ?? null,
   // Whether this program's own admins/members may open the platform runtimes
@@ -152,6 +158,67 @@ export async function createProgram(orgId: string, name: string, category: strin
       },
     }).returning();
     return programRow(p);
+  });
+}
+
+// ── Partners ("sister programs") ────────────────────────────────────────────
+// A partner is a program row flagged is_partner, connected to another program,
+// with its own slug for a dedicated login portal. Its People/Community/Partners
+// are its own (program-scoped); its platform tabs enter the CONNECTED program's
+// instances, restricted by feature_access. All stored migration-free in metadata.
+async function _uniquePartnerSlug(tx: Tx, base: string): Promise<string> {
+  const want = slugify(base) || "partner";
+  const rows = await tx.select({ meta: programs.metadataJson }).from(programs);
+  const taken = new Set(
+    rows.map((r) => (r.meta as Row | undefined)?.slug).filter((s): s is string => typeof s === "string"),
+  );
+  if (!taken.has(want)) return want;
+  for (let n = 2; ; n++) { const s = `${want}-${n}`; if (!taken.has(s)) return s; }
+}
+
+export async function createPartner(orgId: string, opts: {
+  name: string;
+  connectedProgramId: string;
+  description?: string | null;
+  features?: Row;
+  featureAccess?: Record<string, { capabilities: string[] }> | null;
+}): Promise<Row> {
+  return scoped(async (tx) => {
+    const slug = await _uniquePartnerSlug(tx, opts.name);
+    const [p] = await tx.insert(programs).values({
+      orgId,
+      name: opts.name,
+      category: "partner",
+      description: opts.description ?? null,
+      metadataJson: {
+        features: normalizeProgramFeatures(opts.features),
+        is_partner: true,
+        connected_program_id: opts.connectedProgramId,
+        slug,
+        ...(opts.featureAccess ? { feature_access: opts.featureAccess } : {}),
+      },
+    }).returning();
+    return programRow(p);
+  });
+}
+
+/** Partners connected to a program (its Partners tab). */
+export async function listPartnersForProgram(programId: string): Promise<Row[]> {
+  return scoped(async (tx) => {
+    const rows = await tx.select().from(programs);
+    return rows
+      .filter((p) => (p.metadataJson as Row | undefined)?.connected_program_id === programId)
+      .map(programRow);
+  });
+}
+
+/** Resolve a partner by its login slug — privileged (the visitor is a partner
+ *  member, not necessarily a member of the owning org). */
+export async function getPartnerBySlug(slug: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.select().from(programs);
+    const m = rows.find((p) => (p.metadataJson as Row | undefined)?.slug === slug && (p.metadataJson as Row | undefined)?.is_partner);
+    return m ? programRow(m) : null;
   });
 }
 

@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BookOpen, Check, ExternalLink, Lock, Plus, Rocket, ShieldCheck, Trash2, Waypoints, X } from "lucide-react";
+import { BookOpen, Check, Copy, ExternalLink, Handshake, Lock, Plus, Rocket, ShieldCheck, Trash2, Waypoints, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -39,6 +39,7 @@ import {
   listOfferings,
   listPrograms,
   listProgramOrgAffiliations,
+  listPartnersForProgram,
   setProgramOrgAffiliationAccess,
   listProgramGateRequests,
   approveProgramGateRequest,
@@ -1008,110 +1009,82 @@ function NewGroupDialog({
 
 export function ProgramPartners() {
   const { program, orgId, programId } = useProgram();
-  const [affiliations, setAffiliations] = useState<ProgramOrgAffiliation[] | null>(null);
-  const [affiliated, setAffiliated] = useState<AffiliatedProgram[]>([]);
-  const [editing, setEditing] = useState<ProgramOrgAffiliation | null>(null);
+  const [partners, setPartners] = useState<Program[] | null>(null);
+  const [connected, setConnected] = useState<Program | null>(null);
+  const isPartner = !!program?.is_partner;
 
-  const loadAffiliations = useCallback(() => {
-    if (!programId) return;
-    listProgramOrgAffiliations(programId).then(setAffiliations).catch(() => setAffiliations([]));
-  }, [programId]);
-  useEffect(() => { loadAffiliations(); }, [loadAffiliations]);
   useEffect(() => {
-    if (orgId) listAffiliatedPrograms(orgId).then(setAffiliated).catch(() => setAffiliated([]));
-  }, [orgId]);
+    if (!programId) return;
+    if (isPartner) {
+      // A partner's own Partners tab shows just its connected (sister) program.
+      const cid = program?.connected_program_id;
+      if (cid) listPrograms(orgId).then((ps) => setConnected(ps.find((x) => x.id === cid) ?? null)).catch(() => setConnected(null));
+      setPartners([]);
+    } else {
+      listPartnersForProgram(programId).then(setPartners).catch(() => setPartners([]));
+    }
+  }, [programId, orgId, isPartner, program?.connected_program_id]);
 
-  const orgSlug = readBranding(orgId)?.slug ?? null;
-  const programSlug = program?.name ? program.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") : "";
-  const partnerUrl = orgSlug && programSlug ? `${window.location.origin}/partner/${orgSlug}/${programSlug}` : null;
-  const anyGranted = (affiliations ?? []).some((a) => (a.metadata_json?.access?.capabilities ?? []).length);
+  // A partner: show its sister program.
+  if (isPartner) {
+    return (
+      <div>
+        <Head program={program} subtitle="This partner's connected program." />
+        {!connected ? (
+          <EmptyState>Connected program unavailable.</EmptyState>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="glass-card p-4">
+              <div className="flex items-start gap-2">
+                <Handshake className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <Link to={`/o/${orgId}/p/${connected.id}`} className="font-medium text-foreground hover:underline">{connected.name}</Link>
+                  <div className="text-xs text-muted-foreground">Connected program</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
-      <Head program={program} subtitle="Grant a partner organization a gated view of this program, the way you provision roles to people." />
-      {partnerUrl && anyGranted ? (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">Partner entry link:</span>
-          <code className="font-mono text-xs text-foreground">{partnerUrl}</code>
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => { void navigator.clipboard?.writeText(partnerUrl); toast.success("Copied"); }}>Copy</Button>
-        </div>
-      ) : null}
-      {!affiliations ? (
+      <Head program={program} subtitle="Partner organizations connected to this program, each with its own login and a restricted view." />
+      {!partners ? (
         <Spinner />
-      ) : affiliations.length === 0 && affiliated.length === 0 ? (
-        <EmptyState>No partners yet. Affiliated organizations appear here once linked.</EmptyState>
+      ) : partners.length === 0 ? (
+        <EmptyState>No partners yet. Create one with "New partner" on the Programs page, connected to this program.</EmptyState>
       ) : (
-        <div className="space-y-6">
-          {affiliations.length > 0 ? (
-            <div className="glass-card overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Affiliated org</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Granted access</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {affiliations.map((a) => {
-                    const caps = a.metadata_json?.access?.capabilities ?? [];
-                    return (
-                      <TableRow key={a.id}>
-                        <TableCell className="font-mono text-xs">{a.organization_id}</TableCell>
-                        <TableCell>{a.affiliation_type}</TableCell>
-                        <TableCell>
-                          <Pill tone={statusTone(a.status)}>{a.status}</Pill>
-                        </TableCell>
-                        <TableCell>
-                          {caps.length ? (
-                            <div className="flex flex-wrap gap-1">
-                              {caps.slice(0, 3).map((c) => <Pill key={c} tone="neutral">{c}</Pill>)}
-                              {caps.length > 3 ? <span className="text-xs text-muted-foreground">+{caps.length - 3} more</span> : null}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">No access granted</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button size="sm" variant="outline" onClick={() => setEditing(a)}>
-                            <ShieldCheck className="size-3.5" /> Edit access
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          ) : null}
-          {affiliated.length > 0 ? (
-            <div>
-              <h2 className="text-sm font-semibold mb-2">Programs shared with this org</h2>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {affiliated.map((p) => (
-                  <div key={p.program_id} className="glass-card p-4">
-                    <div className="font-medium text-foreground">{p.name}</div>
-                    <div className="text-xs text-muted-foreground">{p.affiliation_type}</div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {partners.map((p) => {
+            const url = p.slug ? `${window.location.origin}/partner/${p.slug}` : null;
+            return (
+              <div key={p.id} className="glass-card p-4">
+                <div className="flex items-start gap-2">
+                  <Handshake className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <Link to={`/o/${orgId}/p/${p.id}`} className="font-medium text-foreground hover:underline">{p.name}</Link>
+                    {p.description ? <div className="text-xs text-muted-foreground">{p.description}</div> : null}
                   </div>
-                ))}
+                </div>
+                {url ? (
+                  <div className="mt-2 flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
+                    <span className="text-[11px] text-muted-foreground shrink-0">Login</span>
+                    <code className="flex-1 truncate text-xs font-mono">{url}</code>
+                    <button type="button" onClick={() => { void navigator.clipboard?.writeText(url); toast.success("Copied"); }} className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"><Copy className="size-3.5" /></button>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          ) : null}
+            );
+          })}
         </div>
       )}
-      {editing && programId ? (
-        <PartnerAccessDialog
-          programId={programId}
-          affiliation={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); loadAffiliations(); }}
-        />
-      ) : null}
     </div>
   );
 }
+
 
 /**
  * Grant a partner org a gated, catalog-based view of this program — the same

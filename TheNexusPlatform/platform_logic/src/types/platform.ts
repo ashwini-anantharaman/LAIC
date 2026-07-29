@@ -66,6 +66,11 @@ export interface Program {
   /** Per-platform "Partial" provisioning: a capability subset for a platform
    *  area (learning/bridge) that clamps what roles can grant. Absent = No/Full. */
   feature_access?: Record<string, { capabilities: string[] }> | null;
+  /** Partner ("sister program") fields — a partner is a program connected to
+   *  another program, with its own slug/login. Absent/false = ordinary program. */
+  is_partner?: boolean;
+  connected_program_id?: string | null;
+  slug?: string | null;
 }
 
 /** Platform feature keys that support the No/Partial/Full provisioning control
