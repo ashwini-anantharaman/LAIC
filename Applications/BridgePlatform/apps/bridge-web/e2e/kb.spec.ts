@@ -753,6 +753,44 @@ test("the table renders the BBO felt — the only view, no skin toggle", async (
   });
 });
 
+test("table settings menu: the ☰ opens the overlay and rows apply their setting", async ({
+  page,
+  context,
+}) => {
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto("/bridge/table");
+  await page
+    .getByRole("button", { name: /Quickplay|Deal a fresh board/ })
+    .or(page.getByRole("link", { name: /^Resume / }))
+    .first()
+    .click();
+  await page.waitForURL(/\/bridge\/table2?\/bs_/);
+  const sid = /bs_[a-z0-9]+/.exec(page.url())![0];
+  await page.goto(`/bridge/table2/${sid}`);
+
+  // The rail's ☰ opens the SettingsMenu overlay with the real rows.
+  await page.getByRole("button", { name: "Table menu" }).click();
+  await expect(page.getByText("Table settings")).toBeVisible();
+  await expect(page.getByRole("button", { name: /New board/ })).toBeVisible();
+
+  // A row applies its param via navigation; the menu STAYS OPEN and the row
+  // shows the new value.
+  await page.getByRole("button", { name: /Show all four hands/ }).click();
+  await page.waitForURL(/hands=/);
+  await expect(page.getByText("Table settings")).toBeVisible();
+
+  // Robot speed cycles normal → slow.
+  await page.getByRole("button", { name: /Robot speed/ }).click();
+  await page.waitForURL(/speed=slow/);
+  await expect(page.getByRole("button", { name: /Robot speed/ })).toContainText("Slow");
+
+  // Clicking the backdrop closes the menu. The panel is 268px wide at the
+  // stage's top-left, so a point well to its right is bare backdrop.
+  const header = (await page.getByText("Table settings").boundingBox())!;
+  await page.mouse.click(header.x + header.width + 400, header.y + header.height / 2);
+  await expect(page.getByText("Table settings")).toHaveCount(0);
+});
+
 test("auction rules explorer: lists the rules at a decision point", async ({
   page,
   context,

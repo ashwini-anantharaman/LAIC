@@ -17,6 +17,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
+import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
 
 // ---------------------------------------------------------------------------
 // The design's palette and metrics, lifted from the prototype verbatim.
@@ -95,6 +96,12 @@ export interface PlayTableProps {
   onNewDeal?: () => void;
   /** Rendered into the left rail under the fixed controls. */
   railExtra?: ReactNode;
+  /**
+   * Settings rows for the ☰ menu (SettingsMenu design). Each row shows its
+   * current value and navigates to apply — the caller owns the params. When
+   * present (and onMenu isn't), the ☰ opens the overlay itself.
+   */
+  settings?: readonly { label: string; value: string; href: string }[];
 }
 
 export function PlayTable({
@@ -117,6 +124,7 @@ export function PlayTable({
   onClaim,
   onNewDeal,
   railExtra,
+  settings,
 }: Readonly<PlayTableProps>) {
   // --- per-instance sizing. The prototype watched `window`; this watches the
   // element, which is what makes a second instance possible at all.
@@ -135,6 +143,18 @@ export function PlayTable({
   // Armed bid level (the two-step bid box) is instance state.
   const [armed, setArmed] = useState<number | null>(null);
   useEffect(() => setArmed(null), [state.auction.length]);
+
+  // The ☰ settings overlay is instance state too. An explicit onMenu prop
+  // wins (the design's "prop handler wins" rule); otherwise the table opens
+  // its own menu when settings rows were provided.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuHandler = onMenu ?? (settings ? () => setMenuOpen((v) => !v) : undefined);
+  const menuItems: SettingsItem[] = [
+    ...(settings ?? []),
+    ...(onNewDeal
+      ? [{ label: "New board", value: "→", on: () => { setMenuOpen(false); onNewDeal(); } }]
+      : []),
+  ];
 
   // Scale DOWN to fit, never up: the design is pixel-drawn at 1040x590 and
   // magnifying it past that only coarsens it.
@@ -428,7 +448,7 @@ export function PlayTable({
   // ---- rail ---------------------------------------------------------------
   const rail = (
     <div style={{ width: 185, flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "14px 10px 18px" }}>
-      <button type="button" onClick={onMenu} title="Table menu and settings" aria-label="Table menu" style={{ width: 100, height: 46, background: RAIL_BLUE, border: "2px solid #dfe4f4", borderRadius: 7, color: "#fff", fontSize: 22, lineHeight: 1, cursor: onMenu ? "pointer" : "default" }}>☰</button>
+      <button type="button" onClick={menuHandler} title="Table menu and settings" aria-label="Table menu" style={{ width: 100, height: 46, background: RAIL_BLUE, border: "2px solid #dfe4f4", borderRadius: 7, color: "#fff", fontSize: 22, lineHeight: 1, cursor: menuHandler ? "pointer" : "default" }}>☰</button>
       <button type="button" onClick={onScoring} title="Scoring mode" style={{ width: 100, height: 32, background: PANEL, border: "2px solid #f2f4f4", borderRadius: 7, color: "#000", fontSize: 19, fontWeight: 700, lineHeight: 1, cursor: onScoring ? "pointer" : "default" }}>{scoringLabel}</button>
       <div style={{ width: 92, background: "#fff", border: "2px solid #7d7d7d", borderRadius: 3, padding: "2px 6px 8px", textAlign: "center", boxShadow: "0 1px 2px rgba(0,0,0,.5)" }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: "#000", lineHeight: 1.2, borderBottom: "1px solid #9a9a9a", marginBottom: 4 }}>{state.dealer}</div>
@@ -486,6 +506,9 @@ export function PlayTable({
             </div>
           </div>
         </div>
+        {menuOpen && !onMenu && (
+          <SettingsMenu accent={RAIL_BLUE} items={menuItems} onClose={() => setMenuOpen(false)} />
+        )}
       </div>
     </div>
   );

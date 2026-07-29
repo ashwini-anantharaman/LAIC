@@ -24,12 +24,12 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; paused?: string; saved?: string; error?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; paused?: string; saved?: string; error?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { hands: handsParam, bboAuction, paused, saved, error } = await searchParams;
+  const { hands: handsParam, bboAuction, speed, paused, saved, error } = await searchParams;
 
   let view;
   try {
@@ -92,6 +92,35 @@ export default async function PlayTablePage({
   // one, so show its trailing digits and keep the full name in the tooltip.
   const boardNumber = /(\d+)\s*$/.exec(record.board.name)?.[1] ?? record.board.name;
 
+  // ☰ settings menu (SettingsMenu design): each row navigates with one param
+  // changed — the app's convention for table toggles. `paused` is kept so a
+  // settings change doesn't remount AutoAdvance and surprise-pause the table.
+  const beatMs = speed === "fast" ? 350 : speed === "slow" ? 1500 : 750;
+  const settingsHref = (patch: Record<string, string | undefined>) => {
+    const q = new URLSearchParams();
+    const current = { hands: handsParam, bboAuction, speed, paused };
+    for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
+    const s = q.toString();
+    return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
+  };
+  const settings = [
+    {
+      label: "Show all four hands",
+      value: showAll ? "On" : "Off",
+      href: settingsHref({ hands: showAll ? "mine" : "all" }),
+    },
+    {
+      label: "Auction display",
+      value: bboAuction === "seats" ? "At seats" : "Centre box",
+      href: settingsHref({ bboAuction: bboAuction === "seats" ? undefined : "seats" }),
+    },
+    {
+      label: "Robot speed",
+      value: speed === "fast" ? "Fast" : speed === "slow" ? "Slow" : "Normal",
+      href: settingsHref({ speed: speed === "slow" ? "fast" : speed === "fast" ? undefined : "slow" }),
+    },
+  ];
+
   return (
     <div className="mx-auto w-full max-w-[1040px]">
       {error && (
@@ -120,6 +149,7 @@ export default async function PlayTablePage({
           active={!actingIsHuman && state.phase !== "complete"}
           seq={record.events.length}
           complete={state.phase === "complete"}
+          beatMs={beatMs}
         />
       </div>
       <div
@@ -145,6 +175,7 @@ export default async function PlayTablePage({
           resultLine={score ? resultLabel(score) : ""}
           resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
           railExtra={seatsPanel}
+          settings={settings}
         />
       </div>
     </div>
