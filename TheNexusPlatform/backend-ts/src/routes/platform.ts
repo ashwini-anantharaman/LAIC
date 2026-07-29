@@ -1445,6 +1445,24 @@ async function _assertProgramConfigAccess(user: PlatformUser, orgId: string, pro
   await _requireOrgArea(user, orgId, "programs", "edit");
 }
 
+// Partial-access provisioning is scoped to the platform areas that have their
+// own Access Catalog (matching the role builder's 3-way): learning + bridge.
+const _FEATURE_ACCESS_PROVIDERS: Record<string, ProviderId> = { learning: "learning", bridge: "bridge" };
+/** Keep only platform-area keys, with capabilities validated against that
+ *  platform's catalog (unknown/foreign ids dropped). */
+async function _sanitizeFeatureAccess(
+  input: Record<string, { capabilities: string[] }>,
+): Promise<Record<string, { capabilities: string[] }>> {
+  const out: Record<string, { capabilities: string[] }> = {};
+  for (const [key, val] of Object.entries(input)) {
+    const providerId = _FEATURE_ACCESS_PROVIDERS[key];
+    if (!providerId) continue;
+    const caps = await catalogue.validGrantsAcross([{ providerId }], val.capabilities ?? []);
+    if (caps.length) out[key] = { capabilities: caps };
+  }
+  return out;
+}
+
 platformRouter.patch("/programs/:program_id/features", async (c) => {
   const user = await getCurrentUser(c);
   const programId = c.req.param("program_id");
@@ -1454,7 +1472,8 @@ platformRouter.patch("/programs/:program_id/features", async (c) => {
   await _requireOrgCap(user, program.org_id, "org.programs.configure");
   const req = parseBody(programFeaturesUpdate, await c.req.json());
   const features = normalizeProgramFeatures(req.features);
-  const row = await db.updateProgramFeatures(programId, features, req.platforms_open);
+  const featureAccess = req.feature_access ? await _sanitizeFeatureAccess(req.feature_access) : undefined;
+  const row = await db.updateProgramFeatures(programId, features, req.platforms_open, featureAccess);
   if (!row) throw new HttpError(404, "Program not found");
   await db.recordAuditEvent("program.features.updated", {
     orgId: program.org_id,
@@ -2218,6 +2237,8 @@ const capabilityPatchSchema = z.object({
   programTypes: z.record(z.string(), z.boolean()).optional(),
   offeringTypes: z.record(z.string(), z.boolean()).optional(),
   features: z.record(z.string(), z.boolean()).optional(),
+  // Partial-access capability subsets per platform area (learning/bridge).
+  featureAccess: z.record(z.string(), z.object({ capabilities: z.array(z.string()) })).optional(),
   // Max programs the org may create; null = unlimited.
   programCapacity: z.number().int().min(1).nullable().optional(),
   // May org-level admins enter the org's programs? (access boundary)
@@ -2229,6 +2250,7 @@ platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
   const orgId = c.req.param("org_id");
   await _requireNexusArea(user, "organizations", "edit");
   const req = parseBody(capabilityPatchSchema, await c.req.json());
+  if (req.featureAccess) req.featureAccess = await _sanitizeFeatureAccess(req.featureAccess);
   const caps = await db.setOrgCapabilities(orgId, req);
   await db.recordAuditEvent("organization.capabilities_updated", {
     orgId,

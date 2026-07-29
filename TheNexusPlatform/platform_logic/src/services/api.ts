@@ -601,17 +601,20 @@ export async function createProgram(orgId: string, program: DraftProgramInput): 
   });
 }
 
-/** Update which feature-areas are accessible inside a program (org-admin config). */
+/** Update which feature-areas are accessible inside a program (org-admin config).
+ *  `featureAccess` carries per-platform Partial capability subsets. */
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
   platformsOpen?: boolean,
+  featureAccess?: Record<string, { capabilities: string[] }>,
 ): Promise<Program> {
+  const body: Record<string, unknown> = { features };
+  if (platformsOpen !== undefined) body.platforms_open = platformsOpen;
+  if (featureAccess !== undefined) body.feature_access = featureAccess;
   return request<Program>(`/api/platform/programs/${programId}/features`, {
     method: "PATCH",
-    body: JSON.stringify(
-      platformsOpen === undefined ? { features } : { features, platforms_open: platformsOpen },
-    ),
+    body: JSON.stringify(body),
   });
 }
 
@@ -882,6 +885,9 @@ export interface OrgCapabilities {
   offeringTypes: Record<string, boolean>;
   /** Feature-areas the org may use — same six keys as per-program features. */
   features: Record<string, boolean>;
+  /** Per-platform "Partial" provisioning: capability subsets per platform area
+   *  (learning/bridge) that clamp what the org's programs and roles can grant. */
+  featureAccess?: Record<string, { capabilities: string[] }>;
   /** Max programs the org may create; null = unlimited. */
   programCapacity?: number | null;
   /** May org-level admins enter the org's programs? Absent/true = yes. */

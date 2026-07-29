@@ -40,6 +40,7 @@ import {
   type OrgCapabilities,
   type ProgramAdministrator,
 } from "@/services/api";
+import { FeatureAccessControls, type FeatureAccessMap } from "@/nexus/access/FeatureAccess";
 import type { Program, ProgramCategory, ProgramFeatures } from "@/types/platform";
 import { DEFAULT_PROGRAM_FEATURES, PROGRAM_FEATURES } from "@/types/platform";
 import { resolveAssetUrl } from "@/services/apiBase";
@@ -667,6 +668,7 @@ function NewProgramDialog({
     setSecondary((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]));
   }
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
+  const [featureAccess, setFeatureAccess] = useState<FeatureAccessMap>({});
   const [admins, setAdmins] = useState<AdminDraft[]>([{ email: "", displayName: "" }]);
   const [invites, setInvites] = useState<CreatedInvite[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -677,6 +679,7 @@ function NewProgramDialog({
     setCategory(categories[0] ?? "");
     setSecondary([]);
     setFeatures({ ...DEFAULT_PROGRAM_FEATURES });
+    setFeatureAccess({});
     setAdmins([{ email: "", displayName: "" }]);
     setInvites(null);
   }
@@ -698,6 +701,10 @@ function NewProgramDialog({
         description: description.trim() || undefined,
         features,
       });
+      // Create can't carry Partial subsets — apply them right after if any set.
+      if (Object.keys(featureAccess).length) {
+        await updateProgramFeatures(program.id, features, undefined, featureAccess).catch(() => {});
+      }
       // Assign each named administrator — same delegation the org provisioning
       // flow uses; each becomes an active administrator immediately.
       const created: CreatedInvite[] = [];
@@ -854,9 +861,16 @@ function NewProgramDialog({
             <div className="space-y-1.5">
               <Label>Features</Label>
               <p className="text-xs text-muted-foreground -mt-1">
-                Choose what's accessible in this program. Only enabled features can be granted to roles.
+                Partial limits a platform to the capabilities you pick — roles can't grant beyond them.
               </p>
-              <FeatureToggles features={features} onChange={setFeatures} allowedKeys={allowedFeatureKeys} />
+              <FeatureAccessControls
+                features={features}
+                featureAccess={featureAccess}
+                allowedKeys={allowedFeatureKeys}
+                onChangeFeatures={(next) => setFeatures(next as ProgramFeatures)}
+                onChangeAccess={setFeatureAccess}
+                disabled={busy}
+              />
             </div>
           </div>
         )}
@@ -900,6 +914,7 @@ function EditFeaturesDialog({
   categories: string[];
 }) {
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
+  const [featureAccess, setFeatureAccess] = useState<FeatureAccessMap>({});
   const [primary, setPrimary] = useState<string>("");
   const [secondary, setSecondary] = useState<string[]>([]);
   const [platformsOpen, setPlatformsOpen] = useState(true);
@@ -908,6 +923,7 @@ function EditFeaturesDialog({
   useEffect(() => {
     if (program) {
       setFeatures({ ...DEFAULT_PROGRAM_FEATURES, ...(program.features ?? {}) });
+      setFeatureAccess((program.feature_access as FeatureAccessMap) ?? {});
       setPrimary(program.category);
       setSecondary(program.secondary_categories ?? []);
       setPlatformsOpen(program.platforms_open !== false);
@@ -922,7 +938,7 @@ function EditFeaturesDialog({
     if (!program) return;
     setBusy(true);
     try {
-      await updateProgramFeatures(program.id, features, platformsOpen);
+      await updateProgramFeatures(program.id, features, platformsOpen, featureAccess);
       if (primary !== program.category || JSON.stringify(secondary) !== JSON.stringify(program.secondary_categories ?? [])) {
         await updateProgramCategories(program.id, {
           category: primary,
@@ -986,10 +1002,16 @@ function EditFeaturesDialog({
         <div className="space-y-1.5">
           <Label>Features</Label>
           <p className="text-xs text-muted-foreground -mt-1">
-            Turn a feature off to hide it from this program's roles. Roles already granting it keep
-            the record, but the area stops being offered.
+            Partial limits a platform to the capabilities you pick — roles can't grant beyond them.
           </p>
-          <FeatureToggles features={features} onChange={setFeatures} allowedKeys={allowedFeatureKeys} />
+          <FeatureAccessControls
+            features={features}
+            featureAccess={featureAccess}
+            allowedKeys={allowedFeatureKeys}
+            onChangeFeatures={(next) => setFeatures(next as ProgramFeatures)}
+            onChangeAccess={setFeatureAccess}
+            disabled={busy}
+          />
         </div>
         <div className="space-y-1.5">
           <Label>Platform access</Label>

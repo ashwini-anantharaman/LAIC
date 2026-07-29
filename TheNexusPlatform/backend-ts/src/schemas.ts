@@ -80,12 +80,21 @@ export function normalizeProgramFeatures(input?: Record<string, unknown> | null)
   return out;
 }
 
+/** Per-platform "Partial" provisioning: a capability subset per platform area.
+ *  Keys are platform feature keys (learning/bridge); server validates the ids. */
+export const featureAccessSchema = z.record(
+  z.string(),
+  z.object({ capabilities: z.array(z.string()) }),
+);
+
 export const programFeaturesUpdate = z.object({
   features: programFeatures,
   // Per-program platform lock: may this program's own admins/members open the
   // platform runtimes (Learning, App Shell, Bridge)? Optional so callers that
   // only touch feature toggles are unchanged.
   platforms_open: z.boolean().optional(),
+  // Partial-access capability subsets per platform area (optional).
+  feature_access: featureAccessSchema.optional(),
 });
 
 // ── Platform request schemas ────────────────────────────────────────────────

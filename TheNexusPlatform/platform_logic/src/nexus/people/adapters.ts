@@ -75,11 +75,16 @@ const PROGRAM_AREA_GROUP: Record<string, string> = {
   teams: "people", community: "community", partners: "partners",
 };
 
+// A platform provisioned "Partial" caps its role builder to that subset. Map the
+// feature key to the platform catalogue's provider id used in the builder.
+const PLATFORM_PROVIDER_BY_KEY: Record<string, string> = { learning: "learning-platform", bridge: "bridge-platform" };
+
 export function programRgAdapter(
   orgId: string,
   programId: string,
   enabledAreaKeys: string[],
   onTestRole?: (role: RgRole) => void,
+  featureAccess?: Record<string, { capabilities: string[] }> | null,
 ): RgAdapter {
   return {
     testAsRole: onTestRole,
@@ -103,12 +108,28 @@ export function programRgAdapter(
       { name: "Super Admin", description: "Program administrator (full access) — holds every capability; not editable." },
     ],
     // A program role grants THIS program's console capabilities + the platforms it
-    // opens (learning/bridge inventory is platform-global).
-    loadCatalogues: catalogueLoader([
-      () => getProgramCatalogue(programId),
-      () => getCatalogue("learning"),
-      () => getCatalogue("bridge"),
-    ]),
+    // opens (learning/bridge inventory is platform-global). A Partial platform's
+    // catalogue is filtered to the provisioned subset so roles can't grant beyond it.
+    loadCatalogues: async () => {
+      const built = await catalogueLoader([
+        () => getProgramCatalogue(programId),
+        () => getCatalogue("learning"),
+        () => getCatalogue("bridge"),
+      ])();
+      if (!featureAccess) return built;
+      const allowedByProvider: Record<string, Set<string>> = {};
+      for (const [key, prov] of Object.entries(PLATFORM_PROVIDER_BY_KEY)) {
+        const partial = featureAccess[key]?.capabilities;
+        if (partial) allowedByProvider[prov] = new Set(partial);
+      }
+      return built
+        .map((b) => {
+          const allowed = b.provider ? allowedByProvider[b.provider] : undefined;
+          if (!allowed) return b;
+          return { ...b, groups: b.groups.map((g) => ({ ...g, capabilities: g.capabilities.filter((cp) => allowed.has(cp.id)) })).filter((g) => g.capabilities.length > 0) };
+        })
+        .filter((b) => b.groups.length > 0);
+    },
   };
 }
 

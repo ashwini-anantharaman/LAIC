@@ -143,6 +143,21 @@ export function ProgramTeam() {
   // Shared Roles & Groups panel adapter — enabled areas + role "Test as". An
   // area shows only if the program's feature is on AND (for platform areas) the
   // org is entitled to that platform.
+  // Effective Partial provisioning = the program's subset intersected with the
+  // org envelope's — clamps the role builder's platform capability picker.
+  const effectiveFeatureAccess = useMemo(() => {
+    const prog = (program?.feature_access as Record<string, { capabilities: string[] }> | null) ?? {};
+    const org = orgCaps?.featureAccess ?? {};
+    const out: Record<string, { capabilities: string[] }> = {};
+    for (const key of ["learning", "bridge"]) {
+      const p = prog[key]?.capabilities, o = org[key]?.capabilities;
+      if (p && o) out[key] = { capabilities: p.filter((c) => o.includes(c)) };
+      else if (p) out[key] = { capabilities: p };
+      else if (o) out[key] = { capabilities: o };
+    }
+    return Object.keys(out).length ? out : null;
+  }, [program, orgCaps]);
+
   const programRg = useMemo(
     () =>
       programRgAdapter(
@@ -155,9 +170,10 @@ export function ProgramTeam() {
           startImpersonation({ roleName: role.name, perms: role.perms, orgId, programId });
           navigate(`/o/${orgId}/p/${programId}`);
         },
+        effectiveFeatureAccess,
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orgId, programId, enabledFeatures, orgCaps, startImpersonation, navigate],
+    [orgId, programId, enabledFeatures, orgCaps, effectiveFeatureAccess, startImpersonation, navigate],
   );
 
   const load = useCallback(() => {

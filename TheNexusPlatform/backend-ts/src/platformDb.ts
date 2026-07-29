@@ -294,6 +294,7 @@ function _mergeCapabilities(base: Row, patch: Row): Row {
     programTypes: merge((tpg.DEFAULT_CAPABILITIES.programTypes as Row), merge((base.programTypes as Row) ?? {}, (patch.programTypes as Row) ?? {})),
     offeringTypes: merge((tpg.DEFAULT_CAPABILITIES.offeringTypes as Row), merge((base.offeringTypes as Row) ?? {}, (patch.offeringTypes as Row) ?? {})),
     features: merge((tpg.DEFAULT_CAPABILITIES.features as Row), merge((base.features as Row) ?? {}, (patch.features as Row) ?? {})),
+    featureAccess: "featureAccess" in patch ? ((patch.featureAccess as Row) ?? {}) : ((base.featureAccess as Row) ?? {}),
     adminsEnterPrograms: pickBool(patch.adminsEnterPrograms, base.adminsEnterPrograms),
   };
 }
@@ -422,8 +423,9 @@ export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
   platformsOpen?: boolean,
+  featureAccess?: Record<string, { capabilities: string[] }> | null,
 ): Promise<Row | null> {
-  if (usePg()) return tpg.updateProgramFeatures(programId, features, platformsOpen);
+  if (usePg()) return tpg.updateProgramFeatures(programId, features, platformsOpen, featureAccess);
   if (await useLocal()) return local.localUpdateProgramFeatures(programId, features);
   const client = requireClient();
   const existing = await getProgram(programId);
@@ -432,6 +434,7 @@ export async function updateProgramFeatures(
     ...((existing.metadata_json as Row) ?? {}),
     features,
     ...(platformsOpen === undefined ? {} : { platforms_open: platformsOpen }),
+    ...(featureAccess === undefined ? {} : { feature_access: featureAccess ?? {} }),
   };
   return _mutateOne(
     client.from("programs").update({ metadata_json: meta }).eq("id", programId).select("*"),

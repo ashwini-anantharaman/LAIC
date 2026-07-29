@@ -38,6 +38,9 @@ const programRow = (p: typeof programs.$inferSelect): Row => ({
   id: p.id, org_id: p.orgId, name: p.name, category: p.category, description: p.description,
   icon: p.icon, instructor_label: p.instructorLabel, learner_label: p.learnerLabel,
   features: normalizeProgramFeatures((p.metadataJson as Row)?.features as Row),
+  // Per-platform "Partial" provisioning: a capability subset for a platform area
+  // (learning/bridge) that clamps what roles can grant. Absent = No/Full.
+  feature_access: ((p.metadataJson as Row)?.feature_access as Row) ?? null,
   secondary_categories: ((p.metadataJson as Row)?.secondary_categories as string[]) ?? [],
   branding: ((p.metadataJson as Row)?.branding as Row) ?? null,
   // Whether this program's own admins/members may open the platform runtimes
@@ -158,6 +161,7 @@ export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
   platformsOpen?: boolean,
+  featureAccess?: Record<string, { capabilities: string[] }> | null,
 ): Promise<Row | null> {
   return scoped(async (tx) => {
     const existing = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
@@ -166,6 +170,7 @@ export async function updateProgramFeatures(
       ...(existing[0].metadataJson as Row),
       features,
       ...(platformsOpen === undefined ? {} : { platforms_open: platformsOpen }),
+      ...(featureAccess === undefined ? {} : { feature_access: featureAccess ?? {} }),
     };
     const [p] = await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId)).returning();
     if (!p) return null;
@@ -766,6 +771,10 @@ export const DEFAULT_CAPABILITIES = {
   // so the Nexus envelope and the org's program config speak one vocabulary.
   // Everything on by default; the operator narrows per org.
   features: { learning: true, bridge: true, appbuilder: true, community: true, teams: true, partners: true },
+  // Per-platform "Partial" provisioning at the org envelope: a capability subset
+  // for a platform area (learning/bridge) that clamps what the org's programs and
+  // roles can grant. Absent key = No/Full (governed by `features`).
+  featureAccess: {} as Record<string, { capabilities: string[] }>,
   // Max programs the org may create; null = unlimited.
   programCapacity: null as number | null,
   // Whether org-level admins/owners automatically get access INTO the org's
@@ -794,6 +803,7 @@ function _capsFromSettings(settings: Record<string, unknown>): Row {
     programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((caps.programTypes as Row) ?? {}) },
     offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((caps.offeringTypes as Row) ?? {}) },
     features: { ...DEFAULT_CAPABILITIES.features, ..._normalizeCapFeatures(caps.features as Row) },
+    featureAccess: (caps.featureAccess as Row | undefined) ?? {},
     programCapacity: (caps.programCapacity as number | null | undefined) ?? null,
     adminsEnterPrograms: (caps.adminsEnterPrograms as boolean | undefined) ?? true,
   };
@@ -817,6 +827,8 @@ export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row
       programTypes: { ...(existing.programTypes as Row), ...((patch.programTypes as Row) ?? {}) },
       offeringTypes: { ...(existing.offeringTypes as Row), ...((patch.offeringTypes as Row) ?? {}) },
       features: { ...(existing.features as Row), ..._normalizeCapFeatures(patch.features as Row) },
+      featureAccess:
+        "featureAccess" in patch ? ((patch.featureAccess as Row) ?? {}) : existing.featureAccess,
       programCapacity:
         "programCapacity" in patch ? ((patch.programCapacity as number | null) ?? null) : existing.programCapacity,
       adminsEnterPrograms:
