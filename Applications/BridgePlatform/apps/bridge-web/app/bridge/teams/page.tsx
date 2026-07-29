@@ -25,6 +25,7 @@ import { NAV_ITEMS } from "@/lib/nav";
 import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
 import { listBridgePeople, nexusProgramId, type BridgePerson } from "@/lib/nexusPeople";
 import { getBridgeCatalogue, listBridgeRoles, type BridgeRole } from "@/lib/nexusBridgeRoles";
+import { CatalogueEditor } from "../catalogue/CatalogueEditor";
 import {
   assignRoleAction,
   createRoleAction,
@@ -78,7 +79,7 @@ export default async function TeamsPage({
   if (!canAccessAdminArea(context)) redirect("/bridge/home");
   const { invited, who, tab, view } = await searchParams;
 
-  const activeTab: "people" | "rg" = tab === "rg" ? "rg" : "people";
+  const activeTab: "people" | "rg" | "catalog" = tab === "rg" ? "rg" : tab === "catalog" ? "catalog" : "people";
   const activeView: "grid" | "stack" = view === "stack" ? "stack" : "grid";
 
   const programId = nexusProgramId(context);
@@ -97,7 +98,7 @@ export default async function TeamsPage({
   const grantable = (gid: string) => (catalogue?.capabilities ?? []).filter((c) => c.group === gid && !c.reserved);
 
   // Links that preserve the sibling axis when switching tab/view.
-  const tabHref = (t: "people" | "rg") => `/bridge/teams?tab=${t}&view=${activeView}`;
+  const tabHref = (t: "people" | "rg" | "catalog") => `/bridge/teams?tab=${t}&view=${activeView}`;
   const viewHref = (v: "grid" | "stack") => `/bridge/teams?tab=people&view=${v}`;
 
   // The role a person currently holds, as an assignable <select> value.
@@ -245,11 +246,20 @@ export default async function TeamsPage({
           >
             Roles &amp; Groups
           </Link>
+          <Link
+            href={tabHref("catalog")}
+            aria-current={activeTab === "catalog" ? "page" : undefined}
+            className={activeTab === "catalog" ? "font-serif text-2xl font-semibold tracking-tight text-[var(--ink)]" : "text-lg font-medium text-neutral-400 hover:text-neutral-600"}
+          >
+            Access Catalog
+          </Link>
         </nav>
         <p className="text-sm text-neutral-600">
           {activeTab === "people"
             ? "Everyone in this Bridge program. Assign a role, or invite someone new — assignments are stored in Nexus, so the same person signs in with the same access from their portal."
-            : "Build capability-based roles from the Access Catalogue. People holding a role can do exactly what its capabilities allow; admins can do everything."}
+            : activeTab === "catalog"
+              ? "The inventory of what this Bridge program's roles can grant, and the UI those grants unlock. Seeded from the platform default until you customize it."
+              : "Build capability-based roles from the Access Catalog. People holding a role can do exactly what its capabilities allow; admins can do everything."}
         </p>
       </header>
 
@@ -340,6 +350,13 @@ export default async function TeamsPage({
             </div>
           )}
         </>
+      ) : activeTab === "catalog" ? (
+        // ── Access Catalog tab (embedded editor) ───────────────────────────
+        catalogue ? (
+          <CatalogueEditor initial={catalogue} canEdit={context.is_admin ?? false} embedded />
+        ) : (
+          <p className="rounded-lg border border-[var(--line)] px-4 py-6 text-center text-sm text-neutral-500">Could not load the bridge catalog.</p>
+        )
       ) : (
         // ── Roles & Groups tab ─────────────────────────────────────────────
         <>
@@ -347,7 +364,7 @@ export default async function TeamsPage({
           <section className="rounded-lg border border-[var(--line)] p-4">
             <h2 className="mb-1 font-medium">Roles</h2>
             <p className="mb-3 text-xs text-neutral-500">
-              Each role grants a set of capabilities from the Access Catalogue. People holding a
+              Each role grants a set of capabilities from the Access Catalog. People holding a
               role can do exactly what its capabilities allow; admins can do everything.
             </p>
 

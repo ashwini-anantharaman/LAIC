@@ -37,7 +37,7 @@ const btnPrimary = `${btn} bg-emerald-700 text-white hover:bg-emerald-800`;
 const btnOutline = `${btn} border border-neutral-300 text-neutral-700 hover:border-neutral-400`;
 const input = "w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm outline-none focus:border-emerald-500";
 
-export function CatalogueEditor({ initial, canEdit }: { initial: BridgeCatalogue; canEdit: boolean }) {
+export function CatalogueEditor({ initial, canEdit, embedded = false }: { initial: BridgeCatalogue; canEdit: boolean; embedded?: boolean }) {
   const [doc, setDoc] = useState<BridgeCatalogue>(initial);
   const [dirty, setDirty] = useState(false);
   const [tab, setTab] = useState<TabId>("groups");
@@ -59,7 +59,7 @@ export function CatalogueEditor({ initial, canEdit }: { initial: BridgeCatalogue
 
   function save() {
     startTransition(async () => {
-      try { await saveCatalogueAction(JSON.stringify(doc)); setDirty(false); fire("Catalogue saved"); }
+      try { await saveCatalogueAction(JSON.stringify(doc)); setDirty(false); fire("Catalog saved"); }
       catch (e) { fire(e instanceof Error ? e.message : "Save failed"); }
     });
   }
@@ -131,22 +131,33 @@ export function CatalogueEditor({ initial, canEdit }: { initial: BridgeCatalogue
   const capsByGroup = (gid: string) => doc.capabilities.filter((c) => c.group === gid);
   const surfsByGroup = (gid: string) => doc.uiSurfaces.filter((s) => s.group === gid);
 
+  const actions = canEdit ? (
+    <div className="flex items-center gap-2">
+      <button type="button" className={btnOutline} onClick={reset} disabled={pending}>↺ Reset defaults</button>
+      <button type="button" className={btnPrimary} onClick={save} disabled={pending || !dirty}>{pending ? "Saving…" : "Save catalog"}</button>
+    </div>
+  ) : null;
+
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Access Catalogue</h1>
-          <p className="text-sm text-neutral-600">
-            The inventory of what Bridge can permission-control. Roles (Teams &amp; roles) bind these capability ids.
-          </p>
-        </div>
-        {canEdit ? (
-          <div className="flex items-center gap-2">
-            <button type="button" className={btnOutline} onClick={reset} disabled={pending}>↺ Reset defaults</button>
-            <button type="button" className={btnPrimary} onClick={save} disabled={pending || !dirty}>{pending ? "Saving…" : "Save catalogue"}</button>
+    <div className={embedded ? "space-y-5" : "mx-auto max-w-4xl space-y-5"}>
+      {embedded ? (
+        canEdit ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-neutral-600">The inventory of what Bridge can permission-control. Roles bind these capability ids.</p>
+            {actions}
           </div>
-        ) : null}
-      </header>
+        ) : null
+      ) : (
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">Access Catalog</h1>
+            <p className="text-sm text-neutral-600">
+              The inventory of what Bridge can permission-control. Roles (Teams &amp; roles) bind these capability ids.
+            </p>
+          </div>
+          {actions}
+        </header>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
         <span className="rounded-full bg-neutral-100 px-2.5 py-0.5">{doc.provider.kind}/{doc.provider.id}</span>
@@ -289,7 +300,7 @@ export function CatalogueEditor({ initial, canEdit }: { initial: BridgeCatalogue
       {tab === "samples" && (
         <div className="space-y-2">
           {(doc.sampleRoleTemplates ?? []).length === 0 ? (
-            <p className="text-sm text-neutral-400">No sample roles in this catalogue.</p>
+            <p className="text-sm text-neutral-400">No sample roles in this catalog.</p>
           ) : (doc.sampleRoleTemplates ?? []).map((r) => (
             <div key={r.id} className="rounded-lg border border-neutral-200 px-4 py-3">
               <div className="text-sm font-medium text-neutral-800">{r.name}</div>
@@ -302,7 +313,7 @@ export function CatalogueEditor({ initial, canEdit }: { initial: BridgeCatalogue
         </div>
       )}
 
-      {tab === "json" && <JsonView title="Live catalogue document" value={doc} />}
+      {tab === "json" && <JsonView title="Live catalog document" value={doc} />}
       {tab === "schema" && <JsonView title="JSON Schema" value={schemaJson} />}
 
       {capEdit && canEdit ? <CapabilityDialog doc={doc} initial={capEdit === "new" ? null : capEdit} defaultGroup={capDefaultGroup} onClose={() => { setCapEdit(null); setCapDefaultGroup(null); }} onSave={upsertCap} /> : null}
