@@ -84,7 +84,7 @@ function RoleEditorModal({
               {initial?.name ? `Edit “${initial.name}”` : 'New role'}
             </h3>
             <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>
-              Grants use Content Studio catalog capability ids.
+              Pick the capabilities this role grants.
             </p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
@@ -366,9 +366,6 @@ export function AdminPeopleRoles() {
             <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl" style={{ background: '#F3F4F6' }}>🃏</div>
             <div>
               <p style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }}>Bridge — Learning access policy</p>
-              <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>
-                Roles sync from Access Catalog sample templates on Save. Custom roles persist in the program policy.
-              </p>
             </div>
           </div>
           <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: '#F3F4F6', color: '#374151' }}>
@@ -379,9 +376,6 @@ export function AdminPeopleRoles() {
           <div className="p-3.5 rounded-2xl" style={{ background: 'rgba(0,0,0,0.025)' }}>
             <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', marginBottom: 7 }}>
               ENABLED CAPABILITIES ({enabledCount})
-            </p>
-            <p style={{ fontSize: 13, color: '#374151' }}>
-              From catalog · refreshed when you Save catalog
             </p>
           </div>
           <div className="p-3.5 rounded-2xl" style={{ background: 'rgba(0,0,0,0.025)' }}>
@@ -418,7 +412,7 @@ export function AdminPeopleRoles() {
         <div className="flex items-center gap-2 mt-4 pt-4 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <Lock size={12} style={{ color: '#9AA3AF' }} />
           <p style={{ fontSize: 12, color: '#9AA3AF' }}>
-            Edit the Access Catalog, then Save — sample roles and enabled capabilities update here automatically.
+            This updates when you save the Access Catalog.
           </p>
         </div>
       </motion.div>
@@ -439,7 +433,7 @@ export function AdminPeopleRoles() {
           </button>
         </div>
         <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 14 }}>
-          Catalog sample roles are the recommended starters. Custom roles grant any combination of catalog capabilities.
+          Sample roles are recommended starters; custom roles grant any mix of capabilities.
         </p>
 
         <p style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF', letterSpacing: '.05em', marginBottom: 10, textTransform: 'uppercase' }}>
@@ -726,7 +720,7 @@ function InvitePersonModal({
         </div>
         {result ? (
           <div className="space-y-3">
-            <p style={{ fontSize: 12.5, color: '#6B7280' }}>Invitation created. Share this activation link — {email.trim()} opens it, sets their own password at the org portal, and accepts. Their role applies on acceptance.</p>
+            <p style={{ fontSize: 12.5, color: '#6B7280' }}>Share this activation link. {email.trim()} sets their own password and their role applies once they accept.</p>
             <div className="flex items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: 'rgba(0,0,0,0.1)', background: '#F9FAFB' }}>
               <code className="flex-1 truncate" style={{ fontSize: 11.5 }}>{result.redeem_url}</code>
               <button type="button" onClick={() => { void navigator.clipboard?.writeText(result.redeem_url); }} className="px-2 py-0.5 rounded-md text-xs" style={{ background: 'rgba(0,0,0,0.06)' }}>Copy</button>

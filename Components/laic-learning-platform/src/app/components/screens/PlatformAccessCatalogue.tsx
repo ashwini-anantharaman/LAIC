@@ -90,7 +90,7 @@ function GroupModal({
         <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>{initial ? `Edit “${initial.label}”` : 'New group'}</h3>
-            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Groups organize capabilities and UI surfaces in the catalogue.</p>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Bucket capabilities and the surfaces they unlock.</p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
         </div>
@@ -169,7 +169,6 @@ function CapabilityModal({
         <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>{initial ? `Edit “${initial.label}”` : 'New capability'}</h3>
-            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Atomic id programs grant — stable contract for UI and APIs.</p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
         </div>
@@ -265,7 +264,7 @@ function SurfaceModal({
         <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>{initial ? `Edit “${initial.label}”` : 'New UI surface'}</h3>
-            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Optional mapping to nav / screen / component. Not the security boundary.</p>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>The UI a capability unlocks. Capabilities are the security boundary, not this.</p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
         </div>
@@ -368,7 +367,7 @@ function SampleRoleModal({
         <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>Sample role · {initial.id}</h3>
-            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Template only — live roles live in program access policy.</p>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>A starter template; live roles live in the program policy.</p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
         </div>
@@ -794,7 +793,7 @@ export function PlatformAccessCatalogue() {
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <p style={{ fontSize: 13, color: '#6B7280' }}>
-              Add, edit, or delete groups. Deleting a group moves its capabilities and UI surfaces into another group.
+              Deleting a group moves its capabilities and surfaces into another group.
             </p>
             <div className="flex gap-2 flex-wrap">
               <button type="button" onClick={() => setOpenGroups(new Set(catalogue.groups.map((g) => g.id)))} className="px-3 py-1.5 rounded-full text-[12px] font-semibold" style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}>Expand all</button>
@@ -888,7 +887,7 @@ export function PlatformAccessCatalogue() {
       {tab === 'capabilities' && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           <div className="flex items-center justify-between">
-            <p style={{ fontSize: 13, color: '#6B7280' }}>Authoritative enforcement keys. Programs grant these; they cannot invent new ids.</p>
+            <p style={{ fontSize: 13, color: '#6B7280' }}>Programs grant these keys; they can't invent new ones.</p>
             <button type="button" onClick={() => setCapModal({ open: true, initial: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
               <Plus size={13} /> Add capability
             </button>
@@ -932,7 +931,7 @@ export function PlatformAccessCatalogue() {
       {tab === 'surfaces' && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           <div className="flex items-center justify-between">
-            <p style={{ fontSize: 13, color: '#6B7280' }}>Navigation, screens, components, actions — optional UI mapping only.</p>
+            <p style={{ fontSize: 13, color: '#6B7280' }}>Optional UI mapping: navigation, screens, components, or actions.</p>
             <button type="button" onClick={() => setSurfaceModal({ open: true, initial: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
               <Plus size={13} /> Add surface
             </button>
