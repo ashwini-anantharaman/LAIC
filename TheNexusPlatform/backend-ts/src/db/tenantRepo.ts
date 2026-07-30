@@ -180,11 +180,12 @@ export async function createPartner(orgId: string, opts: {
   name: string;
   connectedProgramId: string;
   description?: string | null;
+  slug?: string;
   features?: Row;
   featureAccess?: Record<string, { capabilities: string[] }> | null;
 }): Promise<Row> {
   return scoped(async (tx) => {
-    const slug = await _uniquePartnerSlug(tx, opts.name);
+    const slug = await _uniquePartnerSlug(tx, opts.slug || opts.name);
     const [p] = await tx.insert(programs).values({
       orgId,
       name: opts.name,
@@ -195,6 +196,10 @@ export async function createPartner(orgId: string, opts: {
         is_partner: true,
         connected_program_id: opts.connectedProgramId,
         slug,
+        // A partner is a SEPARATE entity — give it its own default theme so it
+        // never inherits the owning org's logo/favicon/accent. An explicit
+        // (empty) branding object stops the shell from falling back to the org.
+        branding: { accent: null, logo: null, favicon: null },
         ...(opts.featureAccess ? { feature_access: opts.featureAccess } : {}),
       },
     }).returning();

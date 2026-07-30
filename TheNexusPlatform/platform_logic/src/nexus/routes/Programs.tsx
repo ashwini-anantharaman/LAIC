@@ -930,6 +930,8 @@ function NewPartnerDialog({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
   const [connectedId, setConnectedId] = useState<string>("");
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
   const [featureAccess, setFeatureAccess] = useState<FeatureAccessMap>({});
@@ -942,9 +944,12 @@ function NewPartnerDialog({
     if (open) setConnectedId(programs[0]?.id ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  // Auto-suggest the slug from the name until the user edits it directly.
+  const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  useEffect(() => { if (!slugEdited) setSlug(slugify(name)); }, [name, slugEdited]);
 
   function reset() {
-    setName(""); setDescription(""); setConnectedId(programs[0]?.id ?? "");
+    setName(""); setDescription(""); setSlug(""); setSlugEdited(false); setConnectedId(programs[0]?.id ?? "");
     setFeatures({ ...DEFAULT_PROGRAM_FEATURES }); setFeatureAccess({});
     setAdmins([{ email: "", displayName: "" }]); setInvites(null); setCreatedSlug(null);
   }
@@ -961,6 +966,7 @@ function NewPartnerDialog({
         name: name.trim(),
         description: description.trim() || undefined,
         connected_program_id: connectedId,
+        slug: slug.trim() || undefined,
         features,
         feature_access: Object.keys(featureAccess).length ? featureAccess : undefined,
       });
@@ -1035,6 +1041,11 @@ function NewPartnerDialog({
                   {programs.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pn-slug">Login slug</Label>
+              <p className="text-xs text-muted-foreground -mt-1">The partner signs in at <span className="font-mono">/partner/{slug || "…"}</span></p>
+              <Input id="pn-slug" value={slug} onChange={(e) => { setSlugEdited(true); setSlug(slugify(e.target.value)); }} placeholder="cs-club-lincoln" />
             </div>
             <div className="space-y-1.5">
               <Label>Features</Label>

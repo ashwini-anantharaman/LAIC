@@ -420,7 +420,7 @@ export async function renameOrgCategory(orgId: string, from: string, to: string)
 
 // ── Partners ("sister programs"; DB-backed only) ────────────────────────────
 export async function createPartner(orgId: string, opts: {
-  name: string; connectedProgramId: string; description?: string | null;
+  name: string; connectedProgramId: string; description?: string | null; slug?: string;
   features?: Row; featureAccess?: Record<string, { capabilities: string[] }> | null;
 }): Promise<Row> {
   return tpg.createPartner(orgId, opts);

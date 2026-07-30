@@ -125,10 +125,19 @@ export function ProgramOverview() {
   const [caps, setCaps] = useState<OrgCapabilities | null>(null);
   const [features, setFeatures] = useState<ProgramFeatures>(DEFAULT_PROGRAM_FEATURES);
   const [busy, setBusy] = useState<ProgramFeatureKey | null>(null);
+  // For a partner: the connected ("provider") program's name, for the footer.
+  const [providerName, setProviderName] = useState<string | null>(null);
+  const isPartner = !!program?.is_partner;
 
   useEffect(() => {
     if (programId) listOfferings(programId).then(setOfferings).catch(() => setOfferings([]));
   }, [programId]);
+  useEffect(() => {
+    const cid = program?.connected_program_id;
+    if (isPartner && cid && orgId) {
+      listPrograms(orgId).then((ps) => setProviderName(ps.find((p) => p.id === cid)?.name ?? null)).catch(() => setProviderName(null));
+    }
+  }, [isPartner, program?.connected_program_id, orgId]);
   useEffect(() => {
     if (orgId) getOrgCapabilities(orgId).then(setCaps).catch(() => setCaps(null));
   }, [orgId]);
@@ -200,11 +209,13 @@ export function ProgramOverview() {
   return (
     <div>
       <Head program={program} subtitle={program?.description ?? "Program workspace."} />
-      <div className="mb-8 flex flex-wrap gap-2">
-        <StatPill label="Offerings" value={offerings.length} />
-        <StatPill label="Learners" value={program?.learner_count ?? 0} />
-        <StatPill label="Courses" value={program?.course_count ?? 0} />
-      </div>
+      {isPartner ? null : (
+        <div className="mb-8 flex flex-wrap gap-2">
+          <StatPill label="Offerings" value={offerings.length} />
+          <StatPill label="Learners" value={program?.learner_count ?? 0} />
+          <StatPill label="Courses" value={program?.course_count ?? 0} />
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         {active.map((p) => (
           <PlatformCard
@@ -223,6 +234,11 @@ export function ProgramOverview() {
           <AddPlatformCard key={p.key} title={p.title} busy={busy === p.key} onAdd={() => setFeature(p.key, true)} />
         ))}
       </div>
+      {isPartner && providerName ? (
+        <div className="mt-12 text-center text-sm font-medium text-muted-foreground">
+          Powered by <span className="text-foreground">{providerName}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

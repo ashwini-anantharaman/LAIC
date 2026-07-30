@@ -1421,6 +1421,7 @@ const partnerCreateSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(2000).optional(),
   connected_program_id: z.string().uuid(),
+  slug: z.string().trim().max(60).optional(),
   features: z.record(z.string(), z.boolean()).optional(),
   feature_access: z.record(z.string(), z.object({ capabilities: z.array(z.string()) })).optional(),
 });
@@ -1440,6 +1441,7 @@ platformRouter.post("/orgs/:org_id/partners", async (c) => {
     name: req.name,
     connectedProgramId: req.connected_program_id,
     description: req.description ?? null,
+    slug: req.slug || undefined,
     features: req.features,
     featureAccess,
   });

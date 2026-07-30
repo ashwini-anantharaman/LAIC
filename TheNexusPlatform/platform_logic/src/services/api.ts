@@ -610,6 +610,7 @@ export async function createPartner(
     name: string;
     description?: string;
     connected_program_id: string;
+    slug?: string;
     features?: Record<string, boolean>;
     feature_access?: Record<string, { capabilities: string[] }>;
   },
