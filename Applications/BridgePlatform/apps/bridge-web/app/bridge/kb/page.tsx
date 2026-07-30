@@ -1,4 +1,5 @@
 import { canViewKbWorkspace } from "@/lib/kbComponent";
+import { canAccessKnowledge } from "@/lib/nav";
 import type { KnowledgeBase, KnowledgeItem } from "@bridge/kb";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -24,7 +25,10 @@ export default async function KbListPage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  if (!(await canViewKbWorkspace(context))) redirect("/bridge/home");
+  // Either gate admits: legacy bridge.knowledge.* capabilities (custom roles)
+  // or the kb-core policy (staff roles / kb.* capabilities).
+  if (!(canAccessKnowledge(context) || (await canViewKbWorkspace(context))))
+    redirect("/bridge/home");
   await ensureSeeds();
   const { hidden, unhidden } = await searchParams;
 

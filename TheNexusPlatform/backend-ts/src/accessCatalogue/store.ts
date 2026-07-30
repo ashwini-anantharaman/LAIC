@@ -32,7 +32,11 @@ export function isProviderId(id: string): id is ProviderId {
  *  shipped default for that provider. */
 export async function getCatalogue(providerId: ProviderId, instanceId?: string | null): Promise<CapabilityCatalogueDocument> {
   const stored = (await db.getPlatformSetting(settingKey(providerId, instanceId))) as CapabilityCatalogueDocument | null;
-  return stored ?? DEFAULT_CATALOGUES[providerId];
+  // A stored doc must be well-formed to be trusted — a corrupted/partial save
+  // (missing the capabilities/groups arrays) must never poison consumers
+  // (context resolution, role builders). Fall back to the shipped default.
+  if (stored && Array.isArray(stored.capabilities) && Array.isArray(stored.groups)) return stored;
+  return DEFAULT_CATALOGUES[providerId];
 }
 
 /** All GLOBAL providers with whether each has a stored (customized) catalogue. */

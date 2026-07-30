@@ -42,7 +42,7 @@ export interface RgGroup {
 export interface RgArea {
   key: string;
   label: string;
-  kind: "graded" | "toggle" | "admin";
+  kind: "graded" | "toggle" | "admin" | "platform";
   /** graded: selectable levels (default view/edit). */
   levels?: string[];
   /** toggle: value stored when on (default "edit"). */
@@ -52,6 +52,11 @@ export interface RgArea {
    *  level seeds all of that group's capabilities ON (then you subtract);
    *  view/off clears them. Capabilities are the enforced source of truth. */
   capabilityGroup?: { catalogueId: string; groupId: string };
+  /** platform: the provider id of the platform's Access Catalogue (e.g.
+   *  "bridge-platform", "learning-platform"). A platform area is a 3-way control
+   *  — No access / Partial / Full — where Partial reveals that catalogue's
+   *  capabilities to pick from. */
+  catalogueId?: string;
 }
 
 export interface RgAdapter {
@@ -77,6 +82,9 @@ export interface RgAdapter {
 export interface CatalogueForBuilder {
   id: string;
   name: string;
+  /** Store provider id (e.g. "bridge-platform") — used to match a platform area
+   *  to its catalogue for the Partial capability picker. */
+  provider?: string;
   groups: { id: string; label: string; capabilities: { id: string; label: string }[] }[];
 }
 
@@ -141,6 +149,22 @@ function PermRow({ area, value, onChange }: { area: RgArea; value: string | unde
             {levels.map((l) => (
               <SelectItem key={l} value={l} className="capitalize">{l}</SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  }
+  if (area.kind === "platform") {
+    // 3-way: No access (undefined) / Partial ("partial") / Full ("administrator").
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+        <span className="text-sm text-foreground">{area.label}</span>
+        <Select value={value ?? "none"} onValueChange={(v) => onChange(v === "none" ? undefined : v)}>
+          <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No access</SelectItem>
+            <SelectItem value="partial">Partial</SelectItem>
+            <SelectItem value="administrator">Full access</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -221,11 +245,28 @@ function EditorDialog({
     if (!g) return [];
     return catalogues.find((c) => c.id === g.catalogueId)?.groups.find((gr) => gr.id === g.groupId)?.capabilities.map((c) => c.id) ?? [];
   };
+  // A platform area's picker draws from its own Access Catalogue, matched by
+  // provider id (e.g. "bridge-platform"). Providers used by platform areas are
+  // excluded from the generic Fine-grained list — they're chosen inline instead.
+  const platformCatalogueFor = (area: RgArea): CatalogueForBuilder | undefined =>
+    area.catalogueId ? catalogues.find((c) => c.provider === area.catalogueId) : undefined;
+  const platformCapIds = (area: RgArea): string[] =>
+    platformCatalogueFor(area)?.groups.flatMap((g) => g.capabilities.map((c) => c.id)) ?? [];
+  const platformProviderIds = new Set(
+    adapter.areas.filter((a) => a.kind === "platform" && a.catalogueId).map((a) => a.catalogueId as string),
+  );
   // Setting an area's coarse level is a PRESET over its capabilities: choosing the
   // top level (edit / on) seeds every capability in the group ON; view / off clears
   // them. Individual toggles then subtract. Capabilities are the enforced truth.
   const applyAreaLevel = (area: RgArea, v: string | undefined) => {
     setPerms((p) => { const n = { ...p }; if (v == null) delete n[area.key]; else n[area.key] = v; return n; });
+    // Platform areas (3-way): Partial keeps its picked caps; Full / No access
+    // clear that platform's caps (Full grants everything via the level; No = none).
+    if (area.kind === "platform") {
+      const ids = platformCapIds(area);
+      if (ids.length && v !== "partial") setCaps((s) => { const n = new Set(s); for (const id of ids) n.delete(id); return n; });
+      return;
+    }
     const ids = groupCapIds(area);
     if (!ids.length) return;
     const topLevel = area.levels ? area.levels[area.levels.length - 1] : "edit";
@@ -299,16 +340,41 @@ function EditorDialog({
             <div className="space-y-1.5">
               <Label>Access</Label>
               <div className="space-y-1.5">
-                {adapter.areas.map((a) => (
-                  <PermRow key={a.key} area={a} value={perms[a.key]} onChange={(v) => applyAreaLevel(a, v)} />
-                ))}
+                {adapter.areas.map((a) => {
+                  const cat = a.kind === "platform" && perms[a.key] === "partial" ? platformCatalogueFor(a) : undefined;
+                  return (
+                    <div key={a.key} className="space-y-1.5">
+                      <PermRow area={a} value={perms[a.key]} onChange={(v) => applyAreaLevel(a, v)} />
+                      {a.kind === "platform" && perms[a.key] === "partial" ? (
+                        cat ? (
+                          <div className="ml-3 rounded-lg border border-border p-2">
+                            <div className="mb-1 px-1 text-[11px] text-muted-foreground">Capabilities this role has in {a.label}.</div>
+                            {cat.groups.map((g) => (
+                              <div key={g.id} className="mb-1.5">
+                                <div className="px-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">{g.label}</div>
+                                {g.capabilities.map((cp) => (
+                                  <label key={cp.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
+                                    <Switch checked={caps.has(cp.id)} onCheckedChange={() => toggleCap(cp.id)} />
+                                    <span className="min-w-0"><span className="text-foreground">{cp.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{cp.id}</span></span>
+                                  </label>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="ml-3 px-1 text-[11px] text-muted-foreground">Loading capabilities…</div>
+                        )
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            {catalogues.length ? (
+            {catalogues.some((c) => !c.provider || !platformProviderIds.has(c.provider)) ? (
               <div className="space-y-2">
                 <Label>Fine-grained capabilities</Label>
                 <p className="-mt-1 text-xs text-muted-foreground">From the Access Catalogue. Layered on top of the areas above.</p>
-                {catalogues.map((cat) => (
+                {catalogues.filter((c) => !c.provider || !platformProviderIds.has(c.provider)).map((cat) => (
                   <div key={cat.id} className="rounded-lg border border-border p-2">
                     <div className="mb-1 px-1 text-xs font-semibold text-muted-foreground">{cat.name}</div>
                     {cat.groups.map((g) => (

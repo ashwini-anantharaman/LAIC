@@ -9,6 +9,9 @@ import type { CapabilityCatalogueDocument } from "./types";
 
 /** Capability ids a CUSTOM role may be granted — reserved (tier-held) excluded. */
 export function grantableCapabilities(doc: CapabilityCatalogueDocument): string[] {
+  // Defensive: a malformed doc must never throw here (it would break request-
+  // time access resolution). Treat a missing capabilities array as empty.
+  if (!Array.isArray(doc?.capabilities)) return [];
   return doc.capabilities.filter((c) => !c.reserved).map((c) => c.id);
 }
 

@@ -98,7 +98,9 @@ export default async function BridgeShellLayout({
           )}
           <p className="font-medium">{displayName}</p>
           <p className="text-xs text-neutral-500">
-            {context.roles.map(roleLabel).join(", ")}
+            {/* The person's actual role name (custom roles included) wins over
+                the level→prebuilt fallback in `roles`. */}
+            {context.role_name || context.roles.map(roleLabel).join(", ")}
           </p>
           {context.programOrganizationId ? (
             <p className="text-xs text-neutral-500">

@@ -796,20 +796,45 @@ platformRouter.get("/bridge/context", async (c) => {
   const isAdmin = access.level === "admin";
   // Effective bridge capabilities — the app gates its tabs on these, exactly
   // like learning:
-  //   • admin        → everything the bridge catalogue grants (all tabs)
-  //   • assigned role→ that role's capabilities (custom role id or pre-built)
-  //   • otherwise    → the launch level's sample-role capabilities
-  const bridgeDoc = await catalogue.getCatalogue("bridge");
-  let capabilities: string[];
+  //   • admin         → everything the bridge catalogue grants (all tabs)
+  //   • assigned role → that role's capabilities (custom role id or pre-built)
+  //   • program role  → a "partial" program-role grant binds specific bridge
+  //                     capabilities (filtered to the bridge catalogue)
+  //   • otherwise     → the launch level's sample-role capabilities
+  // Capability computation must NEVER break context resolution — a corrupted
+  // catalogue or role blob would otherwise 500 here and bounce the user back to
+  // "sign in through Nexus". Compute defensively; on any failure, fall back to
+  // an empty set (the coarse role/level still governs the app).
+  let capabilities: string[] = [];
+  try {
+    const bridgeDoc = await catalogue.getCatalogue("bridge");
+    if (isAdmin) {
+      capabilities = bridgeRoles.bridgeCapsForLevel(bridgeDoc, "admin");
+    } else {
+      const assignedCaps = access.platformRole
+        ? await bridgeRoles.capsForAssignedRole(access.programId, access.platformRole)
+        : null;
+      const programCaps = access.programRoleCapabilities?.length
+        ? await catalogue.validGrantsAcross([{ providerId: "bridge" }], access.programRoleCapabilities)
+        : [];
+      capabilities = assignedCaps && assignedCaps.length
+        ? assignedCaps
+        : programCaps.length
+          ? programCaps
+          : bridgeRoles.bridgeCapsForLevel(bridgeDoc, access.level as "edit" | "comment" | "view");
+    }
+  } catch (e) {
+    console.error("bridge/context capability computation failed (using empty set):", e);
+  }
+  // The display name of the role the person actually holds — a custom
+  // capability-bound role's own name wins over the level→prebuilt fallback, so
+  // the app shows e.g. "Bridge Knowledge + Partnerships", not "Coach".
+  const isPrebuilt = !!(access.platformRole && platformRoleConfig("bridge")?.prebuilt.includes(access.platformRole));
+  let roleName: string | null = access.roleName;
   if (isAdmin) {
-    capabilities = bridgeRoles.bridgeCapsForLevel(bridgeDoc, "admin");
-  } else {
-    const assignedCaps = access.platformRole
-      ? await bridgeRoles.capsForAssignedRole(access.programId, access.platformRole)
-      : null;
-    capabilities = assignedCaps && assignedCaps.length
-      ? assignedCaps
-      : bridgeRoles.bridgeCapsForLevel(bridgeDoc, access.level as "edit" | "comment" | "view");
+    roleName = "Administrator";
+  } else if (access.platformRole && !isPrebuilt) {
+    roleName = (await bridgeRoles.getBridgeRole(access.programId, access.platformRole).catch(() => null))?.name ?? roleName;
   }
   return c.json({
     nexusUserId: access.profileId,
@@ -819,18 +844,16 @@ platformRouter.get("/bridge/context", async (c) => {
     // A pre-built role picked in the Nexus role builder is authoritative;
     // a custom (capability-bound) role or graded grant falls back to the
     // level→role map so the emitted `roles` stays a valid BridgeRole set.
-    roles: access.platformRole && platformRoleConfig("bridge")?.prebuilt.includes(access.platformRole)
-      ? [access.platformRole]
-      : mapped.roles,
+    roles: isPrebuilt ? [access.platformRole] : mapped.roles,
     permissions: [`bridge:${access.level}`],
     accessLevel: mapped.accessLevel,
-    capabilities, // effective bridge-catalogue capability ids (tab gating)
+    capabilities, // effective bridge-catalogue capability ids (tab gating + display)
     is_admin: isAdmin,
     displayName: await _platformDisplayName(access.profileId, user),
     // Extensions beyond the contract (additive — Bridge's shape check ignores them).
     nexus_program_id: access.programId,
     program_name: access.programName,
-    role_name: access.roleName,
+    role_name: roleName,
   });
 });
 
@@ -1165,16 +1188,29 @@ platformRouter.get("/learning/context", async (c) => {
   const customRole = !isAdmin && user.email ? await graph.getLearningRoleForEmail(access.programId, user.email) : null;
   // Effective learning capabilities — the app gates its screens on these:
   //  • admin        → everything the catalogue grants (full access)
-  //  • custom role  → exactly the capabilities that role binds
+  //  • custom role  → exactly the capabilities that Content Studio role binds
+  //  • program role → a "partial" program-role grant binds specific learning
+  //                   capabilities (filtered to the learning catalogue)
   //  • otherwise    → the launch level's sample-role capabilities (edit →
   //                   content-developer, comment → reviewer, view → learner).
-  const learningDoc = await catalogue.getCatalogue("learning");
-  const roleCaps = (customRole?.perms as Row | undefined)?.capabilities;
-  const capabilities = isAdmin
-    ? _learningCapsForLevel(learningDoc, "admin")
-    : Array.isArray(roleCaps) && roleCaps.length
-      ? (roleCaps as string[])
-      : _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
+  // Defensive: never let capability computation break context resolution.
+  let capabilities: string[] = [];
+  try {
+    const learningDoc = await catalogue.getCatalogue("learning");
+    const roleCaps = (customRole?.perms as Row | undefined)?.capabilities;
+    const programCaps = access.programRoleCapabilities?.length
+      ? await catalogue.validGrantsAcross([{ providerId: "learning" }], access.programRoleCapabilities)
+      : [];
+    capabilities = isAdmin
+      ? _learningCapsForLevel(learningDoc, "admin")
+      : Array.isArray(roleCaps) && roleCaps.length
+        ? (roleCaps as string[])
+        : programCaps.length
+          ? programCaps
+          : _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
+  } catch (e) {
+    console.error("learning/context capability computation failed (using empty set):", e);
+  }
   return c.json({
     nexusUserId: access.profileId,
     laicOrgId: access.orgId,

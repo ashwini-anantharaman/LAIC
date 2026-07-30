@@ -40,6 +40,7 @@ function toBuilder(doc: CapabilityCatalogueDocument): CatalogueForBuilder {
   return {
     id: doc.id,
     name: doc.name,
+    provider: doc.provider?.id,
     groups: [...doc.groups]
       .sort((a, b) => a.order - b.order)
       .map((g) => ({ id: g.id, label: g.label, capabilities: byGroup.get(g.id) ?? [] }))
@@ -62,6 +63,11 @@ const PROGRAM_AREA_LABELS: Record<string, string> = {
   community: "Community", teams: "People", partners: "Partners",
 };
 const PROGRAM_PLATFORM_AREAS = new Set(["learning", "bridge"]);
+// A platform area's 3-way picker (No/Partial/Full) reveals that platform's
+// Access-Catalogue capabilities. Match the loaded catalogue by its provider id.
+const PROGRAM_PLATFORM_CATALOGUE: Record<string, string> = {
+  learning: "learning-platform", bridge: "bridge-platform",
+};
 // Feature areas that map 1:1 to a program-console catalogue group (→ the coarse
 // level seeds that group's capabilities). learning/bridge/appbuilder open a
 // platform via single caps and are handled by their own toggle, not seeded here.
@@ -87,7 +93,7 @@ export function programRgAdapter(
     deleteGroup: (id) => deleteGroup(id),
     areas: enabledAreaKeys.map<RgArea>((key) =>
       PROGRAM_PLATFORM_AREAS.has(key)
-        ? { key, label: PROGRAM_AREA_LABELS[key] ?? key, kind: "admin" }
+        ? { key, label: PROGRAM_AREA_LABELS[key] ?? key, kind: "platform", catalogueId: PROGRAM_PLATFORM_CATALOGUE[key] }
         : {
             key, label: PROGRAM_AREA_LABELS[key] ?? key, kind: "graded", levels: ["view", "comment", "edit"],
             ...(PROGRAM_AREA_GROUP[key] ? { capabilityGroup: { catalogueId: "program-console", groupId: PROGRAM_AREA_GROUP[key] } } : {}),

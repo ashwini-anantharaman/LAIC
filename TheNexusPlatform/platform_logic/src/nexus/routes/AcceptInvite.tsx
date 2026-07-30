@@ -12,7 +12,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
-import { acceptInvitation, getInvitation, signup } from "@/services/api";
+import { acceptInvitation, getInvitation, login, signup } from "@/services/api";
 import type { Invitation } from "@/types/platform";
 import { Spinner } from "@/nexus/ui/kit";
 import { portalPath } from "@/nexus/orgResolver";
@@ -64,7 +64,26 @@ export function AcceptInvite() {
     setBusy(true);
     setError(null);
     try {
-      await signup({ signup_type: "student", email: inv.email, password, display_name: name.trim() });
+      try {
+        // New person: create the account with the password they chose.
+        await signup({ signup_type: "student", email: inv.email, password, display_name: name.trim() });
+      } catch (e) {
+        // This email already has a Nexus account (e.g. added to another program
+        // before). Sign in with the password they entered, then accept — we do
+        // NOT reset an existing account's password from an invite link.
+        const msg = e instanceof Error ? e.message.toLowerCase() : "";
+        if (msg.includes("already") || msg.includes("registered") || msg.includes("exists")) {
+          try {
+            await login(inv.email, password, inv.organization_slug ?? undefined);
+          } catch {
+            throw new Error(
+              "This email already has an account. Enter its existing password to accept (or reset it from the sign-in page).",
+            );
+          }
+        } else {
+          throw e;
+        }
+      }
       await acceptInvitation(token, name.trim());
       await finish();
     } catch (e) {
