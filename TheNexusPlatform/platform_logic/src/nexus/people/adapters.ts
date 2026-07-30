@@ -108,14 +108,15 @@ export function programRgAdapter(
       { name: "Super Admin", description: "Program administrator (full access) — holds every capability; not editable." },
     ],
     // A program role grants THIS program's console capabilities + the platforms it
-    // opens (learning/bridge inventory is platform-global). A Partial platform's
+    // opens (learning/bridge inventory is platform-global). Only load a platform's
+    // catalogue when that platform is ENABLED for the program — otherwise its
+    // capabilities would wrongly appear in the role builder. A Partial platform's
     // catalogue is filtered to the provisioned subset so roles can't grant beyond it.
     loadCatalogues: async () => {
-      const built = await catalogueLoader([
-        () => getProgramCatalogue(programId),
-        () => getCatalogue("learning"),
-        () => getCatalogue("bridge"),
-      ])();
+      const loaders: Array<() => Promise<CapabilityCatalogueDocument>> = [() => getProgramCatalogue(programId)];
+      if (enabledAreaKeys.includes("learning")) loaders.push(() => getCatalogue("learning"));
+      if (enabledAreaKeys.includes("bridge")) loaders.push(() => getCatalogue("bridge"));
+      const built = await catalogueLoader(loaders)();
       if (!featureAccess) return built;
       const allowedByProvider: Record<string, Set<string>> = {};
       for (const [key, prov] of Object.entries(PLATFORM_PROVIDER_BY_KEY)) {

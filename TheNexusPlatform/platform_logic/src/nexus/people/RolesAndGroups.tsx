@@ -186,6 +186,38 @@ function PermRow({ area, value, onChange }: { area: RgArea; value: string | unde
   );
 }
 
+/**
+ * A capability set in the fine-grained / Partial picker: a header row with a
+ * toggle that turns the WHOLE set on or off (all-on when every cap is granted),
+ * then the individual capability toggles beneath it.
+ */
+function CapGroup({
+  label, capabilities, caps, onToggle, onToggleAll,
+}: {
+  label: string;
+  capabilities: { id: string; label: string }[];
+  caps: Set<string>;
+  onToggle: (id: string) => void;
+  onToggleAll: (ids: string[], on: boolean) => void;
+}) {
+  const ids = capabilities.map((c) => c.id);
+  const allOn = ids.length > 0 && ids.every((id) => caps.has(id));
+  return (
+    <div className="mb-1.5">
+      <label className="flex items-center gap-2 rounded px-1 py-0.5">
+        <Switch checked={allOn} onCheckedChange={() => onToggleAll(ids, !allOn)} title={allOn ? "Turn all off" : "Turn all on"} />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">{label}</span>
+      </label>
+      {capabilities.map((cp) => (
+        <label key={cp.id} className="ml-5 flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
+          <Switch checked={caps.has(cp.id)} onCheckedChange={() => onToggle(cp.id)} />
+          <span className="min-w-0"><span className="text-foreground">{cp.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{cp.id}</span></span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 // ── Create / edit dialog ────────────────────────────────────────────────────
 function GroupPicker({ groups, value, onChange, exclude }: { groups: RgGroup[]; value: string | null; onChange: (v: string | null) => void; exclude?: Set<string> }) {
   return (
@@ -243,6 +275,8 @@ function EditorDialog({
   }, [open, adapter]);
 
   const toggleCap = (id: string) => setCaps((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // Bulk toggle a capability set (group header): all-on if any is off, else all-off.
+  const setGroupCaps = (ids: string[], on: boolean) => setCaps((s) => { const n = new Set(s); for (const id of ids) on ? n.add(id) : n.delete(id); return n; });
 
   // Capability ids belonging to an area's mapped catalogue group (grantable only —
   // reserved caps are already filtered out of the builder view).
@@ -356,15 +390,7 @@ function EditorDialog({
                           <div className="ml-3 rounded-lg border border-border p-2">
                             <div className="mb-1 px-1 text-[11px] text-muted-foreground">Capabilities this role has in {a.label}.</div>
                             {cat.groups.map((g) => (
-                              <div key={g.id} className="mb-1.5">
-                                <div className="px-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">{g.label}</div>
-                                {g.capabilities.map((cp) => (
-                                  <label key={cp.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
-                                    <Switch checked={caps.has(cp.id)} onCheckedChange={() => toggleCap(cp.id)} />
-                                    <span className="min-w-0"><span className="text-foreground">{cp.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{cp.id}</span></span>
-                                  </label>
-                                ))}
-                              </div>
+                              <CapGroup key={g.id} label={g.label} capabilities={g.capabilities} caps={caps} onToggle={toggleCap} onToggleAll={setGroupCaps} />
                             ))}
                           </div>
                         ) : (
@@ -384,15 +410,7 @@ function EditorDialog({
                   <div key={cat.id} className="rounded-lg border border-border p-2">
                     <div className="mb-1 px-1 text-xs font-semibold text-muted-foreground">{cat.name}</div>
                     {cat.groups.map((g) => (
-                      <div key={g.id} className="mb-1.5">
-                        <div className="px-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">{g.label}</div>
-                        {g.capabilities.map((cp) => (
-                          <label key={cp.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
-                            <Switch checked={caps.has(cp.id)} onCheckedChange={() => toggleCap(cp.id)} />
-                            <span className="min-w-0"><span className="text-foreground">{cp.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{cp.id}</span></span>
-                          </label>
-                        ))}
-                      </div>
+                      <CapGroup key={g.id} label={g.label} capabilities={g.capabilities} caps={caps} onToggle={toggleCap} onToggleAll={setGroupCaps} />
                     ))}
                   </div>
                 ))}

@@ -186,9 +186,13 @@ export function ProgramOverview() {
   // one spinner until we know whether to auto-launch or what cards to paint.
   const confinedDeciding = !access.isAdmin && (access.loading || !caps || !program);
 
-  const active = PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && enabled(p.key) && granted(p.key));
+  // Don't paint any platform cards until the program + envelope are known —
+  // otherwise a disabled platform flashes on (features default to on) before the
+  // real feature set arrives and hides it.
+  const settled = !!program && !!caps;
+  const active = settled ? PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && enabled(p.key) && granted(p.key)) : [];
   // Only admins manage the envelope, so only they see the dashed "add" tiles.
-  const addable = access.isAdmin ? PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && !enabled(p.key)) : [];
+  const addable = settled && access.isAdmin ? PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && !enabled(p.key)) : [];
 
   // A real member whose entire access is a single platform is launched straight
   // into it — there's nothing else for them here. Previews (Test as) are not

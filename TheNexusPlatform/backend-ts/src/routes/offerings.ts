@@ -867,6 +867,7 @@ function _permsWithinFeatures<V>(perms: Record<string, V>, programFeatures: unkn
 const _FEATURE_ACCESS_PROVIDER: Record<string, "learning" | "bridge"> = { learning: "learning", bridge: "bridge" };
 async function _clampCapsToProvisioning(program: Record<string, unknown>, capabilities: string[]): Promise<string[]> {
   const featureAccess = (program.feature_access as Record<string, { capabilities?: string[] }> | null) ?? {};
+  const enabled = normalizeProgramFeatures(program.features as Record<string, unknown>);
   const orgCaps = await db.getOrgCapabilities(program.org_id as string).catch(() => null);
   const orgAccess = (orgCaps?.featureAccess as Record<string, { capabilities?: string[] }> | undefined) ?? {};
   // The allowed set for one platform key: program partial ∩ org partial (either
@@ -888,6 +889,8 @@ async function _clampCapsToProvisioning(program: Record<string, unknown>, capabi
   return capabilities.filter((id) => {
     for (const key of Object.keys(_FEATURE_ACCESS_PROVIDER)) {
       if (platformCapSets[key].has(id)) {
+        // A DISABLED platform grants nothing, regardless of any stale caps sent.
+        if (enabled[key as keyof typeof enabled] === false) return false;
         const allowed = platformAllowed[key];
         return allowed ? allowed.has(id) : true;
       }
