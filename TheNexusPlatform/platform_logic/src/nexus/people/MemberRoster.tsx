@@ -135,27 +135,42 @@ export function MemberRoster({
     const p = g.parent_id ?? null;
     childrenByParent.set(p, [...(childrenByParent.get(p) ?? []), g]);
   }
+  // A role shown as its own group can be nested under a real group — its holders
+  // then live under that group in the hierarchy.
+  const roleParentOf = new Map(
+    (groupsModel?.roles ?? [])
+      .filter((r) => r.display_as_group && r.parent_group_id)
+      .map((r) => [r.id, r.parent_group_id as string]),
+  );
   const directMembersOf = (gid: string) =>
-    team.filter((m) => (groupsModel?.placements[(m.email ?? "").toLowerCase()] ?? []).includes(gid));
+    team.filter((m) => {
+      if (m.roleId && roleParentOf.get(m.roleId) === gid) return false; // renders under the role node
+      return (groupsModel?.placements[(m.email ?? "").toLowerCase()] ?? []).includes(gid);
+    });
+  const roleNodes = (groupsModel?.roles ?? [])
+    .filter((r) => r.display_as_group)
+    .map((r) => ({ id: r.id, name: r.name, parent: (r.parent_group_id as string | null | undefined) ?? null, members: team.filter((m) => m.roleId === r.id) }))
+    .filter((n) => n.members.length > 0);
+  const roleNodesByParent = new Map<string | null, typeof roleNodes>();
+  for (const n of roleNodes) roleNodesByParent.set(n.parent, [...(roleNodesByParent.get(n.parent) ?? []), n]);
   function subtreeEmails(gid: string): Set<string> {
     const out = new Set<string>();
     for (const m of directMembersOf(gid)) if (m.email) out.add(m.email.toLowerCase());
+    for (const rn of roleNodesByParent.get(gid) ?? []) for (const m of rn.members) if (m.email) out.add(m.email.toLowerCase());
     for (const child of childrenByParent.get(gid) ?? []) for (const e of subtreeEmails(child.id)) out.add(e);
     return out;
   }
-  const roleNodes = (groupsModel?.roles ?? [])
-    .filter((r) => r.display_as_group)
-    .map((r) => ({ id: r.id, name: r.name, members: team.filter((m) => m.roleId === r.id) }))
-    .filter((n) => n.members.length > 0);
   const rootGroups = (childrenByParent.get(null) ?? []).filter((g) => subtreeEmails(g.id).size > 0);
+  const rootRoleNodes = roleNodesByParent.get(null) ?? [];
   const ungrouped = team.filter((m) => chips(m).length === 0);
-  const stackEmpty = roleNodes.length === 0 && rootGroups.length === 0 && ungrouped.length === 0;
+  const stackEmpty = rootRoleNodes.length === 0 && rootGroups.length === 0 && ungrouped.length === 0;
 
   function renderGroupNode(g: { id: string; name: string }, depth: number): ReactNode {
     const key = `group:${g.id}`;
     const open = expanded.has(key);
     const direct = directMembersOf(g.id);
     const kids = (childrenByParent.get(g.id) ?? []).filter((c) => subtreeEmails(c.id).size > 0);
+    const nestedRoles = roleNodesByParent.get(g.id) ?? [];
     const total = subtreeEmails(g.id).size;
     return (
       <div key={key} className="glass-card overflow-hidden" style={{ marginLeft: depth * 16 }}>
@@ -167,8 +182,13 @@ export function MemberRoster({
         {open ? (
           <div className="border-t border-border">
             {direct.length ? <Table>{head}<TableBody>{direct.map((m) => row(m, `${key}:`))}</TableBody></Table> : null}
-            {kids.length ? <div className="space-y-2 p-2">{kids.map((c) => renderGroupNode(c, 0))}</div> : null}
-            {!direct.length && !kids.length ? <div className="px-4 py-3 text-xs text-muted-foreground">No one placed here yet.</div> : null}
+            {nestedRoles.length || kids.length ? (
+              <div className="space-y-2 p-2">
+                {nestedRoles.map((rn) => flatNode(rn.id, rn.name, rn.members, "role"))}
+                {kids.map((c) => renderGroupNode(c, 0))}
+              </div>
+            ) : null}
+            {!direct.length && !kids.length && !nestedRoles.length ? <div className="px-4 py-3 text-xs text-muted-foreground">No one placed here yet.</div> : null}
           </div>
         ) : null}
       </div>
@@ -205,7 +225,7 @@ export function MemberRoster({
         <EmptyState>No groups have anyone in them yet. Create a group in Roles &amp; Groups and place people into it.</EmptyState>
       ) : (
         <div className="space-y-2">
-          {roleNodes.map((n) => flatNode(n.id, n.name, n.members, "role"))}
+          {rootRoleNodes.map((n) => flatNode(n.id, n.name, n.members, "role"))}
           {rootGroups.map((g) => renderGroupNode(g, 0))}
           {ungrouped.length ? flatNode("none", "No group", ungrouped, "muted") : null}
         </div>

@@ -241,10 +241,31 @@ export function ProgramTeam() {
     }
   }
 
+  // A role shown as its own group and NESTED under a real group implies
+  // membership in that parent group chain — the mandatory groups it lives under.
+  function roleGroupChain(roleId: string): string[] {
+    const role = groupsModel?.roles.find((r) => r.id === roleId);
+    if (!role?.display_as_group || !role.parent_group_id) return [];
+    const byId = new Map((groupsModel?.groups ?? []).map((g) => [g.id, g]));
+    const chain: string[] = [];
+    let cur: string | null = role.parent_group_id;
+    while (cur && byId.has(cur)) { chain.push(cur); cur = byId.get(cur)?.parent_id ?? null; }
+    return chain;
+  }
+
   async function assignRole(m: ProgramMember, roleId: string | null) {
     if (!m.email) return;
     try {
       await setProgramMemberRole(programId, m.email, roleId);
+      // Auto-place into the role's mandatory parent group chain (if nested).
+      if (roleId) {
+        const chain = roleGroupChain(roleId);
+        if (chain.length) {
+          const existing = groupsModel?.placements[m.email.toLowerCase()] ?? [];
+          const next = [...new Set([...existing, ...chain])];
+          if (next.length !== existing.length) await setProgramMemberGroups(programId, m.email, next).catch(() => {});
+        }
+      }
       toast.success(roleId ? "Role assigned" : "Role cleared");
       load();
     } catch (e) {
@@ -421,22 +442,63 @@ export function ProgramTeam() {
     const p = g.parent_id ?? null;
     childrenByParent.set(p, [...(childrenByParent.get(p) ?? []), g]);
   }
+  // A role shown as its own group can be NESTED under a real group. Its holders
+  // then live under that group in the hierarchy (e.g. "Night Class Teachers"
+  // under "Night Class") — no manual placement needed.
+  const roleParentOf = new Map(
+    (groupsModel?.roles ?? [])
+      .filter((r) => r.display_as_group && r.parent_group_id)
+      .map((r) => [r.id, r.parent_group_id as string]),
+  );
   const directMembersOf = (gid: string) =>
-    groupPool.filter((m) => (groupsModel?.placements[(m.email ?? "").toLowerCase()] ?? []).includes(gid));
-  // Unique people in a group's whole subtree (direct + all descendants).
+    groupPool.filter((m) => {
+      const email = (m.email ?? "").toLowerCase();
+      // Someone here only via a role-group nested under this group renders under
+      // that role node, not as a bare direct member (no double-listing).
+      if (m.role_id && roleParentOf.get(m.role_id) === gid) return false;
+      return (groupsModel?.placements[email] ?? []).includes(gid);
+    });
+  // Role-as-group nodes, indexed by their parent group (null = top level).
+  const roleNodes = (groupsModel?.roles ?? [])
+    .filter((r) => r.display_as_group)
+    .map((r) => ({ id: r.id, name: r.name, parent: (r.parent_group_id as string | null | undefined) ?? null, members: team.filter((m) => m.role_id === r.id) }))
+    .filter((n) => n.members.length > 0);
+  const roleNodesByParent = new Map<string | null, typeof roleNodes>();
+  for (const n of roleNodes) roleNodesByParent.set(n.parent, [...(roleNodesByParent.get(n.parent) ?? []), n]);
+  // Unique people in a group's whole subtree: direct + nested role-groups + child groups.
   function subtreeEmails(gid: string): Set<string> {
     const out = new Set<string>();
     for (const m of directMembersOf(gid)) if (m.email) out.add(m.email.toLowerCase());
+    for (const rn of roleNodesByParent.get(gid) ?? []) for (const m of rn.members) if (m.email) out.add(m.email.toLowerCase());
     for (const child of childrenByParent.get(gid) ?? []) for (const e of subtreeEmails(child.id)) out.add(e);
     return out;
   }
-  const roleNodes = (groupsModel?.roles ?? [])
-    .filter((r) => r.display_as_group)
-    .map((r) => ({ id: r.id, name: r.name, members: team.filter((m) => m.role_id === r.id) }))
-    .filter((n) => n.members.length > 0);
   const rootGroups = (childrenByParent.get(null) ?? []).filter((g) => subtreeEmails(g.id).size > 0);
+  const rootRoleNodes = roleNodesByParent.get(null) ?? [];
   const ungrouped = team.filter((m) => memberGroupChips(m).length === 0);
-  const stackEmpty = roleNodes.length === 0 && rootGroups.length === 0 && ungrouped.length === 0;
+  const stackEmpty = rootRoleNodes.length === 0 && rootGroups.length === 0 && ungrouped.length === 0;
+
+  // One role-as-group node: a collapsible showing its holders. Reused at the top
+  // level and nested inside its parent group.
+  function renderRoleNode(n: { id: string; name: string; members: ProgramMember[] }, depth: number): ReactNode {
+    const key = `role:${n.id}`;
+    const open = expandedGroups.has(key);
+    return (
+      <div key={key} className="glass-card overflow-hidden" style={{ marginLeft: depth * 16 }}>
+        <button type="button" onClick={() => toggleNode(key)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
+          <ChevronRight className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+          <span className="text-sm font-semibold text-foreground">{n.name}</span>
+          <Pill tone="accent">role</Pill>
+          <span className="text-xs text-muted-foreground">{n.members.length} {n.members.length === 1 ? "person" : "people"}</span>
+        </button>
+        {open ? (
+          <div className="border-t border-border">
+            <Table>{peopleTableHead}<TableBody>{n.members.map((m) => personRow(m, `${key}:`))}</TableBody></Table>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   // Recursive render of one real-group node: a collapsed disclosure row that,
   // when expanded, shows its direct members then its child group nodes.
@@ -477,8 +539,14 @@ export function ProgramTeam() {
                 <TableBody>{direct.map((m) => personRow(m, `${key}:`))}</TableBody>
               </Table>
             ) : null}
-            {kids.length ? <div className="space-y-2 p-2">{kids.map((c) => renderGroupNode(c, 0))}</div> : null}
-            {!direct.length && !kids.length ? (
+            {/* Role-as-group nodes nested under this group (e.g. Night Class Teachers under Night Class). */}
+            {(roleNodesByParent.get(g.id) ?? []).length || kids.length ? (
+              <div className="space-y-2 p-2">
+                {(roleNodesByParent.get(g.id) ?? []).map((rn) => renderRoleNode(rn, 0))}
+                {kids.map((c) => renderGroupNode(c, 0))}
+              </div>
+            ) : null}
+            {!direct.length && !kids.length && !(roleNodesByParent.get(g.id) ?? []).length ? (
               <div className="px-4 py-3 text-xs text-muted-foreground">No one placed here yet.</div>
             ) : null}
           </div>
@@ -522,36 +590,9 @@ export function ProgramTeam() {
           <EmptyState>No groups have anyone in them yet. Create a group and place people into it.</EmptyState>
         ) : (
           <div className="space-y-2">
-            {/* Role-as-group nodes (flat, collapsible). */}
-            {roleNodes.map((n) => {
-              const key = `role:${n.id}`;
-              const open = expandedGroups.has(key);
-              return (
-                <div key={key} className="glass-card overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => toggleNode(key)}
-                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
-                  >
-                    <ChevronRight className={`size-4 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
-                    <span className="text-sm font-semibold text-foreground">{n.name}</span>
-                    <Pill tone="accent">role</Pill>
-                    <span className="text-xs text-muted-foreground">
-                      {n.members.length} {n.members.length === 1 ? "person" : "people"}
-                    </span>
-                  </button>
-                  {open ? (
-                    <div className="border-t border-border">
-                      <Table>
-                        {peopleTableHead}
-                        <TableBody>{n.members.map((m) => personRow(m, `${key}:`))}</TableBody>
-                      </Table>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-            {/* Real group forest (hierarchical, collapsible). */}
+            {/* Role-as-group nodes NOT nested under a group (top level). */}
+            {rootRoleNodes.map((n) => renderRoleNode(n, 0))}
+            {/* Real group forest (hierarchical) — nested role-groups render inside. */}
             {rootGroups.map((g) => renderGroupNode(g, 0))}
             {/* Anyone in no group at all. */}
             {ungrouped.length ? (
@@ -1044,7 +1085,19 @@ function InviteMemberDialog({
             </div>
             <div className="space-y-1.5">
               <Label>Role</Label>
-              <Select value={roleId} onValueChange={setRoleId}>
+              <Select
+                value={roleId}
+                onValueChange={(v) => {
+                  setRoleId(v);
+                  // A role shown as a group and nested under a real group implies
+                  // membership in that parent — auto-select it (mandatory).
+                  const r = roles.find((x) => x.id === v);
+                  if (r?.display_as_group && r.parent_group_id) {
+                    const pid = r.parent_group_id;
+                    setGroupIds((s) => (s.has(pid) ? s : new Set(s).add(pid)));
+                  }
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -1063,29 +1116,36 @@ function InviteMemberDialog({
                 <Label>Groups</Label>
                 <p className="text-xs text-muted-foreground -mt-1">Which group(s) this person belongs to.</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {placementGroups.map((g) => {
-                    const on = groupIds.has(g.id);
-                    return (
-                      <button
-                        key={g.id}
-                        type="button"
-                        onClick={() =>
-                          setGroupIds((s) => {
-                            const next = new Set(s);
-                            next.has(g.id) ? next.delete(g.id) : next.add(g.id);
-                            return next;
-                          })
-                        }
-                        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                          on
-                            ? "border-primary bg-primary/10 text-foreground"
-                            : "border-border text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {g.name}
-                      </button>
-                    );
-                  })}
+                  {(() => {
+                    const selRole = roles.find((x) => x.id === roleId);
+                    const mandatory = selRole?.display_as_group ? selRole.parent_group_id ?? null : null;
+                    return placementGroups.map((g) => {
+                      const on = groupIds.has(g.id);
+                      const locked = g.id === mandatory;
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          disabled={locked}
+                          title={locked ? "Required by the selected role" : undefined}
+                          onClick={() =>
+                            setGroupIds((s) => {
+                              const next = new Set(s);
+                              next.has(g.id) ? next.delete(g.id) : next.add(g.id);
+                              return next;
+                            })
+                          }
+                          className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                            on
+                              ? "border-primary bg-primary/10 text-foreground"
+                              : "border-border text-muted-foreground hover:text-foreground"
+                          } ${locked ? "cursor-not-allowed opacity-90" : ""}`}
+                        >
+                          {g.name}{locked ? " ✓" : ""}
+                        </button>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             ) : null}
