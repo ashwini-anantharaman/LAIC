@@ -11,6 +11,7 @@ import type { Seat } from "@bridge/events";
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { undoAction } from "@/app/bridge/table/actions";
 import { HandViewer } from "@/components/table/play/HandViewer";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
@@ -191,6 +192,26 @@ export default async function PlayTablePage({
             className="rounded-full border border-neutral-300 px-3 py-1 text-xs font-medium hover:border-emerald-500 hover:bg-emerald-50"
           >
             ⟵ table
+          </Link>
+        )}
+        {record.events.length > 0 && state.phase !== "complete" && (
+          <form action={undoAction}>
+            <input type="hidden" name="sessionId" value={sessionId} />
+            <button
+              type="submit"
+              className="rounded-full border border-neutral-300 px-3 py-1 text-xs font-medium hover:border-emerald-500 hover:bg-emerald-50"
+            >
+              ↩ undo
+            </button>
+          </form>
+        )}
+        {isFellow && (
+          <Link
+            href={`/bridge/table/${sessionId}?legacy=1`}
+            className="ml-auto rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-500 hover:border-emerald-500 hover:bg-emerald-50"
+            title="Decisions rail, fix-at-the-table, deal editor"
+          >
+            workbench →
           </Link>
         )}
       </div>

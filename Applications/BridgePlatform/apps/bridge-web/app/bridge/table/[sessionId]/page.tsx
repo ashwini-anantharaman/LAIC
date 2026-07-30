@@ -58,11 +58,18 @@ export default async function SessionPage({
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
 
-  // 2026-07-28: this page is the main table again. The redirect to
-  // /bridge/table2 (the <PlayTable/> rewrite, 2026-07-25) is off until that UI
-  // transition finishes — table2 still works at its own URL, and the ?legacy=1
-  // plumbing below is kept inert so flipping the redirect back on is one block.
+  // 2026-07-29: the design-component table (/bridge/table2, <PlayTable/> from
+  // the "Play Table" Claude Design project) is the main table. This page stays
+  // as the verification WORKBENCH behind ?legacy=1 — decisions rail, fix-at-
+  // the-table, deal editor. ?fix / ?editDeal must stay here even without
+  // legacy=1, or those overlays silently never open.
   const sp = await searchParams;
+  if (sp.legacy !== "1" && !sp.fix && !sp.editDeal) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) if (v && k !== "legacy") q.set(k, String(v));
+    const qs = q.toString();
+    redirect(`/bridge/table2/${sessionId}${qs ? `?${qs}` : ""}`);
+  }
   const {
     mode,
     hands: handsParam,
@@ -417,18 +424,21 @@ export default async function SessionPage({
     for (let i = 0; i < padded.length; i += 4) auctionRows.push(padded.slice(i, i + 4) as never);
   }
 
+  // Every self-link carries legacy=1 — this page is the workbench behind the
+  // redirect now, and a dropped flag would bounce mid-workflow to table2.
   const toggleHref = (params: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
+    q.set("legacy", "1");
     if (learnerMode && isFellow) q.set("mode", "learner");
     if (bboSeats) q.set("bboAuction", "seats");
     for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
-    const s = q.toString();
-    return s ? `/bridge/table/${sessionId}?${s}` : `/bridge/table/${sessionId}`;
+    return `/bridge/table/${sessionId}?${q.toString()}`;
   };
   // Flips only the auction-display mode, preserving everything else — the
   // corner toggle inside the BBO felt.
   const auctionToggleHref = (() => {
     const q = new URLSearchParams();
+    q.set("legacy", "1");
     if (learnerMode && isFellow) q.set("mode", "learner");
     if (handsParam) q.set("hands", handsParam);
     if (paused) q.set("paused", paused);
@@ -636,8 +646,8 @@ export default async function SessionPage({
           <Link
             href={
               learnerMode
-                ? `/bridge/table/${sessionId}`
-                : `/bridge/table/${sessionId}?mode=learner`
+                ? `/bridge/table/${sessionId}?legacy=1`
+                : `/bridge/table/${sessionId}?mode=learner&legacy=1`
             }
             aria-label={learnerMode ? "Switch to verification view" : "Switch to learner view"}
             title={learnerMode ? "Verification view — show the decisions rail" : "Learner view — hide the decisions rail"}
@@ -649,6 +659,13 @@ export default async function SessionPage({
             </span>
           </Link>
         )}
+        <Link
+          href={`/bridge/table2/${sessionId}`}
+          className={`${isFellow ? "" : "ml-auto "}rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400`}
+          title="Back to the table"
+        >
+          table →
+        </Link>
       </div>
 
       <div className={`grid gap-6 ${learnerMode ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"}`}>
