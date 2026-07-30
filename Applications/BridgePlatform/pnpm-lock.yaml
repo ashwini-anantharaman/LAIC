@@ -77,6 +77,9 @@ importers:
       '@laic/library-core':
         specifier: workspace:*
         version: link:../../packages/library-core
+      '@laic/library-ui':
+        specifier: workspace:*
+        version: link:../../packages/library-ui
       '@supabase/ssr':
         specifier: ^0.12.0
         version: 0.12.0(@supabase/supabase-js@2.110.1)
@@ -289,6 +292,25 @@ importers:
       '@types/node':
         specifier: ^24.10.1
         version: 24.13.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/library-ui:
+    dependencies:
+      '@laic/library-core':
+        specifier: workspace:*
+        version: link:../library-core
+      react:
+        specifier: '>=18'
+        version: 19.2.7
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.2
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.17
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

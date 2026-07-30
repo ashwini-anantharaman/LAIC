@@ -1,0 +1,28 @@
+{
+  "$comment": "LibraryConfig for the /bridge/library-kit tenant — edit this file (labels, order, theme, features) and reload: the library changes with zero code. Config controls display/features only; access stays policy-enforced.",
+  "features": {
+    "kinds": ["board", "deal", "play", "table"],
+    "search": true,
+    "pick": false
+  },
+  "display": {
+    "title": "Board Room",
+    "subtitle": "The same library component, wearing this config file — swap the JSON, get a different library.",
+    "emptyState": "This shelf is empty — deal something at a table.",
+    "density": "comfortable",
+    "kinds": {
+      "board": { "label": "Hands", "renderer": "bridge-board" },
+      "deal": { "label": "Distributions", "renderer": "bridge-board" },
+      "play": { "label": "Recorded plays", "renderer": "bridge-board" },
+      "table": { "label": "Lineups" }
+    },
+    "theme": {
+      "accent": "#7c3aed",
+      "background": "transparent",
+      "card": "#ffffff",
+      "textMuted": "#8a8374",
+      "radius": 10,
+      "font": "var(--font-karla), sans-serif"
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -81,7 +82,8 @@ export default function LearnersScreen() {
                 .filter(Boolean)
                 .join(" · ")}
               onPress={() => {
-                /* Phase 2: learner detail — plays, reviews, assignments */
+                if (item.user_id)
+                  router.push({ pathname: "/learner/[id]", params: { id: item.user_id } });
               }}
             />
           )}

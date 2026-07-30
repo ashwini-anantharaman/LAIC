@@ -30,6 +30,7 @@
     "@laic/kb-core": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts",
     "@laic/library-core": "workspace:*",
+    "@laic/library-ui": "workspace:*",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.110.1",
     "next": "^16.0.0",

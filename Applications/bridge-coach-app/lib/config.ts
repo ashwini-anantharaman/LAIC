@@ -23,12 +23,12 @@ const LOCAL = {
 };
 
 const TUNNEL = {
-  api: "https://adventure-cameras-frankfurt-hang.trycloudflare.com",
-  learning: "https://undertaken-revolution-yours-egg.trycloudflare.com",
+  api: "https://newspaper-folding-buying-papers.trycloudflare.com",
+  learning: "https://instantly-killing-webshots-subtle.trycloudflare.com",
   // Override the backend's launch_url (its BRIDGE_PLATFORM_URL env points at
   // localhost) with the bridge tunnel so the phone can reach it.
   bridgeLaunch:
-    "https://rings-planners-feeding-habits.trycloudflare.com/nexus/launch" as
+    "https://identical-conceptual-wav-growth.trycloudflare.com/nexus/launch" as
       | string
       | null,
 };

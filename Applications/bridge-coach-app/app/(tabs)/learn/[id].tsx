@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
@@ -50,6 +50,15 @@ export default function LearnContentScreen() {
     load();
   }, [load]);
 
+  // Learn↔Play: a lesson's embedded board asks the app to open it on a live
+  // bridge table (the LP posts {type:'lp:play-entry', entryId}).
+  const handleHostMessage = useCallback((data: unknown) => {
+    const msg = data as { type?: string; entryId?: string } | null;
+    if (msg?.type === "lp:play-entry" && typeof msg.entryId === "string") {
+      router.push({ pathname: "/play-board/[entryId]", params: { entryId: msg.entryId } });
+    }
+  }, []);
+
   return (
     <Screen>
       <ScreenHeader title={title} />
@@ -67,7 +76,7 @@ export default function LearnContentScreen() {
         </View>
       )}
 
-      {url && <ContentWebView url={url} />}
+      {url && <ContentWebView url={url} onHostMessage={handleHostMessage} />}
     </Screen>
   );
 }

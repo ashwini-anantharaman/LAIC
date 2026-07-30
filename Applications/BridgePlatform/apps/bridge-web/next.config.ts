@@ -32,6 +32,7 @@ const nextConfig: NextConfig = {
     "@bridge/sessions",
     "@laic/learner-contracts",
     "@laic/library-core",
+    "@laic/library-ui",
     "@laic/kb-core",
   ],
   experimental: {

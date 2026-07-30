@@ -98,5 +98,6 @@ export const PROVIDER_IDS = [
   "program-console",
   "learning",
   "bridge",
+  "library",
 ] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];

@@ -11,21 +11,25 @@ import { createElement, useEffect } from "react";
 export function ContentWebView({
   url,
   onUrlChange,
+  onHostMessage,
 }: {
   url: string;
   onUrlChange?: (url: string) => void;
+  /** Structured messages posted BY the embedded page (postMessage). */
+  onHostMessage?: (data: unknown) => void;
 }) {
   useEffect(() => {
-    if (!onUrlChange) return;
     const listener = (e: MessageEvent) => {
       const data = e.data as { type?: string; href?: string } | null;
       if (data?.type === "bridge:location" && typeof data.href === "string") {
-        onUrlChange(data.href);
+        onUrlChange?.(data.href);
+      } else if (data?.type) {
+        onHostMessage?.(data);
       }
     };
     window.addEventListener("message", listener);
     return () => window.removeEventListener("message", listener);
-  }, [onUrlChange]);
+  }, [onUrlChange, onHostMessage]);
 
   return createElement("iframe", {
     src: url,

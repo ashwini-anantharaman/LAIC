@@ -834,13 +834,45 @@ function FlashcardSet({ content, objectId }: { content: FlashcardSetContent; obj
   return <FlashcardStudy cards={cards} direction={content.direction || 'Front→back'} storageKey={objectId} />;
 }
 
+/** Learn↔Play bridge: hand the embedded board's entryId to the HOST app,
+ *  which opens the bridge platform on a live table. Reaches the coach app
+ *  via the RN WebView bridge, or an iframe parent via postMessage; when the
+ *  reader is standalone there is no host, so the button hides. */
+function requestPlayBoard(entryId: string): void {
+  const rn = (window as unknown as { ReactNativeWebView?: { postMessage: (s: string) => void } })
+    .ReactNativeWebView;
+  const message = { type: 'lp:play-entry', entryId };
+  if (rn) rn.postMessage(JSON.stringify(message));
+  else if (window.parent !== window) window.parent.postMessage(message, '*');
+}
+
+function hasPlayHost(): boolean {
+  return (
+    Boolean((window as unknown as { ReactNativeWebView?: unknown }).ReactNativeWebView) ||
+    window.parent !== window
+  );
+}
+
 function BridgePlay({ content }: { content: BridgePlayContent }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const playable = Boolean(content.sourceRef?.entryId) && hasPlayHost();
 
   return (
     <div className="rounded-[22px] p-5" style={{ background: '#F8FAF9', border: '1.5px solid rgba(5,150,105,0.15)' }}>
-      <p style={{ fontSize: 11, fontWeight: 600, color: '#059669', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Bridge Play</p>
+      <div className="flex items-start justify-between gap-3">
+        <p style={{ fontSize: 11, fontWeight: 600, color: '#059669', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Bridge Play</p>
+        {playable && (
+          <button
+            type="button"
+            onClick={() => requestPlayBoard(content.sourceRef!.entryId)}
+            className="rounded-full px-3.5 py-1.5"
+            style={{ background: '#059669', color: '#fff', fontSize: 12, fontWeight: 700, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
+          >
+            ▶ Play this board
+          </button>
+        )}
+      </div>
       <p style={{ fontSize: 15, fontWeight: 700, color: '#0B1220', marginBottom: 4 }}>{content.title}</p>
       <p style={{ fontSize: 13.5, color: '#6B7280', marginBottom: 16, lineHeight: 1.5 }}>{content.description}</p>
       {/* Compass layout */}
