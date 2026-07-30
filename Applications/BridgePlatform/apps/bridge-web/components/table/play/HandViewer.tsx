@@ -10,7 +10,7 @@
 // design stage to fit — up as well as down, since a viewer's job is to be
 // big and readable.
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
 
 // The design's palette and metrics, lifted verbatim.
@@ -52,6 +52,8 @@ export interface HandViewerProps {
   info?: readonly { label: string; value: string }[];
   /** Bottom-right panel: contract and score. */
   result?: readonly { label: string; value: string }[];
+  /** Controls rendered inside the canvas, under the vul/board card. */
+  nav?: ReactNode;
 }
 
 export function HandViewer({
@@ -65,6 +67,7 @@ export function HandViewer({
   highlightSeat = null,
   info = [],
   result = [],
+  nav,
 }: Readonly<HandViewerProps>) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [box, setBox] = useState({ w: BASE.w, h: BASE.h });
@@ -195,7 +198,10 @@ export function HandViewer({
     <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: GREEN, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
       <div style={{ flex: "none", transformOrigin: "center center", width: BASE.w, height: BASE.h, transform: `scale(${scale})` }}>
         <div style={{ position: "absolute", inset: 0, display: "grid", gridTemplateColumns: `repeat(3, ${COL}px)`, gridTemplateRows: `repeat(3, ${ROW}px)`, gap: GAP, padding: PAD, background: GREEN }}>
-          <div style={{ justifySelf: "start", alignSelf: "start" }}>{vulBoardCard}</div>
+          <div style={{ justifySelf: "start", alignSelf: "start", display: "flex", flexDirection: "column", gap: 20 }}>
+            {vulBoardCard}
+            {nav}
+          </div>
           {seatPanel("N")}
           <div style={{ alignSelf: "start", width: "100%" }}>{auctionBox}</div>
 

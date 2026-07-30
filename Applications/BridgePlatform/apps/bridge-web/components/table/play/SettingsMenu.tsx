@@ -51,7 +51,18 @@ export function SettingsMenu({
           <button
             key={item.label}
             type="button"
-            onClick={item.on ?? (item.href ? () => router.replace(item.href!, { scroll: false }) : undefined)}
+            onClick={
+              item.on ??
+              (item.href
+                ? () => {
+                    // Same-page toggles replace (no history spam, menu stays
+                    // open); leaving the page is a real navigation — push.
+                    const samePage = item.href!.split("?")[0] === window.location.pathname;
+                    if (samePage) router.replace(item.href!, { scroll: false });
+                    else router.push(item.href!);
+                  }
+                : undefined)
+            }
             style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, width: "100%", background: "#fff", border: 0, borderBottom: "1px solid #e2e2e2", padding: "9px 10px", fontSize: 16, color: "#000", textAlign: "left", cursor: "pointer" }}
           >
             <span>{item.label}</span>

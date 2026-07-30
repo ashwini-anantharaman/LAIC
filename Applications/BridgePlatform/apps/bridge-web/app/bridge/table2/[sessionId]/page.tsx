@@ -122,7 +122,44 @@ export default async function PlayTablePage({
       value: speed === "fast" ? "Fast" : speed === "slow" ? "Slow" : "Normal",
       href: settingsHref({ speed: speed === "slow" ? "fast" : speed === "fast" ? undefined : "slow" }),
     },
+    // The verification workbench (decisions rail, fix-at-the-table, deal
+    // editor) lives behind the ☰ so nothing sits outside the canvas.
+    ...(isFellow
+      ? [{ label: "Verification workbench", value: "→", href: `/bridge/table/${sessionId}?legacy=1` }]
+      : []),
   ];
+
+  // Play controls live INSIDE the canvas: ▶/❚❚ and step as rail chips
+  // (AutoAdvance's rail variant), undo beside them. Same key semantics as
+  // before — an undo remounts the controls paused.
+  const undoChip =
+    record.events.length > 0 && state.phase !== "complete" ? (
+      <form action={undoAction}>
+        <input type="hidden" name="sessionId" value={sessionId} />
+        <button
+          type="submit"
+          aria-label="undo"
+          title="Undo the last decision — comes back paused"
+          style={{ width: 47, height: 32, background: "#acc5c5", border: "2px solid #f2f4f4", borderRadius: 7, color: "#000", fontSize: 16, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
+        >
+          ↩
+        </button>
+      </form>
+    ) : null;
+  const controls = (
+    <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+      <AutoAdvance
+        key={paused ?? "run"}
+        sessionId={sessionId}
+        active={!actingIsHuman && state.phase !== "complete"}
+        seq={record.events.length}
+        complete={state.phase === "complete"}
+        beatMs={beatMs}
+        variant="rail"
+      />
+      {undoChip}
+    </div>
+  );
 
   // The hand-record view (HandViewer design): all four panels big, the full
   // auction, and honest info panels. Mid-play it shows the REMAINING cards
@@ -153,6 +190,18 @@ export default async function PlayTablePage({
       result={[
         { label: contractText, value: score ? `${resultLabel(score)} · ${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : "" },
       ]}
+      nav={
+        <div style={{ display: "flex", flexDirection: "column", gap: 20, alignItems: "flex-start" }}>
+          <Link
+            href={settingsHref({ view: undefined })}
+            style={{ width: 261, height: 64, background: "#acc5c5", border: "3px solid #f2f4f4", borderRadius: 10, color: "#000", fontSize: 30, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
+          >
+            ⟵ table
+          </Link>
+          {/* The stage runs at ~2x the table's chip metrics — scale to match. */}
+          <div style={{ transform: "scale(1.9)", transformOrigin: "top left" }}>{controls}</div>
+        </div>
+      }
     />
   );
 
@@ -174,50 +223,11 @@ export default async function PlayTablePage({
           </Link>
         </p>
       )}
-      {/* The advance control sits ABOVE the table, not inside it: the table box
-          is sized to the design's 1040x590 and anything sharing that box pushes
-          the felt down and clips South's hand. */}
-      <div className="mb-2 flex items-center gap-2">
-        <AutoAdvance
-          key={paused ?? "run"}
-          sessionId={sessionId}
-          active={!actingIsHuman && state.phase !== "complete"}
-          seq={record.events.length}
-          complete={state.phase === "complete"}
-          beatMs={beatMs}
-        />
-        {handsView && (
-          <Link
-            href={settingsHref({ view: undefined })}
-            className="rounded-full border border-neutral-300 px-3 py-1 text-xs font-medium hover:border-emerald-500 hover:bg-emerald-50"
-          >
-            ⟵ table
-          </Link>
-        )}
-        {record.events.length > 0 && state.phase !== "complete" && (
-          <form action={undoAction}>
-            <input type="hidden" name="sessionId" value={sessionId} />
-            <button
-              type="submit"
-              className="rounded-full border border-neutral-300 px-3 py-1 text-xs font-medium hover:border-emerald-500 hover:bg-emerald-50"
-            >
-              ↩ undo
-            </button>
-          </form>
-        )}
-        {isFellow && (
-          <Link
-            href={`/bridge/table/${sessionId}?legacy=1`}
-            className="ml-auto rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-500 hover:border-emerald-500 hover:bg-emerald-50"
-            title="Decisions rail, fix-at-the-table, deal editor"
-          >
-            workbench →
-          </Link>
-        )}
-      </div>
+      {/* Every control lives INSIDE the canvas — rail chips on the table, the
+          nav cell on the hand viewer. Nothing floats above the design. */}
       <div
         className="overflow-hidden rounded-lg"
-        style={{ height: "calc(100vh - 7.5rem)" }}
+        style={{ height: "calc(100vh - 5.5rem)" }}
       >
         {handsView ? (
           handViewer
@@ -240,7 +250,12 @@ export default async function PlayTablePage({
             auctionDisplay={bboAuction === "seats" ? "seats" : "box"}
             resultLine={score ? resultLabel(score) : ""}
             resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
-            railExtra={seatsPanel}
+            railExtra={
+              <>
+                {controls}
+                {seatsPanel}
+              </>
+            }
             settings={settings}
             viewHref={{ label: "Hands", href: settingsHref({ view: "hands" }) }}
           />
