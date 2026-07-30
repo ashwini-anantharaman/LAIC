@@ -834,6 +834,106 @@ platformRouter.get("/bridge/context", async (c) => {
   });
 });
 
+// The coach's learner roster (the mobile app's "My learners", Phase 2's
+// review queue). Coaches see the learners who HIRED them (their roster
+// group); program admins see the whole program. Learners can't enumerate
+// each other.
+platformRouter.get("/bridge/learners", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  if (access.level === "admin") {
+    return c.json(await graph.listProgramLearners(access.orgId, access.programId));
+  }
+  if (access.level !== "edit") throw new HttpError(403, "Coach access required");
+  const coaches = await graph.listProgramCoaches(access.orgId, access.programId);
+  const me = coaches.find((co) => co.coach_id === access.profileId);
+  if (!me?.group_id) return c.json([]); // nobody has hired this coach yet
+  return c.json(
+    await graph.listProgramLearners(access.orgId, access.programId, {
+      groupId: me.group_id as string,
+    }),
+  );
+});
+
+// ── Hire a coach (Phase 1.5) ─────────────────────────────────────────────────
+// Learners browse the program's coaches and pick one; the relationship is the
+// coach's Nexus roster group (see orgGraphRepo). One coach at a time —
+// hiring another switches. Instant (no approval) in v1.
+
+/** The program's coaches — visible to every bridge-program member/learner. */
+platformRouter.get("/bridge/coaches", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  const coaches = await graph.listProgramCoaches(access.orgId, access.programId);
+  // Names + ids only (people isolation: no emails to browsing learners).
+  return c.json(
+    coaches.map((co) => ({
+      coach_id: co.coach_id,
+      name: co.name,
+      learner_count: Number(co.learner_count ?? 0),
+    })),
+  );
+});
+
+/** The calling learner's current coach, or { coach: null }. */
+/** Role-aware activity counts for the coach app's live Home screen. */
+platformRouter.get("/bridge/summary", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  const s = await graph.getBridgeActivitySummary(
+    access.orgId,
+    access.programId,
+    access.profileId,
+  );
+  // The learner's coach rides along so Home can show the relationship.
+  let coach: Row | null = null;
+  if (user.email) {
+    const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
+    if (participant?.group_id) coach = await graph.getCoachForGroup(participant.group_id as string);
+  }
+  return c.json({
+    assignments_open: Number(s.assignments_open ?? 0),
+    plays_reviewed: Number(s.plays_reviewed ?? 0),
+    reviews_pending: Number(s.reviews_pending ?? 0),
+    roster_count: Number(s.roster_count ?? 0),
+    coach,
+  });
+});
+
+platformRouter.get("/bridge/my-coach", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  if (!user.email) return c.json({ coach: null });
+  const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
+  if (!participant?.group_id) return c.json({ coach: null });
+  return c.json({ coach: await graph.getCoachForGroup(participant.group_id as string) });
+});
+
+/** Hire (or switch to) a coach. Learner participants only. */
+platformRouter.post("/bridge/my-coach", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  const body = (await c.req.json()) as Row;
+  const coachId = String(body.coach_id ?? "");
+  if (!coachId) throw new HttpError(400, "coach_id is required");
+  if (!user.email) throw new HttpError(403, "Only learners can hire a coach");
+  const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
+  if (!participant) throw new HttpError(403, "Only program learners can hire a coach");
+  const coaches = await graph.listProgramCoaches(access.orgId, access.programId);
+  const coach = coaches.find((co) => co.coach_id === coachId);
+  if (!coach) throw new HttpError(404, "That coach is not part of this program");
+  const group = await graph.ensureCoachRosterGroup(
+    access.orgId, access.programId, coachId, String(coach.name ?? "Coach"),
+  );
+  await graph.setParticipantGroup(participant.id as string, group.id as string);
+  await db.recordAuditEvent("bridge.coach.hired", {
+    orgId: access.orgId, scopeType: "program", scopeId: access.programId,
+    targetType: "group", targetId: group.id as string,
+    metadata: { learner_email: user.email, coach_id: coachId },
+  });
+  return c.json({ coach: { coach_id: coach.coach_id, name: coach.name } });
+});
+
 // ── Platform People & Roles (administered from each platform's own UI) ──────
 // A platform's admin surface manages who holds which PRE-BUILT platform role,
 // but the data lives here: Nexus stays the single access authority, so
@@ -1109,6 +1209,21 @@ platformRouter.get("/learning/objects", async (c) => {
     return c.json(await graph.listLearningObjectsMeta(access.orgId, access.programId));
   }
   return c.json(await graph.listLearningObjects(access.orgId, access.programId));
+});
+
+// The bridge platform's program-instance library, for the LP's authoring
+// picker (library ↔ LP intersection). Authors only — the embed is a snapshot
+// the author places into a lesson, so browsing is a staff activity.
+platformRouter.get("/learning/bridge-library", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", c.req.query("program_id") ?? null);
+  if (access.level !== "admin" && access.level !== "edit") {
+    throw new HttpError(403, "Content-author access required");
+  }
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  return c.json(await graph.listBridgeLibraryForLearning(access.orgId, access.programId));
 });
 
 platformRouter.get("/learning/objects/:object_id", async (c) => {

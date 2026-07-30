@@ -197,10 +197,14 @@ create table if not exists bridge_kb_sessions (
   created_by text not null,
   record jsonb not null,
   created_at timestamptz not null,
-  updated_at timestamptz not null
+  updated_at timestamptz not null,
+  program_organization_id text
 );
 create index if not exists idx_kb_sessions_kb on bridge_kb_sessions (kb_id, created_at desc);
 create index if not exists idx_kb_sessions_user on bridge_kb_sessions (created_by, created_at desc);
+-- org scoping (0019): upgrade pre-0019 databases in place (end-state replay).
+alter table bridge_kb_sessions add column if not exists program_organization_id text;
+create index if not exists idx_kb_sessions_org on bridge_kb_sessions (program_organization_id, created_at desc);
 
 -- ── fellows' library (0015) ──────────────────────────────────────────────────
 
@@ -209,10 +213,14 @@ create table if not exists bridge_kb_library (
   kind text not null,
   created_by text not null,
   entry jsonb not null,
-  created_at timestamptz not null
+  created_at timestamptz not null,
+  program_organization_id text
 );
 create index if not exists idx_kb_library_kind on bridge_kb_library (kind, created_at desc);
 create index if not exists idx_kb_library_user on bridge_kb_library (created_by, created_at desc);
+-- org scoping (0019): upgrade pre-0019 databases in place (end-state replay).
+alter table bridge_kb_library add column if not exists program_organization_id text;
+create index if not exists idx_kb_library_org on bridge_kb_library (program_organization_id, created_at desc);
 
 -- ── two-level versioning (0016, Stage H) ─────────────────────────────────────
 
@@ -262,3 +270,86 @@ alter table bridge_kb_sessions enable row level security;
 alter table bridge_kb_library enable row level security;
 alter table bridge_kb_item_versions enable row level security;
 alter table bridge_kb_versions enable row level security;
+
+-- ── play submissions + coach comments (0020, coach/learner Phase 2) ──────────
+
+create table if not exists bridge_play_submissions (
+  submission_id text primary key,
+  program_organization_id text,
+  session_id text not null,
+  learner_id text not null,
+  learner_name text,
+  coach_id text not null,
+  coach_name text,
+  status text not null default 'submitted',
+  note text,
+  board jsonb not null,
+  created_at timestamptz not null,
+  reviewed_at timestamptz
+);
+create index if not exists idx_play_submissions_coach
+  on bridge_play_submissions (coach_id, created_at desc);
+create index if not exists idx_play_submissions_learner
+  on bridge_play_submissions (learner_id, created_at desc);
+create index if not exists idx_play_submissions_session
+  on bridge_play_submissions (session_id);
+
+create table if not exists bridge_play_comments (
+  comment_id text primary key,
+  submission_id text not null references bridge_play_submissions(submission_id) on delete cascade,
+  author_id text not null,
+  author_name text,
+  body text not null,
+  created_at timestamptz not null
+);
+create index if not exists idx_play_comments_submission
+  on bridge_play_comments (submission_id, created_at);
+
+alter table bridge_play_submissions enable row level security;
+alter table bridge_play_comments enable row level security;
+
+-- ── coach assignments (0021, coach/learner Phase 3) ──────────────────────────
+
+create table if not exists bridge_assignments (
+  assignment_id text primary key,
+  program_organization_id text,
+  coach_id text not null,
+  coach_name text,
+  learner_id text not null,
+  learner_name text,
+  entry_id text not null,
+  entry_kind text not null,
+  entry_name text not null,
+  note text,
+  status text not null default 'assigned',
+  session_id text,
+  created_at timestamptz not null,
+  started_at timestamptz,
+  completed_at timestamptz
+);
+create index if not exists idx_assignments_learner
+  on bridge_assignments (learner_id, created_at desc);
+create index if not exists idx_assignments_coach
+  on bridge_assignments (coach_id, created_at desc);
+create index if not exists idx_assignments_session
+  on bridge_assignments (session_id);
+
+alter table bridge_assignments enable row level security;
+
+-- ── instance scoping + copy provenance (0022, library rework Phase A) ────────
+-- Scope columns land as idempotent alters (end-state replay; no backfill here
+-- — the tenant-aware backfill lives in the bridge repo's own 0022).
+
+alter table bridge_kb_sessions add column if not exists nexus_program_id text;
+create index if not exists idx_kb_sessions_program
+  on bridge_kb_sessions (nexus_program_id, created_by, created_at desc);
+
+alter table bridge_kb_library add column if not exists scope_level text;
+alter table bridge_kb_library add column if not exists nexus_program_id text;
+alter table bridge_kb_library add column if not exists source_ref jsonb;
+create index if not exists idx_kb_library_scope
+  on bridge_kb_library (scope_level, nexus_program_id, created_by, created_at desc);
+
+alter table bridge_play_submissions add column if not exists nexus_program_id text;
+alter table bridge_assignments add column if not exists nexus_program_id text;
+alter table bridge_assignments add column if not exists source_entry_id text;

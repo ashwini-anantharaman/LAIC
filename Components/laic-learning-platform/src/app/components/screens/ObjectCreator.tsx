@@ -52,6 +52,7 @@ import { VideoScriptEditor } from './VideoScriptEditor';
 import { TutorialExtractPanel } from './TutorialExtractPanel';
 import { TutorialTemplatePicker } from './TutorialTemplatePicker';
 import { ObjectTemplatePicker } from './ObjectTemplatePicker';
+import { BridgeLibraryPicker } from './BridgeLibraryPicker';
 import { LearningBlocksPreview } from './LearnerReader';
 import { AssistantPanel, AssistantOpenButton } from './AssistantPanel';
 import {
@@ -148,6 +149,12 @@ function blocksToParts(blocks: Block[]): any[] {
         url: c.url || '', videoId: c.videoId || parseYtId(c.url || ''),
         startText: fmtTimestamp(c.start), endText: fmtTimestamp(c.end), caption: c.caption || '',
       };
+    }
+    if (b.type === 'bridge-play' || b.type === 'bidding-sequence') {
+      // Carry the block content verbatim — before this branch existed, these
+      // blocks were silently flattened to rich text on reopen.
+      const c = b.content as { title?: string };
+      return { id, type: b.type, label: c.title || 'Bridge block', content: b.content };
     }
     const c = b.content as { text?: string; heading?: string; subheads?: string[] };
     return {
@@ -2167,6 +2174,7 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
   const savedId = useRef<string | null>(initialId || null);
   const [selection, setSelection] = useState<ObjectSelection>({ kind: 'none' });
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [showBridgePicker, setShowBridgePicker] = useState(false);
   const [undoStack, setUndoStack] = useState<PartSnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<PartSnapshot[]>([]);
   const partsRef = useRef(parts);
@@ -2255,13 +2263,20 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
     });
   };
 
-  const addBlock = (type: 'rich-text' | 'concept-card' | 'question') => {
+  const addBlock = (
+    type: 'rich-text' | 'concept-card' | 'question' | 'bridge-play' | 'bidding-sequence',
+    prefill?: Record<string, unknown>,
+  ) => {
     pushUndo();
     const id = `new-${Date.now()}`;
     const base =
       type === 'rich-text' ? { id, type, label: 'New section', body: '' }
         : type === 'concept-card' ? { id, type, label: 'Concept', concept: '', plain: '', misc: '' }
-          : { id, type, label: 'Knowledge check', prompt: '', options: ['', '', '', ''], correct: 0, exp: '' };
+          : type === 'bridge-play' || type === 'bidding-sequence'
+            // Bridge blocks arrive prefilled from the Bridge Library picker —
+            // the part carries the block content verbatim (see buildBlocks).
+            ? { id, type, label: (prefill as any)?.title || 'Bridge block', content: prefill ?? {} }
+            : { id, type, label: 'Knowledge check', prompt: '', options: ['', '', '', ''], correct: 0, exp: '' };
     setParts((prev: any[]) => [...prev, base]);
     setAiId(null);
     setEditId(id);
@@ -2344,6 +2359,10 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
         return { id, type: 'image', content: { url: p.url || '', caption: p.caption || '', alt: p.caption || '' } };
       if (p.type === 'video')
         return { id, type: 'video-embed', content: { provider: 'youtube', url: p.url || '', videoId: p.videoId || parseYtId(p.url || ''), start: parseTimestamp(p.startText || ''), end: parseTimestamp(p.endText || ''), caption: p.caption || '' } };
+      if (p.type === 'bridge-play' || p.type === 'bidding-sequence')
+        // Bridge blocks round-trip verbatim (inserted prefilled from the
+        // Bridge Library picker; content carried on the part).
+        return { id, type: p.type, content: p.content ?? {} };
       return {
         id,
         type: 'rich-text',
@@ -2572,6 +2591,27 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
                           })}
                         </div>
                       )}
+                      {(p.type === 'bridge-play' || p.type === 'bidding-sequence') && (
+                        <div>
+                          <p style={{ fontSize: 11.5, fontWeight: 700, color: '#1f5e56', marginBottom: 4, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                            {p.type === 'bridge-play' ? 'Card-play puzzle' : 'Bidding walkthrough'}
+                            {p.content?.sourceRef && ' · from bridge library'}
+                          </p>
+                          <p style={{ fontSize: 13, color: '#374151' }}>
+                            {p.content?.description || p.content?.finalContract || p.content?.title || ''}
+                          </p>
+                          {p.type === 'bridge-play' && Array.isArray(p.content?.south) && (
+                            <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 4 }}>
+                              South holds: {p.content.south.join(' ')}
+                            </p>
+                          )}
+                          {p.type === 'bidding-sequence' && Array.isArray(p.content?.bids) && (
+                            <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 4 }}>
+                              {p.content.bids.map((b: any) => b.bid).join(' · ')}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {p.type === 'section-quiz' && (
                         <div>
                           <p style={{ fontSize: 11.5, fontWeight: 700, color: '#7C3AED', marginBottom: 4, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
@@ -2621,7 +2661,20 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
                 style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)', background: 'rgba(255,255,255,0.8)' }}>
                 <Plus size={12} />Question
               </button>
+              <button onClick={() => setShowBridgePicker(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all hover:bg-white"
+                style={{ fontSize: 12, fontWeight: 600, color: '#1f5e56', borderColor: 'rgba(31,94,86,0.35)', background: 'rgba(255,255,255,0.8)' }}>
+                <Plus size={12} />From Bridge Library
+              </button>
             </div>
+
+            <BridgeLibraryPicker
+              open={showBridgePicker}
+              onClose={() => setShowBridgePicker(false)}
+              onInsert={(blockType, content) => {
+                setShowBridgePicker(false);
+                addBlock(blockType, content as unknown as Record<string, unknown>);
+              }}
+            />
           </>
         )}
       </div>
