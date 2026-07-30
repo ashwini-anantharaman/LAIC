@@ -72,6 +72,9 @@ export interface RgAdapter {
   areas: RgArea[];
   /** Optional: preview the platform as a holder of this role ("Test as"). */
   testAsRole?: (role: RgRole) => void;
+  /** Optional: read-only structural tiers (Super Admin, etc.) that aren't custom
+   *  roles but should still be visible in the "roles (non grouped)" panel. */
+  structuralRoles?: { name: string; description?: string }[];
   /** Optional: load the Access Catalogue(s) whose fine-grained capabilities this
    *  level's roles can grant. When present, the builder shows a capabilities
    *  section (reserved capabilities are hidden). */
@@ -105,8 +108,11 @@ function buildTree(roles: RgRole[], groups: RgGroup[]): TreeNode[] {
     const parent = g.parent_id && groupById.has(g.parent_id) ? groupNodes.get(g.parent_id!) : null;
     (parent ? parent.children : roots).push(n);
   }
-  // Place roles under their parent group (or root).
+  // Place roles in the hierarchy — but ONLY roles shown as their own group. A
+  // plain (non-grouped) role has no place in the hierarchy; it lives solely in
+  // the "roles (non grouped)" panel below.
   for (const r of roles) {
+    if (!r.display_as_group) continue;
     const n = node("role", r.id, r.name, r);
     const parent = r.parent_group_id ? groupNodes.get(r.parent_group_id) : null;
     (parent ? parent.children : roots).push(n);
@@ -180,6 +186,38 @@ function PermRow({ area, value, onChange }: { area: RgArea; value: string | unde
   );
 }
 
+/**
+ * A capability set in the fine-grained / Partial picker: a header row with a
+ * toggle that turns the WHOLE set on or off (all-on when every cap is granted),
+ * then the individual capability toggles beneath it.
+ */
+function CapGroup({
+  label, capabilities, isChecked, onToggle, onToggleAll,
+}: {
+  label: string;
+  capabilities: { id: string; label: string }[];
+  isChecked: (id: string) => boolean;
+  onToggle: (id: string, on: boolean) => void;
+  onToggleAll: (ids: string[], on: boolean) => void;
+}) {
+  const ids = capabilities.map((c) => c.id);
+  const allOn = ids.length > 0 && ids.every((id) => isChecked(id));
+  return (
+    <div className="mb-1.5">
+      <label className="flex items-center gap-2 rounded px-1 py-0.5">
+        <Switch checked={allOn} onCheckedChange={() => onToggleAll(ids, !allOn)} title={allOn ? "Turn all off" : "Turn all on"} />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">{label}</span>
+      </label>
+      {capabilities.map((cp) => (
+        <label key={cp.id} className="ml-5 flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
+          <Switch checked={isChecked(cp.id)} onCheckedChange={() => onToggle(cp.id, !isChecked(cp.id))} />
+          <span className="min-w-0"><span className="text-foreground">{cp.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{cp.id}</span></span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 // ── Create / edit dialog ────────────────────────────────────────────────────
 function GroupPicker({ groups, value, onChange, exclude }: { groups: RgGroup[]; value: string | null; onChange: (v: string | null) => void; exclude?: Set<string> }) {
   return (
@@ -236,7 +274,9 @@ function EditorDialog({
     return () => { live = false; };
   }, [open, adapter]);
 
-  const toggleCap = (id: string) => setCaps((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // Set/clear specific capabilities (individual toggle passes one id; a set
+  // header passes the whole group).
+  const setGroupCaps = (ids: string[], on: boolean) => setCaps((s) => { const n = new Set(s); for (const id of ids) on ? n.add(id) : n.delete(id); return n; });
 
   // Capability ids belonging to an area's mapped catalogue group (grantable only —
   // reserved caps are already filtered out of the builder view).
@@ -255,16 +295,46 @@ function EditorDialog({
   const platformProviderIds = new Set(
     adapter.areas.filter((a) => a.kind === "platform" && a.catalogueId).map((a) => a.catalogueId as string),
   );
+  // Whether a platform capability reads as ON: Full (level "administrator") means
+  // every capability is on; Partial reads the explicit set.
+  const platformCapOn = (area: RgArea, id: string) => perms[area.key] === "administrator" || caps.has(id);
+  // Toggle platform capabilities with auto-level transitions: all on → Full,
+  // none → No access, otherwise Partial.
+  const togglePlatformCap = (area: RgArea, ids: string[], on: boolean) => {
+    const allIds = platformCapIds(area);
+    const selected = new Set(perms[area.key] === "administrator" ? allIds : allIds.filter((id) => caps.has(id)));
+    for (const id of ids) on ? selected.add(id) : selected.delete(id);
+    const allOn = allIds.length > 0 && allIds.every((id) => selected.has(id));
+    const none = selected.size === 0;
+    setCaps((s) => {
+      const n = new Set(s);
+      for (const id of allIds) n.delete(id);
+      if (!allOn && !none) for (const id of selected) n.add(id); // Full/None store no explicit caps
+      return n;
+    });
+    setPerms((p) => {
+      const n = { ...p };
+      if (none) delete n[area.key];
+      else n[area.key] = allOn ? "administrator" : "partial";
+      return n;
+    });
+  };
   // Setting an area's coarse level is a PRESET over its capabilities: choosing the
   // top level (edit / on) seeds every capability in the group ON; view / off clears
   // them. Individual toggles then subtract. Capabilities are the enforced truth.
   const applyAreaLevel = (area: RgArea, v: string | undefined) => {
     setPerms((p) => { const n = { ...p }; if (v == null) delete n[area.key]; else n[area.key] = v; return n; });
-    // Platform areas (3-way): Partial keeps its picked caps; Full / No access
-    // clear that platform's caps (Full grants everything via the level; No = none).
+    // Platform areas (3-way): the capability list is ALWAYS shown for Partial and
+    // Full. Full shows every capability on (via the level — no explicit caps
+    // stored); Partial seeds every capability on so you can trim; No clears.
     if (area.kind === "platform") {
       const ids = platformCapIds(area);
-      if (ids.length && v !== "partial") setCaps((s) => { const n = new Set(s); for (const id of ids) n.delete(id); return n; });
+      setCaps((s) => {
+        const n = new Set(s);
+        for (const id of ids) n.delete(id);
+        if (v === "partial") for (const id of ids) n.add(id); // start Partial with all on
+        return n;
+      });
       return;
     }
     const ids = groupCapIds(area);
@@ -333,7 +403,7 @@ function EditorDialog({
             <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-foreground">Display role as its own group</span>
-                <span className="block text-xs text-muted-foreground">Holders of this role also form a group by that name.</span>
+                <span className="block text-xs text-muted-foreground">Holders also appear as a group by this name.</span>
               </span>
               <Switch checked={displayAsGroup} onCheckedChange={setDisplayAsGroup} />
             </label>
@@ -341,24 +411,25 @@ function EditorDialog({
               <Label>Access</Label>
               <div className="space-y-1.5">
                 {adapter.areas.map((a) => {
-                  const cat = a.kind === "platform" && perms[a.key] === "partial" ? platformCatalogueFor(a) : undefined;
+                  // The capability list shows for Partial AND Full (Full = all on).
+                  const showPicker = a.kind === "platform" && (perms[a.key] === "partial" || perms[a.key] === "administrator");
+                  const cat = showPicker ? platformCatalogueFor(a) : undefined;
                   return (
                     <div key={a.key} className="space-y-1.5">
                       <PermRow area={a} value={perms[a.key]} onChange={(v) => applyAreaLevel(a, v)} />
-                      {a.kind === "platform" && perms[a.key] === "partial" ? (
+                      {showPicker ? (
                         cat ? (
                           <div className="ml-3 rounded-lg border border-border p-2">
                             <div className="mb-1 px-1 text-[11px] text-muted-foreground">Capabilities this role has in {a.label}.</div>
                             {cat.groups.map((g) => (
-                              <div key={g.id} className="mb-1.5">
-                                <div className="px-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">{g.label}</div>
-                                {g.capabilities.map((cp) => (
-                                  <label key={cp.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
-                                    <Switch checked={caps.has(cp.id)} onCheckedChange={() => toggleCap(cp.id)} />
-                                    <span className="min-w-0"><span className="text-foreground">{cp.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{cp.id}</span></span>
-                                  </label>
-                                ))}
-                              </div>
+                              <CapGroup
+                                key={g.id}
+                                label={g.label}
+                                capabilities={g.capabilities}
+                                isChecked={(id) => platformCapOn(a, id)}
+                                onToggle={(id, on) => togglePlatformCap(a, [id], on)}
+                                onToggleAll={(ids, on) => togglePlatformCap(a, ids, on)}
+                              />
                             ))}
                           </div>
                         ) : (
@@ -373,20 +444,19 @@ function EditorDialog({
             {catalogues.some((c) => !c.provider || !platformProviderIds.has(c.provider)) ? (
               <div className="space-y-2">
                 <Label>Fine-grained capabilities</Label>
-                <p className="-mt-1 text-xs text-muted-foreground">From the Access Catalogue. Layered on top of the areas above.</p>
+                <p className="-mt-1 text-xs text-muted-foreground">From the Access Catalog.</p>
                 {catalogues.filter((c) => !c.provider || !platformProviderIds.has(c.provider)).map((cat) => (
                   <div key={cat.id} className="rounded-lg border border-border p-2">
                     <div className="mb-1 px-1 text-xs font-semibold text-muted-foreground">{cat.name}</div>
                     {cat.groups.map((g) => (
-                      <div key={g.id} className="mb-1.5">
-                        <div className="px-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">{g.label}</div>
-                        {g.capabilities.map((cp) => (
-                          <label key={cp.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
-                            <Switch checked={caps.has(cp.id)} onCheckedChange={() => toggleCap(cp.id)} />
-                            <span className="min-w-0"><span className="text-foreground">{cp.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{cp.id}</span></span>
-                          </label>
-                        ))}
-                      </div>
+                      <CapGroup
+                        key={g.id}
+                        label={g.label}
+                        capabilities={g.capabilities}
+                        isChecked={(id) => caps.has(id)}
+                        onToggle={(id, on) => setGroupCaps([id], on)}
+                        onToggleAll={setGroupCaps}
+                      />
                     ))}
                   </div>
                 ))}
@@ -411,6 +481,7 @@ export function RolesAndGroups({ adapter }: { adapter: RgAdapter }) {
   const [editing, setEditing] = useState<{ kind: Kind; role?: RgRole; group?: RgGroup } | "new" | null>(null);
   const [drag, setDrag] = useState<DragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
+  const [nonGroupedOpen, setNonGroupedOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [rs, gs] = await Promise.all([adapter.loadRoles(), adapter.loadGroups()]);
@@ -487,10 +558,18 @@ export function RolesAndGroups({ adapter }: { adapter: RgAdapter }) {
     );
   };
 
+  // Roles that don't surface as their own group node — both editable custom
+  // roles and read-only structural tiers (Super Admin, etc.). Collected at the
+  // bottom in a collapsible so they're discoverable even though they aren't in
+  // the tree.
+  const plainRoles = roles.filter((r) => !r.display_as_group);
+  const structural = adapter.structuralRoles ?? [];
+  const nonGroupedCount = plainRoles.length + structural.length;
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">Drag a role or group onto a group to nest it — or onto the top zone to lift it out.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">Drag a role or group onto a group to nest it, or onto the top zone to lift it out.</p>
         <Button size="sm" onClick={() => setEditing("new")}><Plus className="size-3.5" /> Create role or group</Button>
       </div>
 
@@ -508,6 +587,63 @@ export function RolesAndGroups({ adapter }: { adapter: RgAdapter }) {
       ) : (
         <div className="space-y-1">{tree.map((n) => renderNode(n, 0))}</div>
       )}
+
+      {/* Roles that aren't shown as their own group — editable customs + read-only
+          structural tiers, so their existence is visible even off the tree. */}
+      {nonGroupedCount > 0 ? (
+        <div className="rounded-lg border border-border">
+          <button
+            type="button"
+            onClick={() => setNonGroupedOpen((v) => !v)}
+            className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+            aria-expanded={nonGroupedOpen}
+          >
+            <ChevronRight className={`size-4 text-muted-foreground transition-transform ${nonGroupedOpen ? "rotate-90" : ""}`} />
+            <span className="text-sm font-medium text-foreground">roles (non grouped)</span>
+            <span className="text-xs text-muted-foreground">{nonGroupedCount}</span>
+          </button>
+          {nonGroupedOpen ? (
+            <div className="space-y-1 border-t border-border p-2">
+              {plainRoles.map((r) => (
+                <div key={`plain:${r.id}`} className="group flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+                  <Shield className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{r.name}</span>
+                  <Pill tone="neutral">role</Pill>
+                  {adapter.testAsRole ? (
+                    <button type="button" title="Preview as a holder of this role"
+                      onClick={() => adapter.testAsRole!(r)}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100">
+                      <Eye className="size-3.5" /> Test as
+                    </button>
+                  ) : null}
+                  <button type="button" title="Edit"
+                    onClick={() => setEditing({ kind: "role", role: r })}
+                    className="text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100">
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <ConfirmButton
+                    title={`Delete role "${r.name}"?`} description="People holding it lose the role." actionLabel="Delete"
+                    onConfirm={async () => { try { await adapter.deleteRole(r.id); await load(); } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); } }}
+                    buttonTitle="Delete"
+                  >
+                    <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                  </ConfirmButton>
+                </div>
+              ))}
+              {structural.map((s) => (
+                <div key={`struct:${s.name}`} className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  <Shield className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="text-sm font-medium text-foreground">{s.name}</span>
+                    {s.description ? <span className="block text-xs text-muted-foreground">{s.description}</span> : null}
+                  </span>
+                  <Pill tone="accent">view only</Pill>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <EditorDialog open={editing !== null} onClose={() => setEditing(null)} adapter={adapter} groups={groups} editing={editing} onDone={load} />
     </div>

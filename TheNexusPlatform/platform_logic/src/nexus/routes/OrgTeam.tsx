@@ -39,6 +39,7 @@ import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { PeoplePage, CollapsibleSection } from "@/nexus/people/PeoplePage";
 import { RolesAndGroups } from "@/nexus/people/RolesAndGroups";
+import { OrgAccessCatalogue } from "@/nexus/access/InstanceAccessCatalogue";
 import { MemberRoster, type RosterMember } from "@/nexus/people/MemberRoster";
 import { orgRgAdapter } from "@/nexus/people/adapters";
 import { useSession } from "@/nexus/session";
@@ -172,10 +173,10 @@ export function OrgTeam() {
   return (
     <>
       <PeoplePage
-        subtitle="Who runs this organization, and what each role can see and do."
         actions={peopleActions}
         people={peopleContent}
         rolesGroups={<RolesAndGroups adapter={rg} />}
+        accessCatalog={<OrgAccessCatalogue embedded />}
       />
       <OrgInviteDialog orgId={orgId} roles={roles ?? []} open={inviteOpen} onOpenChange={setInviteOpen} onDone={load} />
     </>

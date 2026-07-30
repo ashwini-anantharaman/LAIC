@@ -3,7 +3,7 @@
   "schemaVersion": "1.0",
   "documentType": "capability_catalogue",
   "id": "bridge-platform-access",
-  "name": "Bridge Platform Capability Catalogue",
+  "name": "Bridge Platform Capability Catalog",
   "description": "Atomic capabilities and optional UI mappings published by the Bridge Platform. Learning content capabilities are supplied by a separately provisioned Learning Platform instance.",
   "provider": {
     "kind": "platform",

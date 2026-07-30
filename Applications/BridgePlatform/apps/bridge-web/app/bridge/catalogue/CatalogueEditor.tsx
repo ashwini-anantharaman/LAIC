@@ -20,7 +20,7 @@ import schemaJson from "@/lib/access-catalogue.schema.json";
 
 type TabId = "groups" | "capabilities" | "surfaces" | "resources" | "samples" | "json" | "schema";
 const TABS: { id: TabId; label: string }[] = [
-  { id: "groups", label: "Groups" },
+  { id: "groups", label: "Capability Sets" },
   { id: "capabilities", label: "Capabilities" },
   { id: "surfaces", label: "Surfaces" },
   { id: "resources", label: "Resources" },
@@ -40,10 +40,12 @@ const input = "w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm
 export function CatalogueEditor({
   initial,
   canEdit,
+  embedded = false,
   provider = "bridge",
 }: {
   initial: BridgeCatalogue;
   canEdit: boolean;
+  embedded?: boolean;
   /** Which document this editor session edits (bridge's own, or the library
    *  component's platform-level document). */
   provider?: "bridge" | "library";
@@ -55,7 +57,13 @@ export function CatalogueEditor({
   const [toast, setToast] = useState("");
   const [capEdit, setCapEdit] = useState<BridgeCapability | "new" | null>(null);
   const [surfEdit, setSurfEdit] = useState<BridgeUiSurface | "new" | null>(null);
+  // When adding a cap/surface from inside a group, pre-scope the dialog to it.
+  const [capDefaultGroup, setCapDefaultGroup] = useState<string | null>(null);
+  const [surfDefaultGroup, setSurfDefaultGroup] = useState<string | null>(null);
+  const addCapToGroup = (gid: string) => { setCapDefaultGroup(gid); setCapEdit("new"); };
+  const addSurfToGroup = (gid: string) => { setSurfDefaultGroup(gid); setSurfEdit("new"); };
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const fire = (m: string) => { setToast(m); window.setTimeout(() => setToast(""), 2400); };
   const patch = (next: BridgeCatalogue) => { setDoc(next); setDirty(true); };
@@ -64,7 +72,7 @@ export function CatalogueEditor({
 
   function save() {
     startTransition(async () => {
-      try { await saveCatalogueAction(JSON.stringify(doc), provider); setDirty(false); fire("Catalogue saved"); }
+      try { await saveCatalogueAction(JSON.stringify(doc), provider); setDirty(false); fire("Catalog saved"); }
       catch (e) { fire(e instanceof Error ? e.message : "Save failed"); }
     });
   }
@@ -110,12 +118,12 @@ export function CatalogueEditor({
   const addGroup = (label: string) => {
     if (!label.trim()) return;
     const id = slug(label);
-    if (doc.groups.some((g) => g.id === id)) { fire("A group with that id exists"); return; }
+    if (doc.groups.some((g) => g.id === id)) { fire("A capability set with that id exists"); return; }
     patch({ ...doc, groups: [...doc.groups, { id, label: label.trim(), order: doc.groups.length + 1, capabilityIds: [], uiSurfaceIds: [] }] });
   };
   const renameGroup = (id: string, label: string) => patch({ ...doc, groups: doc.groups.map((g) => (g.id === id ? { ...g, label } : g)) });
   const removeGroup = (id: string) => {
-    if (doc.groups.length <= 1) { fire("Keep at least one group"); return; }
+    if (doc.groups.length <= 1) { fire("Keep at least one capability set"); return; }
     const fallback = doc.groups.find((g) => g.id !== id)!.id;
     patch({
       ...doc,
@@ -136,28 +144,33 @@ export function CatalogueEditor({
   const capsByGroup = (gid: string) => doc.capabilities.filter((c) => c.group === gid);
   const surfsByGroup = (gid: string) => doc.uiSurfaces.filter((s) => s.group === gid);
 
+  const actions = canEdit ? (
+    <div className="flex items-center gap-2">
+      <button type="button" className={btnOutline} onClick={reset} disabled={pending}>↺ Reset defaults</button>
+      <button type="button" className={btnPrimary} onClick={save} disabled={pending || !dirty}>{pending ? "Saving…" : "Save catalog"}</button>
+    </div>
+  ) : null;
+
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Access Catalogue</h1>
-          <p className="text-sm text-neutral-600">
-            The inventory of what Bridge can permission-control. Roles (Teams &amp; roles) bind these capability ids.
-          </p>
-        </div>
-        {canEdit ? (
-          <div className="flex items-center gap-2">
-            <button type="button" className={btnOutline} onClick={reset} disabled={pending}>↺ Reset defaults</button>
-            <button type="button" className={btnPrimary} onClick={save} disabled={pending || !dirty}>{pending ? "Saving…" : "Save catalogue"}</button>
+    <div className={embedded ? "space-y-5" : "mx-auto max-w-4xl space-y-5"}>
+      {embedded ? (
+        canEdit ? (
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {actions}
           </div>
-        ) : null}
-      </header>
+        ) : null
+      ) : (
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Access Catalog</h1>
+          {actions}
+        </header>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
         <span className="rounded-full bg-neutral-100 px-2.5 py-0.5">{doc.provider.kind}/{doc.provider.id}</span>
         {doc.catalogueVersion ? <span className="rounded-full bg-neutral-100 px-2.5 py-0.5">v{doc.catalogueVersion}</span> : null}
         {dirty ? <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-amber-800">Unsaved</span> : null}
-        <span>{doc.groups.length} groups · {doc.capabilities.length} capabilities · {doc.uiSurfaces.length} surfaces · {(doc.resourceTypes ?? []).length} resource types</span>
+        <span>{doc.groups.length} capability sets · {doc.capabilities.length} capabilities · {doc.uiSurfaces.length} surfaces · {(doc.resourceTypes ?? []).length} resource types</span>
       </div>
 
       <div className="flex flex-wrap gap-1 border-b border-neutral-200">
@@ -171,7 +184,7 @@ export function CatalogueEditor({
 
       {tab === "groups" && (
         <div className="space-y-2">
-          <p className="text-sm text-neutral-500">Groups organize the role UI. Each holds capabilities (enforcement keys) and surfaces (nav items).</p>
+          <p className="text-sm text-neutral-500">Capability sets bucket capabilities and the surfaces they unlock.</p>
           {groupsSorted.map((g) => {
             const caps = capsByGroup(g.id); const surfs = surfsByGroup(g.id); const open = expanded.has(g.id);
             return (
@@ -183,36 +196,50 @@ export function CatalogueEditor({
                     : <span className="text-sm font-medium text-neutral-800">{g.label}</span>}
                   <span className="font-mono text-xs text-neutral-400">{g.id}</span>
                   <span className="ml-auto text-xs text-neutral-400">{caps.length} caps · {surfs.length} surfaces</span>
-                  {canEdit ? <button type="button" onClick={() => removeGroup(g.id)} className="text-xs text-red-600 hover:underline" title="Remove group">Remove</button> : null}
+                  {canEdit ? <button type="button" onClick={() => removeGroup(g.id)} className="text-xs text-red-600 hover:underline" title="Remove capability set">Remove</button> : null}
                 </div>
                 {open ? (
                   <div className="space-y-3 border-t border-neutral-200 bg-neutral-50 px-4 py-3 pl-11">
                     <div>
                       <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Capabilities</p>
                       {caps.length ? caps.map((c) => (
-                        <div key={c.id} className="flex flex-wrap items-baseline gap-2 py-0.5 text-sm">
+                        <div key={c.id} className="flex flex-wrap items-center gap-2 py-0.5 text-sm">
                           <span className="text-neutral-800">{c.label}</span>
                           <span className="font-mono text-xs text-neutral-400">{c.id}</span>
                           {c.reserved ? <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">reserved · {c.reserved}</span> : null}
+                          {canEdit ? (
+                            <span className="ml-auto flex items-center gap-2">
+                              <button type="button" onClick={() => setCapEdit(c)} className="text-xs text-neutral-600 hover:underline">Edit</button>
+                              <button type="button" onClick={() => removeCap(c.id)} className="text-xs text-red-600 hover:underline">Delete</button>
+                            </span>
+                          ) : null}
                         </div>
-                      )) : <p className="text-xs text-neutral-400">None in this group.</p>}
+                      )) : <p className="text-xs text-neutral-400">None in this capability set.</p>}
+                      {canEdit ? <button type="button" onClick={() => addCapToGroup(g.id)} className="mt-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100">+ Add capability</button> : null}
                     </div>
                     <div>
                       <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Surfaces</p>
                       {surfs.length ? surfs.map((s) => (
-                        <div key={s.id} className="flex flex-wrap items-baseline gap-2 py-0.5 text-sm">
+                        <div key={s.id} className="flex flex-wrap items-center gap-2 py-0.5 text-sm">
                           <span className="text-neutral-800">{s.label}</span>
                           <span className="font-mono text-xs text-neutral-400">{s.id}</span>
                           <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-500">{s.kind}</span>
+                          {canEdit ? (
+                            <span className="ml-auto flex items-center gap-2">
+                              <button type="button" onClick={() => setSurfEdit(s)} className="text-xs text-neutral-600 hover:underline">Edit</button>
+                              <button type="button" onClick={() => removeSurf(s.id)} className="text-xs text-red-600 hover:underline">Delete</button>
+                            </span>
+                          ) : null}
                         </div>
-                      )) : <p className="text-xs text-neutral-400">None in this group.</p>}
+                      )) : <p className="text-xs text-neutral-400">None in this capability set.</p>}
+                      {canEdit ? <button type="button" onClick={() => addSurfToGroup(g.id)} className="mt-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100">+ Add surface</button> : null}
                     </div>
                   </div>
                 ) : null}
               </div>
             );
           })}
-          {canEdit ? <AddInline placeholder="New group label" onAdd={addGroup} /> : null}
+          {canEdit ? <AddInline placeholder="New capability set label" onAdd={addGroup} /> : null}
         </div>
       )}
 
@@ -236,7 +263,7 @@ export function CatalogueEditor({
                     ) : null}
                   </div>
                 ))}
-                {capsByGroup(g.id).length === 0 ? <p className="text-xs text-neutral-400">No capabilities in this group.</p> : null}
+                {capsByGroup(g.id).length === 0 ? <p className="text-xs text-neutral-400">No capabilities in this capability set.</p> : null}
               </div>
             </div>
           ))}
@@ -264,7 +291,7 @@ export function CatalogueEditor({
 
       {tab === "resources" && (
         <div className="space-y-2">
-          <p className="text-sm text-neutral-500">Resource types a capability can be scoped to (enforcement deferred).</p>
+          <p className="text-sm text-neutral-500">Resource types a capability can be scoped to.</p>
           {(doc.resourceTypes ?? []).map((r) => (
             <div key={r.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 px-4 py-2.5">
               <span className="text-sm text-neutral-800">{r.label}</span>
@@ -280,7 +307,7 @@ export function CatalogueEditor({
       {tab === "samples" && (
         <div className="space-y-2">
           {(doc.sampleRoleTemplates ?? []).length === 0 ? (
-            <p className="text-sm text-neutral-400">No sample roles in this catalogue.</p>
+            <p className="text-sm text-neutral-400">No sample roles in this catalog.</p>
           ) : (doc.sampleRoleTemplates ?? []).map((r) => (
             <div key={r.id} className="rounded-lg border border-neutral-200 px-4 py-3">
               <div className="text-sm font-medium text-neutral-800">{r.name}</div>
@@ -293,11 +320,17 @@ export function CatalogueEditor({
         </div>
       )}
 
-      {tab === "json" && <JsonView title="Live catalogue document" value={doc} />}
+      {tab === "json" && <JsonView title="Live catalog document" value={doc} />}
       {tab === "schema" && <JsonView title="JSON Schema" value={schemaJson} />}
 
-      {capEdit && canEdit ? <CapabilityDialog doc={doc} initial={capEdit === "new" ? null : capEdit} onClose={() => setCapEdit(null)} onSave={upsertCap} /> : null}
-      {surfEdit && canEdit ? <SurfaceDialog doc={doc} initial={surfEdit === "new" ? null : surfEdit} onClose={() => setSurfEdit(null)} onSave={upsertSurf} /> : null}
+      {/* Bottom-of-page guide entry. */}
+      <div className="mt-8 flex justify-center border-t border-neutral-200 pt-5">
+        <button type="button" className={btnOutline} onClick={() => setGuideOpen(true)}>📘 Access Catalog Guide</button>
+      </div>
+      {guideOpen ? <AccessCatalogGuide onClose={() => setGuideOpen(false)} /> : null}
+
+      {capEdit && canEdit ? <CapabilityDialog doc={doc} initial={capEdit === "new" ? null : capEdit} defaultGroup={capDefaultGroup} onClose={() => { setCapEdit(null); setCapDefaultGroup(null); }} onSave={upsertCap} /> : null}
+      {surfEdit && canEdit ? <SurfaceDialog doc={doc} initial={surfEdit === "new" ? null : surfEdit} defaultGroup={surfDefaultGroup} onClose={() => { setSurfEdit(null); setSurfDefaultGroup(null); }} onSave={upsertSurf} /> : null}
 
       {toast ? (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white shadow-lg">{toast}</div>
@@ -329,6 +362,101 @@ function JsonView({ title, value }: { title: string; value: unknown }) {
   );
 }
 
+/**
+ * Access Catalog Guide — static, non-editable explainer of the whole model.
+ * Same canonical copy shown by the console/learning guides.
+ */
+function AccessCatalogGuide({ onClose }: { onClose: () => void }) {
+  const H = ({ children }: { children: React.ReactNode }) => (
+    <h4 className="mt-5 text-sm font-semibold text-neutral-900">{children}</h4>
+  );
+  const P = ({ children }: { children: React.ReactNode }) => (
+    <p className="mt-1.5 text-sm leading-relaxed text-neutral-600">{children}</p>
+  );
+  const Code = ({ children }: { children: React.ReactNode }) => (
+    <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[12px] text-neutral-800">{children}</code>
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(11,18,32,0.4)" }}>
+      <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <h3 className="mb-2 text-base font-semibold text-neutral-900">📘 Access Catalog Guide</h3>
+        <P>
+          The Access Catalog is the <strong>inventory</strong> of everything that can be permission-controlled at
+          this level. It does not assign anyone — it defines the vocabulary that <em>roles</em> are built from.
+          Roles bind to items in here; people get roles.
+        </P>
+
+        <H>The three building blocks</H>
+        <P>
+          <strong>1. Capabilities</strong> — the atomic units of permission (e.g. <Code>nexus.audit.view</Code>).
+          A role is, underneath, just a <strong>set of capability ids</strong>. Capabilities are the only thing
+          actually granted and enforced.
+        </P>
+        <P>
+          <strong>2. Capability sets</strong> — labeled folders that bucket related capabilities (and surfaces). Their job
+          is twofold: they tidy the UI, and each set can back <strong>one coarse toggle</strong> in the role
+          builder — flipping that toggle on seeds every capability in the set onto the role. Capability sets are never
+          stored on a role; they’re the design-time bridge between the simple toggle and the underlying capabilities.
+        </P>
+        <P>
+          <strong>3. Surfaces</strong> — the UI a capability unlocks (a nav tab, screen, or action), each with{" "}
+          <Code>requiredAnyCapabilities</Code>. Holding one of those capabilities reveals the surface; lacking them
+          hides it. This is what makes “turn a capability off → the tab disappears” work.
+        </P>
+        <P>
+          <strong>Resource types</strong> scope a capability to kinds of objects (enforcement is still being layered
+          in), and <strong>sample roles</strong> are starter bundles of capabilities.
+        </P>
+
+        <H>How a role is actually built</H>
+        <P>
+          A saved role stores two things — and a capability-set id is in neither: a set of <strong>coarse area levels</strong>{" "}
+          (No / View / Edit, or No / Partial / Full for platforms) and a flat list of <strong>capability ids</strong>.
+          Setting an area’s coarse level is a preset: the top level seeds every capability in that area’s set;
+          “Partial” lets you hand-pick a subset. The capability list is the <strong>enforced source of truth</strong> —
+          the backend validates it against this catalog and drops anything not in the inventory.
+        </P>
+
+        <H>Reserved (structural) capabilities</H>
+        <P>
+          A capability marked <Code>reserved</Code> is held implicitly by a structural tier — a Super Admin / owner,
+          a full operator, or a program admin — and can <strong>never</strong> be granted to a custom role. Those
+          tiers bypass the catalog and hold everything; the reserved flag just hides such a capability from the role
+          builder so no one can hand it out.
+        </P>
+
+        <H>Per-level catalogs</H>
+        <P>
+          Each level has its own catalog: the platform (Nexus), each organization, each program, and each runtime
+          (Content Studio, Bridge). An org/program starts from the shipped default and only diverges once you edit it
+          (a “·edited” marker appears). Editing one level never touches another.
+        </P>
+
+        <H>Adding a new feature end-to-end</H>
+        <P>
+          1) Add a <strong>capability</strong> to a capability set here; 2) add a <strong>surface</strong> for the UI it
+          unlocks; 3) the role builder’s toggle for that set now grants it; 4) the nav/screen gated by that surface
+          appears for anyone who holds it. A brand-new capability set is purely organizational until a role-builder area is
+          wired to it — that wiring is what turns a set into a working, grantable feature.
+        </P>
+
+        <H>Editing here</H>
+        <P>
+          Use the <strong>Capability Sets</strong> tab to add capabilities/surfaces inline within a set, or the dedicated{" "}
+          <strong>Capabilities</strong> / <strong>Surfaces</strong> tabs. <strong>Save catalog</strong> persists your
+          changes for this level; <strong>Reset defaults</strong> restores the shipped catalog. The{" "}
+          <strong>Export JSON</strong> and <strong>JSON Schema</strong> tabs show the live document and the shape it
+          must follow.
+        </P>
+
+        <div className="mt-5 flex justify-end">
+          <button type="button" className={btnPrimary} onClick={onClose}>Got it</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Modal({ title, children, footer }: { title: string; children: React.ReactNode; footer: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(11,18,32,0.4)" }}>
@@ -341,10 +469,10 @@ function Modal({ title, children, footer }: { title: string; children: React.Rea
   );
 }
 
-function CapabilityDialog({ doc, initial, onClose, onSave }: { doc: BridgeCatalogue; initial: BridgeCapability | null; onClose: () => void; onSave: (c: BridgeCapability) => void }) {
+function CapabilityDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc: BridgeCatalogue; initial: BridgeCapability | null; defaultGroup?: string | null; onClose: () => void; onSave: (c: BridgeCapability) => void }) {
   const [id, setId] = useState(initial?.id ?? "");
   const [label, setLabel] = useState(initial?.label ?? "");
-  const [group, setGroup] = useState(initial?.group ?? doc.groups[0]?.id ?? "");
+  const [group, setGroup] = useState(initial?.group ?? defaultGroup ?? doc.groups[0]?.id ?? "");
   const [reserved, setReserved] = useState<BridgeReservedTier | "none">(initial?.reserved ?? "none");
   const [typeScoped, setTypeScoped] = useState(!!initial?.supportsResourceConstraints);
   const effId = initial ? initial.id : (id.trim() || slug(label));
@@ -358,7 +486,7 @@ function CapabilityDialog({ doc, initial, onClose, onSave }: { doc: BridgeCatalo
     >
       {!initial ? <div><label className="mb-1 block text-xs font-medium text-neutral-600">Capability id</label><input value={id} onChange={(e) => setId(e.target.value)} placeholder={slug(label) || "e.g. bridge.kb.edit"} className={input} /></div> : null}
       <div><label className="mb-1 block text-xs font-medium text-neutral-600">Label</label><input value={label} onChange={(e) => setLabel(e.target.value)} className={input} /></div>
-      <div><label className="mb-1 block text-xs font-medium text-neutral-600">Group</label>
+      <div><label className="mb-1 block text-xs font-medium text-neutral-600">Capability set</label>
         <select value={group} onChange={(e) => setGroup(e.target.value)} className={input}>{doc.groups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</select>
       </div>
       <div><label className="mb-1 block text-xs font-medium text-neutral-600">Reserved to tier (hidden from custom roles)</label>
@@ -372,11 +500,11 @@ function CapabilityDialog({ doc, initial, onClose, onSave }: { doc: BridgeCatalo
   );
 }
 
-function SurfaceDialog({ doc, initial, onClose, onSave }: { doc: BridgeCatalogue; initial: BridgeUiSurface | null; onClose: () => void; onSave: (s: BridgeUiSurface) => void }) {
+function SurfaceDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc: BridgeCatalogue; initial: BridgeUiSurface | null; defaultGroup?: string | null; onClose: () => void; onSave: (s: BridgeUiSurface) => void }) {
   const [id, setId] = useState(initial?.id ?? "");
   const [label, setLabel] = useState(initial?.label ?? "");
   const [kind, setKind] = useState<BridgeUiSurfaceKind>(initial?.kind ?? "navigation");
-  const [group, setGroup] = useState(initial?.group ?? doc.groups[0]?.id ?? "");
+  const [group, setGroup] = useState(initial?.group ?? defaultGroup ?? doc.groups[0]?.id ?? "");
   const [route, setRoute] = useState(initial?.routeOrComponent ?? "");
   const [req, setReq] = useState<Set<string>>(new Set(initial?.requiredAnyCapabilities ?? []));
   const effId = initial ? initial.id : (id.trim() || slug(label));
@@ -395,7 +523,7 @@ function SurfaceDialog({ doc, initial, onClose, onSave }: { doc: BridgeCatalogue
         <div><label className="mb-1 block text-xs font-medium text-neutral-600">Kind</label>
           <select value={kind} onChange={(e) => setKind(e.target.value as BridgeUiSurfaceKind)} className={input}>{SURFACE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}</select>
         </div>
-        <div><label className="mb-1 block text-xs font-medium text-neutral-600">Group</label>
+        <div><label className="mb-1 block text-xs font-medium text-neutral-600">Capability set</label>
           <select value={group} onChange={(e) => setGroup(e.target.value)} className={input}>{doc.groups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</select>
         </div>
       </div>

@@ -85,7 +85,7 @@ export function OperatorGates() {
     <div>
       <PageHeader
         title="Operator gates"
-        subtitle="Self-sign-up pages for platform operators. Every request needs your approval, and gates grant a confined operator role only — never full platform admin."
+        subtitle="Every request needs your approval. Gates grant a confined operator role, never full admin."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> Add a gate

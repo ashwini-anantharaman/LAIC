@@ -23,6 +23,7 @@ export const orgConsoleCatalogue: CapabilityCatalogueDocument = {
     { id: "org.settings.branding", label: "Edit organization branding", group: "settings" },
     { id: "org.settings.categories", label: "Manage program categories", group: "settings" },
     { id: "org.audit.view", label: "View organization audit", group: "audit" },
+    { id: "org.gates.manage", label: "Manage sign-in gates", group: "gates" },
   ],
   resourceTypes: [
     { id: "program", label: "Program" },
@@ -34,12 +35,14 @@ export const orgConsoleCatalogue: CapabilityCatalogueDocument = {
     { id: "team", label: "People", kind: "navigation", group: "people", routeOrComponent: "/team", requiredAnyCapabilities: ["org.people.manage", "org.roles.manage", "org.groups.manage"] },
     { id: "settings", label: "Settings", kind: "navigation", group: "settings", routeOrComponent: "/settings", requiredAnyCapabilities: ["org.settings.branding", "org.settings.categories"] },
     { id: "audit", label: "Audit", kind: "navigation", group: "audit", routeOrComponent: "/audit", requiredAnyCapabilities: ["org.audit.view"] },
+    { id: "gates", label: "Gates", kind: "navigation", group: "gates", routeOrComponent: "/gates", requiredAnyCapabilities: ["org.gates.manage"] },
   ],
   groups: [
     { id: "programs", label: "Programs", order: 1, capabilityIds: ["org.programs.create", "org.programs.configure", "org.programs.delete", "org.programs.assign_admins"], uiSurfaceIds: ["programs"] },
     { id: "people", label: "People", order: 2, capabilityIds: ["org.people.manage", "org.roles.manage", "org.groups.manage", "org.admins.remove", "org.access.set_program_policy"], uiSurfaceIds: ["team"] },
     { id: "settings", label: "Settings", order: 3, capabilityIds: ["org.settings.branding", "org.settings.categories"], uiSurfaceIds: ["settings"] },
     { id: "audit", label: "Audit", order: 4, capabilityIds: ["org.audit.view"], uiSurfaceIds: ["audit"] },
+    { id: "gates", label: "Gates", order: 5, capabilityIds: ["org.gates.manage"], uiSurfaceIds: ["gates"] },
   ],
   sampleRoleTemplates: [],
 };

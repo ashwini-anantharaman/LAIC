@@ -38,6 +38,15 @@ const programRow = (p: typeof programs.$inferSelect): Row => ({
   id: p.id, org_id: p.orgId, name: p.name, category: p.category, description: p.description,
   icon: p.icon, instructor_label: p.instructorLabel, learner_label: p.learnerLabel,
   features: normalizeProgramFeatures((p.metadataJson as Row)?.features as Row),
+  // Per-platform "Partial" provisioning: a capability subset for a platform area
+  // (learning/bridge) that clamps what roles can grant. Absent = No/Full.
+  feature_access: ((p.metadataJson as Row)?.feature_access as Row) ?? null,
+  // Partner ("sister program") fields — a partner is a program row connected to
+  // another program, with its own slug/login and restricted platform views into
+  // the connected program's instances. Absent/false = an ordinary program.
+  is_partner: ((p.metadataJson as Row)?.is_partner as boolean | undefined) ?? false,
+  connected_program_id: ((p.metadataJson as Row)?.connected_program_id as string | undefined) ?? null,
+  slug: ((p.metadataJson as Row)?.slug as string | undefined) ?? null,
   secondary_categories: ((p.metadataJson as Row)?.secondary_categories as string[]) ?? [],
   branding: ((p.metadataJson as Row)?.branding as Row) ?? null,
   // Whether this program's own admins/members may open the platform runtimes
@@ -152,12 +161,79 @@ export async function createProgram(orgId: string, name: string, category: strin
   });
 }
 
+// ── Partners ("sister programs") ────────────────────────────────────────────
+// A partner is a program row flagged is_partner, connected to another program,
+// with its own slug for a dedicated login portal. Its People/Community/Partners
+// are its own (program-scoped); its platform tabs enter the CONNECTED program's
+// instances, restricted by feature_access. All stored migration-free in metadata.
+async function _uniquePartnerSlug(tx: Tx, base: string): Promise<string> {
+  const want = slugify(base) || "partner";
+  const rows = await tx.select({ meta: programs.metadataJson }).from(programs);
+  const taken = new Set(
+    rows.map((r) => (r.meta as Row | undefined)?.slug).filter((s): s is string => typeof s === "string"),
+  );
+  if (!taken.has(want)) return want;
+  for (let n = 2; ; n++) { const s = `${want}-${n}`; if (!taken.has(s)) return s; }
+}
+
+export async function createPartner(orgId: string, opts: {
+  name: string;
+  connectedProgramId: string;
+  description?: string | null;
+  slug?: string;
+  features?: Row;
+  featureAccess?: Record<string, { capabilities: string[] }> | null;
+}): Promise<Row> {
+  return scoped(async (tx) => {
+    const slug = await _uniquePartnerSlug(tx, opts.slug || opts.name);
+    const [p] = await tx.insert(programs).values({
+      orgId,
+      name: opts.name,
+      category: "partner",
+      description: opts.description ?? null,
+      metadataJson: {
+        features: normalizeProgramFeatures(opts.features),
+        is_partner: true,
+        connected_program_id: opts.connectedProgramId,
+        slug,
+        // A partner is a SEPARATE entity — give it its own default theme so it
+        // never inherits the owning org's logo/favicon/accent. An explicit
+        // (empty) branding object stops the shell from falling back to the org.
+        branding: { accent: null, logo: null, favicon: null },
+        ...(opts.featureAccess ? { feature_access: opts.featureAccess } : {}),
+      },
+    }).returning();
+    return programRow(p);
+  });
+}
+
+/** Partners connected to a program (its Partners tab). */
+export async function listPartnersForProgram(programId: string): Promise<Row[]> {
+  return scoped(async (tx) => {
+    const rows = await tx.select().from(programs);
+    return rows
+      .filter((p) => (p.metadataJson as Row | undefined)?.connected_program_id === programId)
+      .map(programRow);
+  });
+}
+
+/** Resolve a partner by its login slug — privileged (the visitor is a partner
+ *  member, not necessarily a member of the owning org). */
+export async function getPartnerBySlug(slug: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.select().from(programs);
+    const m = rows.find((p) => (p.metadataJson as Row | undefined)?.slug === slug && (p.metadataJson as Row | undefined)?.is_partner);
+    return m ? programRow(m) : null;
+  });
+}
+
 /** Replace a program's accessible-feature set (org-admin config). Optionally
  * updates the per-program platform lock (platforms_open) in the same write. */
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
   platformsOpen?: boolean,
+  featureAccess?: Record<string, { capabilities: string[] }> | null,
 ): Promise<Row | null> {
   return scoped(async (tx) => {
     const existing = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
@@ -166,6 +242,7 @@ export async function updateProgramFeatures(
       ...(existing[0].metadataJson as Row),
       features,
       ...(platformsOpen === undefined ? {} : { platforms_open: platformsOpen }),
+      ...(featureAccess === undefined ? {} : { feature_access: featureAccess ?? {} }),
     };
     const [p] = await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId)).returning();
     if (!p) return null;
@@ -766,6 +843,10 @@ export const DEFAULT_CAPABILITIES = {
   // so the Nexus envelope and the org's program config speak one vocabulary.
   // Everything on by default; the operator narrows per org.
   features: { learning: true, bridge: true, appbuilder: true, community: true, teams: true, partners: true },
+  // Per-platform "Partial" provisioning at the org envelope: a capability subset
+  // for a platform area (learning/bridge) that clamps what the org's programs and
+  // roles can grant. Absent key = No/Full (governed by `features`).
+  featureAccess: {} as Record<string, { capabilities: string[] }>,
   // Max programs the org may create; null = unlimited.
   programCapacity: null as number | null,
   // Whether org-level admins/owners automatically get access INTO the org's
@@ -794,6 +875,7 @@ function _capsFromSettings(settings: Record<string, unknown>): Row {
     programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((caps.programTypes as Row) ?? {}) },
     offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((caps.offeringTypes as Row) ?? {}) },
     features: { ...DEFAULT_CAPABILITIES.features, ..._normalizeCapFeatures(caps.features as Row) },
+    featureAccess: (caps.featureAccess as Row | undefined) ?? {},
     programCapacity: (caps.programCapacity as number | null | undefined) ?? null,
     adminsEnterPrograms: (caps.adminsEnterPrograms as boolean | undefined) ?? true,
   };
@@ -817,6 +899,8 @@ export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row
       programTypes: { ...(existing.programTypes as Row), ...((patch.programTypes as Row) ?? {}) },
       offeringTypes: { ...(existing.offeringTypes as Row), ...((patch.offeringTypes as Row) ?? {}) },
       features: { ...(existing.features as Row), ..._normalizeCapFeatures(patch.features as Row) },
+      featureAccess:
+        "featureAccess" in patch ? ((patch.featureAccess as Row) ?? {}) : existing.featureAccess,
       programCapacity:
         "programCapacity" in patch ? ((patch.programCapacity as number | null) ?? null) : existing.programCapacity,
       adminsEnterPrograms:
@@ -900,19 +984,36 @@ export async function setProgramBranding(
 }
 
 // ── Org-defined program categories (Settings → Categories) ──────────────────
-// The taxonomy lives in organizations.settings.program_categories. When unset
-// (orgs that predate the feature), the effective list derives from categories
-// already in use, so nothing ever disappears.
-async function _effectiveCategories(tx: Tx, orgId: string): Promise<string[]> {
-  const r = await tx.select({ settings: organizations.settings }).from(organizations)
-    .where(eq(organizations.id, orgId)).limit(1);
-  const stored = ((r[0]?.settings as Row | undefined)?.program_categories as string[] | undefined) ?? null;
-  if (stored) return stored;
-  const progs = await tx.select({ category: programs.category }).from(programs).where(eq(programs.orgId, orgId));
-  return [...new Set(progs.map((p) => p.category))].sort((a, b) => a.localeCompare(b));
+// The taxonomy lives in organizations.settings.program_categories. Categories
+// are identified by NAME (programs reference them by name); nesting adds a
+// `parent` pointer (another category's name, or null for a root). Storage is
+// backward-compatible: a legacy string[] is read as flat root categories.
+// When unset, the effective list derives from categories already in use.
+export interface CategoryNode { name: string; parent: string | null }
+
+function _normalizeCategories(stored: unknown): CategoryNode[] | null {
+  if (!Array.isArray(stored)) return null;
+  return stored.map((c) =>
+    typeof c === "string"
+      ? { name: c, parent: null }
+      : { name: String((c as Row).name), parent: ((c as Row).parent as string | null) ?? null },
+  );
 }
 
-async function _saveCategories(tx: Tx, orgId: string, list: string[]): Promise<void> {
+async function _effectiveCategories(tx: Tx, orgId: string): Promise<CategoryNode[]> {
+  const r = await tx.select({ settings: organizations.settings }).from(organizations)
+    .where(eq(organizations.id, orgId)).limit(1);
+  const stored = _normalizeCategories((r[0]?.settings as Row | undefined)?.program_categories);
+  if (stored) {
+    // Drop parent pointers that reference a category no longer present.
+    const names = new Set(stored.map((c) => c.name));
+    return stored.map((c) => ({ name: c.name, parent: c.parent && names.has(c.parent) ? c.parent : null }));
+  }
+  const progs = await tx.select({ category: programs.category }).from(programs).where(eq(programs.orgId, orgId));
+  return [...new Set(progs.map((p) => p.category))].sort((a, b) => a.localeCompare(b)).map((name) => ({ name, parent: null }));
+}
+
+async function _saveCategories(tx: Tx, orgId: string, list: CategoryNode[]): Promise<void> {
   const r = await tx.select({ settings: organizations.settings }).from(organizations)
     .where(eq(organizations.id, orgId)).limit(1);
   const settings: Row = { ...((r[0]?.settings as Row) ?? {}) };
@@ -920,22 +1021,46 @@ async function _saveCategories(tx: Tx, orgId: string, list: string[]): Promise<v
   await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));
 }
 
-export async function listOrgCategories(orgId: string): Promise<string[]> {
+export async function listOrgCategories(orgId: string): Promise<CategoryNode[]> {
   return scoped((tx) => _effectiveCategories(tx, orgId));
 }
 
-export async function addOrgCategory(orgId: string, name: string): Promise<string[]> {
+export async function addOrgCategory(orgId: string, name: string, parent?: string | null): Promise<CategoryNode[]> {
   return scoped(async (tx) => {
     const list = await _effectiveCategories(tx, orgId);
-    if (!list.some((c) => c.toLowerCase() === name.toLowerCase())) list.push(name);
+    if (!list.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+      const p = parent && list.some((c) => c.name === parent) ? parent : null;
+      list.push({ name, parent: p });
+    }
+    await _saveCategories(tx, orgId, list);
+    return list;
+  });
+}
+
+/** Reparent a category (nesting). Guards against cycles (a category can't be
+ *  nested under itself or a descendant). parent=null lifts it to a root. */
+export async function setOrgCategoryParent(orgId: string, name: string, parent: string | null): Promise<CategoryNode[]> {
+  return scoped(async (tx) => {
+    const list = await _effectiveCategories(tx, orgId);
+    const node = list.find((c) => c.name === name);
+    if (!node) throw new Error("Category not found");
+    if (parent) {
+      if (parent === name) throw new Error("A category can't be nested under itself");
+      if (!list.some((c) => c.name === parent)) throw new Error("Parent category not found");
+      // Walk up from `parent`; if we reach `name`, it's a descendant → cycle.
+      const parentOf = new Map(list.map((c) => [c.name, c.parent]));
+      let cur: string | null = parent;
+      while (cur) { if (cur === name) throw new Error("Can't nest a category under its own descendant"); cur = parentOf.get(cur) ?? null; }
+    }
+    node.parent = parent;
     await _saveCategories(tx, orgId, list);
     return list;
   });
 }
 
 /** Remove a category. Refused while any program uses it as PRIMARY; silently
- * stripped from secondaries. */
-export async function removeOrgCategory(orgId: string, name: string): Promise<string[]> {
+ * stripped from secondaries. Its child categories move up to its parent. */
+export async function removeOrgCategory(orgId: string, name: string): Promise<CategoryNode[]> {
   return scoped(async (tx) => {
     const inUse = await tx.select({ id: programs.id }).from(programs)
       .where(and(eq(programs.orgId, orgId), eq(programs.category, name)));
@@ -951,15 +1076,20 @@ export async function removeOrgCategory(orgId: string, name: string): Promise<st
         await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, p.id));
       }
     }
-    const list = (await _effectiveCategories(tx, orgId)).filter((c) => c !== name);
-    await _saveCategories(tx, orgId, list);
-    return list;
+    const list = await _effectiveCategories(tx, orgId);
+    const removed = list.find((c) => c.name === name);
+    const next = list
+      .filter((c) => c.name !== name)
+      .map((c) => (c.parent === name ? { ...c, parent: removed?.parent ?? null } : c));
+    await _saveCategories(tx, orgId, next);
+    return next;
   });
 }
 
-/** Rename a category everywhere: the stored list, every program's primary, and
- * every secondary list. Renaming onto an existing name merges the two. */
-export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<string[]> {
+/** Rename a category everywhere: the stored list (name + any child's parent
+ * pointer), every program's primary, and every secondary list. Renaming onto an
+ * existing name merges the two. */
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<CategoryNode[]> {
   return scoped(async (tx) => {
     await tx.update(programs).set({ category: to })
       .where(and(eq(programs.orgId, orgId), eq(programs.category, from)));
@@ -974,9 +1104,17 @@ export async function renameOrgCategory(orgId: string, from: string, to: string)
         await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, p.id));
       }
     }
-    const list = [...new Set((await _effectiveCategories(tx, orgId)).map((c) => (c === from ? to : c)))];
-    await _saveCategories(tx, orgId, list);
-    return list;
+    const list = await _effectiveCategories(tx, orgId);
+    // Rename the node and repoint children; merge if `to` already exists.
+    const merged = new Map<string, CategoryNode>();
+    for (const c of list) {
+      const nm = c.name === from ? to : c.name;
+      const pr = c.parent === from ? to : c.parent;
+      if (!merged.has(nm)) merged.set(nm, { name: nm, parent: pr === nm ? null : pr });
+    }
+    const next = [...merged.values()];
+    await _saveCategories(tx, orgId, next);
+    return next;
   });
 }
 

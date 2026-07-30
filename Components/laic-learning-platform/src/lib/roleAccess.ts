@@ -53,11 +53,6 @@ const CAPABILITY_SCREEN_EXTRAS: { anyOf: string[]; screen: string; label: string
     label: 'People & Roles',
   },
   {
-    anyOf: ['learning.repository.organize'],
-    screen: 'admin-access-catalogue',
-    label: 'Access Catalogue',
-  },
-  {
     anyOf: ['learning.publish.release', 'learning.publish.audience'],
     screen: 'admin-publishing',
     label: 'Publishing & Governance',

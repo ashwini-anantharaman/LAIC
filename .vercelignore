@@ -18,3 +18,8 @@ Applications/BridgePlatform/apps/bridge-web/test-results
 # 100 MB per-file upload limit and hangs/fails the deploy.
 Applications/BridgePlatform/apps/bridge-web/.next-e2e
 Applications/BridgePlatform/apps/bridge-web/playwright-report
+# Git-clone builds never carry these; a CLI deploy from the repo root would
+# otherwise try to upload every tree's node_modules / build output and hang.
+**/node_modules
+**/.next
+**/dist

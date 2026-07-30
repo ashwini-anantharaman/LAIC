@@ -770,6 +770,65 @@ export async function listProgramOrgAffiliations(programId: string): Promise<Row
   return scoped(async (tx) => (await tx.select().from(programOrganizationAffiliations).where(eq(programOrganizationAffiliations.programId, programId))).map(poaRow));
 }
 
+/** A partner org's granted access to a program: a role's shape (perms + fine
+ *  capabilities), stored migration-free under the affiliation's metadata_json.
+ *  This is the "provision a partner org like a person" grant. */
+export interface PartnerAccessGrant { perms?: Record<string, unknown>; capabilities?: string[]; updatedAt?: string }
+
+/** Set (or clear) a partner org affiliation's granted access. Scoped — the
+ *  program's admin (an org member) performs this. */
+export async function setProgramOrgAffiliationAccess(id: string, access: PartnerAccessGrant | null): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(programOrganizationAffiliations).where(eq(programOrganizationAffiliations.id, id)).limit(1);
+    if (!r.length) return null;
+    const meta: Row = { ...((r[0].metadataJson as Row) ?? {}) };
+    if (access === null) delete meta.access; else meta.access = access as unknown as Row;
+    const [updated] = await tx.update(programOrganizationAffiliations).set({ metadataJson: meta }).where(eq(programOrganizationAffiliations.id, id)).returning();
+    return updated ? poaRow(updated) : null;
+  });
+}
+
+/** Resolve a program within an org by its slugified name — privileged, for the
+ *  partner portal (the viewer is a partner-org member, not an org member). */
+export async function getProgramByOrgAndSlug(orgId: string, programSlug: string): Promise<Row | null> {
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return asPrivileged(async (tx) => {
+    const rows = await tx.select().from(programs).where(eq(programs.orgId, orgId));
+    const m = rows.find((p) => slug(p.name) === programSlug);
+    if (!m) return null;
+    return {
+      id: m.id, org_id: m.orgId, name: m.name, description: m.description,
+      branding: ((m.metadataJson as Row)?.branding as Row) ?? null,
+    };
+  });
+}
+
+/** Enforcement read: the ACTIVE partner grant a set of orgs holds on a program,
+ *  if any. Privileged — the caller is a partner-org member, not an org member of
+ *  the program's owner, so RLS would otherwise hide the affiliation row. Returns
+ *  the first active affiliation carrying a non-empty capability grant. */
+export async function getActivePartnerAccessForOrgs(
+  programId: string,
+  orgIds: string[],
+): Promise<{ affiliationId: string; organizationId: string; access: PartnerAccessGrant } | null> {
+  if (!orgIds.length) return null;
+  return asPrivileged(async (tx) => {
+    const rows = await tx.select().from(programOrganizationAffiliations)
+      .where(and(
+        eq(programOrganizationAffiliations.programId, programId),
+        inArray(programOrganizationAffiliations.organizationId, orgIds),
+        eq(programOrganizationAffiliations.status, "active"),
+      ));
+    for (const r of rows) {
+      const access = (r.metadataJson as Row | undefined)?.access as PartnerAccessGrant | undefined;
+      if (access && (Array.isArray(access.capabilities) ? access.capabilities.length : Object.keys(access.perms ?? {}).length)) {
+        return { affiliationId: r.id, organizationId: r.organizationId, access };
+      }
+    }
+    return null;
+  });
+}
+
 // Incoming affiliation requests addressed to an org (Org B's inbox). Privileged
 // read enriched with the program name + inviting org id — the route verifies the
 // caller belongs to `orgId` first, and RLS would otherwise hide the program row
@@ -1617,6 +1676,50 @@ export async function getPublicGate(orgSlug: string, gateSlug: string): Promise<
         theme_logo_url: (theme.logo_url as string) ?? null,
       },
       program_name: prog.length ? prog[0].name : null,
+    };
+  });
+}
+
+/**
+ * Resolve a gate by the PARTNER's own slug (/partner/<slug>/<gate>). A partner
+ * is a program row; its gate lives on that program under the owning org. The
+ * page brands as the PARTNER (its own name/theme) but the session still binds to
+ * the owning org (partner members are program-scoped members there). Privileged.
+ */
+export async function getPublicPartnerGate(partnerSlug: string, gateSlug: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const progs = await tx.select().from(programs);
+    const partner = progs.find((p) => {
+      const m = p.metadataJson as Row | undefined;
+      return m?.slug === partnerSlug && m?.is_partner;
+    });
+    if (!partner) return null;
+    const orgs = await tx.select().from(organizations).where(eq(organizations.id, partner.orgId)).limit(1);
+    if (!orgs.length) return null;
+    const org = orgs[0];
+    const r = await tx.select().from(gates)
+      .where(and(eq(gates.organizationId, org.id), eq(gates.slug, gateSlug), eq(gates.programId, partner.id))).limit(1);
+    if (!r.length) return null;
+    const g = r[0];
+    const roleIds = gateRoleIds(g);
+    let roles: Array<{ id: string; name: string }> = [];
+    if (roleIds.length) {
+      const rows = await tx.select({ id: programRoles.id, name: programRoles.name }).from(programRoles).where(inArray(programRoles.id, roleIds));
+      const byId = new Map(rows.map((x) => [x.id, x.name ?? ""]));
+      roles = roleIds.filter((id) => byId.has(id)).map((id) => ({ id, name: byId.get(id) ?? "" }));
+    }
+    const branding = ((partner.metadataJson as Row | undefined)?.branding as Row | undefined) ?? {};
+    return {
+      ...gateRow(g),
+      roles,
+      // org.slug binds the sign-in session to the owning org; the name/theme are
+      // the PARTNER's so the page reads as the partner, not the org.
+      org: {
+        id: org.id, slug: org.slug, name: partner.name,
+        theme_accent_color: (branding.accent as string) ?? null,
+        theme_logo_url: (branding.logo as string) ?? null,
+      },
+      program_name: partner.name,
     };
   });
 }

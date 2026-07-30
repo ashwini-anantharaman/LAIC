@@ -205,6 +205,38 @@ export async function resolvePlatformAccess(
     if (!program) continue;
     sawProgram = true;
 
+    // PARTNER access: the requested program is a partner ("sister program"). Its
+    // platform tabs enter the CONNECTED program's instance (so partners see the
+    // parent's content), restricted to the capabilities the partner was
+    // provisioned (feature_access). Resolve the DATA scope to the connected
+    // program; the capabilities drive what the app shows.
+    const partnerRow = program as Row;
+    if (partnerRow.is_partner && partnerRow.connected_program_id) {
+      const partnerFeatures = normalizeProgramFeatures(program.features as Record<string, unknown>);
+      const membership = _orgMembership(user, program.org_id as string);
+      const isPartnerMember =
+        !!membership &&
+        (user.memberships.some((m) => m.program_id === (partnerRow.id as string)) ||
+          user.memberships.some((m) => m.org_id === program.org_id && ["owner", "administrator"].includes(m.role)));
+      if (!membership || !isPartnerMember) continue;
+      if (!partnerFeatures[area]) { featureDisabled = true; continue; }
+      const connected = await db.getProgram(partnerRow.connected_program_id as string).catch(() => null);
+      if (!connected) continue;
+      const connFeatures = normalizeProgramFeatures(connected.features as Record<string, unknown>);
+      if (!connFeatures[area]) { featureDisabled = true; continue; }
+      const fa = (partnerRow.feature_access as Record<string, { capabilities?: string[] }> | null | undefined)?.[area]?.capabilities;
+      return {
+        profileId: (membership.profile_id as string) ?? user.id,
+        orgId: connected.org_id as string,
+        programId: connected.id as string,
+        programName: connected.name as string,
+        level: "edit",
+        platformRole: null,
+        roleName: "Partner access",
+        programRoleCapabilities: fa && fa.length ? fa : null,
+      };
+    }
+
     const features = normalizeProgramFeatures(program.features as Record<string, unknown>);
 
     const membership = _orgMembership(user, program.org_id as string);

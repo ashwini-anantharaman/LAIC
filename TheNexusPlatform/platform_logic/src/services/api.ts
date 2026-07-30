@@ -222,6 +222,13 @@ export async function listMembers(orgId: string): Promise<OrgMember[]> {
   return request<OrgMember[]>(`/api/platform/orgs/${orgId}/members`);
 }
 
+/** A single program, readable by any member of it (unlike the org-wide list,
+ *  which requires org-level staff). The workspace shell uses this so a program-
+ *  scoped person — e.g. a partner admin — can load its program (incl is_partner). */
+export async function getProgram(programId: string): Promise<Program> {
+  return request<Program>(`/api/programs/${programId}`);
+}
+
 export interface OrgSummary {
   id: string;
   name: string;
@@ -500,6 +507,32 @@ export async function createProgramOrgAffiliation(
 export async function updateProgramOrgAffiliation(id: string, status: string): Promise<ProgramOrgAffiliation> {
   return request<ProgramOrgAffiliation>(`/api/platform/org-affiliations/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
 }
+/** Partner portal: the gated program view a partner-org member is entitled to,
+ *  resolved by the caller's own org affiliation. 403 if no active grant. */
+export interface PartnerProgramContext {
+  program: { id: string; name: string; description: string | null; branding: { accent: string | null; logo: string | null } | null };
+  org_name: string;
+  org_slug: string;
+  program_slug: string;
+  capabilities: string[];
+  surfaces: { id: string; label: string; group: string | null }[];
+}
+export async function getPartnerProgramContext(orgSlug: string, programSlug: string): Promise<PartnerProgramContext> {
+  return request<PartnerProgramContext>(`/api/platform/partner/context?org_slug=${encodeURIComponent(orgSlug)}&program_slug=${encodeURIComponent(programSlug)}`);
+}
+
+/** Grant a partner org a catalog-based, gated view of a program (capabilities
+ *  validated server-side against the program's Access Catalog). */
+export async function setProgramOrgAffiliationAccess(
+  programId: string,
+  affiliationId: string,
+  payload: { capabilities: string[]; perms?: Record<string, unknown> },
+): Promise<ProgramOrgAffiliation> {
+  return request<ProgramOrgAffiliation>(
+    `/api/platform/programs/${programId}/org-affiliations/${affiliationId}/access`,
+    { method: "PUT", body: JSON.stringify(payload) },
+  );
+}
 export async function listIncomingOrgAffiliations(orgId: string): Promise<ProgramOrgAffiliation[]> {
   return request<ProgramOrgAffiliation[]>(`/api/platform/orgs/${orgId}/incoming-affiliations`);
 }
@@ -538,22 +571,31 @@ export async function deleteProgram(programId: string): Promise<void> {
 }
 
 // ── Org-defined program categories (Settings → Categories) ──────────────────
-export async function listOrgCategories(orgId: string): Promise<string[]> {
-  return request<string[]>(`/api/platform/orgs/${orgId}/categories`);
+// Categories are name-identified with an optional `parent` for nesting (a
+// folder tree). Programs still reference a category by name (primary + secondary).
+export interface CategoryNode { name: string; parent: string | null }
+export async function listOrgCategories(orgId: string): Promise<CategoryNode[]> {
+  return request<CategoryNode[]>(`/api/platform/orgs/${orgId}/categories`);
 }
-export async function addOrgCategory(orgId: string, name: string): Promise<string[]> {
-  return request<string[]>(`/api/platform/orgs/${orgId}/categories`, {
+export async function addOrgCategory(orgId: string, name: string, parent?: string | null): Promise<CategoryNode[]> {
+  return request<CategoryNode[]>(`/api/platform/orgs/${orgId}/categories`, {
     method: "POST",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, parent: parent ?? null }),
   });
 }
-export async function removeOrgCategory(orgId: string, name: string): Promise<string[]> {
-  return request<string[]>(`/api/platform/orgs/${orgId}/categories?name=${encodeURIComponent(name)}`, {
+export async function setOrgCategoryParent(orgId: string, name: string, parent: string | null): Promise<CategoryNode[]> {
+  return request<CategoryNode[]>(`/api/platform/orgs/${orgId}/categories/parent`, {
+    method: "PUT",
+    body: JSON.stringify({ name, parent }),
+  });
+}
+export async function removeOrgCategory(orgId: string, name: string): Promise<CategoryNode[]> {
+  return request<CategoryNode[]>(`/api/platform/orgs/${orgId}/categories?name=${encodeURIComponent(name)}`, {
     method: "DELETE",
   });
 }
-export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<string[]> {
-  return request<string[]>(`/api/platform/orgs/${orgId}/categories`, {
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<CategoryNode[]> {
+  return request<CategoryNode[]>(`/api/platform/orgs/${orgId}/categories`, {
     method: "PATCH",
     body: JSON.stringify({ from, to }),
   });
@@ -566,17 +608,51 @@ export async function createProgram(orgId: string, program: DraftProgramInput): 
   });
 }
 
-/** Update which feature-areas are accessible inside a program (org-admin config). */
+// ── Partners ("sister programs") ────────────────────────────────────────────
+/** Create a partner connected to one of the org's programs. A partner is a
+ *  program with its own slug/login and restricted platform views. */
+export async function createPartner(
+  orgId: string,
+  input: {
+    name: string;
+    description?: string;
+    connected_program_id: string;
+    slug?: string;
+    features?: Record<string, boolean>;
+    feature_access?: Record<string, { capabilities: string[] }>;
+  },
+): Promise<Program> {
+  return request<Program>(`/api/platform/orgs/${orgId}/partners`, { method: "POST", body: JSON.stringify(input) });
+}
+/** The partners connected to a program (its Partners tab). */
+export async function listPartnersForProgram(programId: string): Promise<Program[]> {
+  return request<Program[]>(`/api/platform/programs/${programId}/partners`);
+}
+export interface PartnerPortal {
+  partner: Program;
+  connected_program: { id: string; name: string } | null;
+  org_id: string;
+  org_slug: string | null;
+}
+/** Resolve a partner by its login slug (partner portal). */
+export async function getPartnerPortal(slug: string): Promise<PartnerPortal> {
+  return request<PartnerPortal>(`/api/platform/partner-portal/${encodeURIComponent(slug)}`);
+}
+
+/** Update which feature-areas are accessible inside a program (org-admin config).
+ *  `featureAccess` carries per-platform Partial capability subsets. */
 export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
   platformsOpen?: boolean,
+  featureAccess?: Record<string, { capabilities: string[] }>,
 ): Promise<Program> {
+  const body: Record<string, unknown> = { features };
+  if (platformsOpen !== undefined) body.platforms_open = platformsOpen;
+  if (featureAccess !== undefined) body.feature_access = featureAccess;
   return request<Program>(`/api/platform/programs/${programId}/features`, {
     method: "PATCH",
-    body: JSON.stringify(
-      platformsOpen === undefined ? { features } : { features, platforms_open: platformsOpen },
-    ),
+    body: JSON.stringify(body),
   });
 }
 
@@ -847,6 +923,9 @@ export interface OrgCapabilities {
   offeringTypes: Record<string, boolean>;
   /** Feature-areas the org may use — same six keys as per-program features. */
   features: Record<string, boolean>;
+  /** Per-platform "Partial" provisioning: capability subsets per platform area
+   *  (learning/bridge) that clamp what the org's programs and roles can grant. */
+  featureAccess?: Record<string, { capabilities: string[] }>;
   /** Max programs the org may create; null = unlimited. */
   programCapacity?: number | null;
   /** May org-level admins enter the org's programs? Absent/true = yes. */
@@ -1133,6 +1212,10 @@ export async function rejectProgramGateRequest(programId: string, id: string): P
 }
 
 /** Public pre-auth gate config (no session needed). */
+/** A partner's own gate, resolved by the partner's slug (/partner/:slug/:gate). */
+export async function getPublicPartnerGate(partnerSlug: string, gateSlug: string): Promise<PublicGate> {
+  return request<PublicGate>(`/api/gates/partner/${encodeURIComponent(partnerSlug)}/${encodeURIComponent(gateSlug)}`);
+}
 export async function getPublicGate(orgSlug: string, gateSlug: string): Promise<PublicGate> {
   return request<PublicGate>(`/api/gates/by-path/${encodeURIComponent(orgSlug)}/${encodeURIComponent(gateSlug)}`);
 }

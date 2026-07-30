@@ -92,7 +92,7 @@ export function OrgGates() {
     <div>
       <PageHeader
         title="Gates"
-        subtitle="Org-level sign-up / sign-in pages — people who enter join this organization's staff with the role you choose."
+        subtitle="People who enter join this organization's staff with the role you choose."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> Add a gate

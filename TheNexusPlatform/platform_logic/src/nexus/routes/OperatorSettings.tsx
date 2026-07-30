@@ -41,7 +41,7 @@ export function OperatorSettings() {
 
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Nexus's own name, theme, and logo." />
+      <PageHeader title="Settings" />
       <Section title="Branding">
         <ThemeEditor
           name={title}

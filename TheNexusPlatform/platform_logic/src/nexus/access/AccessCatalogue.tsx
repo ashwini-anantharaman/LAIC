@@ -5,8 +5,8 @@
  * so one screen edits every catalogue: nexus/org/program consoles + learning +
  * bridge. See ACCESS_CATALOGUE_DESIGN.md.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Copy, FileJson, KeyRound, LayoutList, Plus, RotateCcw, Save, Shield, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { BookOpen, ChevronDown, ChevronRight, Copy, FileJson, KeyRound, LayoutList, Plus, RotateCcw, Save, Shield, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -25,7 +25,7 @@ import schemaJson from "./access-catalogue.schema.json";
 
 type TabId = "groups" | "capabilities" | "surfaces" | "resources" | "samples" | "json" | "schema";
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: "groups", label: "Groups", icon: <LayoutList className="size-3.5" /> },
+  { id: "groups", label: "Capability Sets", icon: <LayoutList className="size-3.5" /> },
   { id: "capabilities", label: "Capabilities", icon: <KeyRound className="size-3.5" /> },
   { id: "surfaces", label: "Surfaces", icon: <LayoutList className="size-3.5" /> },
   { id: "resources", label: "Resources", icon: <LayoutList className="size-3.5" /> },
@@ -52,7 +52,7 @@ export interface CatalogueSource {
   canEdit?: boolean;
 }
 
-export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
+export function AccessCatalogue({ source, embedded = false }: { source?: CatalogueSource; embedded?: boolean } = {}) {
   const multi = !source;
   const canEdit = source ? source.canEdit !== false : true;
   const [providers, setProviders] = useState<CatalogueListEntry[]>([]);
@@ -63,7 +63,13 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
   const [busy, setBusy] = useState(false);
   const [capEdit, setCapEdit] = useState<Capability | "new" | null>(null);
   const [surfEdit, setSurfEdit] = useState<UiSurface | "new" | null>(null);
+  // When adding a cap/surface from inside a group, pre-scope the dialog to it.
+  const [capDefaultGroup, setCapDefaultGroup] = useState<string | null>(null);
+  const [surfDefaultGroup, setSurfDefaultGroup] = useState<string | null>(null);
+  const addCapToGroup = (gid: string) => { setCapDefaultGroup(gid); setCapEdit("new"); };
+  const addSurfToGroup = (gid: string) => { setSurfDefaultGroup(gid); setSurfEdit("new"); };
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [guideOpen, setGuideOpen] = useState(false);
   const toggleGroup = (id: string) =>
     setExpandedGroups((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -133,13 +139,13 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
   const addGroup = (label: string) => {
     if (!doc || !label.trim()) return;
     const id = slug(label);
-    if (doc.groups.some((g) => g.id === id)) { toast.error("A group with that id exists"); return; }
+    if (doc.groups.some((g) => g.id === id)) { toast.error("A capability set with that id exists"); return; }
     patch({ ...doc, groups: [...doc.groups, { id, label: label.trim(), order: doc.groups.length + 1, capabilityIds: [], uiSurfaceIds: [] }] });
   };
   const renameGroup = (id: string, label: string) => { if (doc) patch({ ...doc, groups: doc.groups.map((g) => (g.id === id ? { ...g, label } : g)) }); };
   const removeGroup = (id: string) => {
     if (!doc) return;
-    if (doc.groups.length <= 1) { toast.error("Keep at least one group"); return; }
+    if (doc.groups.length <= 1) { toast.error("Keep at least one capability set"); return; }
     const fallback = doc.groups.find((g) => g.id !== id)!.id;
     patch({
       ...doc,
@@ -160,32 +166,43 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
   const capsByGroup = (gid: string) => (doc?.capabilities ?? []).filter((c) => c.group === gid);
   const surfsByGroup = (gid: string) => (doc?.uiSurfaces ?? []).filter((s) => s.group === gid);
 
+  // The provider selector + Save/Reset actions — shared between the standalone
+  // PageHeader and the compact embedded row (People → Access Catalog sub-tab).
+  const actionBar = (
+    <div className="flex flex-wrap items-center gap-2">
+      {multi ? (
+        <Select value={providerId} onValueChange={setProviderId}>
+          <SelectTrigger className="h-9 w-52"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {providers.map((p) => (
+              <SelectItem key={p.providerId} value={p.providerId}>{p.name}{p.customized ? " ·edited" : ""}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+      {canEdit ? (
+        <>
+          <Button variant="outline" size="sm" onClick={reset} disabled={busy || !doc}><RotateCcw className="size-3.5" /> Reset defaults</Button>
+          <Button size="sm" onClick={save} disabled={busy || !doc || !dirty}><Save className="size-3.5" /> {busy ? "Saving…" : "Save catalog"}</Button>
+        </>
+      ) : null}
+    </div>
+  );
+
   return (
     <div>
-      <PageHeader
-        title={source?.title ?? "Access Catalogue"}
-        subtitle={source?.subtitle ?? "The platform inventory of what can be permission-controlled. Roles bind against these ids."}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {multi ? (
-              <Select value={providerId} onValueChange={setProviderId}>
-                <SelectTrigger className="h-9 w-52"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {providers.map((p) => (
-                    <SelectItem key={p.providerId} value={p.providerId}>{p.name}{p.customized ? " ·edited" : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
-            {canEdit ? (
-              <>
-                <Button variant="outline" size="sm" onClick={reset} disabled={busy || !doc}><RotateCcw className="size-3.5" /> Reset defaults</Button>
-                <Button size="sm" onClick={save} disabled={busy || !doc || !dirty}><Save className="size-3.5" /> {busy ? "Saving…" : "Save catalogue"}</Button>
-              </>
-            ) : null}
-          </div>
-        }
-      />
+      {embedded ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          {source?.subtitle ? <p className="text-sm text-muted-foreground">{source.subtitle}</p> : <span />}
+          {actionBar}
+        </div>
+      ) : (
+        <PageHeader
+          title={source?.title ?? "Access Catalog"}
+          subtitle={source?.subtitle}
+          actions={actionBar}
+        />
+      )}
 
       {!doc ? (
         <Spinner />
@@ -211,7 +228,7 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
 
           {tab === "groups" && (
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Groups organize the role UI. Each holds capabilities (enforcement keys) and surfaces (nav items).</p>
+              <p className="text-sm text-muted-foreground">Capability sets bucket capabilities and the surfaces they unlock.</p>
               {groupsSorted.map((g) => {
                 const caps = capsByGroup(g.id);
                 const surfs = surfsByGroup(g.id);
@@ -231,7 +248,7 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
                       <Input value={g.label} onChange={(e) => renameGroup(g.id, e.target.value)} className="h-8 max-w-xs" />
                       <span className="font-mono text-xs text-muted-foreground">{g.id}</span>
                       <span className="ml-auto text-xs text-muted-foreground">{caps.length} caps · {surfs.length} surfaces</span>
-                      <ConfirmButton title={`Remove group "${g.label}"?`} description="Its capabilities/surfaces move to another group." actionLabel="Remove" onConfirm={() => removeGroup(g.id)} buttonTitle="Remove group">
+                      <ConfirmButton title={`Remove capability set "${g.label}"?`} description="Its capabilities/surfaces move to another set." actionLabel="Remove" onConfirm={() => removeGroup(g.id)} buttonTitle="Remove capability set">
                         <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
                       </ConfirmButton>
                     </div>
@@ -244,14 +261,25 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
                           {caps.length ? (
                             <div className="flex flex-col gap-1">
                               {caps.map((c) => (
-                                <div key={c.id} className="flex items-center gap-2 text-sm">
+                                <div key={c.id} className="group/row flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-accent/40">
                                   <span className="text-foreground">{c.label}</span>
                                   <span className="font-mono text-xs text-muted-foreground">{c.id}</span>
                                   {c.reserved ? <Pill tone="accent">reserved · {c.reserved}</Pill> : null}
+                                  {canEdit ? (
+                                    <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover/row:opacity-100">
+                                      <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => setCapEdit(c)}>Edit</Button>
+                                      <ConfirmButton title={`Delete "${c.label}"?`} description="Removed from roles and surfaces too." actionLabel="Delete" onConfirm={() => removeCap(c.id)} buttonTitle="Delete capability">
+                                        <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                                      </ConfirmButton>
+                                    </div>
+                                  ) : null}
                                 </div>
                               ))}
                             </div>
-                          ) : <p className="text-xs text-muted-foreground">None in this group.</p>}
+                          ) : <p className="text-xs text-muted-foreground">None in this capability set.</p>}
+                          {canEdit ? (
+                            <Button size="sm" variant="outline" className="mt-1.5 h-7" onClick={() => addCapToGroup(g.id)}><Plus className="size-3.5" /> Add capability</Button>
+                          ) : null}
                         </div>
                         <div>
                           <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -260,21 +288,32 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
                           {surfs.length ? (
                             <div className="flex flex-col gap-1">
                               {surfs.map((s) => (
-                                <div key={s.id} className="flex items-center gap-2 text-sm">
+                                <div key={s.id} className="group/row flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-accent/40">
                                   <span className="text-foreground">{s.label}</span>
                                   <span className="font-mono text-xs text-muted-foreground">{s.id}</span>
                                   <Pill tone="neutral">{s.kind}</Pill>
+                                  {canEdit ? (
+                                    <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover/row:opacity-100">
+                                      <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => setSurfEdit(s)}>Edit</Button>
+                                      <ConfirmButton title={`Delete surface "${s.label}"?`} description="" actionLabel="Delete" onConfirm={() => removeSurf(s.id)} buttonTitle="Delete surface">
+                                        <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                                      </ConfirmButton>
+                                    </div>
+                                  ) : null}
                                 </div>
                               ))}
                             </div>
-                          ) : <p className="text-xs text-muted-foreground">None in this group.</p>}
+                          ) : <p className="text-xs text-muted-foreground">None in this capability set.</p>}
+                          {canEdit ? (
+                            <Button size="sm" variant="outline" className="mt-1.5 h-7" onClick={() => addSurfToGroup(g.id)}><Plus className="size-3.5" /> Add surface</Button>
+                          ) : null}
                         </div>
                       </div>
                     ) : null}
                   </div>
                 );
               })}
-              <AddInline placeholder="New group label" onAdd={addGroup} />
+              <AddInline placeholder="New capability set label" onAdd={addGroup} />
             </div>
           )}
 
@@ -298,7 +337,7 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
                         </div>
                       </div>
                     ))}
-                    {capsByGroup(g.id).length === 0 ? <p className="text-xs text-muted-foreground">No capabilities in this group.</p> : null}
+                    {capsByGroup(g.id).length === 0 ? <p className="text-xs text-muted-foreground">No capabilities in this capability set.</p> : null}
                   </div>
                 </div>
               ))}
@@ -326,7 +365,7 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
 
           {tab === "resources" && (
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Resource types a capability can be scoped to (enforcement deferred).</p>
+              <p className="text-sm text-muted-foreground">Resource types a capability can be scoped to.</p>
               {doc.resourceTypes.map((r) => (
                 <div key={r.id} className="glass-card flex items-center gap-3 px-4 py-2.5">
                   <span className="text-sm text-foreground">{r.label}</span>
@@ -344,7 +383,7 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
           {tab === "samples" && (
             <div className="space-y-2">
               {(doc.sampleRoleTemplates ?? []).length === 0 ? (
-                <EmptyState>No sample roles in this catalogue.</EmptyState>
+                <EmptyState>No sample roles in this catalog.</EmptyState>
               ) : (
                 (doc.sampleRoleTemplates ?? []).map((r) => (
                   <div key={r.id} className="glass-card px-4 py-3">
@@ -359,14 +398,124 @@ export function AccessCatalogue({ source }: { source?: CatalogueSource } = {}) {
             </div>
           )}
 
-          {tab === "json" && <JsonView title="Live catalogue document" value={doc} />}
+          {tab === "json" && <JsonView title="Live catalog document" value={doc} />}
           {tab === "schema" && <JsonView title="JSON Schema" value={schemaJson} />}
         </>
       )}
 
-      {capEdit && doc ? <CapabilityDialog doc={doc} initial={capEdit === "new" ? null : capEdit} onClose={() => setCapEdit(null)} onSave={upsertCap} /> : null}
-      {surfEdit && doc ? <SurfaceDialog doc={doc} initial={surfEdit === "new" ? null : surfEdit} onClose={() => setSurfEdit(null)} onSave={upsertSurf} /> : null}
+      {/* Bottom-of-page guide entry. */}
+      <div className="mt-8 flex justify-center border-t border-border pt-5">
+        <Button variant="outline" size="sm" onClick={() => setGuideOpen(true)}>
+          <BookOpen className="size-3.5" /> Access Catalog Guide
+        </Button>
+      </div>
+
+      {capEdit && doc ? <CapabilityDialog doc={doc} initial={capEdit === "new" ? null : capEdit} defaultGroup={capDefaultGroup} onClose={() => { setCapEdit(null); setCapDefaultGroup(null); }} onSave={upsertCap} /> : null}
+      {surfEdit && doc ? <SurfaceDialog doc={doc} initial={surfEdit === "new" ? null : surfEdit} defaultGroup={surfDefaultGroup} onClose={() => { setSurfEdit(null); setSurfDefaultGroup(null); }} onSave={upsertSurf} /> : null}
+      {guideOpen ? <AccessCatalogGuide onClose={() => setGuideOpen(false)} /> : null}
     </div>
+  );
+}
+
+/**
+ * Access Catalog Guide — an in-app explainer of the whole model. Kept as static
+ * copy (not editable) so every level shows the same canonical explanation.
+ */
+function AccessCatalogGuide({ onClose }: { onClose: () => void }) {
+  const H = ({ children }: { children: ReactNode }) => (
+    <h3 className="mt-5 text-sm font-semibold text-foreground">{children}</h3>
+  );
+  const P = ({ children }: { children: ReactNode }) => (
+    <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{children}</p>
+  );
+  const Code = ({ children }: { children: ReactNode }) => (
+    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[12px] text-foreground">{children}</code>
+  );
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><BookOpen className="size-4" /> Access Catalog Guide</DialogTitle>
+        </DialogHeader>
+
+        <div className="pb-2">
+          <P>
+            The Access Catalog is the <strong>inventory</strong> of everything that can be
+            permission-controlled at this level. It does not assign anyone — it defines the
+            vocabulary that <em>roles</em> are built from. Roles bind to items in here; people get roles.
+          </P>
+
+          <H>The three building blocks</H>
+          <P>
+            <strong>1. Capabilities</strong> — the atomic units of permission (e.g.{" "}
+            <Code>nexus.audit.view</Code>). A role is, underneath, just a <strong>set of capability ids</strong>.
+            Capabilities are the only thing actually granted and enforced.
+          </P>
+          <P>
+            <strong>2. Capability sets</strong> — labeled folders that bucket related capabilities (and surfaces).
+            Their job is twofold: they tidy the UI, and each set can back <strong>one coarse toggle</strong> in
+            the role builder — flipping that toggle on seeds every capability in the set onto the role.
+            Capability sets are never stored on a role; they’re the design-time bridge between the simple toggle and the
+            underlying capabilities.
+          </P>
+          <P>
+            <strong>3. Surfaces</strong> — the UI a capability unlocks (a nav tab, screen, or action), each with{" "}
+            <Code>requiredAnyCapabilities</Code>. Holding one of those capabilities reveals the surface; lacking
+            them hides it. This is what makes “turn a capability off → the tab disappears” work.
+          </P>
+          <P>
+            <strong>Resource types</strong> scope a capability to kinds of objects (enforcement is still being
+            layered in), and <strong>sample roles</strong> are starter bundles of capabilities.
+          </P>
+
+          <H>How a role is actually built</H>
+          <P>
+            A saved role stores two things — and a capability-set id is in neither: a set of <strong>coarse area levels</strong>{" "}
+            (No / View / Edit, or No / Partial / Full for platforms) and a flat list of{" "}
+            <strong>capability ids</strong>. Setting an area’s coarse level is a preset: the top level seeds every
+            capability in that area’s set; “Partial” lets you hand-pick a subset. The capability list is the{" "}
+            <strong>enforced source of truth</strong> — the backend validates it against this catalog and drops
+            anything not in the inventory.
+          </P>
+
+          <H>Reserved (structural) capabilities</H>
+          <P>
+            A capability marked <Code>reserved</Code> is held implicitly by a structural tier — a Super Admin /
+            owner, a full operator, or a program admin — and can <strong>never</strong> be granted to a custom
+            role. Those tiers bypass the catalog and hold everything; the reserved flag just hides such a
+            capability from the role builder so no one can hand it out.
+          </P>
+
+          <H>Per-level catalogs</H>
+          <P>
+            Each level has its own catalog: the platform (Nexus), each organization, each program, and each
+            runtime (Content Studio, Bridge). An org/program starts from the shipped default and only diverges
+            once you edit it here (a “·edited” marker appears). Editing one level never touches another.
+          </P>
+
+          <H>Adding a new feature end-to-end</H>
+          <P>
+            1) Add a <strong>capability</strong> to a capability set here; 2) add a <strong>surface</strong> for the UI it
+            unlocks; 3) the role builder’s toggle for that set now grants it; 4) the nav/screen gated by that
+            surface appears for anyone who holds it. A brand-new capability set is purely organizational until a role-builder
+            area is wired to it — that wiring is what turns a set into a working, grantable feature.
+          </P>
+
+          <H>Editing here</H>
+          <P>
+            Use the <strong>Capability Sets</strong> tab to add capabilities/surfaces inline within a set, or the
+            dedicated <strong>Capabilities</strong> / <strong>Surfaces</strong> tabs. <strong>Save catalog</strong>{" "}
+            persists your changes for this level; <strong>Reset defaults</strong> restores the shipped catalog.
+            The <strong>Export JSON</strong> and <strong>JSON Schema</strong> tabs show the live document and the
+            shape it must follow.
+          </P>
+        </div>
+
+        <DialogFooter>
+          <Button onClick={onClose}>Got it</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -393,10 +542,10 @@ function JsonView({ title, value }: { title: string; value: unknown }) {
   );
 }
 
-function CapabilityDialog({ doc, initial, onClose, onSave }: { doc: CapabilityCatalogueDocument; initial: Capability | null; onClose: () => void; onSave: (c: Capability) => void }) {
+function CapabilityDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc: CapabilityCatalogueDocument; initial: Capability | null; defaultGroup?: string | null; onClose: () => void; onSave: (c: Capability) => void }) {
   const [id, setId] = useState(initial?.id ?? "");
   const [label, setLabel] = useState(initial?.label ?? "");
-  const [group, setGroup] = useState(initial?.group ?? doc.groups[0]?.id ?? "");
+  const [group, setGroup] = useState(initial?.group ?? defaultGroup ?? doc.groups[0]?.id ?? "");
   const [reserved, setReserved] = useState<ReservedTier | "none">(initial?.reserved ?? "none");
   const [typeScoped, setTypeScoped] = useState(!!initial?.supportsResourceConstraints);
   const effId = initial ? initial.id : (id.trim() || slug(label));
@@ -409,7 +558,7 @@ function CapabilityDialog({ doc, initial, onClose, onSave }: { doc: CapabilityCa
             <div className="space-y-1.5"><Label>Capability id</Label><Input value={id} onChange={(e) => setId(e.target.value)} placeholder={slug(label) || "e.g. org.people.manage"} /></div>
           ) : null}
           <div className="space-y-1.5"><Label>Label</Label><Input value={label} onChange={(e) => setLabel(e.target.value)} /></div>
-          <div className="space-y-1.5"><Label>Group</Label>
+          <div className="space-y-1.5"><Label>Capability set</Label>
             <Select value={group} onValueChange={setGroup}><SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{doc.groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.label}</SelectItem>)}</SelectContent>
             </Select>
@@ -433,11 +582,11 @@ function CapabilityDialog({ doc, initial, onClose, onSave }: { doc: CapabilityCa
   );
 }
 
-function SurfaceDialog({ doc, initial, onClose, onSave }: { doc: CapabilityCatalogueDocument; initial: UiSurface | null; onClose: () => void; onSave: (s: UiSurface) => void }) {
+function SurfaceDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc: CapabilityCatalogueDocument; initial: UiSurface | null; defaultGroup?: string | null; onClose: () => void; onSave: (s: UiSurface) => void }) {
   const [id, setId] = useState(initial?.id ?? "");
   const [label, setLabel] = useState(initial?.label ?? "");
   const [kind, setKind] = useState<UiSurfaceKind>(initial?.kind ?? "navigation");
-  const [group, setGroup] = useState(initial?.group ?? doc.groups[0]?.id ?? "");
+  const [group, setGroup] = useState(initial?.group ?? defaultGroup ?? doc.groups[0]?.id ?? "");
   const [route, setRoute] = useState(initial?.routeOrComponent ?? "");
   const [req, setReq] = useState<Set<string>>(new Set(initial?.requiredAnyCapabilities ?? []));
   const effId = initial ? initial.id : (id.trim() || slug(label));
@@ -455,7 +604,7 @@ function SurfaceDialog({ doc, initial, onClose, onSave }: { doc: CapabilityCatal
                 <SelectContent>{SURFACE_KINDS.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5"><Label>Group</Label>
+            <div className="space-y-1.5"><Label>Capability set</Label>
               <Select value={group} onValueChange={setGroup}><SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{doc.groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.label}</SelectItem>)}</SelectContent>
               </Select>

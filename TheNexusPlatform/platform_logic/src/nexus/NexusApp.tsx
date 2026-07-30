@@ -19,6 +19,9 @@ import { OperatorAudit } from "@/nexus/routes/OperatorAudit";
 import { OperatorOrgs } from "@/nexus/routes/OperatorOrgs";
 import { OperatorSettings } from "@/nexus/routes/OperatorSettings";
 import { NexusTeam } from "@/nexus/routes/NexusTeam";
+import { Test1 } from "@/nexus/routes/Test1";
+import { Test2 } from "@/nexus/routes/Test2";
+import { PartnerLogin } from "@/nexus/routes/PartnerLogin";
 import { AccessCatalogue } from "@/nexus/access/AccessCatalogue";
 import { OrgAccessCatalogue, ProgramAccessCatalogue } from "@/nexus/access/InstanceAccessCatalogue";
 import { OperatorGates } from "@/nexus/routes/OperatorGates";
@@ -125,6 +128,10 @@ function Routed() {
       {/* Nexus (operator) gate — no org slug; GatePage resolves it as nexus. */}
       <Route path="/op/:gateSlug" element={<GatePage />} />
       <Route path="/invite/:token" element={<AcceptInvite />} />
+      {/* Partner ("sister program") login portal — its members sign in here. */}
+      <Route path="/partner/:slug" element={<PartnerLogin />} />
+      {/* A partner's own sign-up gate, under the partner's slug. */}
+      <Route path="/partner/:slug/:gateSlug" element={<GatePage partner />} />
       {/* Full-screen launch surface — deliberately outside the AppShell chrome. */}
       <Route
         path="/o/:orgId/p/:programId/learning"
@@ -157,6 +164,8 @@ function Routed() {
         <Route path="/team" element={<NexusTeam />} />
         <Route path="/access-catalogue" element={<AccessCatalogue />} />
         <Route path="/nexus-gates" element={<OperatorGates />} />
+        <Route path="/test1" element={<Test1 />} />
+        <Route path="/test2" element={<Test2 />} />
         {/* Org space */}
         <Route path="/o/:orgId/dashboard" element={<OrgDashboard />} />
         <Route path="/o/:orgId/programs" element={<Programs />} />

@@ -63,7 +63,20 @@ export interface Program {
    *  runtimes (Learning, App Studio, Bridge)? Absent/true = yes. Org admins are
    *  never restricted by this. */
   platforms_open?: boolean;
+  /** Per-platform "Partial" provisioning: a capability subset for a platform
+   *  area (learning/bridge) that clamps what roles can grant. Absent = No/Full. */
+  feature_access?: Record<string, { capabilities: string[] }> | null;
+  /** Partner ("sister program") fields — a partner is a program connected to
+   *  another program, with its own slug/login. Absent/false = ordinary program. */
+  is_partner?: boolean;
+  connected_program_id?: string | null;
+  slug?: string | null;
 }
+
+/** Platform feature keys that support the No/Partial/Full provisioning control
+ *  (they have their own Access Catalog) — matches the role builder's 3-way. */
+export const FEATURE_ACCESS_KEYS = ["learning", "bridge"] as const;
+export const FEATURE_ACCESS_PROVIDER: Record<string, string> = { learning: "learning", bridge: "bridge" };
 
 export interface Integration {
   id: string;
@@ -191,6 +204,8 @@ export interface ProgramOrgAffiliation {
   visibility?: string;
   status: string; // invited | active | paused | archived
   created_at?: string;
+  // The partner's granted, catalog-based access to the program (a gated view).
+  metadata_json?: { access?: { capabilities?: string[]; perms?: Record<string, unknown>; updatedAt?: string } } & Record<string, unknown>;
   // Enriched on the incoming-requests inbox only:
   program_name?: string;
   from_organization_id?: string; // the inviting org (Org A)

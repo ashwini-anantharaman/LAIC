@@ -21,7 +21,7 @@ export function OrgAudit() {
 
   return (
     <div>
-      <PageHeader title="Audit" subtitle="Who did what, and when." />
+      <PageHeader title="Audit" />
       {events.length === 0 ? (
         <EmptyState>No activity recorded yet.</EmptyState>
       ) : (

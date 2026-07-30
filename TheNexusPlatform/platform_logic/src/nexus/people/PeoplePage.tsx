@@ -7,19 +7,22 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-type Tab = "people" | "rg";
+type Tab = "people" | "rg" | "catalog";
 
 export function PeoplePage({
   subtitle,
   actions,
   people,
   rolesGroups,
+  accessCatalog,
 }: {
   subtitle?: string;
   /** Rendered on the People tab, to the right of the heading (invite, view toggle). */
   actions?: ReactNode;
   people: ReactNode;
   rolesGroups: ReactNode;
+  /** Optional third tab: this altitude's Access Catalog editor. Hidden if absent. */
+  accessCatalog?: ReactNode;
 }) {
   const [tab, setTab] = useState<Tab>("people");
   const TabWord = ({ id, label }: { id: Tab; label: string }) => {
@@ -46,11 +49,12 @@ export function PeoplePage({
         <div className="flex flex-wrap items-end gap-4">
           <TabWord id="people" label="People" />
           <TabWord id="rg" label="Roles & Groups" />
+          {accessCatalog ? <TabWord id="catalog" label="Access Catalog" /> : null}
         </div>
         {tab === "people" && actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
       {tab === "people" && subtitle ? <p className="-mt-3 mb-4 text-sm text-muted-foreground">{subtitle}</p> : null}
-      {tab === "people" ? people : rolesGroups}
+      {tab === "people" ? people : tab === "rg" ? rolesGroups : accessCatalog}
     </div>
   );
 }

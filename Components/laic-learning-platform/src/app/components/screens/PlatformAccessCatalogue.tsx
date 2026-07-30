@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Check, ChevronDown, ChevronRight, Copy, FileJson, GitBranch, KeyRound,
+  BookOpen, Check, ChevronDown, ChevronRight, Copy, FileJson, GitBranch, KeyRound,
   LayoutList, Layers, PanelLeft, Plus, RotateCcw, Save, Shield, Trash2, X, Boxes,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -30,7 +30,7 @@ import { useApp } from '../../App';
 type TabId = 'groups' | 'capabilities' | 'surfaces' | 'resources' | 'samples' | 'json' | 'schema';
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: 'groups', label: 'Groups', icon: <GitBranch size={14} /> },
+  { id: 'groups', label: 'Capability Sets', icon: <GitBranch size={14} /> },
   { id: 'capabilities', label: 'Capabilities', icon: <KeyRound size={14} /> },
   { id: 'surfaces', label: 'UI surfaces', icon: <PanelLeft size={14} /> },
   { id: 'resources', label: 'Resource types', icon: <Boxes size={14} /> },
@@ -89,8 +89,8 @@ function GroupModal({
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md rounded-[28px] overflow-hidden flex flex-col bg-white" style={{ boxShadow: '0 24px 64px -16px rgba(30,50,80,0.3)' }}>
         <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>{initial ? `Edit “${initial.label}”` : 'New group'}</h3>
-            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Groups organize capabilities and UI surfaces in the catalogue.</p>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>{initial ? `Edit “${initial.label}”` : 'New capability set'}</h3>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Bucket capabilities and the surfaces they unlock.</p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
         </div>
@@ -129,7 +129,7 @@ function GroupModal({
             className="flex-1 py-2.5 rounded-full text-white disabled:opacity-40"
             style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}
           >
-            Save group
+            Save capability set
           </button>
         </div>
       </motion.div>
@@ -169,7 +169,6 @@ function CapabilityModal({
         <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>{initial ? `Edit “${initial.label}”` : 'New capability'}</h3>
-            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Atomic id programs grant — stable contract for UI and APIs.</p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
         </div>
@@ -188,7 +187,7 @@ function CapabilityModal({
             <input value={description} onChange={(e) => setDescription(e.target.value)} className="w-full rounded-xl px-3 py-2" style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none' }} />
           </div>
           <div>
-            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Group</p>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Capability set</p>
             <select value={group} onChange={(e) => setGroup(e.target.value)} className="w-full rounded-xl px-3 py-2" style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none', background: 'white' }}>
               {groupsSorted(catalogue).map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
             </select>
@@ -265,7 +264,7 @@ function SurfaceModal({
         <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>{initial ? `Edit “${initial.label}”` : 'New UI surface'}</h3>
-            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Optional mapping to nav / screen / component. Not the security boundary.</p>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>The UI a capability unlocks. Capabilities are the security boundary, not this.</p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
         </div>
@@ -289,7 +288,7 @@ function SurfaceModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>UI group</p>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Capability set</p>
               <input value={group} onChange={(e) => setGroup(e.target.value)} className="w-full rounded-xl px-3 py-2" style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none' }} placeholder="learning | learner" />
             </div>
             <div>
@@ -368,7 +367,7 @@ function SampleRoleModal({
         <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>Sample role · {initial.id}</h3>
-            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Template only — live roles live in program access policy.</p>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>A starter template; live roles live in the program policy.</p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
         </div>
@@ -424,6 +423,107 @@ function SampleRoleModal({
   );
 }
 
+/* ─── Access Catalog Guide modal ───────────────────────────────── */
+
+function GuideModal({ onClose }: { onClose: () => void }) {
+  const H = ({ children }: { children: React.ReactNode }) => (
+    <h4 style={{ fontSize: 12.5, fontWeight: 750, color: '#0B1220', letterSpacing: '.02em', marginTop: 18, marginBottom: 4 }}>{children}</h4>
+  );
+  const P = ({ children }: { children: React.ReactNode }) => (
+    <p style={{ fontSize: 13, lineHeight: 1.6, color: '#4B5563', marginTop: 6 }}>{children}</p>
+  );
+  const Code = ({ children }: { children: React.ReactNode }) => (
+    <code style={{ background: '#F3F4F6', color: '#0B1220', borderRadius: 4, padding: '1px 5px', fontSize: 12 }}>{children}</code>
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(11,18,32,0.5)', backdropFilter: 'blur(4px)' }}>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-2xl rounded-[28px] overflow-hidden flex flex-col bg-white" style={{ boxShadow: '0 24px 64px -16px rgba(30,50,80,0.3)', maxHeight: '88vh' }}>
+        <div className="p-5 border-b flex items-start justify-between shrink-0" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>Access Catalog Guide</h3>
+            <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>How the access catalog system works.</p>
+          </div>
+          <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-5">
+          <P>
+            The Access Catalog is the <strong>inventory</strong> of everything that can be permission-controlled
+            at this level. It does not assign anyone — it defines the vocabulary that <em>roles</em> are built
+            from. Roles bind to items in here; people get roles.
+          </P>
+
+          <H>The three building blocks</H>
+          <P>
+            <strong>1. Capabilities</strong> — the atomic units of permission (e.g. <Code>nexus.audit.view</Code>).
+            A role is, underneath, just a <strong>set of capability ids</strong>. Capabilities are the only thing
+            actually granted and enforced.
+          </P>
+          <P>
+            <strong>2. Capability sets</strong> — labeled folders that bucket related capabilities (and surfaces). Their job
+            is twofold: they tidy the UI, and each capability set can back <strong>one coarse toggle</strong> in the role
+            builder — flipping that toggle on seeds every capability in the folder onto the role. Capability sets are never
+            stored on a role; they're the design-time bridge between the simple toggle and the underlying
+            capabilities.
+          </P>
+          <P>
+            <strong>3. Surfaces</strong> — the UI a capability unlocks (a nav tab, screen, or action), each with{' '}
+            <Code>requiredAnyCapabilities</Code>. Holding one of those capabilities reveals the surface; lacking
+            them hides it. This is what makes "turn a capability off → the tab disappears" work.
+          </P>
+          <P>
+            <strong>Resource types</strong> scope a capability to kinds of objects (enforcement is still being
+            layered in), and <strong>sample roles</strong> are starter bundles of capabilities.
+          </P>
+
+          <H>How a role is actually built</H>
+          <P>
+            A saved role stores two things — and a capability-set id is in neither: a set of <strong>coarse area levels</strong>{' '}
+            (No / View / Edit, or No / Partial / Full for platforms) and a flat list of <strong>capability ids</strong>.
+            Setting an area's coarse level is a preset: the top level seeds every capability in that area's set;
+            "Partial" lets you hand-pick a subset. The capability list is the <strong>enforced source of truth</strong>{' '}
+            — the backend validates it against this catalog and drops anything not in the inventory.
+          </P>
+
+          <H>Reserved (structural) capabilities</H>
+          <P>
+            A capability marked <Code>reserved</Code> is held implicitly by a structural tier — a Super Admin /
+            owner, a full operator, or a program admin — and can <strong>never</strong> be granted to a custom role.
+            Those tiers bypass the catalog and hold everything; the reserved flag just hides such a capability from
+            the role builder so no one can hand it out.
+          </P>
+
+          <H>Per-level catalogs</H>
+          <P>
+            Each level has its own catalog: the platform (Nexus), each organization, each program, and each runtime
+            (Content Studio, Bridge). An org/program starts from the shipped default and only diverges once you edit
+            it (a "·edited" marker appears). Editing one level never touches another.
+          </P>
+
+          <H>Adding a new feature end-to-end</H>
+          <P>
+            1) Add a <strong>capability</strong> to a capability set here; 2) add a <strong>surface</strong> for the UI it
+            unlocks; 3) the role builder's toggle for that capability set now grants it; 4) the nav/screen gated by that
+            surface appears for anyone who holds it. A brand-new capability set is purely organizational until a role-builder
+            area is wired to it — that wiring is what turns a folder into a working, grantable feature.
+          </P>
+
+          <H>Editing here</H>
+          <P>
+            Use the <strong>Capability Sets</strong> tab to add capabilities/surfaces inline within a folder, or the dedicated{' '}
+            <strong>Capabilities</strong> / <strong>UI surfaces</strong> tabs. <strong>Save catalog</strong> persists
+            your changes for this level; <strong>Reset defaults</strong> restores the shipped catalog. The{' '}
+            <strong>Export JSON</strong> and <strong>JSON Schema</strong> tabs show the live document and the shape
+            it must follow.
+          </P>
+        </div>
+        <div className="flex justify-end gap-2 p-4 border-t shrink-0" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+          <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}>Got it</button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 /* ─── Main ─────────────────────────────────────────────────────── */
 
 export function PlatformAccessCatalogue() {
@@ -436,6 +536,7 @@ export function PlatformAccessCatalogue() {
   const [capModal, setCapModal] = useState<{ open: boolean; initial: Capability | null }>({ open: false, initial: null });
   const [surfaceModal, setSurfaceModal] = useState<{ open: boolean; initial: UiSurface | null }>({ open: false, initial: null });
   const [roleModal, setRoleModal] = useState<SampleRoleTemplate | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   // The catalogue is CENTRALIZED in Nexus; a learning admin may edit it, everyone
   // else sees it read-only. In standalone demo (no Nexus session) editing is open.
@@ -458,7 +559,7 @@ export function PlatformAccessCatalogue() {
   const patch = (next: CapabilityCatalogueDocument) => { setCatalogue(next); setDirty(true); };
 
   const persist = async (doc: CapabilityCatalogueDocument, toastMsg: string) => {
-    if (readOnly) { fireToast('Read-only — ask a learning admin to edit the catalogue'); return; }
+    if (readOnly) { fireToast('Read-only — ask a learning admin to edit the catalog'); return; }
     try {
       const policy = await saveCatalogueAndSyncRoles(doc);
       setDirty(false);
@@ -468,7 +569,7 @@ export function PlatformAccessCatalogue() {
     }
   };
 
-  const handleSave = () => { void persist(catalogue, 'Catalogue saved'); };
+  const handleSave = () => { void persist(catalogue, 'Catalog saved'); };
   const handleReset = async () => {
     const fresh = await resetCatalogue().catch(() => createDefaultCatalogue());
     setCatalogue(fresh);
@@ -488,7 +589,7 @@ export function PlatformAccessCatalogue() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
-        persist(catalogue, 'Catalogue saved');
+        persist(catalogue, 'Catalog saved');
       }
     };
     window.addEventListener('keydown', onKey);
@@ -513,12 +614,12 @@ export function PlatformAccessCatalogue() {
       });
     }
     setGroupModal({ open: false, initial: null });
-    fireToast(exists ? 'Group updated' : 'Group added');
+    fireToast(exists ? 'Capability set updated' : 'Capability set added');
   };
 
   const removeGroup = (id: string) => {
     if (catalogue.groups.length <= 1) {
-      fireToast('Keep at least one group');
+      fireToast('Keep at least one capability set');
       return;
     }
     const victim = catalogue.groups.find((g) => g.id === id);
@@ -538,8 +639,8 @@ export function PlatformAccessCatalogue() {
       ]),
     ];
     const confirmMsg = moveCapIds.length || moveSurfaceIds.length
-      ? `Delete group “${victim.label}”? Its ${moveCapIds.length} capabilities and ${moveSurfaceIds.length} UI surfaces will move to “${fallback.label}”.`
-      : `Delete empty group “${victim.label}”?`;
+      ? `Delete capability set “${victim.label}”? Its ${moveCapIds.length} capabilities and ${moveSurfaceIds.length} UI surfaces will move to “${fallback.label}”.`
+      : `Delete empty capability set “${victim.label}”?`;
     if (!window.confirm(confirmMsg)) return;
 
     patch({
@@ -656,13 +757,13 @@ export function PlatformAccessCatalogue() {
               <RotateCcw size={13} /> Reset v1 defaults
             </button>
             <button type="button" onClick={handleSave} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
-              <Save size={13} /> Save catalogue
+              <Save size={13} /> Save catalog
             </button>
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-5">
           {[
-            { label: 'Groups', value: catalogue.groups.length },
+            { label: 'Capability Sets', value: catalogue.groups.length },
             { label: 'Capabilities', value: catalogue.capabilities.length },
             { label: 'UI surfaces', value: catalogue.uiSurfaces.length },
             { label: 'Resource types', value: catalogue.resourceTypes.length },
@@ -692,13 +793,13 @@ export function PlatformAccessCatalogue() {
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <p style={{ fontSize: 13, color: '#6B7280' }}>
-              Add, edit, or delete groups. Deleting a group moves its capabilities and UI surfaces into another group.
+              Deleting a capability set moves its capabilities and surfaces into another set.
             </p>
             <div className="flex gap-2 flex-wrap">
               <button type="button" onClick={() => setOpenGroups(new Set(catalogue.groups.map((g) => g.id)))} className="px-3 py-1.5 rounded-full text-[12px] font-semibold" style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}>Expand all</button>
               <button type="button" onClick={() => setOpenGroups(new Set())} className="px-3 py-1.5 rounded-full text-[12px] font-semibold" style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}>Collapse all</button>
               <button type="button" onClick={() => setGroupModal({ open: true, initial: null })} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-semibold text-white" style={{ background: '#0B0F1A' }}>
-                <Plus size={12} /> Add group
+                <Plus size={12} /> Add capability set
               </button>
             </div>
           </div>
@@ -714,7 +815,7 @@ export function PlatformAccessCatalogue() {
                   <span className="mt-0.5 text-[#9AA3AF]">{open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: '#0B0F1A', color: 'white' }}>GROUP</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: '#0B0F1A', color: 'white' }}>CAP SET</span>
                       <p style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }}>{g.label}</p>
                       <code className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: '#F3F4F6', color: '#6B7280' }}>{g.id}</code>
                       <span className="text-[11px] text-[#9AA3AF]">order {g.order}</span>
@@ -737,7 +838,7 @@ export function PlatformAccessCatalogue() {
                     disabled={catalogue.groups.length <= 1}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-semibold disabled:opacity-40"
                     style={{ background: 'rgba(239,68,68,0.08)', color: '#B91C1C' }}
-                    title={catalogue.groups.length <= 1 ? 'Keep at least one group' : 'Delete group'}
+                    title={catalogue.groups.length <= 1 ? 'Keep at least one capability set' : 'Delete capability set'}
                   >
                     <Trash2 size={12} /> Delete
                   </button>
@@ -757,7 +858,7 @@ export function PlatformAccessCatalogue() {
                             <button type="button" onClick={() => setCapModal({ open: true, initial: c })} className="ml-auto opacity-0 group-hover:opacity-100 px-2 py-1 rounded-full text-[11px] font-semibold" style={{ background: 'rgba(0,0,0,0.05)', color: '#374151' }}>Edit</button>
                           </div>
                         ))}
-                        {!caps.length && <p style={{ fontSize: 12, color: '#9AA3AF' }}>No capabilities in this group</p>}
+                        {!caps.length && <p style={{ fontSize: 12, color: '#9AA3AF' }}>No capabilities in this capability set</p>}
                       </div>
                     </div>
                     <div>
@@ -786,7 +887,7 @@ export function PlatformAccessCatalogue() {
       {tab === 'capabilities' && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           <div className="flex items-center justify-between">
-            <p style={{ fontSize: 13, color: '#6B7280' }}>Authoritative enforcement keys. Programs grant these; they cannot invent new ids.</p>
+            <p style={{ fontSize: 13, color: '#6B7280' }}>Programs grant these keys; they can't invent new ones.</p>
             <button type="button" onClick={() => setCapModal({ open: true, initial: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
               <Plus size={13} /> Add capability
             </button>
@@ -830,7 +931,7 @@ export function PlatformAccessCatalogue() {
       {tab === 'surfaces' && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           <div className="flex items-center justify-between">
-            <p style={{ fontSize: 13, color: '#6B7280' }}>Navigation, screens, components, actions — optional UI mapping only.</p>
+            <p style={{ fontSize: 13, color: '#6B7280' }}>Optional UI mapping: navigation, screens, components, or actions.</p>
             <button type="button" onClick={() => setSurfaceModal({ open: true, initial: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
               <Plus size={13} /> Add surface
             </button>
@@ -891,7 +992,7 @@ export function PlatformAccessCatalogue() {
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <p style={{ fontSize: 13, color: '#6B7280', maxWidth: 520 }}>
-              Sample role templates. On <strong>Save catalogue</strong>, these upsert into the live Bridge Learning access policy (People & Roles).
+              Sample role templates. On <strong>Save catalog</strong>, these upsert into the live Bridge Learning access policy (People & Roles).
             </p>
             <button
               type="button"
@@ -954,7 +1055,7 @@ export function PlatformAccessCatalogue() {
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <p style={{ fontSize: 13, color: '#6B7280' }}>LAIC cross-platform schema (catalogue + access_policy).</p>
+              <p style={{ fontSize: 13, color: '#6B7280' }}>LAIC cross-platform schema (catalog + access_policy).</p>
               <p style={{ fontSize: 12, color: '#9AA3AF', marginTop: 4 }}>docs/laic-access-control.schema.json</p>
             </div>
             <button type="button" onClick={handleCopySchema} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full shrink-0" style={{ background: '#0B0F1A', color: 'white', fontSize: 12.5, fontWeight: 600 }}>
@@ -965,7 +1066,15 @@ export function PlatformAccessCatalogue() {
         </motion.div>
       )}
 
+      {/* Bottom-of-page guide entry. */}
+      <div className="flex justify-center pt-4 mt-2 border-t" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+        <button type="button" onClick={() => setGuideOpen(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-full" style={{ background: 'rgba(0,0,0,0.04)', fontSize: 12.5, fontWeight: 600, color: '#374151' }}>
+          <BookOpen size={13} /> Access Catalog Guide
+        </button>
+      </div>
+
       <AnimatePresence>
+        {guideOpen && <GuideModal onClose={() => setGuideOpen(false)} />}
         {groupModal.open && (
           <GroupModal
             initial={groupModal.initial}

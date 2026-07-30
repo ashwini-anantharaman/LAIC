@@ -54,7 +54,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
     requiresCapabilities: KNOWLEDGE_CAPS,
   },
   { href: "/bridge/teams", label: "People", adminOnly: true },
-  { href: "/bridge/catalogue", label: "Access Catalogue", adminOnly: true },
   { href: "/bridge/org", label: "Organization", adminOnly: true },
   { href: "/bridge/admin/audit", label: "Audit", adminOnly: true },
 ];

@@ -32,6 +32,7 @@ import {
   type ProvisionResult,
 } from "@/services/api";
 import { PROGRAM_FEATURES } from "@/types/platform";
+import { FeatureAccessControls } from "@/nexus/access/FeatureAccess";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { Switch } from "@/app/components/ui/switch";
 import { EmptyState, PageHeader, Pill, Spinner, StatPill, statusTone } from "@/nexus/ui/kit";
@@ -68,7 +69,6 @@ export function OperatorOrgs() {
     <div>
       <PageHeader
         title="Organizations"
-        subtitle="Top-level tenants provisioned on Nexus."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> Provision
@@ -268,24 +268,17 @@ function EditOrgDialog({ org, onClose }: { org: OrgSummary | null; onClose: () =
                 Program features
               </div>
               <p className="text-xs text-muted-foreground mb-2">
-                A feature off here disappears from every program in the org — and from the org's own
-                per-program Features dialog.
+                A feature off here disappears from every program in the org. Partial limits a
+                platform to the capabilities you pick — the org's programs and roles can't grant beyond them.
               </p>
-              <div className="grid grid-cols-2 gap-2">
-                {PROGRAM_FEATURES.map((f) => (
-                  <label
-                    key={f.key}
-                    className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
-                  >
-                    <span className="truncate">{f.label}</span>
-                    <Switch
-                      checked={caps.features[f.key] !== false}
-                      disabled={capsBusy}
-                      onCheckedChange={(v) => void patchCaps({ features: { [f.key]: v } })}
-                    />
-                  </label>
-                ))}
-              </div>
+              <FeatureAccessControls
+                features={caps.features}
+                featureAccess={caps.featureAccess ?? {}}
+                allowedKeys={PROGRAM_FEATURES.map((f) => f.key)}
+                onChangeFeatures={(next) => void patchCaps({ features: next })}
+                onChangeAccess={(next) => void patchCaps({ featureAccess: next })}
+                disabled={capsBusy}
+              />
             </div>
 
             {/* "Admins can open programs" now lives in the org's own Settings tab,

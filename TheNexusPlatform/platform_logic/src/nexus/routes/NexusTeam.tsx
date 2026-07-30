@@ -35,6 +35,7 @@ import {
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { PeoplePage, CollapsibleSection } from "@/nexus/people/PeoplePage";
 import { RolesAndGroups } from "@/nexus/people/RolesAndGroups";
+import { AccessCatalogue } from "@/nexus/access/AccessCatalogue";
 import { MemberRoster, type RosterMember } from "@/nexus/people/MemberRoster";
 import { nexusRgAdapter } from "@/nexus/people/adapters";
 import { useSession } from "@/nexus/session";
@@ -144,10 +145,10 @@ export function NexusTeam() {
   return (
     <>
       <PeoplePage
-        subtitle="Who operates Nexus, and what each operator role can see and do."
         actions={peopleActions}
         people={peopleContent}
         rolesGroups={<RolesAndGroups adapter={rg} />}
+        accessCatalog={<AccessCatalogue embedded />}
       />
       <NexusInviteDialog roles={roles ?? []} open={inviteOpen} onOpenChange={setInviteOpen} onDone={load} />
     </>

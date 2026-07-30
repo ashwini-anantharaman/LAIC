@@ -137,6 +137,10 @@ function _programResponse(row: Row): Row {
     secondary_categories: row.secondary_categories ?? [],
     branding: row.branding ?? null,
     platforms_open: row.platforms_open !== false,
+    feature_access: row.feature_access ?? null,
+    is_partner: row.is_partner ?? false,
+    connected_program_id: row.connected_program_id ?? null,
+    slug: row.slug ?? null,
   };
 }
 
@@ -1503,6 +1507,9 @@ platformRouter.get("/orgs/:org_id/programs", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
   _assertOrgStaff(user, orgId);
+  // Returns ALL programs incl. partners (the shell needs the partner row to know
+  // it's a partner). The Programs GRID filters partners out client-side; they
+  // surface on each program's Partners tab.
   return c.json((await db.listPrograms(orgId)).map(_programResponse));
 });
 
@@ -1558,6 +1565,76 @@ platformRouter.post("/orgs/:org_id/programs", async (c) => {
   return c.json(_programResponse((await db.getProgram(row.id)) ?? row));
 });
 
+// ── Partners ("sister programs") ────────────────────────────────────────────
+const partnerCreateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(2000).optional(),
+  connected_program_id: z.string().uuid(),
+  slug: z.string().trim().max(60).optional(),
+  features: z.record(z.string(), z.boolean()).optional(),
+  feature_access: z.record(z.string(), z.object({ capabilities: z.array(z.string()) })).optional(),
+});
+
+// Create a partner connected to one of the org's programs. Same provisioning
+// path as a program (org-admin), plus a required connecting program.
+platformRouter.post("/orgs/:org_id/partners", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "programs", "edit");
+  await _requireOrgCap(user, orgId, "org.programs.create");
+  const req = parseBody(partnerCreateSchema, await c.req.json());
+  const connected = await db.getProgram(req.connected_program_id);
+  if (!connected || connected.org_id !== orgId) throw new HttpError(422, "Connecting program not found in this organization");
+  const featureAccess = req.feature_access ? await _sanitizeFeatureAccess(req.feature_access) : undefined;
+  const row = await db.createPartner(orgId, {
+    name: req.name,
+    connectedProgramId: req.connected_program_id,
+    description: req.description ?? null,
+    slug: req.slug || undefined,
+    features: req.features,
+    featureAccess,
+  });
+  await db.addStageNodes(orgId, [{ stage_type: "national", name: req.name }], null, row.id as string);
+  // Auto-create a default "join" gate so the partner has a self-sign-up link out
+  // of the box (at /partner/<slug>/join), alongside the login link.
+  await graph.createGate(orgId, row.id as string, {
+    level: "program", slug: "join", title: `Join ${row.name}`,
+    audience: "member", allowSignin: true, allowSignup: true, approvalRequired: false,
+  }).catch(() => {});
+  await db.recordAuditEvent("partner.created", {
+    orgId, actorUserId: user.id, scopeType: "program", scopeId: row.id as string,
+    metadata: { name: row.name, connected_program_id: req.connected_program_id },
+  });
+  return c.json(_programResponse(row));
+});
+
+// A program's partners (its Partners tab).
+platformRouter.get("/programs/:program_id/partners", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _assertOrgStaff(user, program.org_id);
+  return c.json((await db.listPartnersForProgram(programId)).map(_programResponse));
+});
+
+// Partner login-portal context — resolve a partner by its slug (privileged, the
+// visitor is a partner member). Returns the partner + connected program summary.
+platformRouter.get("/partner-portal/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  _requireDb();
+  const partner = await db.getPartnerBySlug(slug);
+  if (!partner) throw new HttpError(404, "Partner not found");
+  const connected = partner.connected_program_id ? await db.getProgram(partner.connected_program_id as string) : null;
+  const org = await db.getOrganization(partner.org_id as string).catch(() => null);
+  return c.json({
+    partner: _programResponse(partner),
+    connected_program: connected ? { id: connected.id, name: connected.name } : null,
+    org_id: partner.org_id,
+    org_slug: org?.slug ?? null,
+  });
+});
+
 platformRouter.delete("/programs/:program_id", async (c) => {
   const user = await getCurrentUser(c);
   const programId = c.req.param("program_id");
@@ -1593,6 +1670,24 @@ async function _assertProgramConfigAccess(user: PlatformUser, orgId: string, pro
   await _requireOrgArea(user, orgId, "programs", "edit");
 }
 
+// Partial-access provisioning is scoped to the platform areas that have their
+// own Access Catalog (matching the role builder's 3-way): learning + bridge.
+const _FEATURE_ACCESS_PROVIDERS: Record<string, ProviderId> = { learning: "learning", bridge: "bridge" };
+/** Keep only platform-area keys, with capabilities validated against that
+ *  platform's catalog (unknown/foreign ids dropped). */
+async function _sanitizeFeatureAccess(
+  input: Record<string, { capabilities: string[] }>,
+): Promise<Record<string, { capabilities: string[] }>> {
+  const out: Record<string, { capabilities: string[] }> = {};
+  for (const [key, val] of Object.entries(input)) {
+    const providerId = _FEATURE_ACCESS_PROVIDERS[key];
+    if (!providerId) continue;
+    const caps = await catalogue.validGrantsAcross([{ providerId }], val.capabilities ?? []);
+    if (caps.length) out[key] = { capabilities: caps };
+  }
+  return out;
+}
+
 platformRouter.patch("/programs/:program_id/features", async (c) => {
   const user = await getCurrentUser(c);
   const programId = c.req.param("program_id");
@@ -1602,7 +1697,8 @@ platformRouter.patch("/programs/:program_id/features", async (c) => {
   await _requireOrgCap(user, program.org_id, "org.programs.configure");
   const req = parseBody(programFeaturesUpdate, await c.req.json());
   const features = normalizeProgramFeatures(req.features);
-  const row = await db.updateProgramFeatures(programId, features, req.platforms_open);
+  const featureAccess = req.feature_access ? await _sanitizeFeatureAccess(req.feature_access) : undefined;
+  const row = await db.updateProgramFeatures(programId, features, req.platforms_open, featureAccess);
   if (!row) throw new HttpError(404, "Program not found");
   await db.recordAuditEvent("program.features.updated", {
     orgId: program.org_id,
@@ -2358,7 +2454,12 @@ platformRouter.put("/orgs/:org_id/entitlements/:module", async (c) => {
 platformRouter.get("/orgs/:org_id/capabilities", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
-  _assertOrgStaff(user, orgId);
+  // Readable by ANY member of the org (incl program-scoped, e.g. a partner
+  // admin) — it's the org's feature envelope, which programs already see through
+  // their effective features. Editing it (PUT) still requires operator access.
+  if (user.role !== "platform_admin" && !user.memberships.some((m) => m.org_id === orgId)) {
+    throw new HttpError(403, "Not a member of this organization");
+  }
   return c.json(await db.getOrgCapabilities(orgId));
 });
 
@@ -2366,6 +2467,8 @@ const capabilityPatchSchema = z.object({
   programTypes: z.record(z.string(), z.boolean()).optional(),
   offeringTypes: z.record(z.string(), z.boolean()).optional(),
   features: z.record(z.string(), z.boolean()).optional(),
+  // Partial-access capability subsets per platform area (learning/bridge).
+  featureAccess: z.record(z.string(), z.object({ capabilities: z.array(z.string()) })).optional(),
   // Max programs the org may create; null = unlimited.
   programCapacity: z.number().int().min(1).nullable().optional(),
   // May org-level admins enter the org's programs? (access boundary)
@@ -2377,6 +2480,7 @@ platformRouter.put("/orgs/:org_id/capabilities", async (c) => {
   const orgId = c.req.param("org_id");
   await _requireNexusArea(user, "organizations", "edit");
   const req = parseBody(capabilityPatchSchema, await c.req.json());
+  if (req.featureAccess) req.featureAccess = await _sanitizeFeatureAccess(req.featureAccess);
   const caps = await db.setOrgCapabilities(orgId, req);
   await db.recordAuditEvent("organization.capabilities_updated", {
     orgId,
@@ -2772,10 +2876,17 @@ platformRouter.post("/programs/:program_id/cover", async (c) => {
 });
 
 // ── Org-defined program categories (Settings → Categories) ──────────────────
-const categoryNameSchema = z.object({ name: z.string().trim().min(1).max(60) });
+const categoryNameSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  parent: z.string().trim().min(1).max(60).nullable().optional(),
+});
 const categoryRenameSchema = z.object({
   from: z.string().trim().min(1).max(60),
   to: z.string().trim().min(1).max(60),
+});
+const categoryParentSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  parent: z.string().trim().min(1).max(60).nullable(),
 });
 
 platformRouter.get("/orgs/:org_id/categories", async (c) => {
@@ -2793,11 +2904,31 @@ platformRouter.post("/orgs/:org_id/categories", async (c) => {
   await _requireOrgCap(user, orgId, "org.settings.categories");
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const req = parseBody(categoryNameSchema, await c.req.json());
-  const list = await db.addOrgCategory(orgId, req.name);
+  const list = await db.addOrgCategory(orgId, req.name, req.parent ?? null);
   await db.recordAuditEvent("organization.category.added", {
     orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId, metadata: { name: req.name },
   });
   return c.json(list);
+});
+
+// Reparent a category (nesting). parent=null lifts it to a root.
+platformRouter.put("/orgs/:org_id/categories/parent", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "settings", "edit");
+  await _requireOrgCap(user, orgId, "org.settings.categories");
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const req = parseBody(categoryParentSchema, await c.req.json());
+  try {
+    const list = await db.setOrgCategoryParent(orgId, req.name, req.parent);
+    await db.recordAuditEvent("organization.category.reparented", {
+      orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+      metadata: { name: req.name, parent: req.parent },
+    });
+    return c.json(list);
+  } catch (e) {
+    throw new HttpError(409, e instanceof Error ? e.message : "Can't reparent");
+  }
 });
 
 platformRouter.delete("/orgs/:org_id/categories", async (c) => {
@@ -3542,6 +3673,72 @@ platformRouter.post("/programs/:program_id/org-affiliations", async (c) => {
     targetType: "program_org_affiliation", targetId: row.id as string,
   });
   return c.json(row);
+});
+
+// Grant a partner org a catalog-based, gated view of this program — the same
+// capability vocabulary we provision to people. Stored on the affiliation's
+// metadata; capabilities are validated against THIS program's console catalog.
+platformRouter.put("/programs/:program_id/org-affiliations/:affiliation_id/access", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const programId = c.req.param("program_id");
+  const affiliationId = c.req.param("affiliation_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireProgramAdmin(user, program.org_id, programId);
+  const body = (await c.req.json()) as { capabilities?: string[]; perms?: Record<string, unknown> };
+  const requested = Array.isArray(body?.capabilities) ? body.capabilities : [];
+  // Only capabilities that exist in this program's catalog survive.
+  const capabilities = await catalogue.validGrantsAcross(
+    [{ providerId: "program-console", instanceId: programId }],
+    requested,
+  );
+  const perms = (body?.perms && typeof body.perms === "object") ? body.perms : {};
+  const clearing = capabilities.length === 0 && Object.keys(perms).length === 0;
+  const updated = await graph.setProgramOrgAffiliationAccess(
+    affiliationId,
+    clearing ? null : { perms, capabilities, updatedAt: new Date().toISOString() },
+  );
+  if (!updated) throw new HttpError(404, "Affiliation not found");
+  await db.recordAuditEvent("program.org_affiliation_access_set", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    targetType: "program_org_affiliation", targetId: affiliationId,
+    metadata: { capabilities },
+  });
+  return c.json(updated);
+});
+// Partner portal context — a partner-org member entering a program's gated view
+// through the /partner/:orgSlug/:programSlug slug. One-directional: authorized by
+// the caller's own org holding an ACTIVE affiliation grant on the program. Returns
+// the program summary + the granted capabilities and the program surfaces they
+// unlock. Privileged lookups (caller isn't a member of the program's org).
+platformRouter.get("/partner/context", async (c) => {
+  const user = await getCurrentUser(c);
+  _requireDb();
+  const orgSlug = c.req.query("org_slug");
+  const programSlug = c.req.query("program_slug");
+  if (!orgSlug || !programSlug) throw new HttpError(400, "org_slug and program_slug required");
+  const org = await db.getOrganizationBySlug(orgSlug);
+  if (!org) throw new HttpError(404, "Program not found");
+  const program = await graph.getProgramByOrgAndSlug(org.id as string, programSlug);
+  if (!program) throw new HttpError(404, "Program not found");
+  const orgIds = [...new Set(user.memberships.map((m) => m.org_id as string))];
+  const partner = await graph.getActivePartnerAccessForOrgs(program.id as string, orgIds);
+  if (!partner) throw new HttpError(403, "No partner access to this program");
+  const capsSet = new Set(partner.access.capabilities ?? []);
+  const doc = await catalogue.getCatalogue("program-console", program.id as string);
+  const unlocked = new Set(surfacesForCapabilities(doc, capsSet));
+  const surfaces = doc.uiSurfaces
+    .filter((s) => unlocked.has(s.id))
+    .map((s) => ({ id: s.id, label: s.label, group: s.group ?? null }));
+  return c.json({
+    program: { id: program.id, name: program.name, description: program.description ?? null, branding: program.branding ?? null },
+    org_name: org.name,
+    org_slug: orgSlug,
+    program_slug: programSlug,
+    capabilities: [...capsSet],
+    surfaces,
+  });
 });
 // Incoming affiliation requests addressed to an org (Org B's inbox).
 platformRouter.get("/orgs/:org_id/incoming-affiliations", async (c) => {

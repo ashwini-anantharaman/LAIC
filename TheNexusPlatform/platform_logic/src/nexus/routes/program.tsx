@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BookOpen, Check, ExternalLink, Lock, Plus, Rocket, ShieldCheck, Trash2, Waypoints, X } from "lucide-react";
+import { BookOpen, Check, Copy, ExternalLink, Handshake, Lock, Plus, Rocket, ShieldCheck, Trash2, Waypoints, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -37,8 +37,11 @@ import {
   listGroups,
   listIntegrations,
   listOfferings,
+  getProgram,
   listPrograms,
   listProgramOrgAffiliations,
+  listPartnersForProgram,
+  setProgramOrgAffiliationAccess,
   listProgramGateRequests,
   approveProgramGateRequest,
   rejectProgramGateRequest,
@@ -70,6 +73,8 @@ import { DEFAULT_PROGRAM_FEATURES } from "@/types/platform";
 import type { ProgramFeatureKey, ProgramFeatures } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Section, Spinner, StatPill, statusTone } from "@/nexus/ui/kit";
 import { AppShellAccessCatalogue } from "@/nexus/appshell/AccessCatalogue";
+import { getProgramCatalogue, type CapabilityCatalogueDocument } from "@/nexus/access/catalogue";
+import { readBranding } from "@/nexus/branding";
 import { openInStudio } from "@/services/studio";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useProgramAccess } from "@/nexus/access";
@@ -80,14 +85,14 @@ function useProgram(): { program: Program | null; orgId: string; programId: stri
   const { orgId = "", programId = "" } = useParams();
   const [program, setProgram] = useState<Program | null>(null);
   useEffect(() => {
-    listPrograms(orgId)
-      .then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null))
-      .catch(() => setProgram(null));
+    if (!programId) { setProgram(null); return; }
+    // Single-program read (works for program-scoped people, unlike the org list).
+    getProgram(programId).then(setProgram).catch(() => setProgram(null));
   }, [orgId, programId]);
   return { program, orgId, programId };
 }
 
-function Head({ program, subtitle, actions }: { program: Program | null; subtitle: string; actions?: React.ReactNode }) {
+function Head({ program, subtitle, actions }: { program: Program | null; subtitle?: string; actions?: React.ReactNode }) {
   return <PageHeader title={program?.name ?? "Program"} subtitle={subtitle} actions={actions} />;
 }
 
@@ -121,10 +126,19 @@ export function ProgramOverview() {
   const [caps, setCaps] = useState<OrgCapabilities | null>(null);
   const [features, setFeatures] = useState<ProgramFeatures>(DEFAULT_PROGRAM_FEATURES);
   const [busy, setBusy] = useState<ProgramFeatureKey | null>(null);
+  // For a partner: the connected ("provider") program's name, for the footer.
+  const [providerName, setProviderName] = useState<string | null>(null);
+  const isPartner = !!program?.is_partner;
 
   useEffect(() => {
     if (programId) listOfferings(programId).then(setOfferings).catch(() => setOfferings([]));
   }, [programId]);
+  useEffect(() => {
+    const cid = program?.connected_program_id;
+    if (isPartner && cid && orgId) {
+      listPrograms(orgId).then((ps) => setProviderName(ps.find((p) => p.id === cid)?.name ?? null)).catch(() => setProviderName(null));
+    }
+  }, [isPartner, program?.connected_program_id, orgId]);
   useEffect(() => {
     if (orgId) getOrgCapabilities(orgId).then(setCaps).catch(() => setCaps(null));
   }, [orgId]);
@@ -173,9 +187,14 @@ export function ProgramOverview() {
   // one spinner until we know whether to auto-launch or what cards to paint.
   const confinedDeciding = !access.isAdmin && (access.loading || !caps || !program);
 
-  const active = PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && enabled(p.key) && granted(p.key));
+  // Don't paint platform cards until the program is loaded (features come from
+  // it — that's what prevents the disabled-platform flash). Org caps are a
+  // best-effort clamp: a program-scoped viewer (e.g. a partner admin) can't read
+  // them, and `allowed()` treats a missing caps as "allow", so don't block on it.
+  const settled = !!program;
+  const active = settled ? PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && enabled(p.key) && granted(p.key)) : [];
   // Only admins manage the envelope, so only they see the dashed "add" tiles.
-  const addable = access.isAdmin ? PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && !enabled(p.key)) : [];
+  const addable = settled && access.isAdmin ? PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && !enabled(p.key)) : [];
 
   // A real member whose entire access is a single platform is launched straight
   // into it — there's nothing else for them here. Previews (Test as) are not
@@ -196,11 +215,13 @@ export function ProgramOverview() {
   return (
     <div>
       <Head program={program} subtitle={program?.description ?? "Program workspace."} />
-      <div className="mb-8 flex flex-wrap gap-2">
-        <StatPill label="Offerings" value={offerings.length} />
-        <StatPill label="Learners" value={program?.learner_count ?? 0} />
-        <StatPill label="Courses" value={program?.course_count ?? 0} />
-      </div>
+      {isPartner ? null : (
+        <div className="mb-8 flex flex-wrap gap-2">
+          <StatPill label="Offerings" value={offerings.length} />
+          <StatPill label="Learners" value={program?.learner_count ?? 0} />
+          <StatPill label="Courses" value={program?.course_count ?? 0} />
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         {active.map((p) => (
           <PlatformCard
@@ -219,6 +240,11 @@ export function ProgramOverview() {
           <AddPlatformCard key={p.key} title={p.title} busy={busy === p.key} onAdd={() => setFeature(p.key, true)} />
         ))}
       </div>
+      {isPartner && providerName ? (
+        <div className="mt-12 text-center text-sm font-medium text-muted-foreground">
+          Powered by <span className="text-foreground">{providerName}</span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -341,7 +367,6 @@ export function ProgramOfferings() {
     <div>
       <Head
         program={program}
-        subtitle="Courses, challenges, and applications people join."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> New offering
@@ -525,7 +550,7 @@ export function ProgramRegistrations() {
     <div>
       <Head
         program={program}
-        subtitle="Students in this program — from the app, or added here. Staff go through Team & Roles."
+        subtitle="Students in this program. Staff are managed under People."
         actions={
           <Button onClick={() => setInviteOpen(true)} disabled={!programId}>
             <Plus className="size-4" /> Invite participant
@@ -647,6 +672,8 @@ export function ProgramGates() {
   useEffect(() => load(), [load]);
 
   function gateUrl(g: Gate): string {
+    // A partner's gate lives under the partner's own slug, not the owning org's.
+    if (program?.is_partner && program.slug) return `${window.location.origin}/partner/${program.slug}/${g.slug}`;
     return `${window.location.origin}/@/${g.org_slug ?? ""}/${g.slug}`;
   }
 
@@ -690,7 +717,7 @@ export function ProgramGates() {
     <div>
       <Head
         program={program}
-        subtitle="Sign-up / sign-in pages for this program, each at its own URL."
+        subtitle="Sign-up pages for this program, each at its own URL."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> Add a gate
@@ -885,7 +912,7 @@ export function ProgramGroups() {
     <div>
       <Head
         program={program}
-        subtitle="Classes, clubs, chapters, regions — one freeform group concept with nesting."
+        subtitle="Nestable groups: classes, clubs, chapters, or regions."
         actions={
           <Button onClick={() => setOpen(true)}>
             <Plus className="size-4" /> New group
@@ -1006,66 +1033,157 @@ function NewGroupDialog({
 
 export function ProgramPartners() {
   const { program, orgId, programId } = useProgram();
-  const [affiliations, setAffiliations] = useState<ProgramOrgAffiliation[] | null>(null);
-  const [affiliated, setAffiliated] = useState<AffiliatedProgram[]>([]);
+  const [partners, setPartners] = useState<Program[] | null>(null);
+  const [connected, setConnected] = useState<Program | null>(null);
+  const isPartner = !!program?.is_partner;
 
   useEffect(() => {
     if (!programId) return;
-    listProgramOrgAffiliations(programId).then(setAffiliations).catch(() => setAffiliations([]));
-  }, [programId]);
-  useEffect(() => {
-    if (orgId) listAffiliatedPrograms(orgId).then(setAffiliated).catch(() => setAffiliated([]));
-  }, [orgId]);
+    if (isPartner) {
+      // A partner's own Partners tab shows just its connected (sister) program.
+      const cid = program?.connected_program_id;
+      if (cid) listPrograms(orgId).then((ps) => setConnected(ps.find((x) => x.id === cid) ?? null)).catch(() => setConnected(null));
+      setPartners([]);
+    } else {
+      listPartnersForProgram(programId).then(setPartners).catch(() => setPartners([]));
+    }
+  }, [programId, orgId, isPartner, program?.connected_program_id]);
+
+  // A partner: show its sister program.
+  if (isPartner) {
+    return (
+      <div>
+        <Head program={program} subtitle="This partner's connected program." />
+        {!connected ? (
+          <EmptyState>Connected program unavailable.</EmptyState>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="glass-card p-4">
+              <div className="flex items-start gap-2">
+                <Handshake className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <Link to={`/o/${orgId}/p/${connected.id}`} className="font-medium text-foreground hover:underline">{connected.name}</Link>
+                  <div className="text-xs text-muted-foreground">Connected program</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
-      <Head program={program} subtitle="Organizations affiliated with this program, governed here inside it." />
-      {!affiliations ? (
+      <Head program={program} subtitle="Partner organizations connected to this program, each with its own login and a restricted view." />
+      {!partners ? (
         <Spinner />
-      ) : affiliations.length === 0 && affiliated.length === 0 ? (
-        <EmptyState>No partners yet. Affiliated organizations appear here once linked.</EmptyState>
+      ) : partners.length === 0 ? (
+        <EmptyState>No partners yet. Create one with "New partner" on the Programs page, connected to this program.</EmptyState>
       ) : (
-        <div className="space-y-6">
-          {affiliations.length > 0 ? (
-            <div className="glass-card overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Affiliated org</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {affiliations.map((a) => (
-                    <TableRow key={a.id}>
-                      <TableCell className="font-mono text-xs">{a.organization_id}</TableCell>
-                      <TableCell>{a.affiliation_type}</TableCell>
-                      <TableCell>
-                        <Pill tone={statusTone(a.status)}>{a.status}</Pill>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : null}
-          {affiliated.length > 0 ? (
-            <div>
-              <h2 className="text-sm font-semibold mb-2">Programs shared with this org</h2>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {affiliated.map((p) => (
-                  <div key={p.program_id} className="glass-card p-4">
-                    <div className="font-medium text-foreground">{p.name}</div>
-                    <div className="text-xs text-muted-foreground">{p.affiliation_type}</div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {partners.map((p) => {
+            const url = p.slug ? `${window.location.origin}/partner/${p.slug}` : null;
+            return (
+              <div key={p.id} className="glass-card p-4">
+                <div className="flex items-start gap-2">
+                  <Handshake className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <Link to={`/o/${orgId}/p/${p.id}`} className="font-medium text-foreground hover:underline">{p.name}</Link>
+                    {p.description ? <div className="text-xs text-muted-foreground">{p.description}</div> : null}
                   </div>
-                ))}
+                </div>
+                {url ? (
+                  <div className="mt-2 flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
+                    <span className="text-[11px] text-muted-foreground shrink-0">Login</span>
+                    <code className="flex-1 truncate text-xs font-mono">{url}</code>
+                    <button type="button" onClick={() => { void navigator.clipboard?.writeText(url); toast.success("Copied"); }} className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"><Copy className="size-3.5" /></button>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          ) : null}
+            );
+          })}
         </div>
       )}
     </div>
+  );
+}
+
+
+/**
+ * Grant a partner org a gated, catalog-based view of this program — the same
+ * capability vocabulary we provision to people. Capabilities come from the
+ * program's own Access Catalog; the server re-validates on save.
+ */
+function PartnerAccessDialog({
+  programId, affiliation, onClose, onSaved,
+}: {
+  programId: string;
+  affiliation: ProgramOrgAffiliation;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [doc, setDoc] = useState<CapabilityCatalogueDocument | null>(null);
+  const [caps, setCaps] = useState<Set<string>>(new Set(affiliation.metadata_json?.access?.capabilities ?? []));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    getProgramCatalogue(programId).then(setDoc).catch(() => setDoc(null));
+  }, [programId]);
+
+  const toggle = (id: string) => setCaps((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const grantable = (doc?.capabilities ?? []).filter((c) => !c.reserved);
+  const groups = [...(doc?.groups ?? [])].sort((a, b) => a.order - b.order);
+
+  async function save() {
+    setBusy(true);
+    try {
+      await setProgramOrgAffiliationAccess(programId, affiliation.id, { capabilities: [...caps] });
+      toast.success("Partner access updated");
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update access");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Partner access · {affiliation.organization_id}</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          The capabilities you pick apply to every active member of this partner organization.
+        </p>
+        {!doc ? (
+          <Spinner />
+        ) : grantable.length === 0 ? (
+          <EmptyState>This program’s Access Catalog has no grantable capabilities.</EmptyState>
+        ) : (
+          <div className="space-y-3">
+            {groups.map((g) => {
+              const groupCaps = grantable.filter((c) => c.group === g.id);
+              if (!groupCaps.length) return null;
+              return (
+                <div key={g.id} className="rounded-lg border border-border p-2">
+                  <div className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{g.label}</div>
+                  {groupCaps.map((c) => (
+                    <label key={c.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
+                      <Switch checked={caps.has(c.id)} onCheckedChange={() => toggle(c.id)} />
+                      <span className="min-w-0"><span className="text-foreground">{c.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{c.id}</span></span>
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={busy || !doc}>{busy ? "Saving…" : "Save access"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1080,7 +1198,6 @@ export function ProgramCommunity() {
     <div>
       <Head
         program={program}
-        subtitle="A hub for participants and coaches."
         actions={
           <Button variant="ghost" onClick={() => toast("Discord integration isn\u2019t available yet.")}>
             Connect Discord
@@ -1156,16 +1273,15 @@ export function ProgramShells() {
     <div>
       <Head
         program={program}
-        subtitle="Configurable app containers — one runtime renders every shell's config."
         actions={
           <>
             {access.isAdmin && (
               <Button
                 variant={showCatalogue ? "secondary" : "outline"}
                 onClick={() => setShowCatalogue((v) => !v)}
-                title="The capability catalogue the App Studio publishes — what roles can grant for the Studio and published apps"
+                title="The capability catalog the App Studio publishes — what roles can grant for the Studio and published apps"
               >
-                <ShieldCheck className="size-4" /> Access Catalogue
+                <ShieldCheck className="size-4" /> Access Catalog
               </Button>
             )}
             <Button onClick={() => setOpen(true)}>

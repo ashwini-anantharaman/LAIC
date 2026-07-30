@@ -20,7 +20,7 @@ import {
   Rocket,
   Waypoints,
   ScrollText,
-  ListTree,
+  FlaskConical,
   ChevronRight,
   ChevronLeft,
   Moon,
@@ -44,7 +44,7 @@ import {
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
 import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
-import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
+import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, getProgram, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
 import { useDocumentTitle } from "@/nexus/useDocumentTitle";
@@ -63,7 +63,7 @@ interface NavItem {
 
 // Org nav — each item names the org-role area that gates it (null = always).
 const ORG_NAV_AREAS: Record<string, string | null> = {
-  dashboard: null, programs: "programs", team: "team", "access-catalogue": "team", gates: "team", settings: "settings", audit: "audit",
+  dashboard: null, programs: "programs", team: "team", "access-catalogue": "team", gates: "gates", settings: "settings", audit: "audit",
 };
 function orgNav(orgId: string): NavItem[] {
   const base = `/o/${orgId}`;
@@ -71,16 +71,15 @@ function orgNav(orgId: string): NavItem[] {
     { to: `${base}/dashboard`, label: "Dashboard", icon: LayoutDashboard },
     { to: `${base}/programs`, label: "Programs", icon: Boxes },
     { to: `${base}/team`, label: "People", icon: KeyRound },
-    { to: `${base}/access-catalogue`, label: "Access Catalogue", icon: ListTree },
     { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/settings`, label: "Settings", icon: Settings },
     { to: `${base}/audit`, label: "Audit", icon: ScrollText },
   ];
 }
 
-function programNav(orgId: string, programId: string): NavItem[] {
+function programNav(orgId: string, programId: string, isPartner = false): NavItem[] {
   const base = `/o/${orgId}/p/${programId}`;
-  return [
+  const items: NavItem[] = [
     { to: `${base}`, label: "Overview", icon: LayoutDashboard, end: true },
     { to: `${base}/offerings`, label: "Offerings", icon: Package },
     { to: `${base}/shells`, label: "App Studio", icon: AppWindow },
@@ -89,17 +88,19 @@ function programNav(orgId: string, programId: string): NavItem[] {
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
     { to: `${base}/team`, label: "People", icon: KeyRound },
-    { to: `${base}/access-catalogue`, label: "Access Catalogue", icon: ListTree },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
     { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
   ];
+  // A partner is a separate entity connected to ONE program — it has no
+  // registrations of its own and no partners of its own.
+  return isPartner ? items.filter((it) => !it.to.endsWith("/registrations") && !it.to.endsWith("/partners")) : items;
 }
 
 /**
  * A member's confined program nav: Overview plus only the areas their role
  * grants. Mirrors the prototype's five permissionable areas.
  */
-function confinedProgramNav(orgId: string, programId: string, perms: Record<string, string>): NavItem[] {
+function confinedProgramNav(orgId: string, programId: string, perms: Record<string, string>, isPartner = false): NavItem[] {
   const base = `/o/${orgId}/p/${programId}`;
   const items: NavItem[] = [{ to: `${base}`, label: "Home", icon: LayoutDashboard, end: true }];
   if (perms.learning) items.push({ to: `${base}/learning`, label: "Content Studio", icon: Rocket });
@@ -107,7 +108,8 @@ function confinedProgramNav(orgId: string, programId: string, perms: Record<stri
   if (perms.appbuilder) items.push({ to: `${base}/shells`, label: "App Studio", icon: AppWindow });
   if (perms.community) items.push({ to: `${base}/community`, label: "Community", icon: MessagesSquare });
   if (perms.teams) items.push({ to: `${base}/team`, label: "People", icon: KeyRound });
-  if (perms.partners) items.push({ to: `${base}/partners`, label: "Partners", icon: Handshake });
+  // A partner has no Partners tab of its own.
+  if (perms.partners && !isPartner) items.push({ to: `${base}/partners`, label: "Partners", icon: Handshake });
   return items;
 }
 
@@ -464,8 +466,10 @@ export function AppShell() {
       setProgram(null);
       return;
     }
-    listPrograms(orgId)
-      .then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null))
+    // Single-program read: works for program-scoped people (e.g. a partner
+    // admin), unlike the org-wide list which needs org-level staff access.
+    getProgram(programId)
+      .then((p) => setProgram(p))
       .catch(() => setProgram(null));
   }, [orgId, programId]);
   useEffect(() => {
@@ -473,7 +477,19 @@ export function AppShell() {
     // stale override if it reverted to the org's.
     if (!programId || !program) return;
     const b = (program as Program & { branding?: { accent: string | null; logo: string | null; favicon?: string | null } | null }).branding;
-    if (b && (b.accent || b.logo || b.favicon)) {
+    const partner = !!(program as Program & { is_partner?: boolean }).is_partner;
+    if (partner) {
+      // A partner is a SEPARATE entity — it uses its OWN theme and never falls
+      // back to the owning org's branding. Its own logo/favicon/accent if set,
+      // else a neutral default (no org logo).
+      writeBranding({
+        orgId: programId,
+        accent: b?.accent ?? null,
+        logo: b?.logo ? resolveAssetUrl(b.logo) : null,
+        favicon: b?.favicon ? resolveAssetUrl(b.favicon) : null,
+        title: program.name,
+      });
+    } else if (b && (b.accent || b.logo || b.favicon)) {
       const org = readBranding(orgId);
       writeBranding({
         orgId: programId,
@@ -488,6 +504,7 @@ export function AppShell() {
   }, [programId, program, orgId]);
 
   const programName = program?.name ?? programMemberships.find((m) => m.program_id === programId)?.program_name ?? null;
+  const isPartner = !!(program as (Program & { is_partner?: boolean }) | null)?.is_partner;
 
   // Browser tab (title + favicon) follows the current level.
   const effectiveOrgName = orgTitle ?? orgName;
@@ -563,15 +580,16 @@ export function AppShell() {
 
   if (impersonating && programId) {
     heading = impersonating.roleName;
-    items = confinedProgramNav(orgId, programId, impersonating.perms).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
+    items = confinedProgramNav(orgId, programId, impersonating.perms, isPartner).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (mode === "nexus") {
     heading = "Nexus";
     items = [
       { to: "/orgs", label: "Organizations", icon: Building2 },
       { to: "/team", label: "People", icon: KeyRound },
-      { to: "/access-catalogue", label: "Access Catalogue", icon: ListTree },
       { to: "/nexus-gates", label: "Gates", icon: DoorOpen },
       { to: "/audit", label: "Platform audit", icon: ScrollText },
+      { to: "/test1", label: "Test 1", icon: FlaskConical },
+      { to: "/test2", label: "Test 2", icon: FlaskConical },
       { to: "/settings", label: "Settings", icon: SettingsIcon },
     ];
     // A confined operator (custom platform-scope role) sees only granted areas;
@@ -579,7 +597,8 @@ export function AppShell() {
     if (user?.role !== "platform_admin") {
       const perms = user?.nexus_role?.perms ?? {};
       const NEXUS_NAV_AREAS: Record<string, string | null> = {
-        orgs: "organizations", team: "__admin__", "access-catalogue": "__admin__", "nexus-gates": "__admin__", audit: "audit", settings: "settings",
+        orgs: "organizations", team: "__admin__", "access-catalogue": "__admin__", "nexus-gates": "nexus-gates", audit: "audit", settings: "settings",
+        test1: "test1", test2: "test2",
       };
       items = items.filter((it) => {
         const area = NEXUS_NAV_AREAS[navKey(it.to)];
@@ -589,10 +608,10 @@ export function AppShell() {
     }
   } else if (programId && isPlainMember) {
     heading = myRoleName ?? programMembership?.program_name ?? "Program";
-    items = confinedProgramNav(orgId, programId, myRolePerms ?? {}).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
+    items = confinedProgramNav(orgId, programId, myRolePerms ?? {}, isPartner).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (programId) {
     heading = programName ?? "Program";
-    items = programNav(orgId, programId).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
+    items = programNav(orgId, programId, isPartner).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
     // Members live inside their program; only org-level admins get the org space.
     if (mode === "org") {
       backLink = (
@@ -633,7 +652,7 @@ export function AppShell() {
     orgs: "Organizations", offerings: "Offerings", shells: "App",
     registrations: "Registrations", groups: "Participants & Groups", community: "Community",
     team: "People", partners: "Partners", learning: "Content Studio",
-    "access-catalogue": "Access Catalogue",
+    "access-catalogue": "Access Catalog",
   };
   const segments = pathname.split("/").filter(Boolean);
   const last = segments[segments.length - 1] ?? "";

@@ -294,6 +294,7 @@ function _mergeCapabilities(base: Row, patch: Row): Row {
     programTypes: merge((tpg.DEFAULT_CAPABILITIES.programTypes as Row), merge((base.programTypes as Row) ?? {}, (patch.programTypes as Row) ?? {})),
     offeringTypes: merge((tpg.DEFAULT_CAPABILITIES.offeringTypes as Row), merge((base.offeringTypes as Row) ?? {}, (patch.offeringTypes as Row) ?? {})),
     features: merge((tpg.DEFAULT_CAPABILITIES.features as Row), merge((base.features as Row) ?? {}, (patch.features as Row) ?? {})),
+    featureAccess: "featureAccess" in patch ? ((patch.featureAccess as Row) ?? {}) : ((base.featureAccess as Row) ?? {}),
     adminsEnterPrograms: pickBool(patch.adminsEnterPrograms, base.adminsEnterPrograms),
   };
 }
@@ -399,18 +400,36 @@ export async function updateProgramName(programId: string, name: string): Promis
   return tpg.updateProgramName(programId, name);
 }
 
-// Org-defined program categories (DB-backed; routes guard dbEnabled).
-export async function listOrgCategories(orgId: string): Promise<string[]> {
+// Org-defined program categories (DB-backed; routes guard dbEnabled). Categories
+// are name-identified with an optional `parent` for nesting (CategoryNode).
+export async function listOrgCategories(orgId: string): Promise<tpg.CategoryNode[]> {
   return tpg.listOrgCategories(orgId);
 }
-export async function addOrgCategory(orgId: string, name: string): Promise<string[]> {
-  return tpg.addOrgCategory(orgId, name);
+export async function addOrgCategory(orgId: string, name: string, parent?: string | null): Promise<tpg.CategoryNode[]> {
+  return tpg.addOrgCategory(orgId, name, parent);
 }
-export async function removeOrgCategory(orgId: string, name: string): Promise<string[]> {
+export async function setOrgCategoryParent(orgId: string, name: string, parent: string | null): Promise<tpg.CategoryNode[]> {
+  return tpg.setOrgCategoryParent(orgId, name, parent);
+}
+export async function removeOrgCategory(orgId: string, name: string): Promise<tpg.CategoryNode[]> {
   return tpg.removeOrgCategory(orgId, name);
 }
-export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<string[]> {
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<tpg.CategoryNode[]> {
   return tpg.renameOrgCategory(orgId, from, to);
+}
+
+// ── Partners ("sister programs"; DB-backed only) ────────────────────────────
+export async function createPartner(orgId: string, opts: {
+  name: string; connectedProgramId: string; description?: string | null; slug?: string;
+  features?: Row; featureAccess?: Record<string, { capabilities: string[] }> | null;
+}): Promise<Row> {
+  return tpg.createPartner(orgId, opts);
+}
+export async function listPartnersForProgram(programId: string): Promise<Row[]> {
+  return tpg.listPartnersForProgram(programId);
+}
+export async function getPartnerBySlug(slug: string): Promise<Row | null> {
+  return tpg.getPartnerBySlug(slug);
 }
 
 /** Per-program platform enablement — DB-backed only (route guards dbEnabled). */
@@ -418,8 +437,9 @@ export async function updateProgramFeatures(
   programId: string,
   features: ProgramFeatures,
   platformsOpen?: boolean,
+  featureAccess?: Record<string, { capabilities: string[] }> | null,
 ): Promise<Row | null> {
-  if (usePg()) return tpg.updateProgramFeatures(programId, features, platformsOpen);
+  if (usePg()) return tpg.updateProgramFeatures(programId, features, platformsOpen, featureAccess);
   if (await useLocal()) return local.localUpdateProgramFeatures(programId, features);
   const client = requireClient();
   const existing = await getProgram(programId);
@@ -428,6 +448,7 @@ export async function updateProgramFeatures(
     ...((existing.metadata_json as Row) ?? {}),
     features,
     ...(platformsOpen === undefined ? {} : { platforms_open: platformsOpen }),
+    ...(featureAccess === undefined ? {} : { feature_access: featureAccess ?? {} }),
   };
   return _mutateOne(
     client.from("programs").update({ metadata_json: meta }).eq("id", programId).select("*"),

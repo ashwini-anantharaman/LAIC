@@ -31,18 +31,21 @@ import {
   removeMember,
   removeOrgCategory,
   renameOrgCategory,
+  setOrgCategoryParent,
   revokeInvitation,
   setOrgAccess,
   updateOrgName,
   updateOrgTheme,
   uploadOrgFavicon,
   uploadOrgLogo,
+  type CategoryNode,
   type OrgCapabilities,
 } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import type { Invitation, OrgMember } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Section, Spinner } from "@/nexus/ui/kit";
-import { Check, Copy, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Copy, FolderTree, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { useSession } from "@/nexus/session";
 import { writeBranding } from "@/nexus/branding";
@@ -115,7 +118,7 @@ export function OrgSettings() {
 
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Your organization's profile, theme, and people." />
+      <PageHeader title="Settings" />
 
       <Section title="Branding">
         <ThemeEditor
@@ -320,112 +323,144 @@ function AccessSection({ orgId }: { orgId: string }) {
 }
 
 /**
- * Settings → Categories: the org's program taxonomy. Programs pick a primary
- * (and optional secondaries) from this list; renames cascade to every program.
+ * Settings → Categories: the org's program taxonomy as a nestable folder tree.
+ * Programs pick a primary (and optional secondaries) from these; renames cascade
+ * to every program. Drag a category onto another to nest it (like Roles &
+ * Groups), or onto the top zone to lift it out.
  */
+interface CatTreeNode { name: string; children: CatTreeNode[] }
+function buildCategoryTree(nodes: CategoryNode[]): CatTreeNode[] {
+  const byName = new Map(nodes.map((n) => [n.name, { name: n.name, children: [] as CatTreeNode[] }]));
+  const roots: CatTreeNode[] = [];
+  for (const n of nodes) {
+    const node = byName.get(n.name)!;
+    const parent = n.parent ? byName.get(n.parent) : null;
+    (parent ? parent.children : roots).push(node);
+  }
+  const sortRec = (list: CatTreeNode[]) => { list.sort((a, b) => a.name.localeCompare(b.name)); list.forEach((n) => sortRec(n.children)); };
+  sortRec(roots);
+  return roots;
+}
+/** Names of a category and all its descendants — cycle guard for reparenting. */
+function categorySubtree(name: string, nodes: CategoryNode[]): Set<string> {
+  const childrenOf = new Map<string, string[]>();
+  for (const n of nodes) if (n.parent) childrenOf.set(n.parent, [...(childrenOf.get(n.parent) ?? []), n.name]);
+  const out = new Set<string>([name]);
+  const stack = [name];
+  while (stack.length) { const cur = stack.pop()!; for (const ch of childrenOf.get(cur) ?? []) if (!out.has(ch)) { out.add(ch); stack.push(ch); } }
+  return out;
+}
+
 function CategoriesSection({ orgId }: { orgId: string }) {
-  const [categories, setCategories] = useState<string[] | null>(null);
+  const [categories, setCategories] = useState<CategoryNode[] | null>(null);
   const [newName, setNewName] = useState("");
+  const [newParent, setNewParent] = useState<string>("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameTo, setRenameTo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [drag, setDrag] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
 
   useEffect(() => {
-    listOrgCategories(orgId)
-      .then(setCategories)
-      .catch(() => setCategories([]));
+    listOrgCategories(orgId).then(setCategories).catch(() => setCategories([]));
   }, [orgId]);
 
-  async function run(op: () => Promise<string[]>, ok: string) {
+  async function run(op: () => Promise<CategoryNode[]>, ok: string) {
     setBusy(true);
-    try {
-      setCategories(await op());
-      toast.success(ok);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setBusy(false);
-    }
+    try { setCategories(await op()); toast.success(ok); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+    finally { setBusy(false); }
+  }
+
+  const nodes = categories ?? [];
+  const tree = buildCategoryTree(nodes);
+
+  function reparent(name: string, parent: string | null) {
+    if (parent && categorySubtree(name, nodes).has(parent)) { toast.error("Can't nest a category into itself"); return; }
+    const cur = nodes.find((n) => n.name === name);
+    if (cur && (cur.parent ?? null) === parent) return;
+    void run(() => setOrgCategoryParent(orgId, name, parent), parent ? `Nested "${name}" under "${parent}"` : `Moved "${name}" to top level`);
+  }
+
+  function renderNode(n: CatTreeNode, depth: number): React.ReactNode {
+    const isDropTarget = dropTarget === n.name && drag !== n.name;
+    return (
+      <div key={n.name}>
+        <div
+          draggable={renaming !== n.name}
+          onDragStart={(e) => { setDrag(n.name); e.dataTransfer.effectAllowed = "move"; }}
+          onDragEnd={() => { setDrag(null); setDropTarget(null); }}
+          onDragOver={(e) => { e.preventDefault(); setDropTarget(n.name); }}
+          onDrop={(e) => { e.preventDefault(); if (drag && drag !== n.name) reparent(drag, n.name); setDrag(null); setDropTarget(null); }}
+          className={`group flex items-center gap-2 rounded-md border px-3 py-2 transition-colors ${isDropTarget ? "border-primary bg-primary/5" : "border-border bg-card"}`}
+          style={{ marginLeft: depth * 18 }}
+        >
+          <GripVertical className="size-3.5 shrink-0 cursor-grab text-muted-foreground/50" />
+          <FolderTree className="size-4 shrink-0 text-muted-foreground" />
+          {renaming === n.name ? (
+            <div className="flex flex-1 items-center gap-2">
+              <Input value={renameTo} onChange={(e) => setRenameTo(e.target.value)} className="h-8 flex-1" autoFocus />
+              <Button size="sm" disabled={busy || !renameTo.trim() || renameTo.trim() === n.name}
+                onClick={() => { void run(() => renameOrgCategory(orgId, n.name, renameTo.trim()), `Renamed to "${renameTo.trim()}" everywhere`); setRenaming(null); }}>
+                <Check className="size-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setRenaming(null)}>Cancel</Button>
+            </div>
+          ) : (
+            <>
+              <span className="min-w-0 flex-1 truncate text-sm text-foreground">{n.name}</span>
+              <div className="flex items-center gap-1 shrink-0 opacity-0 transition group-hover:opacity-100">
+                <Button size="sm" variant="ghost" title="Rename category" onClick={() => { setRenaming(n.name); setRenameTo(n.name); }}>
+                  <Pencil className="size-3.5" />
+                </Button>
+                <ConfirmButton
+                  title={`Remove the "${n.name}" category?`}
+                  description="Its subcategories move up to its parent, and it's stripped from every program's secondaries. Refused while any program uses it as its primary."
+                  actionLabel="Remove"
+                  onConfirm={() => run(() => removeOrgCategory(orgId, n.name), `Removed "${n.name}"`)}
+                  buttonTitle="Remove category"
+                >
+                  <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                </ConfirmButton>
+              </div>
+            </>
+          )}
+        </div>
+        {n.children.length ? <div className="mt-1 space-y-1">{n.children.map((c) => renderNode(c, depth + 1))}</div> : null}
+      </div>
+    );
   }
 
   return (
     <Section title="Categories">
       <div className="glass-card p-5 space-y-2">
         <p className="text-xs text-muted-foreground">
-          Programs pick a primary category (and optional secondaries) from this list. Renaming a
-          category updates every program using it; a category can only be removed once no program
-          uses it as its primary.
+          Drag a category onto another to nest it, or onto the top zone to lift it out.
         </p>
         {!categories ? (
           <Spinner />
         ) : (
           <>
-            {categories.map((c) => (
-              <div key={c} className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
-                {renaming === c ? (
-                  <div className="flex flex-1 items-center gap-2">
-                    <Input value={renameTo} onChange={(e) => setRenameTo(e.target.value)} className="h-8 flex-1" autoFocus />
-                    <Button
-                      size="sm"
-                      disabled={busy || !renameTo.trim() || renameTo.trim() === c}
-                      onClick={() => {
-                        void run(() => renameOrgCategory(orgId, c, renameTo.trim()), `Renamed to "${renameTo.trim()}" everywhere`);
-                        setRenaming(null);
-                      }}
-                    >
-                      <Check className="size-3.5" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setRenaming(null)}>
-                      Cancel
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <span className="text-sm text-foreground truncate">{c}</span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        title="Rename category"
-                        onClick={() => {
-                          setRenaming(c);
-                          setRenameTo(c);
-                        }}
-                      >
-                        <Pencil className="size-3.5" />
-                      </Button>
-                      <ConfirmButton
-                        title={`Remove the "${c}" category?`}
-                        description="It disappears from every program's secondary categories. Removal is refused while any program uses it as its primary."
-                        actionLabel="Remove"
-                        onConfirm={() => run(() => removeOrgCategory(orgId, c), `Removed "${c}"`)}
-                        buttonTitle="Remove category"
-                      >
-                        <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
-                      </ConfirmButton>
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-            {categories.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No categories yet — add the first below.</p>
-            ) : null}
-            <div className="flex gap-2 pt-1">
-              <Input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g. Competitions, Summer Camps"
-                className="flex-1"
-              />
-              <Button
-                size="sm"
-                disabled={busy || !newName.trim()}
-                onClick={() => {
-                  void run(() => addOrgCategory(orgId, newName.trim()), `Added "${newName.trim()}"`);
-                  setNewName("");
-                }}
-              >
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDropTarget("root"); }}
+              onDrop={(e) => { e.preventDefault(); if (drag) reparent(drag, null); setDrag(null); setDropTarget(null); }}
+              className={`flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-xs transition-colors ${dropTarget === "root" ? "border-primary bg-primary/5 text-foreground" : "border-border text-muted-foreground"}`}
+            >
+              <ChevronRight className="size-3.5" /> Top level (no parent)
+            </div>
+            {tree.map((n) => renderNode(n, 0))}
+            {nodes.length === 0 ? <p className="text-xs text-muted-foreground">No categories yet — add the first below.</p> : null}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Computer Science Department" className="flex-1 min-w-40" />
+              <Select value={newParent || "__root__"} onValueChange={(v) => setNewParent(v === "__root__" ? "" : v)}>
+                <SelectTrigger className="h-9 w-48"><SelectValue placeholder="Top level" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__root__">Top level</SelectItem>
+                  {nodes.map((n) => <SelectItem key={n.name} value={n.name}>Under {n.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button size="sm" disabled={busy || !newName.trim()}
+                onClick={() => { void run(() => addOrgCategory(orgId, newName.trim(), newParent || null), `Added "${newName.trim()}"`); setNewName(""); setNewParent(""); }}>
                 <Plus className="size-3.5" /> Add
               </Button>
             </div>

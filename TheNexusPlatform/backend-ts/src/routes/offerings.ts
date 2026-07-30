@@ -13,7 +13,8 @@ import { HttpError } from "../httpError";
 import * as db from "../platformDb";
 import { dbEnabled } from "../db/client";
 import * as graph from "../db/orgGraphRepo";
-import { validGrantsAcross, type CatalogueRef } from "../accessCatalogue/store";
+import { validGrantsAcross, getCatalogue, type CatalogueRef } from "../accessCatalogue/store";
+import { grantableCapabilities } from "../accessCatalogue/resolver";
 import { requireCapability } from "../accessCatalogue/enforce";
 import { isOfferingAdmin } from "../permissions";
 import { BRIDGE_PREBUILT_ROLES } from "../platformAccess";
@@ -157,6 +158,20 @@ function _registrationResponse(row: Row): Row {
     created_at: row.created_at,
   };
 }
+
+// A single program, readable by any member of it (program-scoped admins/members
+// included). The org-wide programs list requires ORG-LEVEL staff, so the shell
+// can't use it to load a program for a program-scoped person (e.g. a partner
+// admin) — this fills that gap so the workspace always knows its program.
+offeringsRouter.get("/programs/:program_id", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgMember(user, program.org_id as string);
+  return c.json({ ...program, features: normalizeProgramFeatures(program.features as Record<string, unknown>) });
+});
 
 // ── Offerings ────────────────────────────────────────────────────────────
 offeringsRouter.get("/programs/:program_id/offerings", async (c) => {
@@ -746,6 +761,14 @@ offeringsRouter.get("/gates/by-path/:org_slug/:gate_slug", async (c) => {
   return c.json(gate);
 });
 
+// Partner gate — resolved by the PARTNER's own slug (/partner/<slug>/<gate>).
+offeringsRouter.get("/gates/partner/:partner_slug/:gate_slug", async (c) => {
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const gate = await graph.getPublicPartnerGate(c.req.param("partner_slug"), c.req.param("gate_slug"));
+  if (!gate) throw new HttpError(404, "Gate not found");
+  return c.json(gate);
+});
+
 offeringsRouter.post("/groups/:group_id/participants/coach-add", async (c) => {
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
@@ -860,6 +883,44 @@ function _permsWithinFeatures<V>(perms: Record<string, V>, programFeatures: unkn
   ) as Record<string, V>;
 }
 
+// Platform areas provisioned "Partial" cap what their roles may grant. Drop any
+// learning/bridge capability the program (intersected with the org envelope)
+// didn't provision. Full/unrestricted platforms pass through untouched.
+const _FEATURE_ACCESS_PROVIDER: Record<string, "learning" | "bridge"> = { learning: "learning", bridge: "bridge" };
+async function _clampCapsToProvisioning(program: Record<string, unknown>, capabilities: string[]): Promise<string[]> {
+  const featureAccess = (program.feature_access as Record<string, { capabilities?: string[] }> | null) ?? {};
+  const enabled = normalizeProgramFeatures(program.features as Record<string, unknown>);
+  const orgCaps = await db.getOrgCapabilities(program.org_id as string).catch(() => null);
+  const orgAccess = (orgCaps?.featureAccess as Record<string, { capabilities?: string[] }> | undefined) ?? {};
+  // The allowed set for one platform key: program partial ∩ org partial (either
+  // absent = no restriction from that level). null = fully unrestricted.
+  const allowedFor = (key: string): Set<string> | null => {
+    const prog = featureAccess[key]?.capabilities;
+    const org = orgAccess[key]?.capabilities;
+    if (prog && org) return new Set(prog.filter((c) => org.includes(c)));
+    if (prog) return new Set(prog);
+    if (org) return new Set(org);
+    return null;
+  };
+  const platformCapSets: Record<string, Set<string>> = {};
+  const platformAllowed: Record<string, Set<string> | null> = {};
+  for (const key of Object.keys(_FEATURE_ACCESS_PROVIDER)) {
+    platformCapSets[key] = new Set(grantableCapabilities(await getCatalogue(_FEATURE_ACCESS_PROVIDER[key])));
+    platformAllowed[key] = allowedFor(key);
+  }
+  return capabilities.filter((id) => {
+    for (const key of Object.keys(_FEATURE_ACCESS_PROVIDER)) {
+      if (platformCapSets[key].has(id)) {
+        // A DISABLED platform grants nothing, regardless of any stale caps sent.
+        if (enabled[key as keyof typeof enabled] === false) return false;
+        const allowed = platformAllowed[key];
+        return allowed ? allowed.has(id) : true;
+      }
+    }
+    return true; // not a platform capability → unaffected
+  });
+}
+
 offeringsRouter.get("/programs/:program_id/roles", async (c) => {
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
@@ -882,9 +943,12 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   // profile-id mismatch (the FK targets profiles.id).
   const perms = _permsWithinFeatures(req.perms, program.features);
   const validCaps = req.capabilities !== undefined
-    ? await validGrantsAcross(
-        [{ providerId: "program-console", instanceId: programId }, { providerId: "learning" }, { providerId: "bridge" }],
-        req.capabilities,
+    ? await _clampCapsToProvisioning(
+        program,
+        await validGrantsAcross(
+          [{ providerId: "program-console", instanceId: programId }, { providerId: "learning" }, { providerId: "bridge" }],
+          req.capabilities,
+        ),
       )
     : undefined;
   const finalPerms: Record<string, unknown> =
@@ -921,7 +985,12 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
       : existing.organization_id
         ? [{ providerId: "org-console", instanceId: existing.organization_id as string }]
         : [{ providerId: "nexus-console" }];
-    const validCaps = await validGrantsAcross(refs, req.capabilities);
+    let validCaps = await validGrantsAcross(refs, req.capabilities);
+    // Program roles: also clamp to the program's Partial provisioning envelope.
+    if (existing.program_id) {
+      const program = await db.getProgram(existing.program_id as string);
+      if (program) validCaps = await _clampCapsToProvisioning(program, validCaps);
+    }
     const base = (perms ?? (existing.perms as Record<string, unknown>) ?? {}) as Record<string, unknown>;
     perms = { ...base, capabilities: validCaps };
   }
@@ -1204,7 +1273,23 @@ offeringsRouter.get("/programs/:program_id/my-role", async (c) => {
   const programId = c.req.param("program_id");
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  _requireOrgMember(user, program.org_id);
+  // Direct org members resolve their own program role below. A PARTNER-org
+  // member (not in this program's org) instead inherits their org's affiliation
+  // grant — a catalog-based gated view of the program (see Partners).
+  const isOrgMember = user.role === "platform_admin" || user.memberships.some((m) => m.org_id === program.org_id);
+  if (!isOrgMember) {
+    const orgIds = [...new Set(user.memberships.map((m) => m.org_id as string))];
+    const partner = await graph.getActivePartnerAccessForOrgs(programId, orgIds).catch(() => null);
+    if (!partner) throw new HttpError(403, "Not a member of this organization");
+    return c.json({
+      role_id: null,
+      role_name: "Partner access",
+      perms: { ...(partner.access.perms ?? {}), capabilities: partner.access.capabilities ?? [] },
+      bridge_role: null,
+      learning_role: null,
+      partner: true,
+    });
+  }
   if (!user.email) return c.json(null);
   // A person's effective grants = their custom program role (Team & Roles)
   // merged with platform-role assignments made inside the platforms (e.g.
