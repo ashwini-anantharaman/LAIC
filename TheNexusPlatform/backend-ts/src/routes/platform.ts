@@ -1359,9 +1359,10 @@ platformRouter.get("/orgs/:org_id/programs", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
   _assertOrgStaff(user, orgId);
-  // Partners are program rows too, but they belong on a program's Partners tab —
-  // never in the org's main Programs list.
-  return c.json((await db.listPrograms(orgId)).filter((p) => !p.is_partner).map(_programResponse));
+  // Returns ALL programs incl. partners (the shell needs the partner row to know
+  // it's a partner). The Programs GRID filters partners out client-side; they
+  // surface on each program's Partners tab.
+  return c.json((await db.listPrograms(orgId)).map(_programResponse));
 });
 
 platformRouter.post("/orgs/:org_id/programs", async (c) => {

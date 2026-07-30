@@ -114,7 +114,9 @@ export function Programs() {
   const parentCategory = openCategory ? parentOf.get(openCategory) ?? null : null;
 
   async function load() {
-    setPrograms(await listPrograms(orgId));
+    // The Programs page manages ordinary programs; partners are a program's own
+    // thing (its Partners tab), so keep them out of the grid + connecting picker.
+    setPrograms((await listPrograms(orgId)).filter((p) => !p.is_partner));
   }
   useEffect(() => {
     void load();
