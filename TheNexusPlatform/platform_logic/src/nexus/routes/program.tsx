@@ -187,10 +187,11 @@ export function ProgramOverview() {
   // one spinner until we know whether to auto-launch or what cards to paint.
   const confinedDeciding = !access.isAdmin && (access.loading || !caps || !program);
 
-  // Don't paint any platform cards until the program + envelope are known —
-  // otherwise a disabled platform flashes on (features default to on) before the
-  // real feature set arrives and hides it.
-  const settled = !!program && !!caps;
+  // Don't paint platform cards until the program is loaded (features come from
+  // it — that's what prevents the disabled-platform flash). Org caps are a
+  // best-effort clamp: a program-scoped viewer (e.g. a partner admin) can't read
+  // them, and `allowed()` treats a missing caps as "allow", so don't block on it.
+  const settled = !!program;
   const active = settled ? PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && enabled(p.key) && granted(p.key)) : [];
   // Only admins manage the envelope, so only they see the dashed "add" tiles.
   const addable = settled && access.isAdmin ? PROGRAM_PLATFORMS.filter((p) => allowed(p.cap) && !enabled(p.key)) : [];

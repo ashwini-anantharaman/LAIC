@@ -2421,7 +2421,12 @@ platformRouter.put("/orgs/:org_id/entitlements/:module", async (c) => {
 platformRouter.get("/orgs/:org_id/capabilities", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");
-  _assertOrgStaff(user, orgId);
+  // Readable by ANY member of the org (incl program-scoped, e.g. a partner
+  // admin) — it's the org's feature envelope, which programs already see through
+  // their effective features. Editing it (PUT) still requires operator access.
+  if (user.role !== "platform_admin" && !user.memberships.some((m) => m.org_id === orgId)) {
+    throw new HttpError(403, "Not a member of this organization");
+  }
   return c.json(await db.getOrgCapabilities(orgId));
 });
 
