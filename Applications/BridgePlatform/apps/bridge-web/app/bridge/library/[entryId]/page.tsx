@@ -54,6 +54,14 @@ export default async function LibraryEntryPage({
           {entry.importFileName && ` · ${entry.importFileName}`} · {entry.createdAt.slice(0, 10)}
         </span>
         <span className="ml-auto flex gap-2">
+          {entry.hands && (
+            <Link
+              href={`/bridge/library/${entry.entryId}/view`}
+              className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50"
+            >
+              Hand viewer
+            </Link>
+          )}
           {entry.kind === "table" ? (
             <form action={startTableEntryAction}>
               <input type="hidden" name="entryId" value={entry.entryId} />

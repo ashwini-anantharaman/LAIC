@@ -34,6 +34,13 @@ test("deal editor: author a board on the card grid and save it", async ({ page, 
   await page.waitForURL(/\/bridge\/library\/le_/);
   await expect(page.getByRole("heading", { name: "E2E authored board" })).toBeVisible();
   await expect(page.getByText(/authored · /)).toBeVisible();
+
+  // The full-screen hand record (HandViewer design): North's spades read
+  // AKQJ, and the info panel names the shelf.
+  await page.getByRole("link", { name: "Hand viewer" }).click();
+  await page.waitForURL(/\/view$/);
+  await expect(page.getByText(/Library · (deal|board)/)).toBeVisible();
+  await expect(page.getByText("AKQJ", { exact: true })).toBeVisible();
 });
 
 test("save a play from a live board, then resume it from the library", async ({
@@ -51,7 +58,10 @@ test("save a play from a live board, then resume it from the library", async ({
   const dealForm = block.locator("form").first();
   await dealForm.locator('input[name="seed"]').fill("7");
   await dealForm.getByRole("button", { name: "Deal a board" }).click();
-  await page.waitForURL(/\/bridge\/table\/bs_/);
+  await page.waitForURL(/\/bridge\/table2?\/bs_/);
+  // "step ▸" / Decisions / save-to-library live on the legacy table page.
+  const dealtSid = /bs_[a-z0-9]+/.exec(page.url())![0];
+  await page.goto(`/bridge/table/${dealtSid}?legacy=1`);
 
   // Three asked-for decisions (auto-play stays paused), then save as a play —
   // the recording stops at an AI seat, so the resumed board has work left.
@@ -69,11 +79,15 @@ test("save a play from a live board, then resume it from the library", async ({
   await page.goto("/bridge/library?kind=play");
   const row = page.locator("li").filter({ hasText: playName });
   await row.getByRole("button", { name: "Resume" }).click();
-  await page.waitForURL(/\/bridge\/table\/bs_/);
+  await page.waitForURL(/\/bridge\/table2?\/bs_/);
+  const resumedSid = /bs_[a-z0-9]+/.exec(page.url())![0];
+  await page.goto(`/bridge/table/${resumedSid}?legacy=1`);
 
-  // The auction table carries the recorded calls…
+  // The BBO auction box carries the recorded calls. (The classic view rendered
+  // these as real table cells; the BBO felt lays the auction out in a grid, so
+  // match the call text rather than a cell role.)
   await expect(
-    page.getByRole("cell", { name: /^(P|X|XX|[1-7](NT|[♠♥♦♣]))$/ }).first(),
+    page.getByText(/^(P|X|XX|[1-7](NT|[♠♥♦♣]))$/).first(),
   ).toBeVisible();
   // …and the board sits paused mid-play behind ▶ resume.
   await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();

@@ -16,10 +16,12 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
     "@bridge/audit": "workspace:*",
+    "@bridge/b2f-template": "workspace:*",
     "@bridge/config": "workspace:*",
     "@bridge/engine": "workspace:*",
     "@bridge/events": "workspace:*",
     "@bridge/formats": "workspace:*",
+    "@bridge/girkar-template": "workspace:*",
     "@bridge/kb": "workspace:*",
     "@bridge/nexus-client": "workspace:*",
     "@bridge/pg-stores": "workspace:*",

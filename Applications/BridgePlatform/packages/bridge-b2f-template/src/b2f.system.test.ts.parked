@@ -1,0 +1,192 @@
+// Whole-system gates for the training-notes template:
+//   · the KB compiles clean,
+//   · a Full probe player is 17/17 complete with no conflicts,
+//   · 100 seeded self-play deals ALL complete with ZERO engine-floor events,
+//   · and — specific to this template — EVERY item cites a real page, because an
+//     item nobody can trace back to the notes is an item nobody can check.
+//
+// The fifteen transcribed deals get their own suite (b2f.deals.test.ts), where
+// the page's printed HCP acts as an external checksum on my reading.
+
+import { simulateSelfPlay } from "@bridge/engine";
+import {
+  CAPABILITY_CATEGORIES,
+  InMemoryKbStore,
+  KbService,
+  playerIsValid,
+  validatePlayerStatic,
+  type CompiledKb,
+  type KbPlayer,
+} from "@bridge/kb";
+import { beforeAll, describe, expect, it } from "vitest";
+import { B2F_TEMPLATE } from "./index";
+import { installB2fTemplate } from "./install";
+import { NOTES_PAGE_COUNT, PAGES_BY_KEY } from "./pages";
+
+let compiled: CompiledKb;
+let fullPackId: string;
+let floorPackId: string;
+let store: InMemoryKbStore;
+let kbId: string;
+
+const probe = (packIds: string[]): KbPlayer =>
+  ({
+    playerId: "probe",
+    kbId: "kb",
+    name: "probe",
+    enabledPackIds: packIds,
+    settingOverrides: {},
+    decisionPolicyId: "first_match",
+    fallbackPolicyId: "standard",
+    validationStatus: "draft",
+    ownerType: "coach",
+    version: 1,
+    createdAt: "2026-07-25T00:00:00.000Z",
+    updatedAt: "2026-07-25T00:00:00.000Z",
+  }) as KbPlayer;
+
+beforeAll(async () => {
+  store = new InMemoryKbStore();
+  const service = new KbService(store);
+  const result = await installB2fTemplate(store, service, { createdBy: "u_test" });
+  expect(result.compileError).toBeNull();
+  kbId = result.kbId;
+  compiled = (await service.liveCompile(result.kbId))!;
+  fullPackId = result.packIdByKey.get("full")!;
+  floorPackId = result.packIdByKey.get("floor")!;
+});
+
+describe("training notes — whole-system gates", () => {
+  it("the Full set is 17/17 complete with no conflicts", () => {
+    const report = validatePlayerStatic(compiled, probe([fullPackId]));
+    // Name the gaps in the failure message — "16 !== 17" tells a fellow nothing.
+    const missing = CAPABILITY_CATEGORIES.filter(
+      (c) => !report.static.some((s) => s.categoryId === c.categoryId && s.ok),
+    ).map((c) => c.categoryId);
+    expect(missing).toEqual([]);
+    expect(report.conflicts).toEqual([]);
+    expect(report.missingRequires).toEqual([]);
+    expect(playerIsValid(report)).toBe(true);
+  });
+
+  it("the Floor alone is also complete (the minimal player)", () => {
+    const report = validatePlayerStatic(compiled, probe([floorPackId]));
+    expect(report.static.filter((c) => c.ok).length).toBe(CAPABILITY_CATEGORIES.length);
+  });
+
+  it("100 self-play deals: all complete, zero engine-floor events", async () => {
+    const report = await simulateSelfPlay({
+      compiled,
+      player: {
+        enabledPackIds: [fullPackId],
+        settingOverrides: {},
+        decisionPolicyId: "first_match",
+      },
+      deals: 100,
+      seed: 20260725,
+    });
+    expect(report.completed).toBe(100);
+    expect(report.engineFloorEvents).toBe(0);
+  }, 120_000);
+});
+
+describe("page provenance", () => {
+  it("every item is traceable to at least one page", () => {
+    const untraced = B2F_TEMPLATE.items
+      .filter((i) => !(PAGES_BY_KEY[i.key]?.length ?? 0))
+      .map((i) => i.key);
+    expect(untraced).toEqual([]);
+  });
+
+  it("every cited page is a real page of the 32-page document", () => {
+    const bad: string[] = [];
+    for (const [key, pages] of Object.entries(PAGES_BY_KEY)) {
+      for (const p of pages) {
+        if (!Number.isInteger(p) || p < 1 || p > NOTES_PAGE_COUNT) bad.push(`${key}→${p}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("the page map has no entries for items that do not exist", () => {
+    const keys = new Set(B2F_TEMPLATE.items.map((i) => i.key));
+    expect(Object.keys(PAGES_BY_KEY).filter((k) => !keys.has(k))).toEqual([]);
+  });
+
+  it("installed items carry a `page N` citation and land as drafts", async () => {
+    const items = await store.listItemsForKb(kbId);
+    expect(items.length).toBe(B2F_TEMPLATE.items.length);
+    for (const item of items) {
+      expect(item.status).toBe("draft");
+      expect(item.sourceReferences.length).toBeGreaterThan(0);
+      for (const ref of item.sourceReferences) {
+        expect(ref.anchor).toMatch(/^page \d+$/);
+      }
+    }
+  });
+
+  it("covers every substantive page of the notes", () => {
+    // Page 27 is a bare link to an external quiz document and page 32 is an
+    // unfinished two-hand fragment; every other page should have left a trace.
+    const cited = new Set(Object.values(PAGES_BY_KEY).flat());
+    const teaching = [
+      // the system in prose: guidelines, response trees, the bid-selection logic
+      1, 2, 3, 4, 5,
+      // declarer play and the suit-combination table
+      6, 7, 8, 9,
+      // the summary lists: openings, responses, opener's rebids
+      10, 11, 12, 13, 14,
+      // competition, and the conventions reference table
+      15, 16, 17,
+      // the December 2025 deal review
+      18, 19, 20, 21, 22, 23, 24,
+      // Michaels defence, redouble, carding, leads, probability, worked auction
+      25, 26, 28, 29, 30, 31,
+    ];
+    expect(teaching.filter((p) => !cited.has(p))).toEqual([]);
+  });
+});
+
+describe("authoring hygiene", () => {
+  it("every convention is gated — by its own toggle or by a requires edge", () => {
+    // A convention must be switchable off. Satellite items (keycard responses,
+    // "may not be passed" forcing entries) deliberately carry no toggle of
+    // their own — turning off Roman keycards should not mean hunting down four
+    // more switches — so for them the gate is a `requires` edge to the parent
+    // that does carry it. Either mechanism is fine; having neither is a bug,
+    // because the item would stay live with its convention switched off.
+    const hasToggle = (key: string) =>
+      (B2F_TEMPLATE.items.find((i) => i.key === key)?.settings ?? []).some(
+        (s) => s.role === "enable",
+      );
+    const parentsOf = (key: string) =>
+      B2F_TEMPLATE.edges
+        .filter((e) => e.from === key && e.edgeType === "requires")
+        .map((e) => e.to);
+
+    const ungated = B2F_TEMPLATE.items
+      .filter((i) => i.sets.includes("conventions"))
+      .filter((i) => !hasToggle(i.key) && !parentsOf(i.key).some(hasToggle))
+      .map((i) => i.key);
+    expect(ungated).toEqual([]);
+  });
+
+  it("every edge points at an item that exists", () => {
+    const keys = new Set(B2F_TEMPLATE.items.map((i) => i.key));
+    const dangling = B2F_TEMPLATE.edges
+      .filter((e) => !keys.has(e.from) || !keys.has(e.to))
+      .map((e) => `${e.from}→${e.to}`);
+    expect(dangling).toEqual([]);
+  });
+
+  it("the Full pack is marked intendedComplete so the checklist scores it", () => {
+    expect(B2F_TEMPLATE.packs.find((p) => p.key === "full")?.intendedComplete).toBe(true);
+  });
+
+  it("every item has real human-readable text", () => {
+    const thin = B2F_TEMPLATE.items
+      .filter((i) => i.humanReadableText.trim().length < 40)
+      .map((i) => i.key);
+    expect(thin).toEqual([]);
+  });
+});

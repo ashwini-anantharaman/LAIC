@@ -32,8 +32,7 @@ const KIND_HINTS: [string, string, string][] = [
 export function SaveSheet({
   sessionId,
   boardName,
-  bbo,
-}: Readonly<{ sessionId: string; boardName: string; bbo?: boolean }>) {
+}: Readonly<{ sessionId: string; boardName: string }>) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -96,7 +95,6 @@ export function SaveSheet({
             >
               <input type="hidden" name="sessionId" value={sessionId} />
               <input type="hidden" name="mobile" value="1" />
-              {bbo && <input type="hidden" name="skin" value="bbo" />}
               <select
                 name="kind"
                 defaultValue="board"

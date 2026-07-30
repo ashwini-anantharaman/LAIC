@@ -69,7 +69,7 @@ export const MAX_BATCH = 50;
 // ---------------------------------------------------------------------------
 
 /** PBN rank label: A K Q J T 9 … 2 (T for ten, unlike events' "10"). */
-function pbnRank(rank: number): string {
+export function pbnRank(rank: number): string {
   return rank === 10 ? "T" : rankLabel(rank as never);
 }
 

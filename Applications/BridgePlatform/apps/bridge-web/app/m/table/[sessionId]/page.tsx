@@ -81,7 +81,6 @@ export default async function MobileTablePage({
     fixed?: string;
     fixError?: string;
     editDeal?: string;
-    skin?: string;
     bboAuction?: string;
     from?: string;
   }>;
@@ -103,7 +102,6 @@ export default async function MobileTablePage({
     fixed,
     fixError,
     editDeal,
-    skin,
     bboAuction,
     from,
   } = await searchParams;
@@ -111,9 +109,10 @@ export default async function MobileTablePage({
   // Assignments the arrow returns THERE; otherwise to the lobby/library.
   const backHref =
     from === "games" ? "/m/plays" : from === "assigned" ? "/m/assigned" : lobbyHref;
-  // ?skin=bbo swaps the felt for the BBO replica (same fluid components the
-  // desktop BBO view uses — they size in container units, so they fit phones).
-  const bbo = skin === "bbo";
+  // The BBO replica is the ONLY table view (2026-07-25) — the same fluid
+  // components the desktop uses, sized in container units so they fit phones.
+  // Only the auction-display choice remains: central box, or a bubble at each
+  // seat (?bboAuction=seats).
   const bboSeats = bboAuction === "seats";
 
   let view;
@@ -174,8 +173,7 @@ export default async function MobileTablePage({
   const mobileHref = (extra: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
     if (learnerMode && isFellow) q.set("mode", "learner");
-    if (bbo) q.set("skin", "bbo");
-    if (bbo && bboSeats) q.set("bboAuction", "seats");
+    if (bboSeats) q.set("bboAuction", "seats");
     if (from) q.set("from", from); // keep the back target across replay/toggles
     for (const [k, v] of Object.entries(extra)) if (v) q.set(k, v);
     const s = q.toString();
@@ -185,7 +183,6 @@ export default async function MobileTablePage({
   const mobileAuctionToggleHref = (() => {
     const q = new URLSearchParams();
     if (learnerMode && isFellow) q.set("mode", "learner");
-    q.set("skin", "bbo");
     if (!bboSeats) q.set("bboAuction", "seats");
     return `/m/table/${sessionId}?${q.toString()}`;
   })();
@@ -302,7 +299,6 @@ export default async function MobileTablePage({
                   <input type="hidden" name="suit" value={card.suit} />
                   <input type="hidden" name="rank" value={card.rank} />
                   <input type="hidden" name="mobile" value="1" />
-                  {bbo && <input type="hidden" name="skin" value="bbo" />}
                   <button
                     type="submit"
                     aria-label={`Play ${rankLabel(card.rank)}${GLYPH[card.suit]}`}
@@ -417,7 +413,6 @@ export default async function MobileTablePage({
                       <input type="hidden" name="suit" value={card.suit} />
                       <input type="hidden" name="rank" value={card.rank} />
                       <input type="hidden" name="mobile" value="1" />
-                  {bbo && <input type="hidden" name="skin" value="bbo" />}
                       <button
                         type="submit"
                         aria-label={`Play ${rankLabel(card.rank)}${GLYPH[card.suit]}`}
@@ -564,9 +559,7 @@ export default async function MobileTablePage({
         minHeight: "100dvh",
         display: "flex",
         flexDirection: "column",
-        background: bbo
-          ? "#217A21"
-          : "radial-gradient(130% 118% at 50% 30%,#2f6b6f 0%,#1c4b50 55%,#0c2426 100%)",
+        background: "#217A21",
         fontFamily: FONT_KARLA,
       }}
     >
@@ -744,7 +737,6 @@ export default async function MobileTablePage({
           <form action={playToEndAction} style={{ flex: "none" }}>
             <input type="hidden" name="sessionId" value={sessionId} />
             <input type="hidden" name="mobile" value="1" />
-                  {bbo && <input type="hidden" name="skin" value="bbo" />}
             <button type="submit" aria-label="Play to end" title="Play to end" style={FROSTED_PILL}>
               ⏭
             </button>
@@ -753,7 +745,6 @@ export default async function MobileTablePage({
         <form action={undoAction} style={{ flex: "none" }}>
           <input type="hidden" name="sessionId" value={sessionId} />
           <input type="hidden" name="mobile" value="1" />
-                  {bbo && <input type="hidden" name="skin" value="bbo" />}
           <button type="submit" aria-label="Undo the last decision" title="Undo" style={FROSTED_PILL}>
             ↩
           </button>
@@ -761,7 +752,6 @@ export default async function MobileTablePage({
         <form action={rewindAction} style={{ flex: "none" }}>
           <input type="hidden" name="sessionId" value={sessionId} />
           <input type="hidden" name="mobile" value="1" />
-                  {bbo && <input type="hidden" name="skin" value="bbo" />}
           <button
             type="submit"
             disabled={record.events.length === 0}
@@ -780,7 +770,6 @@ export default async function MobileTablePage({
           <form action={newDealAction} style={{ flex: "none" }}>
             <input type="hidden" name="sessionId" value={sessionId} />
             <input type="hidden" name="mobile" value="1" />
-                  {bbo && <input type="hidden" name="skin" value="bbo" />}
             <button type="submit" aria-label="New deal" title="New deal — same lineup" style={FROSTED_PILL}>
               🎲
             </button>
@@ -811,32 +800,13 @@ export default async function MobileTablePage({
             👁 {showAll ? "hide" : "all"}
           </Link>
         )}
-        {!learnerMode && <SaveSheet sessionId={sessionId} boardName={record.board.name} bbo={bbo} />}
-        <Link
-          href={(() => {
-            const q = new URLSearchParams();
-            if (learnerMode && isFellow) q.set("mode", "learner");
-            if (!bbo) q.set("skin", "bbo");
-            if (paused) q.set("paused", paused);
-            const qs = q.toString();
-            return qs ? `/m/table/${sessionId}?${qs}` : `/m/table/${sessionId}`;
-          })()}
-          aria-label={bbo ? "Switch to platform view" : "Switch to BBO view"}
-          title={bbo ? "Platform view — the standard felt" : "BBO view — the classic Bridge Base Online table"}
-          style={FROSTED_PILL}
-        >
-          🃏 {bbo ? "classic" : "bbo"}
-        </Link>
+        {!learnerMode && <SaveSheet sessionId={sessionId} boardName={record.board.name} />}
         {isFellow && (
           <Link
             href={
               learnerMode
-                ? bbo
-                  ? `/m/table/${sessionId}?skin=bbo`
-                  : `/m/table/${sessionId}`
-                : bbo
-                  ? `/m/table/${sessionId}?mode=learner&skin=bbo`
-                  : `/m/table/${sessionId}?mode=learner`
+                ? `/m/table/${sessionId}`
+                : `/m/table/${sessionId}?mode=learner`
             }
             aria-label={learnerMode ? "Switch to verification view" : "Switch to learner view"}
             title={learnerMode ? "Verification view" : "Learner view"}
@@ -847,300 +817,27 @@ export default async function MobileTablePage({
         )}
       </div>
 
-      {bbo ? (
-        <div className="m-scroll" style={{ flex: 1, overflowY: "auto", padding: "4px 8px 8px" }}>
-          <BboTable
-            sessionId={sessionId}
-            state={state}
-            score={score}
-            visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
-            legalNow={legalNow ? [...legalNow] : null}
-            callsNow={callsNow ? [...callsNow] : null}
-            myTurn={myTurn}
-            mySeat={mySeat}
-            dummy={dummy}
-            actingSeat={actingSeat}
-            actingIsHuman={actingIsHuman}
-            dealer={record.board.dealer}
-            auctionRows={auctionRows as never}
-            plate={mobileBboPlate}
-            lobbyHref={lobbyHref}
-            auctionDisplay={bboSeats ? "seats" : "box"}
-            auctionToggleHref={mobileAuctionToggleHref}
-          />
-        </div>
-      ) : (
-      <>
-      {/* felt */}
-      <div
-        style={{
-          flex: 1,
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          padding: "4px 10px 8px",
-          minHeight: 0,
-        }}
-      >
-        {/* North */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <div style={{ display: "flex", alignItems: "flex-end", minHeight: 32 }}>
-            {canSee("N") ? faceFan("N", false) : backsFan("N")}
-          </div>
-          {seatTag("N")}
-        </div>
-
-        {/* West · center · East */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 6,
-            flex: 1,
-            minHeight: 0,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 4,
-              width: 66,
-            }}
-          >
-            {canSee("W") ? suitRows("W") : backsFan("W")}
-            {seatTag("W")}
-          </div>
-
-          {/* Center */}
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              alignSelf: "stretch",
-              minWidth: 0,
-            }}
-          >
-            {state.phase === "auction" ? (
-              <div
-                style={{
-                  width: "100%",
-                  maxWidth: 230,
-                  background: "rgba(255,255,255,.95)",
-                  borderRadius: 10,
-                  padding: "6px 4px",
-                  boxShadow: "0 2px 8px rgba(0,0,0,.25)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr 1fr 1fr",
-                    textAlign: "center",
-                    font: `600 9px ${FONT_KARLA}`,
-                    letterSpacing: ".1em",
-                    color: "#a49d8e",
-                    textTransform: "uppercase",
-                    paddingBottom: 4,
-                    borderBottom: "1px solid #ece7db",
-                  }}
-                >
-                  <span>W</span>
-                  <span>N</span>
-                  <span>E</span>
-                  <span>S</span>
-                </div>
-                {auctionRows.map((row, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr 1fr 1fr",
-                      textAlign: "center",
-                      font: `500 12px ${FONT_KARLA}`,
-                      padding: "2px 0",
-                      color: "#1d1a15",
-                    }}
-                  >
-                    {[0, 1, 2, 3].map((j) => {
-                      const entry = row[j] as (typeof state.auction)[number] | null;
-                      const dbl = entry && (entry.call === "X" || entry.call === "XX");
-                      return (
-                        <span key={j} style={{ color: dbl ? "#8a2d23" : undefined }}>
-                          {entry ? callLabel(entry.call) : ""}
-                        </span>
-                      );
-                    })}
-                  </div>
-                ))}
-                <div
-                  style={{
-                    textAlign: "center",
-                    font: `400 10px ${FONT_KARLA}`,
-                    color: "#a49d8e",
-                    paddingTop: 3,
-                  }}
-                >
-                  {state.auction.length === 0
-                    ? seatLabel(record.board.dealer) === "you"
-                      ? "you deal"
-                      : `${seatLabel(record.board.dealer)} deals`
-                    : ""}
-                </div>
-              </div>
-            ) : state.phase === "complete" && score ? (
-              <div
-                style={{
-                  background: "rgba(255,255,255,.96)",
-                  borderRadius: 12,
-                  padding: "16px 22px",
-                  textAlign: "center",
-                  boxShadow: "0 4px 16px rgba(0,0,0,.3)",
-                  animation: "dealIn .4s ease",
-                }}
-              >
-                <div style={{ font: `500 22px ${FONT_FRAUNCES}`, color: "#1d1a15" }}>
-                  {resultLabel(score)}
-                </div>
-                {score.contract && (
-                  <div style={{ font: `500 13px ${FONT_KARLA}`, color: "#5e5749", marginTop: 3 }}>
-                    {score.declarerScore >= 0 ? "+" : ""}
-                    {score.declarerScore} for{" "}
-                    {["N", "S"].includes(score.contract.declarer) ? "NS" : "EW"}
-                  </div>
-                )}
-                <div style={{ font: `400 11px ${FONT_KARLA}`, color: "#a49d8e", marginTop: 6 }}>
-                  NS {state.trickCount.NS} · EW {state.trickCount.EW}
-                </div>
-              </div>
-            ) : (
-              <div style={{ position: "relative", width: 150, height: 150 }}>
-                {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
-                  const pos: React.CSSProperties =
-                    seat === "N"
-                      ? { left: "50%", top: 0, transform: "translateX(-50%)" }
-                      : seat === "S"
-                        ? { bottom: 0, left: "50%", transform: "translateX(-50%)" }
-                        : seat === "W"
-                          ? { left: 0, top: "50%", transform: "translateY(-50%)" }
-                          : { right: 0, top: "50%", transform: "translateY(-50%)" };
-                  const card = trickCards[seat];
-                  return card ? (
-                    <span
-                      key={seat}
-                      style={{
-                        position: "absolute",
-                        ...pos,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "flex-start",
-                        width: 36,
-                        aspectRatio: "5 / 7",
-                        background: "#fff",
-                        border: "1px solid #d3ccbb",
-                        borderRadius: 6,
-                        boxShadow: "0 2px 5px rgba(0,0,0,.3)",
-                        padding: "2px 0 0 3px",
-                        color: isRed(card.suit) ? "#8a2d23" : "#161310",
-                        animation: "dealIn .3s ease",
-                      }}
-                    >
-                      <span style={{ font: `600 13px ${FONT_KARLA}`, lineHeight: 0.9 }}>
-                        {rankLabel(card.rank)}
-                      </span>
-                      <span style={{ fontSize: 11 }}>{GLYPH[card.suit]}</span>
-                    </span>
-                  ) : (
-                    <span
-                      key={seat}
-                      style={{
-                        position: "absolute",
-                        ...pos,
-                        width: 34,
-                        aspectRatio: "5 / 7",
-                        borderRadius: 6,
-                        border: `1.5px dashed ${
-                          seat === state.turn ? "rgba(252,211,77,.85)" : "rgba(255,255,255,.25)"
-                        }`,
-                      }}
-                    />
-                  );
-                })}
-                <span
-                  style={{
-                    position: "absolute",
-                    left: "50%",
-                    top: "50%",
-                    transform: "translate(-50%,-50%)",
-                    font: `600 8px ${FONT_KARLA}`,
-                    letterSpacing: ".12em",
-                    textTransform: "uppercase",
-                    color: "rgba(255,255,255,.4)",
-                  }}
-                >
-                  trick {state.tricks.length}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* East */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 4,
-              width: 66,
-            }}
-          >
-            {canSee("E") ? suitRows("E") : backsFan("E")}
-            {seatTag("E")}
-          </div>
-        </div>
-
-        {/* South (you) */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
-          {seatTag("S")}
-          <div style={{ display: "flex", alignItems: "flex-end", minHeight: 56, paddingTop: 8 }}>
-            {canSee("S") ? faceFan("S", true) : backsFan("S")}
-          </div>
-        </div>
+      <div className="m-scroll" style={{ flex: 1, overflowY: "auto", padding: "4px 8px 8px" }}>
+        <BboTable
+          sessionId={sessionId}
+          state={state}
+          score={score}
+          visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
+          legalNow={legalNow ? [...legalNow] : null}
+          callsNow={callsNow ? [...callsNow] : null}
+          myTurn={myTurn}
+          mySeat={mySeat}
+          dummy={dummy}
+          actingSeat={actingSeat}
+          actingIsHuman={actingIsHuman}
+          dealer={record.board.dealer}
+          auctionRows={auctionRows as never}
+          plate={mobileBboPlate}
+          lobbyHref={backHref}
+          auctionDisplay={bboSeats ? "seats" : "box"}
+          auctionToggleHref={mobileAuctionToggleHref}
+        />
       </div>
-
-      {/* action bar: bid box / prompt */}
-      <div style={{ flex: "none", padding: "0 14px" }}>
-        {state.phase === "auction" && myTurn && callsNow ? (
-          <MobileBidBox sessionId={sessionId} legal={[...callsNow]} />
-        ) : (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "6px 0 4px",
-              font: `500 12px ${FONT_KARLA}`,
-              color: myTurn ? "#fcd34d" : "rgba(231,225,211,.7)",
-            }}
-          >
-            {prompt}
-            {state.phase === "complete" && (
-              <>
-                {" "}
-                <Link href={lobbyHref} style={{ color: "#8db5b7", textDecoration: "underline" }}>
-                  Play another →
-                </Link>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      </>
-      )}
 
       {/* decisions feed (hidden entirely in learner mode, like desktop) */}
       {!learnerMode && (
@@ -1260,7 +957,7 @@ export default async function MobileTablePage({
           )}
           <MobileDealEditor
             sessionId={sessionId}
-            bbo={bbo}
+           
             initialName={
               record.board.name.endsWith("(edited)")
                 ? record.board.name

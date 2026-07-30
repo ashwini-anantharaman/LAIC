@@ -20,6 +20,7 @@ import {
 } from "@bridge/sessions/fileStore";
 import { join } from "node:path";
 import { dataDir, pgClient, storeBackend } from "./backend";
+import { benSeatDecider } from "./benSeat";
 import { kbStore } from "./kb";
 
 const globalCache = globalThis as unknown as {
@@ -35,6 +36,9 @@ export function sessionService(): SessionService {
       ? new PgSessionStore(pgClient())
       : new JsonFileSessionStore(join(process.cwd(), dataDir(), "session-store.json")),
     kbStore(),
+    // BEN can sit at any table; the decider dials BEN_ENDPOINT lazily, so a
+    // missing endpoint only errors if a BEN seat actually has to act.
+    { benDecider: benSeatDecider() },
   );
   return globalCache.__bridgeSessionService;
 }

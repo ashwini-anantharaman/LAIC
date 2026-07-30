@@ -19,18 +19,6 @@ import { libraryStore, sessionService } from "@/lib/sessions";
 const SEATS: Seat[] = ["N", "E", "S", "W"];
 
 /**
- * Additive, inert-by-default skin passthrough (mirrors the `mobile=1` pattern):
- * when a table form posts skin=bbo, keep the BBO view on the redirect back to
- * the table by appending ?skin=bbo (or &skin=bbo if the URL already has a
- * query). Absent the field, the URL is returned untouched — the default (no
- * skin) round-trip stays byte-identical.
- */
-function withSkin(url: string, formData: FormData): string {
-  if (formData.get("skin") !== "bbo") return url;
-  return `${url}${url.includes("?") ? "&" : "?"}skin=bbo`;
-}
-
-/**
  * Strip any trailing auto-appended " · deal"/" · board"/" · play"/" · table"
  * kind suffixes from a board name before we append a fresh one. These stack
  * across save→resume→save cycles ("Board 1 · play · play · deal"), so we peel
@@ -154,7 +142,7 @@ export async function redealEditedAction(formData: FormData): Promise<void> {
   const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const failBack: (message: string) => never = (message) =>
     redirect(
-      withSkin(`${tableBase}${sessionId}?editDeal=1&error=${encodeURIComponent(message)}`, formData),
+      `${tableBase}${sessionId}?editDeal=1&error=${encodeURIComponent(message)}`,
     );
 
   const service = sessionService();
@@ -228,7 +216,7 @@ export async function redealEditedAction(formData: FormData): Promise<void> {
     kbId: record.kbId,
     editedFrom: sessionId,
   });
-  redirect(withSkin(`${tableBase}${next.sessionId}`, formData));
+  redirect(`${tableBase}${next.sessionId}`);
 }
 
 export async function createSessionAction(formData: FormData): Promise<void> {
@@ -329,8 +317,10 @@ export async function undoAction(formData: FormData): Promise<void> {
   // Come back PAUSED: the point of undo is to inspect (and often fix) the
   // decision — auto-play would instantly redo it. Step ▸ resumes one beat
   // at a time. The token is unique per undo so AutoAdvance remounts paused
-  // even when the previous pause was already resumed.
-  redirect(withSkin(`${tableBase}${sessionId}?paused=${Date.now()}`, formData));
+  // even when the previous pause was already resumed. A post from the legacy
+  // page returns there (its Decisions rail is where undo makes sense).
+  const legacy = formData.get("legacy") === "1" ? "&legacy=1" : "";
+  redirect(`${tableBase}${sessionId}?paused=${Date.now()}${legacy}`);
 }
 
 /** Rewind the whole board to the deal — undo's big sibling. Comes back
@@ -342,7 +332,7 @@ export async function rewindAction(formData: FormData): Promise<void> {
   await sessionService().rewindToStart(sessionId);
   await audit(context, "session.undo", "kb_session", sessionId, { toStart: true });
   revalidatePath(`/bridge/table/${sessionId}`);
-  redirect(withSkin(`${tableBase}${sessionId}?paused=${Date.now()}`, formData));
+  redirect(`${tableBase}${sessionId}?paused=${Date.now()}`);
 }
 
 /**
@@ -370,7 +360,7 @@ export async function newDealAction(formData: FormData): Promise<void> {
     kbId: record.kbId,
     newDealFrom: sessionId,
   });
-  redirect(withSkin(`${tableBase}${next.sessionId}`, formData));
+  redirect(`${tableBase}${next.sessionId}`);
 }
 
 /**
@@ -393,6 +383,14 @@ export async function swapSeatAction(formData: FormData): Promise<void> {
   let config: SeatConfig;
   if (playerId === "me") {
     config = { kind: "human", nexusUserId: context.nexusUserId };
+  } else if (playerId === "ben") {
+    // BEN, the neural engine, as a character. Only offered when the endpoint
+    // is configured; checked again here so a stale form can't seat a BEN that
+    // will immediately fail to act.
+    await assertAiAllowed(context);
+    const { benAvailable, BEN_SEAT_LABEL } = await import("@/lib/benSeat");
+    if (!benAvailable()) throw new Error("BEN isn't configured on this server (BEN_ENDPOINT)");
+    config = { kind: "ben", label: BEN_SEAT_LABEL };
   } else {
     await assertAiAllowed(context);
     const player = await kbStore().getPlayer(playerId);
@@ -414,7 +412,7 @@ export async function swapSeatAction(formData: FormData): Promise<void> {
     playerId,
     forkedFrom: sessionId,
   });
-  redirect(withSkin(`/bridge/table/${forked.sessionId}`, formData));
+  redirect(`/bridge/table/${forked.sessionId}`);
 }
 
 /**
@@ -470,7 +468,9 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
               seat,
               c.kind === "human"
                 ? { label: "you", human: true }
-                : { label: c.label, playerId: c.playerId },
+                : c.kind === "ben"
+                  ? { label: c.label }
+                  : { label: c.label, playerId: c.playerId },
             ]),
           ) as Record<Seat, { label: string; playerId?: string; human?: boolean }>,
         }
@@ -494,19 +494,16 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
   } catch {
     // Most likely: bridge_kb_library missing (migration 0015 not applied).
     redirect(
-      withSkin(
-        `${tableBase}${sessionId}?error=${encodeURIComponent(
-          "Couldn't save — the library isn't provisioned on this backend yet (migration 0015_library.sql).",
-        )}`,
-        formData,
-      ),
+      `${tableBase}${sessionId}?error=${encodeURIComponent(
+        "Couldn't save — the library isn't provisioned on this backend yet (migration 0015_library.sql).",
+      )}`,
     );
   }
   await audit(context, "profile.create", "kb_library", entry.entryId, {
     sessionId,
     kind,
   });
-  redirect(withSkin(`${tableBase}${sessionId}?saved=${kind}`, formData));
+  redirect(`${tableBase}${sessionId}?saved=${kind}`);
 }
 
 /** Flag a decision → a suggestion in the KB's queue (spec §7). */

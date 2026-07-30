@@ -1,3 +1,25 @@
+# Running BEN — the benchmark AND the table seat
+
+BEN serves two features here, both through the same `BEN_ENDPOINT`:
+
+1. **The bidding benchmark** (KB workspace → Benchmark) — described below.
+2. **BEN as a table character** (2026-07-28): any seat's swap menu offers
+   "BEN · neural engine" whenever `BEN_ENDPOINT` is set. BEN bids via `/bid`,
+   makes the opening lead via `/lead`, and plays every later card via `/play`
+   (the engine already routes the dummy's turn to the declarer's controller,
+   which matches how BEN's `/play` infers who is on play from the `played`
+   sequence). **A BEN seat can never wedge a table**: if BEN is unreachable,
+   times out, or answers with an illegal call/card, the seat degrades — Pass
+   for bids, the engine's fallback chain for cards — and the decision trace
+   says exactly what happened. `BEN_TIMEOUT_MS` (default 20000) bounds each
+   request.
+
+   **Production:** the app calls BEN server-side, so `BEN_ENDPOINT` must be
+   reachable FROM the deployment (a public HTTPS URL — e.g. the BEN container
+   on Fly.io/Railway/a VM), not `127.0.0.1`. Set it in the Vercel project's
+   environment; without it the BEN option simply doesn't render, and existing
+   BEN seats degrade honestly per the above.
+
 # Running BEN for the Bidding Benchmark
 
 The **Benchmark** tab (KB workspace → Benchmark) compares this platform's bids

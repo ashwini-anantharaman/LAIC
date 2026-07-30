@@ -52,6 +52,42 @@ export async function installSaycTemplateAction(formData: FormData): Promise<voi
 }
 
 /**
+ * Install the teaching-deck template (2026-07-25): Standard American 2/1 Game
+ * Force as taught in Milind Girkar's "Introduction to Bridge" slides, authored
+ * slide by slide by reading the actual pages — so the bidding TABLES, the
+ * color-coded forcing rows and the support×strength matrices survive, which a
+ * text-only pass destroys. Every item's citation names the slide it came from
+ * (`slide 49`), so a reviewer can check each rule against the picture.
+ */
+export async function installGirkarTemplateAction(formData: FormData): Promise<void> {
+  const context = await requireAdminContext("bridge.knowledge.edit");
+  await ensureSeeds();
+  const { installGirkarTemplate } = await import("@bridge/girkar-template/install");
+  const name = String(formData.get("name") ?? "").trim() || undefined;
+  const result = await installGirkarTemplate(kbStore(), kbService(), {
+    createdBy: context.nexusUserId,
+    kbName: name,
+  });
+  if (result.compileError) {
+    // Should be impossible — the template ships with a compile-clean test.
+    redirect(`/bridge/kb?error=${encodeURIComponent(result.compileError)}`);
+  }
+  await kbService().publishKbVersion(result.kbId, {
+    label: "Base — teaching deck",
+    notes:
+      "Installed from the slide-by-slide authored template. Items are drafts until experts review them; each cites its slide.",
+    publishedBy: context.nexusUserId,
+  });
+  await audit(context, "kb.create", "kb", result.kbId, {
+    template: "girkar",
+    items: result.itemIdByKey.size,
+  });
+  revalidatePath("/bridge/kb", "layout");
+  redirect(kbPath(result.kbId));
+}
+
+
+/**
  * Start a source augmentation (2026-07-21): derive a full DRAFT COPY of the
  * KB, stamp it with the augmentation ledger, and open the review board. The
  * base KB is never touched — the draft is kept or discarded at the end.

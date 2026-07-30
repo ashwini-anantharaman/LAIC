@@ -14,6 +14,10 @@
     "./install": {
       "types": "./src/install.ts",
       "default": "./src/install.ts"
+    },
+    "./dsl": {
+      "types": "./src/dsl.ts",
+      "default": "./src/dsl.ts"
     }
   },
   "scripts": {

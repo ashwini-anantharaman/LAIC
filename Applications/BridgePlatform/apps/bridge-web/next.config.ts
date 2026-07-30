@@ -28,6 +28,7 @@ const nextConfig: NextConfig = {
     "@bridge/nexus-client",
     "@bridge/pg-stores",
     "@bridge/sayc-template",
+    "@bridge/girkar-template",
     "@bridge/profiles",
     "@bridge/sessions",
     "@laic/learner-contracts",

@@ -97,6 +97,47 @@ export async function deletePlayerAction(formData: FormData): Promise<void> {
   );
 }
 
+/**
+ * One-click BEN table: you sit South against three BENs — or watch four play
+ * each other with watch=1. A session still lives inside a knowledge base (the
+ * trace vocabulary and BEN's degrade fallback come from it), so this uses the
+ * posted kbId or falls back to the first live KB.
+ */
+export async function tryBenAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  await ensureSeeds();
+  const watch = formData.get("watch") === "1";
+  const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
+  await assertAiAllowed(context);
+  const { benAvailable, BEN_SEAT_LABEL } = await import("@/lib/benSeat");
+  if (!benAvailable()) throw new Error("BEN isn't configured on this server (BEN_ENDPOINT)");
+
+  const store = kbStore();
+  const kbParam = String(formData.get("kbId") ?? "");
+  const kbs = (await store.listKbs()).filter((k) => !k.archived);
+  const kb = kbs.find((k) => k.kbId === kbParam) ?? kbs[0];
+  if (!kb) throw new Error("Create a knowledge base first — boards are dealt inside one");
+  const compiled = await kbService().liveCompile(kb.kbId);
+  if (!compiled) throw new Error("This knowledge base has no live compile yet");
+
+  const ben: SeatConfig = { kind: "ben", label: BEN_SEAT_LABEL };
+  const seats = { N: ben, E: ben, S: ben, W: ben } as Record<Seat, SeatConfig>;
+  if (!watch) seats.S = { kind: "human", nexusUserId: context.nexusUserId };
+
+  const record = await sessionService().createSession({
+    kbId: kb.kbId,
+    compiled,
+    seats,
+    seed: (Date.now() % 100_000) + 1,
+    createdBy: context.nexusUserId,
+  });
+  await audit(context, "profile.update", "kb_session", record.sessionId, {
+    kbId: kb.kbId,
+    tryPlayer: "ben",
+  });
+  redirect(`${tableBase}${record.sessionId}`);
+}
+
 /** One-click check: you sit South, three copies of the player fill the rest. */
 export async function tryPlayerAction(formData: FormData): Promise<void> {
   const context = await requireContext();

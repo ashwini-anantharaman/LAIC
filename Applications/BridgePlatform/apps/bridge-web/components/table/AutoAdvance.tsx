@@ -17,6 +17,8 @@ export function AutoAdvance({
   complete,
   beatMs = 750,
   initialPaused = true,
+  variant = "bar",
+  railScale,
 }: Readonly<{
   sessionId: string;
   /** Server truth: an AI seat is to act and the board isn't complete. */
@@ -28,6 +30,17 @@ export function AutoAdvance({
   beatMs?: number;
   /** Boards open paused; pass false only for flows that should self-start. */
   initialPaused?: boolean;
+  /**
+   * "bar": the page-toolbar pills (legacy workbench). "rail": compact chips in
+   * the Play Table design's rail language, for mounting INSIDE the canvas.
+   */
+  variant?: "bar" | "rail";
+  /**
+   * Rail chips only: multiply the design metrics for larger stages (the hand
+   * viewer runs ~2x the table's chip scale). Real layout size — never a CSS
+   * transform, which paints outside its layout box.
+   */
+  railScale?: number;
 }>) {
   const router = useRouter();
   const [paused, setPaused] = useState(initialPaused);
@@ -53,6 +66,46 @@ export function AutoAdvance({
   }, [active, paused, seq, sessionId, beatMs, router]);
 
   if (complete) return null;
+  if (variant === "rail") {
+    const s = railScale ?? 1;
+    return (
+      <div style={{ display: "flex", gap: 6 * s, justifyContent: "center" }}>
+        <button
+          type="button"
+          disabled={!active}
+          onClick={() => setPaused((p) => !p)}
+          aria-label={paused ? (seq === 0 ? "start" : "resume") : "pause"}
+          title={
+            active
+              ? paused
+                ? "Start automatic play"
+                : "Pause automatic play"
+              : "A human is to act — bid or play from the hand"
+          }
+          style={{ width: 47 * s, height: 32 * s, background: "#384bb3", border: `${2 * s}px solid #dfe4f4`, borderRadius: 7 * s, color: "#fff", fontSize: 14 * s, fontWeight: 700, lineHeight: 1, cursor: active ? "pointer" : "default", opacity: active ? 1 : 0.42 }}
+        >
+          {paused ? "▶" : "❚❚"}
+        </button>
+        <button
+          type="button"
+          disabled={!active}
+          onClick={() => {
+            setPaused(true);
+            void advance();
+          }}
+          aria-label="step"
+          title={
+            active
+              ? "Pause and advance one AI decision"
+              : "A human is to act — bid or play from the hand"
+          }
+          style={{ width: 47 * s, height: 32 * s, background: "#acc5c5", border: `${2 * s}px solid #f2f4f4`, borderRadius: 7 * s, color: "#000", fontSize: 16 * s, fontWeight: 700, lineHeight: 1, cursor: active ? "pointer" : "default", opacity: active ? 1 : 0.42 }}
+        >
+          ▸
+        </button>
+      </div>
+    );
+  }
   return (
     <>
       {active && (

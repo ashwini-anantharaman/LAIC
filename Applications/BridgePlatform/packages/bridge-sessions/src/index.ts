@@ -53,6 +53,17 @@ export * from "./assignments";
 export type SeatConfig =
   | { kind: "human"; nexusUserId: string; label?: string }
   | {
+      /**
+       * BEN, the neural bridge engine (github.com/lorserker/ben), sitting in as
+       * a character. The session package stays HTTP-free: the actual decider is
+       * INJECTED via SessionServiceOptions.benDecider by the host app, which
+       * owns the BEN endpoint. Decisions are recorded as ordinary events, so
+       * replays never re-ask BEN.
+       */
+      kind: "ben";
+      label: string;
+    }
+  | {
       kind: "kb_player";
       playerId: string;
       label: string;
@@ -248,8 +259,24 @@ export interface SessionView {
   actingIsHuman: boolean;
 }
 
+/** The decideBid/decidePlay pair a seat needs (createKbDecider's shape). */
+export interface SeatDecider {
+  decideBid(state: GameState, seat: Seat): Promise<Decision<Call>>;
+  decidePlay(state: GameState, seat: Seat): Promise<Decision<Card>>;
+}
+
 export interface SessionServiceOptions {
   now?: () => string;
+  /**
+   * Builds the decider for a `kind: "ben"` seat. Injected by the host app
+   * (it owns BEN_ENDPOINT); without it, a BEN seat fails loudly when asked
+   * to act rather than silently passing.
+   */
+  benDecider?: (args: {
+    record: SessionRecord;
+    compiled: CompiledKb;
+    seat: Seat;
+  }) => SeatDecider;
 }
 
 export class SessionService {
@@ -258,7 +285,7 @@ export class SessionService {
   constructor(
     private readonly store: SessionStore,
     private readonly kb: KbStore,
-    options: SessionServiceOptions = {},
+    private readonly options: SessionServiceOptions = {},
   ) {
     this.now = options.now ?? (() => new Date().toISOString());
   }
@@ -361,6 +388,17 @@ export class SessionService {
     return compiled;
   }
 
+  /** The injected BEN decider, or a loud failure if the host never wired one. */
+  private benSeatDecider(record: SessionRecord, compiled: CompiledKb, seat: Seat): SeatDecider {
+    if (this.options.benDecider) return this.options.benDecider({ record, compiled, seat });
+    const fail = () => {
+      throw new Error(
+        `Seat ${seat} is BEN, but no BEN decider is configured (is BEN_ENDPOINT set?)`,
+      );
+    };
+    return { decideBid: async () => fail(), decidePlay: async () => fail() };
+  }
+
   /** Rebuild the Game from the record (fold action events; wire deciders). */
   private buildGame(
     record: SessionRecord,
@@ -381,6 +419,8 @@ export class SessionService {
         seat,
         config.kind === "human"
           ? humanDecider
+          : config.kind === "ben"
+            ? this.benSeatDecider(record, compiled, seat)
           : createKbDecider({
               compiled,
               player: {
