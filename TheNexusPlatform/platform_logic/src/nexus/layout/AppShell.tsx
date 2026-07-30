@@ -44,7 +44,7 @@ import {
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
 import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
-import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
+import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, getProgram, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
 import { useDocumentTitle } from "@/nexus/useDocumentTitle";
@@ -466,8 +466,10 @@ export function AppShell() {
       setProgram(null);
       return;
     }
-    listPrograms(orgId)
-      .then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null))
+    // Single-program read: works for program-scoped people (e.g. a partner
+    // admin), unlike the org-wide list which needs org-level staff access.
+    getProgram(programId)
+      .then((p) => setProgram(p))
       .catch(() => setProgram(null));
   }, [orgId, programId]);
   useEffect(() => {

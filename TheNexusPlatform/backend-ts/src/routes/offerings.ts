@@ -159,6 +159,20 @@ function _registrationResponse(row: Row): Row {
   };
 }
 
+// A single program, readable by any member of it (program-scoped admins/members
+// included). The org-wide programs list requires ORG-LEVEL staff, so the shell
+// can't use it to load a program for a program-scoped person (e.g. a partner
+// admin) — this fills that gap so the workspace always knows its program.
+offeringsRouter.get("/programs/:program_id", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgMember(user, program.org_id as string);
+  return c.json({ ...program, features: normalizeProgramFeatures(program.features as Record<string, unknown>) });
+});
+
 // ── Offerings ────────────────────────────────────────────────────────────
 offeringsRouter.get("/programs/:program_id/offerings", async (c) => {
   const user = await getCurrentUser(c);

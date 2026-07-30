@@ -222,6 +222,13 @@ export async function listMembers(orgId: string): Promise<OrgMember[]> {
   return request<OrgMember[]>(`/api/platform/orgs/${orgId}/members`);
 }
 
+/** A single program, readable by any member of it (unlike the org-wide list,
+ *  which requires org-level staff). The workspace shell uses this so a program-
+ *  scoped person — e.g. a partner admin — can load its program (incl is_partner). */
+export async function getProgram(programId: string): Promise<Program> {
+  return request<Program>(`/api/programs/${programId}`);
+}
+
 export interface OrgSummary {
   id: string;
   name: string;

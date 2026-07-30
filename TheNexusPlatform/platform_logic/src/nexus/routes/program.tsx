@@ -37,6 +37,7 @@ import {
   listGroups,
   listIntegrations,
   listOfferings,
+  getProgram,
   listPrograms,
   listProgramOrgAffiliations,
   listPartnersForProgram,
@@ -84,9 +85,9 @@ function useProgram(): { program: Program | null; orgId: string; programId: stri
   const { orgId = "", programId = "" } = useParams();
   const [program, setProgram] = useState<Program | null>(null);
   useEffect(() => {
-    listPrograms(orgId)
-      .then((ps) => setProgram(ps.find((p) => p.id === programId) ?? null))
-      .catch(() => setProgram(null));
+    if (!programId) { setProgram(null); return; }
+    // Single-program read (works for program-scoped people, unlike the org list).
+    getProgram(programId).then(setProgram).catch(() => setProgram(null));
   }, [orgId, programId]);
   return { program, orgId, programId };
 }
