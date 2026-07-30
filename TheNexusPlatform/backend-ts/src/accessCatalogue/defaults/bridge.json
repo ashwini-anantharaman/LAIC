@@ -216,54 +216,6 @@
       "group": "configuration"
     },
     {
-      "id": "library.view.program",
-      "label": "View the program library instance",
-      "description": "View the program library instance",
-      "group": "library"
-    },
-    {
-      "id": "library.view.org",
-      "label": "View the organization library instance",
-      "description": "View the organization library instance",
-      "group": "library"
-    },
-    {
-      "id": "library.author.program",
-      "label": "Author into the program library instance",
-      "description": "Author into the program library instance",
-      "group": "library"
-    },
-    {
-      "id": "library.author.org",
-      "label": "Author into the organization library instance",
-      "description": "Author into the organization library instance",
-      "group": "library"
-    },
-    {
-      "id": "library.assign",
-      "label": "Assign/copy library items to people",
-      "description": "Assign/copy library items to people",
-      "group": "library"
-    },
-    {
-      "id": "library.embed",
-      "label": "Embed library items into external documents",
-      "description": "Embed library items into external documents (e.g. lessons)",
-      "group": "library"
-    },
-    {
-      "id": "library.publish",
-      "label": "Publish library packages for partners",
-      "description": "Publish library packages for partner organizations",
-      "group": "library"
-    },
-    {
-      "id": "library.install",
-      "label": "Install published library packages",
-      "description": "Install published library packages from partners",
-      "group": "library"
-    },
-    {
       "id": "kb.view",
       "label": "View knowledge bases and their versions",
       "description": "View knowledge bases and their versions",
@@ -654,23 +606,6 @@
       "uiSurfaceIds": [
         "bridge.convention_cards"
       ]
-    },
-    {
-      "id": "library",
-      "label": "Library",
-      "description": "Scoped content library: personal, program and org instances (@laic/library-core)",
-      "order": 8,
-      "capabilityIds": [
-        "library.view.program",
-        "library.view.org",
-        "library.author.program",
-        "library.author.org",
-        "library.assign",
-        "library.embed",
-        "library.publish",
-        "library.install"
-      ],
-      "uiSurfaceIds": []
     },
     {
       "id": "kb",

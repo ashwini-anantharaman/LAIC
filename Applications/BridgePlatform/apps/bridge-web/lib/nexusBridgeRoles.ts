@@ -92,6 +92,46 @@ export async function resetBridgeCatalogue(programId: string): Promise<BridgeCat
   return (await res.json()) as BridgeCatalogue;
 }
 
+/** The LIBRARY component's own provider catalogue — the single source of
+ *  truth for library.* capability ids (bridge no longer embeds copies). */
+export async function getLibraryCatalogue(): Promise<BridgeCatalogue> {
+  return cachedNexusGet("catalogue:library-component", async () => {
+    const res = await nexusFetch("/api/platform/catalogues/library");
+    if (!res.ok) throw new Error(`Library catalogue request failed: ${res.status}`);
+    return (await res.json()) as BridgeCatalogue;
+  });
+}
+
+/** What the ROLE BUILDER offers: bridge's catalogue plus the library
+ *  component's — one picker over both inventories. The server sanitizes role
+ *  saves against the same pair, so picker and enforcement stay in lockstep. */
+export async function getRoleBuilderCatalogue(programId: string): Promise<BridgeCatalogue> {
+  const [bridge, library] = await Promise.all([
+    getBridgeCatalogue(programId),
+    getLibraryCatalogue().catch(() => null),
+  ]);
+  if (!library) return bridge;
+  const maxOrder = Math.max(0, ...bridge.groups.map((g) => g.order));
+  return {
+    ...bridge,
+    capabilities: [
+      ...bridge.capabilities,
+      ...library.capabilities.map((c) => ({ ...c, group: `library-${c.group}` })),
+    ],
+    groups: [
+      ...bridge.groups,
+      ...library.groups.map((g) => ({
+        ...g,
+        id: `library-${g.id}`,
+        label: `Library · ${g.label}`,
+        order: maxOrder + g.order,
+        capabilityIds: g.capabilityIds,
+      })),
+    ],
+    resourceTypes: [...bridge.resourceTypes, ...(library.resourceTypes ?? [])],
+  };
+}
+
 // ── Custom roles ─────────────────────────────────────────────────────────────
 export async function listBridgeRoles(programId: string): Promise<BridgeRole[]> {
   return cachedNexusGet(`roles:${programId}`, async () => {

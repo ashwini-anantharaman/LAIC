@@ -13,7 +13,7 @@ import { redirect } from "next/navigation";
 import { NAV_ITEMS } from "@/lib/nav";
 import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
 import { listBridgePeople, nexusProgramId } from "@/lib/nexusPeople";
-import { getBridgeCatalogue, listBridgeRoles } from "@/lib/nexusBridgeRoles";
+import { getRoleBuilderCatalogue, listBridgeRoles } from "@/lib/nexusBridgeRoles";
 import {
   assignRoleAction,
   createRoleAction,
@@ -60,7 +60,7 @@ export default async function TeamsPage({
   // Management data (http mode only). Catalogue drives the role builder.
   const [catalogue, roles, people] = live
     ? await Promise.all([
-        getBridgeCatalogue(programId!).catch(() => null),
+        getRoleBuilderCatalogue(programId!).catch(() => null),
         listBridgeRoles(programId!).catch(() => []),
         listBridgePeople(programId!).catch(() => []),
       ])

@@ -38,9 +38,15 @@ export async function getBridgeRole(programId: string, roleId: string): Promise<
   return (await listBridgeRoles(programId)).find((r) => r.id === roleId) ?? null;
 }
 
-/** Capabilities are sanitized against the bridge catalogue (unknown ids dropped). */
+/** Capabilities are sanitized against the catalogues bridge roles may bind:
+ *  bridge's own, plus the LIBRARY component's (its own provider document is
+ *  the single source of truth for library.* ids — bridge references it
+ *  rather than defining copies). */
 async function _sanitize(capabilities: string[]): Promise<string[]> {
-  return validGrantsAcross([{ providerId: "bridge" }], capabilities ?? []);
+  return validGrantsAcross(
+    [{ providerId: "bridge" }, { providerId: "library" }],
+    capabilities ?? [],
+  );
 }
 
 export async function createBridgeRole(programId: string, name: string, capabilities: string[]): Promise<BridgeRole> {
