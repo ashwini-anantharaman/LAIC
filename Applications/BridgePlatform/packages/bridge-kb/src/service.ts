@@ -53,6 +53,10 @@ export class KbService {
     description?: string;
     levels?: LevelDef[];
     createdBy: string;
+    /** Instance scoping (kb-core component) — optional, additive. */
+    scopeLevel?: "user" | "program" | "org";
+    programOrganizationId?: string;
+    nexusProgramId?: string;
   }): Promise<KnowledgeBase> {
     const kb: KnowledgeBase = {
       kbId: newId("kb"),
@@ -64,6 +68,11 @@ export class KbService {
       createdBy: input.createdBy,
       createdAt: this.now(),
       updatedAt: this.now(),
+      ...(input.scopeLevel ? { scopeLevel: input.scopeLevel } : {}),
+      ...(input.programOrganizationId
+        ? { programOrganizationId: input.programOrganizationId }
+        : {}),
+      ...(input.nexusProgramId ? { nexusProgramId: input.nexusProgramId } : {}),
     };
     await this.store.putKb(kb);
     return kb;

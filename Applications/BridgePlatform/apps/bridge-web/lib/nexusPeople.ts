@@ -5,6 +5,7 @@
  * logins, test-as, and /bridge/context. http mode only.
  */
 import { cookies } from "next/headers";
+import { cachedNexusGet, invalidateNexusReads } from "./nexusCache";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
 import { NEXUS_TOKEN_COOKIE } from "./nexusToken";
 
@@ -41,9 +42,11 @@ export async function nexusFetch(path: string, init: RequestInit = {}): Promise<
 }
 
 export async function listBridgePeople(programId: string): Promise<BridgePerson[]> {
-  const res = await nexusFetch(`/api/platform/bridge/people?program_id=${encodeURIComponent(programId)}`);
-  if (!res.ok) throw new Error(`Nexus people request failed: ${res.status}`);
-  return (await res.json()) as BridgePerson[];
+  return cachedNexusGet(`people:${programId}`, async () => {
+    const res = await nexusFetch(`/api/platform/bridge/people?program_id=${encodeURIComponent(programId)}`);
+    if (!res.ok) throw new Error(`Nexus people request failed: ${res.status}`);
+    return (await res.json()) as BridgePerson[];
+  });
 }
 
 export async function setBridgeRole(
@@ -59,6 +62,7 @@ export async function setBridgeRole(
     const err = (await res.json().catch(() => null)) as { detail?: string } | null;
     throw new Error(err?.detail ?? `Nexus role update failed: ${res.status}`);
   }
+  invalidateNexusReads(`people:${programId}`);
 }
 
 export interface BridgeInviteResult {
@@ -90,6 +94,7 @@ export async function inviteBridgePerson(
     const err = (await res.json().catch(() => null)) as { detail?: string } | null;
     throw new Error(err?.detail ?? `Nexus invitation failed: ${res.status}`);
   }
+  invalidateNexusReads(`people:${programId}`);
   const inv = (await res.json()) as { redeem_url: string };
   return { redeem_url: inv.redeem_url };
 }
@@ -104,4 +109,5 @@ export async function removeBridgePerson(programId: string, email: string): Prom
     const err = (await res.json().catch(() => null)) as { detail?: string } | null;
     throw new Error(err?.detail ?? `Nexus removal failed: ${res.status}`);
   }
+  invalidateNexusReads(`people:${programId}`);
 }

@@ -1976,6 +1976,226 @@ export async function findLearnerParticipations(
 }
 
 /**
+ * The program's active learner roster (privileged: powers coach/admin
+ * surfaces — the resolver gates WHO may call, this just reads). Names and
+ * emails come from the registration records: students are never org members,
+ * so registrations are their only people surface.
+ */
+export async function listProgramLearners(
+  orgId: string,
+  programId: string,
+  opts: { groupId?: string } = {},
+): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .select({
+        userId: participants.userId,
+        email: registrations.email,
+        name: registrations.name,
+        joinedAt: participants.createdAt,
+      })
+      .from(participants)
+      .innerJoin(registrations, eq(participants.registrationId, registrations.id))
+      .where(
+        and(
+          eq(participants.organizationId, orgId),
+          eq(participants.programId, programId),
+          eq(participants.participantType, "learner"),
+          eq(participants.status, "active"),
+          ...(opts.groupId ? [eq(participants.groupId, opts.groupId)] : []),
+        ),
+      );
+    // user_id IS the id space the platforms key artifacts on: a participant's
+    // bridge/learning context resolves nexusUserId to this same id.
+    return rows.map((r) => ({
+      user_id: r.userId,
+      email: r.email,
+      name: r.name,
+      joined_at: r.joinedAt,
+    }));
+  });
+}
+
+// ── Hire-a-coach (Bridge Program, Phase 1.5) ─────────────────────────────────
+// The coach↔learner relationship is a Nexus GROUP: one roster group per coach
+// (metadata_json.kind = 'coach_roster', .coach_profile_id = the coach's
+// org-scoped profile id), and the learner's participant row points at it via
+// participants.group_id — single-valued, so "one coach at a time" is enforced
+// by the schema's own shape. Hiring is learner-initiated; switching replaces.
+
+/** The program's coaches (holders of the bridge_coach platform role), with
+ *  their roster group (if any) and live learner count. Learner-visible: names
+ *  and profile ids only — no emails. */
+export async function listProgramCoaches(orgId: string, programId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select p.id as coach_id,
+             coalesce(p.display_name, p.name, split_part(a.email, '@', 1)) as name,
+             g.id as group_id,
+             (select count(*) from participants pa
+               where pa.group_id = g.id and pa.participant_type = 'learner' and pa.status = 'active')
+               as learner_count
+      from platform_role_assignments a
+      join profiles p
+        on lower(p.email) = lower(a.email) and p.organization_id = a.organization_id
+      left join groups g
+        on g.organization_id = a.organization_id and g.program_id = a.program_id
+       and g.metadata_json->>'kind' = 'coach_roster'
+       and g.metadata_json->>'coach_profile_id' = p.id::text
+      where a.organization_id = ${orgId} and a.program_id = ${programId}
+        and a.platform = 'bridge' and a.role = 'bridge_coach'
+      order by name`);
+    return rows as unknown as Row[];
+  });
+}
+
+/** The coach's roster group, created on first use. */
+export async function ensureCoachRosterGroup(
+  orgId: string,
+  programId: string,
+  coachProfileId: string,
+  coachName: string,
+): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const existing = await tx.execute(sql`
+      select * from groups
+      where organization_id = ${orgId} and program_id = ${programId}
+        and metadata_json->>'kind' = 'coach_roster'
+        and metadata_json->>'coach_profile_id' = ${coachProfileId}
+      limit 1`);
+    const found = (existing as unknown as Row[])[0];
+    if (found) return found;
+    const created = await tx.execute(sql`
+      insert into groups (organization_id, program_id, name, visibility, metadata_json)
+      values (${orgId}, ${programId}, ${`${coachName} — coaching roster`}, 'private',
+              ${JSON.stringify({ kind: "coach_roster", coach_profile_id: coachProfileId })}::jsonb)
+      returning *`);
+    return (created as unknown as Row[])[0] as Row;
+  });
+}
+
+/** The learner's active participant row in a program (id + group), by email. */
+export async function getLearnerParticipant(
+  orgId: string,
+  programId: string,
+  email: string,
+): Promise<Row | null> {
+  const key = email.trim().toLowerCase();
+  if (!key) return null;
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select pa.id, pa.group_id, pa.user_id
+      from participants pa
+      join registrations r on pa.registration_id = r.id
+      where pa.organization_id = ${orgId} and pa.program_id = ${programId}
+        and pa.participant_type = 'learner' and pa.status = 'active'
+        and lower(r.email) = ${key}
+      limit 1`);
+    return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+  });
+}
+
+/** Point the learner's participant row at a coach roster group (null = leave). */
+export async function setParticipantGroup(participantId: string, groupId: string | null): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx.execute(sql`update participants set group_id = ${groupId} where id = ${participantId}`);
+  });
+}
+
+/** The coach behind a roster group, or null when the group isn't one. */
+export async function getCoachForGroup(groupId: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select p.id as coach_id,
+             coalesce(p.display_name, p.name, split_part(p.email, '@', 1)) as name
+      from groups g
+      join profiles p on p.id = (g.metadata_json->>'coach_profile_id')::uuid
+      where g.id = ${groupId} and g.metadata_json->>'kind' = 'coach_roster'
+      limit 1`);
+    return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+  });
+}
+
+/**
+ * The bridge platform's PROGRAM-instance library entries, for the Learning
+ * Platform's authoring picker (library ↔ LP intersection, Phase B). Reads the
+ * bridge platform pack's table directly (same shared cluster, privileged) —
+ * the LP itself never touches bridge tables; Nexus stays the door. Embeds are
+ * SNAPSHOTS: the LP copies what it needs and records provenance, so this is a
+ * read-only browse surface. Deals/boards/plays only (tables are lineups,
+ * drills are KB internals).
+ */
+/**
+ * Role-aware activity counts for the coach app's live Home (privileged read
+ * of the bridge platform's tables — same pattern as the learning library
+ * bridge read). `userId` is the caller's bridge nexusUserId: a participant's
+ * auth id (learner) or a member's profile id (coach) — the bridge artifact
+ * tables key on exactly that id, so one parameter serves both roles.
+ */
+export async function getBridgeActivitySummary(
+  orgId: string,
+  programId: string | null,
+  userId: string,
+): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select
+        (select count(*) from bridge_assignments a
+          where a.learner_id = ${userId}
+            and (${programId}::text is null or a.nexus_program_id = ${programId})
+            and a.status in ('assigned','started')) as assignments_open,
+        (select count(*) from bridge_play_submissions s
+          where s.learner_id = ${userId}
+            and (${programId}::text is null or s.nexus_program_id = ${programId})
+            and s.status = 'reviewed') as plays_reviewed,
+        (select count(*) from bridge_play_submissions s
+          where s.coach_id = ${userId}
+            and (${programId}::text is null or s.nexus_program_id = ${programId})
+            and s.status = 'submitted') as reviews_pending,
+        (select count(*) from participants pa
+          join groups g on g.id = pa.group_id
+          where g.organization_id = ${orgId}
+            and g.metadata_json->>'kind' = 'coach_roster'
+            and g.metadata_json->>'coach_profile_id' = ${userId}
+            and pa.participant_type = 'learner' and pa.status = 'active') as roster_count
+    `);
+    return (rows as unknown as Row[])[0] ?? {};
+  });
+}
+
+export async function listBridgeLibraryForLearning(
+  orgId: string,
+  programId: string | null,
+): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select entry_id, kind, entry, created_at
+      from bridge_kb_library
+      where program_organization_id = ${orgId}
+        and scope_level = 'program'
+        and kind in ('deal', 'board', 'play')
+        ${programId ? sql`and nexus_program_id = ${programId}` : sql``}
+      order by created_at desc
+      limit 100`);
+    return (rows as unknown as Row[]).map((r) => {
+      const e = (r.entry ?? {}) as Row;
+      return {
+        entry_id: r.entry_id,
+        kind: r.kind,
+        name: e.name ?? null,
+        dealer: e.dealer ?? null,
+        vul: e.vul ?? null,
+        hands: e.hands ?? null,
+        auction: e.auction ?? null,
+        play: e.play ?? null,
+        contract_label: e.contractLabel ?? null,
+        result_label: e.resultLabel ?? null,
+      };
+    });
+  });
+}
+
+/**
  * Delete a registered app (App Shell) and everything that exists only for it:
  * published config versions and launch tokens go with it; offerings and
  * registrations that POINT at it are detached, never deleted — they are the

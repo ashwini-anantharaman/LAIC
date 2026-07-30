@@ -30,7 +30,7 @@ import { MobileItemEditor } from "@/components/mobile/table/MobileItemEditor";
 import { MobileSheetShell } from "@/components/mobile/table/MobileSheetShell";
 import { SaveSheet } from "@/components/mobile/table/SaveSheet";
 import { kbStore } from "@/lib/kb";
-import { getBridgeContext } from "@/lib/nexus";
+import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { saveItemAction } from "@/app/bridge/kb/actions";
 import {
@@ -83,9 +83,13 @@ export default async function MobileTablePage({
     editDeal?: string;
     skin?: string;
     bboAuction?: string;
+    from?: string;
   }>;
 }>) {
   const context = await getBridgeContext();
+  // Embedded in the coach app the "Take a seat" hub doesn't exist — back and
+  // "play another" land on the library, the app's actual entry point.
+  const lobbyHref = (await isEmbeddedLaunch()) ? "/m/library" : "/m/play";
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
   const {
@@ -101,7 +105,12 @@ export default async function MobileTablePage({
     editDeal,
     skin,
     bboAuction,
+    from,
   } = await searchParams;
+  // Where "back" leads depends on how the board was opened: from My Games or
+  // Assignments the arrow returns THERE; otherwise to the lobby/library.
+  const backHref =
+    from === "games" ? "/m/plays" : from === "assigned" ? "/m/assigned" : lobbyHref;
   // ?skin=bbo swaps the felt for the BBO replica (same fluid components the
   // desktop BBO view uses — they size in container units, so they fit phones).
   const bbo = skin === "bbo";
@@ -167,6 +176,7 @@ export default async function MobileTablePage({
     if (learnerMode && isFellow) q.set("mode", "learner");
     if (bbo) q.set("skin", "bbo");
     if (bbo && bboSeats) q.set("bboAuction", "seats");
+    if (from) q.set("from", from); // keep the back target across replay/toggles
     for (const [k, v] of Object.entries(extra)) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/m/table/${sessionId}?${s}` : `/m/table/${sessionId}`;
@@ -582,8 +592,8 @@ export default async function MobileTablePage({
         }}
       >
         <Link
-          href="/m/play"
-          aria-label="Back to play"
+          href={backHref}
+          aria-label="Back"
           style={{
             color: "rgba(231,225,211,.7)",
             fontSize: 18,
@@ -854,7 +864,7 @@ export default async function MobileTablePage({
             dealer={record.board.dealer}
             auctionRows={auctionRows as never}
             plate={mobileBboPlate}
-            lobbyHref="/m/play"
+            lobbyHref={lobbyHref}
             auctionDisplay={bboSeats ? "seats" : "box"}
             auctionToggleHref={mobileAuctionToggleHref}
           />
@@ -1120,7 +1130,7 @@ export default async function MobileTablePage({
             {state.phase === "complete" && (
               <>
                 {" "}
-                <Link href="/m/play" style={{ color: "#8db5b7", textDecoration: "underline" }}>
+                <Link href={lobbyHref} style={{ color: "#8db5b7", textDecoration: "underline" }}>
                   Play another →
                 </Link>
               </>

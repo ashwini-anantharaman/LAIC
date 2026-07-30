@@ -18,6 +18,7 @@ import {
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
+import { authoredScope, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { arenaSets, ensureHousePlayer } from "@/lib/arena";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
@@ -34,8 +35,11 @@ function fail(message: string): never {
 export async function createDealAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   const kind = String(formData.get("kind")) === "deal" ? "deal" : "board";
+  const mobile = formData.get("mobile") === "1";
   const failNew: (message: string) => never = (message) =>
-    redirect(`/bridge/library/new?kind=${kind}&error=${encodeURIComponent(message)}`);
+    redirect(
+      `${mobile ? "/m/library/new" : "/bridge/library/new"}?kind=${kind}&error=${encodeURIComponent(message)}`,
+    );
 
   const hands = {} as Record<Seat, Card[]>;
   for (const seat of ["N", "E", "S", "W"] as Seat[]) {
@@ -65,6 +69,10 @@ export async function createDealAction(formData: FormData): Promise<void> {
     play: [],
     origin: "authored",
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
+    // Staff author into the program instance; everyone else into their own.
+    scopeLevel: authoredScope(context),
     createdAt: new Date().toISOString(),
   };
   try {
@@ -76,7 +84,52 @@ export async function createDealAction(formData: FormData): Promise<void> {
   }
   await audit(context, "profile.create", "kb_library", entry.entryId, { authored: true });
   revalidatePath("/bridge/library");
-  redirect(`/bridge/library/${entry.entryId}`);
+  revalidatePath("/m/library");
+  redirect(mobile ? `/m/library?kind=${kind}` : `/bridge/library/${entry.entryId}`);
+}
+
+/** The board editor's save-changes: re-validated hands/facts onto an
+ *  existing deal/board entry, through the library component (policy-checked
+ *  `edit` on the entry's instance; envelope/provenance never change). */
+export async function updateDealAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const entryId = String(formData.get("entryId"));
+  const failEdit: (message: string) => never = (message) =>
+    redirect(`/bridge/library/${encodeURIComponent(entryId)}/edit?error=${encodeURIComponent(message)}`);
+
+  const { bridgeLibrary, libraryPrincipalOf } = await import("@/lib/libraryComponent");
+  const service = bridgeLibrary();
+  const principal = await libraryPrincipalOf(context);
+  const item = await service.get(principal, entryId);
+  if (!item) failEdit("That library entry no longer exists.");
+  if (item.kind !== "deal" && item.kind !== "board")
+    failEdit("Only deals and boards can be edited.");
+
+  const hands = {} as Record<Seat, Card[]>;
+  for (const seat of ["N", "E", "S", "W"] as Seat[]) {
+    const parsed = handFromSerialized(String(formData.get(`hand:${seat}`) ?? ""));
+    if ("error" in parsed) failEdit(`${seat}: ${parsed.error}`);
+    if (parsed.length !== 13) failEdit(`${seat} has ${parsed.length} cards — every hand needs 13.`);
+    hands[seat] = parsed;
+  }
+  const invalid = validateDeal(hands);
+  if (invalid) failEdit(invalid);
+
+  const dealer = (String(formData.get("dealer") ?? "N") || "N") as Seat;
+  const vul = (String(formData.get("vul") ?? "none") || "none") as Vul;
+  await service.update(principal, entryId, {
+    name: String(formData.get("name") ?? "").trim(),
+    notes: String(formData.get("notes") ?? "").trim(),
+    content: {
+      ...item.content,
+      hands,
+      // A bare deal is just the card distribution — board facts stay off it.
+      ...(item.kind === "board" ? { dealer, vul } : { dealer: undefined, vul: undefined }),
+    },
+  });
+  await audit(context, "profile.update", "kb_library", entryId, { edited: true });
+  revalidatePath("/bridge/library");
+  redirect(`/bridge/library/${entryId}`);
 }
 
 /** Upload a .lin or .pbn file → one library entry per complete board. */
@@ -112,6 +165,9 @@ export async function importFileAction(formData: FormData): Promise<void> {
       origin: "imported",
       importFileName: file.name,
       createdBy: context.nexusUserId,
+      programOrganizationId: orgScopeOf(context),
+      nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
+      scopeLevel: authoredScope(context),
       createdAt: now,
     };
     try {
@@ -140,7 +196,7 @@ function contractText(ctx: GameContext): string | undefined {
 /** The lineup for a saved entry: a saved `table` entry names its KB; card
  *  entries play against the house lineup of the requested (or first compiled)
  *  knowledge base — N/E/W the house player, South the caller. */
-async function resolveEntryLineup(
+export async function resolveEntryLineup(
   entry: LibraryEntry,
   requestedKbId: string,
   context: NexusBridgeContext,
@@ -198,6 +254,8 @@ export async function playEntryAction(formData: FormData): Promise<void> {
     vul: entry.vul ?? "none",
     boardName: entry.name,
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   await audit(context, "profile.update", "kb_session", record.sessionId, {
     kbId,
@@ -252,6 +310,8 @@ export async function resumePlayEntryAction(formData: FormData): Promise<void> {
     primedEvents: primed.events,
     status: primed.complete ? "completed" : "active",
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   await audit(context, "profile.update", "kb_session", record.sessionId, {
     kbId,
@@ -295,6 +355,8 @@ export async function startTableEntryAction(formData: FormData): Promise<void> {
     seed: (Date.now() % 100_000) + 1,
     boardName: `${entry.name} — fresh deal`,
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   await audit(context, "profile.update", "kb_session", record.sessionId, {
     kbId: entry.kbId,

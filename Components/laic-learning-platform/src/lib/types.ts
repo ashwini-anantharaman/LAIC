@@ -389,6 +389,14 @@ export interface FlashcardSetContent {
   /** Review direction from Define: Front→back · Back→front · Both */
   direction?: string;
 }
+/** Provenance for blocks inserted from the Bridge Platform's library — the
+ *  embed is a SNAPSHOT; this records where it came from. */
+export interface BridgeSourceRef {
+  kind: 'embedded';
+  entryId: string;
+  programId?: string;
+  orgId?: string;
+}
 export interface BridgePlayContent {
   title: string;
   description: string;
@@ -399,6 +407,7 @@ export interface BridgePlayContent {
   west: string;
   correctAnswer: string;
   explanation: string;
+  sourceRef?: BridgeSourceRef;
 }
 export interface BidItem {
   seat: 'N' | 'E' | 'S' | 'W';
@@ -410,6 +419,7 @@ export interface BiddingSequenceContent {
   seats: string[];
   bids: BidItem[];
   finalContract: string;
+  sourceRef?: BridgeSourceRef;
 }
 export interface SourceExcerptContent {
   sourceTitle: string;

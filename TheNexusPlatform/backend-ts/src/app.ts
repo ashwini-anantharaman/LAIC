@@ -48,16 +48,23 @@ export function createApp(): Hono {
     .map((o) => o.trim())
     .filter(Boolean);
   const allowed = new Set([settings.frontendOrigin, ...extraOrigins]);
-  // Local dev ports + any Vercel preview/production deployment.
+  // Local dev ports + any Vercel preview/production deployment + Cloudflare
+  // quick tunnels (session-scoped phone testing — see bridge-coach-app).
   const vercelRe = /^https:\/\/.*\.vercel\.app$/;
   const localhostRe = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
+  const trycloudflareRe = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
 
   app.use(
     "*",
     cors({
       origin: (origin) => {
         if (!origin) return settings.frontendOrigin;
-        if (allowed.has(origin) || vercelRe.test(origin) || localhostRe.test(origin)) {
+        if (
+          allowed.has(origin) ||
+          vercelRe.test(origin) ||
+          localhostRe.test(origin) ||
+          trycloudflareRe.test(origin)
+        ) {
           return origin;
         }
         return null;

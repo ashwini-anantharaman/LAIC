@@ -1,8 +1,8 @@
 import type { LibraryEntry, LibraryKind } from "@bridge/sessions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getBridgeContext } from "@/lib/nexus";
-import { libraryStore } from "@/lib/sessions";
+import { canSeeProgramLibrary, listLibraryFor } from "@/lib/libraryComponent";
+import { getBridgeContext, isBridgeCoach } from "@/lib/nexus";
 import {
   playEntryAction,
   resumePlayEntryAction,
@@ -45,15 +45,21 @@ function metaLine(e: LibraryEntry): string {
  *  re-skinned per the design; one action button per row. */
 export default async function MobileLibraryPage({
   searchParams,
-}: Readonly<{ searchParams: Promise<{ kind?: string }> }>) {
+}: Readonly<{ searchParams: Promise<{ kind?: string; scope?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const params = await searchParams;
   const active = (SHELVES.find((s) => s.kind === params.kind) ?? SHELVES[0]!).kind;
 
+  // Library component (@laic/library-core): ONE library per person, decided
+  // by the access policy — admins curate the program instance, everyone else
+  // works in their own. No toggle; content arrives by Share/Assign copies.
+  const coach = isBridgeCoach(context);
+  const scope = (await canSeeProgramLibrary(context)) ? "program" : "mine";
+
   let all: LibraryEntry[] = [];
   try {
-    all = await libraryStore().listEntries();
+    all = await listLibraryFor(context, scope === "program" ? "program" : "mine");
   } catch {
     // Library backend not provisioned (migration 0015) — shelves show empty.
   }
@@ -86,13 +92,52 @@ export default async function MobileLibraryPage({
       <h1 style={{ font: `500 30px ${F}`, color: "#1d1a15", margin: "4px 0 2px" }}>
         Library
       </h1>
-      <p style={{ font: `400 12px/1.5 ${K}`, color: "#7b7466", margin: "0 0 14px" }}>
+      <p style={{ font: `400 13px/1.6 ${K}`, color: "#7b7466", margin: "0 0 22px", maxWidth: 340 }}>
         Snapshots you save from the table, author in the deal editor, or import
         as LIN / PBN.
       </p>
 
+      {/* Creation row — same authoring entry points as desktop */}
+      <div style={{ display: "flex", gap: 9, flexWrap: "wrap", marginBottom: 20 }}>
+        {[
+          { href: "/m/library/new", label: "+ New board" },
+          { href: "/m/library/new?kind=deal", label: "+ New deal" },
+          { href: "/bridge/library/tables/new", label: "+ New table" },
+        ].map((b) => (
+          <Link
+            key={b.href}
+            href={b.href}
+            style={{
+              border: "1px solid #205e63",
+              background: "#fff",
+              color: "#205e63",
+              borderRadius: 22,
+              padding: "9px 16px",
+              font: `600 13px ${K}`,
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {b.label}
+          </Link>
+        ))}
+      </div>
+
       {/* Shelf chips */}
-      <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 2 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          overflowX: "auto",
+          // Keep the scrollbar clear of the chips and unobtrusive; touch
+          // scrolling stays smooth in the WebView.
+          paddingBottom: 14,
+          marginBottom: 2,
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "thin",
+          scrollbarColor: "#d3ccbb transparent",
+        }}
+      >
         {SHELVES.map((s) => {
           const on = s.kind === active;
           return (
@@ -104,9 +149,9 @@ export default async function MobileLibraryPage({
                 border: `1px solid ${on ? "#205e63" : "#d3ccbb"}`,
                 background: on ? "#205e63" : "#fff",
                 color: on ? "#fff" : "#5e5749",
-                borderRadius: 20,
-                padding: "5px 12px",
-                font: `${on ? 500 : 400} 12px ${K}`,
+                borderRadius: 22,
+                padding: "8px 15px",
+                font: `${on ? 600 : 400} 13px ${K}`,
                 textDecoration: "none",
                 whiteSpace: "nowrap",
               }}
@@ -121,7 +166,7 @@ export default async function MobileLibraryPage({
       </div>
 
       {/* Entries */}
-      <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 9 }}>
+      <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 11 }}>
         {shelf.reserved ? (
           <p
             style={{
@@ -150,18 +195,18 @@ export default async function MobileLibraryPage({
                   key={e.entryId}
                   style={{
                     border: "1px solid #e7e1d3",
-                    borderRadius: 12,
+                    borderRadius: 14,
                     background: "#fffefa",
-                    padding: "12px 14px",
+                    padding: "15px 16px",
                     display: "flex",
                     alignItems: "center",
-                    gap: 10,
+                    gap: 12,
                   }}
                 >
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div
                       style={{
-                        font: `600 13px ${K}`,
+                        font: `600 14px ${K}`,
                         color: "#1d1a15",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
@@ -183,6 +228,23 @@ export default async function MobileLibraryPage({
                       {metaLine(e)}
                     </div>
                   </div>
+                  {coach && !!e.hands && e.kind !== "table" && (
+                    <Link
+                      href={`/m/assign?entry=${encodeURIComponent(e.entryId)}`}
+                      style={{
+                        flex: "none",
+                        border: "1px solid #205e63",
+                        background: "#fff",
+                        color: "#205e63",
+                        borderRadius: 8,
+                        padding: "5px 12px",
+                        font: `600 12px ${K}`,
+                        textDecoration: "none",
+                      }}
+                    >
+                      Assign
+                    </Link>
+                  )}
                   {playable && (
                     <form action={action.form}>
                       <input type="hidden" name="entryId" value={e.entryId} />

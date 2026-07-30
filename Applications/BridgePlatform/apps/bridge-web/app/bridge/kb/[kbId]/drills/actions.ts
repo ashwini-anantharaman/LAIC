@@ -12,6 +12,7 @@ import type { LibraryEntry } from "@bridge/sessions";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
+import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { audit } from "@/lib/audit";
 import { ensureSeeds } from "@/lib/kb";
 import { EXPERT_SEEDS, parseExpectedCalls } from "@/lib/drills";
@@ -34,6 +35,8 @@ function buildDrill(input: {
   expectedText: string;
   note?: string;
   createdBy: string;
+  programOrganizationId: string;
+  nexusProgramId?: string;
 }): LibraryEntry {
   const auctionParsed = parseAuction(input.auctionText, input.dealer);
   if ("error" in auctionParsed) throw new Error(`Auction: ${auctionParsed.error}`);
@@ -60,6 +63,10 @@ function buildDrill(input: {
     ...(input.note?.trim() ? { notes: input.note.trim() } : {}),
     origin: "authored",
     createdBy: input.createdBy,
+    programOrganizationId: input.programOrganizationId,
+    nexusProgramId: input.nexusProgramId,
+    // Drills are knowledge-base regression content — program instance.
+    scopeLevel: "program",
     createdAt: new Date().toISOString(),
   };
 }
@@ -84,6 +91,8 @@ export async function saveDrillAction(formData: FormData): Promise<void> {
       expectedText: String(formData.get("expected") ?? ""),
       note: String(formData.get("note") ?? ""),
       createdBy: context.nexusUserId,
+      programOrganizationId: orgScopeOf(context),
+      nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
     });
   } catch (err) {
     redirect(drillsPath(kbId, `?error=${encodeURIComponent(err instanceof Error ? err.message : String(err))}`));
@@ -152,6 +161,8 @@ export async function seedExpertDrillsAction(formData: FormData): Promise<void> 
       expectedText: spec.expected,
       note: spec.note,
       createdBy: context.nexusUserId,
+      programOrganizationId: orgScopeOf(context),
+      nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
     });
     await lib.putEntry(entry);
     seeded++;

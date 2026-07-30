@@ -5,6 +5,7 @@ import type { Seat } from "@bridge/events";
 import { SessionService, type SeatConfig } from "@bridge/sessions";
 import { NextResponse, type NextRequest } from "next/server";
 import { apiError, requireContext } from "@/lib/api";
+import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
@@ -14,14 +15,18 @@ const SEATS: Seat[] = ["N", "E", "S", "W"];
 
 export async function GET() {
   try {
-    await requireContext();
+    const context = await requireContext();
     const { kbStore } = await import("@/lib/kb");
     const archived = new Set(
       (await kbStore().listKbs()).filter((k) => k.archived).map((k) => k.kbId),
     );
-    const sessions = (await sessionService().listRecent()).filter(
-      (s) => !archived.has(s.kbId),
-    );
+    const programId = (await nexusProgramIdOf()) ?? undefined;
+    const sessions = (
+      await sessionService().listRecent({
+        programOrganizationId: orgScopeOf(context),
+        ...(programId ? { nexusProgramId: programId } : {}),
+      })
+    ).filter((s) => !archived.has(s.kbId));
     return NextResponse.json({
       sessions: sessions.map((s) => ({
         sessionId: s.sessionId,
@@ -68,6 +73,8 @@ export async function POST(request: NextRequest) {
       seats,
       seed: body.seed ?? 1,
       createdBy: context.nexusUserId,
+      programOrganizationId: orgScopeOf(context),
+      nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
     });
     await audit(context, "profile.update", "kb_session", record.sessionId, {
       kbId: body.kbId,

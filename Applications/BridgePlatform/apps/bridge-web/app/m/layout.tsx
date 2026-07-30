@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Fraunces, Karla } from "next/font/google";
+import { EmbedLocationReporter } from "@/components/mobile/EmbedLocationReporter";
 import { TabBar } from "@/components/mobile/TabBar";
+import { isEmbeddedLaunch } from "@/lib/nexus";
 
 // Load the design's two typefaces and expose them as CSS variables so every
 // mobile component can reach them via var(--font-fraunces) / var(--font-karla).
@@ -25,9 +27,12 @@ export const metadata: Metadata = {
  *  column on a warm neutral backdrop so it reads as a device on wide screens
  *  while filling the viewport on a phone. The bottom TabBar anchors to this
  *  container; list screens pad their own bottom so content clears it. */
-export default function MobileLayout({
+export default async function MobileLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Embedded in the coach app: the HOST owns navigation — Bridge shows only
+  // the screen it was asked for (no tab bar, no avatar menu, no way to roam).
+  const embedded = await isEmbeddedLaunch();
   return (
     <div
       className={`${fraunces.variable} ${karla.variable}`}
@@ -51,7 +56,7 @@ export default function MobileLayout({
         }}
       >
         {children}
-        <TabBar />
+        {embedded ? <EmbedLocationReporter /> : <TabBar />}
       </div>
     </div>
   );

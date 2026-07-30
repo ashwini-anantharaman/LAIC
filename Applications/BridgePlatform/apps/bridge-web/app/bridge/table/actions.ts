@@ -10,6 +10,7 @@ import { handFromSerialized } from "@/lib/dealText";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
+import { authoredScope, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
@@ -78,6 +79,8 @@ export async function arenaPlayAction(formData: FormData): Promise<void> {
     seats,
     seed: (Date.now() % 100_000) + 1,
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   await audit(context, "profile.update", "kb_session", record.sessionId, {
     kbId,
@@ -127,6 +130,8 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
       seed: (Date.now() % 100_000) + 1,
       dealer,
       createdBy: context.nexusUserId,
+      programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
     });
     redirect(`${tableBase}${record.sessionId}`);
   }
@@ -209,6 +214,9 @@ export async function redealEditedAction(formData: FormData): Promise<void> {
         origin: "authored",
         sourceSessionId: sessionId,
         createdBy: context.nexusUserId,
+        programOrganizationId: orgScopeOf(context),
+        nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
+        scopeLevel: authoredScope(context),
         createdAt: new Date().toISOString(),
       });
     } catch {
@@ -255,6 +263,8 @@ export async function createSessionAction(formData: FormData): Promise<void> {
     seats,
     seed: Number(formData.get("seed") ?? 1) || 1,
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   await audit(context, "profile.update", "kb_session", record.sessionId, {
     kbId,
@@ -353,6 +363,8 @@ export async function newDealAction(formData: FormData): Promise<void> {
     seats: record.seats,
     seed: (Date.now() % 100_000) + 1,
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   await audit(context, "profile.update", "kb_session", next.sessionId, {
     kbId: record.kbId,
@@ -437,6 +449,12 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
     origin: "recorded" as const,
     sourceSessionId: sessionId,
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
+    // Recordings land in the recorder's ONE library: admins curate the
+    // program instance (they have no personal shelf), everyone else records
+    // into their own.
+    scopeLevel: authoredScope(context),
     createdAt: now,
   };
 
@@ -594,6 +612,8 @@ export async function createDrillAction(formData: FormData): Promise<void> {
     seats,
     seed,
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   await audit(context, "profile.update", "kb_session", record.sessionId, {
     kbId,

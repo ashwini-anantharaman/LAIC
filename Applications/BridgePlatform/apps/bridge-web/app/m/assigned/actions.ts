@@ -1,0 +1,60 @@
+"use server";
+
+// Phase 3: the learner starts (or resumes) an assigned board — a fresh
+// session dealt from the assigned entry, vs house players, learner in South.
+
+import { redirect } from "next/navigation";
+import { resolveEntryLineup } from "@/app/bridge/library/actions";
+import { requireContext } from "@/lib/api";
+import { audit } from "@/lib/audit";
+import { ensureSeeds } from "@/lib/kb";
+import { orgScopeOf } from "@/lib/nexus";
+import { assertAiAllowed } from "@/lib/org";
+import { assignmentStore, libraryStore, sessionService } from "@/lib/sessions";
+
+export async function startAssignmentAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const assignmentId = String(formData.get("assignmentId"));
+
+  const store = assignmentStore();
+  const assignment = await store.getAssignment(assignmentId);
+  if (!assignment) throw new Error("Assignment not found");
+  if (assignment.learnerId !== context.nexusUserId) {
+    throw new Error("Only the assigned learner can start this board");
+  }
+
+  // Already underway — go back to the table.
+  if (assignment.sessionId && assignment.status === "started") {
+    redirect(`/m/table/${assignment.sessionId}`);
+  }
+
+  const entry = await libraryStore().getEntry(assignment.entryId);
+  if (!entry?.hands) throw new Error("This assignment's board no longer exists");
+
+  await ensureSeeds();
+  await assertAiAllowed(context);
+  const { kbId, compiled, seats } = await resolveEntryLineup(entry, "", context);
+  const record = await sessionService().createSession({
+    kbId,
+    compiled,
+    seats,
+    seed: 1,
+    hands: entry.hands,
+    dealer: entry.dealer ?? "N",
+    vul: entry.vul ?? "none",
+    boardName: entry.name,
+    createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+  });
+
+  await store.putAssignment({
+    ...assignment,
+    status: "started",
+    sessionId: record.sessionId,
+    startedAt: new Date().toISOString(),
+  });
+  await audit(context, "assignment.started", "assignment", assignmentId, {
+    sessionId: record.sessionId,
+  });
+  redirect(`/m/table/${record.sessionId}`);
+}
