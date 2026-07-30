@@ -796,6 +796,15 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   await page.waitForURL(/view=hands/);
   await expect(page.getByText(/^NS · /)).toBeVisible();
   await expect(page.getByText(/^EW · /)).toBeVisible();
+
+  // GEOMETRY, not just presence: the nav (⟵ table + controls) sits BESIDE the
+  // vul card inside the first 400px grid row. A stacked column once overflowed
+  // into West's panel — this pins the fix. The vul card's centre is the only
+  // titled div in this view.
+  const vulCentre = (await page.locator("div[title]").first().boundingBox())!;
+  const stepChip = (await page.getByRole("button", { name: "step", exact: true }).boundingBox())!;
+  expect(stepChip.y + stepChip.height).toBeLessThanOrEqual(vulCentre.y + vulCentre.height + 4);
+
   await page.getByRole("link", { name: "⟵ table" }).click();
   await expect(page).not.toHaveURL(/view=hands/);
   await expect(page.getByRole("button", { name: "Table menu" })).toBeVisible();

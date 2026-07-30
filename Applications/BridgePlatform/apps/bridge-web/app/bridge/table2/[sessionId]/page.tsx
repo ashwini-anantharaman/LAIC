@@ -132,22 +132,8 @@ export default async function PlayTablePage({
   // Play controls live INSIDE the canvas: ▶/❚❚ and step as rail chips
   // (AutoAdvance's rail variant), undo beside them. Same key semantics as
   // before — an undo remounts the controls paused.
-  const undoChip =
-    record.events.length > 0 && state.phase !== "complete" ? (
-      <form action={undoAction}>
-        <input type="hidden" name="sessionId" value={sessionId} />
-        <button
-          type="submit"
-          aria-label="undo"
-          title="Undo the last decision — comes back paused"
-          style={{ width: 47, height: 32, background: "#acc5c5", border: "2px solid #f2f4f4", borderRadius: 7, color: "#000", fontSize: 16, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
-        >
-          ↩
-        </button>
-      </form>
-    ) : null;
-  const controls = (
-    <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+  const controlsAt = (s: number) => (
+    <div style={{ display: "flex", gap: 6 * s, justifyContent: "center" }}>
       <AutoAdvance
         key={paused ?? "run"}
         sessionId={sessionId}
@@ -156,8 +142,21 @@ export default async function PlayTablePage({
         complete={state.phase === "complete"}
         beatMs={beatMs}
         variant="rail"
+        railScale={s}
       />
-      {undoChip}
+      {record.events.length > 0 && state.phase !== "complete" && (
+        <form action={undoAction}>
+          <input type="hidden" name="sessionId" value={sessionId} />
+          <button
+            type="submit"
+            aria-label="undo"
+            title="Undo the last decision — comes back paused"
+            style={{ width: 47 * s, height: 32 * s, background: "#acc5c5", border: `${2 * s}px solid #f2f4f4`, borderRadius: 7 * s, color: "#000", fontSize: 16 * s, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
+          >
+            ↩
+          </button>
+        </form>
+      )}
     </div>
   );
 
@@ -198,8 +197,7 @@ export default async function PlayTablePage({
           >
             ⟵ table
           </Link>
-          {/* The stage runs at ~2x the table's chip metrics — scale to match. */}
-          <div style={{ transform: "scale(1.9)", transformOrigin: "top left" }}>{controls}</div>
+          {controlsAt(1.9)}
         </div>
       }
     />
@@ -252,7 +250,7 @@ export default async function PlayTablePage({
             resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
             railExtra={
               <>
-                {controls}
+                {controlsAt(1)}
                 {seatsPanel}
               </>
             }

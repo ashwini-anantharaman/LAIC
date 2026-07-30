@@ -198,7 +198,9 @@ export function HandViewer({
     <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: GREEN, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
       <div style={{ flex: "none", transformOrigin: "center center", width: BASE.w, height: BASE.h, transform: `scale(${scale})` }}>
         <div style={{ position: "absolute", inset: 0, display: "grid", gridTemplateColumns: `repeat(3, ${COL}px)`, gridTemplateRows: `repeat(3, ${ROW}px)`, gap: GAP, padding: PAD, background: GREEN }}>
-          <div style={{ justifySelf: "start", alignSelf: "start", display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Card and nav sit SIDE BY SIDE: the rows are fixed 400px, and a
+              stacked column overflows into West's cell below. */}
+          <div style={{ justifySelf: "start", alignSelf: "start", display: "flex", gap: 24, alignItems: "flex-start", maxHeight: ROW, overflow: "hidden" }}>
             {vulBoardCard}
             {nav}
           </div>
