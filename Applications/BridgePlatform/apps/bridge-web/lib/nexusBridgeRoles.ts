@@ -102,6 +102,25 @@ export async function getLibraryCatalogue(): Promise<BridgeCatalogue> {
   });
 }
 
+/** Save the library component's catalogue (platform-level document; Nexus
+ *  settings-edit permission enforced server-side). */
+export async function saveLibraryCatalogue(doc: BridgeCatalogue): Promise<BridgeCatalogue> {
+  const res = await nexusFetch("/api/platform/catalogues/library", {
+    method: "PUT",
+    body: JSON.stringify(doc),
+  });
+  if (!res.ok) throw new Error(`Library catalogue save failed: ${res.status}`);
+  invalidateNexusReads("catalogue:library-component");
+  return (await res.json()) as BridgeCatalogue;
+}
+
+export async function resetLibraryCatalogue(): Promise<BridgeCatalogue> {
+  const res = await nexusFetch("/api/platform/catalogues/library", { method: "DELETE" });
+  if (!res.ok) throw new Error(`Library catalogue reset failed: ${res.status}`);
+  invalidateNexusReads("catalogue:library-component");
+  return (await res.json()) as BridgeCatalogue;
+}
+
 /** What the ROLE BUILDER offers: bridge's catalogue plus the library
  *  component's — one picker over both inventories. The server sanitizes role
  *  saves against the same pair, so picker and enforcement stay in lockstep. */

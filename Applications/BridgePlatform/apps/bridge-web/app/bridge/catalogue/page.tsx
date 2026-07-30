@@ -9,10 +9,14 @@ import { canAccessAdminArea } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
 import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
 import { nexusProgramId } from "@/lib/nexusPeople";
-import { getBridgeCatalogue } from "@/lib/nexusBridgeRoles";
+import Link from "next/link";
+import { getBridgeCatalogue, getLibraryCatalogue } from "@/lib/nexusBridgeRoles";
 import { CatalogueEditor } from "./CatalogueEditor";
 
-export default async function CataloguePage() {
+export default async function CataloguePage({
+  searchParams,
+}: Readonly<{ searchParams: Promise<{ provider?: string }> }>) {
+  const provider = (await searchParams).provider === "library" ? "library" : "bridge";
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   if (await isFellowDemo()) redirect("/bridge/table");
@@ -31,7 +35,10 @@ export default async function CataloguePage() {
     );
   }
 
-  const catalogue = await getBridgeCatalogue(programId).catch(() => null);
+  const catalogue =
+    provider === "library"
+      ? await getLibraryCatalogue().catch(() => null)
+      : await getBridgeCatalogue(programId).catch(() => null);
   if (!catalogue) {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
@@ -41,5 +48,43 @@ export default async function CataloguePage() {
     );
   }
 
-  return <CatalogueEditor initial={catalogue} canEdit={context.is_admin ?? false} />;
+  return (
+    <div className="mx-auto max-w-4xl space-y-4">
+      {/* Provider switcher: bridge's own document vs the LIBRARY component's
+          (platform-level — the single source of truth for library.* ids). */}
+      <div className="flex gap-2">
+        {(
+          [
+            { id: "bridge", label: "Bridge" },
+            { id: "library", label: "Library (component)" },
+          ] as const
+        ).map((p) => (
+          <Link
+            key={p.id}
+            href={p.id === "bridge" ? "/bridge/catalogue" : "/bridge/catalogue?provider=library"}
+            className={
+              p.id === provider
+                ? "rounded-full bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white"
+                : "rounded-full border border-neutral-300 px-4 py-1.5 text-sm text-neutral-700 hover:border-neutral-400"
+            }
+          >
+            {p.label}
+          </Link>
+        ))}
+      </div>
+      {provider === "library" && (
+        <p className="rounded border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
+          This is the library <b>component&apos;s own</b> catalogue — shared by every host
+          platform. Edits here affect anyone binding library capabilities, and saving
+          requires platform-settings access on Nexus.
+        </p>
+      )}
+      <CatalogueEditor
+        key={provider}
+        initial={catalogue}
+        canEdit={context.is_admin ?? false}
+        provider={provider}
+      />
+    </div>
+  );
 }

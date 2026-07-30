@@ -7,7 +7,13 @@
 import { revalidatePath } from "next/cache";
 import { getBridgeContext } from "@/lib/nexus";
 import { nexusProgramId } from "@/lib/nexusPeople";
-import { resetBridgeCatalogue, saveBridgeCatalogue, type BridgeCatalogue } from "@/lib/nexusBridgeRoles";
+import {
+  resetBridgeCatalogue,
+  resetLibraryCatalogue,
+  saveBridgeCatalogue,
+  saveLibraryCatalogue,
+  type BridgeCatalogue,
+} from "@/lib/nexusBridgeRoles";
 
 async function requireAdminProgramId(): Promise<string> {
   const context = await getBridgeContext();
@@ -18,19 +24,28 @@ async function requireAdminProgramId(): Promise<string> {
   return programId;
 }
 
-/** Save the catalogue. `docJson` is the serialized working document from the client. */
-export async function saveCatalogueAction(docJson: string): Promise<void> {
+/** Save the catalogue. `docJson` is the serialized working document from the
+ *  client. `provider` picks WHICH document: bridge's own (program-scoped) or
+ *  the library component's (platform-level, its own provider). */
+export async function saveCatalogueAction(
+  docJson: string,
+  provider: "bridge" | "library" = "bridge",
+): Promise<void> {
   const programId = await requireAdminProgramId();
   const doc = JSON.parse(docJson) as BridgeCatalogue;
   if (doc?.documentType !== "capability_catalogue" || !Array.isArray(doc.capabilities) || !Array.isArray(doc.groups)) {
     throw new Error("Not a valid catalogue document");
   }
-  await saveBridgeCatalogue(programId, doc);
+  if (provider === "library") await saveLibraryCatalogue(doc);
+  else await saveBridgeCatalogue(programId, doc);
   revalidatePath("/bridge/catalogue");
 }
 
-export async function resetCatalogueAction(): Promise<void> {
+export async function resetCatalogueAction(
+  provider: "bridge" | "library" = "bridge",
+): Promise<void> {
   const programId = await requireAdminProgramId();
-  await resetBridgeCatalogue(programId);
+  if (provider === "library") await resetLibraryCatalogue();
+  else await resetBridgeCatalogue(programId);
   revalidatePath("/bridge/catalogue");
 }

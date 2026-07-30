@@ -37,7 +37,17 @@ const btnPrimary = `${btn} bg-emerald-700 text-white hover:bg-emerald-800`;
 const btnOutline = `${btn} border border-neutral-300 text-neutral-700 hover:border-neutral-400`;
 const input = "w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm outline-none focus:border-emerald-500";
 
-export function CatalogueEditor({ initial, canEdit }: { initial: BridgeCatalogue; canEdit: boolean }) {
+export function CatalogueEditor({
+  initial,
+  canEdit,
+  provider = "bridge",
+}: {
+  initial: BridgeCatalogue;
+  canEdit: boolean;
+  /** Which document this editor session edits (bridge's own, or the library
+   *  component's platform-level document). */
+  provider?: "bridge" | "library";
+}) {
   const [doc, setDoc] = useState<BridgeCatalogue>(initial);
   const [dirty, setDirty] = useState(false);
   const [tab, setTab] = useState<TabId>("groups");
@@ -54,13 +64,13 @@ export function CatalogueEditor({ initial, canEdit }: { initial: BridgeCatalogue
 
   function save() {
     startTransition(async () => {
-      try { await saveCatalogueAction(JSON.stringify(doc)); setDirty(false); fire("Catalogue saved"); }
+      try { await saveCatalogueAction(JSON.stringify(doc), provider); setDirty(false); fire("Catalogue saved"); }
       catch (e) { fire(e instanceof Error ? e.message : "Save failed"); }
     });
   }
   function reset() {
     startTransition(async () => {
-      try { await resetCatalogueAction(); fire("Reset to defaults"); window.location.reload(); }
+      try { await resetCatalogueAction(provider); fire("Reset to defaults"); window.location.reload(); }
       catch (e) { fire(e instanceof Error ? e.message : "Reset failed"); }
     });
   }
