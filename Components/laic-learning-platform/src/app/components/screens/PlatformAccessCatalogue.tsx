@@ -30,7 +30,7 @@ import { useApp } from '../../App';
 type TabId = 'groups' | 'capabilities' | 'surfaces' | 'resources' | 'samples' | 'json' | 'schema';
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: 'groups', label: 'Groups', icon: <GitBranch size={14} /> },
+  { id: 'groups', label: 'Capability Sets', icon: <GitBranch size={14} /> },
   { id: 'capabilities', label: 'Capabilities', icon: <KeyRound size={14} /> },
   { id: 'surfaces', label: 'UI surfaces', icon: <PanelLeft size={14} /> },
   { id: 'resources', label: 'Resource types', icon: <Boxes size={14} /> },
@@ -89,7 +89,7 @@ function GroupModal({
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md rounded-[28px] overflow-hidden flex flex-col bg-white" style={{ boxShadow: '0 24px 64px -16px rgba(30,50,80,0.3)' }}>
         <div className="p-5 border-b flex items-start justify-between" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
           <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>{initial ? `Edit “${initial.label}”` : 'New group'}</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>{initial ? `Edit “${initial.label}”` : 'New capability set'}</h3>
             <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 2 }}>Bucket capabilities and the surfaces they unlock.</p>
           </div>
           <button type="button" onClick={onClose}><X size={16} style={{ color: '#9AA3AF' }} /></button>
@@ -129,7 +129,7 @@ function GroupModal({
             className="flex-1 py-2.5 rounded-full text-white disabled:opacity-40"
             style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}
           >
-            Save group
+            Save capability set
           </button>
         </div>
       </motion.div>
@@ -187,7 +187,7 @@ function CapabilityModal({
             <input value={description} onChange={(e) => setDescription(e.target.value)} className="w-full rounded-xl px-3 py-2" style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none' }} />
           </div>
           <div>
-            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Group</p>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Capability set</p>
             <select value={group} onChange={(e) => setGroup(e.target.value)} className="w-full rounded-xl px-3 py-2" style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none', background: 'white' }}>
               {groupsSorted(catalogue).map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
             </select>
@@ -288,7 +288,7 @@ function SurfaceModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>UI group</p>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', marginBottom: 5 }}>Capability set</p>
               <input value={group} onChange={(e) => setGroup(e.target.value)} className="w-full rounded-xl px-3 py-2" style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', outline: 'none' }} placeholder="learning | learner" />
             </div>
             <div>
@@ -459,9 +459,9 @@ function GuideModal({ onClose }: { onClose: () => void }) {
             actually granted and enforced.
           </P>
           <P>
-            <strong>2. Groups</strong> — labeled folders that bucket related capabilities (and surfaces). Their job
-            is twofold: they tidy the UI, and each group can back <strong>one coarse toggle</strong> in the role
-            builder — flipping that toggle on seeds every capability in the folder onto the role. Groups are never
+            <strong>2. Capability sets</strong> — labeled folders that bucket related capabilities (and surfaces). Their job
+            is twofold: they tidy the UI, and each capability set can back <strong>one coarse toggle</strong> in the role
+            builder — flipping that toggle on seeds every capability in the folder onto the role. Capability sets are never
             stored on a role; they're the design-time bridge between the simple toggle and the underlying
             capabilities.
           </P>
@@ -477,9 +477,9 @@ function GuideModal({ onClose }: { onClose: () => void }) {
 
           <H>How a role is actually built</H>
           <P>
-            A saved role stores two things — and a group id is in neither: a set of <strong>coarse area levels</strong>{' '}
+            A saved role stores two things — and a capability-set id is in neither: a set of <strong>coarse area levels</strong>{' '}
             (No / View / Edit, or No / Partial / Full for platforms) and a flat list of <strong>capability ids</strong>.
-            Setting an area's coarse level is a preset: the top level seeds every capability in that area's group;
+            Setting an area's coarse level is a preset: the top level seeds every capability in that area's set;
             "Partial" lets you hand-pick a subset. The capability list is the <strong>enforced source of truth</strong>{' '}
             — the backend validates it against this catalog and drops anything not in the inventory.
           </P>
@@ -501,15 +501,15 @@ function GuideModal({ onClose }: { onClose: () => void }) {
 
           <H>Adding a new feature end-to-end</H>
           <P>
-            1) Add a <strong>capability</strong> to a group here; 2) add a <strong>surface</strong> for the UI it
-            unlocks; 3) the role builder's toggle for that group now grants it; 4) the nav/screen gated by that
-            surface appears for anyone who holds it. A brand-new group is purely organizational until a role-builder
+            1) Add a <strong>capability</strong> to a capability set here; 2) add a <strong>surface</strong> for the UI it
+            unlocks; 3) the role builder's toggle for that capability set now grants it; 4) the nav/screen gated by that
+            surface appears for anyone who holds it. A brand-new capability set is purely organizational until a role-builder
             area is wired to it — that wiring is what turns a folder into a working, grantable feature.
           </P>
 
           <H>Editing here</H>
           <P>
-            Use the <strong>Groups</strong> tab to add capabilities/surfaces inline within a folder, or the dedicated{' '}
+            Use the <strong>Capability Sets</strong> tab to add capabilities/surfaces inline within a folder, or the dedicated{' '}
             <strong>Capabilities</strong> / <strong>UI surfaces</strong> tabs. <strong>Save catalog</strong> persists
             your changes for this level; <strong>Reset defaults</strong> restores the shipped catalog. The{' '}
             <strong>Export JSON</strong> and <strong>JSON Schema</strong> tabs show the live document and the shape
@@ -614,12 +614,12 @@ export function PlatformAccessCatalogue() {
       });
     }
     setGroupModal({ open: false, initial: null });
-    fireToast(exists ? 'Group updated' : 'Group added');
+    fireToast(exists ? 'Capability set updated' : 'Capability set added');
   };
 
   const removeGroup = (id: string) => {
     if (catalogue.groups.length <= 1) {
-      fireToast('Keep at least one group');
+      fireToast('Keep at least one capability set');
       return;
     }
     const victim = catalogue.groups.find((g) => g.id === id);
@@ -639,8 +639,8 @@ export function PlatformAccessCatalogue() {
       ]),
     ];
     const confirmMsg = moveCapIds.length || moveSurfaceIds.length
-      ? `Delete group “${victim.label}”? Its ${moveCapIds.length} capabilities and ${moveSurfaceIds.length} UI surfaces will move to “${fallback.label}”.`
-      : `Delete empty group “${victim.label}”?`;
+      ? `Delete capability set “${victim.label}”? Its ${moveCapIds.length} capabilities and ${moveSurfaceIds.length} UI surfaces will move to “${fallback.label}”.`
+      : `Delete empty capability set “${victim.label}”?`;
     if (!window.confirm(confirmMsg)) return;
 
     patch({
@@ -763,7 +763,7 @@ export function PlatformAccessCatalogue() {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-5">
           {[
-            { label: 'Groups', value: catalogue.groups.length },
+            { label: 'Capability Sets', value: catalogue.groups.length },
             { label: 'Capabilities', value: catalogue.capabilities.length },
             { label: 'UI surfaces', value: catalogue.uiSurfaces.length },
             { label: 'Resource types', value: catalogue.resourceTypes.length },
@@ -793,13 +793,13 @@ export function PlatformAccessCatalogue() {
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <p style={{ fontSize: 13, color: '#6B7280' }}>
-              Deleting a group moves its capabilities and surfaces into another group.
+              Deleting a capability set moves its capabilities and surfaces into another set.
             </p>
             <div className="flex gap-2 flex-wrap">
               <button type="button" onClick={() => setOpenGroups(new Set(catalogue.groups.map((g) => g.id)))} className="px-3 py-1.5 rounded-full text-[12px] font-semibold" style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}>Expand all</button>
               <button type="button" onClick={() => setOpenGroups(new Set())} className="px-3 py-1.5 rounded-full text-[12px] font-semibold" style={{ background: 'rgba(0,0,0,0.04)', color: '#374151' }}>Collapse all</button>
               <button type="button" onClick={() => setGroupModal({ open: true, initial: null })} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-semibold text-white" style={{ background: '#0B0F1A' }}>
-                <Plus size={12} /> Add group
+                <Plus size={12} /> Add capability set
               </button>
             </div>
           </div>
@@ -815,7 +815,7 @@ export function PlatformAccessCatalogue() {
                   <span className="mt-0.5 text-[#9AA3AF]">{open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</span>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: '#0B0F1A', color: 'white' }}>GROUP</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: '#0B0F1A', color: 'white' }}>CAP SET</span>
                       <p style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }}>{g.label}</p>
                       <code className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: '#F3F4F6', color: '#6B7280' }}>{g.id}</code>
                       <span className="text-[11px] text-[#9AA3AF]">order {g.order}</span>
@@ -838,7 +838,7 @@ export function PlatformAccessCatalogue() {
                     disabled={catalogue.groups.length <= 1}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-semibold disabled:opacity-40"
                     style={{ background: 'rgba(239,68,68,0.08)', color: '#B91C1C' }}
-                    title={catalogue.groups.length <= 1 ? 'Keep at least one group' : 'Delete group'}
+                    title={catalogue.groups.length <= 1 ? 'Keep at least one capability set' : 'Delete capability set'}
                   >
                     <Trash2 size={12} /> Delete
                   </button>
@@ -858,7 +858,7 @@ export function PlatformAccessCatalogue() {
                             <button type="button" onClick={() => setCapModal({ open: true, initial: c })} className="ml-auto opacity-0 group-hover:opacity-100 px-2 py-1 rounded-full text-[11px] font-semibold" style={{ background: 'rgba(0,0,0,0.05)', color: '#374151' }}>Edit</button>
                           </div>
                         ))}
-                        {!caps.length && <p style={{ fontSize: 12, color: '#9AA3AF' }}>No capabilities in this group</p>}
+                        {!caps.length && <p style={{ fontSize: 12, color: '#9AA3AF' }}>No capabilities in this capability set</p>}
                       </div>
                     </div>
                     <div>
