@@ -70,21 +70,16 @@ export function AutoAdvance({
     const s = railScale ?? 1;
     return (
       <div style={{ display: "flex", gap: 6 * s, justifyContent: "center" }}>
+        {/* The SideRail design's pause control: boards run by default and this
+            STOPS them — a standing toggle, live even on a human turn. */}
         <button
           type="button"
-          disabled={!active}
           onClick={() => setPaused((p) => !p)}
-          aria-label={paused ? (seq === 0 ? "start" : "resume") : "pause"}
-          title={
-            active
-              ? paused
-                ? "Start automatic play"
-                : "Pause automatic play"
-              : "A human is to act — bid or play from the hand"
-          }
-          style={{ width: 47 * s, height: 32 * s, background: "#384bb3", border: `${2 * s}px solid #dfe4f4`, borderRadius: 7 * s, color: "#fff", fontSize: 14 * s, fontWeight: 700, lineHeight: 1, cursor: active ? "pointer" : "default", opacity: active ? 1 : 0.42 }}
+          aria-label={paused ? "Resume" : "Pause"}
+          title="Pause or resume play"
+          style={{ width: 100 * s, height: 32 * s, background: paused ? "#8a3030" : "#3a5a7a", border: `${2 * s}px solid #f2f4f4`, borderRadius: 7 * s, color: "#fff", fontSize: 15 * s, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
         >
-          {paused ? "▶" : "❚❚"}
+          {paused ? "Resume" : "Pause"}
         </button>
         <button
           type="button"

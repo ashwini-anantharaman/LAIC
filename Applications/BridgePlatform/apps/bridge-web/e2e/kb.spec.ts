@@ -768,10 +768,15 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   const sid = /bs_[a-z0-9]+/.exec(page.url())![0];
   await page.goto(`/bridge/table2/${sid}`);
 
-  // The rail's ☰ opens the SettingsMenu overlay with the real rows.
+  // The dealer is unmistakable on the felt (SeatPlate DEALER mark).
+  await expect(page.getByText("DEALER").first()).toBeVisible();
+
+  // The rail's ☰ opens the SettingsMenu overlay with the real rows. New board
+  // is gone (2026-07-30 design update); Confirm bids arrived.
   await page.getByRole("button", { name: "Table menu" }).click();
   await expect(page.getByText("Table settings")).toBeVisible();
-  await expect(page.getByRole("button", { name: /New board/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Confirm bids/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /New board/ })).toHaveCount(0);
 
   // A row applies its param via navigation; the menu STAYS OPEN and the row
   // shows the new value.
@@ -789,6 +794,30 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   const header = (await page.getByText("Table settings").boundingBox())!;
   await page.mouse.click(header.x + header.width + 400, header.y + header.height / 2);
   await expect(page.getByText("Table settings")).toHaveCount(0);
+
+  // Confirm bids: with confirm=1, a human call is STAGED — Cancel discards,
+  // Confirm lands it. The board runs on its own until it's our turn.
+  await page.goto(`/bridge/table2/${sid}?confirm=1`);
+  const pass = page.getByRole("button", { name: "Pass", exact: true });
+  await expect(async () => {
+    expect(await pass.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  }).toPass({ timeout: 30_000 });
+  await pass.click();
+  await expect(page.getByText(/Confirm your call/)).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText(/Confirm your call/)).toHaveCount(0);
+  await pass.click();
+  await page.getByRole("button", { name: /Confirm Pass/ }).click();
+  await expect(page.getByText(/Confirm your call/)).toHaveCount(0);
+
+  // Narrow layout: a phone-sized viewport gets the portrait stage — the
+  // touch bid tray's Pass button is finger-sized, not the wide tray's.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/bridge/table2/${sid}?paused=1`);
+  await expect(page.getByRole("button", { name: "Table menu" })).toBeVisible();
+  const narrowPass = await page.getByRole("button", { name: "Pass", exact: true }).boundingBox();
+  if (narrowPass) expect(narrowPass.width).toBeGreaterThan(80);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   // The rail's "Hands" chip switches to the HandViewer record view: big seat
   // panels, the full auction, honest info panels — and a way back.
