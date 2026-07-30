@@ -192,16 +192,16 @@ function PermRow({ area, value, onChange }: { area: RgArea; value: string | unde
  * then the individual capability toggles beneath it.
  */
 function CapGroup({
-  label, capabilities, caps, onToggle, onToggleAll,
+  label, capabilities, isChecked, onToggle, onToggleAll,
 }: {
   label: string;
   capabilities: { id: string; label: string }[];
-  caps: Set<string>;
-  onToggle: (id: string) => void;
+  isChecked: (id: string) => boolean;
+  onToggle: (id: string, on: boolean) => void;
   onToggleAll: (ids: string[], on: boolean) => void;
 }) {
   const ids = capabilities.map((c) => c.id);
-  const allOn = ids.length > 0 && ids.every((id) => caps.has(id));
+  const allOn = ids.length > 0 && ids.every((id) => isChecked(id));
   return (
     <div className="mb-1.5">
       <label className="flex items-center gap-2 rounded px-1 py-0.5">
@@ -210,7 +210,7 @@ function CapGroup({
       </label>
       {capabilities.map((cp) => (
         <label key={cp.id} className="ml-5 flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-accent/40">
-          <Switch checked={caps.has(cp.id)} onCheckedChange={() => onToggle(cp.id)} />
+          <Switch checked={isChecked(cp.id)} onCheckedChange={() => onToggle(cp.id, !isChecked(cp.id))} />
           <span className="min-w-0"><span className="text-foreground">{cp.label}</span> <span className="font-mono text-[11px] text-muted-foreground">{cp.id}</span></span>
         </label>
       ))}
@@ -274,8 +274,8 @@ function EditorDialog({
     return () => { live = false; };
   }, [open, adapter]);
 
-  const toggleCap = (id: string) => setCaps((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  // Bulk toggle a capability set (group header): all-on if any is off, else all-off.
+  // Set/clear specific capabilities (individual toggle passes one id; a set
+  // header passes the whole group).
   const setGroupCaps = (ids: string[], on: boolean) => setCaps((s) => { const n = new Set(s); for (const id of ids) on ? n.add(id) : n.delete(id); return n; });
 
   // Capability ids belonging to an area's mapped catalogue group (grantable only —
@@ -295,16 +295,46 @@ function EditorDialog({
   const platformProviderIds = new Set(
     adapter.areas.filter((a) => a.kind === "platform" && a.catalogueId).map((a) => a.catalogueId as string),
   );
+  // Whether a platform capability reads as ON: Full (level "administrator") means
+  // every capability is on; Partial reads the explicit set.
+  const platformCapOn = (area: RgArea, id: string) => perms[area.key] === "administrator" || caps.has(id);
+  // Toggle platform capabilities with auto-level transitions: all on → Full,
+  // none → No access, otherwise Partial.
+  const togglePlatformCap = (area: RgArea, ids: string[], on: boolean) => {
+    const allIds = platformCapIds(area);
+    const selected = new Set(perms[area.key] === "administrator" ? allIds : allIds.filter((id) => caps.has(id)));
+    for (const id of ids) on ? selected.add(id) : selected.delete(id);
+    const allOn = allIds.length > 0 && allIds.every((id) => selected.has(id));
+    const none = selected.size === 0;
+    setCaps((s) => {
+      const n = new Set(s);
+      for (const id of allIds) n.delete(id);
+      if (!allOn && !none) for (const id of selected) n.add(id); // Full/None store no explicit caps
+      return n;
+    });
+    setPerms((p) => {
+      const n = { ...p };
+      if (none) delete n[area.key];
+      else n[area.key] = allOn ? "administrator" : "partial";
+      return n;
+    });
+  };
   // Setting an area's coarse level is a PRESET over its capabilities: choosing the
   // top level (edit / on) seeds every capability in the group ON; view / off clears
   // them. Individual toggles then subtract. Capabilities are the enforced truth.
   const applyAreaLevel = (area: RgArea, v: string | undefined) => {
     setPerms((p) => { const n = { ...p }; if (v == null) delete n[area.key]; else n[area.key] = v; return n; });
-    // Platform areas (3-way): Partial keeps its picked caps; Full / No access
-    // clear that platform's caps (Full grants everything via the level; No = none).
+    // Platform areas (3-way): the capability list is ALWAYS shown for Partial and
+    // Full. Full shows every capability on (via the level — no explicit caps
+    // stored); Partial seeds every capability on so you can trim; No clears.
     if (area.kind === "platform") {
       const ids = platformCapIds(area);
-      if (ids.length && v !== "partial") setCaps((s) => { const n = new Set(s); for (const id of ids) n.delete(id); return n; });
+      setCaps((s) => {
+        const n = new Set(s);
+        for (const id of ids) n.delete(id);
+        if (v === "partial") for (const id of ids) n.add(id); // start Partial with all on
+        return n;
+      });
       return;
     }
     const ids = groupCapIds(area);
@@ -381,16 +411,25 @@ function EditorDialog({
               <Label>Access</Label>
               <div className="space-y-1.5">
                 {adapter.areas.map((a) => {
-                  const cat = a.kind === "platform" && perms[a.key] === "partial" ? platformCatalogueFor(a) : undefined;
+                  // The capability list shows for Partial AND Full (Full = all on).
+                  const showPicker = a.kind === "platform" && (perms[a.key] === "partial" || perms[a.key] === "administrator");
+                  const cat = showPicker ? platformCatalogueFor(a) : undefined;
                   return (
                     <div key={a.key} className="space-y-1.5">
                       <PermRow area={a} value={perms[a.key]} onChange={(v) => applyAreaLevel(a, v)} />
-                      {a.kind === "platform" && perms[a.key] === "partial" ? (
+                      {showPicker ? (
                         cat ? (
                           <div className="ml-3 rounded-lg border border-border p-2">
                             <div className="mb-1 px-1 text-[11px] text-muted-foreground">Capabilities this role has in {a.label}.</div>
                             {cat.groups.map((g) => (
-                              <CapGroup key={g.id} label={g.label} capabilities={g.capabilities} caps={caps} onToggle={toggleCap} onToggleAll={setGroupCaps} />
+                              <CapGroup
+                                key={g.id}
+                                label={g.label}
+                                capabilities={g.capabilities}
+                                isChecked={(id) => platformCapOn(a, id)}
+                                onToggle={(id, on) => togglePlatformCap(a, [id], on)}
+                                onToggleAll={(ids, on) => togglePlatformCap(a, ids, on)}
+                              />
                             ))}
                           </div>
                         ) : (
@@ -410,7 +449,14 @@ function EditorDialog({
                   <div key={cat.id} className="rounded-lg border border-border p-2">
                     <div className="mb-1 px-1 text-xs font-semibold text-muted-foreground">{cat.name}</div>
                     {cat.groups.map((g) => (
-                      <CapGroup key={g.id} label={g.label} capabilities={g.capabilities} caps={caps} onToggle={toggleCap} onToggleAll={setGroupCaps} />
+                      <CapGroup
+                        key={g.id}
+                        label={g.label}
+                        capabilities={g.capabilities}
+                        isChecked={(id) => caps.has(id)}
+                        onToggle={(id, on) => setGroupCaps([id], on)}
+                        onToggleAll={setGroupCaps}
+                      />
                     ))}
                   </div>
                 ))}
