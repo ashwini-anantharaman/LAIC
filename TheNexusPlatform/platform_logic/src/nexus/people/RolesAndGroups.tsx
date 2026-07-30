@@ -108,8 +108,11 @@ function buildTree(roles: RgRole[], groups: RgGroup[]): TreeNode[] {
     const parent = g.parent_id && groupById.has(g.parent_id) ? groupNodes.get(g.parent_id!) : null;
     (parent ? parent.children : roots).push(n);
   }
-  // Place roles under their parent group (or root).
+  // Place roles in the hierarchy — but ONLY roles shown as their own group. A
+  // plain (non-grouped) role has no place in the hierarchy; it lives solely in
+  // the "roles (non grouped)" panel below.
   for (const r of roles) {
+    if (!r.display_as_group) continue;
     const n = node("role", r.id, r.name, r);
     const parent = r.parent_group_id ? groupNodes.get(r.parent_group_id) : null;
     (parent ? parent.children : roots).push(n);

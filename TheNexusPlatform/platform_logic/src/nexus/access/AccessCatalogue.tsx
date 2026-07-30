@@ -25,7 +25,7 @@ import schemaJson from "./access-catalogue.schema.json";
 
 type TabId = "groups" | "capabilities" | "surfaces" | "resources" | "samples" | "json" | "schema";
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: "groups", label: "Groups", icon: <LayoutList className="size-3.5" /> },
+  { id: "groups", label: "Capability Sets", icon: <LayoutList className="size-3.5" /> },
   { id: "capabilities", label: "Capabilities", icon: <KeyRound className="size-3.5" /> },
   { id: "surfaces", label: "Surfaces", icon: <LayoutList className="size-3.5" /> },
   { id: "resources", label: "Resources", icon: <LayoutList className="size-3.5" /> },
@@ -139,13 +139,13 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
   const addGroup = (label: string) => {
     if (!doc || !label.trim()) return;
     const id = slug(label);
-    if (doc.groups.some((g) => g.id === id)) { toast.error("A group with that id exists"); return; }
+    if (doc.groups.some((g) => g.id === id)) { toast.error("A capability set with that id exists"); return; }
     patch({ ...doc, groups: [...doc.groups, { id, label: label.trim(), order: doc.groups.length + 1, capabilityIds: [], uiSurfaceIds: [] }] });
   };
   const renameGroup = (id: string, label: string) => { if (doc) patch({ ...doc, groups: doc.groups.map((g) => (g.id === id ? { ...g, label } : g)) }); };
   const removeGroup = (id: string) => {
     if (!doc) return;
-    if (doc.groups.length <= 1) { toast.error("Keep at least one group"); return; }
+    if (doc.groups.length <= 1) { toast.error("Keep at least one capability set"); return; }
     const fallback = doc.groups.find((g) => g.id !== id)!.id;
     patch({
       ...doc,
@@ -228,7 +228,7 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
 
           {tab === "groups" && (
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Groups bucket capabilities and the surfaces they unlock.</p>
+              <p className="text-sm text-muted-foreground">Capability sets bucket capabilities and the surfaces they unlock.</p>
               {groupsSorted.map((g) => {
                 const caps = capsByGroup(g.id);
                 const surfs = surfsByGroup(g.id);
@@ -248,7 +248,7 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
                       <Input value={g.label} onChange={(e) => renameGroup(g.id, e.target.value)} className="h-8 max-w-xs" />
                       <span className="font-mono text-xs text-muted-foreground">{g.id}</span>
                       <span className="ml-auto text-xs text-muted-foreground">{caps.length} caps · {surfs.length} surfaces</span>
-                      <ConfirmButton title={`Remove group "${g.label}"?`} description="Its capabilities/surfaces move to another group." actionLabel="Remove" onConfirm={() => removeGroup(g.id)} buttonTitle="Remove group">
+                      <ConfirmButton title={`Remove capability set "${g.label}"?`} description="Its capabilities/surfaces move to another set." actionLabel="Remove" onConfirm={() => removeGroup(g.id)} buttonTitle="Remove capability set">
                         <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
                       </ConfirmButton>
                     </div>
@@ -276,7 +276,7 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
                                 </div>
                               ))}
                             </div>
-                          ) : <p className="text-xs text-muted-foreground">None in this group.</p>}
+                          ) : <p className="text-xs text-muted-foreground">None in this capability set.</p>}
                           {canEdit ? (
                             <Button size="sm" variant="outline" className="mt-1.5 h-7" onClick={() => addCapToGroup(g.id)}><Plus className="size-3.5" /> Add capability</Button>
                           ) : null}
@@ -303,7 +303,7 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
                                 </div>
                               ))}
                             </div>
-                          ) : <p className="text-xs text-muted-foreground">None in this group.</p>}
+                          ) : <p className="text-xs text-muted-foreground">None in this capability set.</p>}
                           {canEdit ? (
                             <Button size="sm" variant="outline" className="mt-1.5 h-7" onClick={() => addSurfToGroup(g.id)}><Plus className="size-3.5" /> Add surface</Button>
                           ) : null}
@@ -313,7 +313,7 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
                   </div>
                 );
               })}
-              <AddInline placeholder="New group label" onAdd={addGroup} />
+              <AddInline placeholder="New capability set label" onAdd={addGroup} />
             </div>
           )}
 
@@ -337,7 +337,7 @@ export function AccessCatalogue({ source, embedded = false }: { source?: Catalog
                         </div>
                       </div>
                     ))}
-                    {capsByGroup(g.id).length === 0 ? <p className="text-xs text-muted-foreground">No capabilities in this group.</p> : null}
+                    {capsByGroup(g.id).length === 0 ? <p className="text-xs text-muted-foreground">No capabilities in this capability set.</p> : null}
                   </div>
                 </div>
               ))}
@@ -452,10 +452,10 @@ function AccessCatalogGuide({ onClose }: { onClose: () => void }) {
             Capabilities are the only thing actually granted and enforced.
           </P>
           <P>
-            <strong>2. Groups</strong> — labeled folders that bucket related capabilities (and surfaces).
-            Their job is twofold: they tidy the UI, and each group can back <strong>one coarse toggle</strong> in
-            the role builder — flipping that toggle on seeds every capability in the folder onto the role.
-            Groups are never stored on a role; they’re the design-time bridge between the simple toggle and the
+            <strong>2. Capability sets</strong> — labeled folders that bucket related capabilities (and surfaces).
+            Their job is twofold: they tidy the UI, and each set can back <strong>one coarse toggle</strong> in
+            the role builder — flipping that toggle on seeds every capability in the set onto the role.
+            Capability sets are never stored on a role; they’re the design-time bridge between the simple toggle and the
             underlying capabilities.
           </P>
           <P>
@@ -470,10 +470,10 @@ function AccessCatalogGuide({ onClose }: { onClose: () => void }) {
 
           <H>How a role is actually built</H>
           <P>
-            A saved role stores two things — and a group id is in neither: a set of <strong>coarse area levels</strong>{" "}
+            A saved role stores two things — and a capability-set id is in neither: a set of <strong>coarse area levels</strong>{" "}
             (No / View / Edit, or No / Partial / Full for platforms) and a flat list of{" "}
             <strong>capability ids</strong>. Setting an area’s coarse level is a preset: the top level seeds every
-            capability in that area’s group; “Partial” lets you hand-pick a subset. The capability list is the{" "}
+            capability in that area’s set; “Partial” lets you hand-pick a subset. The capability list is the{" "}
             <strong>enforced source of truth</strong> — the backend validates it against this catalog and drops
             anything not in the inventory.
           </P>
@@ -495,15 +495,15 @@ function AccessCatalogGuide({ onClose }: { onClose: () => void }) {
 
           <H>Adding a new feature end-to-end</H>
           <P>
-            1) Add a <strong>capability</strong> to a group here; 2) add a <strong>surface</strong> for the UI it
-            unlocks; 3) the role builder’s toggle for that group now grants it; 4) the nav/screen gated by that
-            surface appears for anyone who holds it. A brand-new group is purely organizational until a role-builder
-            area is wired to it — that wiring is what turns a folder into a working, grantable feature.
+            1) Add a <strong>capability</strong> to a capability set here; 2) add a <strong>surface</strong> for the UI it
+            unlocks; 3) the role builder’s toggle for that set now grants it; 4) the nav/screen gated by that
+            surface appears for anyone who holds it. A brand-new capability set is purely organizational until a role-builder
+            area is wired to it — that wiring is what turns a set into a working, grantable feature.
           </P>
 
           <H>Editing here</H>
           <P>
-            Use the <strong>Groups</strong> tab to add capabilities/surfaces inline within a folder, or the
+            Use the <strong>Capability Sets</strong> tab to add capabilities/surfaces inline within a set, or the
             dedicated <strong>Capabilities</strong> / <strong>Surfaces</strong> tabs. <strong>Save catalog</strong>{" "}
             persists your changes for this level; <strong>Reset defaults</strong> restores the shipped catalog.
             The <strong>Export JSON</strong> and <strong>JSON Schema</strong> tabs show the live document and the
@@ -558,7 +558,7 @@ function CapabilityDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc
             <div className="space-y-1.5"><Label>Capability id</Label><Input value={id} onChange={(e) => setId(e.target.value)} placeholder={slug(label) || "e.g. org.people.manage"} /></div>
           ) : null}
           <div className="space-y-1.5"><Label>Label</Label><Input value={label} onChange={(e) => setLabel(e.target.value)} /></div>
-          <div className="space-y-1.5"><Label>Group</Label>
+          <div className="space-y-1.5"><Label>Capability set</Label>
             <Select value={group} onValueChange={setGroup}><SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{doc.groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.label}</SelectItem>)}</SelectContent>
             </Select>
@@ -604,7 +604,7 @@ function SurfaceDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc: C
                 <SelectContent>{SURFACE_KINDS.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5"><Label>Group</Label>
+            <div className="space-y-1.5"><Label>Capability set</Label>
               <Select value={group} onValueChange={setGroup}><SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{doc.groups.map((g) => <SelectItem key={g.id} value={g.id}>{g.label}</SelectItem>)}</SelectContent>
               </Select>
