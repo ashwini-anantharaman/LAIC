@@ -27,27 +27,49 @@ function EditorShell({
 }) {
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
-          <ChevronLeft size={15} />Back to pipeline
-        </button>
-        <input value={title} onChange={(e) => setTitle(e.target.value)}
-          className="flex-1 bg-transparent outline-none" style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }} />
-        <div className="flex rounded-full border p-0.5" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
-          <button type="button" onClick={() => setMode('edit')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
-            style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}>
-            <Pencil size={12} />Edit
+      <div
+        className="sticky top-0 z-20 flex flex-col gap-2 px-3 sm:px-5 py-3 border-b border-white/40"
+        style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1 text-sm font-medium shrink-0"
+            style={{ color: '#6B7280' }}
+          >
+            <ChevronLeft size={15} />
+            <span className="hidden sm:inline">Back to pipeline</span>
+            <span className="sm:hidden">Back</span>
           </button>
-          <button type="button" onClick={() => setMode('preview')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
-            style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}>
-            <Eye size={12} />Student preview
-          </button>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="flex-1 min-w-0 bg-transparent outline-none"
+            style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }}
+          />
         </div>
-        <span style={{ fontSize: 11.5, color: savedNote ? '#059669' : '#9AA3AF' }}>{savedNote ? '✓ Saved' : label}</span>
-        <button onClick={onSaveDraft} className="px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>Save draft</button>
-        <button onClick={onSubmit} className="px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>Submit for review</button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-full border p-0.5 shrink-0" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
+            <button type="button" onClick={() => setMode('edit')} className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}>
+              <Pencil size={12} />Edit
+            </button>
+            <button type="button" onClick={() => setMode('preview')} className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}>
+              <Eye size={12} />
+              <span className="hidden sm:inline">Student preview</span>
+              <span className="sm:hidden">Preview</span>
+            </button>
+          </div>
+          <span className="text-[11.5px]" style={{ color: savedNote ? '#059669' : '#9AA3AF' }}>{savedNote ? '✓ Saved' : label}</span>
+          <div className="flex flex-1 flex-wrap gap-2 sm:justify-end">
+            <button type="button" onClick={onSaveDraft} className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>Save draft</button>
+            <button type="button" onClick={onSubmit} className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>Submit</button>
+          </div>
+        </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-6 max-w-2xl mx-auto w-full">{children}</div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-4 sm:py-6 max-w-2xl mx-auto w-full">{children}</div>
     </div>
   );
 }
@@ -76,8 +98,8 @@ function AskAiBox({ kind, item, onApply }: { kind: StructuredObjectKind; item: a
         <input value={text} onChange={(e) => setText(e.target.value)} disabled={busy}
           onKeyDown={(e) => { if (e.key === 'Enter') run(text); }}
           placeholder="Tell the AI how to change this…"
-          className="flex-1 rounded-xl px-3 py-2" style={field} />
-        <button onClick={() => run(text)} disabled={busy || !text.trim()} className="px-3 py-2 rounded-xl text-white"
+          className="flex-1 min-w-0 rounded-xl px-3 py-2" style={field} />
+        <button onClick={() => run(text)} disabled={busy || !text.trim()} className="px-3 py-2 rounded-xl text-white shrink-0"
           style={{ background: '#0B0F1A', opacity: busy || !text.trim() ? 0.6 : 1 }}>
           {busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
         </button>

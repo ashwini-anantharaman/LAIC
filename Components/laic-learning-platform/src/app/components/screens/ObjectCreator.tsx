@@ -2526,23 +2526,29 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
 
   return (
     <div className="flex flex-col h-full min-h-0 relative">
-      <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={() => {
-          save('draft');
-          onBack?.(parts);
-        }} className="flex items-center gap-1.5 text-sm font-medium shrink-0" style={{ color: '#6B7280' }}>
-          <ArrowLeft size={14} />Back to pipeline
-        </button>
-        {[fmtType(typeId), scope].map((chip, i) => (
-          <span key={i} className="px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0" style={{ background: '#F3F4F6', color: '#374151' }}>{chip}</span>
-        ))}
-        <div className="ml-auto flex items-center gap-2 shrink-0">
+      <div className="sticky top-0 z-20 flex flex-col gap-2 px-3 sm:px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(12px)' }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <button onClick={() => {
+            save('draft');
+            onBack?.(parts);
+          }} className="flex items-center gap-1 text-sm font-medium shrink-0" style={{ color: '#6B7280' }}>
+            <ArrowLeft size={14} />
+            <span className="hidden sm:inline">Back to pipeline</span>
+            <span className="sm:hidden">Back</span>
+          </button>
+          <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
+            {[fmtType(typeId), scope].map((chip, i) => (
+              <span key={i} className="px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0" style={{ background: '#F3F4F6', color: '#374151' }}>{chip}</span>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <AssistantOpenButton onClick={() => setAssistantOpen(true)} />
           <div className="flex rounded-full border p-0.5" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
             <button
               type="button"
               onClick={() => setMode('edit')}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-full"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full"
               style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}
             >
               <Pencil size={12} />Edit
@@ -2550,15 +2556,17 @@ function ObjEditor({ typeId, title, scope, fv, generatedParts, srcCount, extCoun
             <button
               type="button"
               onClick={() => { setMode('preview'); setEditId(null); setAiId(null); }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-full"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full"
               style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}
             >
-              <Eye size={12} />Student preview
+              <Eye size={12} />
+              <span className="hidden sm:inline">Student preview</span>
+              <span className="sm:hidden">Preview</span>
             </button>
           </div>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-5 max-w-2xl w-full mx-auto">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-5 max-w-2xl w-full mx-auto">
         {mode === 'preview' ? (
           <>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1220', marginBottom: 10 }}>{docTitle || displayTitle}</h1>

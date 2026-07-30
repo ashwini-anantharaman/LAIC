@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Home, PlusSquare, Database, BookOpen, SendHorizontal,
   GitBranch, BarChart2, ClipboardCheck, GraduationCap,
-  Users, BookMarked, Shield, UserCheck, ChevronRight, LogOut, LayoutTemplate, ListTree, MonitorPlay,
+  Users, BookMarked, Shield, UserCheck, LogOut, LayoutTemplate, ListTree, MonitorPlay, X,
 } from 'lucide-react';
 import { useApp } from '../App';
 import { USERS } from '../../lib/data';
@@ -75,34 +75,29 @@ const PROGRAM_COLORS: Record<string, string> = {
   'mind-ai': 'bg-violet-100 text-violet-800',
 };
 
-export function Sidebar() {
-  const { role, program, currentScreen, navigate, logout, activeUserId, nexusMode, learningPerms, learningIsAdmin, learningCapabilities, nexusProgramName, nexusUserName, nexusUserRole } = useApp();
-  const initialsOf = (name: string) => name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
-  // Nexus mode: admins see everything. Members are gated by their effective
-  // capabilities (Access Catalogue); the legacy area-perms nav is the fallback
-  // for older roles that carry per-area view/edit instead of capabilities. Demo
-  // mode keeps the fixed per-persona nav.
+function useNavItems(): NavItem[] {
+  const { role, nexusMode, learningPerms, learningIsAdmin, learningCapabilities } = useApp();
   const nexusItems = learningIsAdmin
-    ? navItemsForPerms(learningPerms, true) // admin: full nav (unchanged)
+    ? navItemsForPerms(learningPerms, true)
     : (learningCapabilities?.length
-        ? navItemsForCapabilities(learningCapabilities) // member: capability-gated
-        : navItemsForPerms(learningPerms, false)); // legacy per-area role
-  const items: NavItem[] = nexusMode
+        ? navItemsForCapabilities(learningCapabilities)
+        : navItemsForPerms(learningPerms, false));
+  return nexusMode
     ? nexusItems.map((it) => ({ ...it, icon: ICON_BY_ID[it.id] ?? <Home size={16} /> }))
     : NAV[role] ?? [];
+}
+
+function NavBody({ onNavigate }: { onNavigate?: () => void }) {
+  const {
+    role, program, currentScreen, navigate, logout, activeUserId,
+    nexusMode, nexusProgramName, nexusUserName, nexusUserRole,
+  } = useApp();
+  const items = useNavItems();
   const user = USERS.find(u => u.id === activeUserId);
+  const initialsOf = (name: string) => name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
 
   return (
-    <aside
-      className="flex flex-col w-56 min-h-screen shrink-0"
-      style={{
-        background: 'rgba(255,255,255,0.55)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
-        borderRight: '1px solid rgba(255,255,255,0.6)',
-      }}
-    >
-      {/* Wordmark + program chip */}
+    <>
       <div className="px-5 pt-6 pb-4">
         <div className="flex items-center gap-2 mb-3">
           <div
@@ -115,8 +110,6 @@ export function Sidebar() {
             {nexusMode ? (nexusProgramName ?? 'Content Studio') : 'Life in AI Center'}
           </span>
         </div>
-        {/* Demo program chip only in standalone mode — a Nexus launch is scoped
-            to one program already (shown as the wordmark above). */}
         {!nexusMode ? (
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide ${PROGRAM_COLORS[program] || 'bg-slate-100 text-slate-700'}`}>
             {PROGRAM_LABELS[program] || program}
@@ -124,15 +117,18 @@ export function Sidebar() {
         ) : null}
       </div>
 
-      {/* Nav items */}
       <nav className="flex-1 px-3 py-2 space-y-0.5 overflow-y-auto">
         {items.map(item => {
           const active = currentScreen === item.id;
           return (
             <button
               key={item.id}
-              onClick={() => navigate(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all ${
+              type="button"
+              onClick={() => {
+                navigate(item.id);
+                onNavigate?.();
+              }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-all ${
                 active
                   ? 'bg-white shadow-[0_2px_8px_-2px_rgba(30,50,80,0.15)] text-[#0B1220]'
                   : 'text-[#6B7280] hover:bg-white/60 hover:text-[#0B1220]'
@@ -146,7 +142,6 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* User chip + logout */}
       <div className="px-3 pb-5 pt-2 border-t border-white/40">
         <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/60">
           <div
@@ -160,6 +155,7 @@ export function Sidebar() {
             <p style={{ fontSize: 11, color: '#9AA3AF' }} className="truncate capitalize">{nexusMode ? (nexusUserRole ?? '') : role.replace(/-/g, ' ')}</p>
           </div>
           <button
+            type="button"
             onClick={logout}
             className="text-[#9AA3AF] hover:text-[#0B1220] transition-colors shrink-0"
             title="Log out"
@@ -168,6 +164,63 @@ export function Sidebar() {
           </button>
         </div>
       </div>
+    </>
+  );
+}
+
+const panelStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.96)',
+  backdropFilter: 'blur(24px)',
+  WebkitBackdropFilter: 'blur(24px)',
+};
+
+interface SidebarProps {
+  /** When set, render as a slide-over drawer instead of the desktop rail. */
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
+  const isDrawer = typeof mobileOpen === 'boolean';
+
+  if (isDrawer) {
+    if (!mobileOpen) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex md:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+        <button
+          type="button"
+          className="absolute inset-0 bg-black/35"
+          aria-label="Close menu"
+          onClick={onMobileClose}
+        />
+        <aside
+          className="relative flex flex-col w-[min(18rem,86vw)] h-full shadow-2xl"
+          style={{ ...panelStyle, borderRight: '1px solid rgba(0,0,0,0.06)' }}
+        >
+          <button
+            type="button"
+            onClick={onMobileClose}
+            className="absolute top-3 right-3 p-2 rounded-xl text-[#6B7280] hover:bg-black/5"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+          <NavBody onNavigate={onMobileClose} />
+        </aside>
+      </div>
+    );
+  }
+
+  return (
+    <aside
+      className="hidden md:flex flex-col w-56 min-h-screen shrink-0"
+      style={{
+        ...panelStyle,
+        background: 'rgba(255,255,255,0.55)',
+        borderRight: '1px solid rgba(255,255,255,0.6)',
+      }}
+    >
+      <NavBody />
     </aside>
   );
 }

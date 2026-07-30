@@ -28,6 +28,7 @@ const BASE_URL = (
 const TOKEN_KEY = "laic_nexus_token";
 const PROGRAM_KEY = "laic_nexus_program";
 const RETURN_KEY = "laic_nexus_return";
+const MOBILE_KEY = "laic_nexus_mobile";
 
 export interface LearningRole {
   id: string;
@@ -87,6 +88,7 @@ export async function consumeLaunchFromUrl(): Promise<boolean> {
 
   const programId = params.get("program_id");
   const returnUrl = params.get("return_url");
+  const mobileUi = params.get("mobile") === "1" || params.get("ui") === "mobile";
   // Strip the launch params from the address bar regardless of outcome.
   const clean = window.location.pathname + window.location.hash;
 
@@ -101,6 +103,8 @@ export async function consumeLaunchFromUrl(): Promise<boolean> {
     localStorage.setItem(TOKEN_KEY, access_token);
     if (programId && UUID.test(programId)) localStorage.setItem(PROGRAM_KEY, programId);
     if (returnUrl && /^https?:\/\//i.test(returnUrl)) localStorage.setItem(RETURN_KEY, returnUrl);
+    if (mobileUi) localStorage.setItem(MOBILE_KEY, "1");
+    else localStorage.removeItem(MOBILE_KEY);
     window.history.replaceState({}, "", clean);
     return true;
   } catch (e) {
@@ -108,6 +112,11 @@ export async function consumeLaunchFromUrl(): Promise<boolean> {
     console.warn("[nexus] launch exchange failed:", e);
     return false;
   }
+}
+
+/** True when Content Studio was launched from the Nexus mobile org app. */
+export function isNexusMobileShell(): boolean {
+  return localStorage.getItem(MOBILE_KEY) === "1";
 }
 
 /** Authenticated fetch against Nexus with the stored session token. */
@@ -152,12 +161,26 @@ export function contextToRole(ctx: LearningContext): Role {
 /** Clear the session and return to the org's own sign-in (or a neutral page). */
 export function signOutToNexus(): void {
   const ret = getReturnUrl();
+  const mobile = isNexusMobileShell();
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(PROGRAM_KEY);
   localStorage.removeItem(RETURN_KEY);
+  localStorage.removeItem(MOBILE_KEY);
   try {
     if (ret) {
-      window.location.assign(`${new URL(ret).origin}/login`);
+      const u = new URL(ret);
+      // Mobile org app has no /login — send people back to the program/home
+      // surface (their mobile session is separate and still valid).
+      if (
+        mobile
+        || u.pathname.startsWith("/p/")
+        || u.pathname.startsWith("/@/")
+        || u.pathname === "/home"
+      ) {
+        window.location.assign(ret);
+        return;
+      }
+      window.location.assign(`${u.origin}/login`);
       return;
     }
   } catch {

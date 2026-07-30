@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Command, ChevronDown } from 'lucide-react';
+import { Command, ChevronDown, ChevronLeft, Menu } from 'lucide-react';
 import { useApp } from '../App';
 import type { Role, Program } from '../../lib/types';
 import { USERS } from '../../lib/data';
+import { backToNexus, hasReturnUrl } from '../../lib/nexus';
 
 const ROLE_LABELS: Record<Role, string> = {
   'content-developer': 'Content Dev',
@@ -66,32 +67,68 @@ function GlassPill({ children, onClick }: { children: React.ReactNode; onClick?:
   );
 }
 
-export function TopBar() {
+interface TopBarProps {
+  mobile?: boolean;
+  onOpenNav?: () => void;
+}
+
+export function TopBar({ mobile = false, onOpenNav }: TopBarProps) {
   const { role, program, currentScreen, setRole, setProgram, nexusMode } = useApp();
   const [showRoles, setShowRoles] = useState(false);
   const [showPrograms, setShowPrograms] = useState(false);
 
   const info = SCREEN_TITLES[currentScreen] ?? { title: currentScreen, sub: '' };
+  const showBack = nexusMode && hasReturnUrl();
 
   return (
     <header
-      className="h-14 flex items-center px-5 gap-3 shrink-0 relative z-10"
+      className="h-14 flex items-center px-3 sm:px-5 gap-2 sm:gap-3 shrink-0 relative z-10"
       style={{ borderBottom: '1px solid rgba(255,255,255,0.45)' }}
     >
+      {mobile ? (
+        <button
+          type="button"
+          onClick={onOpenNav}
+          className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)' }}
+          aria-label="Open menu"
+        >
+          <Menu size={18} className="text-[#0B1220]" />
+        </button>
+      ) : null}
+
+      {showBack ? (
+        <button
+          type="button"
+          onClick={() => backToNexus()}
+          className="inline-flex items-center justify-center gap-0.5 w-9 h-9 sm:w-auto sm:px-2.5 sm:py-1.5 rounded-xl shrink-0"
+          style={{
+            fontSize: 12.5, fontWeight: 550, color: '#374151',
+            background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)',
+          }}
+          aria-label="Back to Nexus"
+        >
+          <ChevronLeft size={16} />
+          <span className="hidden sm:inline">Nexus</span>
+        </button>
+      ) : null}
+
       <div className="flex-1 min-w-0">
-        <span style={{ fontSize: 15, fontWeight: 650, color: '#0B1220', letterSpacing: '-0.2px' }}>{info.title}</span>
-        {info.sub && (
-          <span style={{ fontSize: 12.5, color: '#9AA3AF', marginLeft: 8 }}>{info.sub}</span>
-        )}
+        <span
+          style={{ fontSize: mobile ? 14.5 : 15, fontWeight: 650, color: '#0B1220', letterSpacing: '-0.2px' }}
+          className="truncate block"
+        >
+          {info.title}
+        </span>
+        {info.sub && !mobile ? (
+          <span style={{ fontSize: 12.5, color: '#9AA3AF' }} className="hidden md:inline">{info.sub}</span>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Demo-only switchers: a Nexus launch is scoped to one program and a
-            real role, so these are hidden in Nexus mode. */}
         {!nexusMode ? (
         <>
-        {/* Program switcher */}
-        <div className="relative">
+        <div className="relative hidden sm:block">
           <GlassPill onClick={() => { setShowPrograms(v => !v); setShowRoles(false); }}>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
             {PROGRAMS.find(p => p.id === program)?.label}
@@ -116,8 +153,7 @@ export function TopBar() {
           )}
         </div>
 
-        {/* Role switcher */}
-        <div className="relative">
+        <div className="relative hidden sm:block">
           <GlassPill onClick={() => { setShowRoles(v => !v); setShowPrograms(false); }}>
             {ROLE_LABELS[role]}
             <ChevronDown size={11} className="text-[#9AA3AF]" />
@@ -149,18 +185,18 @@ export function TopBar() {
             </div>
           )}
         </div>
-
         </>
         ) : null}
 
-        {/* ⌘K button */}
-        <button
-          className="w-8 h-8 rounded-full flex items-center justify-center transition-all hover:bg-white/70"
-          style={{ background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.7)' }}
-          title="Command palette (⌘K)"
-        >
-          <Command size={14} className="text-[#6B7280]" />
-        </button>
+        {!mobile ? (
+          <button
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-all hover:bg-white/70"
+            style={{ background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.7)' }}
+            title="Command palette (⌘K)"
+          >
+            <Command size={14} className="text-[#6B7280]" />
+          </button>
+        ) : null}
       </div>
     </header>
   );

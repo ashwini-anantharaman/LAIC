@@ -1,18 +1,20 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Eye } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { ScreenErrorBoundary } from './ScreenErrorBoundary';
 import { useApp } from '../App';
 import { isScreenReadOnly } from '../../lib/learningAreas';
+import { isNexusMobileShell } from '../../lib/nexus';
+import { useIsMobile } from './ui/use-mobile';
 
 /** A quiet banner shown when the current screen is granted view-only. */
 function ReadOnlyBanner() {
   const { currentScreen, learningPerms, learningIsAdmin } = useApp();
   if (!isScreenReadOnly(currentScreen, learningPerms, learningIsAdmin)) return null;
   return (
-    <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-800">
-      <Eye className="h-4 w-4" />
+    <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 sm:px-5 py-2 text-sm text-amber-800">
+      <Eye className="h-4 w-4 shrink-0" />
       View only — your role can see this area but not make changes.
     </div>
   );
@@ -79,17 +81,44 @@ function ScreenRouter() {
 }
 
 export function Layout() {
-  const { currentScreen, readerObjectId, navigate } = useApp();
+  const { currentScreen, readerObjectId, navigate, nexusMode } = useApp();
+  const narrow = useIsMobile();
+  const [mobileLaunch, setMobileLaunch] = useState(() => isNexusMobileShell());
+  const [navOpen, setNavOpen] = useState(false);
+
+  // Re-read after boot in case launch params land after first paint.
+  useEffect(() => {
+    setMobileLaunch(isNexusMobileShell());
+  }, [nexusMode]);
+
+  const mobile = mobileLaunch || narrow;
+
+  useEffect(() => {
+    if (!mobile) setNavOpen(false);
+  }, [mobile]);
+
+  useEffect(() => {
+    document.documentElement.dataset.csShell = mobile ? 'mobile' : 'desktop';
+    if (mobileLaunch) document.documentElement.dataset.csMobileLaunch = '1';
+    else delete document.documentElement.dataset.csMobileLaunch;
+    return () => {
+      delete document.documentElement.dataset.csShell;
+      delete document.documentElement.dataset.csMobileLaunch;
+    };
+  }, [mobile, mobileLaunch]);
+
   // Isolate each screen so a crash (e.g. the student-preview crash) shows a
   // recoverable boundary instead of blanking the whole app.
   const boundaryKey = readerObjectId ? `reader:${readerObjectId}` : currentScreen || 'unknown';
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden">
-      <Sidebar />
+    <div className="flex h-[100dvh] min-h-0 overflow-hidden">
+      {!mobile ? <Sidebar /> : <Sidebar mobileOpen={navOpen} onMobileClose={() => setNavOpen(false)} />}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        <TopBar />
+        <TopBar mobile={mobile} onOpenNav={() => setNavOpen(true)} />
         <ReadOnlyBanner />
-        <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+        <main
+          className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col ${mobile ? 'cs-mobile-main' : ''}`}
+        >
           <ScreenErrorBoundary key={boundaryKey} onReset={() => navigate(currentScreen || 'cd-library')}>
             <ScreenRouter />
           </ScreenErrorBoundary>
