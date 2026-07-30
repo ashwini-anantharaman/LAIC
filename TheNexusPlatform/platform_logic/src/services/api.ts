@@ -1205,6 +1205,10 @@ export async function rejectProgramGateRequest(programId: string, id: string): P
 }
 
 /** Public pre-auth gate config (no session needed). */
+/** A partner's own gate, resolved by the partner's slug (/partner/:slug/:gate). */
+export async function getPublicPartnerGate(partnerSlug: string, gateSlug: string): Promise<PublicGate> {
+  return request<PublicGate>(`/api/gates/partner/${encodeURIComponent(partnerSlug)}/${encodeURIComponent(gateSlug)}`);
+}
 export async function getPublicGate(orgSlug: string, gateSlug: string): Promise<PublicGate> {
   return request<PublicGate>(`/api/gates/by-path/${encodeURIComponent(orgSlug)}/${encodeURIComponent(gateSlug)}`);
 }

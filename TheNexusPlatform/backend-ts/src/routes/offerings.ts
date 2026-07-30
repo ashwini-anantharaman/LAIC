@@ -747,6 +747,14 @@ offeringsRouter.get("/gates/by-path/:org_slug/:gate_slug", async (c) => {
   return c.json(gate);
 });
 
+// Partner gate — resolved by the PARTNER's own slug (/partner/<slug>/<gate>).
+offeringsRouter.get("/gates/partner/:partner_slug/:gate_slug", async (c) => {
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const gate = await graph.getPublicPartnerGate(c.req.param("partner_slug"), c.req.param("gate_slug"));
+  if (!gate) throw new HttpError(404, "Gate not found");
+  return c.json(gate);
+});
+
 offeringsRouter.post("/groups/:group_id/participants/coach-add", async (c) => {
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");

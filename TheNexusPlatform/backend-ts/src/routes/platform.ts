@@ -1446,6 +1446,12 @@ platformRouter.post("/orgs/:org_id/partners", async (c) => {
     featureAccess,
   });
   await db.addStageNodes(orgId, [{ stage_type: "national", name: req.name }], null, row.id as string);
+  // Auto-create a default "join" gate so the partner has a self-sign-up link out
+  // of the box (at /partner/<slug>/join), alongside the login link.
+  await graph.createGate(orgId, row.id as string, {
+    level: "program", slug: "join", title: `Join ${row.name}`,
+    audience: "member", allowSignin: true, allowSignup: true, approvalRequired: false,
+  }).catch(() => {});
   await db.recordAuditEvent("partner.created", {
     orgId, actorUserId: user.id, scopeType: "program", scopeId: row.id as string,
     metadata: { name: row.name, connected_program_id: req.connected_program_id },

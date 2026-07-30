@@ -670,6 +670,8 @@ export function ProgramGates() {
   useEffect(() => load(), [load]);
 
   function gateUrl(g: Gate): string {
+    // A partner's gate lives under the partner's own slug, not the owning org's.
+    if (program?.is_partner && program.slug) return `${window.location.origin}/partner/${program.slug}/${g.slug}`;
     return `${window.location.origin}/@/${g.org_slug ?? ""}/${g.slug}`;
   }
 

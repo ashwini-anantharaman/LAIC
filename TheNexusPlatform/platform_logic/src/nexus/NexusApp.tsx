@@ -21,7 +21,6 @@ import { OperatorSettings } from "@/nexus/routes/OperatorSettings";
 import { NexusTeam } from "@/nexus/routes/NexusTeam";
 import { Test1 } from "@/nexus/routes/Test1";
 import { Test2 } from "@/nexus/routes/Test2";
-import { PartnerProgram } from "@/nexus/routes/PartnerProgram";
 import { PartnerLogin } from "@/nexus/routes/PartnerLogin";
 import { AccessCatalogue } from "@/nexus/access/AccessCatalogue";
 import { OrgAccessCatalogue, ProgramAccessCatalogue } from "@/nexus/access/InstanceAccessCatalogue";
@@ -131,15 +130,8 @@ function Routed() {
       <Route path="/invite/:token" element={<AcceptInvite />} />
       {/* Partner ("sister program") login portal — its members sign in here. */}
       <Route path="/partner/:slug" element={<PartnerLogin />} />
-      {/* Partner portal — a partner-org member's gated view of a program. */}
-      <Route
-        path="/partner/:orgSlug/:programSlug"
-        element={
-          <RequireAuth>
-            <PartnerProgram />
-          </RequireAuth>
-        }
-      />
+      {/* A partner's own sign-up gate, under the partner's slug. */}
+      <Route path="/partner/:slug/:gateSlug" element={<GatePage partner />} />
       {/* Full-screen launch surface — deliberately outside the AppShell chrome. */}
       <Route
         path="/o/:orgId/p/:programId/learning"

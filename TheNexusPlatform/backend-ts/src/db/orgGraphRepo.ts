@@ -1680,6 +1680,50 @@ export async function getPublicGate(orgSlug: string, gateSlug: string): Promise<
   });
 }
 
+/**
+ * Resolve a gate by the PARTNER's own slug (/partner/<slug>/<gate>). A partner
+ * is a program row; its gate lives on that program under the owning org. The
+ * page brands as the PARTNER (its own name/theme) but the session still binds to
+ * the owning org (partner members are program-scoped members there). Privileged.
+ */
+export async function getPublicPartnerGate(partnerSlug: string, gateSlug: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const progs = await tx.select().from(programs);
+    const partner = progs.find((p) => {
+      const m = p.metadataJson as Row | undefined;
+      return m?.slug === partnerSlug && m?.is_partner;
+    });
+    if (!partner) return null;
+    const orgs = await tx.select().from(organizations).where(eq(organizations.id, partner.orgId)).limit(1);
+    if (!orgs.length) return null;
+    const org = orgs[0];
+    const r = await tx.select().from(gates)
+      .where(and(eq(gates.organizationId, org.id), eq(gates.slug, gateSlug), eq(gates.programId, partner.id))).limit(1);
+    if (!r.length) return null;
+    const g = r[0];
+    const roleIds = gateRoleIds(g);
+    let roles: Array<{ id: string; name: string }> = [];
+    if (roleIds.length) {
+      const rows = await tx.select({ id: programRoles.id, name: programRoles.name }).from(programRoles).where(inArray(programRoles.id, roleIds));
+      const byId = new Map(rows.map((x) => [x.id, x.name ?? ""]));
+      roles = roleIds.filter((id) => byId.has(id)).map((id) => ({ id, name: byId.get(id) ?? "" }));
+    }
+    const branding = ((partner.metadataJson as Row | undefined)?.branding as Row | undefined) ?? {};
+    return {
+      ...gateRow(g),
+      roles,
+      // org.slug binds the sign-in session to the owning org; the name/theme are
+      // the PARTNER's so the page reads as the partner, not the org.
+      org: {
+        id: org.id, slug: org.slug, name: partner.name,
+        theme_accent_color: (branding.accent as string) ?? null,
+        theme_logo_url: (branding.logo as string) ?? null,
+      },
+      program_name: partner.name,
+    };
+  });
+}
+
 /** Nexus (operator) gates — platform-altitude, no org/program. Privileged. */
 export async function listNexusGates(): Promise<Row[]> {
   return asPrivileged(async (tx) => {

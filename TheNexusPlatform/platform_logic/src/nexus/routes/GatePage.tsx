@@ -11,14 +11,15 @@ import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
-import { getPlatformBranding, getPublicGate, getPublicNexusGate, gateSignin, gateSignup, setToken, type PublicGate } from "@/services/api";
+import { getPlatformBranding, getPublicGate, getPublicPartnerGate, getPublicNexusGate, gateSignin, gateSignup, setToken, type PublicGate } from "@/services/api";
 import { useDocumentTitle } from "@/nexus/useDocumentTitle";
 import { resolveAssetUrl } from "@/services/apiBase";
 
-export function GatePage() {
+export function GatePage({ partner = false }: { partner?: boolean }) {
   const { slug: orgSlug, gateSlug } = useParams();
   // No org slug → this is a nexus (operator) gate mounted at /op/<slug>.
-  const isNexus = !orgSlug;
+  // A partner gate resolves by the partner's own slug (/partner/<slug>/<gate>).
+  const isNexus = !orgSlug && !partner;
   const [gate, setGate] = useState<PublicGate | null>(null);
   const [platformName, setPlatformName] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -34,7 +35,11 @@ export function GatePage() {
 
   useEffect(() => {
     if (!gateSlug) return;
-    const fetchGate = isNexus ? getPublicNexusGate(gateSlug) : getPublicGate(orgSlug as string, gateSlug);
+    const fetchGate = isNexus
+      ? getPublicNexusGate(gateSlug)
+      : partner
+        ? getPublicPartnerGate(orgSlug as string, gateSlug)
+        : getPublicGate(orgSlug as string, gateSlug);
     fetchGate
       .then((g) => {
         setGate(g);
