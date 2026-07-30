@@ -1,6 +1,7 @@
 export type {
   ContentKindSpec,
   LibraryBackend,
+  LibraryCollection,
   LibraryItem,
   LibraryItemScope,
   LibraryOrigin,

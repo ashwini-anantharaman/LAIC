@@ -105,6 +105,25 @@ async function nexusGet<T>(path: string): Promise<T | null> {
 }
 
 /**
+ * Library collection ids this caller may view via role designation — the
+ * resolved grants the library component's principal carries. Cached per
+ * session token (same TTL story as the context cache).
+ */
+export async function getMyCollectionGrants(): Promise<string[]> {
+  if (nexusMode() !== "http") return [];
+  const cookieStore = await cookies();
+  const token = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  if (!token) return [];
+  const { cachedNexusGet } = await import("./nexusCache");
+  return cachedNexusGet(`mycols:${token}`, async () => {
+    const body = await nexusGet<{ collections?: string[] }>(
+      "/api/platform/bridge/my-collections",
+    );
+    return body?.collections ?? [];
+  });
+}
+
+/**
  * The calling learner's hired coach, from Nexus (the roster lives there —
  * Bridge only references people). http mode only: in stub/dev there is no
  * Nexus, so there is no coach — callers surface "hire a coach first".

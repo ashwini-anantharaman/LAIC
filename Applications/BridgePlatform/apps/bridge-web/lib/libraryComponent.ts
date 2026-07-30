@@ -18,10 +18,11 @@ import {
   LibraryService,
   type ContentKindSpec,
   type LibraryBackend,
+  type LibraryCollection,
   type LibraryItem,
   type LibraryPrincipal,
 } from "@laic/library-core";
-import { nexusProgramIdOf, orgScopeOf } from "./nexus";
+import { getMyCollectionGrants, nexusProgramIdOf, orgScopeOf } from "./nexus";
 import { libraryStore } from "./sessions";
 
 // ── Content kinds ─────────────────────────────────────────────────────────────
@@ -137,6 +138,60 @@ class BridgeLibraryBackend implements LibraryBackend<BridgeLibraryContent> {
   async delete(id: string): Promise<void> {
     await this.store.deleteEntry(id);
   }
+
+  // Collections: stored host-side as rows shaped like the core type.
+  async putCollection(c: LibraryCollection): Promise<void> {
+    await this.store.putCollection({
+      collectionId: c.id,
+      name: c.name,
+      ...(c.description ? { description: c.description } : {}),
+      itemIds: c.itemIds,
+      createdBy: c.createdBy,
+      createdAt: c.createdAt,
+      ...(c.scope.orgId ? { programOrganizationId: c.scope.orgId } : {}),
+      ...(c.scope.programId ? { nexusProgramId: c.scope.programId } : {}),
+      scopeLevel: c.scope.level,
+    });
+  }
+  async getCollection(id: string): Promise<LibraryCollection | null> {
+    const r = await this.store.getCollection(id);
+    return r ? rowToCollection(r) : null;
+  }
+  async listCollections(query: {
+    scopeLevel?: "user" | "program" | "org";
+    ownerId?: string;
+    orgId?: string;
+    programId?: string;
+  }): Promise<LibraryCollection[]> {
+    const rows = await this.store.listCollections({
+      ...(query.orgId ? { programOrganizationId: query.orgId } : {}),
+      ...(query.programId ? { nexusProgramId: query.programId } : {}),
+      ...(query.scopeLevel ? { scopeLevel: query.scopeLevel } : {}),
+      ...(query.ownerId ? { createdBy: query.ownerId } : {}),
+    });
+    return rows.map(rowToCollection);
+  }
+  async deleteCollection(id: string): Promise<void> {
+    await this.store.deleteCollection(id);
+  }
+}
+
+function rowToCollection(r: import("@bridge/sessions").LibraryCollectionRow): LibraryCollection {
+  const level = r.scopeLevel ?? "program";
+  return {
+    id: r.collectionId,
+    name: r.name,
+    ...(r.description ? { description: r.description } : {}),
+    itemIds: r.itemIds,
+    createdBy: r.createdBy,
+    createdAt: r.createdAt,
+    scope: {
+      level,
+      ...(level === "user" ? { ownerId: r.createdBy } : {}),
+      ...(r.programOrganizationId ? { orgId: r.programOrganizationId } : {}),
+      ...(r.nexusProgramId ? { programId: r.nexusProgramId } : {}),
+    },
+  };
 }
 
 // ── Policy + principal ────────────────────────────────────────────────────────
@@ -162,6 +217,9 @@ export async function libraryPrincipalOf(
     isAdmin: context.is_admin === true,
     roles: context.roles,
     capabilities: context.capabilities ?? [],
+    // Role-designated collections (later: + subscriptions/packages) — the
+    // component enforces, whoever issued the grant.
+    collectionGrants: await getMyCollectionGrants().catch(() => []),
   };
 }
 

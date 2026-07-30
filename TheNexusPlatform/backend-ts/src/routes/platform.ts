@@ -923,6 +923,39 @@ platformRouter.get("/bridge/summary", async (c) => {
   });
 });
 
+/** Which library collections THIS caller may view via role designation —
+ *  the resolved form the bridge platform feeds into the library component's
+ *  principal (collectionGrants). Union of: their assigned role's
+ *  designations + the program-wide "*" designation. */
+platformRouter.get("/bridge/my-collections", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  const map = await bridgeRoles.getCollectionDesignations(access.programId);
+  const grants = new Set<string>(map["*"] ?? []);
+  // Designation keys are ROLE ids: the assigned platform role (prebuilt or
+  // custom) AND the level-mapped roles the context reports (a participant
+  // with no explicit assignment is still a bridge_learner).
+  const roleKeys = new Set<string>(BRIDGE_ROLE_MAP[access.level]?.roles ?? []);
+  if (access.platformRole) roleKeys.add(access.platformRole);
+  for (const role of roleKeys) for (const id of map[role] ?? []) grants.add(id);
+  return c.json({ collections: [...grants] });
+});
+
+/** Admin: read/replace the designation map (roleId → collection ids). */
+platformRouter.get("/bridge/collection-designations", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  if (access.level !== "admin") throw new HttpError(403, "Bridge admin access required");
+  return c.json(await bridgeRoles.getCollectionDesignations(access.programId));
+});
+platformRouter.put("/bridge/collection-designations", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  if (access.level !== "admin") throw new HttpError(403, "Bridge admin access required");
+  const body = (await c.req.json()) as Record<string, string[]>;
+  return c.json(await bridgeRoles.setCollectionDesignations(access.programId, body));
+});
+
 platformRouter.get("/bridge/my-coach", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);

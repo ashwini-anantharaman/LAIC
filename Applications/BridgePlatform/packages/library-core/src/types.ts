@@ -59,6 +59,22 @@ export interface ContentKindSpec {
 }
 
 /**
+ * A curated, mixed-kind grouping of items — the unit of designation
+ * (role-designated today; subscription/package-exposed later). An item may
+ * belong to many collections; deleting a collection never deletes items.
+ */
+export interface LibraryCollection {
+  id: string;
+  name: string;
+  description?: string;
+  /** Member items, in curated order. */
+  itemIds: string[];
+  createdBy: string;
+  createdAt: string;
+  scope: LibraryItemScope;
+}
+
+/**
  * The resolved caller, mapped from the host platform's context (for bridge:
  * NexusBridgeContext → principal). The component never talks to an identity
  * provider itself — hosts adapt.
@@ -73,6 +89,13 @@ export interface LibraryPrincipal {
   roles: readonly string[];
   /** Access Catalogue capability ids held via role bindings. */
   capabilities: readonly string[];
+  /**
+   * Collection ids this caller may VIEW without holding instance-wide view —
+   * the resolved form of constrained grants, whoever issued them (role
+   * designation, subscription, partner package). Hosts resolve; the
+   * component only enforces.
+   */
+  collectionGrants?: readonly string[];
 }
 
 /**
@@ -91,4 +114,16 @@ export interface LibraryBackend<C = unknown> {
     programId?: string;
   }): Promise<LibraryItem<C>[]>;
   delete(id: string): Promise<void>;
+
+  // Collections (optional: hosts without collection storage omit these and
+  // the service reports collections as unsupported).
+  putCollection?(collection: LibraryCollection): Promise<void>;
+  getCollection?(id: string): Promise<LibraryCollection | null>;
+  listCollections?(query: {
+    scopeLevel?: ScopeLevel;
+    ownerId?: string;
+    orgId?: string;
+    programId?: string;
+  }): Promise<LibraryCollection[]>;
+  deleteCollection?(id: string): Promise<void>;
 }

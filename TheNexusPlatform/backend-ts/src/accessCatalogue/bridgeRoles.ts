@@ -21,6 +21,34 @@ export interface BridgeRole {
 }
 
 const key = (programId: string) => `bridge_roles:${programId}`;
+const designationsKey = (programId: string) => `bridge_collection_designations:${programId}`;
+
+/**
+ * Library collection designations: which collections each ROLE may view —
+ * keyed by role id (prebuilt like "bridge_learner", custom role ids, or "*"
+ * for everyone in the program). The library component enforces via the
+ * caller's resolved collectionGrants; this map is the role-issued source.
+ */
+export async function getCollectionDesignations(
+  programId: string,
+): Promise<Record<string, string[]>> {
+  const raw = (await db.getPlatformSetting(designationsKey(programId))) as
+    | Record<string, string[]>
+    | null;
+  return raw && typeof raw === "object" ? raw : {};
+}
+
+export async function setCollectionDesignations(
+  programId: string,
+  map: Record<string, string[]>,
+): Promise<Record<string, string[]>> {
+  const clean: Record<string, string[]> = {};
+  for (const [role, ids] of Object.entries(map ?? {})) {
+    if (Array.isArray(ids) && ids.length) clean[role] = [...new Set(ids.map(String))];
+  }
+  await db.setPlatformSetting(designationsKey(programId), clean);
+  return clean;
+}
 // Deterministic id (no Math.random / Date in this codebase's constraints is
 // fine here — this is request-time, not a workflow). Kept url-safe + unique.
 let _seq = 0;

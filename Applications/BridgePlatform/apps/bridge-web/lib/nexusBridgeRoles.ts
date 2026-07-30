@@ -192,6 +192,29 @@ export async function deleteBridgeRole(programId: string, roleId: string): Promi
   invalidateNexusReads(`roles:${programId}`);
 }
 
+// ── Collection designations (roleId → collection ids) ───────────────────────
+export async function getCollectionDesignations(
+  programId: string,
+): Promise<Record<string, string[]>> {
+  const res = await nexusFetch(
+    `/api/platform/bridge/collection-designations?program_id=${encodeURIComponent(programId)}`,
+  );
+  if (!res.ok) throw new Error(`Designations request failed: ${res.status}`);
+  return (await res.json()) as Record<string, string[]>;
+}
+
+export async function setCollectionDesignations(
+  programId: string,
+  map: Record<string, string[]>,
+): Promise<void> {
+  const res = await nexusFetch(
+    `/api/platform/bridge/collection-designations?program_id=${encodeURIComponent(programId)}`,
+    { method: "PUT", body: JSON.stringify(map) },
+  );
+  if (!res.ok) throw new Error(`Designations save failed: ${res.status}`);
+  invalidateNexusReads("mycols:");
+}
+
 // ── Test as (centralized dev-login) ──────────────────────────────────────────
 /**
  * Swap the active Nexus session to `email` via the backend dev-login, then set

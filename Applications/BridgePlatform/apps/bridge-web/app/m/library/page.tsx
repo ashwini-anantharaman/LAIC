@@ -1,7 +1,12 @@
 import type { LibraryEntry, LibraryKind } from "@bridge/sessions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { canSeeProgramLibrary, listLibraryFor } from "@/lib/libraryComponent";
+import {
+  bridgeLibrary,
+  canSeeProgramLibrary,
+  libraryPrincipalOf,
+  listLibraryFor,
+} from "@/lib/libraryComponent";
 import { getBridgeContext, isBridgeCoach } from "@/lib/nexus";
 import {
   playEntryAction,
@@ -63,6 +68,12 @@ export default async function MobileLibraryPage({
   } catch {
     // Library backend not provisioned (migration 0015) — shelves show empty.
   }
+
+  // Designated collections: curated program groupings this caller may view
+  // (instance-wide viewers see all; others exactly their granted ones).
+  const collections = await bridgeLibrary()
+    .listCollections(await libraryPrincipalOf(context))
+    .catch(() => []);
   const byKind = new Map<LibraryKind, LibraryEntry[]>();
   for (const s of SHELVES) byKind.set(s.kind, []);
   for (const e of all) byKind.get(e.kind)?.push(e);
@@ -122,6 +133,43 @@ export default async function MobileLibraryPage({
           </Link>
         ))}
       </div>
+
+      {/* Designated collections — curated program groupings, read in place */}
+      {collections.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <p style={{ font: `600 10.5px ${K}`, letterSpacing: ".18em", textTransform: "uppercase", color: "#a49d8e", margin: "0 0 8px" }}>
+            Collections
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            {collections.map((c) => (
+              <Link
+                key={c.id}
+                href={`/m/collection/${c.id}`}
+                style={{
+                  border: "1px solid #d8e4e2",
+                  background: "#eef4f3",
+                  borderRadius: 14,
+                  padding: "13px 16px",
+                  textDecoration: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <span style={{ fontSize: 18 }}>🗂️</span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "block", font: `600 14px ${K}`, color: "#1d1a15" }}>{c.name}</span>
+                  <span style={{ display: "block", font: `400 11.5px ${K}`, color: "#7b7466", marginTop: 2 }}>
+                    {c.itemIds.length} item{c.itemIds.length === 1 ? "" : "s"}
+                    {c.description ? ` · ${c.description}` : ""}
+                  </span>
+                </span>
+                <span style={{ font: `600 14px ${K}`, color: "#205e63" }}>›</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Shelf chips */}
       <div

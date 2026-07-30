@@ -117,8 +117,23 @@ export interface LibraryEntry {
   sourceRef?: SourceRef;
 }
 
+/** A curated, mixed-kind grouping of entries (library-core "collection") —
+ *  stored host-side like entries: jsonb-primary with scope columns. */
+export interface LibraryCollectionRow {
+  collectionId: string;
+  name: string;
+  description?: string;
+  itemIds: string[];
+  createdBy: string;
+  createdAt: string;
+  programOrganizationId?: string;
+  nexusProgramId?: string;
+  scopeLevel?: ScopeLevel;
+}
+
 export interface LibraryStoreData {
   entries: LibraryEntry[];
+  collections?: LibraryCollectionRow[];
 }
 
 export interface LibraryStore {
@@ -126,6 +141,10 @@ export interface LibraryStore {
   getEntry(entryId: string): Promise<LibraryEntry | null>;
   listEntries(kind?: LibraryKind, filter?: ScopeFilter): Promise<LibraryEntry[]>;
   deleteEntry(entryId: string): Promise<void>;
+  putCollection(row: LibraryCollectionRow): Promise<void>;
+  getCollection(collectionId: string): Promise<LibraryCollectionRow | null>;
+  listCollections(filter?: ScopeFilter): Promise<LibraryCollectionRow[]>;
+  deleteCollection(collectionId: string): Promise<void>;
 }
 
 export class InMemoryLibraryStore implements LibraryStore {
@@ -147,6 +166,27 @@ export class InMemoryLibraryStore implements LibraryStore {
   }
   async deleteEntry(entryId: string) {
     this.data.entries = this.data.entries.filter((e) => e.entryId !== entryId);
+    this.persist();
+  }
+  async putCollection(row: LibraryCollectionRow) {
+    const cols = (this.data.collections ??= []);
+    const i = cols.findIndex((c) => c.collectionId === row.collectionId);
+    if (i >= 0) cols[i] = row;
+    else cols.push(row);
+    this.persist();
+  }
+  async getCollection(collectionId: string) {
+    return (this.data.collections ?? []).find((c) => c.collectionId === collectionId) ?? null;
+  }
+  async listCollections(filter?: ScopeFilter) {
+    return (this.data.collections ?? [])
+      .filter((c) => matchesScope({ ...c, createdBy: c.createdBy }, filter))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async deleteCollection(collectionId: string) {
+    this.data.collections = (this.data.collections ?? []).filter(
+      (c) => c.collectionId !== collectionId,
+    );
     this.persist();
   }
 }

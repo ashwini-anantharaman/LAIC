@@ -1,6 +1,6 @@
 // LibraryStore over 0015 (jsonb-primary) + 0019 (org scoping).
 
-import type { LibraryEntry, LibraryKind, LibraryStore, ScopeFilter } from "@bridge/sessions";
+import type { LibraryCollectionRow, LibraryEntry, LibraryKind, LibraryStore, ScopeFilter } from "@bridge/sessions";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { check } from "./client";
 
@@ -70,6 +70,59 @@ export class PgLibraryStore implements LibraryStore {
     check(
       await this.db.from("bridge_kb_library").delete().eq("entry_id", entryId),
       "library.delete",
+    );
+  }
+
+  // ── Collections (0023) — jsonb-primary, scalar scope columns for filtering ──
+  async putCollection(row: LibraryCollectionRow) {
+    check(
+      await this.db.from("bridge_library_collections").upsert(
+        {
+          collection_id: row.collectionId,
+          program_organization_id: row.programOrganizationId ?? null,
+          nexus_program_id: row.nexusProgramId ?? null,
+          scope_level: row.scopeLevel ?? null,
+          created_by: row.createdBy,
+          record: row,
+          created_at: row.createdAt,
+        },
+        { onConflict: "collection_id" },
+      ),
+      "library.collection.put",
+    );
+  }
+  async getCollection(collectionId: string) {
+    const rows = check(
+      await this.db
+        .from("bridge_library_collections")
+        .select("record")
+        .eq("collection_id", collectionId),
+      "library.collection.get",
+    );
+    return rows.length ? ((rows[0] as { record: LibraryCollectionRow }).record ?? null) : null;
+  }
+  async listCollections(filter?: ScopeFilter) {
+    let query = this.db
+      .from("bridge_library_collections")
+      .select("record")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (filter?.programOrganizationId !== undefined)
+      query = query.eq("program_organization_id", filter.programOrganizationId);
+    if (filter?.createdBy !== undefined) query = query.eq("created_by", filter.createdBy);
+    if (filter?.scopeLevel !== undefined) query = query.eq("scope_level", filter.scopeLevel);
+    if (filter?.nexusProgramId !== undefined)
+      query = query.eq("nexus_program_id", filter.nexusProgramId);
+    const rows = check(await query, "library.collection.list");
+    return rows.map((r) => (r as { record: LibraryCollectionRow }).record);
+  }
+  async deleteCollection(collectionId: string) {
+    check(
+      await this.db
+        .from("bridge_library_collections")
+        .delete()
+        .eq("collection_id", collectionId),
+      "library.collection.delete",
     );
   }
 }

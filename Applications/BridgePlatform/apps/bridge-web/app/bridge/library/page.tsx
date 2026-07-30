@@ -78,6 +78,14 @@ export default async function LibraryPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {canShare && (
+            <Link
+              href="/bridge/library/collections"
+              className="rounded border border-sky-700 px-3 py-1.5 text-sm font-medium text-sky-800 hover:bg-sky-50"
+            >
+              Collections
+            </Link>
+          )}
           {createLink && (
             <Link
               href={createLink.href}

@@ -12,6 +12,7 @@ import {
 import type {
   ContentKindSpec,
   LibraryBackend,
+  LibraryCollection,
   LibraryItem,
   LibraryOrigin,
   LibraryPrincipal,
@@ -167,6 +168,95 @@ export class LibraryService<C = unknown> {
     }
     await this.cfg.backend.put(next);
     return next;
+  }
+
+  // ── Collections ────────────────────────────────────────────────────────────
+  // The unit of designation: a caller sees a program collection either via
+  // instance-wide view (staff/admin) or via a collection GRANT resolved onto
+  // the principal (role designation, subscription, package — the component
+  // doesn't care who issued it).
+
+  private collectionsBackend() {
+    const b = this.cfg.backend;
+    if (!b.putCollection || !b.getCollection || !b.listCollections || !b.deleteCollection) {
+      throw new Error("This library backend does not support collections");
+    }
+    return b as Required<Pick<LibraryBackend<C>, "putCollection" | "getCollection" | "listCollections" | "deleteCollection">> & LibraryBackend<C>;
+  }
+
+  private canViewCollection(principal: LibraryPrincipal, col: LibraryCollection): boolean {
+    if (this.can(principal, "view", { level: col.scope.level, ownerId: col.scope.ownerId }))
+      return true;
+    return principal.collectionGrants?.includes(col.id) ?? false;
+  }
+
+  /** Collections the caller may see in their program: instance-wide viewers
+   *  get all of them; everyone else gets exactly their granted ones. */
+  async listCollections(principal: LibraryPrincipal): Promise<LibraryCollection[]> {
+    const b = this.collectionsBackend();
+    const all = await b.listCollections({
+      scopeLevel: "program",
+      orgId: principal.orgId,
+      programId: principal.programId,
+    });
+    return all.filter((c) => this.canViewCollection(principal, c));
+  }
+
+  /** One collection + its items, enforcing collection-level visibility. The
+   *  items are read WITHOUT instance-wide view — being granted the collection
+   *  is the permission. */
+  async getCollectionWithItems(
+    principal: LibraryPrincipal,
+    collectionId: string,
+  ): Promise<{ collection: LibraryCollection; items: LibraryItem<C>[] } | null> {
+    const b = this.collectionsBackend();
+    const collection = await b.getCollection(collectionId);
+    if (!collection) return null;
+    if (!this.canViewCollection(principal, collection)) throw new LibraryAccessError("view", collection.scope.level);
+    const items: LibraryItem<C>[] = [];
+    for (const id of collection.itemIds) {
+      const item = await this.cfg.backend.get(id);
+      if (item) items.push(item);
+    }
+    return { collection, items };
+  }
+
+  /** Create/update a collection — an AUTHOR operation on its instance. */
+  async saveCollection(
+    principal: LibraryPrincipal,
+    draft: { id?: string; name: string; description?: string; itemIds: string[] },
+    scopeLevel: ScopeLevel = "program",
+  ): Promise<LibraryCollection> {
+    const b = this.collectionsBackend();
+    this.require(principal, "edit", {
+      level: scopeLevel,
+      ownerId: scopeLevel === "user" ? principal.userId : undefined,
+    });
+    const existing = draft.id ? await b.getCollection(draft.id) : null;
+    const collection: LibraryCollection = {
+      id: existing?.id ?? this.cfg.newId(),
+      name: draft.name,
+      ...(draft.description ? { description: draft.description } : {}),
+      itemIds: [...new Set(draft.itemIds)],
+      createdBy: existing?.createdBy ?? principal.userId,
+      createdAt: existing?.createdAt ?? this.nowIso(),
+      scope: existing?.scope ?? {
+        level: scopeLevel,
+        ...(scopeLevel === "user" ? { ownerId: principal.userId } : {}),
+        ...(principal.orgId ? { orgId: principal.orgId } : {}),
+        ...(principal.programId ? { programId: principal.programId } : {}),
+      },
+    };
+    await b.putCollection(collection);
+    return collection;
+  }
+
+  async deleteCollection(principal: LibraryPrincipal, id: string): Promise<void> {
+    const b = this.collectionsBackend();
+    const col = await b.getCollection(id);
+    if (!col) return;
+    this.require(principal, "delete", { level: col.scope.level, ownerId: col.scope.ownerId });
+    await b.deleteCollection(id);
   }
 
   async delete(principal: LibraryPrincipal, id: string): Promise<void> {
