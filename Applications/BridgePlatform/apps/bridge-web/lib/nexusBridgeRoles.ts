@@ -5,6 +5,7 @@
  * (who holds a role) stays in Nexus (lib/nexusPeople). http mode only.
  */
 import { cookies } from "next/headers";
+import { cachedNexusGet, invalidateNexusReads } from "./nexusCache";
 import { nexusFetch } from "./nexusPeople";
 import { NEXUS_TOKEN_COOKIE } from "./nexusToken";
 
@@ -65,9 +66,11 @@ export interface BridgeRole {
 
 // ── Catalogue ────────────────────────────────────────────────────────────────
 export async function getBridgeCatalogue(programId: string): Promise<BridgeCatalogue> {
-  const res = await nexusFetch(`/api/platform/bridge/catalogue?program_id=${encodeURIComponent(programId)}`);
-  if (!res.ok) throw new Error(`Bridge catalogue request failed: ${res.status}`);
-  return (await res.json()) as BridgeCatalogue;
+  return cachedNexusGet(`catalogue:${programId}`, async () => {
+    const res = await nexusFetch(`/api/platform/bridge/catalogue?program_id=${encodeURIComponent(programId)}`);
+    if (!res.ok) throw new Error(`Bridge catalogue request failed: ${res.status}`);
+    return (await res.json()) as BridgeCatalogue;
+  });
 }
 
 export async function saveBridgeCatalogue(programId: string, doc: BridgeCatalogue): Promise<BridgeCatalogue> {
@@ -76,6 +79,7 @@ export async function saveBridgeCatalogue(programId: string, doc: BridgeCatalogu
     body: JSON.stringify(doc),
   });
   if (!res.ok) throw new Error(`Bridge catalogue save failed: ${res.status}`);
+  invalidateNexusReads(`catalogue:${programId}`);
   return (await res.json()) as BridgeCatalogue;
 }
 
@@ -84,14 +88,17 @@ export async function resetBridgeCatalogue(programId: string): Promise<BridgeCat
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Bridge catalogue reset failed: ${res.status}`);
+  invalidateNexusReads(`catalogue:${programId}`);
   return (await res.json()) as BridgeCatalogue;
 }
 
 // ── Custom roles ─────────────────────────────────────────────────────────────
 export async function listBridgeRoles(programId: string): Promise<BridgeRole[]> {
-  const res = await nexusFetch(`/api/platform/bridge/roles?program_id=${encodeURIComponent(programId)}`);
-  if (!res.ok) throw new Error(`Bridge roles request failed: ${res.status}`);
-  return (await res.json()) as BridgeRole[];
+  return cachedNexusGet(`roles:${programId}`, async () => {
+    const res = await nexusFetch(`/api/platform/bridge/roles?program_id=${encodeURIComponent(programId)}`);
+    if (!res.ok) throw new Error(`Bridge roles request failed: ${res.status}`);
+    return (await res.json()) as BridgeRole[];
+  });
 }
 
 export async function createBridgeRole(programId: string, input: { name: string; capabilities: string[] }): Promise<BridgeRole> {
@@ -100,6 +107,7 @@ export async function createBridgeRole(programId: string, input: { name: string;
     body: JSON.stringify({ program_id: programId, name: input.name, capabilities: input.capabilities }),
   });
   if (!res.ok) throw new Error(`Create bridge role failed: ${res.status}`);
+  invalidateNexusReads(`roles:${programId}`);
   return (await res.json()) as BridgeRole;
 }
 
@@ -113,6 +121,7 @@ export async function updateBridgeRole(
     body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error(`Update bridge role failed: ${res.status}`);
+  invalidateNexusReads(`roles:${programId}`);
   return (await res.json()) as BridgeRole;
 }
 
@@ -121,6 +130,7 @@ export async function deleteBridgeRole(programId: string, roleId: string): Promi
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Delete bridge role failed: ${res.status}`);
+  invalidateNexusReads(`roles:${programId}`);
 }
 
 // ── Test as (centralized dev-login) ──────────────────────────────────────────

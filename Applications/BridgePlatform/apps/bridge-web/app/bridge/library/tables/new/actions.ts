@@ -10,6 +10,7 @@ import type { LibraryEntry, LibrarySeatRef } from "@bridge/sessions";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
+import { authoredScope, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { audit } from "@/lib/audit";
 import { kbStore } from "@/lib/kb";
 import { libraryStore } from "@/lib/sessions";
@@ -48,6 +49,9 @@ export async function createTableEntryAction(formData: FormData): Promise<void> 
     seats,
     origin: "authored",
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
+    scopeLevel: authoredScope(context),
     createdAt: new Date().toISOString(),
   };
   try {

@@ -10,6 +10,7 @@ import { SEATS, type Seat } from "@bridge/events";
 import { SessionService, type SeatConfig } from "@bridge/sessions";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
+import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
 import { kbService, kbStore } from "@/lib/kb";
 import { sessionService } from "@/lib/sessions";
@@ -46,6 +47,8 @@ export async function dealFindingBoardAction(formData: FormData): Promise<void> 
     vul: "none",
     boardName: `finding-${dealSeed}`,
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   redirect(`/bridge/table/${record.sessionId}`);
 }

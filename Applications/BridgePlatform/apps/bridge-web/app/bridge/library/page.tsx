@@ -3,8 +3,8 @@ import type { LibraryEntry, LibraryKind } from "@bridge/sessions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChipRow } from "@/components/ChipTabs";
+import { canSeeProgramLibrary, canShareLibrary, listLibraryFor } from "@/lib/libraryComponent";
 import { getBridgeContext } from "@/lib/nexus";
-import { libraryStore } from "@/lib/sessions";
 import {
   deleteEntryAction,
   importFileAction,
@@ -29,18 +29,24 @@ const SHELVES: { kind: LibraryKind; label: string; hint: string; reserved?: bool
 export default async function LibraryPage({
   searchParams,
 }: Readonly<{
-  searchParams: Promise<{ kind?: string; imported?: string; error?: string }>;
+  searchParams: Promise<{ kind?: string; scope?: string; imported?: string; shared?: string; error?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const params = await searchParams;
   const active = (SHELVES.find((s) => s.kind === params.kind) ?? SHELVES[1]!).kind;
 
-  const lib = libraryStore();
+  // Library component (@laic/library-core): ONE library per person, decided
+  // by the access policy — admins curate the program instance, everyone else
+  // works in their own. No toggle; content moves between instances only by
+  // Share/Assign copies.
+  const canShare = await canShareLibrary(context);
+  const scope = (await canSeeProgramLibrary(context)) ? "program" : "mine";
+
   let all: LibraryEntry[] = [];
   let storeMissing = false;
   try {
-    all = await lib.listEntries();
+    all = await listLibraryFor(context, scope === "program" ? "program" : "mine");
   } catch {
     storeMissing = true; // 0015 not applied yet on this backend
   }
@@ -92,6 +98,11 @@ export default async function LibraryPage({
       {params.error && (
         <p className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {params.error}
+        </p>
+      )}
+      {params.shared && (
+        <p className="mb-4 rounded border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          Shared copies with {params.shared} {params.shared === "1" ? "person" : "people"}.
         </p>
       )}
       {storeMissing && (
@@ -170,6 +181,22 @@ export default async function LibraryPage({
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                {scope === "program" && canShare && (
+                  <Link
+                    href={`/bridge/library/share/${e.entryId}`}
+                    className="rounded border border-sky-700 px-3 py-1 text-xs font-medium text-sky-800 hover:bg-sky-50"
+                  >
+                    Share
+                  </Link>
+                )}
+                {(e.kind === "deal" || e.kind === "board") && e.hands && (
+                  <Link
+                    href={`/bridge/library/${e.entryId}/edit`}
+                    className="rounded border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                  >
+                    Edit
+                  </Link>
+                )}
                 {e.kind === "table" ? (
                   <form action={startTableEntryAction}>
                     <input type="hidden" name="entryId" value={e.entryId} />

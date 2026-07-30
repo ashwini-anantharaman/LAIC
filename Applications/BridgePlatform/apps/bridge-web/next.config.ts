@@ -31,6 +31,8 @@ const nextConfig: NextConfig = {
     "@bridge/profiles",
     "@bridge/sessions",
     "@laic/learner-contracts",
+    "@laic/library-core",
+    "@laic/kb-core",
   ],
   experimental: {
     serverActions: {
@@ -38,6 +40,10 @@ const nextConfig: NextConfig = {
       // request bodies at ~4.5 MB — we stop just under it and reject larger
       // files with a readable error in the action itself.
       bodySizeLimit: "4mb",
+      // Dev behind a tunnel (phone testing): the Origin header carries the
+      // tunnel hostname while Host is localhost — allow it or every form
+      // posts "Invalid Server Actions request".
+      allowedOrigins: ["*.trycloudflare.com"],
     },
   },
 };

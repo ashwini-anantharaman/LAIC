@@ -1,4 +1,4 @@
-import { canAccessAdminArea } from "@bridge/nexus-client";
+import { canViewKbWorkspace } from "@/lib/kbComponent";
 import type { KnowledgeBase, KnowledgeItem } from "@bridge/kb";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -24,7 +24,7 @@ export default async function KbListPage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  if (!canAccessAdminArea(context)) redirect("/bridge/home");
+  if (!(await canViewKbWorkspace(context))) redirect("/bridge/home");
   await ensureSeeds();
   const { hidden, unhidden } = await searchParams;
 

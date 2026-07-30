@@ -1,4 +1,5 @@
 import {
+  canAccessAdminArea,
   createNexusClient,
   type NexusBridgeContext,
 } from "@bridge/nexus-client";
@@ -60,6 +61,105 @@ export async function isEmbeddedLaunch(): Promise<boolean> {
   return cookieStore.get(NEXUS_EMBEDDED_COOKIE)?.value === "1";
 }
 
+/**
+ * The org that scopes this user's sessions/library rows (0019). Prefers the
+ * §3.5 acting org when one is applied; falls back to the launch org.
+ */
+export function orgScopeOf(context: NexusBridgeContext): string {
+  return context.programOrganizationId ?? context.laicOrgId;
+}
+
+/**
+ * The REAL Nexus program uuid this session was launched for (0022 instance
+ * scoping) — the contract's programId is a fixed string, so the uuid rides
+ * the launch cookie. Null in stub/dev mode (no launch): artifacts then scope
+ * by org only, which is the pre-0022 behavior.
+ */
+export async function nexusProgramIdOf(): Promise<string | null> {
+  if (nexusMode() !== "http") return null;
+  const cookieStore = await cookies();
+  return cookieStore.get(NEXUS_PROGRAM_COOKIE)?.value ?? null;
+}
+
+/** Server-side GET against Nexus with the launch-cookie token (http mode). */
+async function nexusGet<T>(path: string): Promise<T | null> {
+  if (nexusMode() !== "http") return null;
+  const baseUrl = process.env.NEXUS_API_BASE_URL;
+  if (!baseUrl) return null;
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  if (!accessToken) return null;
+  const programId = cookieStore.get(NEXUS_PROGRAM_COOKIE)?.value;
+  const sep = path.includes("?") ? "&" : "?";
+  const qs = programId ? `${sep}program_id=${encodeURIComponent(programId)}` : "";
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/+$/, "")}${path}${qs}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The calling learner's hired coach, from Nexus (the roster lives there —
+ * Bridge only references people). http mode only: in stub/dev there is no
+ * Nexus, so there is no coach — callers surface "hire a coach first".
+ */
+export async function getMyCoach(): Promise<{ coach_id: string; name: string } | null> {
+  const body = await nexusGet<{ coach?: { coach_id: string; name: string } | null }>(
+    "/api/platform/bridge/my-coach",
+  );
+  return body?.coach ?? null;
+}
+
+export type RosterLearner = {
+  /** The id space bridge artifacts key on — a participant's context resolves
+   *  nexusUserId to this same id. */
+  user_id: string | null;
+  email: string | null;
+  name: string | null;
+};
+
+/** The calling coach's roster (learners who hired them), from Nexus. */
+export async function getMyLearners(): Promise<RosterLearner[]> {
+  return (await nexusGet<RosterLearner[]>("/api/platform/bridge/learners")) ?? [];
+}
+
+export type ProgramCoach = {
+  /** Same id space as bridge artifacts' createdBy (the bridge context's
+   *  nexusUserId resolves to the member's profile id). */
+  coach_id: string;
+  name: string | null;
+  learner_count: number;
+};
+
+/** The program's coaches, from Nexus (names + ids only). */
+export async function getProgramCoaches(): Promise<ProgramCoach[]> {
+  return (await nexusGet<ProgramCoach[]>("/api/platform/bridge/coaches")) ?? [];
+}
+
+/**
+ * Which instance receives content a person AUTHORS (deal editor, imports,
+ * lineups): staff author into the PROGRAM instance (shared content); everyone
+ * else authors into their own. Recording at the table is always personal.
+ */
+export function authoredScope(context: NexusBridgeContext): "program" | "user" {
+  return canAccessAdminArea(context) ? "program" : "user";
+}
+
+/** Coach-or-better in the bridge context (the coach surfaces' gate). */
+export function isBridgeCoach(context: NexusBridgeContext): boolean {
+  return (
+    context.is_admin === true ||
+    context.roles.includes("bridge_coach") ||
+    context.roles.includes("bridge_program_admin")
+  );
+}
+
 export function nexusMode(): NexusMode {
   const mode = process.env.NEXUS_CLIENT_MODE ?? "stub";
   if (mode !== "stub" && mode !== "http") {
@@ -86,6 +186,20 @@ async function applyActiveOrg(context: NexusBridgeContext): Promise<NexusBridgeC
   const ok = affiliations.some((a) => a.status === "active" && a.programOrganizationId === target);
   return ok ? { ...context, programOrganizationId: target } : context;
 }
+
+/**
+ * Cross-REQUEST context cache (http mode): re-verifying the session against
+ * Nexus costs ~0.6–1.6s of sequential round trips, and it was paid on every
+ * page render. Cache the resolved context per (token, program) for a short
+ * TTL — a role/permission change propagates within a minute, navigation
+ * stops re-paying the verification chain on every click.
+ */
+const CONTEXT_TTL_MS = 60_000;
+const contextCache = (
+  globalThis as unknown as {
+    __bridgeContextCache?: Map<string, { context: NexusBridgeContext; expires: number }>;
+  }
+).__bridgeContextCache ??= new Map();
 
 /**
  * Resolve the caller's NexusBridgeContext for this request, or null when not
@@ -150,13 +264,21 @@ export const getBridgeContext = cache(
     // Scope to the program the console launched from (multi-program people).
     const programId = cookieStore.get(NEXUS_PROGRAM_COOKIE)?.value;
 
+    const cacheKey = `${accessToken}:${programId ?? ""}`;
+    const hit = contextCache.get(cacheKey);
+    if (hit && hit.expires > Date.now()) return hit.context;
+
     try {
-      return await createNexusClient({
+      const context = await createNexusClient({
         mode: "http",
         baseUrl,
         accessToken,
         ...(programId ? { programId } : {}),
       }).getBridgeContext();
+      // Cap the cache so dead sessions don't accumulate forever.
+      if (contextCache.size > 200) contextCache.clear();
+      contextCache.set(cacheKey, { context, expires: Date.now() + CONTEXT_TTL_MS });
+      return context;
     } catch (err) {
       // Expired session or a role that doesn't grant Bridge (Nexus 403) —
       // treat as signed out; the layout routes to /welcome.

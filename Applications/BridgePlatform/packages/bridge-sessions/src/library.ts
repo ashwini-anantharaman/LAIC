@@ -10,6 +10,54 @@ import type { Call, Card, Seat, Vul } from "@bridge/events";
 
 export type LibraryKind = "deal" | "board" | "table" | "play" | "drill" | "puzzle";
 
+/** Instance scoping (0022): every artifact belongs to exactly one scope. */
+export type ScopeLevel = "user" | "program" | "org";
+
+/** Copy provenance (0022): content crosses scopes only by being copied. */
+export interface SourceRef {
+  /** How the copy arrived. `shared` = admin distribution (untracked). */
+  kind: "assigned" | "shared" | "embedded" | "installed";
+  /** The source entry. */
+  entryId: string;
+  programId?: string;
+  orgId?: string;
+}
+
+/**
+ * Scope filter for list reads (org scoping Phase 0; instance scoping 0022).
+ * When a field is provided, only records stamped with the SAME value match —
+ * legacy records without a stamp are excluded (production rows are
+ * backfilled by migrations 0019/0022).
+ */
+export interface ScopeFilter {
+  programOrganizationId?: string;
+  createdBy?: string;
+  scopeLevel?: ScopeLevel;
+  nexusProgramId?: string;
+}
+
+export function matchesScope(
+  rec: {
+    programOrganizationId?: string;
+    createdBy: string;
+    scopeLevel?: ScopeLevel;
+    nexusProgramId?: string;
+  },
+  filter?: ScopeFilter,
+): boolean {
+  if (!filter) return true;
+  if (
+    filter.programOrganizationId !== undefined &&
+    rec.programOrganizationId !== filter.programOrganizationId
+  )
+    return false;
+  if (filter.createdBy !== undefined && rec.createdBy !== filter.createdBy) return false;
+  if (filter.scopeLevel !== undefined && rec.scopeLevel !== filter.scopeLevel) return false;
+  if (filter.nexusProgramId !== undefined && rec.nexusProgramId !== filter.nexusProgramId)
+    return false;
+  return true;
+}
+
 export const LIBRARY_KINDS: readonly LibraryKind[] = [
   "deal",
   "board",
@@ -58,6 +106,15 @@ export interface LibraryEntry {
   importFileName?: string;
   createdBy: string;
   createdAt: string;
+  /** Org the entry was created in (0019 scoping). Additive jsonb field. */
+  programOrganizationId?: string;
+  /** Which instance owns this entry (0022): the creator's personal shelf, the
+   *  program's shelf, or the org's. */
+  scopeLevel?: ScopeLevel;
+  /** The REAL Nexus program uuid partition (0022). */
+  nexusProgramId?: string;
+  /** Set on copies: where this entry came from and how (0022). */
+  sourceRef?: SourceRef;
 }
 
 export interface LibraryStoreData {
@@ -67,7 +124,7 @@ export interface LibraryStoreData {
 export interface LibraryStore {
   putEntry(entry: LibraryEntry): Promise<void>;
   getEntry(entryId: string): Promise<LibraryEntry | null>;
-  listEntries(kind?: LibraryKind): Promise<LibraryEntry[]>;
+  listEntries(kind?: LibraryKind, filter?: ScopeFilter): Promise<LibraryEntry[]>;
   deleteEntry(entryId: string): Promise<void>;
 }
 
@@ -83,9 +140,9 @@ export class InMemoryLibraryStore implements LibraryStore {
   async getEntry(entryId: string) {
     return this.data.entries.find((e) => e.entryId === entryId) ?? null;
   }
-  async listEntries(kind?: LibraryKind) {
+  async listEntries(kind?: LibraryKind, filter?: ScopeFilter) {
     return this.data.entries
-      .filter((e) => !kind || e.kind === kind)
+      .filter((e) => (!kind || e.kind === kind) && matchesScope(e, filter))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
   async deleteEntry(entryId: string) {

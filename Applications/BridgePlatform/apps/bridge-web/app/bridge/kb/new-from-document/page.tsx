@@ -1,5 +1,5 @@
 import { AutoRead } from "@/components/kb/AutoRead";
-import { canAccessAdminArea } from "@bridge/nexus-client";
+import { canViewKbWorkspace } from "@/lib/kbComponent";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ensureSeeds, kbStore } from "@/lib/kb";
@@ -110,7 +110,7 @@ export default async function NewFromDocumentPage({
 }: Readonly<{ searchParams: Promise<Search> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  if (!canAccessAdminArea(context)) redirect("/bridge/home");
+  if (!(await canViewKbWorkspace(context))) redirect("/bridge/home");
   await ensureSeeds();
   const sp = await searchParams;
 

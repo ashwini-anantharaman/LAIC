@@ -16,13 +16,24 @@ import { NextResponse } from "next/server";
 
 import { NEXUS_EMBEDDED_COOKIE, NEXUS_PROGRAM_COOKIE, NEXUS_RETURN_COOKIE, NEXUS_TOKEN_COOKIE, safeProgramId, safeReturnUrl } from "../../../lib/nexusToken";
 
+/** The externally visible origin — honors proxy headers (tunnels, Vercel),
+ *  falling back to the request URL. Without this, redirects behind a proxy
+ *  point at the internal host (e.g. localhost:3000) and dead-end. */
+function externalOrigin(request: Request, url: URL): string {
+  const first = (name: string) => (request.headers.get(name) ?? "").split(",")[0]!.trim();
+  const host = first("x-forwarded-host") || url.host;
+  const proto = first("x-forwarded-proto") || url.protocol.replace(":", "");
+  return `${proto}://${host}`;
+}
+
 export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
+  const origin = externalOrigin(request, url);
   const launchToken = url.searchParams.get("launch_token");
   const baseUrl = process.env.NEXUS_API_BASE_URL;
 
   if (!launchToken || !baseUrl) {
-    return NextResponse.redirect(new URL("/welcome?launch=missing", url));
+    return NextResponse.redirect(new URL("/welcome?launch=missing", origin));
   }
 
   let accessToken: string | null = null;
@@ -44,10 +55,16 @@ export async function GET(request: Request): Promise<NextResponse> {
   }
 
   if (!accessToken) {
-    return NextResponse.redirect(new URL("/welcome?launch=failed", url));
+    return NextResponse.redirect(new URL("/welcome?launch=failed", origin));
   }
 
-  const response = NextResponse.redirect(new URL("/bridge/home", url));
+  // Optional destination (?next=/m/library): a host app deep-links straight to
+  // one page. Same-origin relative paths only — anything else falls back to
+  // the default landing.
+  const next = url.searchParams.get("next");
+  const destination =
+    next && next.startsWith("/") && !next.startsWith("//") ? next : "/bridge/home";
+  const response = NextResponse.redirect(new URL(destination, origin));
   const cookieOpts = {
     httpOnly: true,
     sameSite: "lax",
