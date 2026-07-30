@@ -20,7 +20,7 @@ import schemaJson from "@/lib/access-catalogue.schema.json";
 
 type TabId = "groups" | "capabilities" | "surfaces" | "resources" | "samples" | "json" | "schema";
 const TABS: { id: TabId; label: string }[] = [
-  { id: "groups", label: "Groups" },
+  { id: "groups", label: "Capability Sets" },
   { id: "capabilities", label: "Capabilities" },
   { id: "surfaces", label: "Surfaces" },
   { id: "resources", label: "Resources" },
@@ -106,12 +106,12 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
   const addGroup = (label: string) => {
     if (!label.trim()) return;
     const id = slug(label);
-    if (doc.groups.some((g) => g.id === id)) { fire("A group with that id exists"); return; }
+    if (doc.groups.some((g) => g.id === id)) { fire("A capability set with that id exists"); return; }
     patch({ ...doc, groups: [...doc.groups, { id, label: label.trim(), order: doc.groups.length + 1, capabilityIds: [], uiSurfaceIds: [] }] });
   };
   const renameGroup = (id: string, label: string) => patch({ ...doc, groups: doc.groups.map((g) => (g.id === id ? { ...g, label } : g)) });
   const removeGroup = (id: string) => {
-    if (doc.groups.length <= 1) { fire("Keep at least one group"); return; }
+    if (doc.groups.length <= 1) { fire("Keep at least one capability set"); return; }
     const fallback = doc.groups.find((g) => g.id !== id)!.id;
     patch({
       ...doc,
@@ -158,7 +158,7 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
         <span className="rounded-full bg-neutral-100 px-2.5 py-0.5">{doc.provider.kind}/{doc.provider.id}</span>
         {doc.catalogueVersion ? <span className="rounded-full bg-neutral-100 px-2.5 py-0.5">v{doc.catalogueVersion}</span> : null}
         {dirty ? <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-amber-800">Unsaved</span> : null}
-        <span>{doc.groups.length} groups · {doc.capabilities.length} capabilities · {doc.uiSurfaces.length} surfaces · {(doc.resourceTypes ?? []).length} resource types</span>
+        <span>{doc.groups.length} capability sets · {doc.capabilities.length} capabilities · {doc.uiSurfaces.length} surfaces · {(doc.resourceTypes ?? []).length} resource types</span>
       </div>
 
       <div className="flex flex-wrap gap-1 border-b border-neutral-200">
@@ -172,7 +172,7 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
 
       {tab === "groups" && (
         <div className="space-y-2">
-          <p className="text-sm text-neutral-500">Groups bucket capabilities and the surfaces they unlock.</p>
+          <p className="text-sm text-neutral-500">Capability sets bucket capabilities and the surfaces they unlock.</p>
           {groupsSorted.map((g) => {
             const caps = capsByGroup(g.id); const surfs = surfsByGroup(g.id); const open = expanded.has(g.id);
             return (
@@ -184,7 +184,7 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
                     : <span className="text-sm font-medium text-neutral-800">{g.label}</span>}
                   <span className="font-mono text-xs text-neutral-400">{g.id}</span>
                   <span className="ml-auto text-xs text-neutral-400">{caps.length} caps · {surfs.length} surfaces</span>
-                  {canEdit ? <button type="button" onClick={() => removeGroup(g.id)} className="text-xs text-red-600 hover:underline" title="Remove group">Remove</button> : null}
+                  {canEdit ? <button type="button" onClick={() => removeGroup(g.id)} className="text-xs text-red-600 hover:underline" title="Remove capability set">Remove</button> : null}
                 </div>
                 {open ? (
                   <div className="space-y-3 border-t border-neutral-200 bg-neutral-50 px-4 py-3 pl-11">
@@ -202,7 +202,7 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
                             </span>
                           ) : null}
                         </div>
-                      )) : <p className="text-xs text-neutral-400">None in this group.</p>}
+                      )) : <p className="text-xs text-neutral-400">None in this capability set.</p>}
                       {canEdit ? <button type="button" onClick={() => addCapToGroup(g.id)} className="mt-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100">+ Add capability</button> : null}
                     </div>
                     <div>
@@ -219,7 +219,7 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
                             </span>
                           ) : null}
                         </div>
-                      )) : <p className="text-xs text-neutral-400">None in this group.</p>}
+                      )) : <p className="text-xs text-neutral-400">None in this capability set.</p>}
                       {canEdit ? <button type="button" onClick={() => addSurfToGroup(g.id)} className="mt-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100">+ Add surface</button> : null}
                     </div>
                   </div>
@@ -227,7 +227,7 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
               </div>
             );
           })}
-          {canEdit ? <AddInline placeholder="New group label" onAdd={addGroup} /> : null}
+          {canEdit ? <AddInline placeholder="New capability set label" onAdd={addGroup} /> : null}
         </div>
       )}
 
@@ -251,7 +251,7 @@ export function CatalogueEditor({ initial, canEdit, embedded = false }: { initia
                     ) : null}
                   </div>
                 ))}
-                {capsByGroup(g.id).length === 0 ? <p className="text-xs text-neutral-400">No capabilities in this group.</p> : null}
+                {capsByGroup(g.id).length === 0 ? <p className="text-xs text-neutral-400">No capabilities in this capability set.</p> : null}
               </div>
             </div>
           ))}
@@ -381,9 +381,9 @@ function AccessCatalogGuide({ onClose }: { onClose: () => void }) {
           actually granted and enforced.
         </P>
         <P>
-          <strong>2. Groups</strong> — labeled folders that bucket related capabilities (and surfaces). Their job
-          is twofold: they tidy the UI, and each group can back <strong>one coarse toggle</strong> in the role
-          builder — flipping that toggle on seeds every capability in the folder onto the role. Groups are never
+          <strong>2. Capability sets</strong> — labeled folders that bucket related capabilities (and surfaces). Their job
+          is twofold: they tidy the UI, and each set can back <strong>one coarse toggle</strong> in the role
+          builder — flipping that toggle on seeds every capability in the set onto the role. Capability sets are never
           stored on a role; they’re the design-time bridge between the simple toggle and the underlying capabilities.
         </P>
         <P>
@@ -398,9 +398,9 @@ function AccessCatalogGuide({ onClose }: { onClose: () => void }) {
 
         <H>How a role is actually built</H>
         <P>
-          A saved role stores two things — and a group id is in neither: a set of <strong>coarse area levels</strong>{" "}
+          A saved role stores two things — and a capability-set id is in neither: a set of <strong>coarse area levels</strong>{" "}
           (No / View / Edit, or No / Partial / Full for platforms) and a flat list of <strong>capability ids</strong>.
-          Setting an area’s coarse level is a preset: the top level seeds every capability in that area’s group;
+          Setting an area’s coarse level is a preset: the top level seeds every capability in that area’s set;
           “Partial” lets you hand-pick a subset. The capability list is the <strong>enforced source of truth</strong> —
           the backend validates it against this catalog and drops anything not in the inventory.
         </P>
@@ -422,15 +422,15 @@ function AccessCatalogGuide({ onClose }: { onClose: () => void }) {
 
         <H>Adding a new feature end-to-end</H>
         <P>
-          1) Add a <strong>capability</strong> to a group here; 2) add a <strong>surface</strong> for the UI it
-          unlocks; 3) the role builder’s toggle for that group now grants it; 4) the nav/screen gated by that surface
-          appears for anyone who holds it. A brand-new group is purely organizational until a role-builder area is
-          wired to it — that wiring is what turns a folder into a working, grantable feature.
+          1) Add a <strong>capability</strong> to a capability set here; 2) add a <strong>surface</strong> for the UI it
+          unlocks; 3) the role builder’s toggle for that set now grants it; 4) the nav/screen gated by that surface
+          appears for anyone who holds it. A brand-new capability set is purely organizational until a role-builder area is
+          wired to it — that wiring is what turns a set into a working, grantable feature.
         </P>
 
         <H>Editing here</H>
         <P>
-          Use the <strong>Groups</strong> tab to add capabilities/surfaces inline within a folder, or the dedicated{" "}
+          Use the <strong>Capability Sets</strong> tab to add capabilities/surfaces inline within a set, or the dedicated{" "}
           <strong>Capabilities</strong> / <strong>Surfaces</strong> tabs. <strong>Save catalog</strong> persists your
           changes for this level; <strong>Reset defaults</strong> restores the shipped catalog. The{" "}
           <strong>Export JSON</strong> and <strong>JSON Schema</strong> tabs show the live document and the shape it
@@ -474,7 +474,7 @@ function CapabilityDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc
     >
       {!initial ? <div><label className="mb-1 block text-xs font-medium text-neutral-600">Capability id</label><input value={id} onChange={(e) => setId(e.target.value)} placeholder={slug(label) || "e.g. bridge.kb.edit"} className={input} /></div> : null}
       <div><label className="mb-1 block text-xs font-medium text-neutral-600">Label</label><input value={label} onChange={(e) => setLabel(e.target.value)} className={input} /></div>
-      <div><label className="mb-1 block text-xs font-medium text-neutral-600">Group</label>
+      <div><label className="mb-1 block text-xs font-medium text-neutral-600">Capability set</label>
         <select value={group} onChange={(e) => setGroup(e.target.value)} className={input}>{doc.groups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</select>
       </div>
       <div><label className="mb-1 block text-xs font-medium text-neutral-600">Reserved to tier (hidden from custom roles)</label>
@@ -511,7 +511,7 @@ function SurfaceDialog({ doc, initial, defaultGroup, onClose, onSave }: { doc: B
         <div><label className="mb-1 block text-xs font-medium text-neutral-600">Kind</label>
           <select value={kind} onChange={(e) => setKind(e.target.value as BridgeUiSurfaceKind)} className={input}>{SURFACE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}</select>
         </div>
-        <div><label className="mb-1 block text-xs font-medium text-neutral-600">Group</label>
+        <div><label className="mb-1 block text-xs font-medium text-neutral-600">Capability set</label>
           <select value={group} onChange={(e) => setGroup(e.target.value)} className={input}>{doc.groups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</select>
         </div>
       </div>
