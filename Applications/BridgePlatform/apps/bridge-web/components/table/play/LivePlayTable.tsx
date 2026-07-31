@@ -9,13 +9,13 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import type { Card, Seat } from "@bridge/events";
-import { bidAction, newDealAction, playCardAction } from "@/app/bridge/table/actions";
+import { bidAction, playCardAction } from "@/app/bridge/table/actions";
 import { PlayTable, type PlayTableProps } from "./PlayTable";
 
 export function LivePlayTable({
   sessionId,
   ...rest
-}: Readonly<{ sessionId: string } & Omit<PlayTableProps, "onCall" | "onPlay" | "onNewDeal">>) {
+}: Readonly<{ sessionId: string } & Omit<PlayTableProps, "onCall" | "onPlay">>) {
   const router = useRouter();
   const [pending, start] = useTransition();
 
@@ -36,7 +36,6 @@ export function LivePlayTable({
       myTurn={rest.myTurn && !pending}
       onCall={(call) => run(bidAction, { call })}
       onPlay={(_seat: Seat, card: Card) => run(playCardAction, { suit: card.suit, rank: String(card.rank) })}
-      onNewDeal={() => run(newDealAction, {})}
     />
   );
 }

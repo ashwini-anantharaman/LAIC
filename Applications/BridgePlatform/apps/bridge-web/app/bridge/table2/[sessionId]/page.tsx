@@ -26,12 +26,12 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { hands: handsParam, bboAuction, speed, view: viewParam, paused, saved, error } = await searchParams;
+  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
   const handsView = viewParam === "hands";
 
   let view;
@@ -68,6 +68,11 @@ export default async function PlayTablePage({
     const c = record.seats[seat];
     return c.kind === "human" ? (c.nexusUserId === context.nexusUserId ? "you" : "human") : c.label;
   };
+  // Identity strips (SeatPlate design): humans petrol, robots a distinct color
+  // per seat — that's what tells two BENs at one table apart.
+  const ROBOT_STRIPS: Record<Seat, string> = { N: "#e0813a", E: "#8e5bc4", S: "#3aa0e0", W: "#3ab77a" };
+  const seatStrip = (seat: Seat) =>
+    record.seats[seat].kind === "human" ? "#12525e" : ROBOT_STRIPS[seat];
 
   // Fellows get the seat-swap panel in the rail — same swapSeatAction and
   // fork semantics as always, plus BEN as a seatable character when the
@@ -99,9 +104,10 @@ export default async function PlayTablePage({
   // changed — the app's convention for table toggles. `paused` is kept so a
   // settings change doesn't remount AutoAdvance and surprise-pause the table.
   const beatMs = speed === "fast" ? 350 : speed === "slow" ? 1500 : 750;
+  const confirmBids = confirm === "1";
   const settingsHref = (patch: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused };
+    const current = { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused };
     for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
@@ -122,6 +128,11 @@ export default async function PlayTablePage({
       value: speed === "fast" ? "Fast" : speed === "slow" ? "Slow" : "Normal",
       href: settingsHref({ speed: speed === "slow" ? "fast" : speed === "fast" ? undefined : "slow" }),
     },
+    {
+      label: "Confirm bids",
+      value: confirmBids ? "On" : "Off",
+      href: settingsHref({ confirm: confirmBids ? undefined : "1" }),
+    },
     // The verification workbench (decisions rail, fix-at-the-table, deal
     // editor) lives behind the ☰ so nothing sits outside the canvas.
     ...(isFellow
@@ -132,8 +143,10 @@ export default async function PlayTablePage({
   // Play controls live INSIDE the canvas: ▶/❚❚ and step as rail chips
   // (AutoAdvance's rail variant), undo beside them. Same key semantics as
   // before — an undo remounts the controls paused.
+  // Boards RUN by default now (the design's pause-first control); ?paused is
+  // the exception an undo sets so the table comes back held.
   const controlsAt = (s: number) => (
-    <div style={{ display: "flex", gap: 6 * s, justifyContent: "center" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 * s }}>
       <AutoAdvance
         key={paused ?? "run"}
         sessionId={sessionId}
@@ -141,6 +154,7 @@ export default async function PlayTablePage({
         seq={record.events.length}
         complete={state.phase === "complete"}
         beatMs={beatMs}
+        initialPaused={Boolean(paused)}
         variant="rail"
         railScale={s}
       />
@@ -151,9 +165,9 @@ export default async function PlayTablePage({
             type="submit"
             aria-label="undo"
             title="Undo the last decision — comes back paused"
-            style={{ width: 47 * s, height: 32 * s, background: "#acc5c5", border: `${2 * s}px solid #f2f4f4`, borderRadius: 7 * s, color: "#000", fontSize: 16 * s, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
+            style={{ width: 100 * s, height: 26 * s, background: "#acc5c5", border: `${2 * s}px solid #f2f4f4`, borderRadius: 7 * s, color: "#000", fontSize: 13 * s, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
           >
-            ↩
+            ↩ undo
           </button>
         </form>
       )}
@@ -234,10 +248,10 @@ export default async function PlayTablePage({
             sessionId={sessionId}
             state={{ ...state, dealer: record.board.dealer, vul: state.vul }}
             seats={{
-              N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "" },
-              E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "" },
-              S: { name: seatName("S"), tag: dummy === "S" ? "dummy" : "" },
-              W: { name: seatName("W"), tag: dummy === "W" ? "dummy" : "" },
+              N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "", strip: seatStrip("N") },
+              E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "", strip: seatStrip("E") },
+              S: { name: seatName("S"), tag: dummy === "S" ? "dummy" : "", strip: seatStrip("S") },
+              W: { name: seatName("W"), tag: dummy === "W" ? "dummy" : "", strip: seatStrip("W") },
             }}
             visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
             mySeat={mySeat}
@@ -246,14 +260,12 @@ export default async function PlayTablePage({
             myTurn={myTurn}
             boardLabel={boardNumber}
             auctionDisplay={bboAuction === "seats" ? "seats" : "box"}
+            confirmBids={confirmBids}
             resultLine={score ? resultLabel(score) : ""}
             resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
-            railExtra={
-              <>
-                {controlsAt(1)}
-                {seatsPanel}
-              </>
-            }
+            controlsExtra={controlsAt(1)}
+            controlsExtraNarrow={controlsAt(1.5)}
+            railExtra={seatsPanel}
             settings={settings}
             viewHref={{ label: "Hands", href: settingsHref({ view: "hands" }) }}
           />
