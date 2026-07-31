@@ -25,6 +25,7 @@ import {
   closeOffering,
   createApp,
   createGate,
+  GATE_PLATFORM_ROLES,
   createGroup,
   createOffering,
   deleteApp,
@@ -69,7 +70,7 @@ import type {
   RegisteredApp,
   Registration,
 } from "@/types/platform";
-import { DEFAULT_PROGRAM_FEATURES } from "@/types/platform";
+import { DEFAULT_PROGRAM_FEATURES, PROGRAM_FEATURES } from "@/types/platform";
 import type { ProgramFeatureKey, ProgramFeatures } from "@/types/platform";
 import { EmptyState, PageHeader, Pill, Section, Spinner, StatPill, statusTone } from "@/nexus/ui/kit";
 import { AppShellAccessCatalogue } from "@/nexus/appshell/AccessCatalogue";
@@ -661,6 +662,14 @@ export function ProgramGates() {
   const [allowSignup, setAllowSignup] = useState(true);
   const [approval, setApproval] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Which platforms a sign-up joins, and as what: { bridge: "bridge_learner" }.
+  const [platformRoles, setPlatformRoles] = useState<Record<string, string>>({});
+
+  // Only platforms this program actually has enabled can be joined here, and
+  // only those with a role vocabulary (People + roles) are offerable.
+  const joinablePlatforms = PROGRAM_FEATURES.filter(
+    (f) => GATE_PLATFORM_ROLES[f.key] && program?.features?.[f.key],
+  );
 
   const load = useCallback(() => {
     if (!programId) return;
@@ -700,11 +709,16 @@ export function ProgramGates() {
         allow_signin: audience === "member" ? allowSignin : false,
         allow_signup: allowSignup,
         approval_required: approval,
+        // Participant gates can join their sign-ups to platforms with a role.
+        ...(audience === "participant" && Object.keys(platformRoles).length > 0
+          ? { platform_roles: platformRoles }
+          : {}),
       });
       toast.success("Gate created");
       setOpen(false);
       setTitle("");
       setRoleIds([]);
+      setPlatformRoles({});
       load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create gate");
@@ -862,6 +876,65 @@ export function ProgramGates() {
                     </p>
                   </>
                 )}
+              </div>
+            ) : null}
+            {/* Which platforms a student joins here. Checking one writes that
+                platform's role on sign-up, so the person lands in the
+                platform's People with a real role — not only in
+                Registrations. Unchecked = registration only. */}
+            {audience === "participant" && joinablePlatforms.length > 0 ? (
+              <div className="space-y-1.5">
+                <Label>Joins these platforms</Label>
+                <div className="rounded-lg border border-border divide-y divide-border">
+                  {joinablePlatforms.map((f) => {
+                    const options = GATE_PLATFORM_ROLES[f.key]!;
+                    const current = platformRoles[f.key];
+                    return (
+                      <div key={f.key} className="flex items-center gap-2.5 px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="size-4 accent-[var(--primary)]"
+                          checked={!!current}
+                          onChange={(e) =>
+                            setPlatformRoles((cur) => {
+                              const next = { ...cur };
+                              if (e.target.checked) next[f.key] = options[0]!.value;
+                              else delete next[f.key];
+                              return next;
+                            })
+                          }
+                        />
+                        <span className="flex-1 text-foreground">{f.label}</span>
+                        {current ? (
+                          <Select
+                            value={current}
+                            onValueChange={(v) =>
+                              setPlatformRoles((cur) => ({ ...cur, [f.key]: v }))
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-44">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {options.map((o) => (
+                                <SelectItem key={o.value} value={o.value}>
+                                  {o.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">not joined</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {Object.keys(platformRoles).length === 0
+                    ? "Nobody is joined to a platform — sign-ups appear in Registrations only."
+                    : "Sign-ups appear in these platforms' People with the chosen role, and in Registrations."}
+                </p>
               </div>
             ) : null}
             {/* Members can sign in at the gate (it's their door). Students sign

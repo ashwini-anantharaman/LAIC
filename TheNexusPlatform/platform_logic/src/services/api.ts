@@ -1110,7 +1110,30 @@ export interface GateWrite {
   allow_signup?: boolean;
   approval_required?: boolean;
   landing?: string | null;
+  /**
+   * Which PLATFORMS a sign-up joins, and with which role —
+   * { bridge: "bridge_learner" }. The person then appears under that
+   * platform's People with that role, not only in Registrations.
+   */
+  platform_roles?: Record<string, string>;
 }
+
+/** Roles a gate may grant per platform (mirrors the backend's assignable
+ *  lists; the server validates regardless). First entry is the default. */
+export const GATE_PLATFORM_ROLES: Record<string, { value: string; label: string }[]> = {
+  bridge: [
+    { value: "bridge_learner", label: "Learner" },
+    { value: "bridge_coach", label: "Coach" },
+    { value: "bridge_reviewer", label: "Reviewer" },
+  ],
+  learning: [
+    { value: "student", label: "Student" },
+    { value: "coach", label: "Coach" },
+    { value: "content-developer", label: "Content Developer" },
+    { value: "object-reviewer", label: "Object Reviewer" },
+    { value: "course-reviewer", label: "Course Reviewer" },
+  ],
+};
 
 export async function listGates(programId: string): Promise<Gate[]> {
   return request<Gate[]>(`/api/programs/${programId}/gates`);
