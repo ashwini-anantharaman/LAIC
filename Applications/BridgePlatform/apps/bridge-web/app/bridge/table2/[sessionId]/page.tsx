@@ -264,6 +264,7 @@ export default async function PlayTablePage({
             resultLine={score ? resultLabel(score) : ""}
             resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
             controlsExtra={controlsAt(1)}
+            controlsExtraNarrow={controlsAt(1.5)}
             railExtra={seatsPanel}
             settings={settings}
             viewHref={{ label: "Hands", href: settingsHref({ view: "hands" }) }}

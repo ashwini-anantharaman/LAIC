@@ -14,11 +14,12 @@
 // It is otherwise presentational: the board comes in through props and every
 // action goes back out through callbacks, so the caller owns the rules.
 //
-// 2026-07-30 design update: seat strips (robots tellable apart), dealer ring +
-// DEALER tag + tinted dealer auction column, per-seat bid HISTORY in seats
-// mode, hands that shrink as cards go, an optional confirm-bid step, and the
-// full NARROW/portrait layout (720×1180 stage: top bar, stacked diagrams,
-// pill tricks, touch-sized ranks, full-width bid tray).
+// 2026-07-30: strips, dealer marks, per-seat bid history, confirm-bid step,
+// shrinking hands. 2026-07-31: the portrait layout is Mobile Table.dc.html —
+// BBO's phone view as one vertical stack (top bar, dummy row in play, a fixed
+// felt with a top-left auction grid or 1.6x trick cards, the bid tray, your
+// big-card hand), a fixed 720-wide stage scaled against the MEASURED stack
+// height so the hand never falls below the fold.
 
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -39,9 +40,12 @@ const PANEL = "#acc5c5";
 const CARD_BACK = "#0d707c";
 const SEAT_BADGE = "#12525e";
 
-/** The stages the design was drawn at; everything scales from these. */
+/** Wide stage; the mobile stack is 720 wide with a MEASURED height. */
 const BASE_WIDE = { w: 1040, h: 590 };
-const BASE_NARROW = { w: 720, h: 1180 };
+const MOBILE_W = 720;
+const MOBILE_FELT_H = 430;
+/** Mobile hand-card metrics (Mobile Table.dc.html). */
+const M_CARD = { w: 54, h: 128, rank: 42, glyph: 38, inset: 5, backW: 52 };
 
 const GLYPH: Record<string, string> = { S: "♠", H: "♥", C: "♣", D: "♦", N: "NT" };
 const STRAINS = ["C", "D", "H", "S", "N"] as const;
@@ -109,8 +113,13 @@ export interface PlayTableProps {
   onMenu?: () => void;
   onScoring?: () => void;
   onClaim?: () => void;
-  /** Play controls (pause / step / undo) — rail on wide, top bar on narrow. */
+  /** Play controls (pause / step / undo) for the wide rail. */
   controlsExtra?: ReactNode;
+  /**
+   * Larger-scale controls for the mobile top bar (the stage scales down, so
+   * rail-sized chips would fall under thumb size). Falls back to controlsExtra.
+   */
+  controlsExtraNarrow?: ReactNode;
   /** Rendered into the left rail under the fixed controls (wide layout only). */
   railExtra?: ReactNode;
   /**
@@ -143,6 +152,7 @@ export function PlayTable({
   onScoring,
   onClaim,
   controlsExtra,
+  controlsExtraNarrow,
   railExtra,
   settings,
   viewHref,
@@ -161,6 +171,16 @@ export function PlayTable({
     return () => ro.disconnect();
   }, []);
 
+  // The mobile stack's height changes with phase (bid tray, dummy row, hand),
+  // so it is MEASURED, never estimated. offsetHeight ignores the ancestor
+  // transform — getBoundingClientRect() would feed the scale it produces.
+  const stackRef = useRef<HTMLDivElement | null>(null);
+  const [contentH, setContentH] = useState(1100);
+  useLayoutEffect(() => {
+    const h = stackRef.current?.offsetHeight;
+    if (h && Math.abs(h - contentH) > 1) setContentH(h);
+  });
+
   // Armed bid level and the staged (unconfirmed) call are instance state.
   const [armed, setArmed] = useState<number | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -176,16 +196,17 @@ export function PlayTable({
   const menuHandler = onMenu ?? (settings ? () => setMenuOpen((v) => !v) : undefined);
   const menuItems: SettingsItem[] = [...(settings ?? [])];
 
-  // Portrait containers get the narrow stage (the design's phone layout).
+  // Portrait containers get the mobile stack (Mobile Table design).
   const narrow = box.w / Math.max(1, box.h) < 1.25;
-  const BASE = narrow ? BASE_NARROW : BASE_WIDE;
 
-  // Scale to FIT — down or up. The stage is DOM text and vectors, so a
-  // transform scale stays crisp, and the table should use whatever space its
-  // container gives it.
-  const scale = Math.min(box.w / BASE.w, box.h / BASE.h) || 1;
-  const stageW = Math.max(BASE.w, box.w / scale);
-  const stageH = Math.max(BASE.h, box.h / scale);
+  // Wide: scale to FIT, down or up. Mobile: a fixed 720-wide column scaled by
+  // BOTH axes against the measured stack height (never up — thumb reach, not
+  // magnification), so the hand stays above the fold.
+  const scale = narrow
+    ? Math.min(1, box.w / MOBILE_W, box.h / contentH) || 1
+    : Math.min(box.w / BASE_WIDE.w, box.h / BASE_WIDE.h) || 1;
+  const stageW = narrow ? MOBILE_W : Math.max(BASE_WIDE.w, box.w / scale);
+  const stageH = narrow ? Math.max(contentH, box.h / scale) : Math.max(BASE_WIDE.h, box.h / scale);
 
   const c = state.contract;
   const declarer = c?.declarer ?? null;
@@ -203,8 +224,6 @@ export function PlayTable({
 
   const plateBgFor = (seat: Seat) =>
     seat === dummy || (!complete && seat === state.turn) ? "#fff" : "#b3b3b3";
-  const panelBgFor = (seat: Seat) =>
-    seat === dummy || (!complete && seat === state.turn) ? "#fff" : "#b3b3b3";
 
   // The staged-call gate: with confirm on, a human call parks in `pending`
   // until confirmed — robots (server seats) are never staged.
@@ -216,10 +235,10 @@ export function PlayTable({
 
   // ---- pieces -------------------------------------------------------------
   /** Face-down cards — as many as the seat still HOLDS, not always 13. */
-  const backs = (seat: Seat) => (
+  const backs = (seat: Seat, m: { w: number; h: number } = { w: 14, h: 71 }) => (
     <div style={{ display: "flex", border: "2px solid rgba(255,255,255,.92)", borderRadius: 3, overflow: "hidden", boxShadow: "0 2px 4px rgba(0,0,0,.35)" }}>
       {Array.from({ length: Math.max(1, state.hands[seat].length) }, (_, i) => (
-        <span key={i} style={{ display: "block", width: 14, height: 71, background: CARD_BACK, borderLeft: i ? "1.5px solid rgba(255,255,255,.92)" : "none" }} />
+        <span key={i} style={{ display: "block", width: m.w, height: m.h, background: CARD_BACK, borderLeft: i ? "1.5px solid rgba(255,255,255,.92)" : "none" }} />
       ))}
     </div>
   );
@@ -267,8 +286,11 @@ export function PlayTable({
     );
   };
 
-  /** N/S: a fanned row of face cards. */
-  const cardRow = (seat: Seat) => {
+  /** A fanned row of face cards (N/S wide; dummy + your hand on mobile). */
+  const cardRow = (
+    seat: Seat,
+    m: { w: number; h: number; rank: number; glyph: number; inset: number } = { w: 50, h: 71, rank: 25, glyph: 22, inset: 3 },
+  ) => {
     const hand = [...state.hands[seat]].sort(
       (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
     );
@@ -284,7 +306,7 @@ export function PlayTable({
               onClick={on ? () => onPlay?.(seat, card) : undefined}
               aria-label={`Play ${rankText(card.rank)}${GLYPH[card.suit]}`}
               style={{
-                position: "relative", display: "block", width: 50, height: 71, flex: "none",
+                position: "relative", display: "block", width: m.w, height: m.h, flex: "none",
                 background: "#fff", border: "1px solid #6b6b6b",
                 borderRadius: i === 0 ? "3px 0 0 3px" : "0 3px 3px 0",
                 marginLeft: i === 0 ? 0 : -1, padding: 0,
@@ -293,9 +315,9 @@ export function PlayTable({
                 transition: "transform 120ms ease",
               }}
             >
-              <span style={{ position: "absolute", left: 3, top: 1, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
-                <span style={{ fontSize: 25, fontWeight: 700 }}>{rankText(card.rank)}</span>
-                <span style={{ fontSize: 22 }}>{GLYPH[card.suit]}</span>
+              <span style={{ position: "absolute", left: m.inset, top: m.inset > 3 ? m.inset : 1, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
+                <span style={{ fontSize: m.rank, fontWeight: 700 }}>{rankText(card.rank)}</span>
+                <span style={{ fontSize: m.glyph }}>{GLYPH[card.suit]}</span>
               </span>
             </button>
           );
@@ -304,51 +326,44 @@ export function PlayTable({
     );
   };
 
-  /** Suit-per-line panel (E/W wide; every seat narrow). Touch seats get big rank targets. */
-  const suitPanel = (
-    seat: Seat,
-    m: { width: number | string; suitW?: number; font?: number; pad?: string; bare?: boolean; touch?: boolean } = { width: 197 },
-  ) => {
-    const font = m.font ?? 19;
-    const touchy = !!m.touch && myTurn && inPlay && state.turn === seat;
-    return (
-      <div style={{ width: m.width, background: m.bare ? panelBgFor(seat) : "#fff", border: m.bare ? 0 : "1px solid #8a8a8a", borderRadius: m.bare ? 0 : 3, padding: m.pad ?? "4px 8px", boxShadow: "0 2px 5px rgba(0,0,0,.4)", boxSizing: "border-box" }}>
-        {DISPLAY.map((su) => {
-          const cards = state.hands[seat].filter((x) => x.suit === su).sort((a, b) => b.rank - a.rank);
-          return (
-            <div key={su} style={{ display: "flex", alignItems: "center", gap: 5, lineHeight: 1.3, color: isRed(su) ? RED : "#000" }}>
-              <span style={{ flex: "none", width: m.suitW ?? 16, fontSize: font }}>{GLYPH[su]}</span>
-              <span style={{ display: "flex", flexWrap: "wrap", gap: touchy ? "0 4px" : "0 5px", fontSize: font }}>
-                {cards.length === 0 ? (
-                  <span>—</span>
-                ) : (
-                  cards.map((card) => {
-                    const on = myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
-                    return (
-                      <button
-                        key={card.rank}
-                        type="button"
-                        onClick={on ? () => onPlay?.(seat, card) : undefined}
-                        aria-label={`Play ${rankText(card.rank)}${GLYPH[su]}`}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: touchy ? 84 : 0, minHeight: touchy ? 78 : 0, background: on ? "#d9f2d9" : "transparent", border: 0, borderRadius: touchy ? 6 : 0, padding: touchy ? "0 4px" : "0 1px", fontSize: font, fontWeight: on ? 700 : 400, color: "inherit", cursor: on ? "pointer" : "default" }}
-                      >
-                        {rankText(card.rank)}
-                      </button>
-                    );
-                  })
-                )}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
+  /** E/W wide: a compact suit-per-line panel. */
+  const suitPanel = (seat: Seat) => (
+    <div style={{ width: 197, background: "#fff", border: "1px solid #8a8a8a", borderRadius: 3, padding: "4px 8px", boxShadow: "0 2px 5px rgba(0,0,0,.35)", boxSizing: "border-box" }}>
+      {DISPLAY.map((su) => {
+        const cards = state.hands[seat].filter((x) => x.suit === su).sort((a, b) => b.rank - a.rank);
+        return (
+          <div key={su} style={{ display: "flex", alignItems: "baseline", gap: 5, lineHeight: 1.3, color: isRed(su) ? RED : "#000" }}>
+            <span style={{ flex: "none", width: 16, fontSize: 19 }}>{GLYPH[su]}</span>
+            <span style={{ display: "flex", flexWrap: "wrap", gap: "0 5px", fontSize: 19 }}>
+              {cards.length === 0 ? (
+                <span>—</span>
+              ) : (
+                cards.map((card) => {
+                  const on = myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
+                  return (
+                    <button
+                      key={card.rank}
+                      type="button"
+                      onClick={on ? () => onPlay?.(seat, card) : undefined}
+                      aria-label={`Play ${rankText(card.rank)}${GLYPH[su]}`}
+                      style={{ background: on ? "#d9f2d9" : "transparent", border: 0, padding: "0 1px", fontSize: 19, fontWeight: on ? 700 : 400, color: "inherit", cursor: on ? "pointer" : "default" }}
+                    >
+                      {rankText(card.rank)}
+                    </button>
+                  );
+                })
+              )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   const seatColumn = (seat: Seat) => (
     <div style={{ width: 197, flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
       {callsRow(seat)}
-      {visible[seat] ? suitPanel(seat, { width: 197 }) : backs(seat)}
+      {visible[seat] ? suitPanel(seat) : backs(seat)}
       {plate(seat, 197)}
     </div>
   );
@@ -373,8 +388,8 @@ export function PlayTable({
   }
 
   /** Vulnerable seats sit on red; the dealer's column is tinted throughout. */
-  const auctionBox = (m: { width: number; height: number | "auto"; headFont: number; cellFont: number; radius?: number } = { width: 356, height: 207, headFont: 25, cellFont: 21, radius: 4 }) => (
-    <div style={{ width: m.width, height: m.height, maxHeight: 340, background: PANEL, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+  const auctionBox = (m: { width: number; height: number | "auto"; headFont: number; cellFont: number; radius?: number; cellMinH?: number } = { width: 356, height: 207, headFont: 25, cellFont: 21, radius: 4 }) => (
+    <div style={{ width: m.width, height: m.height, maxHeight: m.height === "auto" ? 340 : undefined, background: PANEL, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ flex: "none", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 2, padding: 2, textAlign: "center" }}>
         {ORDER.map((s) => {
           const vul = vulFor(s);
@@ -393,7 +408,7 @@ export function PlayTable({
             {[0, 1, 2, 3].map((j) => {
               const e = row[j];
               return (
-                <span key={j} style={{ borderRadius: 3, padding: "2px 0", fontSize: m.cellFont, lineHeight: 1.15, background: e ? (j === dealerCol ? DEALER_TINT : GREY) : "transparent", color: e ? callColor(e.call) : "#000" }}>
+                <span key={j} style={{ borderRadius: 3, padding: "2px 0", minHeight: m.cellMinH ?? 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: m.cellFont, lineHeight: 1.15, background: e ? (j === dealerCol ? DEALER_TINT : GREY) : "transparent", color: e ? callColor(e.call) : "#000" }}>
                   {e ? callText(e.call) : ""}
                 </span>
               );
@@ -411,51 +426,31 @@ export function PlayTable({
 
   const currentPlays = inPlay ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
 
-  const trickCross = (
-    <div style={{ position: "relative", width: 262, height: 262 }}>
+  /** The trick as real card faces; `k` scales the whole cross (1.6 on phones). */
+  const trickCross = (k = 1) => (
+    <div style={{ position: "relative", width: 262 * k, height: 262 * k }}>
       {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
         const play = currentPlays.find((p) => p.seat === seat);
         const pos =
           seat === "N" ? { left: "50%", top: "0", tr: "translateX(-50%)" }
-          : seat === "S" ? { left: "50%", top: "182px", tr: "translateX(-50%)" }
+          : seat === "S" ? { left: "50%", top: `${182 * k}px`, tr: "translateX(-50%)" }
           : seat === "W" ? { left: "0", top: "50%", tr: "translateY(-50%)" }
-          : { left: "206px", top: "50%", tr: "translateY(-50%)" };
+          : { left: `${206 * k}px`, top: "50%", tr: "translateY(-50%)" };
         const onTurn = seat === state.turn;
         return (
           <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, transform: pos.tr, zIndex: play ? 2 : 1 }}>
             {play ? (
-              <span style={{ position: "relative", display: "block", width: 56, height: 80, background: "#fff", border: "1px solid #6b6b6b", borderRadius: 3, boxShadow: "0 2px 5px rgba(0,0,0,.4)" }}>
-                <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(play.card.suit) ? RED : "#000" }}>
-                  <span style={{ fontSize: 27, fontWeight: 700 }}>{rankText(play.card.rank)}</span>
-                  <span style={{ fontSize: 24 }}>{GLYPH[play.card.suit]}</span>
+              <span style={{ position: "relative", display: "block", width: 56 * k, height: 80 * k, background: "#fff", border: "1px solid #6b6b6b", borderRadius: 3, boxShadow: "0 2px 5px rgba(0,0,0,.4)" }}>
+                <span style={{ position: "absolute", left: 4 * k, top: 2 * k, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(play.card.suit) ? RED : "#000" }}>
+                  <span style={{ fontSize: 27 * k, fontWeight: 700 }}>{rankText(play.card.rank)}</span>
+                  <span style={{ fontSize: 24 * k }}>{GLYPH[play.card.suit]}</span>
                 </span>
               </span>
             ) : (
-              <span style={{ display: "flex", width: 56, height: 80, alignItems: "center", justifyContent: "center" }}>
-                <span style={{ display: "block", width: onTurn ? 22 : 0, height: 12, background: onTurn ? "#9a9a9a" : "transparent" }} />
+              <span style={{ display: "flex", width: 56 * k, height: 80 * k, alignItems: "center", justifyContent: "center" }}>
+                <span style={{ display: "block", width: onTurn ? 22 * k : 0, height: 12 * k, background: onTurn ? "#9a9a9a" : "transparent" }} />
               </span>
             )}
-          </div>
-        );
-      })}
-    </div>
-  );
-
-  /** Narrow centre: the TrickArea design's pill variant. */
-  const trickPills = (
-    <div style={{ position: "relative", width: 300, height: 220 }}>
-      {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
-        const play = currentPlays.find((p) => p.seat === seat);
-        const pos: CSSProperties =
-          seat === "N" ? { left: "50%", top: 0, transform: "translateX(-50%)" }
-          : seat === "S" ? { left: "50%", bottom: 0, transform: "translateX(-50%)" }
-          : seat === "W" ? { left: 0, top: "50%", transform: "translateY(-50%)" }
-          : { right: 0, top: "50%", transform: "translateY(-50%)" };
-        if (!play) return null;
-        return (
-          <div key={seat} style={{ position: "absolute", ...pos, display: "flex", alignItems: "center", gap: 2, background: "#fff", border: "1px solid #9a9a9a", padding: "4px 10px", boxShadow: "0 2px 6px rgba(0,0,0,.45)", color: isRed(play.card.suit) ? RED : "#000" }}>
-            <span style={{ fontSize: 36, lineHeight: 1 }}>{GLYPH[play.card.suit]}</span>
-            <span style={{ fontSize: 36, lineHeight: 1 }}>{rankText(play.card.rank)}</span>
           </div>
         );
       })}
@@ -606,8 +601,8 @@ export function PlayTable({
   );
 
   // ---- rail (wide) ----------------------------------------------------------
-  const menuButton = (w: number, h: number, font: number) => (
-    <button type="button" onClick={menuHandler} title="Table menu and settings" aria-label="Table menu" style={{ width: w, height: h, background: RAIL_BLUE, border: "2px solid #dfe4f4", borderRadius: 7, color: "#fff", fontSize: font, lineHeight: 1, cursor: menuHandler ? "pointer" : "default" }}>☰</button>
+  const menuButton = (w: number, h: number, font: number, m: { border?: string; radius?: number } = {}) => (
+    <button type="button" onClick={menuHandler} title="Table menu and settings" aria-label="Table menu" style={{ width: w, height: h, background: RAIL_BLUE, border: m.border ?? "2px solid #dfe4f4", borderRadius: m.radius ?? 7, color: "#fff", fontSize: font, lineHeight: 1, cursor: menuHandler ? "pointer" : "default" }}>☰</button>
   );
 
   const rail = (
@@ -645,76 +640,69 @@ export function PlayTable({
     </div>
   );
 
-  // ---- narrow layout (TableTopBar + stacked diagrams + bid tray) -----------
-  const topBar = (
-    <div style={{ width: "100%", height: 132, flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "0 10px", background: "#000", boxSizing: "border-box" }}>
+  // ---- mobile stack (Mobile Table.dc.html) ----------------------------------
+  const mobileTopBar = (
+    <div style={{ width: "100%", height: 120, flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "0 8px", background: "#000", boxSizing: "border-box" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button type="button" onClick={onScoring} title="Scoring mode" style={{ width: 116, height: 108, background: PANEL, border: "2px solid #f2f4f4", borderRadius: 6, color: "#000", fontSize: 30, fontWeight: 400, lineHeight: 1, cursor: onScoring ? "pointer" : "default" }}>{scoringLabel}</button>
-        <div title={String(boardLabel)} style={{ width: 112, height: 108, background: "#fff", border: "2px solid #7d7d7d", borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>
+        <button type="button" onClick={onScoring} title="Scoring mode" style={{ width: 100, height: 104, background: PANEL, border: "2px solid #f2f4f4", borderRadius: 6, color: "#000", fontSize: 28, fontWeight: 400, lineHeight: 1, cursor: onScoring ? "pointer" : "default" }}>{scoringLabel}</button>
+        <div title={String(boardLabel)} style={{ width: 100, height: 104, background: "#fff", border: "2px solid #7d7d7d", borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", boxSizing: "border-box", overflow: "hidden" }}>
           <span style={{ fontSize: 20, fontWeight: 700, color: "#000", borderBottom: "1px solid #9a9a9a", width: "80%", textAlign: "center" }}>{state.dealer}</span>
-          <span style={{ fontSize: String(boardLabel).length > 3 ? 20 : 40, fontWeight: 700, color: vulFor("N") || vulFor("E") ? "#000" : "#000", padding: "2px 4px", overflow: "hidden", maxWidth: "100%", textAlign: "center" }}>{boardLabel}</span>
+          <span style={{ fontSize: String(boardLabel).length > 3 ? 18 : 36, fontWeight: 700, background: vulFor("N") ? "#c62828" : "#fff", color: vulFor("N") ? "#fff" : "#000", padding: "2px 6px", maxWidth: "100%", textAlign: "center", overflow: "hidden" }}>{boardLabel}</span>
         </div>
         {c && (
-          <div style={{ width: 170, height: 108, background: GREY, borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.15 }}>
-            <span style={{ fontSize: 34, fontWeight: 700, color: isRed(c.strain) ? RED : "#000" }}>
+          <div style={{ width: 150, height: 104, background: GREY, borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.15 }}>
+            <span style={{ fontSize: 30, fontWeight: 700, color: isRed(c.strain) ? RED : "#000" }}>
               {c.level}{GLYPH[c.strain]}{c.doubled === 1 ? "X" : c.doubled === 2 ? "XX" : ""}
             </span>
-            <span style={{ fontSize: 20, color: "#000" }}>{({ N: "North", E: "East", S: "South", W: "West" } as Record<Seat, string>)[c.declarer]}</span>
-            <span style={{ fontSize: 18, color: "#222" }}>NS {state.trickCount.NS} · EW {state.trickCount.EW}</span>
+            <span style={{ fontSize: 18, color: "#000" }}>{({ N: "North", E: "East", S: "South", W: "West" } as Record<Seat, string>)[c.declarer]}</span>
+            <span style={{ fontSize: 16, color: "#222" }}>NS {state.trickCount.NS} · EW {state.trickCount.EW}</span>
           </div>
         )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {onClaim && inPlay && (
-          <button type="button" onClick={onClaim} style={{ width: 120, height: 62, background: RAIL_BLUE, border: 0, borderRadius: 6, color: "#fff", fontSize: 26, fontWeight: 400, cursor: "pointer" }}>Claim</button>
-        )}
-        {controlsExtra}
-        {menuButton(58, 108, 30)}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {controlsExtraNarrow ?? controlsExtra}
+        {menuButton(80, 104, 32, { border: "0", radius: 6 })}
       </div>
     </div>
   );
 
-  const narrowMain = (seat: Seat) => (
-    <div style={{ width: 390, maxWidth: "100%", display: "flex", flexDirection: "column", gap: 3 }}>
-      {callsRow(seat, 22)}
-      {plate(seat, "100%", { height: 44, badge: 40, font: 26, tagFont: 15 })}
-      {visible[seat] && suitPanel(seat, { width: "100%", suitW: 38, font: 40, pad: "6px 10px 8px", bare: true })}
-    </div>
-  );
+  /** Dummy's hand as a plate-less card row across the top (phone play view). */
+  const dummyRow =
+    inPlay && dummy && dummy !== "S" ? (
+      <div style={{ flex: "none", display: "flex", justifyContent: "center", background: "#fff", padding: 0 }}>
+        {visible[dummy] ? cardRow(dummy, M_CARD) : backs(dummy, { w: M_CARD.backW, h: M_CARD.h })}
+      </div>
+    ) : null;
 
-  const narrowTouch = (seat: Seat) => (
-    <div style={{ width: 390, maxWidth: "100%", display: "flex", flexDirection: "column", gap: 3 }}>
-      {callsRow(seat, 22)}
-      {plate(seat, "100%", { height: 48, badge: 44, font: 28, tagFont: 15 })}
-      {visible[seat] && suitPanel(seat, { width: "100%", suitW: 44, font: 42, pad: "6px 10px 10px", bare: true, touch: true })}
-    </div>
-  );
-
-  const narrowSide = (seat: Seat) => (
-    <div style={{ width: 168, flex: "none", display: "flex", flexDirection: "column", gap: 3 }}>
-      {callsRow(seat, 22)}
-      {plate(seat, "100%", { height: 44, badge: 40, font: 22, tagFont: 13 })}
-      {visible[seat] && suitPanel(seat, { width: 168, suitW: 22, font: 25, pad: "5px 7px 7px", bare: true })}
-    </div>
-  );
-
-  const narrowStage = (
-    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#000" }}>
-      {topBar}
-      <div style={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden", background: FELT }}>
-        <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "12px 8px 0" }}>{narrowMain("N")}</div>
-        <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 8 }}>
-          {narrowSide("W")}
-          <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {inAuction && auctionDisplay === "box" ? auctionBox({ width: 330, height: "auto", headFont: 26, cellFont: 24, radius: 0 }) : null}
-            {inPlay ? trickPills : null}
-            {complete ? resultCard : null}
-          </div>
-          {narrowSide("E")}
+  const mobileStack = (
+    <div style={{ width: MOBILE_W, minHeight: stageH, transform: `scale(${scale})`, transformOrigin: "top center", display: "flex", flexDirection: "column", background: "#fff" }}>
+      <div ref={stackRef} style={{ display: "flex", flexDirection: "column", background: "#fff" }}>
+        {mobileTopBar}
+        {dummyRow}
+        <div style={{ flex: "none", height: MOBILE_FELT_H, display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: inAuction ? "flex-start" : "center", overflow: "hidden", background: FELT, padding: inAuction ? 10 : 0 }}>
+          {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: 330, headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
+          {inAuction && auctionDisplay === "seats" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
+              {(["N", "E", "S", "W"] as Seat[]).map((s) => (
+                <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 30, height: 30, background: SEAT_BADGE, color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
+                  {callsRow(s, 22) ?? <span style={{ fontSize: 18, color: "rgba(255,255,255,.6)" }}>—</span>}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {inPlay ? trickCross(1.6) : null}
+          {complete ? resultCard : null}
         </div>
-        <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "0 8px 14px" }}>{narrowTouch("S")}</div>
+        {inAuction ? bidBoxNarrow : null}
+        <div style={{ flex: "none", display: "flex", justifyContent: "center", background: FELT, padding: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            {callsRow("S", 20)}
+            {visible.S ? cardRow("S", M_CARD) : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
+            {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390, { height: 30, badge: 26, font: 19, tagFont: 13 })}
+          </div>
+        </div>
       </div>
-      {inAuction ? bidBoxNarrow : null}
     </div>
   );
 
@@ -729,7 +717,7 @@ export function PlayTable({
             {seatColumn("W")}
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
               {inAuction && auctionDisplay === "box" ? auctionBox() : null}
-              {inPlay ? trickCross : null}
+              {inPlay ? trickCross() : null}
               {complete ? resultCard : null}
             </div>
             {seatColumn("E")}
@@ -747,10 +735,20 @@ export function PlayTable({
   );
 
   // ---- stage --------------------------------------------------------------
+  if (narrow) {
+    return (
+      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+        {mobileStack}
+        {menuOpen && !onMenu && (
+          <SettingsMenu accent={RAIL_BLUE} items={menuItems} onClose={() => setMenuOpen(false)} />
+        )}
+      </div>
+    );
+  }
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
       <div style={{ position: "relative", flex: "none", transformOrigin: "center center", width: stageW, height: stageH, transform: `scale(${scale})` }}>
-        {narrow ? narrowStage : wideStage}
+        {wideStage}
         {menuOpen && !onMenu && (
           <SettingsMenu accent={RAIL_BLUE} items={menuItems} onClose={() => setMenuOpen(false)} />
         )}
