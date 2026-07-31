@@ -13,6 +13,7 @@ import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
+import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
 import { sessionService } from "@/lib/sessions";
 
@@ -130,6 +131,8 @@ export async function tryBenAction(formData: FormData): Promise<void> {
     seats,
     seed: (Date.now() % 100_000) + 1,
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   await audit(context, "profile.update", "kb_session", record.sessionId, {
     kbId: kb.kbId,
@@ -166,6 +169,8 @@ export async function tryPlayerAction(formData: FormData): Promise<void> {
     seats,
     seed: (Date.now() % 100_000) + 1,
     createdBy: context.nexusUserId,
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   await audit(context, "profile.update", "kb_session", record.sessionId, {
     kbId: player.kbId,

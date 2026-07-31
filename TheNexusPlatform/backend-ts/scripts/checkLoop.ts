@@ -1,0 +1,15 @@
+import "dotenv/config";
+import postgres from "postgres";
+const sql = postgres(process.env.DATABASE_URL!, { max: 1 });
+const L1 = "47ab0ea3-0fab-43f3-8433-4262dcbb7b80";
+console.log("--- sessions by status (l1) ---");
+console.log(await sql`select coalesce(record->>'status','?') s, count(*) from bridge_kb_sessions where created_by=${L1} group by 1`);
+console.log("--- l1 submissions ---");
+console.log(await sql`select submission_id, status, coach_name from bridge_play_submissions where learner_id=${L1}`);
+console.log("--- all assignments ---");
+console.log(await sql`select learner_id, learner_name, status, entry_name from bridge_assignments order by created_at desc limit 6`);
+console.log("--- who is ada6e5d7 (the account with the rich data) ---");
+console.log(await sql`select email, name from registrations where user_id='ada6e5d7-7f8c-4548-9c28-c36e6ea3a92d' limit 2`);
+console.log("--- their submissions ---");
+console.log(await sql`select status, coach_name, board->>'name' as board from bridge_play_submissions where learner_id='ada6e5d7-7f8c-4548-9c28-c36e6ea3a92d'`);
+await sql.end();

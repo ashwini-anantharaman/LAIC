@@ -4,12 +4,13 @@
 // platform (the table itself stays an embed); this screen is only the door.
 
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { OptionCard, Screen } from "../../components/ui";
 import { Colors, Spacing } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
+import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
 import { prefetchLaunch } from "../../lib/launch-cache";
 import { fetchBridgeSummary, type BridgeSummary } from "../../lib/nexus";
 
@@ -17,6 +18,20 @@ export default function PlayScreen() {
   const { token } = useAuth();
   const [summary, setSummary] = useState<BridgeSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Assignments are something a coach GIVES, not receives — a coach's Play
+  // tab is just the day's board, resume and new. Theirs live in the Coach tab.
+  const [coach, setCoach] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!token) return;
+    getBridgeContextCached(token).then((ctx) => {
+      if (!cancelled) setCoach(isCoach(ctx));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   // Refresh on every visit: what's resumable changes as boards are played.
   useFocusEffect(
@@ -103,15 +118,17 @@ export default function PlayScreen() {
           subtitle="Deal a fresh board against the house"
           onPress={() => router.push("/new-board")}
         />
-        <OptionCard
-          title="Coach's Assignments"
-          subtitle={
-            summary && summary.assignments_open > 0
-              ? `${summary.assignments_open} waiting for you`
-              : "Boards your coach sent you"
-          }
-          onPress={() => router.push("/assigned")}
-        />
+        {!coach && (
+          <OptionCard
+            title="Coach's Assignments"
+            subtitle={
+              summary && summary.assignments_open > 0
+                ? `${summary.assignments_open} waiting for you`
+                : "Boards your coach sent you"
+            }
+            onPress={() => router.push("/assigned")}
+          />
+        )}
       </View>
     </Screen>
   );

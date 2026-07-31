@@ -8,7 +8,7 @@ import { resolveEntryLineup } from "@/app/bridge/library/actions";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ensureSeeds } from "@/lib/kb";
-import { orgScopeOf } from "@/lib/nexus";
+import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assertAiAllowed } from "@/lib/org";
 import { assignmentStore, libraryStore, sessionService } from "@/lib/sessions";
 
@@ -45,6 +45,9 @@ export async function startAssignmentAction(formData: FormData): Promise<void> {
     boardName: entry.name,
     createdBy: context.nexusUserId,
     programOrganizationId: orgScopeOf(context),
+    // Without the program stamp the session is invisible to every
+    // program-scoped read (My Games, Resume, summary counts).
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
 
   await store.putAssignment({
