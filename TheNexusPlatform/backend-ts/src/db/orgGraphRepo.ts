@@ -575,8 +575,12 @@ export async function setPlatformRoleAssignment(
   email: string,
   role: string | null,
   assignedByUserId: string | null = null,
+  /** Public gate sign-ups run privileged: the GATE authorizes the grant, and
+   *  the caller may be anonymous (RLS would reject the write otherwise). */
+  privileged = false,
 ): Promise<Row | null> {
-  return scoped(async (tx) => {
+  const run = privileged ? asPrivileged : scoped;
+  return run(async (tx) => {
     const key = email.trim().toLowerCase();
     await tx
       .delete(platformRoleAssignments)
@@ -598,8 +602,13 @@ export async function getPlatformRoleForEmail(
   programId: string,
   platform: string,
   email: string,
+  /** Access resolution reads the CALLER's own assignment before any tenant
+   *  context exists (a learner can't read this table under RLS), so it asks
+   *  privileged. Scoped to one program + one email — nothing enumerable. */
+  privileged = false,
 ): Promise<string | null> {
-  return scoped(async (tx) => {
+  const run = privileged ? asPrivileged : scoped;
+  return run(async (tx) => {
     const r = await tx
       .select({ role: platformRoleAssignments.role })
       .from(platformRoleAssignments)

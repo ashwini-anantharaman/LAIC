@@ -144,6 +144,17 @@ export function platformRoleConfig(platform: string): PlatformRoleConfig | null 
   return PLATFORM_ROLES[platform] ?? null;
 }
 
+/** "bridge_learner" → "Learner", "content-developer" → "Content Developer" —
+ *  a readable fallback label for an assigned prebuilt role. */
+function _prettyRole(role: string): string {
+  return role
+    .replace(/^bridge_|^learning_/, "")
+    .split(/[_-]/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 // ── The resolver ─────────────────────────────────────────────────────────────
 
 /**
@@ -252,14 +263,25 @@ export async function resolvePlatformAccess(
           featureDisabled = true;
           continue;
         }
+        // A gate may join its sign-ups to specific platforms with a role
+        // (gates.config.platform_roles → a platform role assignment). When
+        // one exists, the participant carries that ROLE — so they show up in
+        // the platform's People and capability grants can reach them. Without
+        // one, the historical behavior stands: learner-level entry, no role.
+        const assigned = user.email
+          ? await graph
+              .getPlatformRoleForEmail(pid, area, user.email, true)
+              .catch(() => null)
+          : null;
+        const cfg = platformRoleConfig(area);
         return {
           profileId: (part.user_id as string | null) ?? user.id,
           orgId: program.org_id as string,
           programId: pid,
           programName: (program.name as string) ?? "",
-          level: "view",
-          platformRole: null,
-          roleName: "Student",
+          level: (assigned && cfg?.level[assigned]) || "view",
+          platformRole: assigned ?? null,
+          roleName: assigned ? _prettyRole(assigned) : "Student",
           programRoleCapabilities: null,
         };
       }

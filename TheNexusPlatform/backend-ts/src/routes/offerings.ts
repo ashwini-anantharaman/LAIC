@@ -17,6 +17,7 @@ import { validGrantsAcross, getCatalogue, type CatalogueRef } from "../accessCat
 import { grantableCapabilities } from "../accessCatalogue/resolver";
 import { requireCapability } from "../accessCatalogue/enforce";
 import { isOfferingAdmin } from "../permissions";
+import { platformRoleConfig } from "../platformAccess";
 import { BRIDGE_PREBUILT_ROLES } from "../platformAccess";
 import {
   adminAddRegistrationSchema,
@@ -689,7 +690,35 @@ const gateWriteSchema = z.object({
   allow_signup: z.boolean().optional(),
   approval_required: z.boolean().optional(),
   landing: z.string().nullish(),
+  /**
+   * Which PLATFORMS a sign-up through this gate joins, and with which role:
+   * { "bridge": "bridge_learner", "learning": "student" }. Signing up then
+   * writes a platform role assignment per entry, so the person appears under
+   * that platform's People with a real role (not just in Registrations).
+   * Omitted/empty = registration only (pre-existing behavior).
+   */
+  platform_roles: z.record(z.string(), z.string()).optional(),
 });
+
+/** Validate a gate's platform→role map against each platform's assignable
+ *  roles. Unknown platform or non-assignable role is a 400 — a gate must not
+ *  advertise a grant the resolver would refuse. */
+function _validatePlatformRoles(map: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!map) return undefined;
+  const out: Record<string, string> = {};
+  for (const [platform, role] of Object.entries(map)) {
+    const cfg = platformRoleConfig(platform);
+    if (!cfg) throw new HttpError(400, `Unknown platform "${platform}"`);
+    if (!cfg.assignable.includes(role)) {
+      throw new HttpError(
+        400,
+        `"${role}" is not an assignable ${platform} role (choose one of: ${cfg.assignable.join(", ")})`,
+      );
+    }
+    out[platform] = role;
+  }
+  return out;
+}
 
 offeringsRouter.get("/programs/:program_id/gates", async (c) => {
   const user = await getCurrentUser(c);
@@ -709,11 +738,13 @@ offeringsRouter.post("/programs/:program_id/gates", async (c) => {
   _requireOfferingPeopleAdmin(user, program.org_id, programId);
   const slug = _gateSlugify(req.slug || req.title || "gate") || "gate";
   try {
+    const platformRoles = _validatePlatformRoles(req.platform_roles);
     const gate = await graph.createGate(program.org_id, programId, {
       slug, title: req.title ?? null, subtitle: req.subtitle ?? null,
       audience: req.audience, roleId: req.role_id ?? null, roleIds: req.role_ids,
       allowSignin: req.allow_signin, allowSignup: req.allow_signup,
       approvalRequired: req.approval_required, landing: req.landing ?? null,
+      ...(platformRoles ? { config: { platform_roles: platformRoles } } : {}),
     });
     await db.recordAuditEvent("gate.created", {
       orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
@@ -736,6 +767,16 @@ offeringsRouter.patch("/gates/:gate_id", async (c) => {
   if (!gate) throw new HttpError(404, "Gate not found");
   _requireOfferingPeopleAdmin(user, gate.organization_id as string, gate.program_id as string);
   if (typeof patch.slug === "string") patch.slug = _gateSlugify(patch.slug);
+  // Platform grants live in the gate's config jsonb; merge so editing them
+  // doesn't drop unrelated config (branding/copy overrides).
+  if (patch.platform_roles !== undefined) {
+    const validated = _validatePlatformRoles(patch.platform_roles as Record<string, string>);
+    patch.config = {
+      ...((gate.config as Row | undefined) ?? {}),
+      platform_roles: validated ?? {},
+    };
+    delete patch.platform_roles;
+  }
   return c.json(await graph.updateGate(gateId, patch));
 });
 

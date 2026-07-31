@@ -560,6 +560,37 @@ platformRouter.post("/auth/launch-exchange", async (c) => {
 // No session required (a sign-up gate is for people with no account). The gate
 // decides which actions it allows; sign-up creates a program participant
 // (approval-gated if configured). Access itself still flows from participation.
+/**
+ * A gate may declare which PLATFORMS its sign-ups join, and with which role
+ * (`config.platform_roles`, e.g. { bridge: "bridge_learner" }). Writing the
+ * assignment is what makes a gate-registered person appear under that
+ * platform's People with a real role — and what lets capability grants reach
+ * them. Additive: participation still grants entry on its own, so a gate
+ * without this config behaves exactly as before. Best-effort per platform: a
+ * bad entry must never fail the sign-up itself.
+ */
+async function _grantGatePlatformRoles(
+  gate: Row,
+  orgId: string,
+  programId: string,
+  email: string,
+): Promise<void> {
+  const map = ((gate.config as Row | undefined)?.platform_roles ?? null) as
+    | Record<string, string>
+    | null;
+  if (!map) return;
+  for (const [platform, role] of Object.entries(map)) {
+    const cfg = platformRoleConfig(platform);
+    if (!cfg || !cfg.assignable.includes(role)) {
+      console.error(`gate ${gate.id}: skipping invalid platform grant ${platform}/${role}`);
+      continue;
+    }
+    await graph
+      .setPlatformRoleAssignment(orgId, programId, platform, email, role, null, true)
+      .catch((e) => console.error(`gate signup ${platform} role:`, e));
+  }
+}
+
 platformRouter.post("/gates/:gate_id/signup", async (c) => {
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
   const gate = await graph.getGate(c.req.param("gate_id"));
@@ -699,6 +730,7 @@ platformRouter.post("/gates/:gate_id/signup", async (c) => {
           userId: authId, participantType: "learner", registrationId: reg.id,
         }, true);
         await db.grantStudentAccess(reg).catch((e) => console.error("gate signup grant:", e));
+        await _grantGatePlatformRoles(gate, orgId, programId, email);
       }
       await db.recordAuditEvent("gate.signup", {
         orgId, scopeType: "program", scopeId: programId, targetType: "gate", targetId: gate.id as string,
@@ -1027,7 +1059,7 @@ async function _platformPeopleList(user: PlatformUser, platform: string, program
   const assignments = await graph.listPlatformRoleAssignments(programId, platform);
   const byEmail = new Map(assignments.map((a: Row) => [String(a.email).toLowerCase(), a.role]));
   const adminRole = platformRoleConfig(platform)?.adminRoles[0] ?? "administrator";
-  return members.map((m: Row) => {
+  const rows = members.map((m: Row) => {
     const email = ((m.email as string) ?? "").toLowerCase();
     const assigned = byEmail.get(email) ?? null;
     const isAdmin = _memberIsPlatformAdmin(m, platform, assigned);
@@ -1039,8 +1071,36 @@ async function _platformPeopleList(user: PlatformUser, platform: string, program
       invitation_id: m.invitation_id ?? null,
       role: isAdmin ? adminRole : assigned,
       is_admin: isAdmin,
+      is_participant: false,
     };
   });
+
+  // Gate-registered PARTICIPANTS who hold a role on this platform (their gate
+  // joined them to it) belong in People too — they're people with a role
+  // here, even though their enrollment lives in Registrations. Participants
+  // without an assignment stay out: they're registrations, not platform
+  // members. `is_participant` lets the UI segment them.
+  const memberEmails = new Set(rows.map((r) => String(r.email ?? "").toLowerCase()));
+  const learners = await graph
+    .listProgramLearners(access.orgId, programId)
+    .catch(() => [] as Row[]);
+  for (const l of learners) {
+    const email = String(l.email ?? "").toLowerCase();
+    if (!email || memberEmails.has(email)) continue;
+    const assigned = byEmail.get(email);
+    if (!assigned) continue;
+    rows.push({
+      email: (l.email as string) ?? null,
+      display_name: (l.name as string) ?? null,
+      status: "active",
+      membership_id: null,
+      invitation_id: null,
+      role: assigned,
+      is_admin: false,
+      is_participant: true,
+    });
+  }
+  return rows;
 }
 
 async function _platformRolePut(user: PlatformUser, platform: string, body: Row): Promise<Row> {
@@ -1062,8 +1122,15 @@ async function _platformRolePut(user: PlatformUser, platform: string, body: Row)
   const access = await _requirePlatformRoleAdmin(user, platform, req.program_id);
   const members = await graph.listProgramMembers(access.orgId, req.program_id);
   const target = members.find((m: Row) => ((m.email as string) ?? "").toLowerCase() === req.email.toLowerCase());
-  if (!target) throw new HttpError(404, "That person is not in this program");
-  if (target.membership_role === "administrator" || target.membership_role === "owner") {
+  if (!target) {
+    // Not a member — but a gate-registered PARTICIPANT of this program is a
+    // legitimate target: gates can join learners to a platform with a role,
+    // so an admin must be able to change or clear that role afterwards.
+    const parts = await graph
+      .findLearnerParticipations(req.email, req.program_id)
+      .catch(() => [] as Row[]);
+    if (parts.length === 0) throw new HttpError(404, "That person is not in this program");
+  } else if (target.membership_role === "administrator" || target.membership_role === "owner") {
     throw new HttpError(409, "Program administrators hold admin via Nexus, not here");
   }
   const row = await graph.setPlatformRoleAssignment(
