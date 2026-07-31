@@ -248,10 +248,10 @@ export default async function PlayTablePage({
             sessionId={sessionId}
             state={{ ...state, dealer: record.board.dealer, vul: state.vul }}
             seats={{
-              N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "", strip: seatStrip("N") },
-              E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "", strip: seatStrip("E") },
-              S: { name: seatName("S"), tag: dummy === "S" ? "dummy" : "", strip: seatStrip("S") },
-              W: { name: seatName("W"), tag: dummy === "W" ? "dummy" : "", strip: seatStrip("W") },
+              N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "", strip: seatStrip("N"), human: record.seats.N.kind === "human" },
+              E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "", strip: seatStrip("E"), human: record.seats.E.kind === "human" },
+              S: { name: seatName("S"), tag: dummy === "S" ? "dummy" : "", strip: seatStrip("S"), human: record.seats.S.kind === "human" },
+              W: { name: seatName("W"), tag: dummy === "W" ? "dummy" : "", strip: seatStrip("W"), human: record.seats.W.kind === "human" },
             }}
             visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
             mySeat={mySeat}
