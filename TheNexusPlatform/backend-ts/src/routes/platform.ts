@@ -950,12 +950,39 @@ platformRouter.get("/bridge/summary", async (c) => {
     const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
     if (participant?.group_id) coach = await graph.getCoachForGroup(participant.group_id as string);
   }
+  // The app's Play launcher: unfinished boards to resume, and the day's board.
+  const [inProgress, deal] = await Promise.all([
+    graph
+      .listBridgeInProgressSessions(access.programId, access.profileId)
+      .catch(() => [] as Row[]),
+    graph
+      .getBridgeDealOfTheDay(
+        access.orgId,
+        access.programId,
+        Math.floor(Date.now() / 86_400_000),
+      )
+      .catch(() => null),
+  ]);
   return c.json({
     assignments_open: Number(s.assignments_open ?? 0),
     plays_reviewed: Number(s.plays_reviewed ?? 0),
     reviews_pending: Number(s.reviews_pending ?? 0),
     roster_count: Number(s.roster_count ?? 0),
     coach,
+    in_progress: inProgress.map((r) => ({
+      session_id: r.session_id,
+      board_name: r.board_name,
+      updated_at: r.updated_at,
+    })),
+    deal_of_the_day: deal
+      ? {
+          entry_id: deal.entry_id,
+          name: deal.name,
+          dealer: deal.dealer,
+          vul: deal.vul,
+          contract_label: deal.contract_label,
+        }
+      : null,
   });
 });
 

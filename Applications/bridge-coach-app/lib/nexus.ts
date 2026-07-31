@@ -185,12 +185,30 @@ export function launchLearningPlatform(token: string): Promise<PlatformLaunch> {
   );
 }
 
+export type InProgressBoard = {
+  session_id: string;
+  board_name: string;
+  updated_at: string | null;
+};
+
+export type DealOfTheDay = {
+  entry_id: string;
+  name: string | null;
+  dealer: string | null;
+  vul: string | null;
+  contract_label: string | null;
+};
+
 export type BridgeSummary = {
   assignments_open: number;
   plays_reviewed: number;
   reviews_pending: number;
   roster_count: number;
   coach: { coach_id: string; name: string } | null;
+  /** Boards started and not finished — the Play tab's Resume. */
+  in_progress: InProgressBoard[];
+  /** One board a day, same for everyone in the program. */
+  deal_of_the_day: DealOfTheDay | null;
 };
 
 /** Role-aware activity counts for the live Home screen (today-feed). */

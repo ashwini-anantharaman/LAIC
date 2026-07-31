@@ -1,6 +1,8 @@
-// The app's spine: four persistent tabs (Home · Learn · Play · Profile).
-// Everything else (plays, reviews, assign flows, coach picker) pushes as a
-// stack screen OVER the tabs — the tab bar is the learner's daily anchor.
+// The app's spine: five persistent tabs (Home · Learn · Play · Coach · Menu).
+// Play is a native launcher (deal of the day, resume, new, assignments); Menu
+// holds everything that doesn't earn a tab — Profile, Library, and more later.
+// Anything else (tables, reviews, rosters) pushes as a stack screen OVER the
+// tabs, so the bar is always the way back.
 
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
@@ -48,12 +50,17 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="coach"
         options={{
-          title: "Profile",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="person-circle-outline" size={22} color={color} />
-          ),
+          title: "Coach",
+          tabBarIcon: ({ color }) => <Ionicons name="people-outline" size={22} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="menu"
+        options={{
+          title: "Menu",
+          tabBarIcon: ({ color }) => <Ionicons name="menu-outline" size={22} color={color} />,
         }}
       />
     </Tabs>

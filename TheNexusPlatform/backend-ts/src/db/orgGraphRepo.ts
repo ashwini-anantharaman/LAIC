@@ -2172,6 +2172,92 @@ export async function getBridgeActivitySummary(
   });
 }
 
+/**
+ * Boards this person started and hasn't finished — the coach app's "Resume".
+ * Status and board name live in the session's jsonb record.
+ */
+export async function listBridgeInProgressSessions(
+  programId: string | null,
+  userId: string,
+  limit = 5,
+): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select session_id,
+             coalesce(record->'board'->>'name', 'Board') as board_name,
+             updated_at::text as updated_at
+      from bridge_kb_sessions
+      where created_by = ${userId}
+        and coalesce(record->>'status', 'in_progress') <> 'completed'
+        and (${programId}::text is null or nexus_program_id = ${programId})
+      order by updated_at desc
+      limit ${limit}
+    `);
+    return rows as unknown as Row[];
+  });
+}
+
+/**
+ * Deal of the Day: ONE board a day, the same for everyone in the program.
+ * Preference order — a collection literally named "Deal of the Day" (so an
+ * admin curates the rotation), else the program's own boards. The pick is
+ * deterministic from `dayIndex`, so it changes at midnight and never mid-day.
+ */
+export async function getBridgeDealOfTheDay(
+  orgId: string,
+  programId: string | null,
+  dayIndex: number,
+): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const curated = (await tx.execute(sql`
+      select record->'itemIds' as item_ids
+      from bridge_library_collections
+      where lower(record->>'name') = 'deal of the day'
+        and (${programId}::text is null or nexus_program_id = ${programId})
+      limit 1
+    `)) as unknown as Row[];
+
+    let ids: string[] = [];
+    const raw = curated[0]?.item_ids;
+    if (Array.isArray(raw)) ids = raw.map(String);
+    else if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) ids = parsed.map(String);
+      } catch {
+        ids = [];
+      }
+    }
+
+    if (ids.length === 0) {
+      const boards = (await tx.execute(sql`
+        select entry_id
+        from bridge_kb_library
+        where kind in ('board', 'deal')
+          and scope_level = 'program'
+          and program_organization_id = ${orgId}
+          and (${programId}::text is null or nexus_program_id = ${programId})
+        order by entry_id
+      `)) as unknown as Row[];
+      ids = boards.map((b) => String(b.entry_id));
+    }
+    if (ids.length === 0) return null;
+
+    const pick = ids[((dayIndex % ids.length) + ids.length) % ids.length]!;
+    const rows = (await tx.execute(sql`
+      select entry_id,
+             entry->>'name' as name,
+             entry->>'dealer' as dealer,
+             entry->>'vul' as vul,
+             entry->>'contractLabel' as contract_label
+      from bridge_kb_library
+      where entry_id = ${pick}
+      limit 1
+    `)) as unknown as Row[];
+    return rows[0] ?? null;
+  });
+}
+
 export async function listBridgeLibraryForLearning(
   orgId: string,
   programId: string | null,

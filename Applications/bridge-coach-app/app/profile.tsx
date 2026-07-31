@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { PrimaryButton, Screen, ScreenHeader } from "../../components/ui";
-import { Colors, Radius, Spacing } from "../../constants/theme";
-import { useAuth } from "../../lib/auth-context";
-import { BridgeContext, getBridgeContextCached, isCoach } from "../../lib/bridge-role";
-import { fetchMyCoach, MyCoach } from "../../lib/nexus";
+import { PrimaryButton, Screen, ScreenHeader } from "../components/ui";
+import { Colors, Radius, Spacing } from "../constants/theme";
+import { useAuth } from "../lib/auth-context";
+import { BridgeContext, getBridgeContextCached, isCoach } from "../lib/bridge-role";
+import { fetchMyCoach, MyCoach } from "../lib/nexus";
 
 export default function ProfileScreen() {
   const { user, token, signOut } = useAuth();
