@@ -203,13 +203,13 @@ function rowToCollection(r: import("@bridge/sessions").LibraryCollectionRow): Li
  *  capabilities remain the configurable path on top of all of this. */
 const bridgeLibraryPolicy = defaultLibraryPolicy({
   programViewers: [...ADMIN_AREA_ROLES],
-  // AUTHORING IS CAPABILITY-ONLY (owner decision 2026-07-30): no prebuilt
-  // role — learner, coach, reviewer, fellow — may create boards/deals/tables
-  // by virtue of its name. Creation requires `library.author.own` (personal
-  // shelf) or `library.author.program` (shared shelf), granted through the
-  // Access Catalogue. Platform admins still pass structurally.
-  programAuthors: [],
-  ownAuthors: [],
+  programAuthors: [...ADMIN_AREA_ROLES],
+  // LEARNERS DON'T AUTHOR (owner decision 2026-07-30): staff and coaches
+  // create boards/deals/tables as before; the prebuilt learner (and guest)
+  // roles receive content instead — assigned, shared, or via a designated
+  // collection. A program can still opt a role back in by granting
+  // `library.author.own` in the Access Catalogue.
+  ownAuthors: [...ADMIN_AREA_ROLES, "bridge_coach"],
   sharers: ["bridge_coach", "bridge_program_admin"],
 });
 
