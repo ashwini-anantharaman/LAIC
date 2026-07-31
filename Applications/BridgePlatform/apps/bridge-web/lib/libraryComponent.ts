@@ -203,16 +203,14 @@ function rowToCollection(r: import("@bridge/sessions").LibraryCollectionRow): Li
  *  capabilities remain the configurable path on top of all of this. */
 const bridgeLibraryPolicy = defaultLibraryPolicy({
   programViewers: [...ADMIN_AREA_ROLES],
-  programAuthors: [...ADMIN_AREA_ROLES],
+  // AUTHORING IS CAPABILITY-ONLY (owner decision 2026-07-30): no prebuilt
+  // role — learner, coach, reviewer, fellow — may create boards/deals/tables
+  // by virtue of its name. Creation requires `library.author.own` (personal
+  // shelf) or `library.author.program` (shared shelf), granted through the
+  // Access Catalogue. Platform admins still pass structurally.
+  programAuthors: [],
+  ownAuthors: [],
   sharers: ["bridge_coach", "bridge_program_admin"],
-  // Personal-shelf authoring is configurable. Default (LIBRARY_OWN_AUTHORING
-  // unset or "everyone"): everybody may create on their own shelf — a personal
-  // library is a sandbox. Set LIBRARY_OWN_AUTHORING=capability to make it a
-  // privilege: only prebuilt staff/coach roles, or any role granted
-  // `library.author.own` in the Access Catalogue, may create.
-  ...(process.env.LIBRARY_OWN_AUTHORING === "capability"
-    ? { ownAuthors: [...ADMIN_AREA_ROLES, "bridge_coach"] }
-    : {}),
 });
 
 export async function libraryPrincipalOf(

@@ -13,7 +13,7 @@
     {
       "id": "library.author.own",
       "label": "Create items in your own library",
-      "description": "Create boards, deals and tables on your personal shelf. Granted broadly by default (a personal library is a sandbox); revoke it to make a role play-only — they still receive shared, assigned and designated content.",
+      "description": "Create boards, deals and tables on your personal shelf. REQUIRED to create: no prebuilt role (learner, coach…) may author without it — grant it to a role to allow practice authoring. Without it a role is play-only: it still receives shared, assigned and designated content.",
       "group": "instances",
       "supportsResourceConstraints": true,
       "resourceTypes": [
