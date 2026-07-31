@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DealEditor } from "@/components/library/DealEditor";
+import { canCreateInLibrary } from "@/lib/libraryComponent";
 import { getBridgeContext } from "@/lib/nexus";
 import { createDealAction } from "@/app/bridge/library/actions";
 
@@ -15,6 +16,9 @@ export default async function MobileNewDealPage({
 }: Readonly<{ searchParams: Promise<{ kind?: string; error?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  // Direct URL must respect the capability too, not just the hidden button.
+  if (!(await canCreateInLibrary(context)))
+    redirect("/m/library");
   const { kind: rawKind, error } = await searchParams;
   const kind = rawKind === "deal" ? "deal" : "board";
   const noun = kind === "deal" ? "deal" : "board";

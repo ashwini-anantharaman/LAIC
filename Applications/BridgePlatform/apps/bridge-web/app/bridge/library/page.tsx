@@ -3,7 +3,12 @@ import type { LibraryEntry, LibraryKind } from "@bridge/sessions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChipRow } from "@/components/ChipTabs";
-import { canSeeProgramLibrary, canShareLibrary, listLibraryFor } from "@/lib/libraryComponent";
+import {
+  canCreateInLibrary,
+  canSeeProgramLibrary,
+  canShareLibrary,
+  listLibraryFor,
+} from "@/lib/libraryComponent";
 import { getBridgeContext } from "@/lib/nexus";
 import {
   deleteEntryAction,
@@ -41,6 +46,8 @@ export default async function LibraryPage({
   // works in their own. No toggle; content moves between instances only by
   // Share/Assign copies.
   const canShare = await canShareLibrary(context);
+  // Authoring is capability-driven (library.author.own / .program).
+  const canCreate = await canCreateInLibrary(context);
   const scope = (await canSeeProgramLibrary(context)) ? "program" : "mine";
 
   let all: LibraryEntry[] = [];
@@ -86,7 +93,7 @@ export default async function LibraryPage({
               Collections
             </Link>
           )}
-          {createLink && (
+          {canCreate && createLink && (
             <Link
               href={createLink.href}
               className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
@@ -94,7 +101,7 @@ export default async function LibraryPage({
               {createLink.label}
             </Link>
           )}
-          <ImportForm action={importFileAction} />
+          {canCreate && <ImportForm action={importFileAction} />}
         </div>
       </header>
 

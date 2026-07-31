@@ -3,17 +3,32 @@
   "documentType": "capability_catalogue",
   "id": "catalogue/library",
   "name": "Library Component",
-  "description": "The platform library component's own catalogue (@laic/library-core): scoped instances (personal/program/org), copy-with-provenance distribution, partner packaging. The personal instance needs NO capability — everyone owns their shelf; capabilities govern shared instances and crossing between instances. Host platforms may embed this as a group (bridge does) or bind it directly via cross-catalogue role grants.",
-  "provider": { "kind": "framework", "id": "library" },
+  "description": "The platform library component's own catalogue (@laic/library-core): scoped instances (personal/program/org), copy-with-provenance distribution, partner packaging. Everyone READS and EDITS their own shelf by ownership; every other move is a capability — including creating on your own shelf (library.author.own, granted broadly by default so revoking it makes a role play-only). Host platforms may embed this as a group (bridge does) or bind it directly via cross-catalogue role grants.",
+  "provider": {
+    "kind": "framework",
+    "id": "library"
+  },
   "catalogueVersion": "v1.0",
   "capabilities": [
+    {
+      "id": "library.author.own",
+      "label": "Create items in your own library",
+      "description": "Create boards, deals and tables on your personal shelf. Granted broadly by default (a personal library is a sandbox); revoke it to make a role play-only — they still receive shared, assigned and designated content.",
+      "group": "instances",
+      "supportsResourceConstraints": true,
+      "resourceTypes": [
+        "library_item"
+      ]
+    },
     {
       "id": "library.view.program",
       "label": "View the program library instance",
       "description": "Read the program's shared shelf",
       "group": "instances",
       "supportsResourceConstraints": true,
-      "resourceTypes": ["library_item"]
+      "resourceTypes": [
+        "library_item"
+      ]
     },
     {
       "id": "library.view.org",
@@ -21,7 +36,9 @@
       "description": "Read the organization's shared shelf",
       "group": "instances",
       "supportsResourceConstraints": true,
-      "resourceTypes": ["library_item"]
+      "resourceTypes": [
+        "library_item"
+      ]
     },
     {
       "id": "library.author.program",
@@ -29,7 +46,9 @@
       "description": "Create, edit and delete items on the program's shared shelf",
       "group": "instances",
       "supportsResourceConstraints": true,
-      "resourceTypes": ["library_item"]
+      "resourceTypes": [
+        "library_item"
+      ]
     },
     {
       "id": "library.author.org",
@@ -37,7 +56,9 @@
       "description": "Create, edit and delete items on the organization's shared shelf",
       "group": "instances",
       "supportsResourceConstraints": true,
-      "resourceTypes": ["library_item"]
+      "resourceTypes": [
+        "library_item"
+      ]
     },
     {
       "id": "library.assign",
@@ -45,7 +66,9 @@
       "description": "Copy items into other people's instances (assign, share)",
       "group": "distribution",
       "supportsResourceConstraints": true,
-      "resourceTypes": ["library_item"]
+      "resourceTypes": [
+        "library_item"
+      ]
     },
     {
       "id": "library.embed",
@@ -73,7 +96,10 @@
       "id": "library_item",
       "label": "Library item",
       "description": "One item in a scoped library instance; kinds are host-defined (bridge: deal/board/table/play/drill/puzzle)",
-      "constraintFields": ["kind", "scope_level"]
+      "constraintFields": [
+        "kind",
+        "scope_level"
+      ]
     }
   ],
   "uiSurfaces": [
@@ -91,7 +117,10 @@
       "kind": "component",
       "group": "library",
       "routeOrComponent": "CreationRow",
-      "requiredAnyCapabilities": []
+      "requiredAnyCapabilities": [
+        "library.author.own",
+        "library.author.program"
+      ]
     },
     {
       "id": "library.program_shelf",
@@ -99,7 +128,10 @@
       "kind": "screen",
       "group": "library",
       "routeOrComponent": "/bridge/library?scope=program",
-      "requiredAnyCapabilities": ["library.view.program", "library.author.program"]
+      "requiredAnyCapabilities": [
+        "library.view.program",
+        "library.author.program"
+      ]
     },
     {
       "id": "library.share",
@@ -107,7 +139,9 @@
       "kind": "action",
       "group": "library",
       "routeOrComponent": "/bridge/library/share",
-      "requiredAnyCapabilities": ["library.assign"]
+      "requiredAnyCapabilities": [
+        "library.assign"
+      ]
     },
     {
       "id": "library.edit",
@@ -122,30 +156,44 @@
     {
       "id": "instances",
       "label": "Instances",
-      "description": "Reading and authoring the shared (program/org) instances — the personal instance is always the owner's",
+      "description": "Creating on your own shelf, and reading/authoring the shared (program/org) instances",
       "order": 1,
       "capabilityIds": [
+        "library.author.own",
         "library.view.program",
         "library.view.org",
         "library.author.program",
         "library.author.org"
       ],
-      "uiSurfaceIds": ["library.nav", "library.program_shelf", "library.create_row", "library.edit"]
+      "uiSurfaceIds": [
+        "library.nav",
+        "library.program_shelf",
+        "library.create_row",
+        "library.edit"
+      ]
     },
     {
       "id": "distribution",
       "label": "Distribution",
       "description": "Moving copies between instances: assign/share to people, embed into external documents",
       "order": 2,
-      "capabilityIds": ["library.assign", "library.embed"],
-      "uiSurfaceIds": ["library.share"]
+      "capabilityIds": [
+        "library.assign",
+        "library.embed"
+      ],
+      "uiSurfaceIds": [
+        "library.share"
+      ]
     },
     {
       "id": "partnerships",
       "label": "Partnerships",
       "description": "Publishing packages for partner organizations and installing theirs (Phase C)",
       "order": 3,
-      "capabilityIds": ["library.publish", "library.install"],
+      "capabilityIds": [
+        "library.publish",
+        "library.install"
+      ],
       "uiSurfaceIds": []
     }
   ],
@@ -156,7 +204,10 @@
       "description": "Maintains the program's shared collection",
       "grants": [
         {
-          "capabilityIds": ["library.view.program", "library.author.program"]
+          "capabilityIds": [
+            "library.view.program",
+            "library.author.program"
+          ]
         }
       ]
     },
@@ -164,7 +215,14 @@
       "id": "library_distributor",
       "name": "Distributor",
       "description": "Shares and assigns content to people (what coaches effectively hold)",
-      "grants": [{ "capabilityIds": ["library.view.program", "library.assign"] }]
+      "grants": [
+        {
+          "capabilityIds": [
+            "library.view.program",
+            "library.assign"
+          ]
+        }
+      ]
     },
     {
       "id": "library_partnership_manager",
@@ -172,7 +230,10 @@
       "description": "Publishes packages to partners and installs theirs",
       "grants": [
         {
-          "capabilityIds": ["library.publish", "library.install"]
+          "capabilityIds": [
+            "library.publish",
+            "library.install"
+          ]
         }
       ]
     }

@@ -34,6 +34,10 @@ function fail(message: string): never {
 /** The deal editor's save: four hand-authored hands → one deal/board entry. */
 export async function createDealAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  // Authoring is a CAPABILITY (library.author.own / .program) — a role
+  // without it is play-only, and this is where that is enforced.
+  const { assertCanCreateInLibrary } = await import("@/lib/libraryComponent");
+  await assertCanCreateInLibrary(context);
   const kind = String(formData.get("kind")) === "deal" ? "deal" : "board";
   const mobile = formData.get("mobile") === "1";
   const failNew: (message: string) => never = (message) =>
@@ -135,6 +139,8 @@ export async function updateDealAction(formData: FormData): Promise<void> {
 /** Upload a .lin or .pbn file → one library entry per complete board. */
 export async function importFileAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  const { assertCanCreateInLibrary } = await import("@/lib/libraryComponent");
+  await assertCanCreateInLibrary(context); // import IS authoring
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) fail("Choose a .lin or .pbn file first.");
   if (file.size > MAX_IMPORT_BYTES) fail("That file is over 1 MB — export single sessions.");

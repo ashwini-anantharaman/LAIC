@@ -25,6 +25,10 @@ export type LibraryOperation =
  * Stable, domain-free ids — the same ids work in any host's catalogue.
  */
 export const LIBRARY_CAPABILITIES = {
+  /** Authoring in one's OWN instance. Configurable like everything else:
+   *  hosts grant it broadly by default, and revoking it makes a role
+   *  play-only (receive content, never create). */
+  authorOwn: "library.author.own",
   viewProgram: "library.view.program",
   viewOrg: "library.view.org",
   authorProgram: "library.author.program",
@@ -98,13 +102,29 @@ export function defaultLibraryPolicy(hostRoles: {
   programAuthors: readonly string[];
   /** Roles that may copy/assign items into other people's instances. */
   sharers: readonly string[];
+  /**
+   * Personal-shelf authoring. Default: everyone (a personal library is a
+   * sandbox), so nothing changes until an admin narrows it. Pass explicit
+   * roles to make creation a privilege — a role WITHOUT it, and without the
+   * `library.author.own` capability, becomes play-only.
+   */
+  ownAuthors?: readonly string[];
 }): LibraryAccessPolicy {
   const C = LIBRARY_CAPABILITIES;
+  const ownAuthorRule: LibraryAccessRule = hostRoles.ownAuthors
+    ? {
+        operation: "create",
+        scopeLevel: "user",
+        anyRole: hostRoles.ownAuthors,
+        anyCapability: [C.authorOwn],
+      }
+    : { operation: "create", scopeLevel: "user", everyone: true };
   return {
     rules: [
-      // Personal instance: the owner has full control of their own shelf.
+      // Personal instance: the owner reads/edits their own shelf; whether they
+      // may CREATE there is configurable (see ownAuthorRule).
       { operation: "view", scopeLevel: "user", ownerOnly: true },
-      { operation: "create", scopeLevel: "user", everyone: true },
+      ownAuthorRule,
       { operation: "edit", scopeLevel: "user", ownerOnly: true },
       { operation: "delete", scopeLevel: "user", ownerOnly: true },
 
@@ -197,6 +217,7 @@ export function libraryCatalogueFragment(): {
   return {
     group,
     capabilities: [
+      cap(LIBRARY_CAPABILITIES.authorOwn, "Create items in your own library"),
       cap(LIBRARY_CAPABILITIES.viewProgram, "View the program library instance"),
       cap(LIBRARY_CAPABILITIES.viewOrg, "View the organization library instance"),
       cap(LIBRARY_CAPABILITIES.authorProgram, "Author into the program library instance"),

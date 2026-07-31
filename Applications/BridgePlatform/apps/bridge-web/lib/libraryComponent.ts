@@ -22,7 +22,7 @@ import {
   type LibraryItem,
   type LibraryPrincipal,
 } from "@laic/library-core";
-import { getMyCollectionGrants, nexusProgramIdOf, orgScopeOf } from "./nexus";
+import { authoredScope, getMyCollectionGrants, nexusProgramIdOf, orgScopeOf } from "./nexus";
 import { libraryStore } from "./sessions";
 
 // ── Content kinds ─────────────────────────────────────────────────────────────
@@ -205,6 +205,14 @@ const bridgeLibraryPolicy = defaultLibraryPolicy({
   programViewers: [...ADMIN_AREA_ROLES],
   programAuthors: [...ADMIN_AREA_ROLES],
   sharers: ["bridge_coach", "bridge_program_admin"],
+  // Personal-shelf authoring is configurable. Default (LIBRARY_OWN_AUTHORING
+  // unset or "everyone"): everybody may create on their own shelf — a personal
+  // library is a sandbox. Set LIBRARY_OWN_AUTHORING=capability to make it a
+  // privilege: only prebuilt staff/coach roles, or any role granted
+  // `library.author.own` in the Access Catalogue, may create.
+  ...(process.env.LIBRARY_OWN_AUTHORING === "capability"
+    ? { ownAuthors: [...ADMIN_AREA_ROLES, "bridge_coach"] }
+    : {}),
 });
 
 export async function libraryPrincipalOf(
@@ -254,6 +262,28 @@ export async function listLibraryFor(
 export async function canSeeProgramLibrary(context: NexusBridgeContext): Promise<boolean> {
   const principal = await libraryPrincipalOf(context);
   return bridgeLibrary().can(principal, "view", { level: "program" });
+}
+
+/**
+ * May this caller CREATE in the instance their authored content lands in?
+ * (`authoredScope`: staff → program, everyone else → their own shelf.) The
+ * create surfaces gate on this, and the create paths assert it — so revoking
+ * `library.author.own` from a role genuinely makes it play-only.
+ */
+export async function canCreateInLibrary(context: NexusBridgeContext): Promise<boolean> {
+  const principal = await libraryPrincipalOf(context);
+  const level = authoredScope(context);
+  return bridgeLibrary().can(principal, "create", {
+    level,
+    ownerId: level === "user" ? principal.userId : undefined,
+  });
+}
+
+/** Throws unless the caller may create — for the create server actions. */
+export async function assertCanCreateInLibrary(context: NexusBridgeContext): Promise<void> {
+  if (!(await canCreateInLibrary(context))) {
+    throw new Error("Your role doesn't include creating library content");
+  }
 }
 
 /** May this caller distribute program items into other people's instances? */

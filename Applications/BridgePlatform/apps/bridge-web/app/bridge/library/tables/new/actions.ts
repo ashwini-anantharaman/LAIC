@@ -19,6 +19,8 @@ import { libraryStore } from "@/lib/sessions";
  *  seats that would deal a board become a reusable `table` entry instead. */
 export async function createTableEntryAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  const { assertCanCreateInLibrary } = await import("@/lib/libraryComponent");
+  await assertCanCreateInLibrary(context);
   const store = kbStore();
   const kbId = String(formData.get("kbId"));
   const kb = await store.getKb(kbId);

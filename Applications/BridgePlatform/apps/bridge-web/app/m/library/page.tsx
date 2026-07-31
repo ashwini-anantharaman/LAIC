@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   bridgeLibrary,
+  canCreateInLibrary,
   canSeeProgramLibrary,
   libraryPrincipalOf,
   listLibraryFor,
@@ -61,6 +62,7 @@ export default async function MobileLibraryPage({
   // works in their own. No toggle; content arrives by Share/Assign copies.
   const coach = isBridgeCoach(context);
   const scope = (await canSeeProgramLibrary(context)) ? "program" : "mine";
+  const canCreate = await canCreateInLibrary(context);
 
   let all: LibraryEntry[] = [];
   try {
@@ -108,7 +110,8 @@ export default async function MobileLibraryPage({
         as LIN / PBN.
       </p>
 
-      {/* Creation row — same authoring entry points as desktop */}
+      {/* Creation row — capability-gated (library.author.own / .program) */}
+      {canCreate && (
       <div style={{ display: "flex", gap: 9, flexWrap: "wrap", marginBottom: 20 }}>
         {[
           { href: "/m/library/new", label: "+ New board" },
@@ -133,6 +136,7 @@ export default async function MobileLibraryPage({
           </Link>
         ))}
       </div>
+      )}
 
       {/* Designated collections — curated program groupings, read in place */}
       {collections.length > 0 && (
