@@ -73,6 +73,8 @@ export interface PlayTableSeat {
    * colors let several robots at one table be told apart at a glance.
    */
   strip?: string;
+  /** Humans get the GOLD plate (seatModel's plateBg rule). */
+  human?: boolean;
 }
 
 export interface PlayTableProps {
@@ -196,17 +198,22 @@ export function PlayTable({
   const menuHandler = onMenu ?? (settings ? () => setMenuOpen((v) => !v) : undefined);
   const menuItems: SettingsItem[] = [...(settings ?? [])];
 
-  // Portrait containers get the mobile stack (Mobile Table design).
+  // Three tiers (Device Preview.dc.html): phone-sized portrait gets the
+  // Mobile Table stack; a narrow-desktop / split pane gets Play Table's
+  // stacked-diagram layout; everything else is the wide table.
   const narrow = box.w / Math.max(1, box.h) < 1.25;
+  const phone = narrow && box.w < 640;
+  const stacked = narrow && !phone;
+  const BASE = stacked ? { w: MOBILE_W, h: 1180 } : BASE_WIDE;
 
-  // Wide: scale to FIT, down or up. Mobile: a fixed 720-wide column scaled by
-  // BOTH axes against the measured stack height (never up — thumb reach, not
-  // magnification), so the hand stays above the fold.
-  const scale = narrow
+  // Wide/stacked: scale to FIT, down or up. Phone: a fixed 720-wide column
+  // scaled by BOTH axes against the measured stack height (never up — thumb
+  // reach, not magnification), so the hand stays above the fold.
+  const scale = phone
     ? Math.min(1, box.w / MOBILE_W, box.h / contentH) || 1
-    : Math.min(box.w / BASE_WIDE.w, box.h / BASE_WIDE.h) || 1;
-  const stageW = narrow ? MOBILE_W : Math.max(BASE_WIDE.w, box.w / scale);
-  const stageH = narrow ? Math.max(contentH, box.h / scale) : Math.max(BASE_WIDE.h, box.h / scale);
+    : Math.min(box.w / BASE.w, box.h / BASE.h) || 1;
+  const stageW = phone ? MOBILE_W : Math.max(BASE.w, box.w / scale);
+  const stageH = phone ? Math.max(contentH, box.h / scale) : Math.max(BASE.h, box.h / scale);
 
   const c = state.contract;
   const declarer = c?.declarer ?? null;
@@ -222,7 +229,11 @@ export function PlayTable({
   const vulFor = (seat: Seat) => state.vul === "both" || state.vul === "All" || sideOf(seat).toLowerCase() === String(state.vul).toLowerCase();
   const dealerCol = ORDER.indexOf(state.dealer);
 
+  // seatModel's plate rule: humans GOLD, the acting seat pale, others grey;
+  // the PANEL brightens for the acting seat and the dummy.
   const plateBgFor = (seat: Seat) =>
+    seats[seat].human ? GOLD : !complete && seat === state.turn ? "#e8e8c8" : GREY;
+  const panelBgFor = (seat: Seat) =>
     seat === dummy || (!complete && seat === state.turn) ? "#fff" : "#b3b3b3";
 
   // The staged-call gate: with confirm on, a human call parks in `pending`
@@ -326,44 +337,51 @@ export function PlayTable({
     );
   };
 
-  /** E/W wide: a compact suit-per-line panel. */
-  const suitPanel = (seat: Seat) => (
-    <div style={{ width: 197, background: "#fff", border: "1px solid #8a8a8a", borderRadius: 3, padding: "4px 8px", boxShadow: "0 2px 5px rgba(0,0,0,.35)", boxSizing: "border-box" }}>
-      {DISPLAY.map((su) => {
-        const cards = state.hands[seat].filter((x) => x.suit === su).sort((a, b) => b.rank - a.rank);
-        return (
-          <div key={su} style={{ display: "flex", alignItems: "baseline", gap: 5, lineHeight: 1.3, color: isRed(su) ? RED : "#000" }}>
-            <span style={{ flex: "none", width: 16, fontSize: 19 }}>{GLYPH[su]}</span>
-            <span style={{ display: "flex", flexWrap: "wrap", gap: "0 5px", fontSize: 19 }}>
-              {cards.length === 0 ? (
-                <span>—</span>
-              ) : (
-                cards.map((card) => {
-                  const on = myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
-                  return (
-                    <button
-                      key={card.rank}
-                      type="button"
-                      onClick={on ? () => onPlay?.(seat, card) : undefined}
-                      aria-label={`Play ${rankText(card.rank)}${GLYPH[su]}`}
-                      style={{ background: on ? "#d9f2d9" : "transparent", border: 0, padding: "0 1px", fontSize: 19, fontWeight: on ? 700 : 400, color: "inherit", cursor: on ? "pointer" : "default" }}
-                    >
-                      {rankText(card.rank)}
-                    </button>
-                  );
-                })
-              )}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
+  /** Suit-per-line panel (E/W wide; every seat in the stacked-narrow tier). */
+  const suitPanel = (
+    seat: Seat,
+    m: { width: number | string; suitW?: number; font?: number; pad?: string; bare?: boolean; touch?: boolean } = { width: 197 },
+  ) => {
+    const font = m.font ?? 19;
+    const touchy = !!m.touch && myTurn && inPlay && state.turn === seat;
+    return (
+      <div style={{ width: m.width, background: m.bare ? panelBgFor(seat) : "#fff", border: m.bare ? 0 : "1px solid #8a8a8a", borderRadius: m.bare ? 0 : 3, padding: m.pad ?? "4px 8px", boxShadow: "0 2px 5px rgba(0,0,0,.4)", boxSizing: "border-box" }}>
+        {DISPLAY.map((su) => {
+          const cards = state.hands[seat].filter((x) => x.suit === su).sort((a, b) => b.rank - a.rank);
+          return (
+            <div key={su} style={{ display: "flex", alignItems: "center", gap: 5, lineHeight: 1.3, color: isRed(su) ? RED : "#000" }}>
+              <span style={{ flex: "none", width: m.suitW ?? 16, fontSize: font }}>{GLYPH[su]}</span>
+              <span style={{ display: "flex", flexWrap: "wrap", gap: touchy ? "0 4px" : "0 5px", fontSize: font }}>
+                {cards.length === 0 ? (
+                  <span>—</span>
+                ) : (
+                  cards.map((card) => {
+                    const on = myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
+                    return (
+                      <button
+                        key={card.rank}
+                        type="button"
+                        onClick={on ? () => onPlay?.(seat, card) : undefined}
+                        aria-label={`Play ${rankText(card.rank)}${GLYPH[su]}`}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: touchy ? 84 : 0, minHeight: touchy ? 78 : 0, background: on ? "#d9f2d9" : "transparent", border: 0, borderRadius: touchy ? 6 : 0, padding: touchy ? "0 4px" : "0 1px", fontSize: font, fontWeight: on ? 700 : 400, color: "inherit", cursor: on ? "pointer" : "default" }}
+                      >
+                        {rankText(card.rank)}
+                      </button>
+                    );
+                  })
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const seatColumn = (seat: Seat) => (
     <div style={{ width: 197, flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
       {callsRow(seat)}
-      {visible[seat] ? suitPanel(seat) : backs(seat)}
+      {visible[seat] ? suitPanel(seat, { width: 197 }) : backs(seat)}
       {plate(seat, 197)}
     </div>
   );
@@ -388,7 +406,7 @@ export function PlayTable({
   }
 
   /** Vulnerable seats sit on red; the dealer's column is tinted throughout. */
-  const auctionBox = (m: { width: number; height: number | "auto"; headFont: number; cellFont: number; radius?: number; cellMinH?: number } = { width: 356, height: 207, headFont: 25, cellFont: 21, radius: 4 }) => (
+  const auctionBox = (m: { width: number; height: number | "auto" | "100%"; headFont: number; cellFont: number; radius?: number; cellMinH?: number } = { width: 356, height: 207, headFont: 25, cellFont: 21, radius: 4 }) => (
     <div style={{ width: m.width, height: m.height, maxHeight: m.height === "auto" ? 340 : undefined, background: PANEL, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ flex: "none", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 2, padding: 2, textAlign: "center" }}>
         {ORDER.map((s) => {
@@ -462,6 +480,27 @@ export function PlayTable({
       <div style={{ fontSize: 28, fontWeight: 700, color: "#000" }}>{resultLine || "Board complete"}</div>
       {resultScore && <div style={{ fontSize: 18, color: "#444", marginTop: 4 }}>{resultScore}</div>}
       <div style={{ fontSize: 15, color: "#666", marginTop: 6 }}>NS {state.trickCount.NS} · EW {state.trickCount.EW}</div>
+    </div>
+  );
+
+  /** Stacked-narrow centre: the TrickArea design's pill variant. */
+  const trickPills = (
+    <div style={{ position: "relative", width: 300, height: 220 }}>
+      {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
+        const play = currentPlays.find((p) => p.seat === seat);
+        const pos: CSSProperties =
+          seat === "N" ? { left: "50%", top: 0, transform: "translateX(-50%)" }
+          : seat === "S" ? { left: "50%", bottom: 0, transform: "translateX(-50%)" }
+          : seat === "W" ? { left: 0, top: "50%", transform: "translateY(-50%)" }
+          : { right: 0, top: "50%", transform: "translateY(-50%)" };
+        if (!play) return null;
+        return (
+          <div key={seat} style={{ position: "absolute", ...pos, display: "flex", alignItems: "center", gap: 2, background: "#fff", border: "1px solid #9a9a9a", padding: "4px 10px", boxShadow: "0 2px 6px rgba(0,0,0,.45)", color: isRed(play.card.suit) ? RED : "#000" }}>
+            <span style={{ fontSize: 36, lineHeight: 1 }}>{GLYPH[play.card.suit]}</span>
+            <span style={{ fontSize: 36, lineHeight: 1 }}>{rankText(play.card.rank)}</span>
+          </div>
+        );
+      })}
     </div>
   );
 
@@ -628,9 +667,11 @@ export function PlayTable({
           <div style={{ background: CARD_BACK, color: "#fff", textAlign: "center", fontSize: 19, fontWeight: 700, padding: "3px 0" }}>{state.trickCount.EW}</div>
         </div>
       )}
+      <div style={{ flex: 1 }} />
+      {/* The SideRail design's bottom cluster: Pause · step · undo · Seats ·
+          Hands · Claim, anchored above the rail's foot. */}
       {controlsExtra}
       {railExtra}
-      <div style={{ flex: 1 }} />
       {viewHref && (
         <Link href={viewHref.href} title="Switch the view" style={{ width: 100, height: 32, background: PANEL, border: "2px solid #f2f4f4", borderRadius: 7, color: "#000", fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>{viewHref.label}</Link>
       )}
@@ -697,12 +738,57 @@ export function PlayTable({
         {inAuction ? bidBoxNarrow : null}
         <div style={{ flex: "none", display: "flex", justifyContent: "center", background: FELT, padding: 0 }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-            {callsRow("S", 20)}
+            {callsRow("S")}
             {visible.S ? cardRow("S", M_CARD) : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
-            {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390, { height: 30, badge: 26, font: 19, tagFont: 13 })}
+            {/* Default plate metrics — the design keeps SeatPlate stock here. */}
+            {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390)}
           </div>
         </div>
       </div>
+    </div>
+  );
+
+  // ---- stacked-narrow stage (Play Table.dc.html narrow: split pane / narrow
+  // desktop — 720x1180, seat diagrams around a pill trick) -------------------
+  const stackedMain = (seat: Seat) => (
+    <div style={{ width: 390, maxWidth: "100%", display: "flex", flexDirection: "column", gap: 3 }}>
+      {callsRow(seat, 22)}
+      {plate(seat, "100%", { height: 44, badge: 44, font: 28, tagFont: 15 })}
+      {visible[seat] && suitPanel(seat, { width: "100%", suitW: 38, font: 40, pad: "6px 10px 8px", bare: true })}
+    </div>
+  );
+  const stackedSide = (seat: Seat) => (
+    <div style={{ width: 168, flex: "none", display: "flex", flexDirection: "column", gap: 3 }}>
+      {callsRow(seat, 22)}
+      {plate(seat, "100%", { height: 44, badge: 44, font: 24, tagFont: 13 })}
+      {visible[seat] && suitPanel(seat, { width: 168, suitW: 22, font: 25, pad: "5px 7px 7px", bare: true })}
+    </div>
+  );
+  const stackedTouch = (seat: Seat) => (
+    <div style={{ width: 390, maxWidth: "100%", display: "flex", flexDirection: "column", gap: 3 }}>
+      {callsRow(seat, 22)}
+      {plate(seat, "100%", { height: 48, badge: 48, font: 30, tagFont: 15 })}
+      {visible[seat] && suitPanel(seat, { width: "100%", suitW: 44, font: 42, pad: "6px 10px 10px", bare: true, touch: true })}
+    </div>
+  );
+
+  const stackedStage = (
+    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#000" }}>
+      {mobileTopBar}
+      <div style={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden", background: FELT }}>
+        <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "12px 8px 0" }}>{stackedMain("N")}</div>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 8 }}>
+          {stackedSide("W")}
+          <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {inAuction && auctionDisplay === "box" ? auctionBox({ width: 330, height: "100%", headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
+            {inPlay ? trickPills : null}
+            {complete ? resultCard : null}
+          </div>
+          {stackedSide("E")}
+        </div>
+        <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "0 8px 14px" }}>{stackedTouch("S")}</div>
+      </div>
+      {inAuction ? bidBoxNarrow : null}
     </div>
   );
 
@@ -735,7 +821,7 @@ export function PlayTable({
   );
 
   // ---- stage --------------------------------------------------------------
-  if (narrow) {
+  if (phone) {
     return (
       <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
         {mobileStack}
@@ -748,7 +834,7 @@ export function PlayTable({
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
       <div style={{ position: "relative", flex: "none", transformOrigin: "center center", width: stageW, height: stageH, transform: `scale(${scale})` }}>
-        {wideStage}
+        {stacked ? stackedStage : wideStage}
         {menuOpen && !onMenu && (
           <SettingsMenu accent={RAIL_BLUE} items={menuItems} onClose={() => setMenuOpen(false)} />
         )}
