@@ -25,6 +25,7 @@ import {
   closeOffering,
   createApp,
   createGate,
+  updateGate,
   GATE_PLATFORM_ROLES,
   createGroup,
   createOffering,
@@ -664,6 +665,51 @@ export function ProgramGates() {
   const [busy, setBusy] = useState(false);
   // Which platforms a sign-up joins, and as what: { bridge: "bridge_learner" }.
   const [platformRoles, setPlatformRoles] = useState<Record<string, string>>({});
+  // Editing an existing gate: the gate under edit + its working form values.
+  const [editing, setEditing] = useState<Gate | null>(null);
+  const [eTitle, setETitle] = useState("");
+  const [eAllowSignin, setEAllowSignin] = useState(true);
+  const [eAllowSignup, setEAllowSignup] = useState(true);
+  const [eApproval, setEApproval] = useState(false);
+  const [eRoleIds, setERoleIds] = useState<string[]>([]);
+  const [ePlatformRoles, setEPlatformRoles] = useState<Record<string, string>>({});
+
+  /** Open the edit dialog seeded from the gate's current values (platform
+   *  grants live in its config jsonb). */
+  function startEdit(g: Gate) {
+    setEditing(g);
+    setETitle(g.title ?? "");
+    setEAllowSignin(g.allow_signin);
+    setEAllowSignup(g.allow_signup);
+    setEApproval(g.approval_required);
+    setERoleIds(g.role_ids ?? []);
+    setEPlatformRoles(
+      ((g.config as { platform_roles?: Record<string, string> } | null)?.platform_roles ?? {}),
+    );
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    setBusy(true);
+    try {
+      await updateGate(editing.id, {
+        title: eTitle.trim() || null,
+        allow_signin: editing.audience === "member" ? eAllowSignin : false,
+        allow_signup: eAllowSignup,
+        approval_required: eApproval,
+        ...(editing.audience === "member"
+          ? { role_ids: eRoleIds }
+          : { platform_roles: ePlatformRoles }),
+      });
+      toast.success("Gate updated");
+      setEditing(null);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to update gate");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // Only platforms this program actually has enabled can be joined here, and
   // only those with a role vocabulary (People + roles) are offerable.
@@ -777,6 +823,10 @@ export function ProgramGates() {
                   <div className="font-medium text-foreground truncate">{g.title || g.slug}</div>
                   {g.subtitle ? <div className="text-xs text-muted-foreground truncate">{g.subtitle}</div> : null}
                 </div>
+                <div className="flex shrink-0 items-center gap-1">
+                <Button variant="ghost" size="sm" title="Edit gate" onClick={() => startEdit(g)}>
+                  Edit
+                </Button>
                 <ConfirmButton
                   title={`Delete gate "${g.title || g.slug}"?`}
                   description="The page at this URL stops working. People already admitted keep their access."
@@ -794,6 +844,7 @@ export function ProgramGates() {
                 >
                   <Trash2 className="size-3.5" />
                 </ConfirmButton>
+                </div>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <Pill tone={g.audience === "member" ? "warn" : "neutral"}>
@@ -802,6 +853,15 @@ export function ProgramGates() {
                 {g.allow_signin ? <Pill tone="positive">sign-in</Pill> : null}
                 {g.allow_signup ? <Pill tone="positive">sign-up</Pill> : null}
                 {g.approval_required ? <Pill tone="warn">approval</Pill> : null}
+                {/* Platform grants: what a sign-up here actually joins. */}
+                {Object.entries(
+                  ((g.config as { platform_roles?: Record<string, string> } | null)?.platform_roles ?? {}),
+                ).map(([platform, role]) => (
+                  <Pill key={platform} tone="positive">
+                    {(PROGRAM_FEATURES.find((f) => f.key === platform)?.label ?? platform)}:{" "}
+                    {GATE_PLATFORM_ROLES[platform]?.find((o) => o.value === role)?.label ?? role}
+                  </Pill>
+                ))}
               </div>
               <button
                 onClick={() => {
@@ -963,6 +1023,121 @@ export function ProgramGates() {
             </Button>
             <Button onClick={create} disabled={busy || !title.trim()}>
               {busy ? "Creating…" : "Create gate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit an existing gate — same choices as creation (the address/slug and
+          audience are fixed once people may already be using the URL). */}
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit gate</DialogTitle>
+          </DialogHeader>
+          {editing ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="egate-title">Title</Label>
+                <Input id="egate-title" value={eTitle} onChange={(e) => setETitle(e.target.value)} />
+                <p className="text-xs text-muted-foreground">
+                  The address stays <span className="font-mono">{editing.slug}</span> — renaming
+                  the title won&apos;t break links people already have.
+                </p>
+              </div>
+
+              {editing.audience === "member" ? (
+                <div className="space-y-1.5">
+                  <Label>Roles people can join as</Label>
+                  <div className="rounded-lg border border-border divide-y divide-border">
+                    {roles.map((r) => (
+                      <label key={r.id} className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-accent/40">
+                        <input
+                          type="checkbox"
+                          className="size-4 accent-[var(--primary)]"
+                          checked={eRoleIds.includes(r.id)}
+                          onChange={(e) =>
+                            setERoleIds((cur) => (e.target.checked ? [...cur, r.id] : cur.filter((id) => id !== r.id)))
+                          }
+                        />
+                        <span className="text-foreground">{r.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : joinablePlatforms.length > 0 ? (
+                <div className="space-y-1.5">
+                  <Label>Joins these platforms</Label>
+                  <div className="rounded-lg border border-border divide-y divide-border">
+                    {joinablePlatforms.map((f) => {
+                      const options = GATE_PLATFORM_ROLES[f.key]!;
+                      const current = ePlatformRoles[f.key];
+                      return (
+                        <div key={f.key} className="flex items-center gap-2.5 px-3 py-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-[var(--primary)]"
+                            checked={!!current}
+                            onChange={(e) =>
+                              setEPlatformRoles((cur) => {
+                                const next = { ...cur };
+                                if (e.target.checked) next[f.key] = options[0]!.value;
+                                else delete next[f.key];
+                                return next;
+                              })
+                            }
+                          />
+                          <span className="flex-1 text-foreground">{f.label}</span>
+                          {current ? (
+                            <Select
+                              value={current}
+                              onValueChange={(v) => setEPlatformRoles((cur) => ({ ...cur, [f.key]: v }))}
+                            >
+                              <SelectTrigger className="h-8 w-44">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {options.map((o) => (
+                                  <SelectItem key={o.value} value={o.value}>
+                                    {o.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">not joined</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Changes apply to FUTURE sign-ups. People who already joined keep the role
+                    they were given — change theirs in the platform&apos;s People.
+                  </p>
+                </div>
+              ) : null}
+
+              {editing.audience === "member" ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch checked={eAllowSignin} onCheckedChange={setEAllowSignin} /> Allow sign-in
+                </label>
+              ) : null}
+              <label className="flex items-center gap-2 text-sm">
+                <Switch checked={eAllowSignup} onCheckedChange={setEAllowSignup} /> Allow sign-up
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Switch checked={eApproval} onCheckedChange={setEApproval} /> Require approval for
+                sign-ups
+              </label>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveEdit} disabled={busy}>
+              {busy ? "Saving…" : "Save changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
