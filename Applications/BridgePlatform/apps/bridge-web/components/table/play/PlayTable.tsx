@@ -599,8 +599,13 @@ export function PlayTable({
     </button>
   );
 
+  // Row 2 exists only when it has content: legal doubles or an armed level's
+  // strains. (Wide sits in reserved space, so hiding it never shifts layout.)
+  const anyLegalDouble = legalSet.has("X") || legalSet.has("XX");
+  const armedStrains = armed ? STRAINS.filter((st) => legalSet.has(`${armed}${st}`)) : [];
+
   const bidBoxWide = (
-    <div style={{ width: 581, height: 107, flex: "none", background: "#cccc9b", borderRadius: 4, padding: "9px 10px", boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 7, boxSizing: "border-box" }}>
+    <div style={{ width: 581, flex: "none", background: "#cccc9b", borderRadius: 4, padding: "9px 10px", boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 7, boxSizing: "border-box" }}>
       {pending ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, height: 81 }}>
           <span style={{ fontSize: 19, color: "#3a3a20" }}>Confirm your call:</span>
@@ -612,31 +617,93 @@ export function PlayTable({
             {passButton(120, 37, 21)}
             <div style={{ display: "flex", gap: 6 }}>{levelButtons(57, 37, 23)}</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ flex: "none", width: 120, display: "flex", gap: 6 }}>{doubleButtons(57, 37, 21)}</div>
-            <div style={{ display: "flex", gap: 6 }}>{strainButtons(37, 23, 120, 57)}</div>
-          </div>
+          {(anyLegalDouble || armedStrains.length > 0) && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ flex: "none", width: 120, display: "flex", gap: 6 }}>{doubleButtons(57, 37, 21)}</div>
+              <div style={{ display: "flex", gap: 6 }}>{strainButtons(37, 23, 120, 57)}</div>
+            </div>
+          )}
         </>
       )}
     </div>
   );
 
+  // Rendered-size touch floor, same reasoning as the toolbars: the phone
+  // stage is scaled, so 56 authored is ~30 under the thumb.
+  const touchH = Math.max(52, Math.ceil(44 / Math.max(0.05, scale)));
+
+  /** The strain row is ALWAYS five slots tall, empty until a level is armed —
+      rendering it only when armed grew the tray on the first tap and shoved
+      every control under it down. The buttons must not move mid-bid. */
+  const strainSlots = [0, 1, 2, 3, 4].map((i) => {
+    const st = armedStrains[i];
+    if (!st) return <span key={i} style={{ height: touchH, pointerEvents: "none" }} />;
+    return (
+      <button
+        key={i}
+        type="button"
+        onClick={() => stageCall(`${armed}${st}`)}
+        aria-label={`${armed}${st === "N" ? "NT" : st}`}
+        style={{ height: touchH, border: "1px solid #8a8a6a", borderRadius: 5, background: "#f8f8f8", color: isRed(st) ? RED : "#000", fontSize: 26, lineHeight: 1, cursor: "pointer" }}
+      >
+        {GLYPH[st]}
+      </button>
+    );
+  });
+
   const bidBoxNarrow = (
-    <div style={{ width: "100%", flex: "none", background: "#cccc9b", padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
+    <div style={{ width: "100%", flex: "none", background: "#cccc9b", padding: "8px 10px 10px", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
       {pending ? (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "8px 0" }}>
-          <span style={{ fontSize: 26, color: "#3a3a20" }}>Confirm your call</span>
-          <div style={{ display: "flex", gap: 10 }}>{confirmButtons(64, 28)}</div>
+          <span style={{ fontSize: 20, color: "#3a3a20" }}>Confirm your call</span>
+          <div style={{ display: "flex", gap: 10 }}>{confirmButtons(52, 28)}</div>
         </div>
       ) : (
-        <>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6 }}>
           <div style={{ display: "flex", gap: 6 }}>
-            {passButton(170, 84, 28)}
-            {doubleButtons(84, 84, 28)}
+            <button
+              type="button"
+              onClick={boxLive ? () => stageCall("P") : undefined}
+              aria-label="Pass"
+              style={{ flex: 2, minWidth: 0, height: touchH, border: "1px solid #0c4b0b", borderRadius: 5, background: boxLive ? "#116710" : "#a7b8a2", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: boxLive ? "pointer" : "default", opacity: boxLive ? 1 : 0.42 }}
+            >
+              Pass
+            </button>
+            {(["X", "XX"] as const).map((d) => {
+              const live = boxLive && legalSet.has(d);
+              if (!live) return <span key={d} style={{ flex: 1, minWidth: 0, height: touchH }} />;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => stageCall(d)}
+                  aria-label={d === "X" ? "Double" : "Redouble"}
+                  style={{ flex: 1, minWidth: 0, height: touchH, border: `1px solid ${d === "X" ? "#8f0000" : "#0a2170"}`, borderRadius: 5, background: d === "X" ? RED : "#1034a6", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
+                >
+                  {d}
+                </button>
+              );
+            })}
           </div>
-          <div style={{ display: "flex", gap: 6 }}>{levelButtons(80, 84, 28)}</div>
-          {armed && <div style={{ display: "flex", gap: 6 }}>{strainButtons(84, 28, 166, 80)}</div>}
-        </>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5 }}>
+            {[1, 2, 3, 4, 5, 6, 7].map((l) => {
+              const any = STRAINS.some((st) => legalSet.has(`${l}${st}`));
+              const live = boxLive && any;
+              return (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={live ? () => setArmed(armed === l ? null : l) : undefined}
+                  aria-label={`Level ${l}`}
+                  style={{ height: touchH, border: "1px solid #8a8a6a", borderRadius: 5, background: armed === l ? GOLD : "#f8f8f8", color: "#000", fontSize: 26, lineHeight: 1, cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42 }}
+                >
+                  {l}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 5 }}>{strainSlots}</div>
+        </div>
       )}
     </div>
   );
