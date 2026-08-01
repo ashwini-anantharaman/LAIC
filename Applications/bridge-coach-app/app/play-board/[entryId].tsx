@@ -10,6 +10,7 @@ export default function PlayBoardScreen() {
     <BridgeEmbed
       title="Play"
       next={`/m/play-entry/${encodeURIComponent(entryId ?? "")}`}
+      backTo="/play"
     />
   );
 }

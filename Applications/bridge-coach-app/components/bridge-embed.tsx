@@ -1,4 +1,4 @@
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, type Href } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
@@ -19,12 +19,15 @@ export function BridgeEmbed({
   title,
   next,
   resetOnFocus = false,
+  backTo,
 }: {
   title: string;
   next: string;
   /** Tab screens: every return to the tab restarts at `next`, so wandering
    *  into a sub-page (board editor, a table) never becomes the tab's state. */
   resetOnFocus?: boolean;
+  /** Fallback for the header arrow when this screen opened with no history. */
+  backTo?: Href;
 }) {
   const { token } = useAuth();
   const [url, setUrl] = useState<string | null>(null);
@@ -107,7 +110,7 @@ export function BridgeEmbed({
 
   return (
     <Screen>
-      <ScreenHeader title={title} />
+      <ScreenHeader title={title} backTo={backTo} />
 
       {!url && !error && (
         <View style={styles.center}>

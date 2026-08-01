@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { ReactNode } from "react";
 import {
   Pressable,
@@ -28,17 +28,27 @@ export function Screen({
 export function ScreenHeader({
   title,
   showBack = true,
+  backTo = "/home",
 }: {
   title: string;
   showBack?: boolean;
+  /**
+   * Where to go when there is nothing to go BACK to — a reloaded web tab, a
+   * deep link, a notification. `router.back()` is a silent no-op with an empty
+   * history, which is indistinguishable from a dead button (reported
+   * 2026-08-01: the arrow at a table "frozen").
+   */
+  backTo?: Href;
 }) {
   return (
     <View style={styles.header}>
       {showBack ? (
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace(backTo))}
           hitSlop={12}
-          style={styles.backButton}
+          style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <Text style={styles.backButtonText}>‹</Text>
         </Pressable>
