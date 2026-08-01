@@ -27,12 +27,19 @@
 
 import { useState, type ReactNode } from "react";
 
-const GOLD = "#fecd07";
+// The table's own palette (PlayTable's constants): the bid tray's tan, the
+// pale head of a bidding-box button, the auction box's hairline. The strip
+// used to be near-black, which matched nothing else on the felt.
+const TAN = "#cccc9b";
+const HEAD = "#f2f2ea";
+const LINE = "#8a8a6a";
+const INK = "#2b2b1e";
+const MUTED = "#57573f";
 const BADGE: Record<CoachNoteSource, { bg: string; label: string }> = {
   coach: { bg: "#1f5e56", label: "Coach" },
   ben: { bg: "#384bb3", label: "BEN" },
   kb: { bg: "#6b4ea8", label: "Rulebook" },
-  system: { bg: "#4a4a4a", label: "Table" },
+  system: { bg: "#6f6f5a", label: "Table" },
 };
 
 export type CoachNoteSource = "coach" | "ben" | "kb" | "system";
@@ -98,7 +105,7 @@ export function CoachStrip({
       data-testid="coach-strip"
       style={{
         flex: "none", width: "100%", boxSizing: "border-box",
-        background: "#141414", borderTop: `2px solid ${GOLD}`, color: "#fff",
+        background: TAN, borderTop: `2px solid ${LINE}`, color: INK,
       }}
     >
       <button
@@ -108,27 +115,28 @@ export function CoachStrip({
         aria-label={open ? "Hide coaching" : "Show coaching"}
         style={{
           display: "flex", alignItems: "center", gap: 6, width: "100%",
-          padding: compact ? "5px 8px" : "4px 10px", background: "transparent",
-          border: 0, color: "#fff", textAlign: "left", cursor: "pointer",
+          padding: compact ? "5px 8px" : "4px 10px", background: HEAD,
+          borderWidth: 0, borderBottom: open ? `1px solid ${LINE}` : 0, borderStyle: "solid", borderColor: LINE,
+          color: INK, textAlign: "left", cursor: "pointer", fontFamily: "inherit",
         }}
       >
-        <span style={{ flex: "none", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: GOLD }}>
+        <span style={{ flex: "none", fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: MUTED }}>
           {data.title ?? "Coach"}
         </span>
         {/* Collapsed, the header IS the message: the latest headline, one line. */}
-        <span style={{ flex: 1, minWidth: 0, fontSize: font, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: latest ? "#fff" : "rgba(255,255,255,.55)" }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: font, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: latest ? INK : MUTED }}>
           {data.busy ? "Thinking…" : (latest?.headline ?? data.placeholder ?? "No coaching yet.")}
         </span>
         {notes.length > 1 && (
-          <span style={{ flex: "none", fontSize: 11, color: "rgba(255,255,255,.5)" }}>{notes.length}</span>
+          <span style={{ flex: "none", fontSize: 11, color: MUTED }}>{notes.length}</span>
         )}
-        <span style={{ flex: "none", fontSize: 11, color: "rgba(255,255,255,.6)" }}>{open ? "▾" : "▸"}</span>
+        <span style={{ flex: "none", fontSize: 11, color: MUTED }}>{open ? "▾" : "▸"}</span>
       </button>
 
       {open && (
-        <div style={{ maxHeight: maxOpen, overflowY: "auto", padding: `0 ${compact ? 8 : 10}px ${compact ? 8 : 6}px`, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ maxHeight: maxOpen, overflowY: "auto", padding: compact ? "6px 8px" : "6px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
           {notes.length === 0 && (
-            <p style={{ margin: 0, fontSize: font - 1, lineHeight: 1.4, color: "rgba(255,255,255,.6)" }}>
+            <p style={{ margin: 0, fontSize: font - 1, lineHeight: 1.4, color: MUTED }}>
               {data.placeholder ?? "Your coach's notes will appear here as you play."}
             </p>
           )}
@@ -136,21 +144,21 @@ export function CoachStrip({
             const badge = BADGE[note.source];
             return (
               <div key={note.id ?? `${note.source}-${i}`} style={{ display: "flex", gap: 6 }}>
-                <span style={{ flex: "none", height: 17, padding: "0 5px", background: badge.bg, borderRadius: 3, fontSize: 10, fontWeight: 700, lineHeight: "17px" }}>
+                <span style={{ flex: "none", height: 17, padding: "0 5px", background: badge.bg, borderRadius: 3, color: "#fff", fontSize: 10, fontWeight: 700, lineHeight: "17px" }}>
                   {badge.label}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, fontSize: font, lineHeight: 1.35 }}>{note.headline}</p>
                   {note.detail && (
-                    <p style={{ margin: "2px 0 0", fontSize: font - 1, lineHeight: 1.4, color: "rgba(255,255,255,.78)" }}>
+                    <p style={{ margin: "2px 0 0", fontSize: font - 1, lineHeight: 1.4, color: MUTED }}>
                       {note.detail}
                     </p>
                   )}
                   {!!note.alternatives?.length && (
                     <ul style={{ margin: "3px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 1 }}>
                       {note.alternatives.map((alt) => (
-                        <li key={alt.label} style={{ fontSize: font - 2, lineHeight: 1.35, color: "rgba(255,255,255,.62)" }}>
-                          <span style={{ color: "rgba(255,255,255,.85)", fontWeight: 700 }}>not {alt.label}</span>
+                        <li key={alt.label} style={{ fontSize: font - 2, lineHeight: 1.35, color: MUTED }}>
+                          <span style={{ color: INK, fontWeight: 700 }}>not {alt.label}</span>
                           {" — "}
                           {alt.why}
                         </li>
@@ -161,11 +169,11 @@ export function CoachStrip({
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
                       {note.citations.map((cite) =>
                         cite.href ? (
-                          <a key={cite.label} href={cite.href} style={{ fontSize: 10.5, padding: "1px 5px", background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.22)", borderRadius: 3, color: GOLD, textDecoration: "none" }}>
+                          <a key={cite.label} href={cite.href} style={{ fontSize: 10.5, padding: "1px 5px", background: HEAD, border: `1px solid ${LINE}`, borderRadius: 3, color: "#1f5e56", textDecoration: "none" }}>
                             {cite.label}
                           </a>
                         ) : (
-                          <span key={cite.label} style={{ fontSize: 10.5, padding: "1px 5px", background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.22)", borderRadius: 3, color: "rgba(255,255,255,.75)" }}>
+                          <span key={cite.label} style={{ fontSize: 10.5, padding: "1px 5px", background: HEAD, border: `1px solid ${LINE}`, borderRadius: 3, color: MUTED }}>
                             {cite.label}
                           </span>
                         ),
@@ -173,7 +181,7 @@ export function CoachStrip({
                     </div>
                   )}
                   {(note.about?.seat || note.about?.trick || note.at) && (
-                    <p style={{ margin: "2px 0 0", fontSize: 10, color: "rgba(255,255,255,.45)" }}>
+                    <p style={{ margin: "2px 0 0", fontSize: 10, color: MUTED }}>
                       {[note.about?.seat, note.about?.trick ? `trick ${note.about.trick}` : null, note.at]
                         .filter(Boolean)
                         .join(" · ")}

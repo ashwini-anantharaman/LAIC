@@ -715,69 +715,109 @@ export function PlayTable({
       : [];
 
   /**
-   * The armed level's calls and what each would mean — the panel for a bid
-   * you're ABOUT to make, which is what BBO shows beside its box. Rendered
-   * wherever `meaningPanel` would go, whenever nothing more specific (a tapped
-   * call, a staged one, a hovered one) is being explained.
+   * The explanation card — BBO's, in this table's colours.
+   *
+   * It reads as part of the felt furniture rather than a dev tooltip: the tan
+   * of the bid tray for the body, the pale head of a bidding-box button for
+   * the call itself, the auction box's border and shadow. (It was near-black,
+   * which belonged to nothing else on the table.)
+   *
+   * Wide it stands beside the bidding grid as a column, the way BBO does it;
+   * on a phone there's no room beside, so it lies under the grid as a row.
    */
-  const candidatesPanel = (compact: boolean) =>
-    armedMeanings.length > 0 ? (
-      <div
-        data-testid="bid-candidates"
-        style={{
-          maxHeight: compact ? 78 : 92, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3,
-          background: "#141414", border: `1px solid ${GOLD}`, borderRadius: 5,
-          padding: compact ? "4px 6px" : "5px 8px", boxSizing: "border-box", textAlign: "left",
-        }}
-      >
-        {armedMeanings.map((m) => (
-          <div key={m.call} style={{ display: "flex", alignItems: "baseline", gap: 6, color: "#fff" }}>
-            <span style={{ flex: "none", fontSize: compact ? 14 : 16, fontWeight: 700, color: isRed(m.call[1] ?? "") ? "#ff6b6b" : "#fff" }}>
-              {callText(m.call)}
-            </span>
-            <span style={{ minWidth: 0, fontSize: compact ? 12 : 13, lineHeight: 1.3 }}>
-              {m.label}
-              {m.shows ? <span style={{ color: "rgba(255,255,255,.72)" }}> — {m.shows}</span> : null}
-            </span>
-          </div>
-        ))}
-      </div>
-    ) : null;
+  const CARD_BODY = "#cccc9b"; // the bid tray's tan
+  const CARD_HEAD = "#f2f2ea";
+  const CARD_LINE = "#7d7d7d";
+  const CARD_INK = "#2b2b1e";
 
-  /** BBO's panel: the call, its name, and what it promises. */
-  const meaningPanel = (compact: boolean) =>
-    meaning && explained ? (
+  const explainCard = (
+    head: ReactNode,
+    body: ReactNode,
+    o: { compact: boolean; width?: number; testId: string; onClose?: () => void },
+  ) => (
+    <div
+      data-testid={o.testId}
+      style={{
+        width: o.width, maxWidth: "100%", boxSizing: "border-box",
+        display: "flex", flexDirection: o.compact ? "row" : "column",
+        alignItems: o.compact ? "stretch" : undefined,
+        background: CARD_BODY, border: `1px solid ${CARD_LINE}`, borderRadius: 4,
+        boxShadow: "0 3px 8px rgba(0,0,0,.4)", overflow: "hidden", textAlign: "left",
+      }}
+    >
       <div
-        data-testid="bid-meaning"
         style={{
-          display: "flex", alignItems: "baseline", gap: 8, maxWidth: "100%",
-          padding: compact ? "4px 8px" : "5px 10px", boxSizing: "border-box",
-          background: "#141414", border: `1px solid ${GOLD}`, borderRadius: 5,
-          color: "#fff", textAlign: "left",
+          flex: "none", display: "flex", alignItems: "center", gap: 6,
+          background: CARD_HEAD,
+          borderRight: o.compact ? `1px solid ${CARD_LINE}` : undefined,
+          borderBottom: o.compact ? undefined : `1px solid ${CARD_LINE}`,
+          padding: o.compact ? "0 8px" : "1px 8px",
+          fontSize: o.compact ? 18 : 24, fontWeight: 700, lineHeight: 1.25,
         }}
       >
-        <span style={{ flex: "none", fontSize: compact ? 17 : 19, fontWeight: 700, color: isBid(explained) && isRed(explained[1] ?? "") ? "#ff6b6b" : "#fff" }}>
-          {pickedCall ? `${pickedCall.seat} ` : ""}
-          {callText(explained)}
-        </span>
-        <span style={{ minWidth: 0, fontSize: compact ? 12.5 : 13.5, lineHeight: 1.3 }}>
-          {meaning.label}
-          {meaning.shows ? (
-            <span style={{ color: "rgba(255,255,255,.72)" }}> — {meaning.shows}</span>
-          ) : null}
-        </span>
-        {pickedCall && (
+        {head}
+        {o.onClose && (
           <button
             type="button"
-            onClick={() => setPicked(null)}
+            onClick={o.onClose}
             aria-label="Close"
-            style={{ marginLeft: "auto", flex: "none", width: 20, height: 20, background: "rgba(255,255,255,.14)", border: 0, borderRadius: 4, color: "#fff", fontSize: 12, lineHeight: 1, cursor: "pointer" }}
+            style={{ marginLeft: "auto", flex: "none", width: 18, height: 18, background: "transparent", border: `1px solid ${CARD_LINE}`, borderRadius: 3, color: CARD_INK, fontSize: 11, lineHeight: 1, cursor: "pointer" }}
           >
             ✕
           </button>
         )}
       </div>
-    ) : null;
+      <div
+        style={{
+          flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto",
+          padding: o.compact ? "4px 8px" : "6px 8px",
+          fontSize: o.compact ? 12.5 : 14, lineHeight: 1.35, color: CARD_INK,
+        }}
+      >
+        {body}
+      </div>
+    </div>
+  );
+
+  /** The armed level's calls: the panel for a bid you're ABOUT to make. */
+  const candidatesPanel = (compact: boolean, width?: number) =>
+    armedMeanings.length > 0
+      ? explainCard(
+          <span style={{ color: CARD_INK, fontSize: compact ? 14 : 17 }}>Level {armed}</span>,
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {armedMeanings.map((m) => (
+              <div key={m.call}>
+                <span style={{ fontWeight: 700, color: isRed(m.call[1] ?? "") ? RED : "#000" }}>
+                  {callText(m.call)}
+                </span>{" "}
+                {m.label}
+                {m.shows ? <span style={{ color: "#57573f" }}> — {m.shows}</span> : null}
+              </div>
+            ))}
+          </div>,
+          { compact, width, testId: "bid-candidates" },
+        )
+      : null;
+
+  /** One call: what it is, what it shows. */
+  const meaningPanel = (compact: boolean, width?: number) =>
+    meaning && explained
+      ? explainCard(
+          <span style={{ color: isBid(explained) && isRed(explained[1] ?? "") ? RED : "#000" }}>
+            {pickedCall ? (
+              <span style={{ fontSize: compact ? 13 : 15, fontWeight: 400, color: "#57573f" }}>
+                {pickedCall.seat}{" "}
+              </span>
+            ) : null}
+            {callText(explained)}
+          </span>,
+          <>
+            {meaning.label}
+            {meaning.shows ? <span style={{ color: "#57573f" }}> — {meaning.shows}</span> : null}
+          </>,
+          { compact, width, testId: "bid-meaning", onClose: pickedCall ? () => setPicked(null) : undefined },
+        )
+      : null;
 
   const bidBtnStyle = (w: number, h: number, bg: string, border: string, live: boolean, font = 21): CSSProperties => ({
     flex: "none", width: w, height: h, border: `1px solid ${border}`, borderRadius: 5,
@@ -885,14 +925,6 @@ export function PlayTable({
 
   const bidBoxWide = (
     <div style={{ position: "relative", width: 581, height: 107, flex: "none", background: "#cccc9b", borderRadius: 4, padding: "9px 10px", boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 7, boxSizing: "border-box" }}>
-      {/* Above the box, so the pointer never covers what it just revealed: the
-          call being explained, or — with a level armed and nothing else to
-          say — what each of that level's calls would mean. */}
-      {(meaning || armedMeanings.length > 0) && (
-        <div style={{ position: "absolute", left: 0, right: 0, bottom: "calc(100% + 6px)", display: "flex", justifyContent: "center" }}>
-          {meaning ? meaningPanel(false) : candidatesPanel(false)}
-        </div>
-      )}
       {pending ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, height: 81 }}>
           <span style={{ fontSize: 19, color: "#3a3a20" }}>Confirm your call:</span>
@@ -1219,7 +1251,19 @@ export function PlayTable({
           <div style={{ flex: 1, minHeight: 207, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 0" }}>
             {seatColumn("W")}
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {inAuction && auctionDisplay === "box" ? auctionBox() : null}
+              {/* Grid and explanation side by side, BBO's arrangement. The
+                  centre is ~409 wide, so the grid gives up its design 356 for
+                  250 and the card takes 150 — the pair still reads as centred,
+                  and the card's slot is always there so nothing shifts when an
+                  explanation appears. */}
+              {inAuction && auctionDisplay === "box" ? (
+                <div style={{ display: "flex", alignItems: "stretch", gap: 8, height: 207 }}>
+                  {auctionBox({ width: 250, height: 207, headFont: 22, cellFont: 19, radius: 4 })}
+                  <div style={{ width: 150, flex: "none", display: "flex" }}>
+                    {meaning ? meaningPanel(false, 150) : candidatesPanel(false, 150)}
+                  </div>
+                </div>
+              ) : null}
               {inPlay ? trickCross() : null}
               {complete ? resultCard : null}
             </div>
