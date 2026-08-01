@@ -19,7 +19,7 @@ import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { benAvailable, originalHand } from "@/lib/benSeat";
-import { bidMeaningsFor } from "@/lib/bidMeanings";
+import { bidMeaningReader } from "@/lib/bidMeanings";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
@@ -164,14 +164,22 @@ export default async function PlayTablePage({
    * scores, not prose (its /bid returns `candidates: [{call, insta_score}]`),
    * whereas "what does this bid show" is exactly what the KB's rules record.
    */
-  const bidMeanings =
-    state.phase === "auction" && myTurn
-      ? bidMeaningsFor({
-          compiled: await sessionService().compiledFor(record),
-          state,
-          seat: state.turn,
-        })
-      : undefined;
+  const meanings =
+    state.phase === "auction"
+      ? bidMeaningReader({ compiled: await sessionService().compiledFor(record) })
+      : null;
+  // Candidates you could call now — only when the box is live, since there's
+  // nothing to explain about a bid you can't make.
+  const bidMeanings = meanings && myTurn ? meanings.at(state, state.turn) : undefined;
+  // …and what every call already in the auction meant when it was made, for
+  // tapping a cell in the bidding table (BBO's behavior).
+  const auctionMeanings = meanings?.forAuction({
+    boardRef: record.board.name,
+    dealer: record.board.dealer,
+    vul: state.vul,
+    hands: state.hands,
+    auction: state.auction,
+  });
 
   /**
    * The auction, explained — the strip's first real content (2026-08-01).
@@ -375,6 +383,7 @@ export default async function PlayTablePage({
             settings={settings}
             viewHref={{ label: "Hands", href: settingsHref({ view: "hands" }) }}
             bidMeanings={bidMeanings}
+            auctionMeanings={auctionMeanings}
             coach={coachPanel}
           />
         )}

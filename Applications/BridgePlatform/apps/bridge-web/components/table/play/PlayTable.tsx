@@ -204,6 +204,12 @@ export interface PlayTableProps {
    */
   bidMeanings?: Readonly<Record<string, { label: string; shows?: string }>>;
   /**
+   * What each call ALREADY IN the auction meant when it was made, by index.
+   * Tapping a cell in the bidding table explains it — BBO's behavior, and the
+   * one that works on a phone, where there is no pointer to hover with.
+   */
+  auctionMeanings?: readonly ({ label: string; shows?: string } | undefined)[];
+  /**
    * The coaching strip below the player's hand (CoachStrip). Presentational:
    * the host owns the notes, so the coaching runtime — and BEN's explanation of
    * the move it just made — plugs in here without touching this layout. Omit
@@ -237,6 +243,7 @@ export function PlayTable({
   settings,
   viewHref,
   bidMeanings,
+  auctionMeanings,
   coach,
 }: Readonly<PlayTableProps>) {
   // --- per-instance sizing. The prototype watched `window`; this watches the
@@ -256,13 +263,15 @@ export function PlayTable({
   // Armed bid level and the staged (unconfirmed) call are instance state.
   const [armed, setArmed] = useState<number | null>(null);
   const [pending, setPending] = useState<string | null>(null);
-  // The call the pointer is over, for the meaning panel. Touch has no hover, so
-  // there a staged call (confirmBids) is what gets explained.
+  // The call the pointer is over, for the meaning panel. Touch has no hover —
+  // there, a TAPPED call in the bidding table (`picked`) is what gets explained.
   const [hover, setHover] = useState<string | null>(null);
+  const [picked, setPicked] = useState<number | null>(null);
   useEffect(() => {
     setArmed(null);
     setPending(null);
     setHover(null);
+    setPicked(null);
   }, [state.auction.length]);
 
   // The ☰ settings overlay is instance state too. An explicit onMenu prop
@@ -547,11 +556,14 @@ export function PlayTable({
   );
 
   // ---- centre -------------------------------------------------------------
-  const auctionRows: (AuctionCall | null)[][] = [];
+  // Cells carry their auction index: tapping one has to know WHICH call it is,
+  // and the grid is padded to the dealer's column so position alone won't say.
+  type AuctionCell = { entry: AuctionCall; idx: number } | null;
+  const auctionRows: AuctionCell[][] = [];
   {
-    const padded: (AuctionCall | null)[] = [
+    const padded: AuctionCell[] = [
       ...Array.from({ length: ORDER.indexOf(state.dealer) }, () => null),
-      ...state.auction,
+      ...state.auction.map((entry, idx) => ({ entry, idx })),
     ];
     for (let i = 0; i < padded.length; i += 4) auctionRows.push(padded.slice(i, i + 4));
   }
@@ -575,11 +587,33 @@ export function PlayTable({
         {auctionRows.map((row, i) => (
           <div key={i} style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4, textAlign: "center" }}>
             {[0, 1, 2, 3].map((j) => {
-              const e = row[j];
+              const cell = row[j];
+              const e = cell?.entry;
+              // Explainable calls are buttons — this is the tap target that
+              // replaces hover on a phone. The rest stay inert spans.
+              const explainable = cell && auctionMeanings?.[cell.idx];
+              const on = cell !== null && cell !== undefined && picked === cell.idx;
+              const style: CSSProperties = {
+                borderRadius: 3, padding: "2px 0", minHeight: m.cellMinH ?? 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: m.cellFont, lineHeight: 1.15, fontFamily: "inherit",
+                background: e ? (j === dealerCol ? DEALER_TINT : GREY) : "transparent",
+                color: e ? callColor(e.call) : "#000",
+                border: 0, boxShadow: on ? `0 0 0 2px ${GOLD}` : undefined,
+              };
+              if (!explainable || !cell || !e) {
+                return <span key={j} style={style}>{e ? callText(e.call) : ""}</span>;
+              }
               return (
-                <span key={j} style={{ borderRadius: 3, padding: "2px 0", minHeight: m.cellMinH ?? 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: m.cellFont, lineHeight: 1.15, background: e ? (j === dealerCol ? DEALER_TINT : GREY) : "transparent", color: e ? callColor(e.call) : "#000" }}>
-                  {e ? callText(e.call) : ""}
-                </span>
+                <button
+                  key={j}
+                  type="button"
+                  onClick={() => setPicked((p) => (p === cell.idx ? null : cell.idx))}
+                  title={`What ${callText(e.call)} meant`}
+                  style={{ ...style, cursor: "pointer" }}
+                >
+                  {callText(e.call)}
+                </button>
               );
             })}
           </div>
@@ -650,9 +684,16 @@ export function PlayTable({
         }
       : {};
 
-  /** The call being explained: what you've staged wins over what you're over. */
-  const explained = pending ?? hover;
-  const meaning = explained ? bidMeanings?.[explained] : undefined;
+  /**
+   * What the panel is explaining, in priority order: a call you TAPPED in the
+   * bidding table, then one you've staged, then one you're hovering. Tap wins
+   * because it's deliberate — and on a phone it's the only one of the three
+   * that exists.
+   */
+  const pickedCall = picked !== null ? state.auction[picked] : undefined;
+  const pickedMeaning = picked !== null ? auctionMeanings?.[picked] : undefined;
+  const explained = pickedCall ? pickedCall.call : (pending ?? hover);
+  const meaning = pickedCall ? pickedMeaning : explained ? bidMeanings?.[explained] : undefined;
 
   /**
    * Every explainable call at the armed level — the phone's answer to hover.
@@ -686,6 +727,7 @@ export function PlayTable({
         }}
       >
         <span style={{ flex: "none", fontSize: compact ? 17 : 19, fontWeight: 700, color: isBid(explained) && isRed(explained[1] ?? "") ? "#ff6b6b" : "#fff" }}>
+          {pickedCall ? `${pickedCall.seat} ` : ""}
           {callText(explained)}
         </span>
         <span style={{ minWidth: 0, fontSize: compact ? 12.5 : 13.5, lineHeight: 1.3 }}>
@@ -694,6 +736,16 @@ export function PlayTable({
             <span style={{ color: "rgba(255,255,255,.72)" }}> — {meaning.shows}</span>
           ) : null}
         </span>
+        {pickedCall && (
+          <button
+            type="button"
+            onClick={() => setPicked(null)}
+            aria-label="Close"
+            style={{ marginLeft: "auto", flex: "none", width: 20, height: 20, background: "rgba(255,255,255,.14)", border: 0, borderRadius: 4, color: "#fff", fontSize: 12, lineHeight: 1, cursor: "pointer" }}
+          >
+            ✕
+          </button>
+        )}
       </div>
     ) : null;
 
@@ -831,10 +883,6 @@ export function PlayTable({
     const suit = Math.floor((avail - gap * 4) / 6); // NT takes a double slot
     return (
       <div style={{ flex: "none", background: "#cccc9b", padding: `6px ${ph.pad}px`, display: "flex", flexDirection: "column", alignItems: "center", gap, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
-        {/* Inside the tray on a phone: there's no hover here, so this appears
-            for the call you've staged (Confirm bids), where it belongs anyway —
-            right above the Confirm button. */}
-        {meaning ? <div style={{ width: "100%" }}>{meaningPanel(true)}</div> : null}
         {pending ? (
           <div style={{ display: "flex", alignItems: "center", gap, padding: "2px 0", flexWrap: "wrap", justifyContent: "center" }}>
             <span style={{ width: "100%", textAlign: "center", fontSize: 14, color: "#3a3a20" }}>Confirm your call</span>
@@ -849,23 +897,6 @@ export function PlayTable({
               {doubleButtons(dbl, h, 18)}
             </div>
             <div style={{ display: "flex", gap }}>{levelButtons(lvl, h, 20)}</div>
-            {/* What each of this level's calls would mean, right above the row
-                you're about to tap. */}
-            {armedMeanings.length > 0 && (
-              <div style={{ width: "100%", maxHeight: 78, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3, background: "#141414", border: `1px solid ${GOLD}`, borderRadius: 5, padding: "4px 6px", boxSizing: "border-box" }}>
-                {armedMeanings.map((m) => (
-                  <div key={m.call} style={{ display: "flex", alignItems: "baseline", gap: 6, color: "#fff" }}>
-                    <span style={{ flex: "none", fontSize: 14, fontWeight: 700, color: isRed(m.call[1] ?? "") ? "#ff6b6b" : "#fff" }}>
-                      {callText(m.call)}
-                    </span>
-                    <span style={{ minWidth: 0, fontSize: 12, lineHeight: 1.3 }}>
-                      {m.label}
-                      {m.shows ? <span style={{ color: "rgba(255,255,255,.72)" }}> — {m.shows}</span> : null}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
             {armed && <div style={{ display: "flex", gap }}>{strainButtons(h, 20, suit * 2 + gap, suit)}</div>}
           </>
         )}
@@ -1183,8 +1214,13 @@ export function PlayTable({
           {!complete && !sides && !(inAuction && auctionDisplay === "seats") ? phoneSeatStrip : null}
           <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, overflow: "hidden", padding: 4 }}>
             {sides ? phoneSideHand("W") : null}
-            {inAuction && auctionDisplay === "box"
-              ? auctionBox({
+            {/* The bidding table and its explanation, as one block: BBO puts
+                the panel beside the grid, and a phone's version of beside is
+                under. Everything explainable lands here — a call you tapped in
+                the grid, and the calls you could make at the armed level. */}
+            {inAuction && auctionDisplay === "box" ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 4, maxWidth: "100%" }}>
+                {auctionBox({
                   width: Math.min(ph.avail, 420),
                   // Content-sized, and free to use the felt it has: a fixed
                   // height is either a half-empty slab at "1♠ pass" or a
@@ -1195,8 +1231,25 @@ export function PlayTable({
                   cellFont: 16,
                   radius: 3,
                   cellMinH: 26,
-                })
-              : null}
+                })}
+                {meaningPanel(true)}
+                {armedMeanings.length > 0 && !meaning ? (
+                  <div style={{ maxHeight: 78, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3, background: "#141414", border: `1px solid ${GOLD}`, borderRadius: 5, padding: "4px 6px", boxSizing: "border-box" }}>
+                    {armedMeanings.map((m) => (
+                      <div key={m.call} style={{ display: "flex", alignItems: "baseline", gap: 6, color: "#fff" }}>
+                        <span style={{ flex: "none", fontSize: 14, fontWeight: 700, color: isRed(m.call[1] ?? "") ? "#ff6b6b" : "#fff" }}>
+                          {callText(m.call)}
+                        </span>
+                        <span style={{ minWidth: 0, fontSize: 12, lineHeight: 1.3 }}>
+                          {m.label}
+                          {m.shows ? <span style={{ color: "rgba(255,255,255,.72)" }}> — {m.shows}</span> : null}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {inAuction && auctionDisplay === "seats" ? (
               <div style={{ alignSelf: "stretch", display: "flex", flexDirection: "column", justifyContent: "center", gap: 6, padding: 6 }}>
                 {(["N", "E", "S", "W"] as Seat[]).map((s) => (

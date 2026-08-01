@@ -19,13 +19,15 @@
 
 import {
   analyzeSeat,
+  applyEvent,
   inferPartnership,
+  initialState,
   matchContext,
   realizeAuctionAction,
   effectiveSurface,
 } from "@bridge/engine";
 import type { GameState } from "@bridge/engine";
-import type { Call, Seat } from "@bridge/events";
+import type { AuctionCall, Call, Card, Seat, Vul } from "@bridge/events";
 import type { CompiledKb } from "@bridge/kb";
 import type { SettingValue } from "@bridge/config";
 
@@ -65,50 +67,89 @@ function showsText(shows: NonNullable<CompiledKb["auctionRules"][number]["shows"
 }
 
 /**
- * call → what it means at this point in the auction, for the system this table
- * plays. Several rules can produce the same call (an exception and the general
- * agreement, say); the first wins, which is the order the decider itself would
- * consider them in.
+ * A reader bound to one system (KB + packs + settings). The effective surface
+ * is resolved once here because explaining a whole auction asks the same
+ * question at every position.
  */
-export function bidMeaningsFor({
+export function bidMeaningReader({
   compiled,
-  state,
-  seat,
   enabledPackIds = [],
   settingOverrides = {},
 }: {
   compiled: CompiledKb;
-  state: GameState;
-  seat: Seat;
   /** The system in play. Empty means "every pack the KB has", KB defaults. */
   enabledPackIds?: string[];
   settingOverrides?: Record<string, SettingValue>;
-}): Record<string, BidMeaning> {
+}) {
   const surface = effectiveSurface({
     compiled,
     player: { enabledPackIds, settingOverrides, decisionPolicyId: "first_match" },
   });
-  const facts = analyzeSeat(state.auction, seat, state.vul);
-  // Context gating and action realization both read partnership state (an
-  // agreed suit, an ask in progress), so fill it exactly as the decider does.
-  facts.inference = inferPartnership(state.auction, seat, state.vul, {
-    auctionRules: surface.auctionRules,
-  });
 
-  const out: Record<string, BidMeaning> = {};
-  for (const rule of surface.auctionRules) {
-    if (!matchContext(rule.context, facts)) continue;
-    let call: Call | null;
-    try {
-      call = realizeAuctionAction(rule.action, state, seat, facts);
-    } catch {
-      continue; // a rule whose action can't resolve here simply has nothing to say
+  /**
+   * call → what it would mean if `seat` said it now. Several rules can produce
+   * the same call (an exception and the general agreement, say); the first
+   * wins, which is the order the decider itself would consider them in.
+   */
+  const at = (state: GameState, seat: Seat): Record<string, BidMeaning> => {
+    const facts = analyzeSeat(state.auction, seat, state.vul);
+    // Context gating and action realization both read partnership state (an
+    // agreed suit, an ask in progress), so fill it exactly as the decider does.
+    facts.inference = inferPartnership(state.auction, seat, state.vul, {
+      auctionRules: surface.auctionRules,
+    });
+
+    const out: Record<string, BidMeaning> = {};
+    for (const rule of surface.auctionRules) {
+      if (!matchContext(rule.context, facts)) continue;
+      let call: Call | null;
+      try {
+        call = realizeAuctionAction(rule.action, state, seat, facts);
+      } catch {
+        continue; // a rule whose action can't resolve here has nothing to say
+      }
+      if (call === null || out[call]) continue;
+      out[call] = {
+        label: rule.label,
+        shows: rule.shows ? showsText(rule.shows) || undefined : undefined,
+      };
     }
-    if (call === null || out[call]) continue;
-    out[call] = {
-      label: rule.label,
-      shows: rule.shows ? showsText(rule.shows) || undefined : undefined,
-    };
-  }
-  return out;
+    return out;
+  };
+
+  /**
+   * What each call in the auction meant WHEN IT WAS MADE — the answer to
+   * tapping a call in the bidding table. A meaning is a property of the
+   * position, so the auction is replayed and each call asked about at its own
+   * moment; asking at the current position would explain partner's opening
+   * with a rule about the fourth round.
+   *
+   * Aligned with `auction` by index; a call the system has no agreement for
+   * comes back undefined.
+   */
+  const forAuction = (board: {
+    boardRef: string;
+    dealer: Seat;
+    vul: Vul;
+    /** As DEALT — during the auction that's simply the current hands. */
+    hands: Record<Seat, Card[]>;
+    auction: readonly AuctionCall[];
+  }): (BidMeaning | undefined)[] => {
+    let st = initialState(board.boardRef, board.dealer, board.vul, board.hands);
+    return board.auction.map((entry, i) => {
+      const meaning = at(st, entry.seat)[entry.call];
+      st = applyEvent(st, {
+        category: "bid-event",
+        seat: entry.seat,
+        call: entry.call,
+        seq: i,
+        ts: 0,
+        boardRef: board.boardRef,
+        fallback: false,
+      });
+      return meaning;
+    });
+  };
+
+  return { at, forAuction };
 }
