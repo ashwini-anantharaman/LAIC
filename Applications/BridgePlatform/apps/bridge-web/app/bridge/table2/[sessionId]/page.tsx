@@ -145,8 +145,9 @@ export default async function PlayTablePage({
   // before — an undo remounts the controls paused.
   // Boards RUN by default now (the design's pause-first control); ?paused is
   // the exception an undo sets so the table comes back held.
+  // Toolbar transport: Pause/Play · ▶ step · ↩ Undo, one row in the bottom bar.
   const controlsAt = (s: number) => (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 * s }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 7 * s }}>
       <AutoAdvance
         key={paused ?? "run"}
         sessionId={sessionId}
@@ -159,15 +160,15 @@ export default async function PlayTablePage({
         railScale={s}
       />
       {record.events.length > 0 && state.phase !== "complete" && (
-        <form action={undoAction}>
+        <form action={undoAction} style={{ display: "flex" }}>
           <input type="hidden" name="sessionId" value={sessionId} />
           <button
             type="submit"
             aria-label="undo"
-            title="Undo the last decision — comes back paused"
-            style={{ width: 100 * s, height: 26 * s, background: "#acc5c5", border: `${2 * s}px solid #f2f4f4`, borderRadius: 7 * s, color: "#000", fontSize: 13 * s, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
+            title="Take back the last decision — comes back paused"
+            style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "center", height: 30 * s, padding: `0 ${12 * s}px`, border: "1px solid rgba(255,255,255,.18)", borderRadius: 6, background: "rgba(255,255,255,.10)", color: "#eef4f1", fontSize: 13 * s, fontWeight: 700, lineHeight: 1, whiteSpace: "nowrap", cursor: "pointer" }}
           >
-            ↩ undo
+            ↩ Undo
           </button>
         </form>
       )}

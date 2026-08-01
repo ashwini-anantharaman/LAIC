@@ -67,19 +67,20 @@ export function AutoAdvance({
 
   if (complete) return null;
   if (variant === "rail") {
+    // The EdgeToolbar design's transport pair: Pause/Play as a toolbar
+    // button (warn tone while held), step as a ▶ icon. Boards run by
+    // default; this is the standing toggle.
     const s = railScale ?? 1;
     return (
-      <div style={{ display: "flex", gap: 6 * s, justifyContent: "center" }}>
-        {/* The SideRail design's pause control: boards run by default and this
-            STOPS them — a standing toggle, live even on a human turn. */}
+      <div style={{ display: "flex", gap: 7 * s, justifyContent: "center" }}>
         <button
           type="button"
           onClick={() => setPaused((p) => !p)}
-          aria-label={paused ? "Resume" : "Pause"}
-          title="Pause or resume play"
-          style={{ width: 100 * s, height: 32 * s, background: paused ? "#8a3030" : "#3a5a7a", border: `${2 * s}px solid #f2f4f4`, borderRadius: 7 * s, color: "#fff", fontSize: 15 * s, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
+          aria-label={paused ? "Play" : "Pause"}
+          title="Pause or resume"
+          style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "center", height: 30 * s, padding: `0 ${12 * s}px`, border: `1px solid ${paused ? "#a94848" : "rgba(255,255,255,.18)"}`, borderRadius: 6, background: paused ? "#8a3030" : "rgba(255,255,255,.10)", color: paused ? "#fff" : "#eef4f1", fontSize: 13 * s, fontWeight: 700, lineHeight: 1, whiteSpace: "nowrap", cursor: "pointer" }}
         >
-          {paused ? "Resume" : "Pause"}
+          {paused ? "Play" : "Pause"}
         </button>
         <button
           type="button"
@@ -91,12 +92,12 @@ export function AutoAdvance({
           aria-label="step"
           title={
             active
-              ? "Pause and advance one AI decision"
+              ? "Advance one action"
               : "A human is to act — bid or play from the hand"
           }
-          style={{ width: 47 * s, height: 32 * s, background: "#acc5c5", border: `${2 * s}px solid #f2f4f4`, borderRadius: 7 * s, color: "#000", fontSize: 16 * s, fontWeight: 700, lineHeight: 1, cursor: active ? "pointer" : "default", opacity: active ? 1 : 0.42 }}
+          style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "center", width: 30 * s, height: 30 * s, border: "1px solid rgba(255,255,255,.18)", borderRadius: 6, background: "rgba(255,255,255,.10)", color: "#eef4f1", fontSize: 13 * s, lineHeight: 1, cursor: active ? "pointer" : "default", opacity: active ? 1 : 0.42 }}
         >
-          ▸
+          ▶
         </button>
       </div>
     );

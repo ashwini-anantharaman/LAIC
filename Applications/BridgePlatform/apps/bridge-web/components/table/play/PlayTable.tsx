@@ -21,9 +21,9 @@
 // big-card hand), a fixed 720-wide stage scaled against the MEASURED stack
 // height so the hand never falls below the fold.
 
-import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
+import { EdgeToolbar, type ToolbarItem } from "./EdgeToolbar";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
 
 // ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ const CARD_BACK = "#0d707c";
 const SEAT_BADGE = "#12525e";
 
 /** Wide stage; the mobile stack is 720 wide with a MEASURED height. */
-const BASE_WIDE = { w: 1040, h: 590 };
+const BASE_WIDE = { w: 1040, h: 678 };
 const MOBILE_W = 720;
 const MOBILE_FELT_H = 430;
 /** Mobile hand-card metrics (Mobile Table.dc.html). */
@@ -197,6 +197,8 @@ export function PlayTable({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuHandler = onMenu ?? (settings ? () => setMenuOpen((v) => !v) : undefined);
   const menuItems: SettingsItem[] = [...(settings ?? [])];
+  // Who-sits-where moved behind the bottom bar's Seats button (SeatsPopup).
+  const [seatsOpen, setSeatsOpen] = useState(false);
 
   // Three tiers (Device Preview.dc.html): phone-sized portrait gets the
   // Mobile Table stack; a narrow-desktop / split pane gets Play Table's
@@ -204,7 +206,7 @@ export function PlayTable({
   const narrow = box.w / Math.max(1, box.h) < 1.25;
   const phone = narrow && box.w < 640;
   const stacked = narrow && !phone;
-  const BASE = stacked ? { w: MOBILE_W, h: 1180 } : BASE_WIDE;
+  const BASE = stacked ? { w: MOBILE_W, h: 1268 } : BASE_WIDE;
 
   // Wide/stacked: scale to FIT, down or up. Phone: a fixed 720-wide column
   // scaled by BOTH axes against the measured stack height (never up — thumb
@@ -639,73 +641,57 @@ export function PlayTable({
     </div>
   );
 
-  // ---- rail (wide) ----------------------------------------------------------
-  const menuButton = (w: number, h: number, font: number, m: { border?: string; radius?: number } = {}) => (
-    <button type="button" onClick={menuHandler} title="Table menu and settings" aria-label="Table menu" style={{ width: w, height: h, background: RAIL_BLUE, border: m.border ?? "2px solid #dfe4f4", borderRadius: m.radius ?? 7, color: "#fff", fontSize: font, lineHeight: 1, cursor: menuHandler ? "pointer" : "default" }}>☰</button>
-  );
+  // ---- edge toolbars (EdgeToolbar.dc.html + toolbarModel) ------------------
+  const SEAT_NAMES: Record<Seat, string> = { N: "North", E: "East", S: "South", W: "West" };
+  const vulLabel =
+    state.vul === "both" || state.vul === "All" ? "Both"
+    : state.vul === "none" || state.vul === "None" ? "None"
+    : String(state.vul).toUpperCase();
+  // The contract slots are ALWAYS present, "\u2014" until there is one — adding
+  // chips mid-deal reflows the bar and shifts every control after it.
+  const infoItems: ToolbarItem[] = [
+    { kind: "chip", label: "Board", value: String(boardLabel) },
+    { kind: "chip", label: "Dealer", value: state.dealer },
+    { kind: "chip", label: "Vul", value: vulLabel, color: vulLabel === "None" ? "#eef4f1" : "#ff9c9c" },
+    { kind: "divider" },
+    { kind: "chip", label: "Contract", value: c ? `${c.level}${GLYPH[c.strain]}${c.doubled === 1 ? "X" : c.doubled === 2 ? "XX" : ""}` : "—", color: c && isRed(c.strain) ? "#ff8a8a" : "#eef4f1" },
+    { kind: "chip", label: "By", value: c ? SEAT_NAMES[c.declarer] : "—" },
+    { kind: "spacer" },
+    { kind: "chip", label: "NS", value: String(state.trickCount.NS) },
+    { kind: "chip", label: "EW", value: String(state.trickCount.EW) },
+    { kind: "button", label: scoringLabel, title: "Scoring mode", on: onScoring ?? null },
+  ];
+  const actionItems = (controls: ReactNode): ToolbarItem[] => [
+    ...(controls ? ([{ kind: "node", node: controls }] as ToolbarItem[]) : []),
+    { kind: "divider" },
+    ...(viewHref
+      ? ([{ kind: "button", label: viewHref.label, title: "Four-hand record", href: viewHref.href }] as ToolbarItem[])
+      : []),
+    ...(railExtra
+      ? ([{ kind: "button", label: "Seats", title: "Who is in each seat", on: () => setSeatsOpen(true) }] as ToolbarItem[])
+      : []),
+    { kind: "spacer" },
+    ...(onClaim && inPlay ? ([{ kind: "button", label: "Claim", tone: "accent", on: onClaim }] as ToolbarItem[]) : []),
+    ...(menuHandler
+      ? ([{ kind: "icon", label: "☰", tone: "accent", title: "Table settings", ariaLabel: "Table menu", on: menuHandler }] as ToolbarItem[])
+      : []),
+  ];
 
-  const rail = (
-    <div style={{ width: 185, flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "14px 10px 18px", boxSizing: "border-box" }}>
-      {menuButton(100, 46, 22)}
-      <button type="button" onClick={onScoring} title="Scoring mode" style={{ width: 100, height: 32, background: PANEL, border: "2px solid #f2f4f4", borderRadius: 7, color: "#000", fontSize: 19, fontWeight: 700, lineHeight: 1, cursor: onScoring ? "pointer" : "default" }}>{scoringLabel}</button>
-      <div style={{ width: 92, background: "#fff", border: "2px solid #7d7d7d", borderRadius: 3, padding: "2px 6px 8px", textAlign: "center", boxShadow: "0 1px 2px rgba(0,0,0,.5)" }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#000", lineHeight: 1.2, borderBottom: "1px solid #9a9a9a", marginBottom: 4 }}>{state.dealer}</div>
-        <div title={String(boardLabel)} style={{ height: 56, background: PANEL, border: "1px solid #6f8a8a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: String(boardLabel).length > 3 ? 17 : 34, fontWeight: 700, color: "#000", overflow: "hidden", padding: "0 2px", textAlign: "center", lineHeight: 1.05, wordBreak: "break-all" }}>{boardLabel}</div>
-      </div>
-      {c && (
-        <div style={{ width: 92, background: CARD_BACK, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2, padding: 2, boxShadow: "0 1px 2px rgba(0,0,0,.5)" }}>
-          <div style={{ gridColumn: "span 2", display: "grid", gridTemplateColumns: "34px 1fr" }}>
-            <div style={{ background: CARD_BACK }} />
-            <div style={{ background: GREY, textAlign: "center", padding: "2px 0", lineHeight: 1.1 }}>
-              <div style={{ fontSize: 17, fontWeight: 700, color: isRed(c.strain) ? RED : "#000" }}>
-                {c.level}{GLYPH[c.strain]}{c.doubled === 1 ? "X" : c.doubled === 2 ? "XX" : ""}
-              </div>
-              <div style={{ fontSize: 13, color: "#000" }}>{({ N: "North", E: "East", S: "South", W: "West" } as Record<Seat, string>)[c.declarer]}</div>
-            </div>
+  /** SeatsPopup.dc.html: who is in each seat, behind the Seats button. */
+  const seatsPopup =
+    seatsOpen && railExtra ? (
+      <div onClick={() => setSeatsOpen(false)} style={{ position: "absolute", inset: 0, zIndex: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.5)" }}>
+        {/* Without stopPropagation every click inside the card reaches the
+            backdrop and dismisses the popup. */}
+        <div onClick={(e) => e.stopPropagation()} style={{ width: 320, maxWidth: "calc(100% - 24px)", background: "#16211d", border: "1px solid #3a4a44", borderRadius: 9, boxShadow: "0 18px 40px rgba(0,0,0,.5)", padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#eef4f1" }}>Seats</span>
+            <button type="button" aria-label="Close" onClick={() => setSeatsOpen(false)} style={{ width: 28, height: 28, border: 0, borderRadius: 5, background: "#2a3a34", color: "#dfe7e3", fontSize: 15, lineHeight: 1, cursor: "pointer" }}>✕</button>
           </div>
-          <div style={{ background: CARD_BACK, color: "#fff", textAlign: "center", fontSize: 19, fontWeight: 700, padding: "3px 0" }}>{state.trickCount.NS}</div>
-          <div style={{ background: CARD_BACK, color: "#fff", textAlign: "center", fontSize: 19, fontWeight: 700, padding: "3px 0" }}>{state.trickCount.EW}</div>
+          {railExtra}
         </div>
-      )}
-      <div style={{ flex: 1 }} />
-      {/* The SideRail design's bottom cluster: Pause · step · undo · Seats ·
-          Hands · Claim, anchored above the rail's foot. */}
-      {controlsExtra}
-      {railExtra}
-      {viewHref && (
-        <Link href={viewHref.href} title="Switch the view" style={{ width: 100, height: 32, background: PANEL, border: "2px solid #f2f4f4", borderRadius: 7, color: "#000", fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>{viewHref.label}</Link>
-      )}
-      {onClaim && inPlay && (
-        <button type="button" onClick={onClaim} style={{ width: 100, height: 36, background: RAIL_BLUE, border: "2px solid #dfe4f4", borderRadius: 7, color: "#fff", fontSize: 17, fontWeight: 700, cursor: "pointer" }}>Claim</button>
-      )}
-    </div>
-  );
-
-  // ---- mobile stack (Mobile Table.dc.html) ----------------------------------
-  const mobileTopBar = (
-    <div style={{ width: "100%", height: 120, flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "0 8px", background: "#000", boxSizing: "border-box" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button type="button" onClick={onScoring} title="Scoring mode" style={{ width: 100, height: 104, background: PANEL, border: "2px solid #f2f4f4", borderRadius: 6, color: "#000", fontSize: 28, fontWeight: 400, lineHeight: 1, cursor: onScoring ? "pointer" : "default" }}>{scoringLabel}</button>
-        <div title={String(boardLabel)} style={{ width: 100, height: 104, background: "#fff", border: "2px solid #7d7d7d", borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", boxSizing: "border-box", overflow: "hidden" }}>
-          <span style={{ fontSize: 20, fontWeight: 700, color: "#000", borderBottom: "1px solid #9a9a9a", width: "80%", textAlign: "center" }}>{state.dealer}</span>
-          <span style={{ fontSize: String(boardLabel).length > 3 ? 18 : 36, fontWeight: 700, background: vulFor("N") ? "#c62828" : "#fff", color: vulFor("N") ? "#fff" : "#000", padding: "2px 6px", maxWidth: "100%", textAlign: "center", overflow: "hidden" }}>{boardLabel}</span>
-        </div>
-        {c && (
-          <div style={{ width: 150, height: 104, background: GREY, borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.15 }}>
-            <span style={{ fontSize: 30, fontWeight: 700, color: isRed(c.strain) ? RED : "#000" }}>
-              {c.level}{GLYPH[c.strain]}{c.doubled === 1 ? "X" : c.doubled === 2 ? "XX" : ""}
-            </span>
-            <span style={{ fontSize: 18, color: "#000" }}>{({ N: "North", E: "East", S: "South", W: "West" } as Record<Seat, string>)[c.declarer]}</span>
-            <span style={{ fontSize: 16, color: "#222" }}>NS {state.trickCount.NS} · EW {state.trickCount.EW}</span>
-          </div>
-        )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {controlsExtraNarrow ?? controlsExtra}
-        {menuButton(80, 104, 32, { border: "0", radius: 6 })}
-      </div>
-    </div>
-  );
+    ) : null;
 
   /** Dummy's hand as a plate-less card row across the top (phone play view). */
   const dummyRow =
@@ -715,10 +701,11 @@ export function PlayTable({
       </div>
     ) : null;
 
+  // ---- mobile stack (Mobile Table.dc.html) ----------------------------------
   const mobileStack = (
     <div style={{ width: MOBILE_W, minHeight: stageH, transform: `scale(${scale})`, transformOrigin: "top center", display: "flex", flexDirection: "column", background: "#fff" }}>
       <div ref={stackRef} style={{ display: "flex", flexDirection: "column", background: "#fff" }}>
-        {mobileTopBar}
+        <EdgeToolbar side="top" items={infoItems} condensed thickness={52} scale={scale} minTouch={44} />
         {dummyRow}
         <div style={{ flex: "none", height: MOBILE_FELT_H, display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: inAuction ? "flex-start" : "center", overflow: "hidden", background: FELT, padding: inAuction ? 10 : 0 }}>
           {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: 330, headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
@@ -744,12 +731,13 @@ export function PlayTable({
             {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390)}
           </div>
         </div>
+        <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} condensed thickness={52} scale={scale} minTouch={44} />
       </div>
     </div>
   );
 
   // ---- stacked-narrow stage (Play Table.dc.html narrow: split pane / narrow
-  // desktop — 720x1180, seat diagrams around a pill trick) -------------------
+  // desktop — 720x1268, seat diagrams around a pill trick) -------------------
   const stackedMain = (seat: Seat) => (
     <div style={{ width: 390, maxWidth: "100%", display: "flex", flexDirection: "column", gap: 3 }}>
       {callsRow(seat, 22)}
@@ -774,7 +762,7 @@ export function PlayTable({
 
   const stackedStage = (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#000" }}>
-      {mobileTopBar}
+      <EdgeToolbar side="top" items={infoItems} scale={scale} minTouch={44} />
       <div style={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden", background: FELT }}>
         <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "12px 8px 0" }}>{stackedMain("N")}</div>
         <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 8 }}>
@@ -789,14 +777,16 @@ export function PlayTable({
         <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "0 8px 14px" }}>{stackedTouch("S")}</div>
       </div>
       {inAuction ? bidBoxNarrow : null}
+      <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} scale={scale} minTouch={44} />
     </div>
   );
 
+  // ---- wide stage: top info bar, felt, bottom actions bar (no side rail) ----
   const wideStage = (
-    <div style={{ position: "absolute", inset: 0, display: "flex", background: "#000" }}>
-      {rail}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: FELT }}>
-        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "16px 16px 14px" }}>
+    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#0b1512" }}>
+      <EdgeToolbar side="top" items={infoItems} scale={scale} />
+      <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", background: FELT }}>
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 8, padding: "14px 16px" }}>
           <div style={{ display: "flex", justifyContent: "center" }}>{seatRow("N")}</div>
 
           <div style={{ flex: 1, minHeight: 207, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 0" }}>
@@ -817,6 +807,7 @@ export function PlayTable({
           </div>
         </div>
       </div>
+      <EdgeToolbar side="bottom" items={actionItems(controlsExtra)} scale={scale} />
     </div>
   );
 
@@ -825,6 +816,7 @@ export function PlayTable({
     return (
       <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
         {mobileStack}
+        {seatsPopup}
         {menuOpen && !onMenu && (
           <SettingsMenu accent={RAIL_BLUE} items={menuItems} onClose={() => setMenuOpen(false)} />
         )}
@@ -835,6 +827,7 @@ export function PlayTable({
     <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
       <div style={{ position: "relative", flex: "none", transformOrigin: "center center", width: stageW, height: stageH, transform: `scale(${scale})` }}>
         {stacked ? stackedStage : wideStage}
+        {seatsPopup}
         {menuOpen && !onMenu && (
           <SettingsMenu accent={RAIL_BLUE} items={menuItems} onClose={() => setMenuOpen(false)} />
         )}
