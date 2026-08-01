@@ -13,7 +13,7 @@ import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { undoAction } from "@/app/bridge/table/actions";
-import type { CoachNote, CoachPanelData } from "@/components/table/play/CoachStrip";
+import type { CoachNote, CoachNoteSource, CoachPanelData } from "@/components/table/play/CoachStrip";
 import { HandViewer } from "@/components/table/play/HandViewer";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
@@ -164,20 +164,27 @@ export default async function PlayTablePage({
    * scores, not prose (its /bid returns `candidates: [{call, insta_score}]`),
    * whereas "what does this bid show" is exactly what the KB's rules record.
    */
-  const meanings =
-    state.phase === "auction"
-      ? bidMeaningReader({ compiled: await sessionService().compiledFor(record) })
-      : null;
+  // Every phase, not just the auction: the coaching strip keeps the bidding
+  // history after play starts, and a call of YOURS still deserves its meaning
+  // there. The compiled artifact is immutable and cached in-process by id, so
+  // this is a cache hit and a pure pass over the rules.
+  const meanings = bidMeaningReader({ compiled: await sessionService().compiledFor(record) });
   // Candidates you could call now — only when the box is live, since there's
   // nothing to explain about a bid you can't make.
-  const bidMeanings = meanings && myTurn ? meanings.at(state, state.turn) : undefined;
+  const bidMeanings = state.phase === "auction" && myTurn ? meanings.at(state, state.turn) : undefined;
   // …and what every call already in the auction meant when it was made, for
-  // tapping a cell in the bidding table (BBO's behavior).
-  const auctionMeanings = meanings?.forAuction({
+  // tapping a cell in the bidding table (BBO's behavior). Replaying needs the
+  // hands AS DEALT — during play `state.hands` has been emptied by the tricks.
+  const auctionMeanings = meanings.forAuction({
     boardRef: record.board.name,
     dealer: record.board.dealer,
     vul: state.vul,
-    hands: state.hands,
+    hands: {
+      N: originalHand(state, "N"),
+      E: originalHand(state, "E"),
+      S: originalHand(state, "S"),
+      W: originalHand(state, "W"),
+    },
     auction: state.auction,
   });
 
@@ -192,15 +199,20 @@ export default async function PlayTablePage({
    * appear as the auction happens, including the moment after you bid, when the
    * robots answer.
    *
-   * Human calls carry `reason: "human action"` (there is no engine behind
-   * them), so they land as a plain marker — enough to keep the thread in order
-   * without pretending there's reasoning to show.
+   * There is no engine behind a human call — the event carries `reason:
+   * "human action"` — so YOUR bids are explained the other way round: not "why
+   * this was chosen" but what it MEANT, from the same knowledge base the bid
+   * box explains candidates with. That's the half a learner needs anyway ("I
+   * bid 2♦; what did I just promise partner?").
    */
   const auctionNotes: CoachNote[] = record.events
     .filter((e): e is BidLogicEvent => e.category === "bid-logic-event")
-    .slice(-14)
-    .map((e) => {
+    .map((e, i) => {
       const kind = record.seats[e.seat].kind;
+      // Logic events run 1:1 with the auction, but only trust the index when
+      // the call at that position is actually this one.
+      const sameCall = state.auction[i]?.seat === e.seat && state.auction[i]?.call === e.chosen;
+      const meant = sameCall ? auctionMeanings[i] : undefined;
       // The seat letter, not the robot's name: names run to "House · Full
       // teaching deck", and the plates already say who sits where.
       const who = e.seat === mySeat ? "You" : e.seat;
@@ -209,11 +221,19 @@ export default async function PlayTablePage({
         call === "P" ? "passed" : call === "X" ? "doubled" : call === "XX" ? "redoubled" : `bid ${callLabel(call)}`
       }`;
       if (kind === "human") {
-        return { id: `call-${e.seq}`, source: "system", headline, about: { seat: e.seat } };
+        return {
+          id: `call-${e.seq}`,
+          // Badged as the rulebook when there's an agreement to quote, because
+          // that's whose words these are — the table's own system, not a coach.
+          source: (meant ? "kb" : "system") as CoachNoteSource,
+          headline,
+          detail: meant ? [meant.label, meant.shows].filter(Boolean).join(" — ") : undefined,
+          about: { seat: e.seat },
+        };
       }
       return {
         id: `call-${e.seq}`,
-        source: kind === "ben" ? "ben" : "kb",
+        source: (kind === "ben" ? "ben" : "kb") as CoachNoteSource,
         headline,
         detail: e.reason,
         alternatives: e.rejected.map((r) => ({ label: r.action, why: r.why })),
@@ -223,7 +243,9 @@ export default async function PlayTablePage({
         citations: e.citedSettings.filter((s) => s.matched).map((s) => ({ label: s.label })).slice(0, 4),
         about: { seat: e.seat },
       };
-    });
+    })
+    // Long auctions: the strip keeps the last few rounds, newest last.
+    .slice(-14);
 
   // The coaching strip under the player's hand. The coach itself isn't wired
   // yet — what's live is the bidding reasoning above. `?coach=demo` shows a
