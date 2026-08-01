@@ -18,7 +18,7 @@ import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
-import { getBridgeContext } from "@/lib/nexus";
+import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 
 export default async function PlayTablePage({
@@ -30,6 +30,9 @@ export default async function PlayTablePage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  // Embedded in the app there is no platform header above us, so the table gets
+  // the whole viewport instead of leaving 5.5rem for a header that isn't there.
+  const embedded = await isEmbeddedLaunch();
   const { sessionId } = await params;
   const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
   const handsView = viewParam === "hands";
@@ -237,9 +240,16 @@ export default async function PlayTablePage({
       )}
       {/* Every control lives INSIDE the canvas — rail chips on the table, the
           nav cell on the hand viewer. Nothing floats above the design. */}
+      {/* dvh, not vh: on a phone `vh` includes the browser chrome, which would
+          push the hand off the bottom of the screen. Embedded there is no
+          platform header to leave room for, so the only thing to subtract is
+          the shell's own padding on <main> (p-3, p-8 from md up). */}
       <div
-        className="overflow-hidden rounded-lg"
-        style={{ height: "calc(100vh - 5.5rem)" }}
+        className={
+          embedded
+            ? "h-[calc(100dvh-1.5rem)] overflow-hidden rounded-lg md:h-[calc(100dvh-4rem)]"
+            : "h-[calc(100dvh-5.5rem)] overflow-hidden rounded-lg"
+        }
       >
         {handsView ? (
           handViewer

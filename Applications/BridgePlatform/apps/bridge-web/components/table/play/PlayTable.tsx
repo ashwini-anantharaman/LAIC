@@ -16,10 +16,15 @@
 //
 // 2026-07-30: strips, dealer marks, per-seat bid history, confirm-bid step,
 // shrinking hands. 2026-07-31: the portrait layout is Mobile Table.dc.html —
-// BBO's phone view as one vertical stack (top bar, dummy row in play, a fixed
-// felt with a top-left auction grid or 1.6x trick cards, the bid tray, your
-// big-card hand), a fixed 720-wide stage scaled against the MEASURED stack
-// height so the hand never falls below the fold.
+// BBO's phone view as one vertical stack (top bar, dummy row in play, felt with
+// a top-left auction grid or the trick cross, the bid tray, your big-card
+// hand), a fixed 720-wide stage scaled against the MEASURED stack height so the
+// hand never falls below the fold. 2026-08-01: that stack now FILLS the phone —
+// the felt takes the leftover height (the stack is width-limited, so there was
+// always some), the trick and the auction grid grow into it, and a W·N·E strip
+// carries the identity the wide layout keeps on its seat plates. The wide stage
+// stops stretching at MAX_STRETCH so short, wide containers letterbox instead
+// of flinging the seats to the edges.
 
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -43,6 +48,12 @@ const SEAT_BADGE = "#12525e";
 /** Wide stage; the mobile stack is 720 wide with a MEASURED height. */
 const BASE_WIDE = { w: 1040, h: 590 };
 const MOBILE_W = 720;
+/** How far the wide stage may stretch past the design before extra container
+ *  space becomes margin instead of empty felt. */
+const MAX_STRETCH = 1.18;
+/** Minimum mobile felt. It GROWS to soak up leftover container height (see
+ *  `feltH`) — on a phone the stack is width-limited, so without that the felt
+ *  keeps its 430 and the rest of the screen is dead space under the hand. */
 const MOBILE_FELT_H = 430;
 /** Mobile hand-card metrics (Mobile Table.dc.html). */
 const M_CARD = { w: 54, h: 128, rank: 42, glyph: 38, inset: 5, backW: 52 };
@@ -174,12 +185,13 @@ export function PlayTable({
   // The mobile stack's height changes with phase (bid tray, dummy row, hand),
   // so it is MEASURED, never estimated. offsetHeight ignores the ancestor
   // transform — getBoundingClientRect() would feed the scale it produces.
+  //
+  // What's measured is the CHROME: everything except the felt, whose height we
+  // set ourselves. Measuring the whole stack instead would loop (a taller felt
+  // → a taller stack → a smaller scale → a taller felt…). Chrome + our own
+  // felt height is a fixed point that settles in one extra render.
   const stackRef = useRef<HTMLDivElement | null>(null);
-  const [contentH, setContentH] = useState(1100);
-  useLayoutEffect(() => {
-    const h = stackRef.current?.offsetHeight;
-    if (h && Math.abs(h - contentH) > 1) setContentH(h);
-  });
+  const [chromeH, setChromeH] = useState(670);
 
   // Armed bid level and the staged (unconfirmed) call are instance state.
   const [armed, setArmed] = useState<number | null>(null);
@@ -196,17 +208,44 @@ export function PlayTable({
   const menuHandler = onMenu ?? (settings ? () => setMenuOpen((v) => !v) : undefined);
   const menuItems: SettingsItem[] = [...(settings ?? [])];
 
-  // Portrait containers get the mobile stack (Mobile Table design).
+  // Portrait containers get the mobile stack (Mobile Table design). Measured
+  // 2026-08-01: a WIDTH breakpoint was tried here and reverted — the stack is
+  // ~1100 design px tall, so in a short container (e.g. 700x520) it scales to
+  // ~0.47 while the wide design still manages ~0.67. Aspect ratio, not width,
+  // is what says "the stack will fit".
   const narrow = box.w / Math.max(1, box.h) < 1.25;
 
   // Wide: scale to FIT, down or up. Mobile: a fixed 720-wide column scaled by
-  // BOTH axes against the measured stack height (never up — thumb reach, not
-  // magnification), so the hand stays above the fold.
+  // BOTH axes (never up — thumb reach, not magnification), so the hand stays
+  // above the fold. The height it's scaled against is the stack at its
+  // SHORTEST (felt at its minimum) — otherwise growing the felt to fill the
+  // screen would shrink the cards that filling it was meant to serve.
+  const minStackH = chromeH + MOBILE_FELT_H;
   const scale = narrow
-    ? Math.min(1, box.w / MOBILE_W, box.h / contentH) || 1
+    ? Math.min(1, box.w / MOBILE_W, box.h / minStackH) || 1
     : Math.min(box.w / BASE_WIDE.w, box.h / BASE_WIDE.h) || 1;
-  const stageW = narrow ? MOBILE_W : Math.max(BASE_WIDE.w, box.w / scale);
-  const stageH = narrow ? Math.max(contentH, box.h / scale) : Math.max(BASE_WIDE.h, box.h / scale);
+  // Leftover height goes to the felt, so the trick sits in the middle of the
+  // screen instead of the hand floating halfway up it.
+  const feltH = narrow ? Math.max(MOBILE_FELT_H, box.h / scale - chromeH) : MOBILE_FELT_H;
+  // …and the trick grows with it. The cross is square, so a tall phone felt
+  // would otherwise leave a lake of green around four small cards.
+  const crossK = Math.max(1.6, Math.min(2.4, (feltH - 60) / 290, (MOBILE_W - 60) / 290));
+  useLayoutEffect(() => {
+    const h = stackRef.current?.offsetHeight;
+    if (!h) return; // wide layout: the stack isn't mounted
+    if (Math.abs(h - feltH - chromeH) > 1) setChromeH(h - feltH);
+  });
+  // The stage may grow past the design to soak up an odd container ratio, but
+  // only so far: unbounded growth spreads the seats to the far edges and
+  // leaves a lake of empty felt in the middle (visible in embedded/short
+  // windows). Past the cap the extra space becomes margin — the stage is
+  // centred by its flex parent — which keeps the table compact and readable.
+  const stageW = narrow
+    ? MOBILE_W
+    : Math.min(Math.max(BASE_WIDE.w, box.w / scale), BASE_WIDE.w * MAX_STRETCH);
+  const stageH = narrow
+    ? Math.max(chromeH + feltH, box.h / scale)
+    : Math.min(Math.max(BASE_WIDE.h, box.h / scale), BASE_WIDE.h * MAX_STRETCH);
 
   const c = state.contract;
   const declarer = c?.declarer ?? null;
@@ -388,8 +427,8 @@ export function PlayTable({
   }
 
   /** Vulnerable seats sit on red; the dealer's column is tinted throughout. */
-  const auctionBox = (m: { width: number; height: number | "auto"; headFont: number; cellFont: number; radius?: number; cellMinH?: number } = { width: 356, height: 207, headFont: 25, cellFont: 21, radius: 4 }) => (
-    <div style={{ width: m.width, height: m.height, maxHeight: m.height === "auto" ? 340 : undefined, background: PANEL, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+  const auctionBox = (m: { width: number; height: number | "auto"; headFont: number; cellFont: number; radius?: number; cellMinH?: number; maxH?: number } = { width: 356, height: 207, headFont: 25, cellFont: 21, radius: 4 }) => (
+    <div style={{ width: m.width, height: m.height, maxHeight: m.height === "auto" ? (m.maxH ?? 340) : undefined, background: PANEL, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ flex: "none", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 2, padding: 2, textAlign: "center" }}>
         {ORDER.map((s) => {
           const vul = vulFor(s);
@@ -666,6 +705,46 @@ export function PlayTable({
     </div>
   );
 
+  /**
+   * The other three seats as one strip across the top of the phone felt, left
+   * to right in table order (W · N · E). The wide layout carries identity on
+   * each seat's own plate; portrait has no room for three plates, but "who is
+   * that and is it their turn" is not optional information — the trick cross
+   * alone only nudges a grey stub at the seat on lead.
+   */
+  const seatChip = (seat: Seat) => {
+    const onTurn = !complete && seat === state.turn;
+    // In the auction the useful number is what they just said; in play it's how
+    // many cards they still hold (13 for everyone during the auction is noise).
+    const last = [...state.auction].reverse().find((a) => a.seat === seat);
+    const note = seat === dummy ? "dummy" : inAuction ? (last ? callText(last.call) : "") : String(state.hands[seat].length);
+    return (
+      <div
+        key={seat}
+        style={{
+          flex: "1 1 0", minWidth: 0, height: 34, display: "flex", alignItems: "stretch", gap: 6,
+          padding: "0 6px 0 0", background: seat === dummy ? "#fff" : "#b3b3b3",
+          border: `2px solid ${seat === state.dealer ? DEALER_RING : "transparent"}`,
+          boxShadow: onTurn ? `0 0 0 3px ${GOLD}` : "0 1px 3px rgba(0,0,0,.45)",
+          boxSizing: "border-box",
+        }}
+      >
+        <span style={{ flex: "none", width: 6, background: seats[seat].strip ?? "transparent" }} />
+        <span style={{ flex: "none", width: 26, height: 26, alignSelf: "center", background: SEAT_BADGE, color: "#fff", fontSize: 17, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{seat}</span>
+        <span style={{ alignSelf: "center", fontSize: 17, color: "#000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{seats[seat].name}</span>
+        <span style={{ marginLeft: "auto", alignSelf: "center", flex: "none", fontSize: 14, fontWeight: inAuction ? 700 : 400, color: "#555" }}>
+          {note}
+        </span>
+      </div>
+    );
+  };
+
+  const mobileSeatStrip = (
+    <div style={{ flex: "none", display: "flex", gap: 6, padding: "6px 8px 0" }}>
+      {(["W", "N", "E"] as Seat[]).map(seatChip)}
+    </div>
+  );
+
   /** Dummy's hand as a plate-less card row across the top (phone play view). */
   const dummyRow =
     inPlay && dummy && dummy !== "S" ? (
@@ -679,20 +758,40 @@ export function PlayTable({
       <div ref={stackRef} style={{ display: "flex", flexDirection: "column", background: "#fff" }}>
         {mobileTopBar}
         {dummyRow}
-        <div style={{ flex: "none", height: MOBILE_FELT_H, display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: inAuction ? "flex-start" : "center", overflow: "hidden", background: FELT, padding: inAuction ? 10 : 0 }}>
-          {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: 330, headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
-          {inAuction && auctionDisplay === "seats" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
-              {(["N", "E", "S", "W"] as Seat[]).map((s) => (
-                <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 30, height: 30, background: SEAT_BADGE, color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
-                  {callsRow(s, 22) ?? <span style={{ fontSize: 18, color: "rgba(255,255,255,.6)" }}>—</span>}
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {inPlay ? trickCross(1.6) : null}
-          {complete ? resultCard : null}
+        {/* The felt: seat strip pinned at the top, the trick (or the auction,
+            or the result) centred in whatever height is left. */}
+        <div style={{ flex: "none", height: feltH, display: "flex", flexDirection: "column", overflow: "hidden", background: FELT }}>
+          {/* Seats-mode auction already lists all four seats on the felt. */}
+          {!complete && !(inAuction && auctionDisplay === "seats") ? mobileSeatStrip : null}
+          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: inAuction && auctionDisplay === "seats" ? "flex-start" : "center", overflow: "hidden", padding: inAuction ? 10 : 0 }}>
+            {inAuction && auctionDisplay === "box"
+              ? auctionBox({
+                  width: 430,
+                  // Sized to the calls made so far, and allowed to use the
+                  // whole (stretched) felt before it starts scrolling — a
+                  // fixed height is either a half-empty slab at "1♠ pass" or
+                  // a scrollbar over a lake of green by the fourth round.
+                  height: "auto",
+                  maxH: Math.max(240, feltH - 20),
+                  headFont: 26,
+                  cellFont: 24,
+                  radius: 0,
+                  cellMinH: 56,
+                })
+              : null}
+            {inAuction && auctionDisplay === "seats" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
+                {(["N", "E", "S", "W"] as Seat[]).map((s) => (
+                  <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 30, height: 30, background: SEAT_BADGE, color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
+                    {callsRow(s, 22) ?? <span style={{ fontSize: 18, color: "rgba(255,255,255,.6)" }}>—</span>}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {inPlay ? trickCross(crossK) : null}
+            {complete ? resultCard : null}
+          </div>
         </div>
         {inAuction ? bidBoxNarrow : null}
         <div style={{ flex: "none", display: "flex", justifyContent: "center", background: FELT, padding: 0 }}>
