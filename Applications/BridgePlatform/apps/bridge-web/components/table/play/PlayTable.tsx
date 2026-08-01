@@ -714,6 +714,36 @@ export function PlayTable({
         })
       : [];
 
+  /**
+   * The armed level's calls and what each would mean — the panel for a bid
+   * you're ABOUT to make, which is what BBO shows beside its box. Rendered
+   * wherever `meaningPanel` would go, whenever nothing more specific (a tapped
+   * call, a staged one, a hovered one) is being explained.
+   */
+  const candidatesPanel = (compact: boolean) =>
+    armedMeanings.length > 0 ? (
+      <div
+        data-testid="bid-candidates"
+        style={{
+          maxHeight: compact ? 78 : 92, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3,
+          background: "#141414", border: `1px solid ${GOLD}`, borderRadius: 5,
+          padding: compact ? "4px 6px" : "5px 8px", boxSizing: "border-box", textAlign: "left",
+        }}
+      >
+        {armedMeanings.map((m) => (
+          <div key={m.call} style={{ display: "flex", alignItems: "baseline", gap: 6, color: "#fff" }}>
+            <span style={{ flex: "none", fontSize: compact ? 14 : 16, fontWeight: 700, color: isRed(m.call[1] ?? "") ? "#ff6b6b" : "#fff" }}>
+              {callText(m.call)}
+            </span>
+            <span style={{ minWidth: 0, fontSize: compact ? 12 : 13, lineHeight: 1.3 }}>
+              {m.label}
+              {m.shows ? <span style={{ color: "rgba(255,255,255,.72)" }}> — {m.shows}</span> : null}
+            </span>
+          </div>
+        ))}
+      </div>
+    ) : null;
+
   /** BBO's panel: the call, its name, and what it promises. */
   const meaningPanel = (compact: boolean) =>
     meaning && explained ? (
@@ -789,7 +819,16 @@ export function PlayTable({
         <button
           key={l}
           type="button"
-          onClick={live ? () => setArmed(armed === l ? null : l) : undefined}
+          onClick={
+            live
+              ? () => {
+                  setArmed(armed === l ? null : l);
+                  // Arming is a new intent: stop explaining the call you
+                  // tapped in the grid and explain what you could bid now.
+                  setPicked(null);
+                }
+              : undefined
+          }
           aria-label={`Level ${l}`}
           style={{ flex: "none", width: w, height: h, border: "1px solid #8a8a6a", borderRadius: 5, background: armed === l ? GOLD : "#f8f8f8", color: "#000", fontSize: font, lineHeight: 1, cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42 }}
         >
@@ -846,10 +885,12 @@ export function PlayTable({
 
   const bidBoxWide = (
     <div style={{ position: "relative", width: 581, height: 107, flex: "none", background: "#cccc9b", borderRadius: 4, padding: "9px 10px", boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 7, boxSizing: "border-box" }}>
-      {/* Above the box, so the pointer never covers what it just revealed. */}
-      {meaning && (
+      {/* Above the box, so the pointer never covers what it just revealed: the
+          call being explained, or — with a level armed and nothing else to
+          say — what each of that level's calls would mean. */}
+      {(meaning || armedMeanings.length > 0) && (
         <div style={{ position: "absolute", left: 0, right: 0, bottom: "calc(100% + 6px)", display: "flex", justifyContent: "center" }}>
-          {meaningPanel(false)}
+          {meaning ? meaningPanel(false) : candidatesPanel(false)}
         </div>
       )}
       {pending ? (
@@ -1232,22 +1273,7 @@ export function PlayTable({
                   radius: 3,
                   cellMinH: 26,
                 })}
-                {meaningPanel(true)}
-                {armedMeanings.length > 0 && !meaning ? (
-                  <div style={{ maxHeight: 78, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3, background: "#141414", border: `1px solid ${GOLD}`, borderRadius: 5, padding: "4px 6px", boxSizing: "border-box" }}>
-                    {armedMeanings.map((m) => (
-                      <div key={m.call} style={{ display: "flex", alignItems: "baseline", gap: 6, color: "#fff" }}>
-                        <span style={{ flex: "none", fontSize: 14, fontWeight: 700, color: isRed(m.call[1] ?? "") ? "#ff6b6b" : "#fff" }}>
-                          {callText(m.call)}
-                        </span>
-                        <span style={{ minWidth: 0, fontSize: 12, lineHeight: 1.3 }}>
-                          {m.label}
-                          {m.shows ? <span style={{ color: "rgba(255,255,255,.72)" }}> — {m.shows}</span> : null}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
+                {meaning ? meaningPanel(true) : candidatesPanel(true)}
               </div>
             ) : null}
             {inAuction && auctionDisplay === "seats" ? (
