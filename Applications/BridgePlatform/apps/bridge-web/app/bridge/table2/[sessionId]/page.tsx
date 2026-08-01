@@ -74,12 +74,19 @@ export default async function PlayTablePage({
   const seatStrip = (seat: Seat) =>
     record.seats[seat].kind === "human" ? "#12525e" : ROBOT_STRIPS[seat];
 
-  // Fellows get the seat-swap panel in the rail — same swapSeatAction and
-  // fork semantics as always, plus BEN as a seatable character when the
-  // server has BEN_ENDPOINT configured.
+  // The seat-swap panel — same swapSeatAction and fork semantics as always,
+  // plus BEN as a seatable character when the server has BEN_ENDPOINT.
+  //
+  // Everyone gets it (2026-08-01): it was fellows-only, which meant a learner
+  // on a phone had no way to choose who they play against, and the ☰ is now
+  // the phone's whole rail. swapSeatAction never depended on the role — it
+  // checks KB access and the org's own allow-AI-players policy, which is the
+  // control that should decide this. What stays fellows-only is the KB's
+  // player ROSTER (authoring material); a learner sees "sit here yourself"
+  // and BEN.
   const isFellow = canAccessAdminArea(context);
   const roster = isFellow ? await kbStore().listPlayersForKb(record.kbId) : [];
-  const seatsPanel = isFellow ? (
+  const seatsPanel = (
     <SeatsPanel
       sessionId={sessionId}
       seatLabels={{ N: seatName("N"), E: seatName("E"), S: seatName("S"), W: seatName("W") }}
@@ -94,7 +101,7 @@ export default async function PlayTablePage({
         .map((p) => ({ playerId: p.playerId, name: p.name, validationStatus: p.validationStatus }))}
       benOffered={benAvailable()}
     />
-  ) : null;
+  );
 
   // The board card in the rail is sized for a number; "seeded-26105" is not
   // one, so show its trailing digits and keep the full name in the tooltip.
