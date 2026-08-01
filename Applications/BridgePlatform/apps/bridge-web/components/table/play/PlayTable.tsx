@@ -660,25 +660,27 @@ export function PlayTable({
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6 }}>
-          <div style={{ display: "flex", gap: 6 }}>
+          {/* Same 7-column grid as the levels row, so Pass ends exactly where
+              the "3" ends instead of landing a few px off from a flex ratio. */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5 }}>
             <button
               type="button"
               onClick={boxLive ? () => stageCall("P") : undefined}
               aria-label="Pass"
-              style={{ flex: 2, minWidth: 0, height: touchH, border: "1px solid #0c4b0b", borderRadius: 5, background: boxLive ? "#116710" : "#a7b8a2", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: boxLive ? "pointer" : "default", opacity: boxLive ? 1 : 0.42 }}
+              style={{ gridColumn: "span 3", minWidth: 0, height: touchH, border: "1px solid #0c4b0b", borderRadius: 5, background: boxLive ? "#116710" : "#a7b8a2", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: boxLive ? "pointer" : "default", opacity: boxLive ? 1 : 0.42 }}
             >
               Pass
             </button>
             {(["X", "XX"] as const).map((d) => {
               const live = boxLive && legalSet.has(d);
-              if (!live) return <span key={d} style={{ flex: 1, minWidth: 0, height: touchH }} />;
+              if (!live) return <span key={d} style={{ gridColumn: "span 2", minWidth: 0, height: touchH }} />;
               return (
                 <button
                   key={d}
                   type="button"
                   onClick={() => stageCall(d)}
                   aria-label={d === "X" ? "Double" : "Redouble"}
-                  style={{ flex: 1, minWidth: 0, height: touchH, border: `1px solid ${d === "X" ? "#8f0000" : "#0a2170"}`, borderRadius: 5, background: d === "X" ? RED : "#1034a6", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
+                  style={{ gridColumn: "span 2", minWidth: 0, height: touchH, border: `1px solid ${d === "X" ? "#8f0000" : "#0a2170"}`, borderRadius: 5, background: d === "X" ? RED : "#1034a6", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
                 >
                   {d}
                 </button>
@@ -760,10 +762,11 @@ export function PlayTable({
       </div>
     ) : null;
 
-  /** Dummy's hand as a plate-less card row across the top (phone play view). */
+  /** Dummy's hand as a plate-less card row across the top (phone play view).
+      Transparent — it sits on the shared felt wrapper. */
   const dummyRow =
     inPlay && dummy && dummy !== "S" ? (
-      <div style={{ flex: "none", display: "flex", justifyContent: "center", background: "#fff", padding: 0 }}>
+      <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: 0 }}>
         {visible[dummy] ? cardRow(dummy, M_CARD) : backs(dummy, { w: M_CARD.backW, h: M_CARD.h })}
       </div>
     ) : null;
@@ -773,29 +776,34 @@ export function PlayTable({
     <div style={{ width: MOBILE_W, minHeight: stageH, transform: `scale(${scale})`, transformOrigin: "top center", display: "flex", flexDirection: "column", background: "#fff" }}>
       <div ref={stackRef} style={{ display: "flex", flexDirection: "column", background: "#fff" }}>
         <EdgeToolbar side="top" items={infoItems} condensed thickness={52} scale={scale} minTouch={44} />
-        {dummyRow}
-        <div style={{ flex: "none", height: MOBILE_FELT_H, display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: inAuction ? "flex-start" : "center", overflow: "hidden", background: FELT, padding: inAuction ? 10 : 0 }}>
-          {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: 330, headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
-          {inAuction && auctionDisplay === "seats" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
-              {(["N", "E", "S", "W"] as Seat[]).map((s) => (
-                <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 30, height: 30, background: SEAT_BADGE, color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
-                  {callsRow(s, 22) ?? <span style={{ fontSize: 18, color: "rgba(255,255,255,.6)" }}>—</span>}
-                </div>
-              ))}
+        {/* ONE felt wrapper behind dummy row, centre, tray and hand: painting
+            the radial gradient per-band restarts it, and the greens under the
+            top cards visibly failed to match the felt below. */}
+        <div style={{ flex: "none", display: "flex", flexDirection: "column", background: FELT }}>
+          {dummyRow}
+          <div style={{ flex: "none", height: MOBILE_FELT_H, display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: inAuction ? "flex-start" : "center", overflow: "hidden", padding: inAuction ? 10 : 0 }}>
+            {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: 330, headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
+            {inAuction && auctionDisplay === "seats" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
+                {(["N", "E", "S", "W"] as Seat[]).map((s) => (
+                  <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 30, height: 30, background: SEAT_BADGE, color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
+                    {callsRow(s, 22) ?? <span style={{ fontSize: 18, color: "rgba(255,255,255,.6)" }}>—</span>}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {inPlay ? trickCross(1.6) : null}
+            {complete ? resultCard : null}
+          </div>
+          {inAuction ? bidBoxNarrow : null}
+          <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: 0 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+              {callsRow("S")}
+              {visible.S ? cardRow("S", M_CARD) : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
+              {/* Default plate metrics — the design keeps SeatPlate stock here. */}
+              {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390)}
             </div>
-          ) : null}
-          {inPlay ? trickCross(1.6) : null}
-          {complete ? resultCard : null}
-        </div>
-        {inAuction ? bidBoxNarrow : null}
-        <div style={{ flex: "none", display: "flex", justifyContent: "center", background: FELT, padding: 0 }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-            {callsRow("S")}
-            {visible.S ? cardRow("S", M_CARD) : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
-            {/* Default plate metrics — the design keeps SeatPlate stock here. */}
-            {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390)}
           </div>
         </div>
         <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} condensed thickness={52} scale={scale} minTouch={44} />
