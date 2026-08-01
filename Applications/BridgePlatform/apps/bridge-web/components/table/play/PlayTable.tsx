@@ -272,11 +272,25 @@ export function PlayTable({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuItems: SettingsItem[] = [...(settings ?? [])];
 
-  // Portrait containers get the phone layout. Measured 2026-08-01: a WIDTH
-  // breakpoint was tried here and reverted — in a short container (e.g.
-  // 700x520) the vertical stack has nowhere to put the hand, while the wide
-  // design still fits. Aspect ratio, not width, is what says "a stack fits".
-  const narrow = box.w / Math.max(1, box.h) < 1.25;
+  /**
+   * Phone layout or wide table?
+   *
+   * PORTRAIT gets the phone layout — a vertical stack needs height for the bar,
+   * a hand at each end and the felt between them, which a landscape box hasn't
+   * got (measured: at 700x520 the stack has nowhere to put the hand while the
+   * wide design still fits, so this is a ratio question, not a width one).
+   *
+   * The exception is a landscape box too narrow for the 1040-wide design: below
+   * ~700 the wide table scales down past readability, and the fluid phone
+   * layout — which sizes to whatever it's given — does better.
+   *
+   * The threshold used to be ratio < 1.25, which was wrong on a desktop: with
+   * the platform's 256px sidebar a 1351x892 window leaves the table 1031x828,
+   * i.e. 1.245, so the whole platform flipped to the phone layout (reported
+   * 2026-08-01). Real desktop windows sit between 1.2 and 2.0; portrait devices
+   * sit below 0.8. Splitting at 1.0 leaves both a wide margin.
+   */
+  const narrow = box.w / Math.max(1, box.h) < 1.0 || box.w < 700;
 
   const menuHandler =
     onMenu ?? (settings || narrow ? () => setMenuOpen((v) => !v) : undefined);
@@ -640,6 +654,25 @@ export function PlayTable({
   const explained = pending ?? hover;
   const meaning = explained ? bidMeanings?.[explained] : undefined;
 
+  /**
+   * Every explainable call at the armed level — the phone's answer to hover.
+   *
+   * A finger has no hover state, and tapping a strain bids it, so there is no
+   * moment at which a phone could show one call's meaning the way a pointer
+   * does. Arming a level IS that moment: you have said "level 4" and not yet
+   * said which suit, so this is exactly when "what would 4♥ mean here" is the
+   * question. Calls the knowledge base has no agreement for are left out
+   * rather than listed as blanks.
+   */
+  const armedMeanings =
+    armed && bidMeanings
+      ? STRAINS.flatMap((st) => {
+          const call = `${armed}${st}`;
+          const m = legalSet.has(call) ? bidMeanings[call] : undefined;
+          return m ? [{ call, ...m }] : [];
+        })
+      : [];
+
   /** BBO's panel: the call, its name, and what it promises. */
   const meaningPanel = (compact: boolean) =>
     meaning && explained ? (
@@ -816,6 +849,23 @@ export function PlayTable({
               {doubleButtons(dbl, h, 18)}
             </div>
             <div style={{ display: "flex", gap }}>{levelButtons(lvl, h, 20)}</div>
+            {/* What each of this level's calls would mean, right above the row
+                you're about to tap. */}
+            {armedMeanings.length > 0 && (
+              <div style={{ width: "100%", maxHeight: 78, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3, background: "#141414", border: `1px solid ${GOLD}`, borderRadius: 5, padding: "4px 6px", boxSizing: "border-box" }}>
+                {armedMeanings.map((m) => (
+                  <div key={m.call} style={{ display: "flex", alignItems: "baseline", gap: 6, color: "#fff" }}>
+                    <span style={{ flex: "none", fontSize: 14, fontWeight: 700, color: isRed(m.call[1] ?? "") ? "#ff6b6b" : "#fff" }}>
+                      {callText(m.call)}
+                    </span>
+                    <span style={{ minWidth: 0, fontSize: 12, lineHeight: 1.3 }}>
+                      {m.label}
+                      {m.shows ? <span style={{ color: "rgba(255,255,255,.72)" }}> — {m.shows}</span> : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             {armed && <div style={{ display: "flex", gap }}>{strainButtons(h, 20, suit * 2 + gap, suit)}</div>}
           </>
         )}
