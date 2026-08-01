@@ -65,7 +65,7 @@ function phoneMetrics(w: number, cards: number) {
   const avail = Math.max(240, w - pad * 2);
   // Your hand: the biggest card that leaves room for a readable corner on each
   // of the others. `step` is the visible sliver; the last card shows in full.
-  const cardW = Math.round(Math.min(76, Math.max(40, avail / 5.6)));
+  const cardW = Math.round(Math.min(60, Math.max(38, avail / 6.4)));
   const cardH = Math.round(cardW * 1.44);
   const n = Math.max(1, cards);
   const step = n > 1 ? Math.max(16, Math.min(cardW, (avail - cardW) / (n - 1))) : cardW;
@@ -76,9 +76,12 @@ function phoneMetrics(w: number, cards: number) {
     barH: Math.round(Math.min(58, Math.max(44, w * 0.13))),
     chip: 30,
     hand: { w: cardW, h: cardH, step, rank, glyph: Math.round(rank * 0.82) },
-    // The dummy's row is reference, not a control: two thirds the size.
-    dummy: { w: Math.round(cardW * 0.72), h: Math.round(cardH * 0.66), rank: Math.round(rank * 0.76) },
-    plateH: 26,
+    // North's row is reference, not a control: two thirds the size.
+    north: { w: Math.round(cardW * 0.7), h: Math.round(cardH * 0.6), rank: Math.round(rank * 0.72) },
+    /** East and West sit in columns beside the trick, as on the wide table.
+     *  Kept lean: what they take, the trick can't have. */
+    colW: Math.max(62, Math.min(100, Math.round(avail * 0.23))),
+    plateH: 24,
   };
 }
 
@@ -243,9 +246,9 @@ export function PlayTable({
 
   // The ☰ settings overlay is instance state too. An explicit onMenu prop
   // wins (the design's "prop handler wins" rule); otherwise the table opens
-  // its own menu when settings rows were provided.
+  // its own menu — always on a phone, where the ☰ is the only way to reach
+  // what the wide rail shows, and on the wide table when there are rows.
   const [menuOpen, setMenuOpen] = useState(false);
-  const menuHandler = onMenu ?? (settings ? () => setMenuOpen((v) => !v) : undefined);
   const menuItems: SettingsItem[] = [...(settings ?? [])];
 
   // Portrait containers get the phone layout. Measured 2026-08-01: a WIDTH
@@ -253,6 +256,9 @@ export function PlayTable({
   // 700x520) the vertical stack has nowhere to put the hand, while the wide
   // design still fits. Aspect ratio, not width, is what says "a stack fits".
   const narrow = box.w / Math.max(1, box.h) < 1.25;
+
+  const menuHandler =
+    onMenu ?? (settings || narrow ? () => setMenuOpen((v) => !v) : undefined);
 
   // The wide stage is the fixed design, scaled to fit (down or up).
   const scale = narrow ? 1 : Math.min(box.w / BASE_WIDE.w, box.h / BASE_WIDE.h) || 1;
@@ -787,11 +793,6 @@ export function PlayTable({
           must survive intact, so this group shrinks (and clips its rightmost
           chip) rather than pushing the menu off the screen. */}
       <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 4, overflow: "hidden" }}>
-        {/* Under ~340px there isn't room for all three chips, and a scoring
-            toggle matters less than a legible contract. */}
-        {box.w >= 340 && (
-          <button type="button" onClick={onScoring} title="Scoring mode" style={{ flex: "none", width: 40, height: ph.barH - 10, background: PANEL, border: "1px solid #f2f4f4", borderRadius: 5, color: "#000", fontSize: 13, fontWeight: 700, lineHeight: 1, cursor: onScoring ? "pointer" : "default" }}>{scoringLabel}</button>
-        )}
         {/* Dealer over board number; the number turns red when N/S are vul. Long
             board names (library boards carry their title here) ellipsise rather
             than spilling out of the chip. */}
@@ -858,15 +859,70 @@ export function PlayTable({
     </div>
   );
 
-  /** Dummy's hand fanned across the top, for reference — not for tapping. */
-  const phoneDummyRow =
-    inPlay && dummy && dummy !== "S" ? (
-      <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: `4px ${ph.pad}px 0`, background: "#000" }}>
-        {visible[dummy]
-          ? fanRow(dummy, { ...ph.dummy, step: fanStep(dummy, ph.dummy.w), glyph: Math.round(ph.dummy.rank * 0.82) }, false)
-          : fanBacks(dummy, { w: ph.dummy.w, h: ph.dummy.h, step: fanStep(dummy, ph.dummy.w) })}
-      </div>
-    ) : null;
+  /** A phone plate: the seat on turn gets a gold ring (white alone reads as dummy). */
+  const phonePlate = (seat: Seat, width: number | string) => (
+    <div style={{ width, boxShadow: !complete && seat === state.turn ? `0 0 0 2px ${GOLD}` : undefined }}>
+      {plate(seat, "100%", { height: ph.plateH, badge: 18, font: 13, tagFont: 10 })}
+    </div>
+  );
+
+  /** North's hand fanned across the top, for reference — not for tapping. */
+  const phoneNorthRow = (
+    <div style={{ flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: `3px ${ph.pad}px 0`, background: "#000" }}>
+      {visible.N
+        ? fanRow("N", { ...ph.north, step: fanStep("N", ph.north.w), glyph: Math.round(ph.north.rank * 0.82) }, false)
+        : fanBacks("N", { w: ph.north.w, h: ph.north.h, step: fanStep("N", ph.north.w) })}
+      {phonePlate("N", Math.min(ph.avail, ph.north.w + Math.max(0, state.hands.N.length - 1) * fanStep("N", ph.north.w)))}
+    </div>
+  );
+
+  /**
+   * East and West beside the trick, as on the wide table — suit-per-line when
+   * the hand is face-up, a counted card back when it isn't. Without these the
+   * phone could only ever show two of the four hands, which is no use for
+   * reviewing a board or teaching from one.
+   */
+  const phoneSideHand = (seat: Seat) => (
+    <div style={{ width: ph.colW, flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+      {visible[seat] ? (
+        <div style={{ width: "100%", background: "#fff", border: "1px solid #8a8a8a", borderRadius: 3, padding: "2px 4px", boxSizing: "border-box", boxShadow: "0 2px 4px rgba(0,0,0,.35)" }}>
+          {DISPLAY.map((su) => {
+            const cards = state.hands[seat].filter((x) => x.suit === su).sort((a, b) => b.rank - a.rank);
+            return (
+              <div key={su} style={{ display: "flex", alignItems: "baseline", gap: 3, lineHeight: 1.25, color: isRed(su) ? RED : "#000" }}>
+                <span style={{ flex: "none", width: 11, fontSize: 12 }}>{GLYPH[su]}</span>
+                <span style={{ display: "flex", flexWrap: "wrap", gap: "0 3px", fontSize: 12.5 }}>
+                  {cards.length === 0 ? (
+                    <span>—</span>
+                  ) : (
+                    cards.map((card) => {
+                      const on = myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
+                      return (
+                        <button
+                          key={card.rank}
+                          type="button"
+                          onClick={on ? () => onPlay?.(seat, card) : undefined}
+                          aria-label={`Play ${rankText(card.rank)}${GLYPH[su]}`}
+                          style={{ background: on ? "#d9f2d9" : "transparent", border: 0, padding: 0, fontSize: 12.5, fontWeight: on ? 700 : 400, color: "inherit", cursor: on ? "pointer" : "default" }}
+                        >
+                          {rankText(card.rank)}
+                        </button>
+                      );
+                    })
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ width: "100%", height: 54, background: CARD_BACK, border: "2px solid rgba(255,255,255,.92)", borderRadius: 3, display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", color: "#fff", fontSize: 17, fontWeight: 700, boxShadow: "0 2px 4px rgba(0,0,0,.35)" }}>
+          {state.hands[seat].length}
+        </div>
+      )}
+      {phonePlate(seat, "100%")}
+    </div>
+  );
 
   /**
    * The trick on a phone: four slots in a tight diamond, sized to the felt.
@@ -878,16 +934,19 @@ export function PlayTable({
    * who the table is waiting for.
    */
   const phoneTrickPile = (w: number, h: number) => {
-    const cardW = Math.round(Math.max(46, Math.min(w * 0.27, h * 0.3, 116)));
+    // Three cards across (W · N/S · E) and two down: the tightest diamond in
+    // which no card can cover another's corner index. An earlier version
+    // overlapped by half a card and hid the rank of whatever was underneath.
+    const gap = 5;
+    const cardW = Math.round(Math.max(30, Math.min((w - gap * 2) / 3, ((h - gap) / 2) / 1.42, 92)));
     const cardH = Math.round(cardW * 1.42);
-    const gap = Math.round(cardW * 0.1);
-    const boxW = cardW * 2 + gap;
+    const boxW = cardW * 3 + gap * 2;
     const boxH = cardH * 2 + gap;
     const at: Record<Seat, { left: number; top: number }> = {
-      N: { left: (boxW - cardW) / 2, top: 0 },
-      S: { left: (boxW - cardW) / 2, top: cardH + gap },
+      N: { left: cardW + gap, top: 0 },
+      S: { left: cardW + gap, top: cardH + gap },
       W: { left: 0, top: (boxH - cardH) / 2 },
-      E: { left: cardW + gap, top: (boxH - cardH) / 2 },
+      E: { left: (cardW + gap) * 2, top: (boxH - cardH) / 2 },
     };
     return (
       <div style={{ position: "relative", width: boxW, height: boxH }}>
@@ -917,6 +976,19 @@ export function PlayTable({
     );
   };
 
+  /**
+   * Everything the wide rail offers, as menu rows. The phone bar keeps only
+   * what you touch mid-trick (board, contract, play controls); the rest —
+   * scoring mode, the hands view, Claim — lives behind the ☰, and the seat/AI
+   * chooser rides in as the menu's `extra`.
+   */
+  const phoneMenuItems: SettingsItem[] = [
+    ...(onScoring ? [{ label: "Scoring", value: scoringLabel, on: onScoring }] : []),
+    ...menuItems,
+    ...(viewHref ? [{ label: "View", value: viewHref.label, href: viewHref.href }] : []),
+    ...(onClaim && inPlay ? [{ label: "Claim the rest", value: "Claim", on: onClaim }] : []),
+  ];
+
   /** Your hand: the biggest thing on the screen, because it's the control. */
   const phoneHand = (
     <div style={{ flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: `2px ${ph.pad}px 4px`, background: FELT }}>
@@ -924,7 +996,7 @@ export function PlayTable({
       {visible.S
         ? fanRow("S", { ...ph.hand, step: fanStep("S", ph.hand.w) }, true)
         : fanBacks("S", { w: ph.hand.w, h: ph.hand.h, step: fanStep("S", ph.hand.w) })}
-      {plate("S", ph.avail, { height: ph.plateH, badge: 20, font: 14, tagFont: 11 })}
+      {phonePlate("S", ph.avail)}
     </div>
   );
 
@@ -961,14 +1033,19 @@ export function PlayTable({
   // the bar, the dummy, the tray and your hand always get the space they need
   // and whatever is left over is table — no scaling, no measuring, no scroll.
   if (narrow) {
+    // Four hands only while cards are being played: during the auction the
+    // width belongs to the auction grid (and the seat strip carries identity),
+    // and on a finished board it belongs to the result.
+    const sides = inPlay;
     return (
       <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#000", display: "flex", flexDirection: "column", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
         {phoneTopBar}
-        {phoneDummyRow}
+        {inPlay ? phoneNorthRow : null}
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: FELT }}>
           {/* Seats-mode auction already lists all four seats on the felt. */}
-          {!complete && !(inAuction && auctionDisplay === "seats") ? phoneSeatStrip : null}
-          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 4 }}>
+          {!complete && !sides && !(inAuction && auctionDisplay === "seats") ? phoneSeatStrip : null}
+          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, overflow: "hidden", padding: 4 }}>
+            {sides ? phoneSideHand("W") : null}
             {inAuction && auctionDisplay === "box"
               ? auctionBox({
                   width: Math.min(ph.avail, 420),
@@ -996,12 +1073,16 @@ export function PlayTable({
             {/* The trick sizes itself to the felt it was given. */}
             {inPlay ? <PhoneTrick render={phoneTrickPile} /> : null}
             {complete ? resultCard : null}
+            {sides ? phoneSideHand("E") : null}
           </div>
         </div>
         {inAuction ? bidBoxNarrow : null}
         {phoneHand}
         {menuOpen && !onMenu && (
-          <SettingsMenu accent={RAIL_BLUE} items={menuItems} onClose={() => setMenuOpen(false)} />
+          // The phone has no rail, so the ☰ carries everything the rail does:
+          // the scoring toggle, the hands view, Claim, and — passed through as
+          // `extra` — the seat/AI chooser.
+          <SettingsMenu accent={RAIL_BLUE} items={phoneMenuItems} extra={railExtra} onClose={() => setMenuOpen(false)} />
         )}
       </div>
     );

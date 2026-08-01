@@ -18,7 +18,7 @@ import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
-import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
+import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 
 export default async function PlayTablePage({
@@ -30,9 +30,6 @@ export default async function PlayTablePage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  // Embedded in the app there is no platform header above us, so the table gets
-  // the whole viewport instead of leaving 5.5rem for a header that isn't there.
-  const embedded = await isEmbeddedLaunch();
   const { sessionId } = await params;
   const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
   const handsView = viewParam === "hands";
@@ -221,7 +218,7 @@ export default async function PlayTablePage({
   );
 
   return (
-    <div className="mx-auto w-full">
+    <div className="mx-auto flex h-full w-full flex-col">
       {error && (
         <p className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}
@@ -240,17 +237,11 @@ export default async function PlayTablePage({
       )}
       {/* Every control lives INSIDE the canvas — rail chips on the table, the
           nav cell on the hand viewer. Nothing floats above the design. */}
-      {/* dvh, not vh: on a phone `vh` includes the browser chrome, which would
-          push the hand off the bottom of the screen. Embedded there is no
-          platform header to leave room for, so the only thing to subtract is
-          the shell's own padding on <main> (p-3, p-8 from md up). */}
-      <div
-        className={
-          embedded
-            ? "h-[calc(100dvh-1.5rem)] overflow-hidden rounded-lg md:h-[calc(100dvh-4rem)]"
-            : "h-[calc(100dvh-5.5rem)] overflow-hidden rounded-lg"
-        }
-      >
+      {/* Exactly the space the shell has left — no viewport arithmetic. The
+          shell is h-dvh with <main> as the scroll container, so this holds
+          whether or not the nav is above us (embedded, it isn't) and whether or
+          not a phone browser's chrome is showing. */}
+      <div className="min-h-0 flex-1 overflow-hidden rounded-lg">
         {handsView ? (
           handViewer
         ) : (

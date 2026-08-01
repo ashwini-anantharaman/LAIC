@@ -42,14 +42,18 @@ export default async function BridgeShellLayout({
 
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
+    // The shell owns the viewport and `main` is the scroll container, rather
+    // than the window scrolling the whole shell. That's what lets a page ask
+    // for the space that's actually left (h-full) — the table needs it, and on
+    // a phone the nav bar's height isn't a constant anyone can subtract.
+    <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
       {/* Embedded in the coach app: the host owns ALL navigation — desktop
           pages reached from the app render their content only. No in-page
           back link: the app's own header arrow returns to wherever the screen
           was pushed from (Play, Library, Assignments…), which an in-page link
           could only guess at. */}
       {!embedded && (
-      <aside className="flex w-full shrink-0 flex-col border-b border-[var(--line)] bg-[var(--card)] md:w-64 md:border-b-0 md:border-r">
+      <aside className="flex w-full shrink-0 flex-col overflow-y-auto border-b border-[var(--line)] bg-[var(--card)] md:w-64 md:border-b-0 md:border-r">
         <div className="border-b border-[var(--line)] px-3 py-2 md:p-4">
           <p className="hidden text-[11px] tracking-[0.35em] text-neutral-500 md:block">
             ♠ <span className="text-[var(--madder)]">♥</span> ♣{" "}
@@ -113,7 +117,7 @@ export default async function BridgeShellLayout({
         </div>
       </aside>
       )}
-      <main className="min-w-0 flex-1 p-3 md:p-8">{children}</main>
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-8">{children}</main>
     </div>
   );
 }

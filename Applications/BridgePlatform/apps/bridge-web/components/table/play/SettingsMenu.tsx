@@ -13,6 +13,7 @@
 // the design's "prop handler wins" rule.
 
 import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 
 export interface SettingsItem {
   label: string;
@@ -28,11 +29,18 @@ export function SettingsMenu({
   title = "Table settings",
   accent = "#384bb3",
   items,
+  extra,
   onClose,
 }: Readonly<{
   title?: string;
   accent?: string;
   items: readonly SettingsItem[];
+  /**
+   * Rendered below the rows. On a phone this is where the rail's own panels
+   * live — the seat/AI chooser above all — because there is no rail to put
+   * them in and they must still be reachable.
+   */
+  extra?: ReactNode;
   onClose: () => void;
 }>) {
   const router = useRouter();
@@ -43,9 +51,12 @@ export function SettingsMenu({
         onClick={onClose}
         aria-hidden
       />
-      <div style={{ position: "absolute", left: 12, top: 12, width: 268, background: "#fff", border: "1px solid #7d7d7d", borderRadius: 4, boxShadow: "0 6px 18px rgba(0,0,0,.5)", overflow: "hidden" }}>
-        <div style={{ background: accent, color: "#fff", fontSize: 17, fontWeight: 700, padding: "6px 10px" }}>
-          {title}
+      {/* Never wider than the table it opens over, and scrollable: on a 320px
+          phone the rows plus the seat panel are taller than the screen. */}
+      <div style={{ position: "absolute", left: 12, top: 12, width: "min(268px, calc(100% - 24px))", maxHeight: "calc(100% - 24px)", overflowY: "auto", background: "#fff", border: "1px solid #7d7d7d", borderRadius: 4, boxShadow: "0 6px 18px rgba(0,0,0,.5)" }}>
+        <div style={{ position: "sticky", top: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, background: accent, color: "#fff", fontSize: 17, fontWeight: 700, padding: "6px 10px" }}>
+          <span>{title}</span>
+          <button type="button" onClick={onClose} aria-label="Close menu" style={{ flex: "none", width: 24, height: 24, background: "rgba(255,255,255,.18)", border: 0, borderRadius: 4, color: "#fff", fontSize: 15, lineHeight: 1, cursor: "pointer" }}>✕</button>
         </div>
         {items.map((item) => (
           <button
@@ -69,6 +80,7 @@ export function SettingsMenu({
             <span style={{ flex: "none", fontWeight: 700, color: accent }}>{item.value}</span>
           </button>
         ))}
+        {extra && <div style={{ padding: 8, background: "#1b1b1b" }}>{extra}</div>}
       </div>
     </div>
   );
