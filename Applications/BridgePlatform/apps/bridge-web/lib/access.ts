@@ -31,11 +31,20 @@ export function accessStore(): AccessStore {
   return globalCache.__bridgeAccessStore;
 }
 
-/** The program-wide catalogue, or the all-defaults catalogue when unset. */
-export const getCatalogue = cache(
-  async (): Promise<AccessCatalogue> =>
-    (await accessStore().getCatalogue(GLOBAL_CATALOGUE_ID)) ?? defaultCatalogue(),
-);
+/**
+ * The program-wide catalogue, or the all-defaults catalogue when unset — or
+ * when the store is UNREACHABLE (missing table, db hiccup). Access config
+ * failing to load must degrade to the built-in defaults, never take every
+ * page down with it.
+ */
+export const getCatalogue = cache(async (): Promise<AccessCatalogue> => {
+  try {
+    return (await accessStore().getCatalogue(GLOBAL_CATALOGUE_ID)) ?? defaultCatalogue();
+  } catch (error) {
+    console.error("access catalogue unreadable — serving built-in defaults", error);
+    return defaultCatalogue();
+  }
+});
 
 export async function canUse(context: NexusBridgeContext, key: string): Promise<boolean> {
   return canAccess(await getCatalogue(), key, context.roles);
