@@ -322,6 +322,17 @@ export function PlayTable({
     return n > 1 ? Math.max(12, Math.min(cardW, (ph.avail - cardW) / (n - 1))) : cardW;
   };
 
+  /**
+   * You have no seat at this board — you're watching someone else's.
+   *
+   * The table then shows every hand and never gives you a turn, which is
+   * right for review but bewildering when you didn't ask for it: boards
+   * dealt under a different identity (the demo host signs everyone into one
+   * shared account, so a board dealt there isn't "yours" here) look like the
+   * robots are playing by themselves with North face-up. So say it.
+   */
+  const watching = !mySeat;
+
   const c = state.contract;
   const declarer = c?.declarer ?? null;
   const dummy = declarer && state.phase !== "auction" ? PARTNER[declarer] : null;
@@ -707,10 +718,13 @@ export function PlayTable({
    */
   const armedMeanings =
     armed && bidMeanings
-      ? STRAINS.flatMap((st) => {
+      ? STRAINS.filter((st) => legalSet.has(`${armed}${st}`)).map((st) => {
           const call = `${armed}${st}`;
-          const m = legalSet.has(call) ? bidMeanings[call] : undefined;
-          return m ? [{ call, ...m }] : [];
+          // Every legal call at the level, INCLUDING the ones the system has
+          // no agreement for. Dropping those made the card vanish entirely at
+          // levels the teaching deck doesn't cover (5 said nothing while 4
+          // said plenty), which reads as broken rather than as "no agreement".
+          return { call, ...bidMeanings[call] };
         })
       : [];
 
@@ -786,11 +800,11 @@ export function PlayTable({
           <span style={{ color: CARD_INK, fontSize: compact ? 14 : 17 }}>Level {armed}</span>,
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {armedMeanings.map((m) => (
-              <div key={m.call}>
+              <div key={m.call} style={{ opacity: m.label ? 1 : 0.65 }}>
                 <span style={{ fontWeight: 700, color: isRed(m.call[1] ?? "") ? RED : "#000" }}>
                   {callText(m.call)}
                 </span>{" "}
-                {m.label}
+                {m.label ?? <span style={{ fontStyle: "italic" }}>no agreement in this system</span>}
                 {m.shows ? <span style={{ color: "#57573f" }}> — {m.shows}</span> : null}
               </div>
             ))}
@@ -1005,6 +1019,11 @@ export function PlayTable({
           <div style={{ background: CARD_BACK, color: "#fff", textAlign: "center", fontSize: 19, fontWeight: 700, padding: "3px 0" }}>{state.trickCount.EW}</div>
         </div>
       )}
+      {watching && (
+        <span title="You have no seat at this board — every hand is shown and no turn is yours." style={{ width: 100, padding: "2px 0", background: GOLD, borderRadius: 5, color: "#3a3000", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textAlign: "center" }}>
+          WATCHING
+        </span>
+      )}
       {controlsExtra}
       {railExtra}
       <div style={{ flex: 1 }} />
@@ -1046,6 +1065,11 @@ export function PlayTable({
         )}
       </div>
       <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
+        {watching && (
+          <span title="You have no seat at this board — every hand is shown and no turn is yours." style={{ flex: "none", padding: "2px 5px", background: GOLD, borderRadius: 4, color: "#3a3000", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>
+            WATCHING
+          </span>
+        )}
         {controlsExtraNarrow ?? controlsExtra}
         {menuButton(40, ph.barH - 10, 20, { border: "0", radius: 5 })}
       </div>
