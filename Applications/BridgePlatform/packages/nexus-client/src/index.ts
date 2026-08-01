@@ -20,7 +20,7 @@ import { HttpNexusClient } from "./http";
 import { StubNexusClient } from "./stub";
 import type { NexusClient, NexusClientConfig } from "./types";
 
-export type { NexusBridgeContext } from "@laic/learner-contracts";
+export type { BridgeRole, NexusBridgeContext } from "@laic/learner-contracts";
 export {
   ADMIN_AREA_ROLES,
   canAccessAdminArea,

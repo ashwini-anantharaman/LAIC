@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { ensureSeeds, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore, sessionService } from "@/lib/sessions";
@@ -17,6 +18,7 @@ import { quickPlayAction } from "./actions";
 export default async function PlayPage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.play");
   await ensureSeeds();
 
   // One parallel round-trip for everything the landing needs — no compiled

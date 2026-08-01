@@ -1,6 +1,7 @@
 import type { LibraryEntry, LibraryKind } from "@bridge/sessions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { canUse, requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";
 import {
@@ -48,6 +49,8 @@ export default async function MobileLibraryPage({
 }: Readonly<{ searchParams: Promise<{ kind?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.library");
+  const canResume = await canUse(context, "library.resume");
   const params = await searchParams;
   const active = (SHELVES.find((s) => s.kind === params.kind) ?? SHELVES[0]!).kind;
 
@@ -144,7 +147,7 @@ export default async function MobileLibraryPage({
                   : e.kind === "play"
                     ? { form: resumePlayEntryAction, label: "Resume" }
                     : { form: playEntryAction, label: "Play" };
-              const playable = e.kind === "table" || !!e.hands;
+              const playable = canResume && (e.kind === "table" || !!e.hands);
               return (
                 <div
                   key={e.entryId}

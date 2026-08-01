@@ -3,6 +3,7 @@ import type { LibraryEntry, LibraryKind } from "@bridge/sessions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChipRow } from "@/components/ChipTabs";
+import { canUse, requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";
 import {
@@ -33,6 +34,13 @@ export default async function LibraryPage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.library");
+  const [canCreate, canImport, canResume, canDelete] = await Promise.all([
+    canUse(context, "library.create"),
+    canUse(context, "library.import"),
+    canUse(context, "library.resume"),
+    canUse(context, "library.delete"),
+  ]);
   const params = await searchParams;
   const active = (SHELVES.find((s) => s.kind === params.kind) ?? SHELVES[1]!).kind;
 
@@ -72,7 +80,7 @@ export default async function LibraryPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {createLink && (
+          {canCreate && createLink && (
             <Link
               href={createLink.href}
               className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
@@ -80,7 +88,7 @@ export default async function LibraryPage({
               {createLink.label}
             </Link>
           )}
-          <ImportForm action={importFileAction} />
+          {canImport && <ImportForm action={importFileAction} />}
         </div>
       </header>
 
@@ -170,46 +178,49 @@ export default async function LibraryPage({
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                {e.kind === "table" ? (
-                  <form action={startTableEntryAction}>
-                    <input type="hidden" name="entryId" value={e.entryId} />
-                    <button
-                      type="submit"
-                      className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
-                    >
-                      Start · fresh deal
-                    </button>
-                  </form>
-                ) : e.kind === "drill" ? (
-                  e.kbId && (
-                    <Link
-                      href={`/bridge/kb/${e.kbId}/drills`}
-                      className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
-                    >
-                      Run
-                    </Link>
-                  )
-                ) : (
-                  e.hands && (
-                    <form action={e.kind === "play" ? resumePlayEntryAction : playEntryAction}>
+                {canResume &&
+                  (e.kind === "table" ? (
+                    <form action={startTableEntryAction}>
                       <input type="hidden" name="entryId" value={e.entryId} />
                       <button
                         type="submit"
                         className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
                       >
-                        {e.kind === "play" ? "Resume" : "Play"}
+                        Start · fresh deal
                       </button>
                     </form>
-                  )
+                  ) : e.kind === "drill" ? (
+                    e.kbId && (
+                      <Link
+                        href={`/bridge/kb/${e.kbId}/drills`}
+                        className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+                      >
+                        Run
+                      </Link>
+                    )
+                  ) : (
+                    e.hands && (
+                      <form action={e.kind === "play" ? resumePlayEntryAction : playEntryAction}>
+                        <input type="hidden" name="entryId" value={e.entryId} />
+                        <button
+                          type="submit"
+                          className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+                        >
+                          {e.kind === "play" ? "Resume" : "Play"}
+                        </button>
+                      </form>
+                    )
+                  ))}
+                {canDelete && (
+                  <ConfirmButton
+                    action={deleteEntryAction}
+                    hidden={{ entryId: e.entryId }}
+                    confirm={`Delete "${e.name}" from the library? This can't be undone.`}
+                    label="Delete"
+                    title="Delete this library item"
+                    className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-400 hover:border-red-300 hover:text-red-700"
+                  />
                 )}
-                <ConfirmButton
-                  action={deleteEntryAction}
-                  hidden={{ entryId: e.entryId }}
-                  confirm={`Delete "${e.name}" from the library? This can't be undone.`}
-                  label="Delete"
-                  title="Delete this library item"
-                  className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-400 hover:border-red-300 hover:text-red-700"
-                />
               </div>
             </li>
           ))}

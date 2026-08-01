@@ -5,19 +5,25 @@ import { usePathname } from "next/navigation";
 
 /** The five bottom tabs from the mobile design. Active tab draws a teal icon
  *  and a deep-teal semibold label; inactive tabs are muted. Hidden entirely on
- *  the table screen (which renders its own full-screen chrome). */
-const TABS: { href: string; icon: string; label: string }[] = [
-  { href: "/m/home", icon: "⌂", label: "Home" },
-  { href: "/m/play", icon: "♠", label: "Play" },
-  { href: "/m/players", icon: "◐", label: "Players" },
-  { href: "/m/library", icon: "▤", label: "Library" },
-  { href: "/m/guide", icon: "?", label: "Guide" },
+ *  the table screen (which renders its own full-screen chrome). Each tab is
+ *  gated by its access-catalogue feature key — the layout computes the allowed
+ *  keys server-side and passes them in. */
+const TABS: { href: string; icon: string; label: string; featureKey: string }[] = [
+  { href: "/m/home", icon: "⌂", label: "Home", featureKey: "page.home" },
+  { href: "/m/play", icon: "♠", label: "Play", featureKey: "page.play" },
+  { href: "/m/players", icon: "◐", label: "Players", featureKey: "page.players" },
+  { href: "/m/library", icon: "▤", label: "Library", featureKey: "page.library" },
+  { href: "/m/guide", icon: "?", label: "Guide", featureKey: "page.guide" },
 ];
 
-export function TabBar() {
+export function TabBar({ allowedKeys }: { allowedKeys?: readonly string[] }) {
   const pathname = usePathname() ?? "";
   // The table screen owns the whole viewport — no tab bar there.
   if (pathname.startsWith("/m/table")) return null;
+
+  const allowed = allowedKeys
+    ? TABS.filter((t) => allowedKeys.includes(t.featureKey))
+    : TABS;
 
   return (
     <nav
@@ -35,7 +41,7 @@ export function TabBar() {
         padding: "8px 6px calc(26px + env(safe-area-inset-bottom))",
       }}
     >
-      {TABS.map((t) => {
+      {allowed.map((t) => {
         const active =
           pathname === t.href || pathname.startsWith(`${t.href}/`);
         return (

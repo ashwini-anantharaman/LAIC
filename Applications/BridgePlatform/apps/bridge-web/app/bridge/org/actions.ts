@@ -5,6 +5,7 @@
 
 import type { AffiliationType, BridgeOrgType } from "@bridge/profiles";
 import { revalidatePath } from "next/cache";
+import { requireFeature } from "@/lib/access";
 import { audit } from "@/lib/audit";
 import { getBridgeContext } from "@/lib/nexus";
 import { profileService } from "@/lib/profiles";
@@ -17,6 +18,7 @@ async function requireContext() {
 
 export async function saveOrgProfileAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "org.edit_profile");
   const saved = await profileService().saveOrgProfile(context, {
     bridgeOrgType: String(formData.get("bridgeOrgType")) as BridgeOrgType,
     allowedBiddingSystems: String(formData.get("allowedBiddingSystems") ?? "")

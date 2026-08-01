@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DealEditor } from "@/components/library/DealEditor";
+import { requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 import { createDealAction } from "../actions";
 
@@ -11,6 +12,7 @@ export default async function NewDealPage({
 }: Readonly<{ searchParams: Promise<{ kind?: string; error?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.library");
   const { kind: rawKind, error } = await searchParams;
   const kind = rawKind === "deal" ? "deal" : "board";
   const noun = kind === "deal" ? "deal" : "board";

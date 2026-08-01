@@ -9,6 +9,7 @@ import { newId } from "@bridge/kb";
 import type { LibraryEntry, LibrarySeatRef } from "@bridge/sessions";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { kbStore } from "@/lib/kb";
@@ -18,6 +19,7 @@ import { libraryStore } from "@/lib/sessions";
  *  seats that would deal a board become a reusable `table` entry instead. */
 export async function createTableEntryAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "library.create");
   const store = kbStore();
   const kbId = String(formData.get("kbId"));
   const kb = await store.getKb(kbId);

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 
 const F = "var(--font-fraunces), serif";
@@ -27,6 +28,7 @@ const SECTIONS: { title: string; body: string }[] = [
 export default async function MobileGuidePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.guide");
 
   return (
     <main

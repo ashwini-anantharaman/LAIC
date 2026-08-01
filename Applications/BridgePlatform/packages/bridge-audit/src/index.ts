@@ -46,7 +46,8 @@ export type AuditAction =
   | "org.profile.update"
   | "org.affiliation.change"
   | "session.undo"
-  | "session.fork";
+  | "session.fork"
+  | "access.catalogue.update";
 
 export interface AuditRecord {
   auditId: string;

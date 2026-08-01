@@ -6,6 +6,7 @@ import type { Seat } from "@bridge/events";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { HandViewer } from "@/components/table/play/HandViewer";
+import { requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";
 
@@ -14,6 +15,8 @@ export default async function LibraryHandViewerPage({
 }: Readonly<{ params: Promise<{ entryId: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.library");
+  await requireFeature(context, "library.hand_viewer");
   const { entryId } = await params;
   const entry = await libraryStore().getEntry(entryId);
   if (!entry?.hands) notFound();

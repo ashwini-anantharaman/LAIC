@@ -1,6 +1,19 @@
+import { canAccess } from "@bridge/access";
 import type { Metadata } from "next";
 import { Fraunces, Karla } from "next/font/google";
 import { TabBar } from "@/components/mobile/TabBar";
+import { getCatalogue } from "@/lib/access";
+import { getBridgeContext } from "@/lib/nexus";
+
+/** The mobile tab keys, in bar order. Enforced server-side here so the client
+ *  TabBar only ever renders tabs the catalogue permits. */
+const MOBILE_TAB_KEYS = [
+  "page.home",
+  "page.play",
+  "page.players",
+  "page.library",
+  "page.guide",
+] as const;
 
 // Load the design's two typefaces and expose them as CSS variables so every
 // mobile component can reach them via var(--font-fraunces) / var(--font-karla).
@@ -25,9 +38,18 @@ export const metadata: Metadata = {
  *  column on a warm neutral backdrop so it reads as a device on wide screens
  *  while filling the viewport on a phone. The bottom TabBar anchors to this
  *  container; list screens pad their own bottom so content clears it. */
-export default function MobileLayout({
+export default async function MobileLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const context = await getBridgeContext();
+  const allowedKeys = context
+    ? await (async () => {
+        const catalogue = await getCatalogue();
+        return MOBILE_TAB_KEYS.filter((key) =>
+          canAccess(catalogue, key, context.roles),
+        );
+      })()
+    : [];
   return (
     <div
       className={`${fraunces.variable} ${karla.variable}`}
@@ -51,7 +73,7 @@ export default function MobileLayout({
         }}
       >
         {children}
-        <TabBar />
+        <TabBar allowedKeys={allowedKeys} />
       </div>
     </div>
   );

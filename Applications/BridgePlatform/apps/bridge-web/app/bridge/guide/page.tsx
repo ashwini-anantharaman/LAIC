@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 
 /** The in-app guide (2026-07-22): how knowledge works, written for fellows,
@@ -47,6 +48,7 @@ function Section({
 export default async function GuidePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.guide");
 
   return (
     <div className="mx-auto max-w-3xl space-y-12 pb-16">

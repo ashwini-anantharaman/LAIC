@@ -8,7 +8,6 @@
 
 import { legalCalls, legalPlays, resultLabel, scoreBoard } from "@bridge/engine";
 import type { Seat } from "@bridge/events";
-import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { undoAction } from "@/app/bridge/table/actions";
@@ -16,6 +15,7 @@ import { HandViewer } from "@/components/table/play/HandViewer";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
+import { canUse, requireFeature } from "@/lib/access";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
@@ -30,9 +30,28 @@ export default async function PlayTablePage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.play");
+  const [
+    canSeatsPanel,
+    canBenSeat,
+    canWorkbenchLink,
+    canUndo,
+    canStepControls,
+    canSettingsMenu,
+    canHandsView,
+  ] = await Promise.all([
+    canUse(context, "table.seats_panel"),
+    canUse(context, "table.ben_seat"),
+    canUse(context, "table.workbench_link"),
+    canUse(context, "table.undo"),
+    canUse(context, "table.step_controls"),
+    canUse(context, "table.settings_menu"),
+    canUse(context, "table.hands_view"),
+  ]);
   const { sessionId } = await params;
   const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
-  const handsView = viewParam === "hands";
+  // Denied the hands-record view: the ?view=hands param is treated as absent.
+  const handsView = viewParam === "hands" && canHandsView;
 
   let view;
   try {
@@ -74,12 +93,11 @@ export default async function PlayTablePage({
   const seatStrip = (seat: Seat) =>
     record.seats[seat].kind === "human" ? "#12525e" : ROBOT_STRIPS[seat];
 
-  // Fellows get the seat-swap panel in the rail — same swapSeatAction and
-  // fork semantics as always, plus BEN as a seatable character when the
-  // server has BEN_ENDPOINT configured.
-  const isFellow = canAccessAdminArea(context);
-  const roster = isFellow ? await kbStore().listPlayersForKb(record.kbId) : [];
-  const seatsPanel = isFellow ? (
+  // The seat-swap panel in the rail — same swapSeatAction and fork semantics
+  // as always, plus BEN as a seatable character when the server has
+  // BEN_ENDPOINT configured and the catalogue permits BEN seating.
+  const roster = canSeatsPanel ? await kbStore().listPlayersForKb(record.kbId) : [];
+  const seatsPanel = canSeatsPanel ? (
     <SeatsPanel
       sessionId={sessionId}
       seatLabels={{ N: seatName("N"), E: seatName("E"), S: seatName("S"), W: seatName("W") }}
@@ -92,7 +110,7 @@ export default async function PlayTablePage({
               : 1,
         )
         .map((p) => ({ playerId: p.playerId, name: p.name, validationStatus: p.validationStatus }))}
-      benOffered={benAvailable()}
+      benOffered={benAvailable() && canBenSeat}
     />
   ) : null;
 
@@ -135,7 +153,7 @@ export default async function PlayTablePage({
     },
     // The verification workbench (decisions rail, fix-at-the-table, deal
     // editor) lives behind the ☰ so nothing sits outside the canvas.
-    ...(isFellow
+    ...(canWorkbenchLink
       ? [{ label: "Verification workbench", value: "→", href: `/bridge/table/${sessionId}?legacy=1` }]
       : []),
   ];
@@ -159,7 +177,7 @@ export default async function PlayTablePage({
         variant="rail"
         railScale={s}
       />
-      {record.events.length > 0 && state.phase !== "complete" && (
+      {canUndo && record.events.length > 0 && state.phase !== "complete" && (
         <form action={undoAction} style={{ display: "flex" }}>
           <input type="hidden" name="sessionId" value={sessionId} />
           <button
@@ -212,7 +230,7 @@ export default async function PlayTablePage({
           >
             ⟵ table
           </Link>
-          {controlsAt(1.9)}
+          {canStepControls && controlsAt(1.9)}
         </div>
       }
     />
@@ -264,11 +282,11 @@ export default async function PlayTablePage({
             confirmBids={confirmBids}
             resultLine={score ? resultLabel(score) : ""}
             resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
-            controlsExtra={controlsAt(1)}
-            controlsExtraNarrow={controlsAt(1.5)}
+            controlsExtra={canStepControls ? controlsAt(1) : undefined}
+            controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
             railExtra={seatsPanel}
-            settings={settings}
-            viewHref={{ label: "Hands", href: settingsHref({ view: "hands" }) }}
+            settings={canSettingsMenu ? settings : undefined}
+            viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
           />
         )}
       </div>

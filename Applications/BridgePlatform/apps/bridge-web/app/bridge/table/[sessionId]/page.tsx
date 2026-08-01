@@ -5,7 +5,6 @@ import {
   type Seat,
 } from "@bridge/events";
 import { legalCalls, legalPlays, resultLabel, scoreBoard } from "@bridge/engine";
-import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { saveItemAction } from "@/app/bridge/kb/actions";
@@ -16,6 +15,7 @@ import { DealEditor } from "@/components/library/DealEditor";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { BboTable } from "@/components/table/bbo/BboTable";
 import { DecisionEntry } from "@/components/table/DecisionEntry";
+import { canUse } from "@/lib/access";
 import { benAvailable } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
@@ -64,7 +64,11 @@ export default async function SessionPage({
   // the-table, deal editor. ?fix / ?editDeal must stay here even without
   // legacy=1, or those overlays silently never open.
   const sp = await searchParams;
-  if (sp.legacy !== "1" && !sp.fix && !sp.editDeal) {
+  // The workbench is catalogue-gated (page.workbench, ADMIN by default). Denied
+  // users lose nothing — learner-mode legacy ≈ table2 — so they redirect there
+  // regardless of ?legacy/?fix/?editDeal, exactly as the plain redirect does.
+  const canWorkbench = await canUse(context, "page.workbench");
+  if (!canWorkbench || (sp.legacy !== "1" && !sp.fix && !sp.editDeal)) {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(sp)) if (v && k !== "legacy") q.set(k, String(v));
     const qs = q.toString();
@@ -99,7 +103,28 @@ export default async function SessionPage({
   }
   const { record, state, actingSeat, actingIsHuman } = view;
 
-  const isFellow = canAccessAdminArea(context);
+  // The workbench is the fellow surface; individual tools inside it are gated
+  // by their own catalogue keys, ANDed with !learnerMode below.
+  const isFellow = canWorkbench;
+  const [
+    canSeatsPanel,
+    canBenSeat,
+    canSaveLibrary,
+    canNewDeal,
+    canDealEditor,
+    canFixAtTable,
+    canDecisions,
+    canLearnerToggle,
+  ] = await Promise.all([
+    canUse(context, "table.seats_panel"),
+    canUse(context, "table.ben_seat"),
+    canUse(context, "table.save_library"),
+    canUse(context, "table.new_deal"),
+    canUse(context, "table.deal_editor"),
+    canUse(context, "table.fix_at_table"),
+    canUse(context, "table.decisions"),
+    canUse(context, "table.learner_toggle"),
+  ]);
   const learnerMode = mode === "learner" || !isFellow;
   const mySeat = (Object.entries(record.seats) as [Seat, (typeof record.seats)[Seat]][]).find(
     ([, c]) => c.kind === "human" && c.nexusUserId === context.nexusUserId,
@@ -143,11 +168,11 @@ export default async function SessionPage({
   // missing-compile sessions still open, DecisionEntry falls back to
   // id-free phrasing), and the seat menus' swap roster.
   const [fixItem, compiled, rosterRaw] = await Promise.all([
-    fix && !learnerMode ? kbStore().getItem(fix) : null,
+    fix && !learnerMode && canFixAtTable ? kbStore().getItem(fix) : null,
     sessionService()
       .compiledFor(record)
       .catch(() => undefined),
-    learnerMode ? [] : kbStore().listPlayersForKb(record.kbId),
+    learnerMode || !canSeatsPanel ? [] : kbStore().listPlayersForKb(record.kbId),
   ]);
   const ruleIndex = compiled ? buildRuleIndex(compiled) : undefined;
 
@@ -171,7 +196,7 @@ export default async function SessionPage({
   // BEN in every seat's swap menu — the neural engine is a character any seat
   // can hold, not a North-only fixture. Offered only when the server has an
   // endpoint; swapSeatAction re-checks so a stale form can't seat a dead BEN.
-  const benOffered = benAvailable();
+  const benOffered = benAvailable() && canBenSeat;
   const benSwapEntry = (seat: Seat) => {
     if (!benOffered) return null;
     const seated = record.seats[seat].kind === "ben";
@@ -218,7 +243,7 @@ export default async function SessionPage({
     const barClass = `flex w-full items-center gap-1.5 rounded-[3px] px-1 py-0.5 shadow ${
       acting ? "bg-amber-300" : "bg-neutral-100"
     }`;
-    if (learnerMode) {
+    if (learnerMode || !canSeatsPanel) {
       return <p className={barClass}>{tag}</p>;
     }
     const iAmHere = config.kind === "human" && config.nexusUserId === context.nexusUserId;
@@ -326,7 +351,7 @@ export default async function SessionPage({
     // Fills its reserved-width column (BboTable wraps the plate in a fixed-
     // width box), so the plate — and the column — never resizes with the name.
     const barClass = "flex w-full items-center gap-1.5 px-1 py-0.5 text-[13px]";
-    if (learnerMode) {
+    if (learnerMode || !canSeatsPanel) {
       return (
         <p className={barClass} style={plateStyle}>
           {inner}
@@ -538,7 +563,7 @@ export default async function SessionPage({
             <span className="ml-1 hidden lg:inline text-[10px]">hands</span>
           </Link>
         )}
-        {!learnerMode && (
+        {!learnerMode && canSaveLibrary && (
           <Dropdown className="relative">
             <summary
               className="cursor-pointer list-none rounded-full border border-neutral-300 px-2.5 py-1 text-neutral-600 hover:border-emerald-400"
@@ -619,7 +644,7 @@ export default async function SessionPage({
             ⏮<span className="ml-1 hidden lg:inline text-[10px]">start</span>
           </button>
         </form>
-        {!learnerMode && (
+        {!learnerMode && canNewDeal && (
           <form action={newDealAction}>
             <input type="hidden" name="sessionId" value={sessionId} />
             <button
@@ -632,7 +657,7 @@ export default async function SessionPage({
             </button>
           </form>
         )}
-        {!learnerMode && (
+        {!learnerMode && canDealEditor && (
           <Link
             href={toggleHref({ editDeal: "1", paused })}
             aria-label="Edit the deal"
@@ -642,7 +667,7 @@ export default async function SessionPage({
             ✏️<span className="ml-1 hidden lg:inline text-[10px]">edit</span>
           </Link>
         )}
-        {isFellow && (
+        {isFellow && canLearnerToggle && (
           <Link
             href={
               learnerMode
@@ -668,7 +693,7 @@ export default async function SessionPage({
         </Link>
       </div>
 
-      <div className={`grid gap-6 ${learnerMode ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"}`}>
+      <div className={`grid gap-6 ${learnerMode || !canDecisions ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"}`}>
         <div>
           <BboTable
             sessionId={sessionId}
@@ -691,7 +716,7 @@ export default async function SessionPage({
         </div>
 
         {/* The verification rail */}
-        {!learnerMode && (
+        {!learnerMode && canDecisions && (
           <aside>
             <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-neutral-500">
               Decisions ({logicEvents.length})
@@ -775,7 +800,7 @@ export default async function SessionPage({
       {/* Edit-the-deal: centered, dimmed overlay over the board (replaces the
           old /edit page). Redistribute unplayed cards, then continue on the
           edited deal — played cards are locked to the seat that played them. */}
-      {editDeal && !learnerMode && (
+      {editDeal && !learnerMode && canDealEditor && (
         <div className="fixed inset-0 z-50">
           <Link
             href={`/bridge/table/${sessionId}?paused=${Date.now()}`}

@@ -2,6 +2,7 @@ import { roleLabel, stubDisplayName } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
 import { clearDevUser } from "@/app/actions";
 import { NavLink } from "@/components/NavLink";
+import { getCatalogue } from "@/lib/access";
 import { navForContext } from "@/lib/nav";
 import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
 
@@ -24,7 +25,8 @@ export default async function BridgeShellLayout({
   if (!context) redirect("/welcome");
 
   const demo = await isFellowDemo();
-  const navItems = navForContext(context).filter(
+  const catalogue = await getCatalogue();
+  const navItems = navForContext(catalogue, context).filter(
     (item) => !demo || !DEMO_HIDDEN_NAV.has(item.href),
   );
 

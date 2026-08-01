@@ -29,6 +29,7 @@ import { MobileFixView } from "@/components/mobile/table/MobileFixView";
 import { MobileItemEditor } from "@/components/mobile/table/MobileItemEditor";
 import { MobileSheetShell } from "@/components/mobile/table/MobileSheetShell";
 import { SaveSheet } from "@/components/mobile/table/SaveSheet";
+import { canUse, requireFeature } from "@/lib/access";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
@@ -86,6 +87,15 @@ export default async function MobileTablePage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.play");
+  const [canSaveLibrary, canDecisions, canFixAtTable, canDealEditor, canLearnerToggle] =
+    await Promise.all([
+      canUse(context, "table.save_library"),
+      canUse(context, "table.decisions"),
+      canUse(context, "table.fix_at_table"),
+      canUse(context, "table.deal_editor"),
+      canUse(context, "table.learner_toggle"),
+    ]);
   const { sessionId } = await params;
   const {
     mode,
@@ -150,7 +160,8 @@ export default async function MobileTablePage({
   // Fix-at-the-table overlay (fellows only, like desktop): ?fix=<itemId>
   // opens view-first; &fixMode=edit swaps in the phone editor whose save
   // re-pins THIS session to the fresh compile and comes back paused.
-  const fixItem = fix && !learnerMode ? await kbStore().getItem(fix).catch(() => null) : null;
+  const fixItem =
+    fix && !learnerMode && canFixAtTable ? await kbStore().getItem(fix).catch(() => null) : null;
 
   const seatLabel = (seat: Seat) => {
     const config = record.seats[seat];
@@ -790,8 +801,10 @@ export default async function MobileTablePage({
             👁 {showAll ? "hide" : "all"}
           </Link>
         )}
-        {!learnerMode && <SaveSheet sessionId={sessionId} boardName={record.board.name} />}
-        {isFellow && (
+        {!learnerMode && canSaveLibrary && (
+          <SaveSheet sessionId={sessionId} boardName={record.board.name} />
+        )}
+        {isFellow && canLearnerToggle && (
           <Link
             href={
               learnerMode
@@ -830,7 +843,7 @@ export default async function MobileTablePage({
       </div>
 
       {/* decisions feed (hidden entirely in learner mode, like desktop) */}
-      {!learnerMode && (
+      {!learnerMode && canDecisions && (
         <FeedSheet
           count={logicEvents.length}
           lastLine={feedLastLine}
@@ -922,7 +935,7 @@ export default async function MobileTablePage({
       {/* Edit-the-deal (mobile): the phone deal editor over the felt. Posts
           the SAME redealEditedAction contract as the desktop overlay (+mobile=1
           so the fork lands back on /m/table). */}
-      {editDeal && !learnerMode && (
+      {editDeal && !learnerMode && canDealEditor && (
         <MobileSheetShell
           closeHref={mobileHref({ paused: paused ?? String(Date.now()) })}
           closeLabel="Close the deal editor"

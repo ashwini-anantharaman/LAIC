@@ -1,6 +1,7 @@
 import { stubDisplayName } from "@bridge/nexus-client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 
 const F = "var(--font-fraunces), serif";
@@ -10,6 +11,7 @@ const bold = { color: "#1d1a15", fontWeight: 700 };
 export default async function MobileHomePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.home");
   const firstName = (
     stubDisplayName(context.nexusUserId) ?? context.nexusUserId
   ).split(" ")[0];

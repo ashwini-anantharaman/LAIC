@@ -1,51 +1,36 @@
-import {
-  ADMIN_AREA_ROLES,
-  hasAnyRole,
-  type NexusBridgeContext,
-} from "@bridge/nexus-client";
-import type { BridgeRole } from "@laic/learner-contracts";
+import { canAccess, type AccessCatalogue } from "@bridge/access";
+import { type NexusBridgeContext } from "@bridge/nexus-client";
 
 export type NavItem = {
   href: string;
   label: string;
-  /** When set, the item renders only for contexts holding one of these roles. */
-  requiresRoles?: readonly BridgeRole[];
+  /** The access-catalogue feature key that gates this item (§7). */
+  featureKey: string;
 };
 
 /**
  * Navigation during the knowledge rework (spec 2026-07-14). Surfaces return
  * stage by stage: knowledge bases (Stage D), players (E), the table (F).
+ * Visibility is gated through the access catalogue by feature key — the seeded
+ * defaults mirror the historical role sets exactly.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
-  { href: "/bridge/home", label: "Home" },
-  { href: "/bridge/table", label: "Play" },
-  { href: "/bridge/players", label: "Players" },
-  { href: "/bridge/library", label: "Library" },
-  { href: "/bridge/guide", label: "Guide" },
-  {
-    href: "/bridge/kb",
-    label: "Knowledge bases",
-    requiresRoles: ADMIN_AREA_ROLES,
-  },
-  {
-    href: "/bridge/teams",
-    label: "Teams & roles",
-    requiresRoles: ADMIN_AREA_ROLES,
-  },
-  {
-    href: "/bridge/org",
-    label: "Organization",
-    requiresRoles: ["bridge_coach", "bridge_org_admin", "bridge_club_admin", "bridge_program_admin"],
-  },
-  {
-    href: "/bridge/admin/audit",
-    label: "Audit",
-    requiresRoles: ADMIN_AREA_ROLES,
-  },
+  { href: "/bridge/home", label: "Home", featureKey: "page.home" },
+  { href: "/bridge/table", label: "Play", featureKey: "page.play" },
+  { href: "/bridge/players", label: "Players", featureKey: "page.players" },
+  { href: "/bridge/library", label: "Library", featureKey: "page.library" },
+  { href: "/bridge/guide", label: "Guide", featureKey: "page.guide" },
+  { href: "/bridge/kb", label: "Knowledge bases", featureKey: "page.kb" },
+  { href: "/bridge/teams", label: "Teams & roles", featureKey: "page.teams" },
+  { href: "/bridge/org", label: "Organization", featureKey: "page.org" },
+  { href: "/bridge/admin/audit", label: "Audit", featureKey: "page.audit" },
 ];
 
-export function navForContext(context: NexusBridgeContext): NavItem[] {
-  return NAV_ITEMS.filter(
-    (item) => !item.requiresRoles || hasAnyRole(context, item.requiresRoles),
+export function navForContext(
+  catalogue: AccessCatalogue | null | undefined,
+  context: NexusBridgeContext,
+): NavItem[] {
+  return NAV_ITEMS.filter((item) =>
+    canAccess(catalogue, item.featureKey, context.roles),
   );
 }

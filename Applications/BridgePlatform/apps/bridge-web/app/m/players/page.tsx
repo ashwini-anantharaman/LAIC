@@ -1,6 +1,7 @@
 import type { KbPlayer, KnowledgeBase, PlayerValidationStatus } from "@bridge/kb";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { canUse, requireFeature } from "@/lib/access";
 import { benAvailable, BEN_SEAT_LABEL } from "@/lib/benSeat";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
@@ -34,6 +35,11 @@ export default async function MobilePlayersPage({
 }: Readonly<{ searchParams: Promise<{ kb?: string; tab?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.players");
+  const [canTry, canAiTab] = await Promise.all([
+    canUse(context, "players.try"),
+    canUse(context, "players.ai_tab"),
+  ]);
   await ensureSeeds();
   const { kb: kbParam, tab } = await searchParams;
   const aiTab = tab === "ai";
@@ -108,7 +114,7 @@ export default async function MobilePlayersPage({
       </div>
 
       {aiTab ? (
-        benAvailable() ? (
+        canAiTab && benAvailable() ? (
           <div
             style={{
               border: "1px solid #e7e1d3",
@@ -147,34 +153,36 @@ export default async function MobilePlayersPage({
               Engine-backed — bids and plays from BEN&apos;s trained models, not from
               knowledge packs. Also seatable anywhere from a live board&apos;s seat menus.
             </p>
-            <div style={{ marginTop: 11, display: "flex", gap: 7 }}>
-              <form action={tryBenAction}>
-                {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
-                <input type="hidden" name="mobile" value="1" />
-                <button
-                  type="submit"
-                  style={{
-                    border: "none",
-                    background: "#205e63",
-                    color: "#fff",
-                    borderRadius: 8,
-                    padding: "6px 14px",
-                    font: `600 12px ${K}`,
-                    cursor: "pointer",
-                  }}
-                >
-                  Play
-                </button>
-              </form>
-              <form action={tryBenAction}>
-                {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
-                <input type="hidden" name="watch" value="1" />
-                <input type="hidden" name="mobile" value="1" />
-                <button type="submit" style={actionBtn}>
-                  Watch 4
-                </button>
-              </form>
-            </div>
+            {canTry && (
+              <div style={{ marginTop: 11, display: "flex", gap: 7 }}>
+                <form action={tryBenAction}>
+                  {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                  <input type="hidden" name="mobile" value="1" />
+                  <button
+                    type="submit"
+                    style={{
+                      border: "none",
+                      background: "#205e63",
+                      color: "#fff",
+                      borderRadius: 8,
+                      padding: "6px 14px",
+                      font: `600 12px ${K}`,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Play
+                  </button>
+                </form>
+                <form action={tryBenAction}>
+                  {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                  <input type="hidden" name="watch" value="1" />
+                  <input type="hidden" name="mobile" value="1" />
+                  <button type="submit" style={actionBtn}>
+                    Watch 4
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
         ) : (
           <p
@@ -275,37 +283,39 @@ export default async function MobilePlayersPage({
               <p style={{ margin: "5px 0 0", font: `400 11px ${K}`, color: "#7b7466" }}>
                 {sets}
               </p>
-              <div style={{ marginTop: 11, display: "flex", gap: 7 }}>
-                <form action={tryPlayerAction}>
-                  <input type="hidden" name="playerId" value={p.playerId} />
-                  <input type="hidden" name="mobile" value="1" />
-                  <button
-                    type="submit"
-                    style={{
-                      border: "none",
-                      background: "#205e63",
-                      color: "#fff",
-                      borderRadius: 8,
-                      padding: "6px 14px",
-                      font: `600 12px ${K}`,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Play
-                  </button>
-                </form>
-                <form action={tryPlayerAction}>
-                  <input type="hidden" name="playerId" value={p.playerId} />
-                  <input type="hidden" name="watch" value="1" />
-                  <input type="hidden" name="mobile" value="1" />
-                  <button type="submit" style={actionBtn}>
-                    Watch 4
-                  </button>
-                </form>
-                {/* No Edit here: the player editor (packs, policies, validation,
-                    simulation) is a desktop workbench — deliberately kept out of
-                    the mobile flow rather than dumping users into desktop chrome. */}
-              </div>
+              {canTry && (
+                <div style={{ marginTop: 11, display: "flex", gap: 7 }}>
+                  <form action={tryPlayerAction}>
+                    <input type="hidden" name="playerId" value={p.playerId} />
+                    <input type="hidden" name="mobile" value="1" />
+                    <button
+                      type="submit"
+                      style={{
+                        border: "none",
+                        background: "#205e63",
+                        color: "#fff",
+                        borderRadius: 8,
+                        padding: "6px 14px",
+                        font: `600 12px ${K}`,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Play
+                    </button>
+                  </form>
+                  <form action={tryPlayerAction}>
+                    <input type="hidden" name="playerId" value={p.playerId} />
+                    <input type="hidden" name="watch" value="1" />
+                    <input type="hidden" name="mobile" value="1" />
+                    <button type="submit" style={actionBtn}>
+                      Watch 4
+                    </button>
+                  </form>
+                  {/* No Edit here: the player editor (packs, policies, validation,
+                      simulation) is a desktop workbench — deliberately kept out of
+                      the mobile flow rather than dumping users into desktop chrome. */}
+                </div>
+              )}
             </div>
           );
         })}

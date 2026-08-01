@@ -2,6 +2,7 @@ import { callLabel, rankLabel, type Seat, type Suit } from "@bridge/events";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { HandDiagram } from "@/components/library/HandDiagram";
+import { canUse, requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";
 import {
@@ -23,6 +24,12 @@ export default async function LibraryEntryPage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.library");
+  const [canResume, canDelete, canHandViewer] = await Promise.all([
+    canUse(context, "library.resume"),
+    canUse(context, "library.delete"),
+    canUse(context, "library.hand_viewer"),
+  ]);
   const { entryId } = await params;
   const { error } = await searchParams;
   const entry = await libraryStore().getEntry(entryId);
@@ -54,7 +61,7 @@ export default async function LibraryEntryPage({
           {entry.importFileName && ` · ${entry.importFileName}`} · {entry.createdAt.slice(0, 10)}
         </span>
         <span className="ml-auto flex gap-2">
-          {entry.hands && (
+          {canHandViewer && entry.hands && (
             <Link
               href={`/bridge/library/${entry.entryId}/view`}
               className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-emerald-500 hover:bg-emerald-50"
@@ -62,38 +69,41 @@ export default async function LibraryEntryPage({
               Hand viewer
             </Link>
           )}
-          {entry.kind === "table" ? (
-            <form action={startTableEntryAction}>
-              <input type="hidden" name="entryId" value={entry.entryId} />
-              <button
-                type="submit"
-                className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
-              >
-                Start · fresh deal
-              </button>
-            </form>
-          ) : (
-            entry.hands && (
-              <form action={entry.kind === "play" ? resumePlayEntryAction : playEntryAction}>
+          {canResume &&
+            (entry.kind === "table" ? (
+              <form action={startTableEntryAction}>
                 <input type="hidden" name="entryId" value={entry.entryId} />
                 <button
                   type="submit"
                   className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
                 >
-                  {entry.kind === "play" ? "Resume" : "Play"}
+                  Start · fresh deal
                 </button>
               </form>
-            )
+            ) : (
+              entry.hands && (
+                <form action={entry.kind === "play" ? resumePlayEntryAction : playEntryAction}>
+                  <input type="hidden" name="entryId" value={entry.entryId} />
+                  <button
+                    type="submit"
+                    className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+                  >
+                    {entry.kind === "play" ? "Resume" : "Play"}
+                  </button>
+                </form>
+              )
+            ))}
+          {canDelete && (
+            <form action={deleteEntryAction}>
+              <input type="hidden" name="entryId" value={entry.entryId} />
+              <button
+                type="submit"
+                className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-500 hover:border-red-300 hover:text-red-700"
+              >
+                Delete
+              </button>
+            </form>
           )}
-          <form action={deleteEntryAction}>
-            <input type="hidden" name="entryId" value={entry.entryId} />
-            <button
-              type="submit"
-              className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-500 hover:border-red-300 hover:text-red-700"
-            >
-              Delete
-            </button>
-          </form>
         </span>
       </header>
 

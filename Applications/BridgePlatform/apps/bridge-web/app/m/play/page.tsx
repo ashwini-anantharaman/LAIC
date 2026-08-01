@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DealerControl } from "@/components/mobile/DealerControl";
+import { requireFeature } from "@/lib/access";
 import { ensureSeeds, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore, sessionService } from "@/lib/sessions";
@@ -33,6 +34,7 @@ const outlineRow: React.CSSProperties = {
 export default async function MobilePlayPage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.play");
   await ensureSeeds();
 
   const [kbs, recent, plays] = await Promise.all([

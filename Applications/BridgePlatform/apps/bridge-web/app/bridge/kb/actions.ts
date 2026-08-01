@@ -8,6 +8,7 @@
 import { newId, type EdgeType, type KbSource } from "@bridge/kb";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { requireAdminContext, requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { fileToText, uploadDocument } from "@/lib/documents";
@@ -777,6 +778,7 @@ export async function resolveSuggestionAction(formData: FormData): Promise<void>
 
 export async function suggestPlayersAction(formData: FormData): Promise<void> {
   const context = await requireAdminContext("bridge.knowledge.edit");
+  await requireFeature(context, "players.create");
   const kbId = String(formData.get("kbId"));
   const compiled = await kbService().liveCompile(kbId);
   if (!compiled) throw new Error("Compile the KB first (save any item)");
