@@ -7,12 +7,13 @@
 // (see /bridge/table2/demo for three of them on one page).
 
 import { legalCalls, legalPlays, resultLabel, scoreBoard } from "@bridge/engine";
-import type { Seat } from "@bridge/events";
+import type { BidLogicEvent, Seat } from "@bridge/events";
+import { callLabel } from "@bridge/events";
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { undoAction } from "@/app/bridge/table/actions";
-import type { CoachPanelData } from "@/components/table/play/CoachStrip";
+import type { CoachNote, CoachPanelData } from "@/components/table/play/CoachStrip";
 import { HandViewer } from "@/components/table/play/HandViewer";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
@@ -153,22 +154,64 @@ export default async function PlayTablePage({
     },
   ];
 
-  // The coaching strip under the player's hand. UI scaffold for now: the strip
-  // is presentational and the notes come from here, so wiring the coach (and
-  // BEN's own explanation of the move it just made — the logic events already
-  // carry `reason`, `rejected[]` and `citedSettings`) is a matter of filling
-  // this array, not of touching the table. `?coach=demo` shows the populated
-  // state; `?coach=off` hides the strip entirely.
+  /**
+   * The auction, explained — the strip's first real content (2026-08-01).
+   *
+   * Every call a decision engine makes already records WHY: BEN fills `reason`
+   * with its own explanation of the bid it chose and `rejected[]` with the
+   * candidates it turned down and their scores; a knowledge-base player fills
+   * the same fields from the rule that fired, plus the settings it cited. So
+   * this reads the board's own history rather than asking anything: the notes
+   * appear as the auction happens, including the moment after you bid, when the
+   * robots answer.
+   *
+   * Human calls carry `reason: "human action"` (there is no engine behind
+   * them), so they land as a plain marker — enough to keep the thread in order
+   * without pretending there's reasoning to show.
+   */
+  const auctionNotes: CoachNote[] = record.events
+    .filter((e): e is BidLogicEvent => e.category === "bid-logic-event")
+    .slice(-14)
+    .map((e) => {
+      const kind = record.seats[e.seat].kind;
+      // The seat letter, not the robot's name: names run to "House · Full
+      // teaching deck", and the plates already say who sits where.
+      const who = e.seat === mySeat ? "You" : e.seat;
+      const call = e.chosen;
+      const headline = `${who} ${
+        call === "P" ? "passed" : call === "X" ? "doubled" : call === "XX" ? "redoubled" : `bid ${callLabel(call)}`
+      }`;
+      if (kind === "human") {
+        return { id: `call-${e.seq}`, source: "system", headline, about: { seat: e.seat } };
+      }
+      return {
+        id: `call-${e.seq}`,
+        source: kind === "ben" ? "ben" : "kb",
+        headline,
+        detail: e.reason,
+        alternatives: e.rejected.map((r) => ({ label: r.action, why: r.why })),
+        // Only the settings that actually bore on the decision, by their human
+        // labels. `matchedRuleId` is deliberately left out — it's an internal
+        // id, and the workbench is where you go to read the rule itself.
+        citations: e.citedSettings.filter((s) => s.matched).map((s) => ({ label: s.label })).slice(0, 4),
+        about: { seat: e.seat },
+      };
+    });
+
+  // The coaching strip under the player's hand. The coach itself isn't wired
+  // yet — what's live is the bidding reasoning above. `?coach=demo` shows a
+  // sample of the shapes a coach will add; `?coach=off` hides the strip.
   const coachPanel: CoachPanelData | undefined =
     coachParam === "off"
       ? undefined
       : {
-          title: "Coach",
+          title: state.phase === "auction" ? "Bidding · why" : "Coach",
           placeholder:
-            "Nothing yet. Your coach's instruction for this board — and BEN's reasons for its own bids and cards — will appear here.",
+            "Nothing yet. Each robot's reason for its bid appears here as the auction goes round — and your coach's own notes once the coach is wired.",
           notes:
             coachParam === "demo"
               ? [
+                  ...auctionNotes,
                   {
                     id: "demo-coach",
                     source: "coach",
@@ -177,17 +220,8 @@ export default async function PlayTablePage({
                       "Against a notrump contract, lead the fourth-highest of your longest and strongest suit unless you can see a better plan.",
                     citations: [{ label: "Lesson · opening leads" }],
                   },
-                  {
-                    id: "demo-ben",
-                    source: "ben",
-                    headline: "I led the ♦9 rather than a spade.",
-                    detail:
-                      "Dummy is marked with spade length from the auction, so leading into it gives away a tempo. The diamond keeps the entry in hand.",
-                    citations: [{ label: "lead: fourth-best" }, { label: "avoid dummy's long suit" }],
-                    about: { seat: "W", trick: 1 },
-                  },
                 ]
-              : [],
+              : auctionNotes,
         };
 
   // Play controls live INSIDE the canvas: ▶/❚❚ and step as rail chips

@@ -46,6 +46,12 @@ export interface CoachNote {
    * point at.
    */
   citations?: readonly { label: string; href?: string }[];
+  /**
+   * What it considered and turned down — a bid engine's `rejected[]`. Half of
+   * "why this bid" is "why not that one", and for a learner that half is
+   * usually the more useful one.
+   */
+  alternatives?: readonly { label: string; why: string }[];
   /** Which seat/trick this is about, for later filtering by hand or trick. */
   about?: { seat?: string; trick?: number };
   /** Host-supplied timestamp; rendered as given, never parsed. */
@@ -153,6 +159,17 @@ export function CoachStrip({
                     <p style={{ margin: "2px 0 0", fontSize: font - 1, lineHeight: 1.4, color: "rgba(255,255,255,.78)" }}>
                       {note.detail}
                     </p>
+                  )}
+                  {!!note.alternatives?.length && (
+                    <ul style={{ margin: "3px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 1 }}>
+                      {note.alternatives.map((alt) => (
+                        <li key={alt.label} style={{ fontSize: font - 2, lineHeight: 1.35, color: "rgba(255,255,255,.62)" }}>
+                          <span style={{ color: "rgba(255,255,255,.85)", fontWeight: 700 }}>not {alt.label}</span>
+                          {" — "}
+                          {alt.why}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                   {!!note.citations?.length && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
