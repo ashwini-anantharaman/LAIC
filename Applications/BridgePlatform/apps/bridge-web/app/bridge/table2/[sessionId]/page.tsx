@@ -12,6 +12,7 @@ import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { undoAction } from "@/app/bridge/table/actions";
+import type { CoachPanelData } from "@/components/table/play/CoachStrip";
 import { HandViewer } from "@/components/table/play/HandViewer";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
@@ -26,12 +27,12 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string; coach?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
+  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error, coach: coachParam } = await searchParams;
   const handsView = viewParam === "hands";
 
   let view;
@@ -114,7 +115,7 @@ export default async function PlayTablePage({
   const confirmBids = confirm === "1";
   const settingsHref = (patch: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const current = { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused };
+    const current = { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, coach: coachParam };
     for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
@@ -145,7 +146,49 @@ export default async function PlayTablePage({
     ...(isFellow
       ? [{ label: "Verification workbench", value: "→", href: `/bridge/table/${sessionId}?legacy=1` }]
       : []),
+    {
+      label: "Coaching panel",
+      value: coachParam === "off" ? "Hidden" : coachParam === "demo" ? "Sample" : "On",
+      href: settingsHref({ coach: coachParam === "off" ? undefined : coachParam === "demo" ? "off" : "demo" }),
+    },
   ];
+
+  // The coaching strip under the player's hand. UI scaffold for now: the strip
+  // is presentational and the notes come from here, so wiring the coach (and
+  // BEN's own explanation of the move it just made — the logic events already
+  // carry `reason`, `rejected[]` and `citedSettings`) is a matter of filling
+  // this array, not of touching the table. `?coach=demo` shows the populated
+  // state; `?coach=off` hides the strip entirely.
+  const coachPanel: CoachPanelData | undefined =
+    coachParam === "off"
+      ? undefined
+      : {
+          title: "Coach",
+          placeholder:
+            "Nothing yet. Your coach's instruction for this board — and BEN's reasons for its own bids and cards — will appear here.",
+          notes:
+            coachParam === "demo"
+              ? [
+                  {
+                    id: "demo-coach",
+                    source: "coach",
+                    headline: "Focus on your opening lead.",
+                    detail:
+                      "Against a notrump contract, lead the fourth-highest of your longest and strongest suit unless you can see a better plan.",
+                    citations: [{ label: "Lesson · opening leads" }],
+                  },
+                  {
+                    id: "demo-ben",
+                    source: "ben",
+                    headline: "I led the ♦9 rather than a spade.",
+                    detail:
+                      "Dummy is marked with spade length from the auction, so leading into it gives away a tempo. The diamond keeps the entry in hand.",
+                    citations: [{ label: "lead: fourth-best" }, { label: "avoid dummy's long suit" }],
+                    about: { seat: "W", trick: 1 },
+                  },
+                ]
+              : [],
+        };
 
   // Play controls live INSIDE the canvas: ▶/❚❚ and step as rail chips
   // (AutoAdvance's rail variant), undo beside them. Same key semantics as
@@ -278,6 +321,7 @@ export default async function PlayTablePage({
             railExtra={seatsPanel}
             settings={settings}
             viewHref={{ label: "Hands", href: settingsHref({ view: "hands" }) }}
+            coach={coachPanel}
           />
         )}
       </div>

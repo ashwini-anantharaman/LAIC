@@ -29,6 +29,7 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
+import { COACH_STRIP_H, CoachStrip, type CoachPanelData } from "./CoachStrip";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
 
 // ---------------------------------------------------------------------------
@@ -195,6 +196,13 @@ export interface PlayTableProps {
   settings?: readonly { label: string; value: string; href: string }[];
   /** Rail chip above Claim (the SideRail design's view toggle), e.g. "Hands". */
   viewHref?: { label: string; href: string };
+  /**
+   * The coaching strip below the player's hand (CoachStrip). Presentational:
+   * the host owns the notes, so the coaching runtime — and BEN's explanation of
+   * the move it just made — plugs in here without touching this layout. Omit
+   * and the table draws no strip at all.
+   */
+  coach?: CoachPanelData;
 }
 
 export function PlayTable({
@@ -221,6 +229,7 @@ export function PlayTable({
   railExtra,
   settings,
   viewHref,
+  coach,
 }: Readonly<PlayTableProps>) {
   // --- per-instance sizing. The prototype watched `window`; this watches the
   // element, which is what makes a second instance possible at all.
@@ -260,15 +269,23 @@ export function PlayTable({
   const menuHandler =
     onMenu ?? (settings || narrow ? () => setMenuOpen((v) => !v) : undefined);
 
+  // The coaching strip's open state is owned here, not by the strip: the wide
+  // stage is a fixed-height DESIGN, so a band under the table makes the design
+  // taller (and the whole thing scale down a little). Squeezing the centre
+  // instead put the auction box through North's seat plate.
+  const [coachOpen, setCoachOpen] = useState(Boolean(coach?.defaultOpen));
+  const coachH = !coach ? 0 : coachOpen ? COACH_STRIP_H.openWide : COACH_STRIP_H.closed;
+  const baseH = BASE_WIDE.h + coachH;
+
   // The wide stage is the fixed design, scaled to fit (down or up).
-  const scale = narrow ? 1 : Math.min(box.w / BASE_WIDE.w, box.h / BASE_WIDE.h) || 1;
+  const scale = narrow ? 1 : Math.min(box.w / BASE_WIDE.w, box.h / baseH) || 1;
   // The stage may grow past the design to soak up an odd container ratio, but
   // only so far: unbounded growth spreads the seats to the far edges and
   // leaves a lake of empty felt in the middle (visible in embedded/short
   // windows). Past the cap the extra space becomes margin — the stage is
   // centred by its flex parent — which keeps the table compact and readable.
   const stageW = Math.min(Math.max(BASE_WIDE.w, box.w / scale), BASE_WIDE.w * MAX_STRETCH);
-  const stageH = Math.min(Math.max(BASE_WIDE.h, box.h / scale), BASE_WIDE.h * MAX_STRETCH);
+  const stageH = Math.min(Math.max(baseH, box.h / scale), baseH * MAX_STRETCH);
 
   // Phone sizes, in real pixels. Cheap, and every phone piece below reads them.
   const ph = phoneMetrics(box.w, state.hands.S.length);
@@ -405,13 +422,15 @@ export function PlayTable({
   const fanRow = (
     seat: Seat,
     m: { w: number; h: number; step: number; rank: number; glyph: number },
-    interactive: boolean,
   ) => {
     const hand = [...state.hands[seat]].sort(
       (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
     );
+    // This rule alone decides what can be tapped — there is deliberately no
+    // per-row "interactive" switch. One existed and was set false for the
+    // dummy's row, which stopped every board where you are declarer.
     const live = (card: Card) =>
-      interactive && myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
+      myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
     return (
       <div style={{ display: "flex", filter: "drop-shadow(0 2px 4px rgba(0,0,0,.45))" }}>
         {hand.map((card, i) => {
@@ -866,11 +885,19 @@ export function PlayTable({
     </div>
   );
 
-  /** North's hand fanned across the top, for reference — not for tapping. */
+  /**
+   * North's hand fanned across the top. TAPPABLE, and it has to be: the engine
+   * plays the dummy's cards through the declarer's controller, so when you are
+   * declarer and dummy is on lead the table is waiting for you to play from
+   * this row. Rendering it inert (as this did until 2026-08-01) stops the board
+   * dead with no way to continue. `fanRow`'s own rule still decides what's
+   * live — your turn, in play, this seat, a legal card — so nothing here is
+   * playable when it isn't yours to play.
+   */
   const phoneNorthRow = (
     <div style={{ flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: `3px ${ph.pad}px 0`, background: "#000" }}>
       {visible.N
-        ? fanRow("N", { ...ph.north, step: fanStep("N", ph.north.w), glyph: Math.round(ph.north.rank * 0.82) }, false)
+        ? fanRow("N", { ...ph.north, step: fanStep("N", ph.north.w), glyph: Math.round(ph.north.rank * 0.82) })
         : fanBacks("N", { w: ph.north.w, h: ph.north.h, step: fanStep("N", ph.north.w) })}
       {phonePlate("N", Math.min(ph.avail, ph.north.w + Math.max(0, state.hands.N.length - 1) * fanStep("N", ph.north.w)))}
     </div>
@@ -994,7 +1021,7 @@ export function PlayTable({
     <div style={{ flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: `2px ${ph.pad}px 4px`, background: FELT }}>
       {callsRow("S", 14)}
       {visible.S
-        ? fanRow("S", { ...ph.hand, step: fanStep("S", ph.hand.w) }, true)
+        ? fanRow("S", { ...ph.hand, step: fanStep("S", ph.hand.w) })
         : fanBacks("S", { w: ph.hand.w, h: ph.hand.h, step: fanStep("S", ph.hand.w) })}
       {phonePlate("S", ph.avail)}
     </div>
@@ -1003,8 +1030,10 @@ export function PlayTable({
   const wideStage = (
     <div style={{ position: "absolute", inset: 0, display: "flex", background: "#000" }}>
       {rail}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: FELT }}>
-        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "16px 16px 14px" }}>
+      {/* A column so the coaching strip can hold its own row under the table
+          rather than floating over the player's hand. */}
+      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: FELT, display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "16px 16px 14px" }}>
           <div style={{ display: "flex", justifyContent: "center" }}>{seatRow("N")}</div>
 
           <div style={{ flex: 1, minHeight: 207, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 0" }}>
@@ -1024,6 +1053,7 @@ export function PlayTable({
             {seatRow("S")}
           </div>
         </div>
+        {coach ? <CoachStrip data={coach} open={coachOpen} onToggle={setCoachOpen} /> : null}
       </div>
     </div>
   );
@@ -1078,6 +1108,9 @@ export function PlayTable({
         </div>
         {inAuction ? bidBoxNarrow : null}
         {phoneHand}
+        {/* Below the player, as specified — collapsed, so it costs one line
+            of the screen until there's something worth opening. */}
+        {coach ? <CoachStrip data={coach} compact open={coachOpen} onToggle={setCoachOpen} /> : null}
         {menuOpen && !onMenu && (
           // The phone has no rail, so the ☰ carries everything the rail does:
           // the scoring toggle, the hands view, Claim, and — passed through as
