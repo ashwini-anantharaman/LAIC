@@ -19,6 +19,7 @@ import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { benAvailable, originalHand } from "@/lib/benSeat";
+import { bidMeaningsFor } from "@/lib/bidMeanings";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
@@ -153,6 +154,24 @@ export default async function PlayTablePage({
       href: settingsHref({ coach: coachParam === "off" ? undefined : coachParam === "demo" ? "off" : "demo" }),
     },
   ];
+
+  /**
+   * What each call would MEAN here, for the bid box's hover panel — BBO's
+   * behavior. Only while it's your call: it's a pure pass over the compiled
+   * rules (no I/O, no BEN), but there's nothing to hover when the box is inert.
+   *
+   * Deliberately from the knowledge base rather than BEN: BEN answers with
+   * scores, not prose (its /bid returns `candidates: [{call, insta_score}]`),
+   * whereas "what does this bid show" is exactly what the KB's rules record.
+   */
+  const bidMeanings =
+    state.phase === "auction" && myTurn
+      ? bidMeaningsFor({
+          compiled: await sessionService().compiledFor(record),
+          state,
+          seat: state.turn,
+        })
+      : undefined;
 
   /**
    * The auction, explained — the strip's first real content (2026-08-01).
@@ -355,6 +374,7 @@ export default async function PlayTablePage({
             railExtra={seatsPanel}
             settings={settings}
             viewHref={{ label: "Hands", href: settingsHref({ view: "hands" }) }}
+            bidMeanings={bidMeanings}
             coach={coachPanel}
           />
         )}

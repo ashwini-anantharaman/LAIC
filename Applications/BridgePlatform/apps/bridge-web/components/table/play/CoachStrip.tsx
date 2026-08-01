@@ -20,6 +20,10 @@
 // It is collapsed by default and never grows past `maxOpen`: this sits under
 // the hand, and a coaching panel that pushes the cards off a phone screen is
 // worse than no coaching panel.
+//
+// PHONE ONLY (owner decision 2026-08-01). The desktop platform's table doesn't
+// show it — coaching is the app's surface — so PlayTable renders this in its
+// portrait layout and nowhere else.
 
 import { useState, type ReactNode } from "react";
 
@@ -75,36 +79,18 @@ export interface CoachPanelData {
   defaultOpen?: boolean;
 }
 
-/** Open height of the notes list, by variant. The host needs this to reserve
- *  room for the strip, so it lives here with the styling that determines it. */
-export const COACH_STRIP_H = { closed: 30, openWide: 140, openCompact: 226 };
-
 export function CoachStrip({
   data,
   compact = false,
-  open: openProp,
-  onToggle,
 }: Readonly<{
   data: CoachPanelData;
   /** Phone metrics: smaller type, taller open state (there's more room below). */
   compact?: boolean;
-  /**
-   * Controlled open state. The wide table drives this because its stage is a
-   * fixed-height design that has to grow by the strip's height — it can't find
-   * that out after the fact. Left out, the strip owns the state itself.
-   */
-  open?: boolean;
-  onToggle?: (open: boolean) => void;
 }>) {
-  const [openSelf, setOpenSelf] = useState(Boolean(data.defaultOpen));
-  const open = openProp ?? openSelf;
-  const setOpen = (next: boolean) => {
-    setOpenSelf(next);
-    onToggle?.(next);
-  };
+  const [open, setOpen] = useState(Boolean(data.defaultOpen));
   const notes = data.notes ?? [];
   const latest = notes[notes.length - 1];
-  const maxOpen = compact ? 190 : 104;
+  const maxOpen = compact ? 190 : 120;
   const font = compact ? 13 : 14;
 
   return (

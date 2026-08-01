@@ -29,7 +29,7 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
-import { COACH_STRIP_H, CoachStrip, type CoachPanelData } from "./CoachStrip";
+import { CoachStrip, type CoachPanelData } from "./CoachStrip";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
 
 // ---------------------------------------------------------------------------
@@ -197,6 +197,13 @@ export interface PlayTableProps {
   /** Rail chip above Claim (the SideRail design's view toggle), e.g. "Hands". */
   viewHref?: { label: string; href: string };
   /**
+   * call → what it means in the system this table plays, for THIS point in the
+   * auction. Hovering a call in the bid box shows it (BBO shows the same thing
+   * beside its box); on touch, where there is no hover, it shows for the call
+   * you've staged with `confirmBids`. Omit and no panel appears.
+   */
+  bidMeanings?: Readonly<Record<string, { label: string; shows?: string }>>;
+  /**
    * The coaching strip below the player's hand (CoachStrip). Presentational:
    * the host owns the notes, so the coaching runtime — and BEN's explanation of
    * the move it just made — plugs in here without touching this layout. Omit
@@ -229,6 +236,7 @@ export function PlayTable({
   railExtra,
   settings,
   viewHref,
+  bidMeanings,
   coach,
 }: Readonly<PlayTableProps>) {
   // --- per-instance sizing. The prototype watched `window`; this watches the
@@ -248,9 +256,13 @@ export function PlayTable({
   // Armed bid level and the staged (unconfirmed) call are instance state.
   const [armed, setArmed] = useState<number | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  // The call the pointer is over, for the meaning panel. Touch has no hover, so
+  // there a staged call (confirmBids) is what gets explained.
+  const [hover, setHover] = useState<string | null>(null);
   useEffect(() => {
     setArmed(null);
     setPending(null);
+    setHover(null);
   }, [state.auction.length]);
 
   // The ☰ settings overlay is instance state too. An explicit onMenu prop
@@ -269,23 +281,15 @@ export function PlayTable({
   const menuHandler =
     onMenu ?? (settings || narrow ? () => setMenuOpen((v) => !v) : undefined);
 
-  // The coaching strip's open state is owned here, not by the strip: the wide
-  // stage is a fixed-height DESIGN, so a band under the table makes the design
-  // taller (and the whole thing scale down a little). Squeezing the centre
-  // instead put the auction box through North's seat plate.
-  const [coachOpen, setCoachOpen] = useState(Boolean(coach?.defaultOpen));
-  const coachH = !coach ? 0 : coachOpen ? COACH_STRIP_H.openWide : COACH_STRIP_H.closed;
-  const baseH = BASE_WIDE.h + coachH;
-
   // The wide stage is the fixed design, scaled to fit (down or up).
-  const scale = narrow ? 1 : Math.min(box.w / BASE_WIDE.w, box.h / baseH) || 1;
+  const scale = narrow ? 1 : Math.min(box.w / BASE_WIDE.w, box.h / BASE_WIDE.h) || 1;
   // The stage may grow past the design to soak up an odd container ratio, but
   // only so far: unbounded growth spreads the seats to the far edges and
   // leaves a lake of empty felt in the middle (visible in embedded/short
   // windows). Past the cap the extra space becomes margin — the stage is
   // centred by its flex parent — which keeps the table compact and readable.
   const stageW = Math.min(Math.max(BASE_WIDE.w, box.w / scale), BASE_WIDE.w * MAX_STRETCH);
-  const stageH = Math.min(Math.max(baseH, box.h / scale), baseH * MAX_STRETCH);
+  const stageH = Math.min(Math.max(BASE_WIDE.h, box.h / scale), BASE_WIDE.h * MAX_STRETCH);
 
   // Phone sizes, in real pixels. Cheap, and every phone piece below reads them.
   const ph = phoneMetrics(box.w, state.hands.S.length);
@@ -617,6 +621,49 @@ export function PlayTable({
   );
 
   // ---- bid box ------------------------------------------------------------
+  /**
+   * Hover/focus handlers that explain a call. Spread onto any button that IS a
+   * call — a level on its own isn't one (1 could be 1♣ through 1NT), which is
+   * why BBO also waits for the strain.
+   */
+  const explains = (call: string) =>
+    bidMeanings?.[call]
+      ? {
+          onMouseEnter: () => setHover(call),
+          onMouseLeave: () => setHover((c) => (c === call ? null : c)),
+          onFocus: () => setHover(call),
+          onBlur: () => setHover((c) => (c === call ? null : c)),
+        }
+      : {};
+
+  /** The call being explained: what you've staged wins over what you're over. */
+  const explained = pending ?? hover;
+  const meaning = explained ? bidMeanings?.[explained] : undefined;
+
+  /** BBO's panel: the call, its name, and what it promises. */
+  const meaningPanel = (compact: boolean) =>
+    meaning && explained ? (
+      <div
+        data-testid="bid-meaning"
+        style={{
+          display: "flex", alignItems: "baseline", gap: 8, maxWidth: "100%",
+          padding: compact ? "4px 8px" : "5px 10px", boxSizing: "border-box",
+          background: "#141414", border: `1px solid ${GOLD}`, borderRadius: 5,
+          color: "#fff", textAlign: "left",
+        }}
+      >
+        <span style={{ flex: "none", fontSize: compact ? 17 : 19, fontWeight: 700, color: isBid(explained) && isRed(explained[1] ?? "") ? "#ff6b6b" : "#fff" }}>
+          {callText(explained)}
+        </span>
+        <span style={{ minWidth: 0, fontSize: compact ? 12.5 : 13.5, lineHeight: 1.3 }}>
+          {meaning.label}
+          {meaning.shows ? (
+            <span style={{ color: "rgba(255,255,255,.72)" }}> — {meaning.shows}</span>
+          ) : null}
+        </span>
+      </div>
+    ) : null;
+
   const bidBtnStyle = (w: number, h: number, bg: string, border: string, live: boolean, font = 21): CSSProperties => ({
     flex: "none", width: w, height: h, border: `1px solid ${border}`, borderRadius: 5,
     background: bg, color: "#fff", fontSize: font, fontWeight: 700, lineHeight: 1,
@@ -673,6 +720,7 @@ export function PlayTable({
             key={st}
             type="button"
             onClick={() => stageCall(`${armed}${st}`)}
+            {...explains(`${armed}${st}`)}
             aria-label={`${armed}${st === "N" ? "NT" : st}`}
             style={{ flex: "none", width: st === "N" ? wNT : wSuit, height: h, border: "1px solid #8a8a6a", borderRadius: 5, background: "#f8f8f8", color: isRed(st) ? RED : "#000", fontSize: font, lineHeight: 1, cursor: "pointer" }}
           >
@@ -690,6 +738,7 @@ export function PlayTable({
           key={d}
           type="button"
           onClick={() => stageCall(d)}
+          {...explains(d)}
           aria-label={d === "X" ? "Double" : "Redouble"}
           style={{ flex: "none", width: w, height: h, border: `1px solid ${d === "X" ? "#8f0000" : "#0a2170"}`, borderRadius: 5, background: d === "X" ? RED : "#1034a6", color: "#fff", fontSize: font, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
         >
@@ -702,6 +751,7 @@ export function PlayTable({
     <button
       type="button"
       onClick={boxLive ? () => stageCall("P") : undefined}
+      {...explains("P")}
       aria-label="Pass"
       style={bidBtnStyle(w, h, boxLive ? "#116710" : "#a7b8a2", "#0c4b0b", boxLive, font)}
     >
@@ -710,7 +760,13 @@ export function PlayTable({
   );
 
   const bidBoxWide = (
-    <div style={{ width: 581, height: 107, flex: "none", background: "#cccc9b", borderRadius: 4, padding: "9px 10px", boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 7, boxSizing: "border-box" }}>
+    <div style={{ position: "relative", width: 581, height: 107, flex: "none", background: "#cccc9b", borderRadius: 4, padding: "9px 10px", boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 7, boxSizing: "border-box" }}>
+      {/* Above the box, so the pointer never covers what it just revealed. */}
+      {meaning && (
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: "calc(100% + 6px)", display: "flex", justifyContent: "center" }}>
+          {meaningPanel(false)}
+        </div>
+      )}
       {pending ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, height: 81 }}>
           <span style={{ fontSize: 19, color: "#3a3a20" }}>Confirm your call:</span>
@@ -742,6 +798,10 @@ export function PlayTable({
     const suit = Math.floor((avail - gap * 4) / 6); // NT takes a double slot
     return (
       <div style={{ flex: "none", background: "#cccc9b", padding: `6px ${ph.pad}px`, display: "flex", flexDirection: "column", alignItems: "center", gap, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
+        {/* Inside the tray on a phone: there's no hover here, so this appears
+            for the call you've staged (Confirm bids), where it belongs anyway —
+            right above the Confirm button. */}
+        {meaning ? <div style={{ width: "100%" }}>{meaningPanel(true)}</div> : null}
         {pending ? (
           <div style={{ display: "flex", alignItems: "center", gap, padding: "2px 0", flexWrap: "wrap", justifyContent: "center" }}>
             <span style={{ width: "100%", textAlign: "center", fontSize: 14, color: "#3a3a20" }}>Confirm your call</span>
@@ -1030,10 +1090,8 @@ export function PlayTable({
   const wideStage = (
     <div style={{ position: "absolute", inset: 0, display: "flex", background: "#000" }}>
       {rail}
-      {/* A column so the coaching strip can hold its own row under the table
-          rather than floating over the player's hand. */}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: FELT, display: "flex", flexDirection: "column" }}>
-        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "16px 16px 14px" }}>
+      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: FELT }}>
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "16px 16px 14px" }}>
           <div style={{ display: "flex", justifyContent: "center" }}>{seatRow("N")}</div>
 
           <div style={{ flex: 1, minHeight: 207, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 0" }}>
@@ -1053,7 +1111,6 @@ export function PlayTable({
             {seatRow("S")}
           </div>
         </div>
-        {coach ? <CoachStrip data={coach} open={coachOpen} onToggle={setCoachOpen} /> : null}
       </div>
     </div>
   );
@@ -1108,9 +1165,11 @@ export function PlayTable({
         </div>
         {inAuction ? bidBoxNarrow : null}
         {phoneHand}
-        {/* Below the player, as specified — collapsed, so it costs one line
-            of the screen until there's something worth opening. */}
-        {coach ? <CoachStrip data={coach} compact open={coachOpen} onToggle={setCoachOpen} /> : null}
+        {/* Below the player, as specified — collapsed, so it costs one line of
+            the screen until there's something worth opening. PHONE ONLY (owner
+            decision 2026-08-01): the desktop platform's table doesn't carry a
+            coaching strip; coaching is the app's surface. */}
+        {coach ? <CoachStrip data={coach} compact /> : null}
         {menuOpen && !onMenu && (
           // The phone has no rail, so the ☰ carries everything the rail does:
           // the scoring toggle, the hands view, Claim, and — passed through as
