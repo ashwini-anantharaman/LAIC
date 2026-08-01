@@ -45,18 +45,69 @@ const PANEL = "#acc5c5";
 const CARD_BACK = "#0d707c";
 const SEAT_BADGE = "#12525e";
 
-/** Wide stage; the mobile stack is 720 wide with a MEASURED height. */
+/** The wide stage is a fixed design scaled to fit; the phone layout is fluid. */
 const BASE_WIDE = { w: 1040, h: 590 };
-const MOBILE_W = 720;
 /** How far the wide stage may stretch past the design before extra container
  *  space becomes margin instead of empty felt. */
 const MAX_STRETCH = 1.18;
-/** Minimum mobile felt. It GROWS to soak up leftover container height (see
- *  `feltH`) — on a phone the stack is width-limited, so without that the felt
- *  keeps its 430 and the rest of the screen is dead space under the hand. */
-const MOBILE_FELT_H = 430;
-/** Mobile hand-card metrics (Mobile Table.dc.html). */
-const M_CARD = { w: 54, h: 128, rank: 42, glyph: 38, inset: 5, backW: 52 };
+
+/**
+ * Phone metrics, in REAL pixels, derived from the container.
+ *
+ * The portrait layout is not a scaled-down desktop: a 720-wide design squeezed
+ * into a 390-wide phone renders everything at 54%, which is how you get 30px
+ * cards and 11px labels. So nothing here is scaled — the hand FANS instead,
+ * overlapping so that 13 cards always span the screen exactly while each card
+ * keeps a full-size corner index.
+ */
+function phoneMetrics(w: number, cards: number) {
+  const pad = 6;
+  const avail = Math.max(240, w - pad * 2);
+  // Your hand: the biggest card that leaves room for a readable corner on each
+  // of the others. `step` is the visible sliver; the last card shows in full.
+  const cardW = Math.round(Math.min(76, Math.max(40, avail / 5.6)));
+  const cardH = Math.round(cardW * 1.44);
+  const n = Math.max(1, cards);
+  const step = n > 1 ? Math.max(16, Math.min(cardW, (avail - cardW) / (n - 1))) : cardW;
+  const rank = Math.round(Math.min(cardH * 0.3, step * 0.86));
+  return {
+    pad,
+    avail,
+    barH: Math.round(Math.min(58, Math.max(44, w * 0.13))),
+    chip: 30,
+    hand: { w: cardW, h: cardH, step, rank, glyph: Math.round(rank * 0.82) },
+    // The dummy's row is reference, not a control: two thirds the size.
+    dummy: { w: Math.round(cardW * 0.72), h: Math.round(cardH * 0.66), rank: Math.round(rank * 0.76) },
+    plateH: 26,
+  };
+}
+
+/**
+ * The trick on a phone, as big as the felt it landed in allows.
+ *
+ * It measures itself rather than being told: the felt is a flex row whose
+ * height is whatever the bar, the dummy, the tray and the hand didn't take, and
+ * that isn't known until layout. Measuring here can't feed back into the size
+ * (the box is stretched by flex, not by its content), so there's no loop.
+ */
+function PhoneTrick({ render }: Readonly<{ render: (w: number, h: number) => ReactNode }>) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const read = () => setBox({ w: el.clientWidth, h: el.clientHeight });
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={ref} style={{ alignSelf: "stretch", flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {box.w > 0 ? render(box.w, box.h) : null}
+    </div>
+  );
+}
 
 const GLYPH: Record<string, string> = { S: "♠", H: "♥", C: "♣", D: "♦", N: "NT" };
 const STRAINS = ["C", "D", "H", "S", "N"] as const;
@@ -182,17 +233,6 @@ export function PlayTable({
     return () => ro.disconnect();
   }, []);
 
-  // The mobile stack's height changes with phase (bid tray, dummy row, hand),
-  // so it is MEASURED, never estimated. offsetHeight ignores the ancestor
-  // transform — getBoundingClientRect() would feed the scale it produces.
-  //
-  // What's measured is the CHROME: everything except the felt, whose height we
-  // set ourselves. Measuring the whole stack instead would loop (a taller felt
-  // → a taller stack → a smaller scale → a taller felt…). Chrome + our own
-  // felt height is a fixed point that settles in one extra render.
-  const stackRef = useRef<HTMLDivElement | null>(null);
-  const [chromeH, setChromeH] = useState(670);
-
   // Armed bid level and the staged (unconfirmed) call are instance state.
   const [armed, setArmed] = useState<number | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -208,44 +248,29 @@ export function PlayTable({
   const menuHandler = onMenu ?? (settings ? () => setMenuOpen((v) => !v) : undefined);
   const menuItems: SettingsItem[] = [...(settings ?? [])];
 
-  // Portrait containers get the mobile stack (Mobile Table design). Measured
-  // 2026-08-01: a WIDTH breakpoint was tried here and reverted — the stack is
-  // ~1100 design px tall, so in a short container (e.g. 700x520) it scales to
-  // ~0.47 while the wide design still manages ~0.67. Aspect ratio, not width,
-  // is what says "the stack will fit".
+  // Portrait containers get the phone layout. Measured 2026-08-01: a WIDTH
+  // breakpoint was tried here and reverted — in a short container (e.g.
+  // 700x520) the vertical stack has nowhere to put the hand, while the wide
+  // design still fits. Aspect ratio, not width, is what says "a stack fits".
   const narrow = box.w / Math.max(1, box.h) < 1.25;
 
-  // Wide: scale to FIT, down or up. Mobile: a fixed 720-wide column scaled by
-  // BOTH axes (never up — thumb reach, not magnification), so the hand stays
-  // above the fold. The height it's scaled against is the stack at its
-  // SHORTEST (felt at its minimum) — otherwise growing the felt to fill the
-  // screen would shrink the cards that filling it was meant to serve.
-  const minStackH = chromeH + MOBILE_FELT_H;
-  const scale = narrow
-    ? Math.min(1, box.w / MOBILE_W, box.h / minStackH) || 1
-    : Math.min(box.w / BASE_WIDE.w, box.h / BASE_WIDE.h) || 1;
-  // Leftover height goes to the felt, so the trick sits in the middle of the
-  // screen instead of the hand floating halfway up it.
-  const feltH = narrow ? Math.max(MOBILE_FELT_H, box.h / scale - chromeH) : MOBILE_FELT_H;
-  // …and the trick grows with it. The cross is square, so a tall phone felt
-  // would otherwise leave a lake of green around four small cards.
-  const crossK = Math.max(1.6, Math.min(2.4, (feltH - 60) / 290, (MOBILE_W - 60) / 290));
-  useLayoutEffect(() => {
-    const h = stackRef.current?.offsetHeight;
-    if (!h) return; // wide layout: the stack isn't mounted
-    if (Math.abs(h - feltH - chromeH) > 1) setChromeH(h - feltH);
-  });
+  // The wide stage is the fixed design, scaled to fit (down or up).
+  const scale = narrow ? 1 : Math.min(box.w / BASE_WIDE.w, box.h / BASE_WIDE.h) || 1;
   // The stage may grow past the design to soak up an odd container ratio, but
   // only so far: unbounded growth spreads the seats to the far edges and
   // leaves a lake of empty felt in the middle (visible in embedded/short
   // windows). Past the cap the extra space becomes margin — the stage is
   // centred by its flex parent — which keeps the table compact and readable.
-  const stageW = narrow
-    ? MOBILE_W
-    : Math.min(Math.max(BASE_WIDE.w, box.w / scale), BASE_WIDE.w * MAX_STRETCH);
-  const stageH = narrow
-    ? Math.max(chromeH + feltH, box.h / scale)
-    : Math.min(Math.max(BASE_WIDE.h, box.h / scale), BASE_WIDE.h * MAX_STRETCH);
+  const stageW = Math.min(Math.max(BASE_WIDE.w, box.w / scale), BASE_WIDE.w * MAX_STRETCH);
+  const stageH = Math.min(Math.max(BASE_WIDE.h, box.h / scale), BASE_WIDE.h * MAX_STRETCH);
+
+  // Phone sizes, in real pixels. Cheap, and every phone piece below reads them.
+  const ph = phoneMetrics(box.w, state.hands.S.length);
+  /** Overlap for THIS seat's fan: a hand of 5 spreads out, a hand of 13 tightens. */
+  const fanStep = (seat: Seat, cardW: number) => {
+    const n = Math.max(1, state.hands[seat].length);
+    return n > 1 ? Math.max(12, Math.min(cardW, (ph.avail - cardW) / (n - 1))) : cardW;
+  };
 
   const c = state.contract;
   const declarer = c?.declarer ?? null;
@@ -364,6 +389,68 @@ export function PlayTable({
       </div>
     );
   };
+
+  /**
+   * A fanned hand for the phone: cards overlap by `step` so the whole hand
+   * spans the screen at full card size. Each card's corner index sits in its
+   * own visible sliver, which is why the fan reads at a glance and why the
+   * cards can be big enough to tap without a scaled-down stage.
+   */
+  const fanRow = (
+    seat: Seat,
+    m: { w: number; h: number; step: number; rank: number; glyph: number },
+    interactive: boolean,
+  ) => {
+    const hand = [...state.hands[seat]].sort(
+      (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
+    );
+    const live = (card: Card) =>
+      interactive && myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
+    return (
+      <div style={{ display: "flex", filter: "drop-shadow(0 2px 4px rgba(0,0,0,.45))" }}>
+        {hand.map((card, i) => {
+          const on = live(card);
+          return (
+            <button
+              key={`${card.suit}${card.rank}`}
+              type="button"
+              onClick={on ? () => onPlay?.(seat, card) : undefined}
+              aria-label={`Play ${rankText(card.rank)}${GLYPH[card.suit]}`}
+              style={{
+                position: "relative", zIndex: i, flex: "none", display: "block",
+                width: m.w, height: m.h, marginLeft: i ? m.step - m.w : 0, padding: 0,
+                background: "#fff", border: "1px solid #6b6b6b", borderRadius: 4,
+                cursor: on ? "pointer" : "default",
+                transform: on ? "translateY(-8px)" : "none",
+                transition: "transform 120ms ease",
+              }}
+            >
+              <span style={{ position: "absolute", left: 2, top: 1, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.92, color: isRed(card.suit) ? RED : "#000" }}>
+                <span style={{ fontSize: m.rank, fontWeight: 700 }}>{rankText(card.rank)}</span>
+                <span style={{ fontSize: m.glyph }}>{GLYPH[card.suit]}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  /** The same fan, face down — a hidden hand still shows how many cards are left. */
+  const fanBacks = (seat: Seat, m: { w: number; h: number; step: number }) => (
+    <div style={{ display: "flex", filter: "drop-shadow(0 2px 4px rgba(0,0,0,.45))" }}>
+      {Array.from({ length: Math.max(1, state.hands[seat].length) }, (_, i) => (
+        <span
+          key={i}
+          style={{
+            position: "relative", zIndex: i, flex: "none", display: "block",
+            width: m.w, height: m.h, marginLeft: i ? m.step - m.w : 0,
+            background: CARD_BACK, border: "1px solid rgba(255,255,255,.92)", borderRadius: 4,
+          }}
+        />
+      ))}
+    </div>
+  );
 
   /** E/W wide: a compact suit-per-line panel. */
   const suitPanel = (seat: Seat) => (
@@ -511,7 +598,7 @@ export function PlayTable({
     cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42,
   });
 
-  const confirmButtons = (h: number, font: number) => (
+  const confirmButtons = (h: number, font: number, wYes = 240, wNo = 120) => (
     <>
       <button
         type="button"
@@ -520,7 +607,7 @@ export function PlayTable({
           setPending(null);
           onCall?.(p);
         }}
-        style={bidBtnStyle(240, h, "#116710", "#0c4b0b", true, font)}
+        style={bidBtnStyle(wYes, h, "#116710", "#0c4b0b", true, font)}
       >
         Confirm {callText(pending ?? "")}
       </button>
@@ -530,7 +617,7 @@ export function PlayTable({
           setPending(null);
           setArmed(null);
         }}
-        style={bidBtnStyle(120, h, "#8a3030", "#5e1c1c", true, font)}
+        style={bidBtnStyle(wNo, h, "#8a3030", "#5e1c1c", true, font)}
       >
         Cancel
       </button>
@@ -619,25 +706,37 @@ export function PlayTable({
     </div>
   );
 
-  const bidBoxNarrow = (
-    <div style={{ width: "100%", flex: "none", background: "#cccc9b", padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
-      {pending ? (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "8px 0" }}>
-          <span style={{ fontSize: 26, color: "#3a3a20" }}>Confirm your call</span>
-          <div style={{ display: "flex", gap: 10 }}>{confirmButtons(64, 28)}</div>
-        </div>
-      ) : (
-        <>
-          <div style={{ display: "flex", gap: 6 }}>
-            {passButton(170, 84, 28)}
-            {doubleButtons(84, 84, 28)}
+  /** The phone tray: every row sized off the container so nothing clips. */
+  const bidBoxNarrow = (() => {
+    const gap = 4;
+    const avail = ph.avail;
+    const lvl = Math.floor((avail - gap * 6) / 7); // seven levels across
+    const h = Math.max(38, Math.min(52, lvl + 4));
+    const pass = Math.round(avail * 0.34);
+    const dbl = Math.floor((avail - pass - gap * 2) / 2);
+    const suit = Math.floor((avail - gap * 4) / 6); // NT takes a double slot
+    return (
+      <div style={{ flex: "none", background: "#cccc9b", padding: `6px ${ph.pad}px`, display: "flex", flexDirection: "column", alignItems: "center", gap, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
+        {pending ? (
+          <div style={{ display: "flex", alignItems: "center", gap, padding: "2px 0", flexWrap: "wrap", justifyContent: "center" }}>
+            <span style={{ width: "100%", textAlign: "center", fontSize: 14, color: "#3a3a20" }}>Confirm your call</span>
+            <div style={{ display: "flex", gap }}>
+              {confirmButtons(h, 16, Math.round(avail * 0.6), Math.round(avail * 0.36))}
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 6 }}>{levelButtons(80, 84, 28)}</div>
-          {armed && <div style={{ display: "flex", gap: 6 }}>{strainButtons(84, 28, 166, 80)}</div>}
-        </>
-      )}
-    </div>
-  );
+        ) : (
+          <>
+            <div style={{ display: "flex", gap }}>
+              {passButton(pass, h, 18)}
+              {doubleButtons(dbl, h, 18)}
+            </div>
+            <div style={{ display: "flex", gap }}>{levelButtons(lvl, h, 20)}</div>
+            {armed && <div style={{ display: "flex", gap }}>{strainButtons(h, 20, suit * 2 + gap, suit)}</div>}
+          </>
+        )}
+      </div>
+    );
+  })();
 
   // ---- rail (wide) ----------------------------------------------------------
   const menuButton = (w: number, h: number, font: number, m: { border?: string; radius?: number } = {}) => (
@@ -679,38 +778,52 @@ export function PlayTable({
     </div>
   );
 
-  // ---- mobile stack (Mobile Table.dc.html) ----------------------------------
-  const mobileTopBar = (
-    <div style={{ width: "100%", height: 120, flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "0 8px", background: "#000", boxSizing: "border-box" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button type="button" onClick={onScoring} title="Scoring mode" style={{ width: 100, height: 104, background: PANEL, border: "2px solid #f2f4f4", borderRadius: 6, color: "#000", fontSize: 28, fontWeight: 400, lineHeight: 1, cursor: onScoring ? "pointer" : "default" }}>{scoringLabel}</button>
-        <div title={String(boardLabel)} style={{ width: 100, height: 104, background: "#fff", border: "2px solid #7d7d7d", borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", boxSizing: "border-box", overflow: "hidden" }}>
-          <span style={{ fontSize: 20, fontWeight: 700, color: "#000", borderBottom: "1px solid #9a9a9a", width: "80%", textAlign: "center" }}>{state.dealer}</span>
-          <span style={{ fontSize: String(boardLabel).length > 3 ? 18 : 36, fontWeight: 700, background: vulFor("N") ? "#c62828" : "#fff", color: vulFor("N") ? "#fff" : "#000", padding: "2px 6px", maxWidth: "100%", textAlign: "center", overflow: "hidden" }}>{boardLabel}</span>
+  // ---- phone layout (fluid, 1:1 — nothing here is scaled) -------------------
+
+  /** Compact black bar: scoring, board, contract, host controls, ☰. */
+  const phoneTopBar = (
+    <div style={{ flex: "none", height: ph.barH, display: "flex", alignItems: "center", gap: 5, padding: `0 ${ph.pad}px`, background: "#000", boxSizing: "border-box", overflow: "hidden" }}>
+      {/* The chips YIELD: on a 320px phone the host's play controls and the ☰
+          must survive intact, so this group shrinks (and clips its rightmost
+          chip) rather than pushing the menu off the screen. */}
+      <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 4, overflow: "hidden" }}>
+        {/* Under ~340px there isn't room for all three chips, and a scoring
+            toggle matters less than a legible contract. */}
+        {box.w >= 340 && (
+          <button type="button" onClick={onScoring} title="Scoring mode" style={{ flex: "none", width: 40, height: ph.barH - 10, background: PANEL, border: "1px solid #f2f4f4", borderRadius: 5, color: "#000", fontSize: 13, fontWeight: 700, lineHeight: 1, cursor: onScoring ? "pointer" : "default" }}>{scoringLabel}</button>
+        )}
+        {/* Dealer over board number; the number turns red when N/S are vul. Long
+            board names (library boards carry their title here) ellipsise rather
+            than spilling out of the chip. */}
+        <div title={String(boardLabel)} style={{ flex: "none", width: 48, height: ph.barH - 10, background: "#fff", border: "1px solid #7d7d7d", borderRadius: 5, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", boxSizing: "border-box", overflow: "hidden" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#000", lineHeight: 1.1 }}>{state.dealer}</span>
+          <span style={{ maxWidth: "100%", padding: "0 3px", fontSize: String(boardLabel).length > 4 ? 10 : 16, fontWeight: 700, background: vulFor("N") ? "#c62828" : "#fff", color: vulFor("N") ? "#fff" : "#000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{boardLabel}</span>
         </div>
         {c && (
-          <div style={{ width: 150, height: 104, background: GREY, borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.15 }}>
-            <span style={{ fontSize: 30, fontWeight: 700, color: isRed(c.strain) ? RED : "#000" }}>
+          <div style={{ flex: "0 1 auto", minWidth: 0, height: ph.barH - 10, padding: "0 5px", background: GREY, borderRadius: 5, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.1, overflow: "hidden" }}>
+            <span style={{ whiteSpace: "nowrap", fontSize: 16, fontWeight: 700, color: isRed(c.strain) ? RED : "#000" }}>
               {c.level}{GLYPH[c.strain]}{c.doubled === 1 ? "X" : c.doubled === 2 ? "XX" : ""}
+              <span style={{ fontSize: 11, fontWeight: 400, color: "#333" }}> {c.declarer}</span>
             </span>
-            <span style={{ fontSize: 18, color: "#000" }}>{({ N: "North", E: "East", S: "South", W: "West" } as Record<Seat, string>)[c.declarer]}</span>
-            <span style={{ fontSize: 16, color: "#222" }}>NS {state.trickCount.NS} · EW {state.trickCount.EW}</span>
+            <span title="Tricks: NS · EW" style={{ whiteSpace: "nowrap", fontSize: 11, color: "#222" }}>
+              {state.trickCount.NS} · {state.trickCount.EW}
+            </span>
           </div>
         )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
         {controlsExtraNarrow ?? controlsExtra}
-        {menuButton(80, 104, 32, { border: "0", radius: 6 })}
+        {menuButton(40, ph.barH - 10, 20, { border: "0", radius: 5 })}
       </div>
     </div>
   );
 
   /**
-   * The other three seats as one strip across the top of the phone felt, left
-   * to right in table order (W · N · E). The wide layout carries identity on
-   * each seat's own plate; portrait has no room for three plates, but "who is
-   * that and is it their turn" is not optional information — the trick cross
-   * alone only nudges a grey stub at the seat on lead.
+   * The other three seats as one strip across the top of the felt, left to
+   * right in table order (W · N · E). The wide layout carries identity on each
+   * seat's own plate; portrait has no room for three plates, but "who is that
+   * and is it their turn" is not optional information — the trick cross alone
+   * only nudges a grey stub at the seat on lead.
    */
   const seatChip = (seat: Seat) => {
     const onTurn = !complete && seat === state.turn;
@@ -722,86 +835,96 @@ export function PlayTable({
       <div
         key={seat}
         style={{
-          flex: "1 1 0", minWidth: 0, height: 34, display: "flex", alignItems: "stretch", gap: 6,
-          padding: "0 6px 0 0", background: seat === dummy ? "#fff" : "#b3b3b3",
-          border: `2px solid ${seat === state.dealer ? DEALER_RING : "transparent"}`,
-          boxShadow: onTurn ? `0 0 0 3px ${GOLD}` : "0 1px 3px rgba(0,0,0,.45)",
+          flex: "1 1 0", minWidth: 0, height: ph.chip, display: "flex", alignItems: "stretch", gap: 4,
+          padding: "0 4px 0 0", background: seat === dummy ? "#fff" : "#b3b3b3",
+          border: `1px solid ${seat === state.dealer ? DEALER_RING : "transparent"}`,
+          boxShadow: onTurn ? `0 0 0 2px ${GOLD}` : "0 1px 2px rgba(0,0,0,.4)",
           boxSizing: "border-box",
         }}
       >
-        <span style={{ flex: "none", width: 6, background: seats[seat].strip ?? "transparent" }} />
-        <span style={{ flex: "none", width: 26, height: 26, alignSelf: "center", background: SEAT_BADGE, color: "#fff", fontSize: 17, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{seat}</span>
-        <span style={{ alignSelf: "center", fontSize: 17, color: "#000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{seats[seat].name}</span>
-        <span style={{ marginLeft: "auto", alignSelf: "center", flex: "none", fontSize: 14, fontWeight: inAuction ? 700 : 400, color: "#555" }}>
+        <span style={{ flex: "none", width: 4, background: seats[seat].strip ?? "transparent" }} />
+        <span style={{ flex: "none", width: 20, height: 20, alignSelf: "center", background: SEAT_BADGE, color: "#fff", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{seat}</span>
+        <span style={{ alignSelf: "center", fontSize: 13, color: "#000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{seats[seat].name}</span>
+        <span style={{ marginLeft: "auto", alignSelf: "center", flex: "none", fontSize: 12, fontWeight: inAuction ? 700 : 400, color: "#555" }}>
           {note}
         </span>
       </div>
     );
   };
 
-  const mobileSeatStrip = (
-    <div style={{ flex: "none", display: "flex", gap: 6, padding: "6px 8px 0" }}>
+  const phoneSeatStrip = (
+    <div style={{ flex: "none", display: "flex", gap: 4, padding: `4px ${ph.pad}px 0` }}>
       {(["W", "N", "E"] as Seat[]).map(seatChip)}
     </div>
   );
 
-  /** Dummy's hand as a plate-less card row across the top (phone play view). */
-  const dummyRow =
+  /** Dummy's hand fanned across the top, for reference — not for tapping. */
+  const phoneDummyRow =
     inPlay && dummy && dummy !== "S" ? (
-      <div style={{ flex: "none", display: "flex", justifyContent: "center", background: "#fff", padding: 0 }}>
-        {visible[dummy] ? cardRow(dummy, M_CARD) : backs(dummy, { w: M_CARD.backW, h: M_CARD.h })}
+      <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: `4px ${ph.pad}px 0`, background: "#000" }}>
+        {visible[dummy]
+          ? fanRow(dummy, { ...ph.dummy, step: fanStep(dummy, ph.dummy.w), glyph: Math.round(ph.dummy.rank * 0.82) }, false)
+          : fanBacks(dummy, { w: ph.dummy.w, h: ph.dummy.h, step: fanStep(dummy, ph.dummy.w) })}
       </div>
     ) : null;
 
-  const mobileStack = (
-    <div style={{ width: MOBILE_W, minHeight: stageH, transform: `scale(${scale})`, transformOrigin: "top center", display: "flex", flexDirection: "column", background: "#fff" }}>
-      <div ref={stackRef} style={{ display: "flex", flexDirection: "column", background: "#fff" }}>
-        {mobileTopBar}
-        {dummyRow}
-        {/* The felt: seat strip pinned at the top, the trick (or the auction,
-            or the result) centred in whatever height is left. */}
-        <div style={{ flex: "none", height: feltH, display: "flex", flexDirection: "column", overflow: "hidden", background: FELT }}>
-          {/* Seats-mode auction already lists all four seats on the felt. */}
-          {!complete && !(inAuction && auctionDisplay === "seats") ? mobileSeatStrip : null}
-          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: inAuction && auctionDisplay === "seats" ? "flex-start" : "center", overflow: "hidden", padding: inAuction ? 10 : 0 }}>
-            {inAuction && auctionDisplay === "box"
-              ? auctionBox({
-                  width: 430,
-                  // Sized to the calls made so far, and allowed to use the
-                  // whole (stretched) felt before it starts scrolling — a
-                  // fixed height is either a half-empty slab at "1♠ pass" or
-                  // a scrollbar over a lake of green by the fourth round.
-                  height: "auto",
-                  maxH: Math.max(240, feltH - 20),
-                  headFont: 26,
-                  cellFont: 24,
-                  radius: 0,
-                  cellMinH: 56,
-                })
-              : null}
-            {inAuction && auctionDisplay === "seats" ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
-                {(["N", "E", "S", "W"] as Seat[]).map((s) => (
-                  <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 30, height: 30, background: SEAT_BADGE, color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
-                    {callsRow(s, 22) ?? <span style={{ fontSize: 18, color: "rgba(255,255,255,.6)" }}>—</span>}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {inPlay ? trickCross(crossK) : null}
-            {complete ? resultCard : null}
-          </div>
-        </div>
-        {inAuction ? bidBoxNarrow : null}
-        <div style={{ flex: "none", display: "flex", justifyContent: "center", background: FELT, padding: 0 }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-            {callsRow("S", 20)}
-            {visible.S ? cardRow("S", M_CARD) : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
-            {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390, { height: 30, badge: 26, font: 19, tagFont: 13 })}
-          </div>
-        </div>
+  /**
+   * The trick on a phone: four slots in a tight diamond, sized to the felt.
+   *
+   * The wide layout's cross is a 262px grid with the cards at its extremes —
+   * scaled onto a phone that reads as four small cards adrift in green. Here
+   * the cards nearly touch, so the trick reads as one pile, and the empty seats
+   * keep a dashed slot: it says where each player's card lands and (in gold)
+   * who the table is waiting for.
+   */
+  const phoneTrickPile = (w: number, h: number) => {
+    const cardW = Math.round(Math.max(46, Math.min(w * 0.27, h * 0.3, 116)));
+    const cardH = Math.round(cardW * 1.42);
+    const gap = Math.round(cardW * 0.1);
+    const boxW = cardW * 2 + gap;
+    const boxH = cardH * 2 + gap;
+    const at: Record<Seat, { left: number; top: number }> = {
+      N: { left: (boxW - cardW) / 2, top: 0 },
+      S: { left: (boxW - cardW) / 2, top: cardH + gap },
+      W: { left: 0, top: (boxH - cardH) / 2 },
+      E: { left: cardW + gap, top: (boxH - cardH) / 2 },
+    };
+    return (
+      <div style={{ position: "relative", width: boxW, height: boxH }}>
+        {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
+          const play = currentPlays.find((p) => p.seat === seat);
+          const onTurn = seat === state.turn;
+          return (
+            <div key={seat} style={{ position: "absolute", left: at[seat].left, top: at[seat].top, width: cardW, height: cardH, zIndex: play ? 2 : 1 }}>
+              {play ? (
+                <div style={{ position: "relative", width: "100%", height: "100%", background: "#fff", border: "1px solid #6b6b6b", borderRadius: 4, boxShadow: "0 2px 6px rgba(0,0,0,.45)" }}>
+                  <span style={{ position: "absolute", left: Math.round(cardW * 0.07), top: Math.round(cardH * 0.03), display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.9, color: isRed(play.card.suit) ? RED : "#000" }}>
+                    <span style={{ fontSize: Math.round(cardW * 0.5), fontWeight: 700 }}>{rankText(play.card.rank)}</span>
+                    <span style={{ fontSize: Math.round(cardW * 0.44) }}>{GLYPH[play.card.suit]}</span>
+                  </span>
+                </div>
+              ) : (
+                // Table markings, not wireframe: a faint slot per seat, gold
+                // for the one the table is waiting on.
+                <div style={{ width: "100%", height: "100%", borderRadius: 4, boxSizing: "border-box", border: onTurn ? `2px solid ${GOLD}` : "1px solid rgba(255,255,255,.14)", background: onTurn ? "rgba(254,205,7,.10)" : "rgba(255,255,255,.045)" }}>
+                  <span style={{ display: "block", paddingTop: 2, textAlign: "center", fontSize: Math.round(cardW * 0.2), fontWeight: 700, color: onTurn ? GOLD : "rgba(255,255,255,.3)" }}>{seat}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
+    );
+  };
+
+  /** Your hand: the biggest thing on the screen, because it's the control. */
+  const phoneHand = (
+    <div style={{ flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: `2px ${ph.pad}px 4px`, background: FELT }}>
+      {callsRow("S", 14)}
+      {visible.S
+        ? fanRow("S", { ...ph.hand, step: fanStep("S", ph.hand.w) }, true)
+        : fanBacks("S", { w: ph.hand.w, h: ph.hand.h, step: fanStep("S", ph.hand.w) })}
+      {plate("S", ph.avail, { height: ph.plateH, badge: 20, font: 14, tagFont: 11 })}
     </div>
   );
 
@@ -834,10 +957,49 @@ export function PlayTable({
   );
 
   // ---- stage --------------------------------------------------------------
+  // Phone: a flex column at real size. The felt is the only flexible row, so
+  // the bar, the dummy, the tray and your hand always get the space they need
+  // and whatever is left over is table — no scaling, no measuring, no scroll.
   if (narrow) {
     return (
-      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
-        {mobileStack}
+      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#000", display: "flex", flexDirection: "column", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+        {phoneTopBar}
+        {phoneDummyRow}
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: FELT }}>
+          {/* Seats-mode auction already lists all four seats on the felt. */}
+          {!complete && !(inAuction && auctionDisplay === "seats") ? phoneSeatStrip : null}
+          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 4 }}>
+            {inAuction && auctionDisplay === "box"
+              ? auctionBox({
+                  width: Math.min(ph.avail, 420),
+                  // Content-sized, and free to use the felt it has: a fixed
+                  // height is either a half-empty slab at "1♠ pass" or a
+                  // scrollbar by the fourth round.
+                  height: "auto",
+                  maxH: 9999,
+                  headFont: 17,
+                  cellFont: 16,
+                  radius: 3,
+                  cellMinH: 26,
+                })
+              : null}
+            {inAuction && auctionDisplay === "seats" ? (
+              <div style={{ alignSelf: "stretch", display: "flex", flexDirection: "column", justifyContent: "center", gap: 6, padding: 6 }}>
+                {(["N", "E", "S", "W"] as Seat[]).map((s) => (
+                  <div key={s} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ flex: "none", width: 22, height: 22, background: SEAT_BADGE, color: "#fff", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
+                    {callsRow(s, 14) ?? <span style={{ fontSize: 13, color: "rgba(255,255,255,.6)" }}>—</span>}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {/* The trick sizes itself to the felt it was given. */}
+            {inPlay ? <PhoneTrick render={phoneTrickPile} /> : null}
+            {complete ? resultCard : null}
+          </div>
+        </div>
+        {inAuction ? bidBoxNarrow : null}
+        {phoneHand}
         {menuOpen && !onMenu && (
           <SettingsMenu accent={RAIL_BLUE} items={menuItems} onClose={() => setMenuOpen(false)} />
         )}

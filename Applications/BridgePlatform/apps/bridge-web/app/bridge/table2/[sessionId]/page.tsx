@@ -274,7 +274,9 @@ export default async function PlayTablePage({
             resultLine={score ? resultLabel(score) : ""}
             resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
             controlsExtra={controlsAt(1)}
-            controlsExtraNarrow={controlsAt(1.5)}
+            // The phone layout renders at real size (it used to be a scaled
+            // 720px stage), so these are chips, not blown-up rail buttons.
+            controlsExtraNarrow={controlsAt(0.8)}
             railExtra={seatsPanel}
             settings={settings}
             viewHref={{ label: "Hands", href: settingsHref({ view: "hands" }) }}
