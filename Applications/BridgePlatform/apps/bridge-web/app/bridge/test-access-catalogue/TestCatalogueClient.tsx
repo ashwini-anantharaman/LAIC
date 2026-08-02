@@ -296,8 +296,15 @@ export function TestCatalogueClient({
         </div>
       </section>
 
-      {/* Footer — export + apply. */}
+      {/* Footer — reset + export + apply. */}
       <section className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setAssignment(initialAssignment)}
+          className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+        >
+          Reset sets to defaults
+        </button>
         <button
           type="button"
           onClick={exportJson}
