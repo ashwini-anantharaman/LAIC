@@ -195,31 +195,106 @@ paying the tenancy/auth bill before there is a second consumer to justify it.
 
 ---
 
-## 4. Suggested order
+## 4. Build order
 
-1. **BR3 + judgment mapping.** Define the return path onto the existing
-   `CoachStrip` note shape, and the verdict mapping. Nothing else can be
-   verified end-to-end until output can reach the table.
-2. **Bridge event adapter (BR1/BR2).** Translate logic events → `ActivityEvent`
-   + evaluation facts. Async, non-blocking. First visible result: the coach
-   explaining a call using the rule the robot actually fired.
-3. **KB-backed `KnowledgeSource`** through `@laic/kb-core`, composed with the
-   teaching chunks, provenance preserved.
-4. **The four policy presets** + the ☰ switch.
-5. **`coach.json` access catalogue**, mapped 1:1 from `CoachCapabilityScope`.
-6. **`LearnerContextSource`** — after confirming which service owns BKT and
-   whether it has an HTTP surface.
-7. **Tenancy + auth**, when and if the coach moves out of process.
+**Phase 0 — prove the import (spike, half a day).** Everything rests on it.
+`link:` dep + `transpilePackages` + one server-side import of
+`openCoachSession`, rendering a hardcoded suggestion in the strip.
+Two known risks, both to be settled here, not later:
+- the coach's relative imports carry `.js` extensions (NodeNext); webpack needs
+  `resolve.extensionAlias` unless Next 16 already handles it. `@laic/learner-contracts`
+  does not prove this — it is types-only.
+- `link:` does not install the target's dependencies, and
+  `Components/generalizable-coach/node_modules` will not exist on Vercel. Check
+  whether the runtime path actually reaches `ajv` (likely only
+  `contracts/validate.ts` does); if it does, add it to bridge-web's own deps.
+*Fallbacks if the spike fails:* build `dist` in the deploy step; publish the
+package; or fall back to the HTTP service.
+
+**Phase 1 — write the seams down before any wiring.**
+- **BR3 (return path):** `CoachNoteRecord` above → `CoachStrip`'s existing note
+  shape. The render target already exists and is already phone-only.
+- **BR2 (evaluation):** bridge is the evaluator, the coach never re-implements
+  bridge rules. For robot actions the verdict is already recorded (logic events:
+  `reason`, `rejected[]`, `citedSettings`, `matchedRuleId`). **For the learner's
+  own actions there is no verdict today** — a human call records
+  `reason: "human action"`. The evaluator for those is the KB decider run in
+  *ask* mode (decide without committing) and compared with what the learner did.
+  This is the single most important piece of new logic in the whole integration.
+- The judgment → correctness mapping table, written once.
+- **Deterministic only in the commit path. No LLM.** `HeuristicLLM` /
+  `withOfflineFallback` exist for exactly this; LLM phrasing becomes an opt-in
+  "explain more", never a blocker on committing a bid (§10.5).
+
+**Phase 2 — adapters, all in `apps/bridge-web/lib/coach/`.** Host-specific code
+lives host-side; the component stays clean.
+| File | Job |
+|---|---|
+| `activityEvents.ts` | bridge event → `ActivityEvent` (BR1) |
+| `evaluate.ts` | KB decider in ask mode → evaluation facts (BR2) |
+| `knowledge.ts` | `KnowledgeSource` over the compiled KB via `@laic/kb-core`, composed with the teaching chunks |
+| `policy.ts` | resolve the layer stack → `CoachingPolicy` |
+| `notes.ts` | read/write `CoachNoteRecord` on the session; undo rule |
+| `session.ts` | build the coach session, cached per compileId like the KB cache |
+
+**Phase 3 — the run point.** In the same server path that commits an action,
+after persistence: synchronous, deterministic, time-budgeted, failures logged
+and swallowed. A coach that throws must never cost a learner their bid.
+
+**Phase 4 — render.** The page maps stored notes → `CoachNote`. Mostly done.
+
+**Phase 5 — the four presets + the ☰ switch** (§R4).
+
+**Phase 6 — `coach.json` access catalogue**, mapped 1:1 from `CoachCapabilityScope`.
+
+**Deferred:** `LearnerContextSource` HTTP adapter (blocked on a BKT service),
+cross-session learner model persistence, LLM phrasing, postmortems, tenancy +
+auth (only needed if the coach ever moves out of process).
+
+### The thinnest useful slice
+After you bid, the strip tells you whether the system agreed and why — the
+learner's call evaluated against the KB decider, cited to the rule. No LLM, no
+learner model, no new service, no learning-platform dependency.
 
 ---
 
-## 5. Open questions for the owner
+## 5. Decisions (owner, 2026-08-02)
 
-1. **Which service owns mastery/BKT today, and can it be queried over HTTP?**
-   R1 depends entirely on this and I could not find an endpoint.
-2. **In-process or service?** (§3 — my recommendation is in-process first.)
-3. **Should coaching notes persist with the board**, so a coach reviewing a
-   learner's session later sees what the coach said at the time? That is a
-   storage decision with a schema cost; worth settling before wiring.
-4. **Who may change the mode** — learner, coach, program admin? Determines which
-   policy fields get locked at which layer.
+1. **No mastery/BKT service exists yet.** So the coach OWNS the bridge-domain
+   learner model for now — it already has the machinery (`LearnerStore`,
+   `skillStates`, `detectWeakSkills`) and nothing else is computing it. The
+   `LearnerContextSource` port still gets defined, so that when Owlwise arrives
+   the coach becomes a reader and its own inference is switched off **by
+   config, not by surgery**. Until then there is exactly one writer of bridge
+   mastery, which is the property that matters.
+   *Corollary:* R1 is not in the first slice. Within-board coaching needs no
+   learner model at all.
+2. **In-process.** Confirmed. Consumption follows the pattern already proven by
+   `@laic/learner-contracts`: a `link:` dependency plus `transpilePackages`,
+   importing `@laic/coach/source` so Next transpiles the TypeScript directly and
+   no build step is needed.
+3. **Coaching notes persist, on the session record, keyed to the action's
+   `seq`.** Reasons: a note is evidence of what the learner was told, so review
+   and postmortem both need it; recomputing at render is only defensible while
+   the coach is deterministic, and stops being so the moment LLM phrasing
+   arrives; the session is already jsonb and already read by the page, so notes
+   cost no extra query and inherit org/program scoping for free.
+   **Not as engine events** — the action/logic stream has a single writer and
+   undo pairs by `seq`; foreign events risk both. A sibling array is enough:
+   ```ts
+   type CoachNoteRecord = {
+     noteId: string; seq: number;         // the action this is about
+     learnerId: string; profileId: string; policyVersion: string;
+     kind: "hint" | "nudge" | "question" | "explanation";
+     headline: string; detail?: string;
+     citations?: { label: string; ruleId?: string }[];
+     createdAt: string;
+   };
+   ```
+   Undo rule: drop notes whose `seq >= droppedSeq`.
+4. **Mode ownership: learner-chosen after subscribing — but far ahead.** For now
+   a program default plus a table-level override in the ☰. Build the layer stack
+   so a subscription/entitlement layer inserts later without touching call
+   sites: platform default → program profile → *(future: subscription tier)* →
+   learner preference → session override. `resolvePolicy` already supports
+   exactly this.
