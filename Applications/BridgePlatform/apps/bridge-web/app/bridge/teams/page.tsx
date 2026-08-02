@@ -136,7 +136,15 @@ export default async function TeamsPage({
 
       <section className="rounded-lg border border-neutral-200 p-4">
         <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium">Access catalogue</h2>
+          <h2 className="flex items-baseline gap-2 font-medium">
+            Access catalogue
+            <a
+              href="/bridge/test-access-catalogue"
+              className="text-xs font-normal text-emerald-700 hover:text-emerald-800 hover:underline"
+            >
+              Test access catalogue →
+            </a>
+          </h2>
           <p className="text-xs text-neutral-500">
             {catalogue.updatedAt ? (
               <>

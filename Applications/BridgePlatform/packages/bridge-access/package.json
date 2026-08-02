@@ -14,6 +14,10 @@
     "./fileStore": {
       "types": "./src/fileStore.ts",
       "default": "./src/fileStore.ts"
+    },
+    "./sets": {
+      "types": "./src/sets.ts",
+      "default": "./src/sets.ts"
     }
   },
   "scripts": {

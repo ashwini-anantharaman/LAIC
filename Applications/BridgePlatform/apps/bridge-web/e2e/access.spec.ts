@@ -99,4 +99,28 @@ test.describe("access catalogue editor", () => {
     await page.goto("/bridge/library");
     await expect(page.getByRole("heading", { name: "Library" })).toBeVisible();
   });
+
+  test("test-access-catalogue compiles the set designer to the live matrix", async ({
+    page,
+    context,
+  }) => {
+    // Runs at defaults (the prior test reset), so the compiled matrix matches
+    // the live catalogue exactly. Read-only experiment — nothing is applied,
+    // so there is nothing to clean up.
+    await switchUser(context, "user_orgadmin_olivia");
+    await page.goto("/bridge/test-access-catalogue");
+
+    await expect(
+      page.getByRole("heading", { name: "Test access catalogue" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Compiles to" })).toBeVisible();
+    await expect(page.getByText("Matches the live catalogue exactly.")).toBeVisible();
+
+    // Drop learners from the Library capability set: all 6 library keys lose
+    // learner, so 6 cells now differ from the live catalogue.
+    await page.getByLabel("Library — Learner").uncheck();
+    await expect(
+      page.getByText("6 cells differ from the live catalogue"),
+    ).toBeVisible();
+  });
 });
