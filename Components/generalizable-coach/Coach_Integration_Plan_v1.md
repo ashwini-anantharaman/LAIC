@@ -258,6 +258,55 @@ learner model, no new service, no learning-platform dependency.
 
 ---
 
+## 4b. Mastery: what it actually is here, and what blocks it
+
+**The model.** Per skill, per domain: a five-rung ladder
+(`not_started → introduced → practicing → proficient → mastered`) computed by
+`computeMastery` in `platform/learner-model/LearnerStore.ts` from three
+counters — `exposureCount`, `correctCount`, `mistakeCount`. Thresholds: 3+
+exposures → practicing; 10+ at >70% → proficient; 20+ at >90% → mastered.
+**Progression is monotonic — it never regresses.**
+
+**It is not BKT.** Bayesian Knowledge Tracing carries a probability of knowing
+with learn/slip/guess parameters. This is a counter ladder. When Owlwise
+arrives, the two are different *kinds* of quantity, not different estimates of
+the same one — `MASTERY_SCORE` projects the rung onto the contract's 0–1 field,
+and that projection is lossy. Worth knowing before anyone compares numbers.
+
+**Who consumes it:** the policy resolver (level → hint depth, direct answers),
+`detectWeakSkills` / `recommendNextSkill`, and the learner-facing "level".
+
+**The handover switch already exists.** `LearnerStore.setExternalMasteryDomains([...])`
+makes `updateSkillState` a no-op for a domain, exactly so the coach cannot
+advance a second divergent record once a host owns it. Nothing needs building
+for the eventual Owlwise handover except the read port.
+
+**Two things block bridge mastery today, and neither is the coach's fault:**
+
+1. **Nothing can key it.** Mastery is per `skillId`. `@bridge/taxonomy` defines
+   the skills (`sk_opening_bid_selection`, `sk_response_selection`,
+   `sk_declarer_planning`, …) with level bands — but **nothing imports it**, and
+   compiled KB rules carry no `skillId`/`conceptId`. So an evaluated action
+   cannot currently say which skill it exercised. This is BR7 ("shared
+   concept/skill taxonomy") going unmet.
+   *Cheapest fix:* map the engine's own `AuctionContext` (opening / response /
+   rebid / overcall — which `matchContext` already computes) onto the taxonomy's
+   bidding skills. The categories line up almost one-to-one, and it needs no
+   re-authoring of the knowledge base. Attaching skill ids to rules is the
+   better long-run answer, but it touches every item.
+2. **Nothing persists it.** `LearnerStore` defaults to `InMemoryLearnerRepo`.
+   In-process on serverless that means mastery lives for one request. A
+   Postgres `LearnerRepo` is needed before cross-session mastery means anything.
+
+**Consequence for sequencing:** mastery is not in the first slice, and that is a
+finding rather than a preference — the ids to key it by do not exist yet.
+Within-board coaching needs none of it.
+
+**One product question to settle before it ships:** monotonic mastery means a
+learner who masters a skill and then stops playing for six months is still
+"mastered", and the coach will keep pitching at that level. Fine for a first
+version; say so deliberately rather than discovering it later.
+
 ## 5. Decisions (owner, 2026-08-02)
 
 1. **No mastery/BKT service exists yet.** So the coach OWNS the bridge-domain
