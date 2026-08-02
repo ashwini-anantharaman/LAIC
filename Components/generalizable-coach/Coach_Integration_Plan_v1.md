@@ -156,11 +156,18 @@ for the learner-facing switch.
 `CoachCapabilityScope` is an access catalogue in all but name — 15 capabilities,
 structurally enforced.
 
-**Do:** ship `coach.json` alongside `library.json` / `bridge.json` / `learning.json`,
-mapping each capability to a catalogue capability id (`coach.hint.generate`,
-`coach.answer.direct`, `coach.postmortem.generate`, …) so roles grant them the
-same way they grant everything else. Map **1:1 onto the existing scope** — do
-not invent a second vocabulary.
+**Do:** a `coach.json` provider document mapping each capability to a catalogue
+capability id (`coach.hint.generate`, `coach.answer.direct`,
+`coach.postmortem.generate`, …) so roles grant them the same way they grant
+everything else. Map **1:1 onto the existing scope** — do not invent a second
+vocabulary.
+
+**Authored in the component, registered by the platform** — following the
+library precedent, where the owner's correction was that the catalogue belongs
+to the component rather than being configured from the consuming platform. So
+the document ships from `Components/generalizable-coach/` and Nexus registers
+it, the same way `library.json` is surfaced. (An earlier draft of this plan said
+"ship it alongside `library.json` in backend-ts" — that is the wrong home.)
 
 **The actual blocker is not the catalogue.** The coach service has no `orgId`,
 no `programId`, no auth on any endpoint — I checked. Anyone who can reach port
@@ -257,6 +264,53 @@ learner's call evaluated against the KB decider, cited to the rule. No LLM, no
 learner model, no new service, no learning-platform dependency.
 
 ---
+
+## 3b. The component boundary — where each piece is allowed to live
+
+The coach is a component, not a bridge feature. Verified 2026-08-02 that the
+boundary currently holds: `platform/*` names bridge only in doc comments, never
+as a dependency, and `domains/bridge/*` imports no `@bridge/*`, no Next, no
+Postgres. **This integration must not be what breaks that.**
+
+Three zones, and the import arrow only ever points one way (host → component):
+
+| Zone | Knows about | Must never know |
+|---|---|---|
+| `platform/*` | coaching, learners, knowledge, policy — no domain | any game, any app |
+| `domains/bridge/*` | bridge **as a game**: auctions, contracts, cards | session records, Nexus identity, Postgres, Next, `@bridge/*` |
+| `apps/bridge-web/lib/coach/*` | **this application**: `bridge_kb_sessions`, the compiled KB store, Nexus context, note persistence | — (it may import the component) |
+
+**The test when unsure:** *would this code still make sense if bridge were played
+in a different app?* Yes → `domains/bridge`. If it names `bridge_kb_sessions`,
+`nexusUserId`, or imports `@bridge/kb` → host.
+
+Worked examples:
+- *Judgment → correctness mapping* — game-level vocabulary, pure function →
+  `domains/bridge`. But *producing* the verdicts (running the KB decider in ask
+  mode) reads the compiled KB and the session → host.
+- *Auction context → taxonomy skill* — imports `@bridge/taxonomy`, an app-tree
+  package → host, until/unless the taxonomy itself moves.
+- *`LearnerContextSource`* — a generic pull port, no domain in its shape →
+  `platform/*`. The learning-platform adapter that implements it → wherever the
+  host lives.
+- *`CoachNoteRecord`* — a bridge-web storage shape, not a coach contract. The
+  component emits `AdaptiveCoachResponse`; the host maps it to its own note and
+  renders it. Do not let the strip's shape leak back into the component.
+
+**Consequences of in-process worth stating plainly:**
+- Each host runs its own copy. That is what a library is, and it is fine — the
+  shared things are the code and the contracts, not a running instance.
+- But it means **learner state is per host** until there is a shared store or
+  the service. Bridge mastery in bridge-web will not be visible to the learning
+  platform's copy. Acceptable while bridge is the only consumer; it is the thing
+  that will eventually force the service, not "we should have a service".
+
+**Component hygiene this integration should fix, because consumers pay for it:**
+`better-sqlite3` (a native module) and `express` are hard `dependencies` of
+`@laic/coach`. The core is careful — `platform/storage/sqlite.ts` says outright
+that it must never enter the embed graph, and the root export does not reach it —
+but every consumer still installs them. They belong in `optionalDependencies`,
+or the service belongs in its own package.
 
 ## 4b. Mastery: what it actually is here, and what blocks it
 
