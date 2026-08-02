@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/table/:sessionId",
+      "destination": "/table/%5BsessionId%5D"
+    },
+    {
+      "source": "/play-board/:entryId",
+      "destination": "/play-board/%5BentryId%5D"
+    },
+    {
+      "source": "/learner/:id",
+      "destination": "/learner/%5Bid%5D"
+    },
+    {
+      "source": "/learn/:id",
+      "destination": "/learn/%5Bid%5D"
+    }
+  ]
+}

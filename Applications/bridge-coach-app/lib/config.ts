@@ -33,7 +33,25 @@ const TUNNEL = {
       | null,
 };
 
-const ACTIVE = Platform.OS === "web" ? LOCAL : TUNNEL;
+/**
+ * A DEPLOYED build (the web export a reviewer opens from a URL): every service
+ * is a stable https origin, given at build time. Expo inlines `EXPO_PUBLIC_*`
+ * into the bundle, so these are baked in by the export command — there is no
+ * runtime config to get wrong, and a build with none of them set behaves
+ * exactly as before.
+ */
+const DEPLOYED = {
+  api: process.env.EXPO_PUBLIC_API_URL,
+  learning: process.env.EXPO_PUBLIC_LEARNING_URL,
+  bridgeLaunch: process.env.EXPO_PUBLIC_BRIDGE_LAUNCH_URL,
+};
+
+const LOCAL_OR_TUNNEL = Platform.OS === "web" ? LOCAL : TUNNEL;
+const ACTIVE = {
+  api: DEPLOYED.api ?? LOCAL_OR_TUNNEL.api,
+  learning: DEPLOYED.learning ?? LOCAL_OR_TUNNEL.learning,
+  bridgeLaunch: DEPLOYED.bridgeLaunch ?? LOCAL_OR_TUNNEL.bridgeLaunch,
+};
 
 /** Nexus API base URL. */
 export const NEXUS_API_URL = ACTIVE.api;
@@ -46,8 +64,7 @@ export const LEARNING_PLATFORM_URL = ACTIVE.learning;
  * launch_url (the backend's BRIDGE_PLATFORM_URL). The web preview overrides
  * to localhost so its iframe stays same-site (cookie sessions survive).
  */
-export const BRIDGE_LAUNCH_URL_OVERRIDE: string | null =
-  Platform.OS === "web" ? LOCAL.bridgeLaunch : TUNNEL.bridgeLaunch;
+export const BRIDGE_LAUNCH_URL_OVERRIDE: string | null = ACTIVE.bridgeLaunch;
 
 // ── Program identity ─────────────────────────────────────────────────────────
 
