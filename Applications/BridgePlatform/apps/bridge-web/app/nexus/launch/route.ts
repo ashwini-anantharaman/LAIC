@@ -65,12 +65,23 @@ export async function GET(request: Request): Promise<NextResponse> {
   const destination =
     next && next.startsWith("/") && !next.startsWith("//") ? next : "/bridge/home";
   const response = NextResponse.redirect(new URL(destination, origin));
+  // An EMBEDDED launch is a third-party context: the host app's page is one
+  // site and this is another, so a Lax cookie is never sent back and the embed
+  // bounces to /welcome forever. SameSite=None (which browsers only honour
+  // over https) is what makes the app's iframe able to stay signed in.
+  //
+  // Only the embedded launch relaxes it. A normal, top-level launch keeps Lax,
+  // which is the stronger default and all it needs. Note that browsers which
+  // block third-party cookies outright (Safari, Firefox) will still drop it —
+  // the durable fix is serving app and platform from one registrable domain.
+  const embedded = url.searchParams.get("embedded") === "1";
+  const secure = process.env.NODE_ENV === "production";
   const cookieOpts = {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: embedded && secure ? ("none" as const) : ("lax" as const),
     path: "/",
-    secure: process.env.NODE_ENV === "production",
-  } as const;
+    secure,
+  };
   response.cookies.set(NEXUS_TOKEN_COOKIE, accessToken, cookieOpts);
   // The console's return address, when Nexus sent one — powers "Back to Nexus".
   const returnUrl = safeReturnUrl(url.searchParams.get("return_url"));
@@ -80,7 +91,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   if (programId) response.cookies.set(NEXUS_PROGRAM_COOKIE, programId, cookieOpts);
   // Embedded launch (host-app iframe): remember it so the shell hides its own
   // sign-out. A normal launch clears the flag.
-  if (url.searchParams.get("embedded") === "1") {
+  if (embedded) {
     response.cookies.set(NEXUS_EMBEDDED_COOKIE, "1", cookieOpts);
   } else {
     response.cookies.set(NEXUS_EMBEDDED_COOKIE, "", { ...cookieOpts, maxAge: 0 });
