@@ -8,7 +8,7 @@
  * architecture doc's §8 (Weak Skill Detector, Recommendation/Practice-Plan
  * Builder, Learner Summary Generator).
  */
-import type { DomainLearnerState, LearnerProfile, Mastery } from "../learner-model/types.js";
+import type { DomainLearnerState, LearnerProfile, Mastery } from "../learner-model/types";
 
 export interface WeakSkill {
   skillId: string;
@@ -69,9 +69,8 @@ const PROFICIENT_OR_BETTER: Mastery[] = ["proficient", "mastered"];
  * suggest exploring new material.
  */
 export function recommendNextSkill(domain: DomainLearnerState): Recommendation {
-  const weak = detectWeakSkills(domain);
-  if (weak.length > 0) {
-    const w = weak[0];
+  const [w] = detectWeakSkills(domain);
+  if (w) {
     return {
       skillId: w.skillId,
       kind: "reinforce_weak",
@@ -80,11 +79,10 @@ export function recommendNextSkill(domain: DomainLearnerState): Recommendation {
   }
 
   // Least-practiced skill that isn't proficient yet — build it up.
-  const buildable = domain.skillStates
-    .filter((s) => !PROFICIENT_OR_BETTER.includes(s.mastery))
+  const [s] = domain.skillStates
+    .filter((st) => !PROFICIENT_OR_BETTER.includes(st.mastery))
     .sort((a, b) => a.exposureCount - b.exposureCount);
-  if (buildable.length > 0) {
-    const s = buildable[0];
+  if (s) {
     return {
       skillId: s.skillId,
       kind: "build_up",
@@ -106,11 +104,10 @@ export function summarizeLearner(profile: LearnerProfile, domainId: string): str
     return "No practice yet in this domain.";
   }
   const practiced = domain.skillStates.filter((s) => s.exposureCount > 0);
-  const weak = detectWeakSkills(domain);
+  const [w] = detectWeakSkills(domain);
   const parts: string[] = [`Practiced ${practiced.length} skill(s).`];
 
-  if (weak.length > 0) {
-    const w = weak[0];
+  if (w) {
     parts.push(`Weakest: ${w.skillId} (${Math.round(w.accuracy * 100)}% correct).`);
   }
   // Most common recent-mistake concept.
@@ -124,4 +121,4 @@ export function summarizeLearner(profile: LearnerProfile, domainId: string): str
   return parts.join(" ");
 }
 
-export * from "./postmortem.js";
+export * from "./postmortem";

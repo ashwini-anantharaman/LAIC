@@ -12,9 +12,9 @@
  * Contract: sends the Coach's RetrievalRequest; expects `{ chunks: KnowledgeChunk[] }`.
  * Rejects chunks carrying an unrecognized major schemaVersion rather than guessing.
  */
-import type { KnowledgeChunk } from "../../contracts/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
-import type { KnowledgeQuery, KnowledgeSource } from "./KnowledgeSource.js";
+import type { KnowledgeChunk } from "../../contracts/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/version";
+import type { KnowledgeQuery, KnowledgeSource } from "./KnowledgeSource";
 
 export interface PlatformKnowledgeSourceOptions {
   /** Base URL of the Learning Platform, e.g. "http://localhost:3001". */
@@ -38,7 +38,7 @@ interface RetrieveResponse {
 
 /** Major-version component of a semver-ish string ("1.2.3" -> "1"). */
 function majorOf(version: string): string {
-  return String(version).split(".")[0];
+  return String(version).split(".")[0] ?? version;
 }
 
 const EXPECTED_MAJOR = majorOf(CONTRACTS_SCHEMA_VERSION);

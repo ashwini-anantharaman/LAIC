@@ -11,7 +11,7 @@ import type {
   Difficulty,
   ChunkType,
   HintLevel,
-} from "../types/index.js";
+} from "../types/index";
 
 export class KnowledgeRetriever {
   private readonly chunks: KnowledgeChunk[];

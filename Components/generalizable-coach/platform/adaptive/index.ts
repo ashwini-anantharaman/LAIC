@@ -5,4 +5,4 @@ export {
   type CommonCoachPackage,
   type OpenCoachSessionOptions,
   type ChatTurn,
-} from "./openCoachSession.js";
+} from "./openCoachSession";

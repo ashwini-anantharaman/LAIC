@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { BridgeEvaluator } from "./BridgeEvaluator.js";
-import { parseHand, isBalanced } from "./hand.js";
-import type { BridgeGameState, BridgeBidAction } from "../plugin/events.js";
-import * as C from "../plugin/constants.js";
+import { BridgeEvaluator } from "./BridgeEvaluator";
+import { parseHand, isBalanced } from "./hand";
+import type { BridgeGameState, BridgeBidAction } from "../plugin/events";
+import * as C from "../plugin/constants";
 
 const evaluator = new BridgeEvaluator();
 

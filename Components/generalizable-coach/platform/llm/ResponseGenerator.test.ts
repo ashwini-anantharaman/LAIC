@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
-import { ResponseGenerator, type LLMLike } from "./ResponseGenerator.js";
-import { PromptBuilder } from "./PromptBuilder.js";
-import type { BuiltPrompt } from "./PromptBuilder.js";
+import { ResponseGenerator, type LLMLike } from "./ResponseGenerator";
+import { PromptBuilder } from "./PromptBuilder";
+import type { BuiltPrompt } from "./PromptBuilder";
 import type {
   CommonCoachPackage,
   EvaluationResult,
-} from "../types/index.js";
-import type { InterventionDecision } from "../coach-runtime/InterventionPolicyEngine.js";
+} from "../types/index";
+import type { InterventionDecision } from "../coach-runtime/InterventionPolicyEngine";
 
 function pkg(): CommonCoachPackage {
   return {

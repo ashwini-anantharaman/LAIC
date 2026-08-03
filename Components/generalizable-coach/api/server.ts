@@ -3,7 +3,7 @@
  *
  *   npm run start:coach     # listens on COACH_PORT or 3100
  */
-import { createCoachService } from "./coachService.js";
+import { createCoachService } from "./coachService";
 
 const port = Number(process.env.COACH_PORT ?? 3100);
 const { app } = createCoachService();

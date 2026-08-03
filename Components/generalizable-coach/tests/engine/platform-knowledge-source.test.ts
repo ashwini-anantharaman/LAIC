@@ -11,8 +11,8 @@
  * real Owlwise course is a manual/integration step (see M4 plan A4).
  */
 import { describe, it, expect } from "vitest";
-import { PlatformKnowledgeSource } from "../../platform/knowledge-source/index.js";
-import { validate } from "../../contracts/index.js";
+import { PlatformKnowledgeSource } from "../../platform/knowledge-source/index";
+import { validate } from "../../contracts/index";
 
 type Captured = { url: string; init: RequestInit };
 

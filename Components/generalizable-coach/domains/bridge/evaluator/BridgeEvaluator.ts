@@ -11,8 +11,8 @@ import type {
   EvaluationResult,
   Correctness,
   Severity,
-} from "../../../platform/types/index.js";
-import type { BridgeGameState, BridgeBidAction } from "../plugin/events.js";
+} from "../../../platform/types/index";
+import type { BridgeGameState, BridgeBidAction } from "../plugin/events";
 import {
   parseHand,
   isBalanced,
@@ -23,8 +23,8 @@ import {
   strainRank,
   type ParsedHand,
   type SuitLetter,
-} from "./hand.js";
-import * as C from "../plugin/constants.js";
+} from "./hand";
+import * as C from "../plugin/constants";
 
 interface Recommendation {
   /** the single best call, normalized (e.g. "1S", "1NT", "P") */

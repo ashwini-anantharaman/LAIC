@@ -9,11 +9,11 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { openCoachSession } from "../../platform/adaptive/index.js";
-import { LearnerStore } from "../../platform/learner-model/index.js";
-import { BundledKnowledgeSource } from "../../platform/knowledge-source/index.js";
-import { validate } from "../../contracts/index.js";
-import type { EvaluationResult } from "../../platform/types/index.js";
+import { openCoachSession } from "../../platform/adaptive/index";
+import { LearnerStore } from "../../platform/learner-model/index";
+import { BundledKnowledgeSource } from "../../platform/knowledge-source/index";
+import { validate } from "../../contracts/index";
+import type { EvaluationResult } from "../../platform/types/index";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const bridgePkg = JSON.parse(

@@ -13,17 +13,17 @@ import type {
   CoachingPolicyProfile,
   KnowledgeScope,
   CoachCapabilityScope,
-} from "../../contracts/index.js";
-import { CONTRACTS_SCHEMA_VERSION, validate } from "../../contracts/index.js";
-import { resolvePolicy } from "../config/index.js";
+} from "../../contracts/index";
+import { CONTRACTS_SCHEMA_VERSION, validate } from "../../contracts/index";
+import { resolvePolicy } from "../config/index";
 import {
   decideIntervention,
   applyCapabilityScope,
   defaultCapabilityScope,
   type InterventionDecision,
-} from "../policy/index.js";
-import type { EvaluationResult } from "../types/index.js";
-import { bridgeBeginnerPreset } from "./presets.js";
+} from "../policy/index";
+import type { EvaluationResult } from "../types/index";
+import { bridgeBeginnerPreset } from "./presets";
 
 export interface CloneRequest {
   basePresetId: string;

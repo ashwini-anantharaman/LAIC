@@ -1,2 +1,2 @@
-export * from "./hand.js";
-export * from "./BridgeEvaluator.js";
+export * from "./hand";
+export * from "./BridgeEvaluator";

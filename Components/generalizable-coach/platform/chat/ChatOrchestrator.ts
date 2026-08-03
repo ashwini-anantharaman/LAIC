@@ -18,8 +18,8 @@ import type {
   CoachingPolicy,
   KnowledgeChunk,
   KnowledgeScope,
-} from "../../contracts/index.js";
-import { ScopedKnowledgeSource, type KnowledgeSource } from "../knowledge-source/index.js";
+} from "../../contracts/index";
+import { ScopedKnowledgeSource, type KnowledgeSource } from "../knowledge-source/index";
 import {
   gateTools,
   type CoachMode,
@@ -27,11 +27,11 @@ import {
   type ToolExecutor,
   type ToolRegistry,
   type ToolResult,
-} from "../tools/index.js";
-import type { InteractionMemory } from "../memory/index.js";
-import type { TraceStore } from "../trace/index.js";
-import { IntentRouter, type Intent } from "./IntentRouter.js";
-import { ToolSelector } from "./ToolSelector.js";
+} from "../tools/index";
+import type { InteractionMemory } from "../memory/index";
+import type { TraceStore } from "../trace/index";
+import { IntentRouter, type Intent } from "./IntentRouter";
+import { ToolSelector } from "./ToolSelector";
 
 export type Phraser = (ctx: { message: string; chunks: KnowledgeChunk[] }) => Promise<string | null>;
 

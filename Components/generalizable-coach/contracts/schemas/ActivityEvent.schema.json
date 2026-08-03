@@ -18,6 +18,7 @@
       "description": "Domain-specific payload; opaque to the platform.",
       "type": ["object", "null"]
     },
+    "context": { "$ref": "./PlatformContext.schema.json" },
     "sourcePlatform": {
       "type": "string",
       "enum": ["bridge", "learning", "nexus", "coach", "other"],

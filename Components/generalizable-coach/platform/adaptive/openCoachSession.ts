@@ -13,18 +13,18 @@ import type {
   CoachingPolicyProfile,
   CoachCapabilityScope,
   LearnerDomainProfile,
-} from "../../contracts/index.js";
-import { LearnerStore } from "../learner-model/index.js";
-import { getRegisteredDomain } from "../embed/registry.js";
-import type { KnowledgeSource } from "../knowledge-source/index.js";
-import { platformDefaultPolicy, resolvePolicy, type PolicyLayer } from "../config/index.js";
+} from "../../contracts/index";
+import { LearnerStore } from "../learner-model/index";
+import { getRegisteredDomain } from "../embed/registry";
+import type { KnowledgeSource } from "../knowledge-source/index";
+import { platformDefaultPolicy, resolvePolicy, type PolicyLayer } from "../config/index";
 import {
   decideIntervention,
   applyCapabilityScope,
   defaultCapabilityScope,
   type InterventionDecision,
-} from "../policy/index.js";
-import type { EvaluationResult } from "../types/index.js";
+} from "../policy/index";
+import type { EvaluationResult } from "../types/index";
 
 export interface CommonCoachPackage {
   learnerId: string;

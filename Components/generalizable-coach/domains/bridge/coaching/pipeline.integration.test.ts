@@ -9,10 +9,10 @@
  * domain at all.
  */
 import { describe, it, expect } from "vitest";
-import { buildBridgeCoach, MockLLM } from "./index.js";
-import { BRIDGE_DOMAIN_ID, SKILL_OPENING_1SUIT } from "../plugin/constants.js";
-import type { ActivityEvent } from "../../../platform/types/index.js";
-import type { BridgeBidAction, BridgeGameState } from "../plugin/events.js";
+import { buildBridgeCoach, MockLLM } from "./index";
+import { BRIDGE_DOMAIN_ID, SKILL_OPENING_1SUIT } from "../plugin/constants";
+import type { ActivityEvent } from "../../../platform/types/index";
+import type { BridgeBidAction, BridgeGameState } from "../plugin/events";
 
 let counter = 0;
 function bidEvent(

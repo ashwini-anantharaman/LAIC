@@ -1,1 +1,1 @@
-export * from "./SessionEngine.js";
+export * from "./SessionEngine";

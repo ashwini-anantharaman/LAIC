@@ -5,9 +5,9 @@
  * lower layers; the resolved policy is stamped with the profile's id + version.
  */
 import { describe, it, expect } from "vitest";
-import { resolvePolicy } from "../../platform/config/index.js";
-import { validate, CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
-import type { CoachingPolicyProfile } from "../../contracts/index.js";
+import { resolvePolicy } from "../../platform/config/index";
+import { validate, CONTRACTS_SCHEMA_VERSION } from "../../contracts/index";
+import type { CoachingPolicyProfile } from "../../contracts/index";
 
 const profile: CoachingPolicyProfile = {
   schemaVersion: CONTRACTS_SCHEMA_VERSION,

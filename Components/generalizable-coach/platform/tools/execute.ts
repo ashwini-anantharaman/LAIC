@@ -7,7 +7,7 @@
  * here `InProcessToolExecutor` runs the registry's handlers directly, which
  * both serves co-located deployments and stands in for a mock host in tests.
  */
-import type { CoachTool, ToolCall, ToolContext, ToolRegistry, ToolResult } from "./types.js";
+import type { CoachTool, ToolCall, ToolContext, ToolRegistry, ToolResult } from "./types";
 
 export interface ToolExecutor {
   execute(call: ToolCall, ctx: ToolContext): Promise<ToolResult>;

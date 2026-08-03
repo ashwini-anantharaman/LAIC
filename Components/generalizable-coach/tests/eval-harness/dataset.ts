@@ -6,7 +6,7 @@
  * surfaces edge cases; it is the objective bar the graded helper must clear
  * before it becomes a course default (D3).
  */
-import type { GradingCase } from "../../platform/eval/gradedAccuracy.js";
+import type { GradingCase } from "../../platform/eval/gradedAccuracy";
 
 export const MEMORY_LESSON_CASES: GradingCase[] = [
   {

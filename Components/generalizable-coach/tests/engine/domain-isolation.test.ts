@@ -7,10 +7,10 @@
  * guarantee the plan says to lock in before any UI exists.
  */
 import { describe, it, expect } from "vitest";
-import { openCoachSession } from "../../platform/adaptive/index.js";
-import { LearnerStore } from "../../platform/learner-model/index.js";
-import { validate } from "../../contracts/index.js";
-import type { EvaluationResult } from "../../platform/types/index.js";
+import { openCoachSession } from "../../platform/adaptive/index";
+import { LearnerStore } from "../../platform/learner-model/index";
+import { validate } from "../../contracts/index";
+import type { EvaluationResult } from "../../platform/types/index";
 
 const BRIDGE = "bridge_gameplay";
 const BRAINBEE = "brainbee";

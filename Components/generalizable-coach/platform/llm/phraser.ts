@@ -8,10 +8,10 @@
  * source set, or any model failure. So enabling the LLM never removes the
  * offline safety net or the source-grounding guarantee.
  */
-import type { KnowledgeChunk } from "../../contracts/index.js";
-import type { LLMLike } from "./ResponseGenerator.js";
-import type { BuiltPrompt } from "./PromptBuilder.js";
-import { LLMClient } from "./LLMClient.js";
+import type { KnowledgeChunk } from "../../contracts/index";
+import type { LLMLike } from "./ResponseGenerator";
+import type { BuiltPrompt } from "./PromptBuilder";
+import { LLMClient } from "./LLMClient";
 
 export type GroundedPhraser = (ctx: {
   message?: string;

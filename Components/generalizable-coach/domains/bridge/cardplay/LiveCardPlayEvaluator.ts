@@ -17,12 +17,12 @@ import type {
   EvaluationResult,
   Correctness,
   Severity,
-} from "../../../platform/types/index.js";
-import type { Seat } from "../plugin/events.js";
-import * as C from "../plugin/constants.js";
-import { normalizeCard } from "./scenarios.js";
-import { runPrinciples } from "./principles.js";
-import { NullOracle, type DoubleDummyOracle } from "./oracle.js";
+} from "../../../platform/types/index";
+import type { Seat } from "../plugin/events";
+import * as C from "../plugin/constants";
+import { normalizeCard } from "./scenarios";
+import { runPrinciples } from "./principles";
+import { NullOracle, type DoubleDummyOracle } from "./oracle";
 
 export interface TrickCard {
   seat: Seat;

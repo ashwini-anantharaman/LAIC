@@ -7,8 +7,8 @@
  * it grows, swap scoreChunks for a hybrid tag+embedding retriever behind the
  * same call site.
  */
-import type { CommonCoachPackage, KnowledgeChunk } from "../types/index.js";
-import type { BuiltPrompt } from "../llm/index.js";
+import type { CommonCoachPackage, KnowledgeChunk } from "../types/index";
+import type { BuiltPrompt } from "../llm/index";
 
 const STOPWORDS = new Set(
   "the a an and or of to in is are was be do does did i you we my your it this that what why how should when with for on at".split(" "),

@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createCoachService } from "../../api/coachService.js";
+import { createCoachService } from "../../api/coachService";
 
 let server: Server;
 let base: string;

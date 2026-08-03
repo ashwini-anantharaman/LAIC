@@ -12,14 +12,14 @@ import {
   createCoreCoachSession,
   type CoachSession,
   type CoreCoachSessionOptions,
-} from "../../../platform/embed/index.js";
-import { HeuristicLLM } from "../../../platform/embed/index.js";
-import type { LLMLike } from "../../../platform/llm/index.js";
-import type { FeedbackStyle, ExplanationDepth } from "../../../platform/types/index.js";
-import { buildBridgeCoach, type BridgeCoach } from "./buildBridgeCoach.js";
-import { BRIDGE_DOMAIN_ID } from "../plugin/constants.js";
-import { LocalDoubleDummyOracle } from "../cardplay/dds/LocalDoubleDummyOracle.js";
-import type { DoubleDummyOracle } from "../cardplay/oracle.js";
+} from "../../../platform/embed/index";
+import { HeuristicLLM } from "../../../platform/embed/index";
+import type { LLMLike } from "../../../platform/llm/index";
+import type { FeedbackStyle, ExplanationDepth } from "../../../platform/types/index";
+import { buildBridgeCoach, type BridgeCoach } from "./buildBridgeCoach";
+import { BRIDGE_DOMAIN_ID } from "../plugin/constants";
+import { LocalDoubleDummyOracle } from "../cardplay/dds/LocalDoubleDummyOracle";
+import type { DoubleDummyOracle } from "../cardplay/oracle";
 
 export interface CoachSessionOptions {
   /** the learner/seat being coached, e.g. "S" for South */

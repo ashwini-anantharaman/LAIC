@@ -6,7 +6,7 @@
  * field is required on every contract (DoD: "versioned with a schemaVersion").
  */
 import { describe, it, expect } from "vitest";
-import { validate, schemas, CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
+import { validate, schemas, CONTRACTS_SCHEMA_VERSION } from "../../contracts/index";
 
 const V = CONTRACTS_SCHEMA_VERSION;
 
@@ -21,7 +21,15 @@ const CORE = [
   "CoachInstance",
   "CoachingPolicyProfile",
   "CoachCapabilityScope",
+  "CoachNote",
 ] as const;
+
+/**
+ * Schemas that are VALUE OBJECTS, not records: they only ever appear embedded
+ * in a contract above, and are versioned by whatever carries them. Requiring a
+ * schemaVersion on them would mean stamping one on every occurrence.
+ */
+const VALUE_OBJECTS = ["PlatformContext"] as const;
 
 /** One minimal valid instance per contract. */
 const valid: Record<(typeof CORE)[number], unknown> = {
@@ -97,6 +105,15 @@ const valid: Record<(typeof CORE)[number], unknown> = {
     questioningStyle: "socratic",
     interventionPolicy: { maxHintLevel: 3 },
   },
+  CoachNote: {
+    schemaVersion: V,
+    noteId: "n1",
+    learnerId: "L1",
+    anchorId: "12",
+    kind: "hint",
+    headline: "That isn't what your system calls here.",
+    createdAt: "2026-08-02T00:00:00.000Z",
+  },
   CoachCapabilityScope: {
     schemaVersion: V,
     id: "cs1",
@@ -108,8 +125,8 @@ const valid: Record<(typeof CORE)[number], unknown> = {
 
 describe("contract schemas", () => {
   it("registers all core schemas", () => {
-    for (const name of CORE) expect(schemas[name], name).toBeTruthy();
-    expect(Object.keys(schemas).sort()).toEqual([...CORE].sort());
+    for (const name of [...CORE, ...VALUE_OBJECTS]) expect(schemas[name], name).toBeTruthy();
+    expect(Object.keys(schemas).sort()).toEqual([...CORE, ...VALUE_OBJECTS].sort());
   });
 
   it("every schema requires a schemaVersion field", () => {

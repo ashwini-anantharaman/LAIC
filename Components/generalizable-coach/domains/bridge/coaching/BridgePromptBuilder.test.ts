@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { BridgePromptBuilder } from "./BridgePromptBuilder.js";
-import type { CommonCoachPackage, EvaluationResult } from "../../../platform/types/index.js";
-import type { InterventionDecision } from "../../../platform/coach-runtime/index.js";
+import { BridgePromptBuilder } from "./BridgePromptBuilder";
+import type { CommonCoachPackage, EvaluationResult } from "../../../platform/types/index";
+import type { InterventionDecision } from "../../../platform/coach-runtime/index";
 
 function pkg(): CommonCoachPackage {
   return {

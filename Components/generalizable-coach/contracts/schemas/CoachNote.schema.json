@@ -1,0 +1,134 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.nexus/coach/contracts/CoachNote.schema.json",
+  "title": "CoachNote",
+  "description": "One thing the coach said to a learner, about one action. This is a CONTRACT rather than a host convention: a note is evidence of what a learner was told, so review, postmortem and audit all need it in one shape across every host. Hosts persist and render it however suits them \u2014 the shape is not negotiable, the storage and styling are.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "noteId",
+    "learnerId",
+    "anchorId",
+    "kind",
+    "headline",
+    "createdAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string"
+    },
+    "noteId": {
+      "type": "string"
+    },
+    "context": {
+      "$ref": "./PlatformContext.schema.json"
+    },
+    "learnerId": {
+      "type": "string"
+    },
+    "anchorId": {
+      "type": "string",
+      "description": "The host action this note is about, opaque to the coach. Bridge uses the event seq; a quiz would use a question id. The coach must never need to know which."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "hint",
+        "nudge",
+        "question",
+        "explanation",
+        "affirmation",
+        "status"
+      ],
+      "description": "Mirrors the intervention's response type, plus `affirmation` (a correct action confirmed) and `status` (the coach reporting on itself)."
+    },
+    "headline": {
+      "type": "string",
+      "description": "One line. The whole note, when there is only room for one."
+    },
+    "detail": {
+      "type": "string"
+    },
+    "citations": {
+      "type": "array",
+      "description": "What the note leaned on \u2014 a rule, a lesson, a setting. The product's claim is a cited rulebook, so a note that asserts without provenance is a bug.",
+      "items": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string",
+            "description": "The cited artifact's own id, e.g. a compiled rule id."
+          },
+          "href": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "alternatives": {
+      "type": "array",
+      "description": "What the coach considered and set aside. Half of \"why this\" is \"why not that\", and for a learner that half is usually the more useful one.",
+      "items": {
+        "type": "object",
+        "required": [
+          "label",
+          "why"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "followUps": {
+      "type": "array",
+      "description": "Questions the learner can ask about this note, each with an answer the coach already holds. Deterministic by design: a follow-up whose answer has to be generated is a different feature with different failure modes.",
+      "items": {
+        "type": "object",
+        "required": [
+          "q",
+          "a"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "q": {
+            "type": "string"
+          },
+          "a": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "hintLevel": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "description": "How much of the answer this note gave away. Stored so a later note can escalate rather than repeat."
+    },
+    "policyVersion": {
+      "type": "string",
+      "description": "Which resolved policy produced it \u2014 a note is only interpretable against the behaviour that generated it."
+    },
+    "profileId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

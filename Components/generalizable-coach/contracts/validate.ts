@@ -15,8 +15,10 @@ import addFormats from "ajv-formats";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_DIR = path.join(here, "schemas");
 
-/** The version producers stamp on new contract objects. */
-export const CONTRACTS_SCHEMA_VERSION = "1.0.0";
+/** The version producers stamp on new contract objects.
+ *  Defined in ./version.ts (dependency-free) and re-exported here so callers
+ *  that already import it from the validator keep working. */
+export { CONTRACTS_SCHEMA_VERSION } from "./version";
 
 const ajv = new Ajv({ allErrors: true, strict: false });
 addFormats(ajv);

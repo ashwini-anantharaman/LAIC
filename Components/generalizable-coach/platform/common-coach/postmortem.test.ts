@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { generatePostmortem } from "./postmortem.js";
-import type { WeakSkill } from "./index.js";
-import type { Session } from "../session/SessionEngine.js";
+import { generatePostmortem } from "./postmortem";
+import type { WeakSkill } from "./index";
+import type { Session } from "../session/SessionEngine";
 
 function session(): Session {
   return {

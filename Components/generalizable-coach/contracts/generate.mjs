@@ -35,6 +35,10 @@ export async function generateAll() {
   for (const file of files) {
     const schema = JSON.parse(await readFile(path.join(SCHEMA_DIR, file), "utf8"));
     const ts = await compile(schema, schema.title, {
+      // Sibling $refs (e.g. CoachNote -> ./PlatformContext.schema.json) are
+      // resolved relative to the schema directory. Without a cwd the compiler
+      // has no base to resolve them against and silently inlines `unknown`.
+      cwd: `${SCHEMA_DIR}${path.sep}`,
       bannerComment: banner(file),
       additionalProperties: false,
       declareExternallyReferenced: true,
@@ -46,7 +50,7 @@ export async function generateAll() {
   const titles = Object.keys(out).map((f) => f.replace(/\.ts$/, "")).sort();
   out["index.ts"] =
     `${banner("*")}\n` +
-    titles.map((t) => `export type { ${t} } from "./${t}.js";`).join("\n") +
+    titles.map((t) => `export type { ${t} } from "./${t}";`).join("\n") +
     "\n";
   return out;
 }

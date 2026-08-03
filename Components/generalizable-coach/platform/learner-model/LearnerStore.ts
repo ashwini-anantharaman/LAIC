@@ -11,25 +11,25 @@ import type {
   FeedbackStyle,
   ExplanationDepth,
   SkillLevel,
-} from "../types/index.js";
+} from "../types/index";
 import type {
   LearnerProfile,
   DomainLearnerState,
   SkillState,
   Mastery,
   MistakeRecord,
-} from "./types.js";
-import type { LearnerRepo } from "../storage/ports.js";
-import { InMemoryLearnerRepo } from "../storage/memory.js";
+} from "./types";
+import type { LearnerRepo } from "../storage/ports";
+import { InMemoryLearnerRepo } from "../storage/memory";
 import {
   detectWeakSkills,
   recommendNextSkill,
   summarizeLearner,
   type WeakSkill,
   type Recommendation,
-} from "../common-coach/index.js";
-import type { LearnerDomainProfile } from "../../contracts/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
+} from "../common-coach/index";
+import type { LearnerDomainProfile } from "../../contracts/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/version";
 
 /** Map the internal mastery ladder onto the contract's 0–1 mastery scale. */
 const MASTERY_SCORE: Record<Mastery, number> = {

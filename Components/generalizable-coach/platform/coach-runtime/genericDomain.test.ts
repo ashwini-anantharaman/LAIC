@@ -13,8 +13,8 @@ import {
   hintRequest,
   GENERIC_DOMAIN_ID,
   SKILL_OBEY_SIGNAL,
-} from "../__fixtures__/genericDomain.js";
-import type { SignalState } from "../__fixtures__/genericDomain.js";
+} from "../__fixtures__/genericDomain";
+import type { SignalState } from "../__fixtures__/genericDomain";
 
 const red: SignalState = { signal: "red" };
 

@@ -7,9 +7,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createCoachService } from "../../api/coachService.js";
-import { buildObservation, InMemoryObservationStore } from "../../platform/observation/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
+import { createCoachService } from "../../api/coachService";
+import { buildObservation, InMemoryObservationStore } from "../../platform/observation/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index";
 
 describe("buildObservation", () => {
   it("interprets a raw event without an evaluation", () => {

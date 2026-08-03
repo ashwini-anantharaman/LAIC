@@ -7,8 +7,8 @@
  * the corpus grows, and the on-ramp to the architecture doc's §4 (Embedding
  * Generator + Vector Store). With no provider it falls back to pure keyword.
  */
-import type { KnowledgeChunk } from "../types/index.js";
-import { scoreChunksScored } from "../embed/chat.js";
+import type { KnowledgeChunk } from "../types/index";
+import { scoreChunksScored } from "../embed/chat";
 
 /** Anything that turns text into vectors (OpenAI, a local model, a stub). */
 export interface EmbeddingProvider {
@@ -21,9 +21,14 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   let nb = 0;
   const n = Math.min(a.length, b.length);
   for (let i = 0; i < n; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
+    // `i < n` bounds both, so the fallbacks never fire — they are here so the
+    // file compiles under a consumer's `noUncheckedIndexedAccess`, and 0 is the
+    // identity for every term below anyway.
+    const ai = a[i] ?? 0;
+    const bi = b[i] ?? 0;
+    dot += ai * bi;
+    na += ai * ai;
+    nb += bi * bi;
   }
   if (na === 0 || nb === 0) return 0;
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
@@ -71,11 +76,21 @@ export class HybridRetriever {
       this.chunkVecs = await this.embedder.embed(this.chunks.map((c) => c.content));
     }
     const [qVec] = await this.embedder.embed([question]);
+    const chunkVecs = this.chunkVecs ?? [];
+    // An embedder that returned nothing for the question can't contribute a
+    // similarity; fall back to the keyword ranking rather than scoring everything 0.
+    if (!qVec) {
+      return keyword
+        .filter((s) => s.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topN)
+        .map((s) => s.chunk);
+    }
 
     const maxKw = Math.max(1, ...keyword.map((s) => s.score));
     const blended = this.chunks.map((chunk, i) => {
-      const kwNorm = keyword[i].score / maxKw; // 0..1
-      const cos = Math.max(0, cosineSimilarity(qVec, this.chunkVecs![i])); // 0..1
+      const kwNorm = (keyword[i]?.score ?? 0) / maxKw; // 0..1
+      const cos = Math.max(0, cosineSimilarity(qVec, chunkVecs[i] ?? [])); // 0..1
       return { chunk, score: this.kw * kwNorm + this.ew * cos };
     });
 

@@ -7,8 +7,8 @@
  * learner's chosen card deterministically. (Tactics per Watson's "Play of the
  * Hand at Bridge".)
  */
-import type { Seat } from "../plugin/events.js";
-import type { Severity } from "../../../platform/types/index.js";
+import type { Seat } from "../plugin/events";
+import type { Severity } from "../../../platform/types/index";
 
 export type Strain = "S" | "H" | "D" | "C" | "NT";
 

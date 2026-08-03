@@ -24,7 +24,7 @@ export const sideOf = (s: SeatId): Side => (s === "N" || s === "S" ? "NS" : "EW"
 
 /** "HQ" → integer code. Returns -1 for a malformed card. */
 export function encodeCard(card: string): number {
-  const suit = SUIT_INDEX[card[0]?.toUpperCase()];
+  const suit = SUIT_INDEX[card[0]?.toUpperCase() ?? ""];
   const rank = RANK_ORDER.indexOf(card.slice(1).toUpperCase());
   if (suit == null || rank < 0) return -1;
   return suit * 13 + rank;
@@ -66,10 +66,12 @@ function beats(a: number, b: number, trump: number, led: number): boolean {
 }
 
 function trickWinner(trick: PlayedCard[], trump: number): SeatId {
-  const led = suitOfCode(trick[0].code);
-  let best = trick[0];
+  // Only ever called with a full trick; the guard is for the type system.
+  let best = trick[0]!;
+  const led = suitOfCode(best.code);
   for (let i = 1; i < trick.length; i++) {
-    if (beats(trick[i].code, best.code, trump, led)) best = trick[i];
+    const next = trick[i]!;
+    if (beats(next.code, best.code, trump, led)) best = next;
   }
   return best.seat;
 }
@@ -77,7 +79,7 @@ function trickWinner(trick: PlayedCard[], trump: number): SeatId {
 /** Legal plays for `toPlay`: follow the led suit if able, else anything. */
 function legalCards(hand: number[], trick: PlayedCard[]): number[] {
   if (trick.length === 0) return hand;
-  const led = suitOfCode(trick[0].code);
+  const led = suitOfCode(trick[0]!.code);
   const following = hand.filter((c) => suitOfCode(c) === led);
   return following.length ? following : hand;
 }

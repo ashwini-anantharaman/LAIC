@@ -5,10 +5,10 @@
 import type {
   DomainPlugin,
   EvaluatorContract,
-} from "../../../platform/types/index.js";
-import { BridgeEvaluator } from "../evaluator/BridgeEvaluator.js";
+} from "../../../platform/types/index";
+import { BridgeEvaluator } from "../evaluator/BridgeEvaluator";
 import schema from "./bridge_gameplay.schema.json";
-import { BRIDGE_DOMAIN_ID } from "./constants.js";
+import { BRIDGE_DOMAIN_ID } from "./constants";
 
 export class BridgePlugin implements DomainPlugin {
   readonly domainId = BRIDGE_DOMAIN_ID;

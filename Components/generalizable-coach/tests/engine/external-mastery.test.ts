@@ -6,8 +6,8 @@
  * deviation). A domain the Coach owns still advances normally.
  */
 import { describe, it, expect } from "vitest";
-import { LearnerStore } from "../../platform/learner-model/index.js";
-import type { EvaluationResult } from "../../platform/types/index.js";
+import { LearnerStore } from "../../platform/learner-model/index";
+import type { EvaluationResult } from "../../platform/types/index";
 
 const miss: EvaluationResult = {
   correctness: "incorrect",

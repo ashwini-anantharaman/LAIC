@@ -8,10 +8,10 @@
 import type {
   EvaluatorContract,
   EvaluationResult,
-} from "../../../platform/types/index.js";
-import { BridgeEvaluator } from "./BridgeEvaluator.js";
-import { CardPlayEvaluator } from "../cardplay/CardPlayEvaluator.js";
-import { LiveCardPlayEvaluator } from "../cardplay/LiveCardPlayEvaluator.js";
+} from "../../../platform/types/index";
+import { BridgeEvaluator } from "./BridgeEvaluator";
+import { CardPlayEvaluator } from "../cardplay/CardPlayEvaluator";
+import { LiveCardPlayEvaluator } from "../cardplay/LiveCardPlayEvaluator";
 
 export class RouterEvaluator implements EvaluatorContract<any, any> {
   constructor(

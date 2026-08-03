@@ -6,9 +6,9 @@
  * generic Session shape and the coach responses' concept metadata. A host can
  * show this directly, or pass `summary` to an LLM for nicer phrasing.
  */
-import type { Session } from "../session/SessionEngine.js";
-import type { CoachResponseType } from "../types/index.js";
-import type { WeakSkill } from "./index.js";
+import type { Session } from "../session/SessionEngine";
+import type { CoachResponseType } from "../types/index";
+import type { WeakSkill } from "./index";
 
 export interface Postmortem {
   sessionId: string;
@@ -47,8 +47,8 @@ export function generatePostmortem(
     .map(([c]) => c);
 
   const suggestions: string[] = [];
-  if (weakSkills.length > 0) {
-    const w = weakSkills[0];
+  const [w] = weakSkills;
+  if (w) {
     suggestions.push(
       `Focus next on ${w.skillId} (currently ${Math.round(w.accuracy * 100)}% correct).`,
     );

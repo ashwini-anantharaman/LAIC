@@ -5,7 +5,7 @@
  * evaluator — that is the high-risk M4 work. This proves the tutor path on a
  * real second (non-bridge) domain using only safe machinery.
  */
-import type { EvaluatorContract, EvaluationResult } from "../../platform/types/index.js";
+import type { EvaluatorContract, EvaluationResult } from "../../platform/types/index";
 
 export interface QuizAction {
   questionId: string;

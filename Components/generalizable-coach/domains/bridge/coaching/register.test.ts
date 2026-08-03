@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import "./register.js"; // side-effect: registers the bridge domain
-import { listDomains, openCoachSession } from "../../../platform/embed/registry.js";
-import { BRIDGE_DOMAIN_ID } from "../plugin/constants.js";
-import { MockLLM } from "./MockLLM.js";
+import { listDomains, openCoachSession } from "../../../platform/embed/registry";
+import { BRIDGE_DOMAIN_ID } from "../plugin/constants";
+import { MockLLM } from "./MockLLM";
 
 describe("bridge domain registration", () => {
   it("appears in the registry", () => {

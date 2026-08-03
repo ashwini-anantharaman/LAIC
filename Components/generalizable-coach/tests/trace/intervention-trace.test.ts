@@ -9,14 +9,14 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { BundledKnowledgeSource } from "../../platform/knowledge-source/index.js";
-import { StudyTutor } from "../../platform/tutor/index.js";
-import { InMemoryTraceStore } from "../../platform/trace/index.js";
-import { RecommendationEngine } from "../../platform/recommendation/index.js";
-import { resolvePolicy } from "../../platform/config/index.js";
-import { CourseQuizEvaluator, memoryLessonScope, COURSE_LEARNING_DOMAIN_ID } from "../../domains/course_learning/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
-import type { ActivityEvent, CoachingPolicyProfile } from "../../contracts/index.js";
+import { BundledKnowledgeSource } from "../../platform/knowledge-source/index";
+import { StudyTutor } from "../../platform/tutor/index";
+import { InMemoryTraceStore } from "../../platform/trace/index";
+import { RecommendationEngine } from "../../platform/recommendation/index";
+import { resolvePolicy } from "../../platform/config/index";
+import { CourseQuizEvaluator, memoryLessonScope, COURSE_LEARNING_DOMAIN_ID } from "../../domains/course_learning/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index";
+import type { ActivityEvent, CoachingPolicyProfile } from "../../contracts/index";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(

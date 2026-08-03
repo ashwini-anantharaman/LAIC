@@ -10,10 +10,10 @@
  * All chunks are normalized on construction so the required-tag rule (A1) holds
  * for whatever the producer supplied.
  */
-import type { KnowledgeChunk } from "../../contracts/index.js";
-import { cosineSimilarity } from "../knowledge/embeddings.js";
-import type { KnowledgePackage, KnowledgeQuery, KnowledgeSource } from "./KnowledgeSource.js";
-import { toKnowledgeChunk, type RawChunk } from "./normalize.js";
+import type { KnowledgeChunk } from "../../contracts/index";
+import { cosineSimilarity } from "../knowledge/embeddings";
+import type { KnowledgePackage, KnowledgeQuery, KnowledgeSource } from "./KnowledgeSource";
+import { toKnowledgeChunk, type RawChunk } from "./normalize";
 
 const DEFAULT_TOP_K = 5;
 

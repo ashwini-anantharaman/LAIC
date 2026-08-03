@@ -11,18 +11,18 @@ import {
   buildBridgeCoach,
   MockLLM,
   type BridgeCoach,
-} from "../domains/bridge/coaching/index.js";
+} from "../domains/bridge/coaching/index";
 import {
   BRIDGE_DOMAIN_ID,
   SKILL_OPENING_1SUIT,
   SKILL_SIMPLE_RAISE,
   CONCEPT_OPENING_BID,
-} from "../domains/bridge/plugin/constants.js";
-import type { ActivityEvent } from "../platform/types/index.js";
+} from "../domains/bridge/plugin/constants";
+import type { ActivityEvent } from "../platform/types/index";
 import type {
   BridgeBidAction,
   BridgeGameState,
-} from "../domains/bridge/plugin/events.js";
+} from "../domains/bridge/plugin/events";
 
 let eventCounter = 0;
 

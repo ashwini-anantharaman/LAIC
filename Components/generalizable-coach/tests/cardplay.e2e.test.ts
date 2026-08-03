@@ -4,10 +4,10 @@
  * card-play skill, and escalates on hint requests.
  */
 import { describe, it, expect } from "vitest";
-import { buildBridgeCoach, MockLLM } from "../domains/bridge/coaching/index.js";
-import { getScenario } from "../domains/bridge/cardplay/index.js";
-import { BRIDGE_DOMAIN_ID, SKILL_TAKE_FINESSE } from "../domains/bridge/plugin/constants.js";
-import type { ActivityEvent } from "../platform/types/index.js";
+import { buildBridgeCoach, MockLLM } from "../domains/bridge/coaching/index";
+import { getScenario } from "../domains/bridge/cardplay/index";
+import { BRIDGE_DOMAIN_ID, SKILL_TAKE_FINESSE } from "../domains/bridge/plugin/constants";
+import type { ActivityEvent } from "../platform/types/index";
 
 let n = 0;
 function cardEvent(sessionId: string, scenarioId: string, card: string, seat: any): ActivityEvent<any> {

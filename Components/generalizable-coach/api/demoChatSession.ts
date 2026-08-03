@@ -15,21 +15,21 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import type { KnowledgeScope } from "../contracts/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../contracts/index.js";
-import { ChatOrchestrator } from "../platform/chat/index.js";
+import type { KnowledgeScope } from "../contracts/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../contracts/index";
+import { ChatOrchestrator } from "../platform/chat/index";
 import {
   BundledKnowledgeSource,
   PlatformKnowledgeSource,
   type KnowledgeSource,
-} from "../platform/knowledge-source/index.js";
-import { InProcessToolExecutor, toolRegistry } from "../platform/tools/index.js";
-import { InMemoryInteractionMemory } from "../platform/memory/index.js";
-import { InMemoryTraceStore } from "../platform/trace/index.js";
-import { resolvePolicy } from "../platform/config/index.js";
-import { defaultCapabilityScope } from "../platform/policy/index.js";
-import { envGroundedPhraser } from "../platform/llm/index.js";
-import { memoryLessonScope, COURSE_LEARNING_DOMAIN_ID } from "../domains/course_learning/index.js";
+} from "../platform/knowledge-source/index";
+import { InProcessToolExecutor, toolRegistry } from "../platform/tools/index";
+import { InMemoryInteractionMemory } from "../platform/memory/index";
+import { InMemoryTraceStore } from "../platform/trace/index";
+import { resolvePolicy } from "../platform/config/index";
+import { defaultCapabilityScope } from "../platform/policy/index";
+import { envGroundedPhraser } from "../platform/llm/index";
+import { memoryLessonScope, COURSE_LEARNING_DOMAIN_ID } from "../domains/course_learning/index";
 
 export interface ChatSessionParams {
   learnerId: string;

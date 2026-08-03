@@ -1,0 +1,25 @@
+{
+  // The consumable surface, held to the strictest consumer's flags.
+  //
+  // `@laic/coach/core` is imported as TypeScript SOURCE (a `link:` dependency
+  // plus `transpilePackages`), which means the CONSUMER's tsconfig compiles it —
+  // so a strictness flag we don't set here is a flag their build fails on. This
+  // config mirrors Applications/BridgePlatform/tsconfig.base.json.
+  //
+  // Scoped to platform/* + contracts/* rather than the whole repo: the service,
+  // the bridge domain and the tests are never compiled by a consumer, and
+  // holding them to this would be a cleanup with no consumer benefit.
+  //
+  // Run: npm run typecheck:core
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true
+  },
+  "include": ["core.ts", "contracts/**/*", "platform/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "platform/__fixtures__/**"
+  ]
+}

@@ -8,29 +8,29 @@
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
-import { LLMClient, type LLMLike } from "../../../platform/llm/index.js";
-import { createSecurity } from "./security.js";
+import { LLMClient, type LLMLike } from "../../../platform/llm/index";
+import { createSecurity } from "./security";
 import {
   buildBridgeCoach,
   type BridgeCoach,
-} from "../coaching/index.js";
+} from "../coaching/index";
 import "../coaching/register.js"; // register bridge with the platform registry
-import { listDomains } from "../../../platform/embed/registry.js";
-import { generatePostmortem } from "../../../platform/common-coach/index.js";
-import { LearnerStore } from "../../../platform/learner-model/index.js";
-import { SessionEngine } from "../../../platform/session/index.js";
-import { openCoachDatabase } from "../../../platform/storage/sqlite.js";
-import { DealGenerator } from "../DealGenerator.js";
-import { BridgeEvaluator } from "../evaluator/BridgeEvaluator.js";
-import { BRIDGE_DOMAIN_ID } from "../plugin/constants.js";
+import { listDomains } from "../../../platform/embed/registry";
+import { generatePostmortem } from "../../../platform/common-coach/index";
+import { LearnerStore } from "../../../platform/learner-model/index";
+import { SessionEngine } from "../../../platform/session/index";
+import { openCoachDatabase } from "../../../platform/storage/sqlite";
+import { DealGenerator } from "../DealGenerator";
+import { BridgeEvaluator } from "../evaluator/BridgeEvaluator";
+import { BRIDGE_DOMAIN_ID } from "../plugin/constants";
 import {
   CARD_PLAY_SCENARIOS,
   getScenario,
   toPublicScenario,
   CardPlayEvaluator,
-} from "../cardplay/index.js";
-import type { ActivityEvent } from "../../../platform/types/index.js";
-import type { BridgeBidAction, BridgeGameState } from "../plugin/events.js";
+} from "../cardplay/index";
+import type { ActivityEvent } from "../../../platform/types/index";
+import type { BridgeBidAction, BridgeGameState } from "../plugin/events";
 
 export interface CreateServerOptions {
   coach?: BridgeCoach;

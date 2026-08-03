@@ -5,7 +5,7 @@
  * sources it cited) OR a cleared tool call (action instead of words) OR a
  * decline (out of scope) OR silence. `sources` carries citations to the UI.
  */
-import type { KnowledgeChunk } from "../../contracts/index.js";
+import type { KnowledgeChunk } from "../../contracts/index";
 
 export type TextResponseType =
   | "nudge"

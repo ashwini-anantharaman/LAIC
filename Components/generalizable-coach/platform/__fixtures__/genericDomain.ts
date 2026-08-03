@@ -14,24 +14,24 @@
  * If any bridge concept ever leaks into Zone 1, a test built on this fixture
  * breaks — which is exactly the guardrail we want.
  */
-import { LearnerStore } from "../learner-model/index.js";
-import { KnowledgeRetriever } from "../knowledge/index.js";
+import { LearnerStore } from "../learner-model/index";
+import { KnowledgeRetriever } from "../knowledge/index";
 import {
   InterventionPolicyEngine,
   AdaptiveCoachRuntime,
-} from "../coach-runtime/index.js";
+} from "../coach-runtime/index";
 import {
   ResponseGenerator,
   type BuiltPrompt,
-} from "../llm/index.js";
-import type { LLMLike } from "../llm/index.js";
-import { SessionEngine } from "../session/index.js";
+} from "../llm/index";
+import type { LLMLike } from "../llm/index";
+import { SessionEngine } from "../session/index";
 import type {
   ActivityEvent,
   EvaluationResult,
   EvaluatorContract,
   KnowledgePackage,
-} from "../types/index.js";
+} from "../types/index";
 
 // --- Opaque, non-bridge taxonomy -------------------------------------------
 export const GENERIC_DOMAIN_ID = "traffic_signal";

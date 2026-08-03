@@ -6,8 +6,8 @@
  * be produced — the decision is downgraded to silent. Same guarantee as
  * tool-gating, applied to what the coach may do.
  */
-import type { CoachCapabilityScope } from "../../contracts/index.js";
-import type { InterventionDecision, ResponseType } from "./InterventionPolicyEngine.js";
+import type { CoachCapabilityScope } from "../../contracts/index";
+import type { InterventionDecision, ResponseType } from "./InterventionPolicyEngine";
 
 export type Capability = keyof Omit<CoachCapabilityScope, "schemaVersion" | "id" | "name">;
 

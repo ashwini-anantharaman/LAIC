@@ -6,8 +6,8 @@
  * out-of-scope action is unselectable by construction. Rule-based for now;
  * LLM function-calling layers on later.
  */
-import type { CoachTool } from "../tools/index.js";
-import type { Intent, ToolHint } from "./IntentRouter.js";
+import type { CoachTool } from "../tools/index";
+import type { Intent, ToolHint } from "./IntentRouter";
 
 export interface SelectionContext {
   /** concepts in scope for this lesson — used to fill the tool input */

@@ -10,9 +10,9 @@
  * storage/index.ts — the server imports it by explicit path.
  */
 import Database, { type Database as DB } from "better-sqlite3";
-import type { LearnerProfile } from "../learner-model/types.js";
-import type { Session } from "../session/SessionEngine.js";
-import type { LearnerRepo, SessionRepo } from "./ports.js";
+import type { LearnerProfile } from "../learner-model/types";
+import type { Session } from "../session/SessionEngine";
+import type { LearnerRepo, SessionRepo } from "./ports";
 
 export class SqliteLearnerRepo implements LearnerRepo {
   constructor(private readonly db: DB) {

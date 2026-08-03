@@ -10,7 +10,7 @@
  *   2. process.env.LLM_PROVIDER ("openai" | "anthropic")
  *   3. inferred: OpenAI if OPENAI_API_KEY is set, otherwise Anthropic
  */
-import type { BuiltPrompt } from "./PromptBuilder.js";
+import type { BuiltPrompt } from "./PromptBuilder";
 
 export type LLMProvider = "openai" | "anthropic";
 

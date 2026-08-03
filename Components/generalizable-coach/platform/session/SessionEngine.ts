@@ -8,8 +8,8 @@
 import type {
   ActivityEvent,
   AdaptiveCoachResponse,
-} from "../types/index.js";
-import type { SessionRepo } from "../storage/ports.js";
+} from "../types/index";
+import type { SessionRepo } from "../storage/ports";
 
 // Isomorphic UUID: Web Crypto is available in browsers (secure contexts) and
 // in Node 19+ as globalThis.crypto, so this runs unchanged in a Vite bundle or
@@ -23,7 +23,7 @@ function randomUUID(): string {
     return v.toString(16);
   });
 }
-import type { SessionLogger } from "../coach-runtime/AdaptiveCoachRuntime.js";
+import type { SessionLogger } from "../coach-runtime/AdaptiveCoachRuntime";
 
 export interface SessionEvent {
   eventId: string;

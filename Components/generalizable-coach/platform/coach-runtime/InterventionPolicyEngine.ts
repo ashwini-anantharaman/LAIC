@@ -10,8 +10,8 @@ import type {
   CoachingPolicy,
   CoachResponseType,
   HintLevel,
-} from "../types/index.js";
-import type { MistakeRecord } from "../learner-model/index.js";
+} from "../types/index";
+import type { MistakeRecord } from "../learner-model/index";
 
 export interface InterventionDecision {
   shouldRespond: boolean;

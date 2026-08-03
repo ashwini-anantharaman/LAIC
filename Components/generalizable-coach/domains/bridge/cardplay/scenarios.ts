@@ -6,8 +6,8 @@
  * teaching set, not an exhaustive engine — every scenario is one whose right
  * play follows from a clear rule (finesse, second-hand-low, hold-up, etc.).
  */
-import * as C from "../plugin/constants.js";
-import type { CardPlayScenario } from "./types.js";
+import * as C from "../plugin/constants";
+import type { CardPlayScenario } from "./types";
 
 /** Normalize a card token: uppercase, "10" → "T". e.g. "hq" → "HQ". */
 export function normalizeCard(card: string): string {

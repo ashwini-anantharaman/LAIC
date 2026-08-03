@@ -10,7 +10,7 @@
  * durable adapter (Postgres `activity_events`, per §16.3) implements the same
  * port for production without touching callers.
  */
-import type { ActivityEvent } from "../../contracts/index.js";
+import type { ActivityEvent } from "../../contracts/index";
 
 export interface EventLogFilter {
   sessionId?: string;

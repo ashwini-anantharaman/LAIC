@@ -15,8 +15,8 @@ import type {
   CommonCoachPackage,
   EvaluationResult,
   KnowledgeChunk,
-} from "../types/index.js";
-import type { InterventionDecision } from "../coach-runtime/InterventionPolicyEngine.js";
+} from "../types/index";
+import type { InterventionDecision } from "../coach-runtime/InterventionPolicyEngine";
 
 export interface PromptInput {
   commonCoachPackage: CommonCoachPackage;

@@ -3,10 +3,10 @@ export {
   type InterventionDecision,
   type DecideInput,
   type ResponseType,
-} from "./InterventionPolicyEngine.js";
+} from "./InterventionPolicyEngine";
 export {
   applyCapabilityScope,
   defaultCapabilityScope,
   isAllowed,
   type Capability,
-} from "./capability.js";
+} from "./capability";

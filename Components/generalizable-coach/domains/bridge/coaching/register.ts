@@ -5,10 +5,10 @@
  * openCoachSession(). index.ts imports it so any host that imports @laic/coach
  * gets the bridge domain registered automatically.
  */
-import { registerDomain } from "../../../platform/embed/registry.js";
-import { BRIDGE_DOMAIN_ID } from "../plugin/constants.js";
-import { buildBridgeCoach } from "./buildBridgeCoach.js";
-import { LocalDoubleDummyOracle } from "../cardplay/dds/LocalDoubleDummyOracle.js";
+import { registerDomain } from "../../../platform/embed/registry";
+import { BRIDGE_DOMAIN_ID } from "../plugin/constants";
+import { buildBridgeCoach } from "./buildBridgeCoach";
+import { LocalDoubleDummyOracle } from "../cardplay/dds/LocalDoubleDummyOracle";
 
 registerDomain({
   id: BRIDGE_DOMAIN_ID,

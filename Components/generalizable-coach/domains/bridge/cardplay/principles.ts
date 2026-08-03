@@ -12,11 +12,11 @@
  * situation is unambiguous — and severities are capped modestly, leaving the
  * oracle to assign major/critical when it is present.
  */
-import type { Seat } from "../plugin/events.js";
-import type { Severity } from "../../../platform/types/index.js";
-import { parseHand, type SuitLetter } from "../evaluator/hand.js";
-import * as C from "../plugin/constants.js";
-import type { LiveCardPlayState, TrickCard } from "./LiveCardPlayEvaluator.js";
+import type { Seat } from "../plugin/events";
+import type { Severity } from "../../../platform/types/index";
+import { parseHand, type SuitLetter } from "../evaluator/hand";
+import * as C from "../plugin/constants";
+import type { LiveCardPlayState, TrickCard } from "./LiveCardPlayEvaluator";
 
 const RANK_ORDER = "23456789TJQKA";
 
@@ -48,7 +48,9 @@ function holdingIn(state: LiveCardPlayState, seat: Seat, suit: string): number[]
 function winningIndex(trick: TrickCard[], trump: string, leadSuit: string): number {
   let best = 0;
   for (let i = 1; i < trick.length; i++) {
-    if (beats(trick[i].card, trick[best].card, trump, leadSuit)) best = i;
+    const here = trick[i]?.card;
+    const leader = trick[best]?.card;
+    if (here && leader && beats(here, leader, trump, leadSuit)) best = i;
   }
   return best;
 }
@@ -89,7 +91,9 @@ export function runPrinciples(
   const pos = state.trickSoFar.length; // 0=lead,1=2nd,2=3rd,3=4th
   if (pos === 0) return []; // opening/on-lead principles out of scope for v1
 
-  const leadSuit = state.leadSuit ?? suitOf(state.trickSoFar[0].card);
+  const firstPlay = state.trickSoFar[0];
+  if (!firstPlay) return [];
+  const leadSuit = state.leadSuit ?? suitOf(firstPlay.card);
   const learner = state.playFromSeat;
 
   // Principles below concern following the led suit; ruffs/discards are the
@@ -99,10 +103,11 @@ export function runPrinciples(
   const trump = state.trump;
   const winIdx = winningIndex(state.trickSoFar, trump, leadSuit);
   const winner = state.trickSoFar[winIdx];
+  if (!winner) return [];
   const winnerIsPartner = winner.seat === partnerOf(learner);
   const holding = holdingIn(state, learner, leadSuit); // high→low
   const playedVal = rankValue(played);
-  const lowest = holding.length ? holding[holding.length - 1] : playedVal;
+  const lowest = holding[holding.length - 1] ?? playedVal;
 
   const findings: PrincipleFinding[] = [];
 
@@ -138,9 +143,9 @@ export function runPrinciples(
     }
   } else if (pos === 2) {
     // Third hand high (partner led): contribute your highest when it can matter.
-    const leaderIsPartner = state.trickSoFar[0].seat === partnerOf(learner);
+    const leaderIsPartner = firstPlay.seat === partnerOf(learner);
     if (leaderIsPartner && holding.length > 0) {
-      const highest = holding[0];
+      const highest = holding[0]!;
       const highestCard = leadSuit + RANK_ORDER[highest];
       const highestBeatsCurrent = beats(highestCard, winner.card, trump, leadSuit);
       // Only flag when a higher card would actually have won/pushed the trick.
@@ -165,7 +170,7 @@ export function runPrinciples(
     }
   } else if (pos === 1) {
     // Second hand low: don't rise with an honor over a small card without cause.
-    const ledCard = state.trickSoFar[0].card;
+    const ledCard = firstPlay.card;
     const ledLow = !isHonor(ledCard);
     if (ledLow && holding.length >= 2) {
       const ok = !(isHonor(played) && playedVal > lowest);

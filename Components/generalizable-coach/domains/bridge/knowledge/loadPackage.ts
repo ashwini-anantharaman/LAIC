@@ -6,7 +6,7 @@
  *  - Card-play package (Watson's tactics for the play of the hand)
  *  - A combined package covering both, for a coach that spans bidding + play
  */
-import type { KnowledgePackage, KnowledgeChunk } from "../../../platform/types/index.js";
+import type { KnowledgePackage, KnowledgeChunk } from "../../../platform/types/index";
 
 import biddingManifest from "./beginner-1/manifest.json";
 import openingBids from "./beginner-1/opening-bids.json";
