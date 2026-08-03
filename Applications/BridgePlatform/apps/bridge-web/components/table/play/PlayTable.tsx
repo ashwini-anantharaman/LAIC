@@ -83,6 +83,49 @@ const DEFAULT_LOOK: ResolvedAppearance = {
 /** The centre frame's gold surround (design token, wide/stacked only). */
 const CENTRE_FRAME: CSSProperties = { border: "3px solid #c9992b", borderRadius: 10, padding: 10 };
 
+/**
+ * The design's centreFit: the centre band holds whatever the phase puts there
+ * (auction box, trick cross, the suit-column pad), and the CONTENT scales to
+ * the band rather than the band growing — the pad at full size is taller than
+ * the band and, unclamped, collides with the hands above and below it.
+ * offsetWidth/Height read the unscaled layout size, so the fit never feeds
+ * back into itself; the 0.005 dead-band stops resize-observer flutter.
+ */
+function CentreFit({ children }: Readonly<{ children: ReactNode }>) {
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const innerRef = useRef<HTMLDivElement | null>(null);
+  const [fit, setFit] = useState(1);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const band = boxRef.current;
+      const inner = innerRef.current;
+      if (!band || !inner) return;
+      const bw = band.clientWidth;
+      const bh = band.clientHeight;
+      const iw = inner.offsetWidth;
+      const ih = inner.offsetHeight;
+      if (!bw || !bh || !iw || !ih) return;
+      const k = Math.min(1, bw / iw, bh / ih);
+      setFit((prev) => (Math.abs(k - prev) > 0.005 ? k : prev));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (boxRef.current) ro.observe(boxRef.current);
+    if (innerRef.current) ro.observe(innerRef.current);
+    return () => ro.disconnect();
+  });
+  return (
+    <div ref={boxRef} style={{ flex: 1, minWidth: 0, minHeight: 0, alignSelf: "stretch", position: "relative", overflow: "hidden" }}>
+      <div
+        ref={innerRef}
+        style={{ position: "absolute", left: "50%", top: "50%", transform: `translate(-50%,-50%) scale(${fit})`, display: "flex", alignItems: "center", justifyContent: "center" }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export interface PlayTableSeat {
   /** Name on the plate, e.g. "you" or "House · Full SAYC". */
   name: string;
@@ -1004,15 +1047,18 @@ export function PlayTable({
           <div style={{ flex: 1, minHeight: 207, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 0" }}>
             {seatColumn("W")}
             {/* Columns pad takes the CENTRE during the auction (box hidden); the
-                gold frame, when on, surrounds whatever the centre holds. */}
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", ...frameStyle }}>
-              {inAuction && columnsPad
-                ? wideBidColumns
-                : inAuction && auctionDisplay === "box"
-                  ? auctionBox()
-                  : null}
-              {inPlay ? trickCross() : null}
-              {complete ? resultCard : null}
+                gold frame, when on, surrounds whatever the centre holds, and
+                CentreFit scales the content to the band it actually has. */}
+            <div style={{ flex: 1, minWidth: 0, alignSelf: "stretch", display: "flex", ...frameStyle }}>
+              <CentreFit>
+                {inAuction && columnsPad
+                  ? wideBidColumns
+                  : inAuction && auctionDisplay === "box"
+                    ? auctionBox()
+                    : null}
+                {inPlay ? trickCross() : null}
+                {complete ? resultCard : null}
+              </CentreFit>
             </div>
             {seatColumn("E")}
           </div>
