@@ -13,6 +13,7 @@
 // the design's "prop handler wins" rule.
 
 import { useRouter } from "next/navigation";
+import type { CSSProperties } from "react";
 
 export interface SettingsItem {
   label: string;
@@ -22,6 +23,12 @@ export interface SettingsItem {
   href?: string;
   /** Or a direct handler (e.g. "New board"). */
   on?: () => void;
+  /**
+   * Or a server action (per-user persistence, e.g. skin/layout toggles). The
+   * row becomes a <form action={…}> submit button that looks identical to an
+   * href/handler row; the server re-render keeps the client menu open.
+   */
+  action?: () => Promise<void>;
 }
 
 export function SettingsMenu({
@@ -36,6 +43,15 @@ export function SettingsMenu({
   onClose: () => void;
 }>) {
   const router = useRouter();
+  // One shared row style so an action row (a <form> submit) is pixel-identical
+  // to an href/handler row (a plain <button>).
+  const rowStyle: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, width: "100%", background: "#fff", border: 0, borderBottom: "1px solid #e2e2e2", padding: "9px 10px", fontSize: 16, color: "#000", textAlign: "left", cursor: "pointer" };
+  const rowInner = (item: SettingsItem) => (
+    <>
+      <span>{item.label}</span>
+      <span style={{ flex: "none", fontWeight: 700, color: accent }}>{item.value}</span>
+    </>
+  );
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 20 }}>
       <div
@@ -47,28 +63,38 @@ export function SettingsMenu({
         <div style={{ background: accent, color: "#fff", fontSize: 17, fontWeight: 700, padding: "6px 10px" }}>
           {title}
         </div>
-        {items.map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            onClick={
-              item.on ??
-              (item.href
-                ? () => {
-                    // Same-page toggles replace (no history spam, menu stays
-                    // open); leaving the page is a real navigation — push.
-                    const samePage = item.href!.split("?")[0] === window.location.pathname;
-                    if (samePage) router.replace(item.href!, { scroll: false });
-                    else router.push(item.href!);
-                  }
-                : undefined)
-            }
-            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, width: "100%", background: "#fff", border: 0, borderBottom: "1px solid #e2e2e2", padding: "9px 10px", fontSize: 16, color: "#000", textAlign: "left", cursor: "pointer" }}
-          >
-            <span>{item.label}</span>
-            <span style={{ flex: "none", fontWeight: 700, color: accent }}>{item.value}</span>
-          </button>
-        ))}
+        {items.map((item) =>
+          item.action ? (
+            // A server action persists the change; the resulting server
+            // re-render preserves the client menuOpen state, so the menu stays
+            // open exactly as an href row does.
+            <form key={item.label} action={item.action} style={{ margin: 0, display: "block" }}>
+              <button type="submit" style={rowStyle}>
+                {rowInner(item)}
+              </button>
+            </form>
+          ) : (
+            <button
+              key={item.label}
+              type="button"
+              onClick={
+                item.on ??
+                (item.href
+                  ? () => {
+                      // Same-page toggles replace (no history spam, menu stays
+                      // open); leaving the page is a real navigation — push.
+                      const samePage = item.href!.split("?")[0] === window.location.pathname;
+                      if (samePage) router.replace(item.href!, { scroll: false });
+                      else router.push(item.href!);
+                    }
+                  : undefined)
+              }
+              style={rowStyle}
+            >
+              {rowInner(item)}
+            </button>
+          ),
+        )}
       </div>
     </div>
   );

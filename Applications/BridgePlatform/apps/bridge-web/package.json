@@ -26,6 +26,7 @@
     "@bridge/profiles": "workspace:*",
     "@bridge/sayc-template": "workspace:*",
     "@bridge/sessions": "workspace:*",
+    "@bridge/table-config": "workspace:*",
     "@bridge/taxonomy": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts",
     "@supabase/ssr": "^0.12.0",

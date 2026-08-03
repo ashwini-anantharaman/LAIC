@@ -74,6 +74,9 @@ importers:
       '@bridge/sessions':
         specifier: workspace:*
         version: link:../../packages/bridge-sessions
+      '@bridge/table-config':
+        specifier: workspace:*
+        version: link:../../packages/bridge-table-config
       '@bridge/taxonomy':
         specifier: workspace:*
         version: link:../../packages/bridge-taxonomy
@@ -277,6 +280,9 @@ importers:
       '@bridge/sessions':
         specifier: workspace:*
         version: link:../bridge-sessions
+      '@bridge/table-config':
+        specifier: workspace:*
+        version: link:../bridge-table-config
       '@supabase/supabase-js':
         specifier: ^2.110.1
         version: 2.110.1
@@ -340,6 +346,18 @@ importers:
       '@bridge/kb':
         specifier: workspace:*
         version: link:../bridge-kb
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.13.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)
+
+  packages/bridge-table-config:
     devDependencies:
       '@types/node':
         specifier: ^24.10.1

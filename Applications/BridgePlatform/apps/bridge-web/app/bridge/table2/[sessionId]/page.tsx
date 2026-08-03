@@ -15,11 +15,14 @@ import { HandViewer } from "@/components/table/play/HandViewer";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
+import { nextSkin, resolveSkin, skinLabel } from "@bridge/table-config";
 import { canUse, requireFeature } from "@/lib/access";
+import { getAppearance } from "@/lib/appearance";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
+import { patchAppearanceAction } from "./actions";
 
 export default async function PlayTablePage({
   params,
@@ -39,6 +42,8 @@ export default async function PlayTablePage({
     canStepControls,
     canSettingsMenu,
     canHandsView,
+    canSkinSettings,
+    canSkinsPage,
   ] = await Promise.all([
     canUse(context, "table.seats_panel"),
     canUse(context, "table.ben_seat"),
@@ -47,7 +52,20 @@ export default async function PlayTablePage({
     canUse(context, "table.step_controls"),
     canUse(context, "table.settings_menu"),
     canUse(context, "table.hands_view"),
+    canUse(context, "table.skin_settings"),
+    canUse(context, "page.skins"),
   ]);
+  // The viewer's saved skin & layout — resolved once here and threaded to the
+  // table. Fails open to the built-in look inside getAppearance.
+  const appearance = await getAppearance(context.nexusUserId);
+  const resolvedAppearance = {
+    ...resolveSkin(appearance.skin, appearance.overrides),
+    handLayout: appearance.handLayout,
+    bidPad: appearance.bidPad,
+    centreFrame: appearance.centreFrame,
+    fanSpread: appearance.fanSpread,
+    fanRadius: appearance.fanRadius,
+  };
   const { sessionId } = await params;
   const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
   // Denied the hands-record view: the ?view=hands param is treated as absent.
@@ -151,6 +169,42 @@ export default async function PlayTablePage({
       value: confirmBids ? "On" : "Off",
       href: settingsHref({ confirm: confirmBids ? undefined : "1" }),
     },
+    // Appearance quick-toggles (skins design). Each persists per-user via a
+    // bound server action; the menu stays open across the re-render. Gated on
+    // table.skin_settings.
+    ...(canSkinSettings
+      ? [
+          {
+            label: "Skin",
+            value: skinLabel(appearance.skin),
+            action: patchAppearanceAction.bind(null, sessionId, { skin: nextSkin(appearance.skin) }),
+          },
+          {
+            label: "Hand layout",
+            value: appearance.handLayout === "fan" ? "Fan" : "Row",
+            action: patchAppearanceAction.bind(null, sessionId, {
+              handLayout: appearance.handLayout === "fan" ? "row" : "fan",
+            }),
+          },
+          {
+            label: "Bid pad",
+            value: appearance.bidPad === "columns" ? "Suit columns" : "Level grid",
+            action: patchAppearanceAction.bind(null, sessionId, {
+              bidPad: appearance.bidPad === "columns" ? "grid" : "columns",
+            }),
+          },
+          {
+            label: "Centre frame",
+            value: appearance.centreFrame ? "On" : "Off",
+            action: patchAppearanceAction.bind(null, sessionId, {
+              centreFrame: !appearance.centreFrame,
+            }),
+          },
+        ]
+      : []),
+    ...(canSkinsPage
+      ? [{ label: "Appearance", value: "→", href: "/bridge/skins" }]
+      : []),
     // The verification workbench (decisions rail, fix-at-the-table, deal
     // editor) lives behind the ☰ so nothing sits outside the canvas.
     ...(canWorkbenchLink
@@ -287,6 +341,7 @@ export default async function PlayTablePage({
             railExtra={seatsPanel}
             settings={canSettingsMenu ? settings : undefined}
             viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
+            appearance={resolvedAppearance}
           />
         )}
       </div>

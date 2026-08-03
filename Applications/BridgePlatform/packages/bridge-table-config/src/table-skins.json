@@ -1,0 +1,154 @@
+{
+  "order": ["bbo", "midnight", "parchment", "noir", "claret"],
+  "skins": {
+    "bbo": {
+      "label": "Green baize",
+      "note": "The BBO table: green felt, olive tray, cyan card backs.",
+      "felt": "radial-gradient(125% 115% at 33% 20%,#26805e 0%,#1c6b4f 45%,#14563f 100%)",
+      "feltFlat": "radial-gradient(140% 120% at 50% 50%,rgba(255,255,255,.05) 0%,rgba(0,0,0,.12) 100%),#1c6b4f",
+      "stageBg": "#000",
+      "barBg": "rgba(9,22,17,.90)",
+      "accent": "#384bb3",
+      "chip": "#acc5c5",
+      "trayBg": "#cccc9b",
+      "strainBg": "#f8f8f8",
+      "levelBorder": "#8a8a6a",
+      "auctionBg": "#acc5c5",
+      "cardBack": "#0d707c",
+      "radius": "5px",
+      "font": "Arial, Helvetica, sans-serif",
+      "barThickness": 44,
+      "cardW": 54
+    },
+    "midnight": {
+      "label": "Midnight",
+      "note": "Cool indigo felt and slate chrome — easy on the eyes at night.",
+      "felt": "radial-gradient(125% 115% at 33% 20%,#2f3f6b 0%,#212e4f 45%,#151d36 100%)",
+      "feltFlat": "radial-gradient(140% 120% at 50% 50%,rgba(255,255,255,.06) 0%,rgba(0,0,0,.14) 100%),#212e4f",
+      "stageBg": "#080b14",
+      "barBg": "rgba(12,18,33,.93)",
+      "accent": "#4b62d8",
+      "chip": "#9fb3d9",
+      "trayBg": "#3a4360",
+      "strainBg": "#f5f7fc",
+      "levelBorder": "#6d7899",
+      "auctionBg": "#b9c6de",
+      "cardBack": "#27407a",
+      "radius": "8px",
+      "font": "\"Helvetica Neue\", Helvetica, Arial, sans-serif",
+      "barThickness": 44,
+      "cardW": 54
+    },
+    "parchment": {
+      "label": "Parchment",
+      "note": "A paper hand-record: warm light table, serif type, brown chrome.",
+      "felt": "linear-gradient(160deg,#f4e9d2 0%,#e9dabb 55%,#dcc9a4 100%)",
+      "feltFlat": "radial-gradient(140% 120% at 50% 50%,rgba(255,255,255,.35) 0%,rgba(120,90,50,.14) 100%),#e9dabb",
+      "stageBg": "#cabb9c",
+      "barBg": "rgba(58,43,26,.93)",
+      "accent": "#8a5a2b",
+      "chip": "#efe4cc",
+      "trayBg": "#cdb994",
+      "strainBg": "#fffdf6",
+      "levelBorder": "#a58d63",
+      "auctionBg": "#f1e7d1",
+      "cardBack": "#8a5a2b",
+      "radius": "3px",
+      "font": "Georgia, \"Times New Roman\", serif",
+      "barThickness": 42,
+      "cardW": 54
+    },
+    "noir": {
+      "label": "Noir",
+      "note": "Near-black, minimal chrome, hard corners — a broadcast table.",
+      "felt": "linear-gradient(180deg,#1e1e1e 0%,#131313 100%)",
+      "feltFlat": "radial-gradient(140% 120% at 50% 50%,rgba(255,255,255,.05) 0%,rgba(0,0,0,.18) 100%),#181818",
+      "stageBg": "#000",
+      "barBg": "rgba(0,0,0,.94)",
+      "accent": "#2f6fd0",
+      "chip": "#d8d8d8",
+      "trayBg": "#2b2b2b",
+      "strainBg": "#fafafa",
+      "levelBorder": "#5a5a5a",
+      "auctionBg": "#d2d2d2",
+      "cardBack": "#3a3a3a",
+      "radius": "2px",
+      "font": "\"Arial Narrow\", Arial, Helvetica, sans-serif",
+      "barThickness": 40,
+      "cardW": 54
+    },
+    "claret": {
+      "label": "Claret",
+      "note": "Club room: burgundy cloth, gold tray, warm serif type.",
+      "felt": "radial-gradient(125% 115% at 33% 20%,#7d2136 0%,#631427 45%,#480e1c 100%)",
+      "feltFlat": "radial-gradient(140% 120% at 50% 50%,rgba(255,255,255,.06) 0%,rgba(0,0,0,.16) 100%),#631427",
+      "stageBg": "#1a0a0d",
+      "barBg": "rgba(34,10,17,.93)",
+      "accent": "#a8863c",
+      "chip": "#e3cfa4",
+      "trayBg": "#b4a06a",
+      "strainBg": "#fdfaf2",
+      "levelBorder": "#8d7642",
+      "auctionBg": "#e6d7b3",
+      "cardBack": "#7a2338",
+      "radius": "6px",
+      "font": "Georgia, \"Times New Roman\", serif",
+      "barThickness": 44,
+      "cardW": 54
+    }
+  },
+  "strainTint": {
+    "N": { "bg": "#cfe4f7", "ink": "#12508f", "edge": "#8fbde8" },
+    "S": { "bg": "#c6cfd9", "ink": "#1b2a3a", "edge": "#9aa7b5" },
+    "H": { "bg": "#f7cccc", "ink": "#c02020", "edge": "#e39a9a" },
+    "D": { "bg": "#f9dcae", "ink": "#c9761a", "edge": "#e0b477" },
+    "C": { "bg": "#e0e6ea", "ink": "#2c3b47", "edge": "#b6c1c8" }
+  },
+  "overrideOptions": {
+    "feltColor": ["#1c6b4f", "#14563f", "#0d707c", "#1d5c8f"],
+    "accent": ["#384bb3", "#1f2f80", "#0d707c"],
+    "bidBoxColor": ["#cccc9b", "#c2c8a8", "#b9b98c"],
+    "auctionColor": ["#acc5c5", "#c3d6d6", "#9bb5b5"],
+    "cardBackColor": ["#0d707c", "#12525e", "#8f1d1d"]
+  },
+  "fan": {
+    "spread": { "min": 30, "max": 140, "step": 2, "default": 78 },
+    "radius": { "min": 120, "max": 900, "default": 0 }
+  },
+  "defaults": {
+    "skin": "bbo",
+    "handLayout": "row",
+    "bidPad": "grid",
+    "centreFrame": false,
+    "fanSpread": 78,
+    "fanRadius": 0,
+    "overrides": {}
+  },
+  "presets": {
+    "classic-club": {
+      "label": "Classic club",
+      "note": "Fanned hand, suit-column bidding, gold centre frame.",
+      "appearance": { "skin": "bbo", "handLayout": "fan", "bidPad": "columns", "centreFrame": true }
+    },
+    "green-baize": {
+      "label": "Green baize",
+      "appearance": { "skin": "bbo", "handLayout": "row", "bidPad": "grid", "centreFrame": false }
+    },
+    "midnight": {
+      "label": "Midnight",
+      "appearance": { "skin": "midnight", "handLayout": "row", "bidPad": "grid", "centreFrame": false }
+    },
+    "parchment": {
+      "label": "Parchment",
+      "appearance": { "skin": "parchment", "handLayout": "row", "bidPad": "grid", "centreFrame": false }
+    },
+    "noir": {
+      "label": "Noir",
+      "appearance": { "skin": "noir", "handLayout": "row", "bidPad": "grid", "centreFrame": false }
+    },
+    "claret": {
+      "label": "Claret",
+      "appearance": { "skin": "claret", "handLayout": "row", "bidPad": "grid", "centreFrame": false }
+    }
+  }
+}

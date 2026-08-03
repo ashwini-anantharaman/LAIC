@@ -7,7 +7,7 @@
 
 import type { BridgeRole } from "@bridge/nexus-client";
 
-export type AccessKind = "page" | "feature";
+export type AccessKind = "page" | "feature" | "control";
 
 export interface AccessFeature {
   key: string;
@@ -128,6 +128,14 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     description: "The legacy verification table; hidden, the workbench page is gone.",
     defaultRoles: ADMIN,
   },
+  {
+    key: "page.skins",
+    label: "Skins & appearance page",
+    group: "Pages",
+    kind: "page",
+    description: "The table skins & appearance configurator; hidden, the appearance page is unreachable.",
+    defaultRoles: ALL,
+  },
 
   // Table: the controls and rails around a live table.
   {
@@ -232,6 +240,14 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     group: "Table",
     kind: "feature",
     description: "The hand-record view at the table; hidden, the record view is gone.",
+    defaultRoles: ALL,
+  },
+  {
+    key: "table.skin_settings",
+    label: "Appearance settings (☰)",
+    group: "Table",
+    kind: "control",
+    description: "The skin & appearance rows in the table settings menu; hidden, appearance is fixed to the default.",
     defaultRoles: ALL,
   },
 

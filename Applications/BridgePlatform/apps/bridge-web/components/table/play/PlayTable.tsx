@@ -23,6 +23,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
+import { resolveSkin, type SkinTokens, type TableAppearance } from "@bridge/table-config";
+import { BidColumns } from "./BidColumns";
 import { EdgeToolbar, type ToolbarItem } from "./EdgeToolbar";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
 
@@ -34,10 +36,6 @@ const GOLD = "#fecd07";
 const GREY = "#d3d3d3";
 const DEALER_TINT = "#f2e2b8";
 const DEALER_RING = "#b8901f";
-const FELT = "radial-gradient(125% 115% at 33% 20%,#26805e 0%,#1c6b4f 45%,#14563f 100%)";
-const RAIL_BLUE = "#384bb3";
-const PANEL = "#acc5c5";
-const CARD_BACK = "#0d707c";
 const SEAT_BADGE = "#12525e";
 
 /** Wide stage; the mobile stack is 720 wide with a MEASURED height. */
@@ -62,6 +60,28 @@ const callColor = (c: string) => (isBid(c) && isRed(c[1] ?? "") ? RED : "#000");
 const sideOf = (s: Seat) => (s === "N" || s === "S" ? "NS" : "EW");
 
 // ---------------------------------------------------------------------------
+
+/**
+ * The fully-resolved look the table dresses itself with: a skin's tokens (five
+ * colour overrides already applied by resolveSkin) plus the five layout knobs.
+ * When the `appearance` prop is omitted the table falls back to DEFAULT_LOOK —
+ * the bbo skin with row hands / grid pad / no frame — whose tokens are, by
+ * construction, byte-identical to the pre-skin hard-coded constants above.
+ */
+export type ResolvedAppearance = SkinTokens &
+  Pick<TableAppearance, "handLayout" | "bidPad" | "centreFrame" | "fanSpread" | "fanRadius">;
+
+const DEFAULT_LOOK: ResolvedAppearance = {
+  ...resolveSkin("bbo"),
+  handLayout: "row",
+  bidPad: "grid",
+  centreFrame: false,
+  fanSpread: 78,
+  fanRadius: 0,
+};
+
+/** The centre frame's gold surround (design token, wide/stacked only). */
+const CENTRE_FRAME: CSSProperties = { border: "3px solid #c9992b", borderRadius: 10, padding: 10 };
 
 export interface PlayTableSeat {
   /** Name on the plate, e.g. "you" or "House · Full SAYC". */
@@ -129,9 +149,15 @@ export interface PlayTableProps {
    * current value and navigates to apply — the caller owns the params. When
    * present (and onMenu isn't), the ☰ opens the overlay itself.
    */
-  settings?: readonly { label: string; value: string; href: string }[];
+  settings?: readonly SettingsItem[];
   /** Rail chip above Claim (the SideRail design's view toggle), e.g. "Hands". */
   viewHref?: { label: string; href: string };
+  /**
+   * The resolved skin + layout the table dresses itself with. Omit for the
+   * built-in look (bbo, row hands, grid pad, no frame) — byte-identical to the
+   * pre-skin table.
+   */
+  appearance?: ResolvedAppearance;
 }
 
 export function PlayTable({
@@ -158,7 +184,18 @@ export function PlayTable({
   railExtra,
   settings,
   viewHref,
+  appearance,
 }: Readonly<PlayTableProps>) {
+  // One skin resolve per render dresses every tier. `tok` carries the colour
+  // tokens; the five layout knobs steer fan / columns / frame below.
+  const tok = appearance ?? DEFAULT_LOOK;
+  const fanLayout = tok.handLayout === "fan";
+  const columnsPad = tok.bidPad === "columns";
+  const framed = tok.centreFrame;
+  const frameStyle: CSSProperties = framed ? CENTRE_FRAME : {};
+  // Skin corner radius drives the bid-pad button/box corners (bbo → 5, so the
+  // default look is byte-identical). Everything else keeps its authored radius.
+  const skinRadius = Number.parseInt(tok.radius, 10) || 5;
   // --- per-instance sizing. The prototype watched `window`; this watches the
   // element, which is what makes a second instance possible at all.
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -232,7 +269,7 @@ export function PlayTable({
   const dealerCol = ORDER.indexOf(state.dealer);
 
   // seatModel's plate rule: humans GOLD, the acting seat pale, others grey;
-  // the PANEL brightens for the acting seat and the dummy.
+  // the suit panel brightens for the acting seat and the dummy.
   const plateBgFor = (seat: Seat) =>
     seats[seat].human ? GOLD : !complete && seat === state.turn ? "#e8e8c8" : GREY;
   const panelBgFor = (seat: Seat) =>
@@ -245,13 +282,25 @@ export function PlayTable({
     if (confirmBids) setPending(call);
     else onCall?.(call);
   };
+  // Shared by both bid pads (BidBox tray and BidColumns): resolve the staged
+  // call, or drop it.
+  const confirmPending = () => {
+    if (pending == null) return;
+    const p = pending;
+    setPending(null);
+    onCall?.(p);
+  };
+  const cancelPending = () => {
+    setPending(null);
+    setArmed(null);
+  };
 
   // ---- pieces -------------------------------------------------------------
   /** Face-down cards — as many as the seat still HOLDS, not always 13. */
   const backs = (seat: Seat, m: { w: number; h: number } = { w: 14, h: 71 }) => (
     <div style={{ display: "flex", border: "2px solid rgba(255,255,255,.92)", borderRadius: 3, overflow: "hidden", boxShadow: "0 2px 4px rgba(0,0,0,.35)" }}>
       {Array.from({ length: Math.max(1, state.hands[seat].length) }, (_, i) => (
-        <span key={i} style={{ display: "block", width: m.w, height: m.h, background: CARD_BACK, borderLeft: i ? "1.5px solid rgba(255,255,255,.92)" : "none" }} />
+        <span key={i} style={{ display: "block", width: m.w, height: m.h, background: tok.cardBack, borderLeft: i ? "1.5px solid rgba(255,255,255,.92)" : "none" }} />
       ))}
     </div>
   );
@@ -388,14 +437,88 @@ export function PlayTable({
     </div>
   );
 
-  const seatRow = (seat: Seat) => (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-      {callsRow(seat)}
-      {visible[seat] ? cardRow(seat) : backs(seat)}
-      {/* The plate spans the fan, so it NARROWS as cards are played. */}
-      {plate(seat, visible[seat] ? 50 + Math.max(0, state.hands[seat].length - 1) * 49 : 197)}
-    </div>
-  );
+  /**
+   * A face-up hand fanned about ONE pivot `radius` px below the top-centre
+   * (SeatHand fan geometry). The reserved box is the union of every rotated
+   * card's corners, so the fan never clips; the SAME spread refills as cards
+   * are played, closing the fan up like a held hand. Wide-tier N/S only.
+   */
+  const fanHand = (seat: Seat) => {
+    const hand = [...state.hands[seat]].sort(
+      (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
+    );
+    const n = hand.length;
+    const cw = tok.cardW;
+    const ch = Math.round(cw * 1.42);
+    const spread = tok.fanSpread;
+    const radius = tok.fanRadius > 0 ? tok.fanRadius : Math.round(ch * 4.2);
+    const angleAt = (i: number) => (n <= 1 ? 0 : -spread / 2 + i * (spread / (n - 1)));
+    // Reserved box = union of every rotated card's four corners.
+    let xMin = 0, xMax = 0, yMin = 0, yMax = 0;
+    for (let i = 0; i < n; i++) {
+      const a = (angleAt(i) * Math.PI) / 180;
+      const cos = Math.cos(a);
+      const sin = Math.sin(a);
+      for (const dx of [-cw / 2, cw / 2]) {
+        for (const dy of [-radius, -radius + ch]) {
+          const x = dx * cos - dy * sin;
+          const y = dx * sin + dy * cos;
+          if (x < xMin) xMin = x;
+          if (x > xMax) xMax = x;
+          if (y < yMin) yMin = y;
+          if (y > yMax) yMax = y;
+        }
+      }
+    }
+    const boxW = Math.ceil(Math.max(-xMin, xMax) * 2) + 4;
+    const boxH = Math.ceil(yMax - yMin) + 4;
+    const fanTop = Math.ceil(-yMin - radius) + 2;
+    const rankF = Math.round(cw * 0.46);
+    const glyphF = Math.round(cw * 0.4);
+    return (
+      <div style={{ position: "relative", width: boxW, height: boxH }}>
+        {hand.map((card, i) => {
+          const on = myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
+          return (
+            <button
+              key={`${card.suit}${card.rank}`}
+              type="button"
+              onClick={on ? () => onPlay?.(seat, card) : undefined}
+              aria-label={`Play ${rankText(card.rank)}${GLYPH[card.suit]}`}
+              style={{
+                position: "absolute", left: "50%", top: fanTop, width: cw, height: ch, padding: 0,
+                background: "#fff", border: "1px solid #6b6b6b", borderRadius: 4,
+                boxShadow: "-2px 1px 4px rgba(0,0,0,.28)",
+                transform: `translateX(-50%) rotate(${angleAt(i)}deg)${on ? " translateY(-14px)" : ""}`,
+                transformOrigin: `50% ${radius}px`,
+                transition: "transform 120ms ease",
+                cursor: on ? "pointer" : "default",
+              }}
+            >
+              <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
+                <span style={{ fontSize: rankF, fontWeight: 700 }}>{rankText(card.rank)}</span>
+                <span style={{ fontSize: glyphF }}>{GLYPH[card.suit]}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const seatRow = (seat: Seat) => {
+    // Fan dresses face-up wide-tier hands only; face-down seats keep backs.
+    const useFan = fanLayout && visible[seat];
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+        {callsRow(seat)}
+        {visible[seat] ? (useFan ? fanHand(seat) : cardRow(seat)) : backs(seat)}
+        {/* Row mode: the plate spans the fan, so it NARROWS as cards are
+            played. Fan mode: a fixed 197px plate (the fan owns its own box). */}
+        {plate(seat, useFan ? 197 : visible[seat] ? 50 + Math.max(0, state.hands[seat].length - 1) * 49 : 197)}
+      </div>
+    );
+  };
 
   // ---- centre -------------------------------------------------------------
   const auctionRows: (AuctionCall | null)[][] = [];
@@ -409,7 +532,7 @@ export function PlayTable({
 
   /** Vulnerable seats sit on red; the dealer's column is tinted throughout. */
   const auctionBox = (m: { width: number; height: number | "auto" | "100%"; headFont: number; cellFont: number; radius?: number; cellMinH?: number } = { width: 356, height: 207, headFont: 25, cellFont: 21, radius: 4 }) => (
-    <div style={{ width: m.width, height: m.height, maxHeight: m.height === "auto" ? 340 : undefined, background: PANEL, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div style={{ width: m.width, height: m.height, maxHeight: m.height === "auto" ? 340 : undefined, background: tok.auctionBg, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ flex: "none", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 2, padding: 2, textAlign: "center" }}>
         {ORDER.map((s) => {
           const vul = vulFor(s);
@@ -508,7 +631,7 @@ export function PlayTable({
 
   // ---- bid box ------------------------------------------------------------
   const bidBtnStyle = (w: number, h: number, bg: string, border: string, live: boolean, font = 21): CSSProperties => ({
-    flex: "none", width: w, height: h, border: `1px solid ${border}`, borderRadius: 5,
+    flex: "none", width: w, height: h, border: `1px solid ${border}`, borderRadius: skinRadius,
     background: bg, color: "#fff", fontSize: font, fontWeight: 700, lineHeight: 1,
     cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42,
   });
@@ -517,21 +640,14 @@ export function PlayTable({
     <>
       <button
         type="button"
-        onClick={() => {
-          const p = pending!;
-          setPending(null);
-          onCall?.(p);
-        }}
+        onClick={confirmPending}
         style={bidBtnStyle(240, h, "#116710", "#0c4b0b", true, font)}
       >
         Confirm {callText(pending ?? "")}
       </button>
       <button
         type="button"
-        onClick={() => {
-          setPending(null);
-          setArmed(null);
-        }}
+        onClick={cancelPending}
         style={bidBtnStyle(120, h, "#8a3030", "#5e1c1c", true, font)}
       >
         Cancel
@@ -549,7 +665,7 @@ export function PlayTable({
           type="button"
           onClick={live ? () => setArmed(armed === l ? null : l) : undefined}
           aria-label={`Level ${l}`}
-          style={{ flex: "none", width: w, height: h, border: "1px solid #8a8a6a", borderRadius: 5, background: armed === l ? GOLD : "#f8f8f8", color: "#000", fontSize: font, lineHeight: 1, cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42 }}
+          style={{ flex: "none", width: w, height: h, border: "1px solid #8a8a6a", borderRadius: skinRadius, background: armed === l ? GOLD : "#f8f8f8", color: "#000", fontSize: font, lineHeight: 1, cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42 }}
         >
           {l}
         </button>
@@ -564,7 +680,7 @@ export function PlayTable({
             type="button"
             onClick={() => stageCall(`${armed}${st}`)}
             aria-label={`${armed}${st === "N" ? "NT" : st}`}
-            style={{ flex: "none", width: st === "N" ? wNT : wSuit, height: h, border: "1px solid #8a8a6a", borderRadius: 5, background: "#f8f8f8", color: isRed(st) ? RED : "#000", fontSize: font, lineHeight: 1, cursor: "pointer" }}
+            style={{ flex: "none", width: st === "N" ? wNT : wSuit, height: h, border: "1px solid #8a8a6a", borderRadius: skinRadius, background: "#f8f8f8", color: isRed(st) ? RED : "#000", fontSize: font, lineHeight: 1, cursor: "pointer" }}
           >
             {GLYPH[st]}
           </button>
@@ -581,7 +697,7 @@ export function PlayTable({
           type="button"
           onClick={() => stageCall(d)}
           aria-label={d === "X" ? "Double" : "Redouble"}
-          style={{ flex: "none", width: w, height: h, border: `1px solid ${d === "X" ? "#8f0000" : "#0a2170"}`, borderRadius: 5, background: d === "X" ? RED : "#1034a6", color: "#fff", fontSize: font, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
+          style={{ flex: "none", width: w, height: h, border: `1px solid ${d === "X" ? "#8f0000" : "#0a2170"}`, borderRadius: skinRadius, background: d === "X" ? RED : "#1034a6", color: "#fff", fontSize: font, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
         >
           {d}
         </button>
@@ -605,7 +721,7 @@ export function PlayTable({
   const armedStrains = armed ? STRAINS.filter((st) => legalSet.has(`${armed}${st}`)) : [];
 
   const bidBoxWide = (
-    <div style={{ width: 581, flex: "none", background: "#cccc9b", borderRadius: 4, padding: "9px 10px", boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 7, boxSizing: "border-box" }}>
+    <div style={{ width: 581, flex: "none", background: tok.trayBg, borderRadius: 4, padding: "9px 10px", boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 7, boxSizing: "border-box" }}>
       {pending ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, height: 81 }}>
           <span style={{ fontSize: 19, color: "#3a3a20" }}>Confirm your call:</span>
@@ -644,7 +760,7 @@ export function PlayTable({
         type="button"
         onClick={() => stageCall(`${armed}${st}`)}
         aria-label={`${armed}${st === "N" ? "NT" : st}`}
-        style={{ height: touchH, border: "1px solid #8a8a6a", borderRadius: 5, background: "#f8f8f8", color: isRed(st) ? RED : "#000", fontSize: 26, lineHeight: 1, cursor: "pointer" }}
+        style={{ height: touchH, border: "1px solid #8a8a6a", borderRadius: skinRadius, background: "#f8f8f8", color: isRed(st) ? RED : "#000", fontSize: 26, lineHeight: 1, cursor: "pointer" }}
       >
         {GLYPH[st]}
       </button>
@@ -652,7 +768,7 @@ export function PlayTable({
   });
 
   const bidBoxNarrow = (
-    <div style={{ width: "100%", flex: "none", background: "#cccc9b", padding: "8px 10px 10px", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
+    <div style={{ width: "100%", flex: "none", background: tok.trayBg, padding: "8px 10px 10px", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
       {pending ? (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "8px 0" }}>
           <span style={{ fontSize: 20, color: "#3a3a20" }}>Confirm your call</span>
@@ -667,7 +783,7 @@ export function PlayTable({
               type="button"
               onClick={boxLive ? () => stageCall("P") : undefined}
               aria-label="Pass"
-              style={{ gridColumn: "span 3", minWidth: 0, height: touchH, border: "1px solid #0c4b0b", borderRadius: 5, background: boxLive ? "#116710" : "#a7b8a2", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: boxLive ? "pointer" : "default", opacity: boxLive ? 1 : 0.42 }}
+              style={{ gridColumn: "span 3", minWidth: 0, height: touchH, border: "1px solid #0c4b0b", borderRadius: skinRadius, background: boxLive ? "#116710" : "#a7b8a2", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: boxLive ? "pointer" : "default", opacity: boxLive ? 1 : 0.42 }}
             >
               Pass
             </button>
@@ -680,7 +796,7 @@ export function PlayTable({
                   type="button"
                   onClick={() => stageCall(d)}
                   aria-label={d === "X" ? "Double" : "Redouble"}
-                  style={{ gridColumn: "span 2", minWidth: 0, height: touchH, border: `1px solid ${d === "X" ? "#8f0000" : "#0a2170"}`, borderRadius: 5, background: d === "X" ? RED : "#1034a6", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
+                  style={{ gridColumn: "span 2", minWidth: 0, height: touchH, border: `1px solid ${d === "X" ? "#8f0000" : "#0a2170"}`, borderRadius: skinRadius, background: d === "X" ? RED : "#1034a6", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
                 >
                   {d}
                 </button>
@@ -697,7 +813,7 @@ export function PlayTable({
                   type="button"
                   onClick={live ? () => setArmed(armed === l ? null : l) : undefined}
                   aria-label={`Level ${l}`}
-                  style={{ height: touchH, border: "1px solid #8a8a6a", borderRadius: 5, background: armed === l ? GOLD : "#f8f8f8", color: "#000", fontSize: 26, lineHeight: 1, cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42 }}
+                  style={{ height: touchH, border: "1px solid #8a8a6a", borderRadius: skinRadius, background: armed === l ? GOLD : "#f8f8f8", color: "#000", fontSize: 26, lineHeight: 1, cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42 }}
                 >
                   {l}
                 </button>
@@ -707,6 +823,27 @@ export function PlayTable({
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 5 }}>{strainSlots}</div>
         </div>
       )}
+    </div>
+  );
+
+  // ---- suit-column bid pad (BidColumns) -----------------------------------
+  // Same intent plumbing as the tray: a legal cell fires stageCall, and the
+  // staged call resolves through confirm/cancel. Wide tier drops it in the
+  // centre (auction box hidden, bottom tray collapsed); narrow/phone swap it
+  // in for the bidBoxNarrow band, scaled up with a touch floor.
+  const bidColumnsProps = {
+    legalCalls,
+    live: boxLive,
+    pending,
+    onStage: stageCall,
+    onConfirm: confirmPending,
+    onCancel: cancelPending,
+    radius: skinRadius,
+  };
+  const wideBidColumns = <BidColumns cell={46} {...bidColumnsProps} />;
+  const narrowBidColumns = (
+    <div style={{ width: "100%", flex: "none", background: tok.trayBg, padding: 10, display: "flex", justifyContent: "center", boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
+      <BidColumns cell={84} minCellH={touchH} {...bidColumnsProps} />
     </div>
   );
 
@@ -775,11 +912,11 @@ export function PlayTable({
   const mobileStack = (
     <div style={{ width: MOBILE_W, minHeight: stageH, transform: `scale(${scale})`, transformOrigin: "top center", display: "flex", flexDirection: "column", background: "#fff" }}>
       <div ref={stackRef} style={{ display: "flex", flexDirection: "column", background: "#fff" }}>
-        <EdgeToolbar side="top" items={infoItems} condensed thickness={52} scale={scale} minTouch={44} />
+        <EdgeToolbar side="top" items={infoItems} condensed thickness={52} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />
         {/* ONE felt wrapper behind dummy row, centre, tray and hand: painting
             the radial gradient per-band restarts it, and the greens under the
             top cards visibly failed to match the felt below. */}
-        <div style={{ flex: "none", display: "flex", flexDirection: "column", background: FELT }}>
+        <div style={{ flex: "none", display: "flex", flexDirection: "column", background: tok.felt }}>
           {dummyRow}
           <div style={{ flex: "none", height: MOBILE_FELT_H, display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: inAuction ? "flex-start" : "center", overflow: "hidden", padding: inAuction ? 10 : 0 }}>
             {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: 330, headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
@@ -796,7 +933,7 @@ export function PlayTable({
             {inPlay ? trickCross(1.6) : null}
             {complete ? resultCard : null}
           </div>
-          {inAuction ? bidBoxNarrow : null}
+          {inAuction ? (columnsPad ? narrowBidColumns : bidBoxNarrow) : null}
           <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: 0 }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
               {callsRow("S")}
@@ -806,7 +943,7 @@ export function PlayTable({
             </div>
           </div>
         </div>
-        <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} condensed thickness={52} scale={scale} minTouch={44} />
+        <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} condensed thickness={52} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />
       </div>
     </div>
   );
@@ -836,13 +973,13 @@ export function PlayTable({
   );
 
   const stackedStage = (
-    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#000" }}>
-      <EdgeToolbar side="top" items={infoItems} scale={scale} minTouch={44} />
-      <div style={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden", background: FELT }}>
+    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: tok.stageBg }}>
+      <EdgeToolbar side="top" items={infoItems} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />
+      <div style={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden", background: tok.felt }}>
         <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "12px 8px 0" }}>{stackedMain("N")}</div>
         <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 8 }}>
           {stackedSide("W")}
-          <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: "center", justifyContent: "center", ...frameStyle }}>
             {inAuction && auctionDisplay === "box" ? auctionBox({ width: 330, height: "100%", headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
             {inPlay ? trickPills : null}
             {complete ? resultCard : null}
@@ -851,23 +988,29 @@ export function PlayTable({
         </div>
         <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "0 8px 14px" }}>{stackedTouch("S")}</div>
       </div>
-      {inAuction ? bidBoxNarrow : null}
-      <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} scale={scale} minTouch={44} />
+      {inAuction ? (columnsPad ? narrowBidColumns : bidBoxNarrow) : null}
+      <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />
     </div>
   );
 
   // ---- wide stage: top info bar, felt, bottom actions bar (no side rail) ----
   const wideStage = (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#0b1512" }}>
-      <EdgeToolbar side="top" items={infoItems} scale={scale} />
-      <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", background: FELT }}>
+      <EdgeToolbar side="top" items={infoItems} scale={scale} bg={tok.barBg} accent={tok.accent} />
+      <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", background: tok.felt }}>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 8, padding: "14px 16px" }}>
           <div style={{ display: "flex", justifyContent: "center" }}>{seatRow("N")}</div>
 
           <div style={{ flex: 1, minHeight: 207, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 0" }}>
             {seatColumn("W")}
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {inAuction && auctionDisplay === "box" ? auctionBox() : null}
+            {/* Columns pad takes the CENTRE during the auction (box hidden); the
+                gold frame, when on, surrounds whatever the centre holds. */}
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", ...frameStyle }}>
+              {inAuction && columnsPad
+                ? wideBidColumns
+                : inAuction && auctionDisplay === "box"
+                  ? auctionBox()
+                  : null}
               {inPlay ? trickCross() : null}
               {complete ? resultCard : null}
             </div>
@@ -875,36 +1018,37 @@ export function PlayTable({
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-            <div style={{ height: inAuction ? 113 : 0, flex: "none", display: "flex", alignItems: "flex-start", justifyContent: "center" }}>
-              {inAuction ? bidBoxWide : null}
+            {/* Columns pad collapses the tray slot to zero — one pad on screen. */}
+            <div style={{ height: inAuction && !columnsPad ? 113 : 0, flex: "none", display: "flex", alignItems: "flex-start", justifyContent: "center" }}>
+              {inAuction && !columnsPad ? bidBoxWide : null}
             </div>
             {seatRow("S")}
           </div>
         </div>
       </div>
-      <EdgeToolbar side="bottom" items={actionItems(controlsExtra)} scale={scale} />
+      <EdgeToolbar side="bottom" items={actionItems(controlsExtra)} scale={scale} bg={tok.barBg} accent={tok.accent} />
     </div>
   );
 
   // ---- stage --------------------------------------------------------------
   if (phone) {
     return (
-      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", justifyContent: "center", fontFamily: tok.font, WebkitFontSmoothing: "antialiased" }}>
         {mobileStack}
         {seatsPopup}
         {menuOpen && !onMenu && (
-          <SettingsMenu accent={RAIL_BLUE} items={menuItems} onClose={() => setMenuOpen(false)} />
+          <SettingsMenu accent={tok.accent} items={menuItems} onClose={() => setMenuOpen(false)} />
         )}
       </div>
     );
   }
   return (
-    <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+    <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: tok.stageBg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tok.font, WebkitFontSmoothing: "antialiased" }}>
       <div style={{ position: "relative", flex: "none", transformOrigin: "center center", width: stageW, height: stageH, transform: `scale(${scale})` }}>
         {stacked ? stackedStage : wideStage}
         {seatsPopup}
         {menuOpen && !onMenu && (
-          <SettingsMenu accent={RAIL_BLUE} items={menuItems} onClose={() => setMenuOpen(false)} />
+          <SettingsMenu accent={tok.accent} items={menuItems} onClose={() => setMenuOpen(false)} />
         )}
       </div>
     </div>

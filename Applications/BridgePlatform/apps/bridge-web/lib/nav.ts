@@ -19,6 +19,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/bridge/table", label: "Play", featureKey: "page.play" },
   { href: "/bridge/players", label: "Players", featureKey: "page.players" },
   { href: "/bridge/library", label: "Library", featureKey: "page.library" },
+  { href: "/bridge/skins", label: "Skins", featureKey: "page.skins" },
   { href: "/bridge/guide", label: "Guide", featureKey: "page.guide" },
   { href: "/bridge/kb", label: "Knowledge bases", featureKey: "page.kb" },
   { href: "/bridge/teams", label: "Teams & roles", featureKey: "page.teams" },

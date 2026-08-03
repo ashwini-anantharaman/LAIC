@@ -30,9 +30,10 @@ export type ToolbarItem =
   /** Platform escape hatch: a pre-built node (pause/step/undo controls). */
   | { kind: "node"; node: ReactNode };
 
+const DEFAULT_ACCENT = "#384bb3";
 const TONES = {
   plain: { bg: "rgba(255,255,255,.10)", border: "rgba(255,255,255,.18)", color: "#eef4f1" },
-  accent: { bg: "#384bb3", border: "#5468d6", color: "#fff" },
+  accent: { bg: DEFAULT_ACCENT, border: "#5468d6", color: "#fff" },
   warn: { bg: "#8a3030", border: "#a94848", color: "#fff" },
   go: { bg: "#116710", border: "#1a8a18", color: "#fff" },
 } as const;
@@ -45,6 +46,7 @@ export function EdgeToolbar({
   scale = 1,
   minTouch = 30,
   bg = "rgba(9,22,17,.90)",
+  accent = DEFAULT_ACCENT,
 }: Readonly<{
   side: "top" | "bottom";
   items: readonly ToolbarItem[];
@@ -54,7 +56,16 @@ export function EdgeToolbar({
   scale?: number;
   minTouch?: number;
   bg?: string;
+  /** Accent for the ☰ / Claim buttons — a skin's `accent` token dresses it.
+      The default keeps the design's paired border; a skin accent tints both. */
+  accent?: string;
 }>) {
+  // The stock accent keeps its lighter paired border (byte-identical to the
+  // pre-skin toolbar); any skin accent tints the fill and the border together.
+  const tones =
+    accent === DEFAULT_ACCENT
+      ? TONES
+      : { ...TONES, accent: { bg: accent, border: accent, color: "#fff" } };
   const t = thickness;
   const ctrlH = Math.min(
     Math.round(t * 2.2),
@@ -85,7 +96,7 @@ export function EdgeToolbar({
           <span style={{ fontSize: ctrlFont, fontWeight: 700, lineHeight: 1, color: it.color ?? "#eef4f1" }}>{it.value}</span>
         </div>
       );
-    const tone = TONES[it.tone ?? "plain"];
+    const tone = tones[it.tone ?? "plain"];
     const dim = it.disabled === true;
     const style: CSSProperties = {
       flex: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,

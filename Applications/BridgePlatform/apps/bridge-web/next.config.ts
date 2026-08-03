@@ -30,6 +30,7 @@ const nextConfig: NextConfig = {
     "@bridge/sayc-template",
     "@bridge/profiles",
     "@bridge/sessions",
+    "@bridge/table-config",
     "@laic/learner-contracts",
   ],
   experimental: {

@@ -3,7 +3,7 @@
 // sets, and each set unlocks a fixed list of live feature keys ("surfaces").
 // This layer is pure metadata on top of the enforcement registry — it compiles
 // DOWN to the flat feature->roles rules the app already enforces, so the
-// designer never invents its own gating. The 13 sets partition all 34
+// designer never invents its own gating. The 13 sets partition all 36
 // ACCESS_FEATURES keys: every key lives in exactly one set.
 
 import { ALL_BRIDGE_ROLES } from "./index";
@@ -43,13 +43,15 @@ export const CAPABILITY_SETS: readonly CapabilitySet[] = [
   {
     id: "playing",
     name: "Playing",
-    description: "Sitting at a live table and its universal controls — undo, stepping, settings, the hand record.",
+    description: "Sitting at a live table and its universal controls — undo, stepping, settings, the hand record, appearance, and the skins page.",
     featureKeys: [
       "page.play",
+      "page.skins",
       "table.undo",
       "table.step_controls",
       "table.settings_menu",
       "table.hands_view",
+      "table.skin_settings",
     ],
   },
   {
