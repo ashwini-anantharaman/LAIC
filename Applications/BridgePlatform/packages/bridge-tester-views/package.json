@@ -1,0 +1,28 @@
+{
+  "name": "@bridge/tester-views",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Saved views for the component tester: the { id, name, config, createdBy, createdAt } read model and its persistence seam (InMemory/JSON-file here; Postgres in @bridge/pg-stores). Mirrors @bridge/table-config.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./fileStore": {
+      "types": "./src/fileStore.ts",
+      "default": "./src/fileStore.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
