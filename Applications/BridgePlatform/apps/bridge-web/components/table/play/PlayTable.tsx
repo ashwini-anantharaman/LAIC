@@ -1395,10 +1395,13 @@ export function PlayTable({
         </div>
         {inAuction ? bidBoxNarrow : null}
         {phoneHand}
-        {/* Below the player, as specified — collapsed, so it costs one line of
-            the screen until there's something worth opening. PHONE ONLY (owner
-            decision 2026-08-01): the desktop platform's table doesn't carry a
-            coaching strip; coaching is the app's surface. */}
+        {/* Below the player, as specified. It sizes itself to what it has to
+            say — a header when there's nothing, the note in full when there is —
+            and since the felt above is this column's only flexible row, every
+            pixel it takes comes out of empty green rather than off the hand or
+            the bidding box. PHONE ONLY (owner decision 2026-08-01): the desktop
+            platform's table doesn't carry a coaching strip; coaching is the
+            app's surface. */}
         {coach ? <CoachStrip data={coach} compact /> : null}
         {menuOpen && !onMenu && (
           // The phone has no rail, so the ☰ carries everything the rail does:
