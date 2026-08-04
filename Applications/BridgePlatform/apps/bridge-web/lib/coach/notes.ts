@@ -41,12 +41,29 @@ import type { TableActivityEvent } from "./tableEvents";
 /**
  * The rung at which the coach names the play it would have made.
  *
- * 2, not 3, because of how the levels are actually reached. Unprompted,
- * `decideIntervention` sets the level from SEVERITY alone: 1 for a near miss, 2
- * for a real divergence. Anything above 2 needs an explicit request, and "Show
- * me" supplies it — so one tap from a nudge reaches the answer.
+ * 1 — which means NOTHING IS WITHHELD unprompted. Every correction names the
+ * play, cites the rule and carries its follow-up questions straight away, and
+ * the "Show me" escalation therefore never appears.
+ *
+ * That is a deliberate retreat, not a simplification. Withhold-then-reveal is
+ * real pedagogy, but *whether* a learner should be made to think before being
+ * told — and for how long — is a teaching decision, and nobody has made it. The
+ * thresholds that drove the withholding were picked by feel. Guessing at a
+ * ladder is worse than not having one: on cards in particular, a differing card
+ * rates as a near miss, so almost every card correction was offering a button
+ * instead of an answer.
+ *
+ * The mechanism is intact and costs nothing while this is 1: `revealFor` still
+ * escalates through the engine's own `hintRequested` path, and `toStripNote`
+ * still offers the affordance for any note that IS withholding. Raise this to 2
+ * (or 3, alongside a policy whose ceiling reaches it) and the ladder comes back
+ * without touching anything else — which is what the socratic mode will want.
+ *
+ * Note for whoever raises it: a socratic profile produces `question` responses
+ * at low levels, and at rung 1 those would reveal. The rung and the profile have
+ * to move together.
  */
-export const REVEAL_LEVEL = 2;
+export const REVEAL_LEVEL = 1;
 
 /** The AREA a call belongs to, from the engine's own auction role. */
 const AREA_BY_ROLE: Record<string, string> = {

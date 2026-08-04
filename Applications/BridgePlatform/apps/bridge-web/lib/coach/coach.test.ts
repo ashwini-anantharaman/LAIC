@@ -32,6 +32,7 @@ import { assessMove, BUDGET, searchDepthFor } from "./assessors/panel";
 import { reconcile } from "@laic/coach/core";
 import { livePlayState } from "./cardVerdicts";
 import { advisePlay } from "./advise";
+import { REVEAL_LEVEL } from "./notes";
 import { splitDetail, toStripNote } from "./render";
 import type { TeachingStore } from "./kbTeaching";
 import { partnershipSystem, type CallVerdict } from "./verdicts";
@@ -421,10 +422,12 @@ describe("the coach reads the table", () => {
   });
 
   it("offers \"Show me\" only where something is still withheld", () => {
+    // The RULE, expressed against the rung rather than a literal level, so it
+    // keeps meaning when the rung moves.
     const withheld = toStripNote(
       {
         schemaVersion: "1.0.0", noteId: "n1", learnerId: "L", anchorId: "a1",
-        kind: "nudge", hintLevel: 1, headline: "Worth a second look.",
+        kind: "nudge", hintLevel: REVEAL_LEVEL - 1, headline: "Worth a second look.",
         createdAt: "2026-08-03T00:00:00.000Z",
       },
       { revealHref: (id) => `/t?reveal=${id}` },
@@ -435,7 +438,7 @@ describe("the coach reads the table", () => {
     const answered = toStripNote(
       {
         schemaVersion: "1.0.0", noteId: "n2", learnerId: "L", anchorId: "a2",
-        kind: "hint", hintLevel: 2, headline: "Your system would call 1NT.",
+        kind: "hint", hintLevel: REVEAL_LEVEL, headline: "Your system would call 1NT.",
         createdAt: "2026-08-03T00:00:00.000Z",
       },
       { revealHref: (id) => `/t?reveal=${id}` },
@@ -454,6 +457,29 @@ describe("the coach reads the table", () => {
     expect(affirmed.action).toBeUndefined();
     // And no note carries a bare seat chip any more.
     expect(withheld.about).toBeUndefined();
+  });
+
+  it("withholds nothing under the current policy, so no board offers \"Show me\"", () => {
+    // The rung is deliberately at 1: withhold-then-reveal is real pedagogy, but
+    // the thresholds driving it were guesses, and a guessed ladder is worse than
+    // none. This pins the CURRENT policy — if the socratic mode raises the rung,
+    // this test is the one that should fail and be updated on purpose.
+    expect(REVEAL_LEVEL).toBe(1);
+
+    const levels = [1, 2, 3];
+    for (const hintLevel of levels) {
+      for (const kind of ["hint", "nudge", "question"] as const) {
+        const note = toStripNote(
+          {
+            schemaVersion: "1.0.0", noteId: `n-${kind}-${hintLevel}`, learnerId: "L",
+            anchorId: "a", kind, hintLevel, headline: "x",
+            createdAt: "2026-08-03T00:00:00.000Z",
+          },
+          { revealHref: (id) => `/t?reveal=${id}` },
+        );
+        expect(note.action, `${kind} at level ${hintLevel}`).toBeUndefined();
+      }
+    }
   });
 
   
