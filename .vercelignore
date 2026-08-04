@@ -9,6 +9,11 @@ Applications/*
 Components/*
 !Components/laic-learner-contracts
 !Components/laic-learning-platform
+# The coaching engine. bridge-web consumes it as SOURCE over a `link:`
+# dependency, so the directory has to reach the build or pnpm links an absent
+# path, reports the package as 0.0.0, and every subpath export fails to resolve.
+# Adding a `link:` dependency on a new Components/ directory means adding it here.
+!Components/generalizable-coach
 # TheNexusPlatform: app_shell (App Studio), platform_logic (console), backend-ts (API)
 !TheNexusPlatform
 Applications/BridgePlatform/apps/bridge-web/.data
