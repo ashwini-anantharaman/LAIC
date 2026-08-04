@@ -20,14 +20,21 @@
 // corrections, and a surface that speaks 40 times a board is not read by trick
 // four.
 //
-// WIRING STATUS. "What should I play?" is real: it calls /api/bridge/play-hint,
-// which runs the assessor panel — your knowledge base first, a named guideline
-// next, a double-dummy search last — and reports which of the three answered.
-// "Help me think" and the auction's "What should I bid?" are surfaces only; each
-// says what it will do rather than pretending to do it. Nothing here fabricates
-// an answer, which matters more than either button being finished.
+// WIRING STATUS. "What should I play?" calls /api/bridge/play-hint, which runs
+// the assessor panel and reports which of its authorities answered.
+//
+// "Help me think" is LAYER 1 ONLY, and needs no network at all: the whole
+// scaffold is computed server-side in lib/coach/think.ts and handed down as a
+// prop, so tapping it is instant and cannot fail. Layer 2 adds what each
+// candidate DOES, what a bid PROMISES, and the framing question — one model call,
+// structurally blind to the solver. Until then the panel says plainly that the
+// reasoning half is missing, rather than letting the facts pass for the whole
+// feature.
+//
+// The auction's "What should I bid?" is still a surface only, and says so.
 
 import { useState } from "react";
+import type { ThinkAid } from "@/lib/coach/think";
 
 // The table's own palette, as CoachPanel uses it.
 const HEAD = "#f2f2ea";
@@ -59,7 +66,8 @@ type Answer =
   | { kind: "loading" }
   | { kind: "done"; hint: Hint }
   | { kind: "empty"; reason: string }
-  | { kind: "pending"; what: string; will: string };
+  | { kind: "pending"; what: string; will: string }
+  | { kind: "think"; aid: ThinkAid };
 
 export type TablePhase = "auction" | "play" | "other";
 
@@ -67,11 +75,18 @@ export function CoachPrompts({
   sessionId,
   phase,
   active,
+  aid,
 }: Readonly<{
   sessionId: string;
   phase: TablePhase;
   /** Is this actually the learner's decision right now? */
   active: boolean;
+  /**
+   * The reasoning scaffold, computed on the server. Present means "Help me think"
+   * answers with no request at all; absent means there is nothing to scaffold —
+   * a watcher, or between boards.
+   */
+  aid?: ThinkAid | null;
 }>) {
   const [answer, setAnswer] = useState<Answer | null>(null);
 
@@ -108,13 +123,12 @@ export function CoachPrompts({
   }
 
   function think() {
+    // No fetch: the scaffold arrived with the page.
+    if (aid) return setAnswer({ kind: "think", aid });
     setAnswer({
       kind: "pending",
-      what: "Not wired yet.",
-      will:
-        phase === "auction"
-          ? "It will lay out what partner's bidding has told you, what your hand is worth, and what the question in front of you actually is — without naming a call."
-          : "It will lay out what's known — the cards played, what the bidding implied, what your hand can still do — and pose the question the trick turns on, without naming a card.",
+      what: "Nothing to work through here.",
+      will: "Take a seat and wait for a decision that is yours, and this will lay the position out.",
     });
   }
 
@@ -184,6 +198,8 @@ function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
       </p>
     );
   }
+
+  if (answer.kind === "think") return <ThinkBlock aid={answer.aid} />;
 
   if (answer.kind === "pending") {
     return (
@@ -259,6 +275,84 @@ function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
           )}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * The scaffold: what can be worked out, then the choices.
+ *
+ * Candidates render in the order given and are styled identically. That is
+ * load-bearing rather than lazy — any visual or positional difference between
+ * them reads as a recommendation, and a learner picks up that tell faster than
+ * they pick up the position. The point of this button is that it does not answer.
+ */
+function ThinkBlock({ aid }: Readonly<{ aid: ThinkAid }>) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+      {aid.known.length > 0 && (
+        <div>
+          <Head>What you can work out</Head>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 5 }}>
+            {aid.known.map((line) => (
+              <li key={line} style={{ position: "relative", paddingLeft: 13, fontSize: 13.5, lineHeight: 1.45, color: INK }}>
+                <span aria-hidden style={{ position: "absolute", left: 0, top: 0, color: TEAL, fontWeight: 700 }}>
+                  &middot;
+                </span>
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {aid.candidates.length > 0 && (
+        <div>
+          <Head>Your realistic choices</Head>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+            {aid.candidates.map((c) => (
+              <li key={c.label} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13.5, lineHeight: 1.45 }}>
+                <span style={{ flex: "none", minWidth: 42, fontWeight: 700, color: INK }}>{c.label}</span>
+                {c.does ? (
+                  <span style={{ color: MUTED }}>{c.does}</span>
+                ) : c.note ? (
+                  <span style={{ color: FAINT }}>{c.note}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {aid.noChoice && (
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: MUTED }}>{aid.noChoice}</p>
+      )}
+
+      {aid.question && (
+        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, fontWeight: 700, color: INK }}>{aid.question}</p>
+      )}
+
+      {/* Say what is missing. Letting the facts pass for the finished feature
+          would let a learner conclude this is all the coach has to offer. */}
+      {aid.degraded && (
+        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: FAINT }}>
+          These are the facts. What each choice would <i>do</i>, and what the bidding promises, is
+          the part still being built.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Head({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <div
+      style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
+        textTransform: "uppercase", color: FAINT, marginBottom: 6,
+      }}
+    >
+      {children}
     </div>
   );
 }

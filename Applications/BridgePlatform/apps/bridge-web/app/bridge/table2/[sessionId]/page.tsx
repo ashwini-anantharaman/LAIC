@@ -20,6 +20,7 @@ import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { BenRead } from "@/components/table/play/BenRead";
 import { CoachPrompts, type TablePhase } from "@/components/table/play/CoachPrompts";
 import { lookingAt } from "@/lib/coach/looking";
+import { thinkAid } from "@/lib/coach/think";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { bidMeaningReader } from "@/lib/bidMeanings";
 import { coachNotesForBoard } from "@/lib/coach";
@@ -274,6 +275,10 @@ export default async function PlayTablePage({
   // learner's own thirteen cards plus a reading of the auction as played. No KB,
   // no model, no hand the learner cannot see. `null` for a watcher.
   const looking = lookingAt(state, mySeat ?? null);
+  // "Help me think", layer 1 — the same deal as the facts card: arithmetic over
+  // cards this learner may see, computed here so the button answers with no
+  // request and has nothing that can fail.
+  const aid = thinkAid(state, mySeat ?? null);
 
   const coachPanel: CoachPanelData | undefined =
     coachParam === "off"
@@ -298,6 +303,7 @@ export default async function PlayTablePage({
               }
               // Includes dummy's card while declaring: declarer chooses both hands.
               active={(state.phase === "play" || state.phase === "auction") && myTurn}
+              aid={aid}
             />
           ) : undefined,
           notes:

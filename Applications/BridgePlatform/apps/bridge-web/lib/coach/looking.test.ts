@@ -8,7 +8,8 @@ import type { GameState } from "@bridge/engine";
 import type { Card, Seat, Suit } from "@bridge/events";
 import { describe, expect, it } from "vitest";
 
-import { callLabel, lookingAt } from "./looking";
+import { lookingAt } from "./looking";
+import { callLabel } from "./position";
 
 const RANKS: Record<string, number> = {
   "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,

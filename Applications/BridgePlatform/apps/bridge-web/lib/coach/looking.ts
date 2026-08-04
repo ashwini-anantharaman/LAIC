@@ -17,7 +17,12 @@
 
 import { hcp } from "@bridge/engine";
 import type { GameState } from "@bridge/engine";
-import type { Call, Card, Seat, Suit } from "@bridge/events";
+import type { Call, Seat } from "@bridge/events";
+
+import {
+  callLabel, cardLabel, dealtHand, GLYPH, partnerOf, Relative,
+  relative, SEAT_NAME, shapeOf,
+} from "./position";
 
 /** What the sheet's context card draws. */
 export interface LookingAt {
@@ -25,67 +30,6 @@ export interface LookingAt {
   looking: string;
   /** Compact chips. `label` may be empty for a value that reads alone. */
   facts: { label: string; value: string }[];
-}
-
-const GLYPH: Record<string, string> = { C: "♣", D: "♦", H: "♥", S: "♠" };
-const SUITS: Suit[] = ["S", "H", "D", "C"];
-const RANK: Record<number, string> = {
-  14: "A", 13: "K", 12: "Q", 11: "J", 10: "10",
-  9: "9", 8: "8", 7: "7", 6: "6", 5: "5", 4: "4", 3: "3", 2: "2",
-};
-/** Clockwise: N → E → S → W → N. */
-const ORDER: Seat[] = ["N", "E", "S", "W"];
-const SEAT_NAME: Record<Seat, string> = { N: "North", E: "East", S: "South", W: "West" };
-
-const step = (seat: Seat, n: number) => ORDER[(ORDER.indexOf(seat) + n) % 4]!;
-const partnerOf = (seat: Seat) => step(seat, 2);
-
-/** "1D" → "1♦", "1N" → "1NT", "P" → "Pass". */
-export function callLabel(call: Call): string {
-  if (call === "P") return "Pass";
-  if (call === "X") return "Double";
-  if (call === "XX") return "Redouble";
-  const level = call.slice(0, 1);
-  const strain = call.slice(1);
-  return `${level}${strain === "N" ? "NT" : (GLYPH[strain] ?? strain)}`;
-}
-
-const cardLabel = (c: Card) => `${RANK[c.rank] ?? c.rank}${GLYPH[c.suit] ?? c.suit}`;
-
-/**
- * How to refer to a seat when talking TO `me`.
- *
- * Partner earns the word "partner" because that relationship is what the auction
- * is about. Opponents get their seat letter's name rather than "your left-hand
- * opponent" — the table already labels the seats, and the long form costs six
- * words to say something the learner can read off the screen.
- */
-function relative(seat: Seat, me: Seat): string {
-  if (seat === me) return "you";
-  if (seat === partnerOf(me)) return "partner";
-  return SEAT_NAME[seat];
-}
-
-/** "4=3=2=4" in ♠♥♦♣ order, plus the shape's plain-English class. */
-function shapeOf(hand: Card[]): { pattern: string; kind: string } {
-  const lengths = SUITS.map((s) => hand.filter((c) => c.suit === s).length);
-  const sorted = [...lengths].sort((a, b) => b - a);
-  const [a = 0, b = 0, , d = 0] = sorted;
-  // Balanced in the ordinary sense: no void, no singleton, at most one doubleton.
-  const doubletons = sorted.filter((n) => n === 2).length;
-  const kind =
-    d >= 2 && doubletons <= 1 && a <= 5
-      ? "balanced"
-      : a >= 7
-        ? "very long suit"
-        : a >= 6
-          ? "six-card suit"
-          : b >= 5
-            ? "two long suits"
-            : d === 0
-              ? "a void"
-              : "unbalanced";
-  return { pattern: lengths.join("="), kind };
 }
 
 /**
@@ -102,13 +46,7 @@ export function lookingAt(
 ): LookingAt | null {
   if (!seat) return null;
 
-  // The ORIGINAL thirteen. `state.hands` loses cards as they are played, so
-  // mid-play it would report the strength of what is left rather than what was
-  // dealt — a different number, and not the one anyone means by "my hand".
-  const dealt = [
-    ...state.hands[seat],
-    ...state.tricks.flatMap((t) => t.plays.filter((p) => p.seat === seat).map((p) => p.card)),
-  ];
+  const dealt = dealtHand(state, seat);
   const points = hcp(dealt);
   const { pattern, kind } = shapeOf(dealt);
   const system = opts.systemLabel?.trim();
@@ -197,9 +135,7 @@ function auctionSentence(auction: readonly { seat: Seat; call: Call }[], me: Sea
 
   // "opened" only if it really was the first thing said at this table.
   const verb = spoken.length === 1 ? "opened" : "bid";
-  const who = relative(last.seat, me);
-  const subject = who === "you" ? "You" : who.charAt(0).toUpperCase() + who.slice(1);
-  let sentence = `${subject} ${verb} ${callLabel(last.call)}`;
+  let sentence = `${Relative(last.seat, me)} ${verb} ${callLabel(last.call)}`;
 
   // Passes SINCE that call — the part the sentence can add cheaply, because it
   // tells you whether the auction is about to end.
