@@ -155,5 +155,22 @@ test.describe("skins & appearance configurator", () => {
       await page.getByRole("button", { name: /Skin/ }).first().click();
       await expect(page.getByRole("button", { name: /Skin/ }).first()).toContainText(label);
     }
+
+    // The fan works on the PHONE tier too (Mobile Table.dc.html): flip Hand
+    // layout to Fan, shrink to a phone-tier viewport, and the South hand's
+    // cards carry the fan's rotate transform.
+    const handRow = page.getByRole("button", { name: /Hand layout/ });
+    await handRow.click();
+    await expect(page.getByRole("button", { name: /Hand layout/ })).toContainText("Fan");
+    await page.setViewportSize({ width: 900, height: 1250 });
+    await page.mouse.click(750, 900); // backdrop — close the menu
+    await expect(page.getByText("Table settings")).toHaveCount(0);
+    const fanCard = page.locator('button[aria-label^="Play"][style*="rotate("]').first();
+    await expect(fanCard).toBeVisible();
+
+    // Leave the reviewer on Row so this spec is state-neutral end to end.
+    await page.getByRole("button", { name: "Table menu" }).click();
+    await page.getByRole("button", { name: /Hand layout/ }).click();
+    await expect(page.getByRole("button", { name: /Hand layout/ })).toContainText("Row");
   });
 });

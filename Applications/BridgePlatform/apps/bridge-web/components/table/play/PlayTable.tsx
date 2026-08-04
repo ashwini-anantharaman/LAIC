@@ -484,15 +484,16 @@ export function PlayTable({
    * A face-up hand fanned about ONE pivot `radius` px below the top-centre
    * (SeatHand fan geometry). The reserved box is the union of every rotated
    * card's corners, so the fan never clips; the SAME spread refills as cards
-   * are played, closing the fan up like a held hand. Wide-tier N/S only.
+   * are played, closing the fan up like a held hand. Dresses wide-tier N/S
+   * and, at M_CARD metrics, the phone dummy row and your hand.
    */
-  const fanHand = (seat: Seat) => {
+  const fanHand = (seat: Seat, m?: { w: number; h: number; rank: number; glyph: number; inset: number }) => {
     const hand = [...state.hands[seat]].sort(
       (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
     );
     const n = hand.length;
-    const cw = tok.cardW;
-    const ch = Math.round(cw * 1.42);
+    const cw = m?.w ?? tok.cardW;
+    const ch = m?.h ?? Math.round(cw * 1.42);
     const spread = tok.fanSpread;
     const radius = tok.fanRadius > 0 ? tok.fanRadius : Math.round(ch * 4.2);
     const angleAt = (i: number) => (n <= 1 ? 0 : -spread / 2 + i * (spread / (n - 1)));
@@ -516,8 +517,8 @@ export function PlayTable({
     const boxW = Math.ceil(Math.max(-xMin, xMax) * 2) + 4;
     const boxH = Math.ceil(yMax - yMin) + 4;
     const fanTop = Math.ceil(-yMin - radius) + 2;
-    const rankF = Math.round(cw * 0.46);
-    const glyphF = Math.round(cw * 0.4);
+    const rankF = m?.rank ?? Math.round(cw * 0.46);
+    const glyphF = m?.glyph ?? Math.round(cw * 0.4);
     return (
       <div style={{ position: "relative", width: boxW, height: boxH }}>
         {hand.map((card, i) => {
@@ -538,7 +539,7 @@ export function PlayTable({
                 cursor: on ? "pointer" : "default",
               }}
             >
-              <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
+              <span style={{ position: "absolute", left: m?.inset ?? 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
                 <span style={{ fontSize: rankF, fontWeight: 700 }}>{rankText(card.rank)}</span>
                 <span style={{ fontSize: glyphF }}>{GLYPH[card.suit]}</span>
               </span>
@@ -942,12 +943,16 @@ export function PlayTable({
       </div>
     ) : null;
 
-  /** Dummy's hand as a plate-less card row across the top (phone play view).
-      Transparent — it sits on the shared felt wrapper. */
+  /** Dummy's hand as a plate-less card row (or fan) across the top (phone play
+      view). Transparent — it sits on the shared felt wrapper. */
   const dummyRow =
     inPlay && dummy && dummy !== "S" ? (
       <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: 0 }}>
-        {visible[dummy] ? cardRow(dummy, M_CARD) : backs(dummy, { w: M_CARD.backW, h: M_CARD.h })}
+        {visible[dummy]
+          ? fanLayout
+            ? fanHand(dummy, M_CARD)
+            : cardRow(dummy, M_CARD)
+          : backs(dummy, { w: M_CARD.backW, h: M_CARD.h })}
       </div>
     ) : null;
 
@@ -956,32 +961,51 @@ export function PlayTable({
     <div style={{ width: MOBILE_W, minHeight: stageH, transform: `scale(${scale})`, transformOrigin: "top center", display: "flex", flexDirection: "column", background: "#fff" }}>
       <div ref={stackRef} style={{ display: "flex", flexDirection: "column", background: "#fff" }}>
         <EdgeToolbar side="top" items={infoItems} condensed thickness={52} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />
-        {/* ONE felt wrapper behind dummy row, centre, tray and hand: painting
-            the radial gradient per-band restarts it, and the greens under the
-            top cards visibly failed to match the felt below. */}
-        <div style={{ flex: "none", display: "flex", flexDirection: "column", background: tok.felt }}>
+        {/* ONE felt wrapper behind dummy row, centre, pad and hand. The FLAT
+            skin variant, per Mobile Table.dc.html: the felt spans stacked
+            bands, and a radial gradient reads as a different green in each. */}
+        <div style={{ flex: "none", display: "flex", flexDirection: "column", background: tok.feltFlat }}>
           {dummyRow}
-          <div style={{ flex: "none", height: MOBILE_FELT_H, display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: inAuction ? "flex-start" : "center", overflow: "hidden", padding: inAuction ? 10 : 0 }}>
-            {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: 330, headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
-            {inAuction && auctionDisplay === "seats" ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
-                {(["N", "E", "S", "W"] as Seat[]).map((s) => (
-                  <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 30, height: 30, background: SEAT_BADGE, color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
-                    {callsRow(s, 22) ?? <span style={{ fontSize: 18, color: "rgba(255,255,255,.6)" }}>—</span>}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {inPlay ? trickCross(1.6) : null}
-            {complete ? resultCard : null}
+          <div style={{ flex: "none", height: MOBILE_FELT_H, overflow: "hidden", padding: inAuction ? 10 : 0 }}>
+            {/* The gold centre frame, when on, wraps the felt centre band. */}
+            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: inAuction ? "flex-start" : "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
+              {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: 330, headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
+              {inAuction && auctionDisplay === "seats" ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
+                  {(["N", "E", "S", "W"] as Seat[]).map((s) => (
+                    <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ width: 30, height: 30, background: SEAT_BADGE, color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
+                      {callsRow(s, 22) ?? <span style={{ fontSize: 18, color: "rgba(255,255,255,.6)" }}>—</span>}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {inPlay ? trickCross(1.6) : null}
+              {complete ? resultCard : null}
+            </div>
           </div>
-          {inAuction ? (columnsPad ? narrowBidColumns : bidBoxNarrow) : null}
+          {/* Columns pad sits directly on the felt at the design's compact 40px
+              cell (Mobile Table.dc.html padCell); the tray only shows in grid
+              mode — one pad on screen at a time. */}
+          {inAuction ? (
+            columnsPad ? (
+              <div style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+                <BidColumns cell={40} {...bidColumnsProps} />
+              </div>
+            ) : (
+              bidBoxNarrow
+            )
+          ) : null}
           <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: 0 }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
               {callsRow("S")}
-              {visible.S ? cardRow("S", M_CARD) : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
-              {/* Default plate metrics — the design keeps SeatPlate stock here. */}
+              {visible.S
+                ? fanLayout
+                  ? fanHand("S", M_CARD)
+                  : cardRow("S", M_CARD)
+                : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
+              {/* Default plate metrics — the design keeps SeatPlate stock here,
+                  and the plate narrows with the hand in fan mode too. */}
               {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390)}
             </div>
           </div>
