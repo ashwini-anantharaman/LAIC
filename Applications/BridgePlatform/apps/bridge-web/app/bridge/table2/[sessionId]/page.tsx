@@ -12,7 +12,7 @@ import { canAccessAdminArea } from "@bridge/nexus-client";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { undoAction } from "@/app/bridge/table/actions";
-import type { CoachNoteSource, CoachPanelData } from "@/components/table/play/CoachStrip";
+import type { CoachNoteSource, CoachPanelData } from "@/components/table/play/CoachPanel";
 import { HandViewer } from "@/components/table/play/HandViewer";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
@@ -278,9 +278,10 @@ export default async function PlayTablePage({
             : "Take a seat to be coached — right now you're watching.",
           // Trace is for reading the detail, so don't make them tap twice.
           defaultOpen: coachParam === "trace",
-          // The coach's whole surface: two buttons. Present whenever the learner
-          // has a seat — they disable themselves and say why when it is not this
-          // player's decision, which reads better than a panel that empties out.
+          // The coach's whole surface: two buttons, inside the sheet the felt's
+          // icon opens. Present whenever the learner has a seat — they disable
+          // themselves and say why when it is not this player's decision, which
+          // reads better than a panel that empties out.
           prompts: mySeat ? (
             <CoachPrompts
               sessionId={sessionId}

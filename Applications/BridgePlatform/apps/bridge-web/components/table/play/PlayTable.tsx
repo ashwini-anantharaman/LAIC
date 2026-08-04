@@ -29,7 +29,7 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
-import { CoachStrip, type CoachPanelData } from "./CoachStrip";
+import { CoachFab, CoachSheet, type CoachPanelData, type CoachPresence } from "./CoachPanel";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
 
 // ---------------------------------------------------------------------------
@@ -210,7 +210,8 @@ export interface PlayTableProps {
    */
   auctionMeanings?: readonly ({ label: string; shows?: string } | undefined)[];
   /**
-   * The coaching strip below the player's hand (CoachStrip). Presentational:
+   * The coach's icon on the felt, and the sheet it opens (CoachPanel).
+   * Presentational:
    * the host owns the notes, so the coaching runtime — and BEN's explanation of
    * the move it just made — plugs in here without touching this layout. Omit
    * and the table draws no strip at all.
@@ -287,6 +288,11 @@ export function PlayTable({
   // its own menu — always on a phone, where the ☰ is the only way to reach
   // what the wide rail shows, and on the wide table when there are rows.
   const [menuOpen, setMenuOpen] = useState(false);
+  // The coach is an overlay now, so its open/presence state lives here for the
+  // same reason menuOpen does: the icon sits inside the felt and the sheet
+  // covers the whole stack, so neither can own the state alone.
+  const [coachOpen, setCoachOpen] = useState(Boolean(coach?.defaultOpen));
+  const [coachPresence, setCoachPresence] = useState<CoachPresence>("request");
   const menuItems: SettingsItem[] = [...(settings ?? [])];
 
   /**
@@ -1351,7 +1357,7 @@ export function PlayTable({
       <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#000", display: "flex", flexDirection: "column", fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
         {phoneTopBar}
         {inPlay ? phoneNorthRow : null}
-        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: FELT }}>
+        <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", background: FELT }}>
           {/* Seats-mode auction already lists all four seats on the felt. */}
           {!complete && !sides && !(inAuction && auctionDisplay === "seats") ? phoneSeatStrip : null}
           <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, overflow: "hidden", padding: 4 }}>
@@ -1392,6 +1398,21 @@ export function PlayTable({
             {complete ? resultCard : null}
             {sides ? phoneSideHand("E") : null}
           </div>
+          {/* The coach's icon. Inside the felt so it can never sit over the
+              hand, the bidding box or the tray — which is the whole reason it
+              replaced a row that competed with them. */}
+          {coach && !coachOpen ? (
+            <CoachFab
+              presence={coachPresence}
+              onOpen={() => setCoachOpen(true)}
+              busy={coach.busy}
+              toReview={
+                coachPresence === "guided"
+                  ? (coach.notes ?? []).filter((n) => (n.tone ?? "correction") === "correction").length
+                  : 0
+              }
+            />
+          ) : null}
         </div>
         {inAuction ? bidBoxNarrow : null}
         {phoneHand}
@@ -1402,7 +1423,14 @@ export function PlayTable({
             the bidding box. PHONE ONLY (owner decision 2026-08-01): the desktop
             platform's table doesn't carry a coaching strip; coaching is the
             app's surface. */}
-        {coach ? <CoachStrip data={coach} compact /> : null}
+        {coach && coachOpen ? (
+          <CoachSheet
+            data={coach}
+            presence={coachPresence}
+            onPresence={setCoachPresence}
+            onClose={() => setCoachOpen(false)}
+          />
+        ) : null}
         {menuOpen && !onMenu && (
           // The phone has no rail, so the ☰ carries everything the rail does:
           // the scoring toggle, the hands view, Claim, and — passed through as

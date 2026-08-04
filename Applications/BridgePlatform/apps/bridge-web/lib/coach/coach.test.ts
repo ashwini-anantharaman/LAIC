@@ -26,7 +26,7 @@ import {
 import type { NexusBridgeContext } from "@laic/learner-contracts";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import type { CoachNote } from "@/components/table/play/CoachStrip";
+import type { CoachNote } from "@/components/table/play/CoachPanel";
 import { coachNotesForBoard } from "./index";
 import { assessMove, BUDGET, searchDepthFor } from "./assessors/panel";
 import { reconcile } from "@laic/coach/core";

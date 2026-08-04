@@ -29,7 +29,7 @@
 
 import { useState } from "react";
 
-// The table's own palette, as CoachStrip uses it.
+// The table's own palette, as CoachPanel uses it.
 const HEAD = "#f2f2ea";
 const LINE = "#8a8a6a";
 const INK = "#2b2b1e";
