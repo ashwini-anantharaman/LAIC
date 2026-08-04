@@ -17,8 +17,11 @@ import { HandViewer } from "@/components/table/play/HandViewer";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
+import { BenRead } from "@/components/table/play/BenRead";
+import { PlayHint } from "@/components/table/play/PlayHint";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { bidMeaningReader } from "@/lib/bidMeanings";
+import { coachNotesForBoard } from "@/lib/coach";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
@@ -28,12 +31,12 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string; coach?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string; coach?: string; reveal?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId } = await params;
-  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error, coach: coachParam } = await searchParams;
+  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error, coach: coachParam, reveal } = await searchParams;
   const handsView = viewParam === "hands";
 
   let view;
@@ -116,7 +119,7 @@ export default async function PlayTablePage({
   const confirmBids = confirm === "1";
   const settingsHref = (patch: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const current = { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, coach: coachParam };
+    const current = { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, coach: coachParam, reveal };
     for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
@@ -148,9 +151,29 @@ export default async function PlayTablePage({
       ? [{ label: "Verification workbench", value: "→", href: `/bridge/table/${sessionId}?legacy=1` }]
       : []),
     {
+      // On → Sample → Trace → Hidden → On. "Trace" shows the coach's own
+      // reasoning per call (what it heard, what the system would have called,
+      // why it did or didn't speak) — the switch you want when checking the
+      // wiring from a phone, where there's no URL bar to type into.
       label: "Coaching panel",
-      value: coachParam === "off" ? "Hidden" : coachParam === "demo" ? "Sample" : "On",
-      href: settingsHref({ coach: coachParam === "off" ? undefined : coachParam === "demo" ? "off" : "demo" }),
+      value:
+        coachParam === "off"
+          ? "Hidden"
+          : coachParam === "demo"
+            ? "Sample"
+            : coachParam === "trace"
+              ? "Trace"
+              : "On",
+      href: settingsHref({
+        coach:
+          coachParam === "off"
+            ? undefined
+            : coachParam === "demo"
+              ? "trace"
+              : coachParam === "trace"
+                ? "off"
+                : "demo",
+      }),
     },
   ];
 
@@ -197,15 +220,57 @@ export default async function PlayTablePage({
    * and any call you could make. Repeating it down here made the strip a log
    * rather than a coach.
    *
-   * So the panel waits for the coaching runtime. `?coach=demo` shows the shape
-   * a coach's note takes; `?coach=off` hides the strip.
+   * Now it holds the real thing: `@laic/coach` reads this table's event stream
+   * through its own EventSource port, and each of YOUR calls is judged against
+   * the knowledge base (the decider run in ask mode) before the engine decides
+   * whether to speak and how much to give away. See lib/coach/index.ts for what
+   * is and isn't coached yet. `?coach=demo` still shows the sample note;
+   * `?coach=off` hides the strip.
    */
+  const coachNotes =
+    coachParam === "off" || coachParam === "demo"
+      ? []
+      : await coachNotesForBoard({
+          context,
+          record,
+          vul: state.vul,
+          dealtHands: {
+            N: originalHand(state, "N"),
+            E: originalHand(state, "E"),
+            S: originalHand(state, "S"),
+            W: originalHand(state, "W"),
+          },
+          learnerSeat: mySeat,
+          compiled: await sessionService().compiledFor(record),
+          // The KB itself, so a note can quote the agreement's authored
+          // explanation and cite the sources behind it rather than paraphrasing.
+          kb: kbStore(),
+          contract: state.contract,
+          trace: coachParam === "trace",
+          // "Show me" — the action the learner asked to have explained. One at a
+          // time and in the URL, like every other table toggle, so it survives a
+          // refresh and the back button undoes it.
+          revealFor: reveal,
+          revealHref: (anchorId) => settingsHref({ reveal: anchorId }),
+        });
+
   const coachPanel: CoachPanelData | undefined =
     coachParam === "off"
       ? undefined
       : {
           title: "Coach",
-          placeholder: "Your coach's notes for this board will appear here.",
+          placeholder: mySeat
+            ? "Your coach's notes for this board will appear here."
+            : "Take a seat to be coached — right now you're watching.",
+          // Trace is for reading the detail, so don't make them tap twice.
+          defaultOpen: coachParam === "trace",
+          // The coach's one PROACTIVE affordance: what to play, now. Only when
+          // it is actually your decision — including dummy's card when you are
+          // declaring, since declarer chooses both hands.
+          actions:
+            state.phase === "play" && mySeat && myTurn ? (
+              <PlayHint sessionId={sessionId} />
+            ) : undefined,
           notes:
             coachParam === "demo"
               ? [
@@ -218,7 +283,7 @@ export default async function PlayTablePage({
                     citations: [{ label: "Lesson · opening leads" }],
                   },
                 ]
-              : [],
+              : coachNotes,
         };
 
   // Play controls live INSIDE the canvas: ▶/❚❚ and step as rail chips
@@ -355,6 +420,12 @@ export default async function PlayTablePage({
             bidMeanings={bidMeanings}
             auctionMeanings={auctionMeanings}
             coach={coachPanel}
+            // BEN's read of the other three hands, under the candidates card.
+            // Only while the box is live — there is nothing to reason about
+            // when it isn't your call — and only when BEN is actually wired up.
+            candidatesFooter={
+              bidMeanings && benAvailable() ? <BenRead sessionId={sessionId} /> : undefined
+            }
           />
         )}
       </div>

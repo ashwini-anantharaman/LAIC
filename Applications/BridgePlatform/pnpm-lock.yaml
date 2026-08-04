@@ -74,6 +74,9 @@ importers:
       '@bridge/taxonomy':
         specifier: workspace:*
         version: link:../../packages/bridge-taxonomy
+      '@laic/coach':
+        specifier: link:../../../../Components/generalizable-coach
+        version: link:../../../../Components/generalizable-coach
       '@laic/kb-core':
         specifier: workspace:*
         version: link:../../packages/kb-core

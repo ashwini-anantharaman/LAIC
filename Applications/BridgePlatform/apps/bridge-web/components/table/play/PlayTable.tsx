@@ -216,6 +216,13 @@ export interface PlayTableProps {
    * and the table draws no strip at all.
    */
   coach?: CoachPanelData;
+  /**
+   * A host-supplied footer for the candidates card — where BEN's read of the
+   * other hands goes. A SLOT rather than a prop of data, because that read
+   * costs a slow network call and the host owns when to make it; this component
+   * stays free of fetching, as it is of everything else.
+   */
+  candidatesFooter?: ReactNode;
 }
 
 export function PlayTable({
@@ -245,6 +252,7 @@ export function PlayTable({
   bidMeanings,
   auctionMeanings,
   coach,
+  candidatesFooter,
 }: Readonly<PlayTableProps>) {
   // --- per-instance sizing. The prototype watched `window`; this watches the
   // element, which is what makes a second instance possible at all.
@@ -747,12 +755,16 @@ export function PlayTable({
   const explainCard = (
     head: ReactNode,
     body: ReactNode,
-    o: { compact: boolean; width?: number; testId: string; onClose?: () => void },
+    o: { compact: boolean; width?: number; maxHeight?: number; testId: string; onClose?: () => void },
   ) => (
     <div
       data-testid={o.testId}
       style={{
         width: o.width, maxWidth: "100%", boxSizing: "border-box",
+        // Bounded, not free-growing: a level with five agreements on it (the
+        // splinters over a major) otherwise pushes the bid box and the hand
+        // down the screen. The body already scrolls; this is what makes it.
+        maxHeight: o.maxHeight,
         display: "flex", flexDirection: o.compact ? "row" : "column",
         alignItems: o.compact ? "stretch" : undefined,
         background: CARD_BODY, border: `1px solid ${CARD_LINE}`, borderRadius: 4,
@@ -793,8 +805,26 @@ export function PlayTable({
     </div>
   );
 
+  /**
+   * The rule's label without its leading call.
+   *
+   * Labels are authored with the call in front — "4♣ splinter over 1♠
+   * (singleton club)" — because in the knowledge base they stand alone. Beside
+   * the call chip they read as a stutter: "4♣ 4♣ splinter over 1♠". Strip it
+   * when it is the same call; leave any other leading call alone, since
+   * "1♠ raise" under a 2♠ chip is telling you something.
+   */
+  const trimLabel = (call: string, label?: string) => {
+    if (!label) return label;
+    const shown = callText(call);
+    for (const prefix of [shown, call]) {
+      if (label.startsWith(`${prefix} `)) return label.slice(prefix.length + 1);
+    }
+    return label;
+  };
+
   /** The armed level's calls: the panel for a bid you're ABOUT to make. */
-  const candidatesPanel = (compact: boolean, width?: number) =>
+  const candidatesPanel = (compact: boolean, width?: number, maxHeight?: number) =>
     armedMeanings.length > 0
       ? explainCard(
           <span style={{ color: CARD_INK, fontSize: compact ? 14 : 17 }}>Level {armed}</span>,
@@ -804,12 +834,15 @@ export function PlayTable({
                 <span style={{ fontWeight: 700, color: isRed(m.call[1] ?? "") ? RED : "#000" }}>
                   {callText(m.call)}
                 </span>{" "}
-                {m.label ?? <span style={{ fontStyle: "italic" }}>no agreement in this system</span>}
+                {trimLabel(m.call, m.label) ?? (
+                  <span style={{ fontStyle: "italic" }}>no agreement in this system</span>
+                )}
                 {m.shows ? <span style={{ color: "#57573f" }}> — {m.shows}</span> : null}
               </div>
             ))}
+            {candidatesFooter}
           </div>,
-          { compact, width, testId: "bid-candidates" },
+          { compact, width, maxHeight, testId: "bid-candidates" },
         )
       : null;
 
@@ -1341,7 +1374,7 @@ export function PlayTable({
                   radius: 3,
                   cellMinH: 26,
                 })}
-                {meaning ? meaningPanel(true) : candidatesPanel(true)}
+                {meaning ? meaningPanel(true) : candidatesPanel(true, undefined, Math.round(box.h * 0.34))}
               </div>
             ) : null}
             {inAuction && auctionDisplay === "seats" ? (

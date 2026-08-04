@@ -32,6 +32,10 @@ const nextConfig: NextConfig = {
     "@bridge/profiles",
     "@bridge/sessions",
     "@laic/learner-contracts",
+    // The coaching engine, consumed as TypeScript source via `@laic/coach/core`
+    // — the domain-free entrypoint, which by construction pulls no dependency
+    // and no bridge code (Components/generalizable-coach/core.ts).
+    "@laic/coach",
     "@laic/library-core",
     "@laic/library-ui",
     "@laic/kb-core",

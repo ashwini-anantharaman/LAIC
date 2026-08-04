@@ -29,6 +29,7 @@
     "@bridge/sayc-template": "workspace:*",
     "@bridge/sessions": "workspace:*",
     "@bridge/taxonomy": "workspace:*",
+    "@laic/coach": "link:../../../../Components/generalizable-coach",
     "@laic/kb-core": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts",
     "@laic/library-core": "workspace:*",
