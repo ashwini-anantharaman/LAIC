@@ -18,7 +18,7 @@ import type {
   CoachingPolicy,
   KnowledgeChunk,
   KnowledgeScope,
-} from "../../contracts/index";
+} from "../../contracts/generated/index";
 import { ScopedKnowledgeSource, type KnowledgeSource } from "../knowledge-source/index";
 import {
   gateTools,

@@ -14,7 +14,7 @@
  * source-count-agnostic), then dedupe by chunk id, then top-K. A shared reranker
  * can replace this later on evidence, without touching callers.
  */
-import type { KnowledgeChunk } from "../../contracts/index";
+import type { KnowledgeChunk } from "../../contracts/generated/index";
 import type { KnowledgeQuery, KnowledgeSource } from "./KnowledgeSource";
 
 const DEFAULT_TOP_K = 5;

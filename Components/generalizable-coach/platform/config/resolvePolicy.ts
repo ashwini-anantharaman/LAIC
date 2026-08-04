@@ -8,7 +8,7 @@
  * stamped with the profile's id + schemaVersion (config versioning, §8.5) so a
  * later postmortem reads history under the settings it ran with.
  */
-import type { CoachingPolicy, CoachingPolicyProfile } from "../../contracts/index";
+import type { CoachingPolicy, CoachingPolicyProfile } from "../../contracts/generated/index";
 import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/version";
 
 /** The platform-default resolved policy — the base of every inheritance chain. */

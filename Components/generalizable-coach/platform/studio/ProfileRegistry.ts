@@ -13,8 +13,12 @@ import type {
   CoachingPolicyProfile,
   KnowledgeScope,
   CoachCapabilityScope,
-} from "../../contracts/index";
-import { CONTRACTS_SCHEMA_VERSION, validate } from "../../contracts/index";
+} from "../../contracts/generated/index";
+// The VALIDATOR, deliberately from the barrel: this module is the one that
+// genuinely needs ajv. It is not reachable from core.ts, so a consumer never
+// compiles it — see scripts/check-core-graph.mjs.
+import { validate } from "../../contracts/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/version";
 import { resolvePolicy } from "../config/index";
 import {
   decideIntervention,

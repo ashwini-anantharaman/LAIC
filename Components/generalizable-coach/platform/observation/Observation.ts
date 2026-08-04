@@ -6,7 +6,7 @@
  * event log (system of record for what physically happened) and from the
  * learner model (mastery). Raw events in, never mutated; observations derived.
  */
-import type { ActivityEvent } from "../../contracts/index";
+import type { ActivityEvent } from "../../contracts/generated/index";
 import type { EvaluationResult } from "../types/index";
 
 export interface Observation {

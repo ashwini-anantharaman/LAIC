@@ -15,13 +15,13 @@ import type {
   CoachingPolicy,
   KnowledgeChunk,
   KnowledgeScope,
-} from "../../contracts/index";
+} from "../../contracts/generated/index";
 import type { EvaluationResult, EvaluatorContract } from "../types/index";
 import { ScopedKnowledgeSource, type KnowledgeSource } from "../knowledge-source/index";
 import type { InteractionMemory } from "../memory/index";
 import type { TraceStore } from "../trace/index";
 import { RecommendationEngine } from "../recommendation/index";
-import type { Recommendation } from "../../contracts/index";
+import type { Recommendation } from "../../contracts/generated/index";
 import type { CoachResponse } from "../adaptive/response";
 
 export type Phraser = (ctx: {

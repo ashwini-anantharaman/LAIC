@@ -13,7 +13,7 @@ import type {
   CoachingPolicyProfile,
   CoachCapabilityScope,
   LearnerDomainProfile,
-} from "../../contracts/index";
+} from "../../contracts/generated/index";
 import { LearnerStore } from "../learner-model/index";
 import { getRegisteredDomain } from "../embed/registry";
 import type { KnowledgeSource } from "../knowledge-source/index";

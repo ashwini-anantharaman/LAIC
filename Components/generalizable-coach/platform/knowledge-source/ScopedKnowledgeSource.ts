@@ -6,7 +6,7 @@
  * must not touch a forbidden one. An out-of-scope query therefore returns
  * nothing, which is what lets the tutor DECLINE rather than hallucinate.
  */
-import type { KnowledgeChunk, KnowledgeScope } from "../../contracts/index";
+import type { KnowledgeChunk, KnowledgeScope } from "../../contracts/generated/index";
 import type { KnowledgeQuery, KnowledgeSource } from "./KnowledgeSource";
 
 export class ScopedKnowledgeSource implements KnowledgeSource {

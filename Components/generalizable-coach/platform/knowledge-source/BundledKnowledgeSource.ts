@@ -10,7 +10,7 @@
  * All chunks are normalized on construction so the required-tag rule (A1) holds
  * for whatever the producer supplied.
  */
-import type { KnowledgeChunk } from "../../contracts/index";
+import type { KnowledgeChunk } from "../../contracts/generated/index";
 import { cosineSimilarity } from "../knowledge/embeddings";
 import type { KnowledgePackage, KnowledgeQuery, KnowledgeSource } from "./KnowledgeSource";
 import { toKnowledgeChunk, type RawChunk } from "./normalize";

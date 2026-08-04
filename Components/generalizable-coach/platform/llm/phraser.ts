@@ -8,7 +8,7 @@
  * source set, or any model failure. So enabling the LLM never removes the
  * offline safety net or the source-grounding guarantee.
  */
-import type { KnowledgeChunk } from "../../contracts/index";
+import type { KnowledgeChunk } from "../../contracts/generated/index";
 import type { LLMLike } from "./ResponseGenerator";
 import type { BuiltPrompt } from "./PromptBuilder";
 import { LLMClient } from "./LLMClient";

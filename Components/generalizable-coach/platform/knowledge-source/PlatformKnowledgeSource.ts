@@ -12,7 +12,7 @@
  * Contract: sends the Coach's RetrievalRequest; expects `{ chunks: KnowledgeChunk[] }`.
  * Rejects chunks carrying an unrecognized major schemaVersion rather than guessing.
  */
-import type { KnowledgeChunk } from "../../contracts/index";
+import type { KnowledgeChunk } from "../../contracts/generated/index";
 import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/version";
 import type { KnowledgeQuery, KnowledgeSource } from "./KnowledgeSource";
 

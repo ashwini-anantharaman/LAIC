@@ -6,7 +6,7 @@
  * A tool that is gated out is structurally absent from the returned list, so a
  * selector can never choose it (the assessment-safety guarantee).
  */
-import type { CoachingPolicy } from "../../contracts/index";
+import type { CoachingPolicy } from "../../contracts/generated/index";
 import type { CoachTool, ToolRegistry } from "./types";
 
 export type CoachMode =

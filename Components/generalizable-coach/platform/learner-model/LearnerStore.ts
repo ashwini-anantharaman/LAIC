@@ -28,7 +28,7 @@ import {
   type WeakSkill,
   type Recommendation,
 } from "../common-coach/index";
-import type { LearnerDomainProfile } from "../../contracts/index";
+import type { LearnerDomainProfile } from "../../contracts/generated/index";
 import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/version";
 
 /** Map the internal mastery ladder onto the contract's 0–1 mastery scale. */

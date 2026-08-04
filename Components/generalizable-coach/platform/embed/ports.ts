@@ -7,7 +7,7 @@
  * ResponseSink / listener). This is what makes the coach embeddable in *any*
  * UI — BridgeBot, a mobile client, a future play client — with no coupling.
  */
-import type { LearnerDomainProfile } from "../../contracts/index";
+import type { LearnerDomainProfile } from "../../contracts/generated/index";
 import type {
   ActivityEvent,
   AdaptiveCoachResponse,

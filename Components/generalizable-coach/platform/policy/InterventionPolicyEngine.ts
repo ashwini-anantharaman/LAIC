@@ -9,7 +9,7 @@
  * (The Phase-1 bridge InterventionPolicyEngine still exists for the bridge
  * runtime; this is the canonical M0-aligned engine going forward.)
  */
-import type { CoachingPolicy } from "../../contracts/index";
+import type { CoachingPolicy } from "../../contracts/generated/index";
 import type { EvaluationResult } from "../types/index";
 
 export type ResponseType =
