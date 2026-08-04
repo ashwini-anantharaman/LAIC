@@ -3,7 +3,7 @@
 // sets, and each set unlocks a fixed list of live feature keys ("surfaces").
 // This layer is pure metadata on top of the enforcement registry — it compiles
 // DOWN to the flat feature->roles rules the app already enforces, so the
-// designer never invents its own gating. The 13 sets partition all 36
+// designer never invents its own gating. The 13 sets partition all 37
 // ACCESS_FEATURES keys: every key lives in exactly one set.
 
 import { ALL_BRIDGE_ROLES } from "./index";
@@ -91,6 +91,7 @@ export const CAPABILITY_SETS: readonly CapabilitySet[] = [
     description: "The verification workbench and the reasoning rails: decisions, the learner/verify toggle, the workbench link.",
     featureKeys: [
       "page.workbench",
+      "page.component_tester",
       "table.decisions",
       "table.learner_toggle",
       "table.workbench_link",

@@ -31,6 +31,7 @@ const nextConfig: NextConfig = {
     "@bridge/profiles",
     "@bridge/sessions",
     "@bridge/table-config",
+    "@bridge/table-ui",
     "@laic/learner-contracts",
   ],
   experimental: {

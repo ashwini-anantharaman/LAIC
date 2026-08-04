@@ -129,6 +129,14 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     defaultRoles: ADMIN,
   },
   {
+    key: "page.component_tester",
+    label: "Component tester",
+    group: "Pages",
+    kind: "page",
+    description: "The table-component tester harness; hidden, the hidden tester route is gone.",
+    defaultRoles: ADMIN,
+  },
+  {
     key: "page.skins",
     label: "Skins & appearance page",
     group: "Pages",

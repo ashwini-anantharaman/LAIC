@@ -20,44 +20,45 @@
 // felt with a top-left auction grid or 1.6x trick cards, the bid tray, your
 // big-card hand), a fixed 720-wide stage scaled against the MEASURED stack
 // height so the hand never falls below the fold.
+//
+// 2026-08-04: the seat/centre pieces are REAL props-driven components now —
+// SeatHand, SeatPlate, SeatDiagram, AuctionBox, TrickArea, ResultCard,
+// SeatsPopup — each byte-identical to the closure it replaced. PlayTable still
+// SHAPES the data (which cards show, whose turn, the calls row) and composes
+// the leaves; the leaves stay dumb. callsRow stays here: it reads the running
+// auction per seat and only ever appears interleaved with the composition, so
+// it never became a standalone leaf.
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
+import type { AuctionCall, Card, Seat } from "@bridge/events";
 import { resolveSkin, type SkinTokens, type TableAppearance } from "@bridge/table-config";
 import { BidColumns } from "./BidColumns";
 import { EdgeToolbar, type ToolbarItem } from "./EdgeToolbar";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
+import { SeatHand, type SeatHandMetrics } from "./SeatHand";
+import { SeatPlate } from "./SeatPlate";
+import { SeatDiagram } from "./SeatDiagram";
+import { AuctionBox, type AuctionBoxSizing } from "./AuctionBox";
+import { TrickArea } from "./TrickArea";
+import { ResultCard } from "./ResultCard";
+import { SeatsPopup } from "./SeatsPopup";
+import {
+  RED, GOLD, GREY, SEAT_BADGE, GLYPH, STRAINS, ORDER, PARTNER,
+  isRed, callText, callColor, sideOf,
+} from "./tokens";
 
 // ---------------------------------------------------------------------------
-// The design's palette and metrics, lifted from the prototype verbatim.
+// PlayTable-specific stage metrics. The leaf palette + text helpers live in
+// ./tokens, shared byte-for-byte with every extracted component.
 // ---------------------------------------------------------------------------
-const RED = "#cc0000";
-const GOLD = "#fecd07";
-const GREY = "#d3d3d3";
-const DEALER_TINT = "#f2e2b8";
-const DEALER_RING = "#b8901f";
-const SEAT_BADGE = "#12525e";
-
 /** Wide stage; the mobile stack is 720 wide with a MEASURED height. */
 const BASE_WIDE = { w: 1040, h: 678 };
 const MOBILE_W = 720;
 const MOBILE_FELT_H = 430;
 /** Mobile hand-card metrics (Mobile Table.dc.html). */
 const M_CARD = { w: 54, h: 128, rank: 42, glyph: 38, inset: 5, backW: 52 };
-
-const GLYPH: Record<string, string> = { S: "♠", H: "♥", C: "♣", D: "♦", N: "NT" };
-const STRAINS = ["C", "D", "H", "S", "N"] as const;
-const ORDER: Seat[] = ["W", "N", "E", "S"];
-const DISPLAY: Suit[] = ["S", "H", "C", "D"];
-const PARTNER: Record<Seat, Seat> = { N: "S", S: "N", E: "W", W: "E" };
-
-const isRed = (s: string) => s === "H" || s === "D";
-const rankText = (r: number) => (({ 11: "J", 12: "Q", 13: "K", 14: "A" }) as Record<number, string>)[r] ?? String(r);
-const isBid = (c: string) => /^[1-7][CDHSN]$/.test(c);
-const callText = (c: string) =>
-  c === "P" ? "Pass" : c === "X" ? "X" : c === "XX" ? "XX" : `${c[0]}${GLYPH[c[1] ?? ""] ?? ""}`;
-const callColor = (c: string) => (isBid(c) && isRed(c[1] ?? "") ? RED : "#000");
-const sideOf = (s: Seat) => (s === "N" || s === "S" ? "NS" : "EW");
+/** SeatHand default row metrics — the pre-extraction cardRow defaults. */
+const CARD_ROW: SeatHandMetrics = { w: 50, h: 71, rank: 25, glyph: 22, inset: 3 };
 
 // ---------------------------------------------------------------------------
 
@@ -339,13 +340,17 @@ export function PlayTable({
   };
 
   // ---- pieces -------------------------------------------------------------
+  // Each piece is a thin wrapper that SHAPES data (which cards, whose turn,
+  // playability) and hands it to an extracted, byte-identical leaf. The call
+  // sites in the three tiers below never changed.
+
+  /** Per-card playability the play leaves share (the old inline `on`/`live`). */
+  const canPlay = (seat: Seat) => (card: Card) =>
+    myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
+
   /** Face-down cards — as many as the seat still HOLDS, not always 13. */
   const backs = (seat: Seat, m: { w: number; h: number } = { w: 14, h: 71 }) => (
-    <div style={{ display: "flex", border: "2px solid rgba(255,255,255,.92)", borderRadius: 3, overflow: "hidden", boxShadow: "0 2px 4px rgba(0,0,0,.35)" }}>
-      {Array.from({ length: Math.max(1, state.hands[seat].length) }, (_, i) => (
-        <span key={i} style={{ display: "block", width: m.w, height: m.h, background: tok.cardBack, borderLeft: i ? "1.5px solid rgba(255,255,255,.92)" : "none" }} />
-      ))}
-    </div>
+    <SeatHand cards={state.hands[seat]} hidden metrics={CARD_ROW} layout="row" fanSpread={tok.fanSpread} fanRadius={tok.fanRadius} backColor={tok.cardBack} backMetrics={m} />
   );
 
   /** SeatPlate: identity strip, seat badge, name, DEALER mark, dummy tag. */
@@ -353,24 +358,9 @@ export function PlayTable({
     seat: Seat,
     width: number | string,
     m: { height?: number; badge?: number; font?: number; tagFont?: number } = {},
-  ) => {
-    const h = m.height ?? 22;
-    const badge = m.badge ?? 20;
-    const font = m.font ?? 15;
-    const tagFont = m.tagFont ?? 11;
-    const isDealer = seat === state.dealer;
-    return (
-      <div style={{ display: "flex", alignItems: "stretch", gap: 5, width, height: h, padding: "0 3px 0 0", background: plateBgFor(seat), boxShadow: "0 1px 2px rgba(0,0,0,.45)", border: `2px solid ${isDealer ? DEALER_RING : "transparent"}`, boxSizing: "border-box", overflow: "hidden" }}>
-        <span style={{ flex: "none", width: 6, background: seats[seat].strip ?? "transparent" }} />
-        <span style={{ flex: "none", width: badge, height: badge, alignSelf: "center", background: SEAT_BADGE, color: "#fff", fontSize: font - 1, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{seat}</span>
-        <span style={{ alignSelf: "center", fontSize: font, color: "#000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{seats[seat].name}</span>
-        {isDealer && (
-          <span style={{ alignSelf: "center", flex: "none", padding: "0 2px", fontSize: tagFont, fontWeight: 700, color: "#7a5a12" }}>DEALER</span>
-        )}
-        <span style={{ marginLeft: "auto", alignSelf: "center", flex: "none", fontSize: tagFont, color: "#555" }}>{seats[seat].tag ?? ""}</span>
-      </div>
-    );
-  };
+  ) => (
+    <SeatPlate seat={seat} name={seats[seat].name} tag={seats[seat].tag} strip={seats[seat].strip} bg={plateBgFor(seat)} width={width} isDealer={seat === state.dealer} metrics={m} />
+  );
 
   /** Seats mode shows each seat's WHOLE bid history — latest call bold. */
   const callsRow = (seat: Seat, font = 16) => {
@@ -392,92 +382,36 @@ export function PlayTable({
   };
 
   /** A fanned row of face cards (N/S wide; dummy + your hand on mobile). */
-  const cardRow = (
-    seat: Seat,
-    m: { w: number; h: number; rank: number; glyph: number; inset: number } = { w: 50, h: 71, rank: 25, glyph: 22, inset: 3 },
-  ) => {
-    const hand = [...state.hands[seat]].sort(
-      (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
-    );
-    const live = (card: Card) => myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
-    return (
-      <div style={{ display: "flex", boxShadow: "0 2px 5px rgba(0,0,0,.35)" }}>
-        {hand.map((card, i) => {
-          const on = live(card);
-          return (
-            <button
-              key={`${card.suit}${card.rank}`}
-              type="button"
-              onClick={on ? () => onPlay?.(seat, card) : undefined}
-              aria-label={`Play ${rankText(card.rank)}${GLYPH[card.suit]}`}
-              style={{
-                position: "relative", display: "block", width: m.w, height: m.h, flex: "none",
-                background: "#fff", border: "1px solid #6b6b6b",
-                borderRadius: i === 0 ? "3px 0 0 3px" : "0 3px 3px 0",
-                marginLeft: i === 0 ? 0 : -1, padding: 0,
-                cursor: on ? "pointer" : "default",
-                transform: on ? "translateY(-6px)" : "none",
-                transition: "transform 120ms ease",
-              }}
-            >
-              <span style={{ position: "absolute", left: m.inset, top: m.inset > 3 ? m.inset : 1, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
-                <span style={{ fontSize: m.rank, fontWeight: 700 }}>{rankText(card.rank)}</span>
-                <span style={{ fontSize: m.glyph }}>{GLYPH[card.suit]}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
+  const cardRow = (seat: Seat, m: SeatHandMetrics = CARD_ROW) => (
+    <SeatHand
+      cards={state.hands[seat]}
+      metrics={m}
+      layout="row"
+      fanSpread={tok.fanSpread}
+      fanRadius={tok.fanRadius}
+      backColor={tok.cardBack}
+      isPlayable={canPlay(seat)}
+      onPlay={(card) => onPlay?.(seat, card)}
+    />
+  );
 
   /** Suit-per-line panel (E/W wide; every seat in the stacked-narrow tier). */
   const suitPanel = (
     seat: Seat,
     m: { width: number | string; suitW?: number; font?: number; pad?: string; bare?: boolean; touch?: boolean } = { width: 197 },
-  ) => {
-    const font = m.font ?? 19;
-    const touchy = !!m.touch && myTurn && inPlay && state.turn === seat;
-    return (
-      <div style={{ width: m.width, background: m.bare ? panelBgFor(seat) : "#fff", border: m.bare ? 0 : "1px solid #8a8a8a", borderRadius: m.bare ? 0 : 3, padding: m.pad ?? "4px 8px", boxShadow: "0 2px 5px rgba(0,0,0,.4)", boxSizing: "border-box" }}>
-        {DISPLAY.map((su) => {
-          const cards = state.hands[seat].filter((x) => x.suit === su).sort((a, b) => b.rank - a.rank);
-          return (
-            <div key={su} style={{ display: "flex", alignItems: "center", gap: 5, lineHeight: 1.3, color: isRed(su) ? RED : "#000" }}>
-              <span style={{ flex: "none", width: m.suitW ?? 16, fontSize: font }}>{GLYPH[su]}</span>
-              <span style={{ display: "flex", flexWrap: "wrap", gap: touchy ? "0 4px" : "0 5px", fontSize: font }}>
-                {cards.length === 0 ? (
-                  <span>—</span>
-                ) : (
-                  cards.map((card) => {
-                    const on = myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
-                    return (
-                      <button
-                        key={card.rank}
-                        type="button"
-                        onClick={on ? () => onPlay?.(seat, card) : undefined}
-                        aria-label={`Play ${rankText(card.rank)}${GLYPH[su]}`}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: touchy ? 84 : 0, minHeight: touchy ? 78 : 0, background: on ? "#d9f2d9" : "transparent", border: 0, borderRadius: touchy ? 6 : 0, padding: touchy ? "0 4px" : "0 1px", fontSize: font, fontWeight: on ? 700 : 400, color: "inherit", cursor: on ? "pointer" : "default" }}
-                      >
-                        {rankText(card.rank)}
-                      </button>
-                    );
-                  })
-                )}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const seatColumn = (seat: Seat) => (
-    <div style={{ width: 197, flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-      {callsRow(seat)}
-      {visible[seat] ? suitPanel(seat, { width: 197 }) : backs(seat)}
-      {plate(seat, 197)}
-    </div>
+  ) => (
+    <SeatDiagram
+      cards={state.hands[seat]}
+      panelBg={panelBgFor(seat)}
+      width={m.width}
+      suitW={m.suitW}
+      font={m.font}
+      pad={m.pad}
+      bare={m.bare}
+      touch={!!m.touch && myTurn && inPlay && state.turn === seat}
+      isPlayable={canPlay(seat)}
+      onPlay={(card) => onPlay?.(seat, card)}
+    />
   );
 
   /**
@@ -487,66 +421,25 @@ export function PlayTable({
    * are played, closing the fan up like a held hand. Dresses wide-tier N/S
    * and, at M_CARD metrics, the phone dummy row and your hand.
    */
-  const fanHand = (seat: Seat, m?: { w: number; h: number; rank: number; glyph: number; inset: number }) => {
-    const hand = [...state.hands[seat]].sort(
-      (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
-    );
-    const n = hand.length;
-    const cw = m?.w ?? tok.cardW;
-    const ch = m?.h ?? Math.round(cw * 1.42);
-    const spread = tok.fanSpread;
-    const radius = tok.fanRadius > 0 ? tok.fanRadius : Math.round(ch * 4.2);
-    const angleAt = (i: number) => (n <= 1 ? 0 : -spread / 2 + i * (spread / (n - 1)));
-    // Reserved box = union of every rotated card's four corners.
-    let xMin = 0, xMax = 0, yMin = 0, yMax = 0;
-    for (let i = 0; i < n; i++) {
-      const a = (angleAt(i) * Math.PI) / 180;
-      const cos = Math.cos(a);
-      const sin = Math.sin(a);
-      for (const dx of [-cw / 2, cw / 2]) {
-        for (const dy of [-radius, -radius + ch]) {
-          const x = dx * cos - dy * sin;
-          const y = dx * sin + dy * cos;
-          if (x < xMin) xMin = x;
-          if (x > xMax) xMax = x;
-          if (y < yMin) yMin = y;
-          if (y > yMax) yMax = y;
-        }
-      }
-    }
-    const boxW = Math.ceil(Math.max(-xMin, xMax) * 2) + 4;
-    const boxH = Math.ceil(yMax - yMin) + 4;
-    const fanTop = Math.ceil(-yMin - radius) + 2;
-    const rankF = m?.rank ?? Math.round(cw * 0.46);
-    const glyphF = m?.glyph ?? Math.round(cw * 0.4);
+  const fanHand = (seat: Seat, m?: SeatHandMetrics) => {
+    const metrics: SeatHandMetrics = m ?? {
+      w: tok.cardW,
+      h: Math.round(tok.cardW * 1.42),
+      rank: Math.round(tok.cardW * 0.46),
+      glyph: Math.round(tok.cardW * 0.4),
+      inset: 4,
+    };
     return (
-      <div style={{ position: "relative", width: boxW, height: boxH }}>
-        {hand.map((card, i) => {
-          const on = myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
-          return (
-            <button
-              key={`${card.suit}${card.rank}`}
-              type="button"
-              onClick={on ? () => onPlay?.(seat, card) : undefined}
-              aria-label={`Play ${rankText(card.rank)}${GLYPH[card.suit]}`}
-              style={{
-                position: "absolute", left: "50%", top: fanTop, width: cw, height: ch, padding: 0,
-                background: "#fff", border: "1px solid #6b6b6b", borderRadius: 4,
-                boxShadow: "-2px 1px 4px rgba(0,0,0,.28)",
-                transform: `translateX(-50%) rotate(${angleAt(i)}deg)${on ? " translateY(-14px)" : ""}`,
-                transformOrigin: `50% ${radius}px`,
-                transition: "transform 120ms ease",
-                cursor: on ? "pointer" : "default",
-              }}
-            >
-              <span style={{ position: "absolute", left: m?.inset ?? 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
-                <span style={{ fontSize: rankF, fontWeight: 700 }}>{rankText(card.rank)}</span>
-                <span style={{ fontSize: glyphF }}>{GLYPH[card.suit]}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <SeatHand
+        cards={state.hands[seat]}
+        metrics={metrics}
+        layout="fan"
+        fanSpread={tok.fanSpread}
+        fanRadius={tok.fanRadius}
+        backColor={tok.cardBack}
+        isPlayable={canPlay(seat)}
+        onPlay={(card) => onPlay?.(seat, card)}
+      />
     );
   };
 
@@ -564,6 +457,14 @@ export function PlayTable({
     );
   };
 
+  const seatColumn = (seat: Seat) => (
+    <div style={{ width: 197, flex: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+      {callsRow(seat)}
+      {visible[seat] ? suitPanel(seat, { width: 197 }) : backs(seat)}
+      {plate(seat, 197)}
+    </div>
+  );
+
   // ---- centre -------------------------------------------------------------
   const auctionRows: (AuctionCall | null)[][] = [];
   {
@@ -575,103 +476,28 @@ export function PlayTable({
   }
 
   /** Vulnerable seats sit on red; the dealer's column is tinted throughout. */
-  const auctionBox = (m: { width: number; height: number | "auto" | "100%"; headFont: number; cellFont: number; radius?: number; cellMinH?: number } = { width: 356, height: 207, headFont: 25, cellFont: 21, radius: 4 }) => (
-    <div style={{ width: m.width, height: m.height, maxHeight: m.height === "auto" ? 340 : undefined, background: tok.auctionBg, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div style={{ flex: "none", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 2, padding: 2, textAlign: "center" }}>
-        {ORDER.map((s) => {
-          const vul = vulFor(s);
-          const isDealer = s === state.dealer;
-          return (
-            <span key={s} style={{ padding: "2px 0", fontSize: m.headFont, fontWeight: 700, lineHeight: 1.1, background: vul ? "#cc1111" : isDealer ? DEALER_TINT : "#fff", color: vul ? "#fff" : "#000" }}>
-              {s}
-              {isDealer ? " •" : ""}
-            </span>
-          );
-        })}
-      </div>
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 5px", display: "flex", flexDirection: "column", gap: 3 }}>
-        {auctionRows.map((row, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4, textAlign: "center" }}>
-            {[0, 1, 2, 3].map((j) => {
-              const e = row[j];
-              return (
-                <span key={j} style={{ borderRadius: 3, padding: "2px 0", minHeight: m.cellMinH ?? 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: m.cellFont, lineHeight: 1.15, background: e ? (j === dealerCol ? DEALER_TINT : GREY) : "transparent", color: e ? callColor(e.call) : "#000" }}>
-                  {e ? callText(e.call) : ""}
-                </span>
-              );
-            })}
-          </div>
-        ))}
-        {state.auction.length === 0 && (
-          <div style={{ textAlign: "center", fontSize: 17, color: "#3c4c4c", paddingTop: 6 }}>
-            {state.dealer === mySeat ? "You deal" : `${state.dealer} deals`}
-          </div>
-        )}
-      </div>
-    </div>
+  const auctionBox = (m: AuctionBoxSizing = { width: 356, height: 207, headFont: 25, cellFont: 21, radius: 4 }) => (
+    <AuctionBox
+      bg={tok.auctionBg}
+      m={m}
+      heads={ORDER.map((s) => ({ seat: s, vul: vulFor(s), isDealer: s === state.dealer }))}
+      rows={auctionRows}
+      dealerCol={dealerCol}
+      emptyText={state.auction.length === 0 ? (state.dealer === mySeat ? "You deal" : `${state.dealer} deals`) : null}
+    />
   );
 
   const currentPlays = inPlay ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
 
   /** The trick as real card faces; `k` scales the whole cross (1.6 on phones). */
-  const trickCross = (k = 1) => (
-    <div style={{ position: "relative", width: 262 * k, height: 262 * k }}>
-      {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
-        const play = currentPlays.find((p) => p.seat === seat);
-        const pos =
-          seat === "N" ? { left: "50%", top: "0", tr: "translateX(-50%)" }
-          : seat === "S" ? { left: "50%", top: `${182 * k}px`, tr: "translateX(-50%)" }
-          : seat === "W" ? { left: "0", top: "50%", tr: "translateY(-50%)" }
-          : { left: `${206 * k}px`, top: "50%", tr: "translateY(-50%)" };
-        const onTurn = seat === state.turn;
-        return (
-          <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, transform: pos.tr, zIndex: play ? 2 : 1 }}>
-            {play ? (
-              <span style={{ position: "relative", display: "block", width: 56 * k, height: 80 * k, background: "#fff", border: "1px solid #6b6b6b", borderRadius: 3, boxShadow: "0 2px 5px rgba(0,0,0,.4)" }}>
-                <span style={{ position: "absolute", left: 4 * k, top: 2 * k, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(play.card.suit) ? RED : "#000" }}>
-                  <span style={{ fontSize: 27 * k, fontWeight: 700 }}>{rankText(play.card.rank)}</span>
-                  <span style={{ fontSize: 24 * k }}>{GLYPH[play.card.suit]}</span>
-                </span>
-              </span>
-            ) : (
-              <span style={{ display: "flex", width: 56 * k, height: 80 * k, alignItems: "center", justifyContent: "center" }}>
-                <span style={{ display: "block", width: onTurn ? 22 * k : 0, height: 12 * k, background: onTurn ? "#9a9a9a" : "transparent" }} />
-              </span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+  const trickCross = (k = 1) => <TrickArea plays={currentPlays} turn={state.turn} scale={k} />;
 
   const resultCard = (
-    <div style={{ background: "#fff", border: "1px solid #7d7d7d", borderRadius: 4, padding: "16px 28px", textAlign: "center", boxShadow: "0 3px 10px rgba(0,0,0,.45)" }}>
-      <div style={{ fontSize: 28, fontWeight: 700, color: "#000" }}>{resultLine || "Board complete"}</div>
-      {resultScore && <div style={{ fontSize: 18, color: "#444", marginTop: 4 }}>{resultScore}</div>}
-      <div style={{ fontSize: 15, color: "#666", marginTop: 6 }}>NS {state.trickCount.NS} · EW {state.trickCount.EW}</div>
-    </div>
+    <ResultCard line={resultLine} score={resultScore} detail={`NS ${state.trickCount.NS} · EW ${state.trickCount.EW}`} />
   );
 
   /** Stacked-narrow centre: the TrickArea design's pill variant. */
-  const trickPills = (
-    <div style={{ position: "relative", width: 300, height: 220 }}>
-      {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
-        const play = currentPlays.find((p) => p.seat === seat);
-        const pos: CSSProperties =
-          seat === "N" ? { left: "50%", top: 0, transform: "translateX(-50%)" }
-          : seat === "S" ? { left: "50%", bottom: 0, transform: "translateX(-50%)" }
-          : seat === "W" ? { left: 0, top: "50%", transform: "translateY(-50%)" }
-          : { right: 0, top: "50%", transform: "translateY(-50%)" };
-        if (!play) return null;
-        return (
-          <div key={seat} style={{ position: "absolute", ...pos, display: "flex", alignItems: "center", gap: 2, background: "#fff", border: "1px solid #9a9a9a", padding: "4px 10px", boxShadow: "0 2px 6px rgba(0,0,0,.45)", color: isRed(play.card.suit) ? RED : "#000" }}>
-            <span style={{ fontSize: 36, lineHeight: 1 }}>{GLYPH[play.card.suit]}</span>
-            <span style={{ fontSize: 36, lineHeight: 1 }}>{rankText(play.card.rank)}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
+  const trickPills = <TrickArea variant="pill" plays={currentPlays} turn={state.turn} />;
 
   // ---- bid box ------------------------------------------------------------
   const bidBtnStyle = (w: number, h: number, bg: string, border: string, live: boolean, font = 21): CSSProperties => ({
@@ -897,7 +723,7 @@ export function PlayTable({
     state.vul === "both" || state.vul === "All" ? "Both"
     : state.vul === "none" || state.vul === "None" ? "None"
     : String(state.vul).toUpperCase();
-  // The contract slots are ALWAYS present, "\u2014" until there is one — adding
+  // The contract slots are ALWAYS present, "—" until there is one — adding
   // chips mid-deal reflows the bar and shifts every control after it.
   const infoItems: ToolbarItem[] = [
     { kind: "chip", label: "Board", value: String(boardLabel) },
@@ -930,17 +756,7 @@ export function PlayTable({
   /** SeatsPopup.dc.html: who is in each seat, behind the Seats button. */
   const seatsPopup =
     seatsOpen && railExtra ? (
-      <div onClick={() => setSeatsOpen(false)} style={{ position: "absolute", inset: 0, zIndex: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.5)" }}>
-        {/* Without stopPropagation every click inside the card reaches the
-            backdrop and dismisses the popup. */}
-        <div onClick={(e) => e.stopPropagation()} style={{ width: 320, maxWidth: "calc(100% - 24px)", background: "#16211d", border: "1px solid #3a4a44", borderRadius: 9, boxShadow: "0 18px 40px rgba(0,0,0,.5)", padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#eef4f1" }}>Seats</span>
-            <button type="button" aria-label="Close" onClick={() => setSeatsOpen(false)} style={{ width: 28, height: 28, border: 0, borderRadius: 5, background: "#2a3a34", color: "#dfe7e3", fontSize: 15, lineHeight: 1, cursor: "pointer" }}>✕</button>
-          </div>
-          {railExtra}
-        </div>
-      </div>
+      <SeatsPopup onClose={() => setSeatsOpen(false)}>{railExtra}</SeatsPopup>
     ) : null;
 
   /** Dummy's hand as a plate-less card row (or fan) across the top (phone play

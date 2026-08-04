@@ -1,7 +1,7 @@
 "use client";
 
 // The capability-set designer, wired live. Assign whole SETS to roles (section
-// 1), and the flat 36-key feature matrix the app enforces recomputes on the
+// 1), and the flat 37-key feature matrix the app enforces recomputes on the
 // client (section 2) via the pure compileAssignment. Cells that differ from the
 // live catalogue are flagged amber. Optionally the compiled matrix is written
 // straight to the live catalogue.
@@ -223,7 +223,7 @@ export function TestCatalogueClient({
           </p>
         </div>
         <p className="mb-3 text-sm text-neutral-600">
-          The read-only 36-key feature matrix the app actually enforces, computed live from the set
+          The read-only 37-key feature matrix the app actually enforces, computed live from the set
           assignment above. Amber cells differ from the current live catalogue.
         </p>
         <div className="space-y-6">

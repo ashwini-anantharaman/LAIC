@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import type { AuctionCall, Card, Seat } from "@bridge/events";
-import { PlayTable } from "@/components/table/play/PlayTable";
+import { PlayTable } from "@bridge/table-ui";
 
 const NEXT: Record<Seat, Seat> = { N: "E", E: "S", S: "W", W: "N" };
 const STRAINS = ["C", "D", "H", "S", "N"];

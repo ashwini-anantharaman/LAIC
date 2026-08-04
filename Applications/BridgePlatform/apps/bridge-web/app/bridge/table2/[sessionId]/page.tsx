@@ -11,7 +11,7 @@ import type { Seat } from "@bridge/events";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { undoAction } from "@/app/bridge/table/actions";
-import { HandViewer } from "@/components/table/play/HandViewer";
+import { HandViewer } from "@bridge/table-ui";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";

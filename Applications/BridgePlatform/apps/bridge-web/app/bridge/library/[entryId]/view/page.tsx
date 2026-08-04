@@ -5,7 +5,7 @@
 import type { Seat } from "@bridge/events";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { HandViewer } from "@/components/table/play/HandViewer";
+import { HandViewer } from "@bridge/table-ui";
 import { requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";

@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import type { Card, Seat } from "@bridge/events";
 import { bidAction, playCardAction } from "@/app/bridge/table/actions";
-import { PlayTable, type PlayTableProps } from "./PlayTable";
+import { PlayTable, type PlayTableProps } from "@bridge/table-ui";
 
 export function LivePlayTable({
   sessionId,
