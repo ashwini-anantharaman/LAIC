@@ -283,7 +283,7 @@ export function TesterClient({ data }: Readonly<{ data: TesterData }>) {
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 700 }}>Component tester</span>
           <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {REGISTRY.length} components · every cell is a real session, so visibility rules are the product&rsquo;s, not the harness&rsquo;s
+            {`${REGISTRY.length} components · every cell is a real session, so visibility rules are the product’s, not the harness’s`}
           </span>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
