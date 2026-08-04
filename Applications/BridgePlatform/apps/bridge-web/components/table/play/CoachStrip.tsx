@@ -38,7 +38,7 @@
 // Legibility came from size and from putting sentences on the pale ground, not
 // from introducing a surface that belongs to a different app.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createElement, useEffect, useRef, useState, type ReactNode } from "react";
 
 // The table's own palette (PlayTable's constants): the bid tray's tan, the
 // pale head of a bidding-box button, the auction box's hairline, and the
@@ -148,7 +148,15 @@ export interface CoachPanelData {
    * which makes it a teaching call rather than a layout one.
    */
   facts?: readonly { label: string; value: string }[];
-  /** Host controls for the header, e.g. an "Explain that" button. */
+  /**
+   * The coach's PRIMARY affordances — the buttons the learner pulls on.
+   *
+   * OWNER DECISION 2026-08-04: at the table the coach IS these, and it does not
+   * volunteer. So they are the panel's resting content, rendered first and
+   * rendered large, rather than chrome tucked under a note.
+   */
+  prompts?: ReactNode;
+  /** Secondary host controls, e.g. a bid-meaning toggle. */
   actions?: ReactNode;
   /** Open on first render. Defaults to closed. */
   defaultOpen?: boolean;
@@ -235,24 +243,35 @@ export function CoachStrip({
 
       {/* ── header ──────────────────────────────────────────────────────────
           It no longer carries the message: the body does, at rest. So this is
-          a label, the live-state dot, the at-a-glance facts, and the toggle. */}
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-label={open ? "Hide earlier coaching" : "Show earlier coaching"}
-        disabled={!hasMore}
-        style={{
-          display: "flex", alignItems: "center", gap: 7, width: "100%",
-          padding: compact ? "7px 9px" : "6px 10px", background: HEAD,
-          // Longhands only. `borderBottom` is a shorthand for the same values
-          // borderStyle/borderColor set, and it changes with `open` — React
-          // warns because the two can disagree across a re-render.
-          borderWidth: 0, borderBottomWidth: 1, borderStyle: "solid", borderColor: LINE,
-          color: INK, textAlign: "left", cursor: hasMore ? "pointer" : "default",
-          fontFamily: "inherit", boxSizing: "border-box",
-        }}
-      >
+          a label, the live-state dot, the at-a-glance facts, and — only when
+          there is something behind it — the toggle.
+          A BUTTON ONLY WHEN IT DOES SOMETHING. With the coach reduced to its two
+          prompts there is usually nothing to expand, and a permanently disabled
+          button is a control that isn't one: it takes a tab stop, announces
+          itself to a screen reader and answers to neither. */}
+      {createElement(
+        hasMore ? "button" : "div",
+        {
+          ...(hasMore
+            ? {
+                type: "button" as const,
+                onClick: () => setOpen(!open),
+                "aria-expanded": open,
+                "aria-label": open ? "Hide earlier coaching" : "Show earlier coaching",
+              }
+            : {}),
+          style: {
+            display: "flex", alignItems: "center", gap: 7, width: "100%",
+            padding: compact ? "7px 9px" : "6px 10px", background: HEAD,
+            // Longhands only. `borderBottom` is a shorthand for the same values
+            // borderStyle/borderColor set, and it changes with `open` — React
+            // warns because the two can disagree across a re-render.
+            borderWidth: 0, borderBottomWidth: 1, borderStyle: "solid", borderColor: LINE,
+            color: INK, textAlign: "left" as const, cursor: hasMore ? "pointer" : "default",
+            fontFamily: "inherit", boxSizing: "border-box" as const,
+          },
+        },
+        <>
         <span
           aria-hidden
           style={{
@@ -297,7 +316,15 @@ export function CoachStrip({
             {open ? "▾" : "▸"}
           </span>
         )}
-      </button>
+        </>,
+      )}
+
+      {/* ── the two buttons: the coach's whole surface at the table ─────── */}
+      {data.prompts && (
+        <div style={{ padding: compact ? "10px 9px" : "10px", borderBottomWidth: lead ? 1 : 0, borderBottomStyle: "solid", borderBottomColor: LINE }}>
+          {data.prompts}
+        </div>
+      )}
 
       {/* ── at rest: the latest note, in full, no tap required ───────────── */}
       {lead ? (
@@ -311,7 +338,7 @@ export function CoachStrip({
         >
           <NoteBody note={lead} font={font} sub={sub} expanded={expanded} setExpanded={setExpanded} keyBase="lead" tinted />
         </div>
-      ) : (
+      ) : data.prompts ? null : (
         <p style={{ margin: 0, padding: compact ? "9px" : "9px 10px", fontSize: sub, lineHeight: 1.45, color: MUTED }}>
           {data.placeholder ?? "Your coach's notes will appear here as you play."}
         </p>

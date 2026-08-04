@@ -18,7 +18,7 @@ import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { BenRead } from "@/components/table/play/BenRead";
-import { PlayHint } from "@/components/table/play/PlayHint";
+import { CoachPrompts, type TablePhase } from "@/components/table/play/CoachPrompts";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { bidMeaningReader } from "@/lib/bidMeanings";
 import { coachNotesForBoard } from "@/lib/coach";
@@ -224,35 +224,49 @@ export default async function PlayTablePage({
    * through its own EventSource port, and each of YOUR calls is judged against
    * the knowledge base (the decider run in ask mode) before the engine decides
    * whether to speak and how much to give away. See lib/coach/index.ts for what
-   * is and isn't coached yet. `?coach=demo` still shows the sample note;
-   * `?coach=off` hides the strip.
+   * is and isn't coached yet.
+   *
+   * UNPROMPTED NOTES ARE OFF AT THE TABLE (owner decision 2026-08-04). The coach
+   * here is two buttons and waits to be asked; judging every action produced 34
+   * approvals for every 6 corrections, and a panel that speaks forty times a
+   * board is not read by trick four. The evaluation path is untouched and still
+   * fully tested — this is a surface decision, not a demolition.
+   *
+   *   `?coach=notes` turns the unprompted notes back on
+   *   `?coach=trace` the same, plus the decider's reasoning (implies notes)
+   *   `?coach=demo`  the single sample note, no evaluation
+   *   `?coach=off`   no panel at all
    */
-  const coachNotes =
-    coachParam === "off" || coachParam === "demo"
-      ? []
-      : await coachNotesForBoard({
-          context,
-          record,
-          vul: state.vul,
-          dealtHands: {
-            N: originalHand(state, "N"),
-            E: originalHand(state, "E"),
-            S: originalHand(state, "S"),
-            W: originalHand(state, "W"),
-          },
-          learnerSeat: mySeat,
-          compiled: await sessionService().compiledFor(record),
-          // The KB itself, so a note can quote the agreement's authored
-          // explanation and cite the sources behind it rather than paraphrasing.
-          kb: kbStore(),
-          contract: state.contract,
-          trace: coachParam === "trace",
-          // "Show me" — the action the learner asked to have explained. One at a
-          // time and in the URL, like every other table toggle, so it survives a
-          // refresh and the back button undoes it.
-          revealFor: reveal,
-          revealHref: (anchorId) => settingsHref({ reveal: anchorId }),
-        });
+  // UNPROMPTED NOTES ARE OFF (owner decision 2026-08-04). The coach at the table
+  // is two buttons; it waits to be asked. The whole evaluation path still works
+  // and still has its tests — `?coach=notes` turns it back on, and `?coach=trace`
+  // implies it — so this is a surface decision, not a demolition.
+  const notesOn = coachParam === "notes" || coachParam === "trace";
+  const coachNotes = notesOn
+    ? await coachNotesForBoard({
+        context,
+        record,
+        vul: state.vul,
+        dealtHands: {
+          N: originalHand(state, "N"),
+          E: originalHand(state, "E"),
+          S: originalHand(state, "S"),
+          W: originalHand(state, "W"),
+        },
+        learnerSeat: mySeat,
+        compiled: await sessionService().compiledFor(record),
+        // The KB itself, so a note can quote the agreement's authored
+        // explanation and cite the sources behind it rather than paraphrasing.
+        kb: kbStore(),
+        contract: state.contract,
+        trace: coachParam === "trace",
+        // "Show me" — the action the learner asked to have explained. One at a
+        // time and in the URL, like every other table toggle, so it survives a
+        // refresh and the back button undoes it.
+        revealFor: reveal,
+        revealHref: (anchorId) => settingsHref({ reveal: anchorId }),
+      })
+    : [];
 
   const coachPanel: CoachPanelData | undefined =
     coachParam === "off"
@@ -264,13 +278,19 @@ export default async function PlayTablePage({
             : "Take a seat to be coached — right now you're watching.",
           // Trace is for reading the detail, so don't make them tap twice.
           defaultOpen: coachParam === "trace",
-          // The coach's one PROACTIVE affordance: what to play, now. Only when
-          // it is actually your decision — including dummy's card when you are
-          // declaring, since declarer chooses both hands.
-          actions:
-            state.phase === "play" && mySeat && myTurn ? (
-              <PlayHint sessionId={sessionId} />
-            ) : undefined,
+          // The coach's whole surface: two buttons. Present whenever the learner
+          // has a seat — they disable themselves and say why when it is not this
+          // player's decision, which reads better than a panel that empties out.
+          prompts: mySeat ? (
+            <CoachPrompts
+              sessionId={sessionId}
+              phase={
+                (state.phase === "play" ? "play" : state.phase === "auction" ? "auction" : "other") as TablePhase
+              }
+              // Includes dummy's card while declaring: declarer chooses both hands.
+              active={(state.phase === "play" || state.phase === "auction") && myTurn}
+            />
+          ) : undefined,
           notes:
             coachParam === "demo"
               ? [
