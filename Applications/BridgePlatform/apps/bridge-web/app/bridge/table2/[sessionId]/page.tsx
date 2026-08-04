@@ -19,6 +19,7 @@ import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { BenRead } from "@/components/table/play/BenRead";
 import { CoachPrompts, type TablePhase } from "@/components/table/play/CoachPrompts";
+import { lookingAt } from "@/lib/coach/looking";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { bidMeaningReader } from "@/lib/bidMeanings";
 import { coachNotesForBoard } from "@/lib/coach";
@@ -268,11 +269,18 @@ export default async function PlayTablePage({
       })
     : [];
 
+  // "What I'm looking at" — facts only, computed here because it needs the
+  // server's view of the position and costs nothing: arithmetic over the
+  // learner's own thirteen cards plus a reading of the auction as played. No KB,
+  // no model, no hand the learner cannot see. `null` for a watcher.
+  const looking = lookingAt(state, mySeat ?? null);
+
   const coachPanel: CoachPanelData | undefined =
     coachParam === "off"
       ? undefined
       : {
           title: "Coach",
+          ...(looking ? { looking: looking.looking, facts: looking.facts } : {}),
           placeholder: mySeat
             ? "Your coach's notes for this board will appear here."
             : "Take a seat to be coached — right now you're watching.",
