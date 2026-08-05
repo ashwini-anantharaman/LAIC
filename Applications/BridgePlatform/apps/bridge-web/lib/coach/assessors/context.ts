@@ -9,7 +9,7 @@
 import type { GameState, KbPlayerConfig } from "@bridge/engine";
 import type { Call, Seat } from "@bridge/events";
 import type { CompiledKb } from "@bridge/kb";
-import type { Finding } from "@laic/coach/core";
+import type { Authority, Finding } from "@laic/coach/core";
 
 import type { WhyNot } from "../whyNot";
 
@@ -64,6 +64,13 @@ export interface MoveUnderReview {
 export interface AssessContext {
   /** The rulebook this table plays, at the partnership's own pack surface. */
   system: { compiled: CompiledKb; player: KbPlayerConfig };
+  /**
+   * Which authorities may speak. Defaults to `LIVE_AUTHORITIES` — see there.
+   *
+   * A LIST RATHER THAN A DELETION, deliberately: the knowledge base is out of the
+   * coaching path for now, not gone. Restoring it is adding one string back.
+   */
+  authorities?: readonly Authority[];
   /** Resolves a rule to its knowledge item's prose and sources. */
   teaching?: { forRule(ruleId: string | undefined): Promise<{ text?: string; citations: { label: string; sourceId?: string }[]; itemId?: string }> };
 }

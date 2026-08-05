@@ -67,6 +67,7 @@ export async function advisePlay({
   actor,
   system,
   kb,
+  authorities,
 }: {
   state: GameState;
   learnerSeat: Seat;
@@ -74,6 +75,13 @@ export async function advisePlay({
   actor: Seat;
   system: { compiled: CompiledKb; player: KbPlayerConfig };
   kb?: TeachingStore;
+  /**
+   * Override which authorities may answer. Omitted — which is what the button
+   * does — means `LIVE_AUTHORITIES`, and so no knowledge base. Present so a
+   * comparison surface can ask the same position both ways without a second
+   * code path.
+   */
+  authorities?: readonly Authority[];
 }): Promise<PlayAdvice> {
   const move: MoveUnderReview = {
     // A hypothetical: the assessors read the position, not this placeholder.
@@ -87,7 +95,7 @@ export async function advisePlay({
   const teaching = kb ? kbTeaching({ compiled: system.compiled, store: kb }) : undefined;
   const assessment = await assessMove(
     move,
-    { system, ...(teaching ? { teaching } : {}) },
+    { system, ...(teaching ? { teaching } : {}), ...(authorities ? { authorities } : {}) },
     BUDGET.asked,
   );
 
@@ -99,6 +107,8 @@ export async function advisePlay({
   if (!adviser?.recommends?.length) {
     return {
       best: [],
+      // Meaningless with no cards to attribute: callers key the silent case on
+      // `best.length`, and read `source` only when there is advice to label.
       source: "system",
       silentBecause:
         assessment.silentBecause ?? "no agreement, guideline or calculation covers this position",

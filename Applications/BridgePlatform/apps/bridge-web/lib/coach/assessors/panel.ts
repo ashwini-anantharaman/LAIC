@@ -12,7 +12,7 @@
 // board still costs one pass over the rules per card and no search until the
 // endgame.
 
-import { reconcile, type Assessment, type EvaluationBudget } from "@laic/coach/core";
+import { reconcile, type Assessment, type Authority, type EvaluationBudget } from "@laic/coach/core";
 
 import type { AssessContext, MoveUnderReview } from "./context";
 import { conventionAssessor } from "./conventions";
@@ -31,6 +31,41 @@ const ASSESSORS = [
   doubleDummyAssessor,
   conventionAssessor,
 ];
+
+/**
+ * Which authorities are currently allowed to speak.
+ *
+ * OWNER DECISION 2026-08-04: the knowledge base is NOT consulted for coaching.
+ * Two reasons, and the second is the one that showed up on screen:
+ *
+ *   · it is not complete enough to coach from, so it answers some positions and
+ *     shrugs at others with no pattern a learner could learn;
+ *   · its authored prose is written for whoever REVIEWS the rulebook, not for
+ *     someone holding thirteen cards. A real answer came back opening in block
+ *     capitals and referring to "the deck" — the source slide deck the rule was
+ *     extracted from, which means nothing at a card table.
+ *
+ * So `system` is off the list. `convention` (the hardcoded named guidelines, not
+ * the KB) and `solution` (the double-dummy search) remain, and the model will
+ * take the empty slot.
+ *
+ * THIS COSTS COVERAGE and that is the accepted trade. Measured over one full
+ * board of thirteen decisions (3NT by South, the fixture rulebook): the button
+ * answered 13 of 13 with the KB and 9 of 13 without, and every surviving answer
+ * came from `convention` rather than `system` — so the wording drops from "Your
+ * system plays" to "Usually right here", which is the honest label for a general
+ * maxim. Four positions now say "No suggestion for this position", which is a
+ * worse answer than a good one and a better answer than a rulebook page read
+ * aloud to the wrong reader.
+ *
+ * A LIST, NOT A DELETION. Every KB assessor still exists, still has its tests,
+ * and comes back by adding one string. `coachNotesForBoard` passes the full set,
+ * so `?coach=notes` remains the surface where the KB can be compared.
+ */
+export const LIVE_AUTHORITIES: readonly Authority[] = ["convention", "solution"];
+
+/** Everything, for the notes surface and for tests of the KB machinery. */
+export const ALL_AUTHORITIES: readonly Authority[] = ["system", "convention", "solution"];
 
 /** Budgets, named for what the caller is doing rather than for a depth. */
 export const BUDGET = {
@@ -58,7 +93,8 @@ export async function assessMove(
   ctx: AssessContext,
   budget: EvaluationBudget,
 ): Promise<Assessment> {
-  const applicable = ASSESSORS.filter((a) => a.applies(move));
+  const allowed = ctx.authorities ?? LIVE_AUTHORITIES;
+  const applicable = ASSESSORS.filter((a) => allowed.includes(a.authority) && a.applies(move));
 
   const findings = (
     await Promise.all(

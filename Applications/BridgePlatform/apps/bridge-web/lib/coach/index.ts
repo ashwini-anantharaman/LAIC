@@ -38,7 +38,7 @@ import {
 
 import type { CoachNote as StripNote } from "@/components/table/play/CoachPanel";
 import { BRIDGE_DOMAIN_ID, CONTRACT_VERSION, coachIdentity, type NoteContext } from "./context";
-import { assessMove, BUDGET, type MoveUnderReview } from "./assessors/panel";
+import { ALL_AUTHORITIES, assessMove, BUDGET, type MoveUnderReview } from "./assessors/panel";
 import { kbTeaching, type TeachingStore } from "./kbTeaching";
 import { assessmentAffirmation, assessmentNote } from "./notes";
 import { toStripNote } from "./render";
@@ -219,7 +219,15 @@ async function runCoach(input: CoachBoardInput, learnerSeat: Seat): Promise<Stri
     };
     if (move.action.kind === "card") yourCards++;
 
-    const assessment = await assessMove(move, assessCtx, BUDGET.review);
+    // The notes surface keeps the full set. It is only reachable behind
+    // `?coach=notes`, so this is the one place the knowledge base can still be
+    // heard and compared against what replaces it — deliberately, rather than as
+    // an oversight.
+    const assessment = await assessMove(
+      move,
+      { ...assessCtx, authorities: ALL_AUTHORITIES },
+      BUDGET.review,
+    );
     const what = moveLabel(turn);
 
     // Nobody could speak — and the reason is recorded rather than left blank.

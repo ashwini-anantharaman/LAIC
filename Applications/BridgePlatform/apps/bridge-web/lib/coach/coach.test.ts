@@ -28,7 +28,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import type { CoachNote } from "@/components/table/play/CoachPanel";
 import { coachNotesForBoard } from "./index";
-import { assessMove, BUDGET, searchDepthFor } from "./assessors/panel";
+import { ALL_AUTHORITIES, assessMove, BUDGET, searchDepthFor } from "./assessors/panel";
 import { reconcile } from "@laic/coach/core";
 import { livePlayState } from "./cardVerdicts";
 import { advisePlay } from "./advise";
@@ -499,7 +499,7 @@ describe("the coach reads the table", () => {
       actor: "S" as Seat,
       learnerSeat: "S" as Seat,
     };
-    const a = await assessMove(move, { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") } }, BUDGET.review);
+    const a = await assessMove(move, { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") }, authorities: ALL_AUTHORITIES }, BUDGET.review);
 
     expect(a.findings.length).toBeGreaterThan(0);
     for (const f of a.findings) {
@@ -542,7 +542,7 @@ describe("the coach reads the table", () => {
       tricks: [{ leader: "W" as Seat, plays: [{ seat: "W" as Seat, card: c("S", 5) }] }],
       trickCount: { NS: 0, EW: 0 },
     };
-    const ctx = { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") } };
+    const ctx = { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") }, authorities: ALL_AUTHORITIES };
     const card = { kind: "card" as const, seat: "S" as Seat, card: "S4", auctionSoFar: [], hand: "", fallback: false };
 
     const judged = await assessMove({ action: card, before, actor: "S", learnerSeat: "S" }, ctx, BUDGET.review);
@@ -564,7 +564,7 @@ describe("the coach reads the table", () => {
         actor: "S" as Seat,
         learnerSeat: "S" as Seat,
       },
-      { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") } },
+      { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") }, authorities: ALL_AUTHORITIES },
       BUDGET.review,
     );
     expect(a.findings).toEqual([]);
@@ -712,7 +712,7 @@ describe("the coach reads the table", () => {
     // violated it. This one goes through `advisePlay`, which is what the route
     // calls, so the two cannot drift again.
     const state = midHand();
-    const ctx = { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") } };
+    const ctx = { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") }, authorities: ALL_AUTHORITIES };
 
     const advice = await advisePlay({ state, learnerSeat: "S", actor: "S", ...ctx });
     const judged = await assessMove(
@@ -745,7 +745,7 @@ describe("the coach reads the table", () => {
       tricks: [{ leader: "S" as Seat, plays: [] }],
       trickCount: { NS: 0, EW: 0 },
     };
-    const ctx = { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") } };
+    const ctx = { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") }, authorities: ALL_AUTHORITIES };
 
     // ASKED: a default is a real answer, offered with lower confidence.
     const advice = await advisePlay({ state, learnerSeat: "S", actor: "S", ...ctx });
