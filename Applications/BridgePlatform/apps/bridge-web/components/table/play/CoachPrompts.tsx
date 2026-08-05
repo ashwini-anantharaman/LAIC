@@ -53,6 +53,50 @@ const AMBER = "#9c5a12";
 
 const SUIT_GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const RED = new Set(["♥", "♦"]);
+const RED_INK = "#c00";
+
+/**
+ * The coach's voice: one serif face for everything it SAYS, so the reason, the
+ * why-not line and the tie note read as one person talking.
+ *
+ * They were three different faces and three different sizes — the main reason in
+ * Georgia and the two lines under it in the app's Arial, which made a single
+ * thought look like three unrelated remarks. Size carries the hierarchy now;
+ * family and colour carry who is speaking.
+ */
+const SAYS = {
+  margin: 0,
+  fontFamily: "Georgia, 'Times New Roman', serif",
+  lineHeight: 1.5,
+} as const;
+
+/** A card inside prose: "10♦", "K♠". Captured so the split keeps them. */
+const CARD_IN_PROSE = /((?:10|[2-9AKQJ])[♠♥♦♣])/g;
+
+/**
+ * Prose with its suit symbols coloured — red for hearts and diamonds, black for
+ * spades and clubs, as every printed hand diagram has done for a century.
+ *
+ * This is not decoration. At body-text size in a serif face, ♦ and ♠ are close
+ * enough that a reader genuinely cannot tell which one a sentence named — a real
+ * reader asked "why is it saying 9 spade?" of a sentence about a diamond. Colour
+ * makes the suit unmistakable at a glance and costs nothing.
+ */
+function SuitText({ children }: Readonly<{ children: string }>) {
+  return (
+    <>
+      {children.split(CARD_IN_PROSE).map((part, i) =>
+        CARD_IN_PROSE.test(part) && RED.has(part.slice(-1)) ? (
+          <span key={i} style={{ color: RED_INK, fontWeight: 600 }}>
+            {part}
+          </span>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
 
 /** "DT" → "10♦". The engine's notation, in the table's. */
 function cardText(card: string): { rank: string; suit: string } {
@@ -300,25 +344,33 @@ function AnswerBlock({
           wording when it did not — the authority's is always true, just written
           for whoever reviews the rulebook rather than for a player. */}
       {why ? (
-        <p style={{ margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 14, lineHeight: 1.5, color: INK }}>
-          {why.why}
+        <p style={{ ...SAYS, fontSize: 14, color: INK }}>
+          <SuitText>{why.why}</SuitText>
         </p>
       ) : hint.because ? (
-        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: MUTED }}>{hint.because}</p>
+        <p style={{ ...SAYS, fontSize: 13.5, color: MUTED }}>
+          <SuitText>{hint.because}</SuitText>
+        </p>
       ) : null}
 
       {/* Why NOT the other card — beside the card it is about, rather than
           underneath the ones that survived. */}
       {why?.notThis?.map((n) => (
-        <p key={n.label} style={{ margin: 0, fontSize: 13, lineHeight: 1.45, color: MUTED }}>
-          <span style={{ fontWeight: 700, color: INK }}>not {n.label}</span> — {n.why}
+        <p key={n.label} style={{ ...SAYS, fontSize: 13.5, color: MUTED }}>
+          <span style={{ fontWeight: 700, color: INK }}>
+            not <SuitText>{n.label}</SuitText>
+          </span>
+          {" — "}
+          <SuitText>{n.why}</SuitText>
         </p>
       ))}
 
       {/* The authority offered several and cannot separate them. Said plainly
           rather than left as two chips with no explanation of why there are two. */}
       {why?.equivalent && (
-        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.45, color: FAINT }}>{why.equivalent}</p>
+        <p style={{ ...SAYS, fontSize: 13, color: FAINT }}>
+          <SuitText>{why.equivalent}</SuitText>
+        </p>
       )}
 
       {whyPending && (

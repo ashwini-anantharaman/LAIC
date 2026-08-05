@@ -238,3 +238,62 @@ describe("explainPlay — every failure is a reason, never a throw", () => {
     expect(params.system[0]!.cache_control).toEqual({ type: "ephemeral" });
   });
 });
+
+describe("validateExplanation — a card from another suit cannot win THIS trick", () => {
+  /**
+   * South holds a spade as well as the diamonds, so the spade is VISIBLE. That is
+   * the whole point of this fixture: an invisible wrong-suit card is already
+   * caught by the unseen-card rule, so the only gap worth a new rule is a card the
+   * learner really can see being credited with a trick it cannot win.
+   */
+  function withSpade(): ExplainInput {
+    const s = {
+      boardRef: "b", dealer: "N", vul: "none", phase: "play", turn: "N",
+      contract: { level: 3, strain: "H", doubled: 0, declarer: "S" },
+      hands: {
+        N: cards("DJ DT D6"), E: cards("SK SJ"),
+        S: cards("DQ D9 D7 SA"), W: cards("S3"),
+      },
+      auction: [{ seat: "E", call: "1S" }, { seat: "S", call: "2D" }],
+      tricks: [{ leader: "W", plays: [{ seat: "W", card: one("D2") }] }],
+      trickCount: { NS: 0, EW: 0 },
+    } as unknown as GameState;
+    return { ...input(), pos: visiblePosition(s, "S")! };
+  }
+
+  it("rejects crediting a visible spade with taking a diamond trick", () => {
+    const out = validateExplanation(
+      { why: "West led a small diamond, so play low and let your A♠ take care of the trick." },
+      withSpade(),
+    );
+    expect("reason" in out).toBe(true);
+    if ("reason" in out) expect(out.detail).toContain("wins a ♦ trick");
+  });
+
+  it("accepts the same sentence naming a card that CAN win it", () => {
+    const out = validateExplanation(
+      { why: "West led a small diamond, so play low and let your Q♦ take care of the trick." },
+      withSpade(),
+    );
+    expect("explanation" in out).toBe(true);
+  });
+
+  it("still allows a cross-suit remark that claims no trick", () => {
+    const out = validateExplanation(
+      { why: "Play low on the 2♦ — you will want the lead later for your A♠." },
+      withSpade(),
+    );
+    expect("explanation" in out).toBe(true);
+  });
+
+  it("an INVISIBLE wrong-suit card is caught earlier, by the unseen-card rule", () => {
+    // Which is why the reported 9-of-something was almost certainly a diamond:
+    // South held 9♦, and a 9♠ they did not hold would have been discarded here.
+    const out = validateExplanation(
+      { why: "Play low and let your 9♠ take care of the trick." },
+      input(),
+    );
+    expect("reason" in out).toBe(true);
+    if ("reason" in out) expect(out.detail).toContain("named unseen 9♠");
+  });
+});

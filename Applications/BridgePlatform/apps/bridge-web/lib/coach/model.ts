@@ -294,8 +294,45 @@ export function validateExplanation(
   }
   if (SECOND_GUESSING.test(why)) return { reason: "invalid", detail: "hedges about the answer" };
 
+  // RULE 2b — a card from another suit cannot win THIS trick.
+  //
+  // Live failure: on a diamond lead the model wrote "letting your hand's Q♦/9♠
+  // take care of the trick", naming a spade as the card that would win a diamond
+  // trick. Every other rule passed — the spade was in a hand the learner can see,
+  // nothing was ranked, the prose was specific and short. It was simply wrong
+  // about bridge, which is the one thing a validator cannot check in general.
+  //
+  // This case it can. Scoped to winning verbs so a legitimate cross-suit remark
+  // ("play low, you'll want the lead for your spades later") still passes.
+  const led = input.pos.tricks.at(-1)?.plays[0]?.card.slice(-1);
+  if (led) {
+    const wrongSuit = [...(why.match(/(?:10|[2-9AKQJ])[♠♥♦♣]/g) ?? [])].filter(
+      (c) => c.slice(-1) !== led,
+    );
+    const claimsWin = wrongSuit.filter((c) =>
+      new RegExp(`${c}[^.]{0,40}\\b(?:take|takes|win|wins|winning|cover|covers|beat|beats|capture|captures)\\b`, "i").test(why),
+    );
+    if (claimsWin.length) {
+      return {
+        reason: "invalid",
+        detail: `claimed ${claimsWin.join(", ")} wins a ${led} trick`,
+      };
+    }
+  }
+
   // RULE 3 — say something from THIS deal. The anti-blandness guard.
-  const concrete = [...input.best, ...(input.rejected ?? []), ...input.pos.auction.map((a) => a.call)];
+  //
+  // Any card actually in the deal counts, not just the chosen and rejected ones:
+  // "let your Q♦ take care of the trick" is entirely specific to this position
+  // even though the Q♦ is neither the answer nor an option. An earlier version
+  // listed only best/rejected/auction and rejected exactly that sentence.
+  const concrete = [
+    ...input.best,
+    ...(input.rejected ?? []),
+    ...input.pos.auction.map((a) => a.call),
+    ...input.pos.myHand.cards,
+    ...(input.pos.dummy?.cards ?? []),
+  ];
   if (!concrete.some((t) => prose.includes(t))) {
     return { reason: "invalid", detail: "nothing specific to this deal" };
   }
