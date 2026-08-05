@@ -20,21 +20,26 @@
 // corrections, and a surface that speaks 40 times a board is not read by trick
 // four.
 //
-// WIRING STATUS. "What should I play?" calls /api/bridge/play-hint, which runs
-// the assessor panel and reports which of its authorities answered.
+// WHERE THE MODEL SITS (owner decision 2026-08-05): behind the ANSWER, not behind
+// the reasoning.
 //
-// "Help me think" is LAYER 1 ONLY, and needs no network at all: the whole
-// scaffold is computed server-side in lib/coach/think.ts and handed down as a
-// prop, so tapping it is instant and cannot fail. Layer 2 adds what each
-// candidate DOES, what a bid PROMISES, and the framing question — one model call,
-// structurally blind to the solver. Until then the panel says plainly that the
-// reasoning half is missing, rather than letting the facts pass for the whole
-// feature.
+// "What should I play?" calls /api/bridge/play-hint for the card, then
+// /api/bridge/play-why for the reason. Two requests on purpose: the card lands
+// immediately and the explanation catches up, so nothing useful waits on a model.
+// The model may only explain the card an authority already chose — and it is
+// never asked when the double-dummy search is the adviser, because that reason IS
+// the hidden hands and no honest sentence can be written from the learner's side.
+//
+// "Help me think" is deterministic, end to end. No model, no network: the facts
+// and the realistic choices are computed server-side in lib/coach/think.ts and
+// handed down as a prop, so tapping it answers on the tick it is pressed and
+// cannot fail. That is the point of it — one button that cannot be wrong, and one
+// that can be explained.
 //
 // The auction's "What should I bid?" is still a surface only, and says so.
 
 import { useState } from "react";
-import type { Framing } from "@/lib/coach/model";
+import type { PlayExplanation } from "@/lib/coach/model";
 import type { ThinkAid } from "@/lib/coach/think";
 
 // The table's own palette, as CoachPanel uses it.
@@ -65,10 +70,10 @@ type Hint = {
 
 type Answer =
   | { kind: "loading" }
-  | { kind: "done"; hint: Hint }
+  | { kind: "done"; hint: Hint; why?: PlayExplanation; whyPending?: boolean }
   | { kind: "empty"; reason: string }
   | { kind: "pending"; what: string; will: string }
-  | { kind: "think"; aid: ThinkAid; framing?: Framing; framingPending?: boolean };
+  | { kind: "think"; aid: ThinkAid };
 
 export type TablePhase = "auction" | "play" | "other";
 
@@ -113,49 +118,58 @@ export function CoachPrompts({
       // somebody else's cards.
       const res = await fetch(`/api/bridge/play-hint?sessionId=${encodeURIComponent(sessionId)}`);
       const body = (await res.json()) as { hint?: Hint | null; reason?: string };
-      setAnswer(
-        body.hint?.best?.length
-          ? { kind: "done", hint: body.hint }
-          : { kind: "empty", reason: body.reason ?? "no answer" },
-      );
+      if (!body.hint?.best?.length) {
+        setAnswer({ kind: "empty", reason: body.reason ?? "no answer" });
+        return;
+      }
+      const hint = body.hint;
+      // The card is on screen now. The reason is a second request, so a slow or
+      // absent model never delays the thing the learner asked for.
+      setAnswer({ kind: "done", hint, whyPending: true });
+      void explain(hint);
     } catch {
       setAnswer({ kind: "empty", reason: "unreachable" });
     }
   }
 
-  async function think() {
-    if (!aid) {
-      setAnswer({
-        kind: "pending",
-        what: "Nothing to work through here.",
-        will: "Take a seat and wait for a decision that is yours, and this will lay the position out.",
-      });
-      return;
-    }
-
-    // TWO SPEEDS. Layer 1 arrived with the page, so it renders on this tick with
-    // no network at all. The framing is one request behind it and streams into the
-    // same block when it lands — the learner reads the facts while it is in flight
-    // rather than watching a spinner.
-    setAnswer({ kind: "think", aid, framingPending: true });
+  async function explain(hint: Hint) {
     try {
-      const res = await fetch(`/api/bridge/help-me-think?sessionId=${encodeURIComponent(sessionId)}`);
-      const body = (await res.json()) as { framing?: Framing | null };
+      const res = await fetch(`/api/bridge/play-why?sessionId=${encodeURIComponent(sessionId)}`);
+      const body = (await res.json()) as { explanation?: PlayExplanation | null };
       setAnswer((prev) =>
-        prev?.kind === "think"
-          ? { kind: "think", aid: prev.aid, framingPending: false, ...(body.framing ? { framing: body.framing } : {}) }
+        prev?.kind === "done" && prev.hint === hint
+          ? { kind: "done", hint, whyPending: false, ...(body.explanation ? { why: body.explanation } : {}) }
           : prev,
       );
     } catch {
-      // A missing framing is a feature that did not fire, never an error a
-      // learner should see. The facts they are already reading remain true.
-      setAnswer((prev) => (prev?.kind === "think" ? { kind: "think", aid: prev.aid, framingPending: false } : prev));
+      // No explanation is a flourish that did not arrive. The authority's own
+      // wording is still there and still true.
+      setAnswer((prev) =>
+        prev?.kind === "done" && prev.hint === hint ? { kind: "done", hint, whyPending: false } : prev,
+      );
     }
+  }
+
+  function think() {
+    // No fetch, ever. The scaffold arrived with the page, so this answers on the
+    // tick it is pressed and has no failure mode to design around.
+    if (aid) return setAnswer({ kind: "think", aid });
+    setAnswer({
+      kind: "pending",
+      what: "Nothing to work through here.",
+      will: "Take a seat and wait for a decision that is yours, and this will lay the position out.",
+    });
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-      {answer && <AnswerBlock answer={answer} />}
+      {answer && (
+        <AnswerBlock
+          answer={answer}
+          {...(answer.kind === "done" && answer.why ? { why: answer.why } : {})}
+          whyPending={answer.kind === "done" && Boolean(answer.whyPending)}
+        />
+      )}
 
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
         <Prompt onClick={think} disabled={!active} primary>
@@ -211,7 +225,9 @@ function Prompt({
  * agrees or dissents separately — "your system says this, the cards say
  * otherwise" is worth showing rather than resolving.
  */
-function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
+function AnswerBlock({
+  answer, why, whyPending,
+}: Readonly<{ answer: Answer; why?: PlayExplanation; whyPending: boolean }>) {
   if (answer.kind === "loading") {
     return (
       <p style={{ margin: 0, fontSize: 13.5, color: MUTED, fontStyle: "italic" }}>
@@ -220,10 +236,7 @@ function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
     );
   }
 
-  if (answer.kind === "think")
-    return (
-      <ThinkBlock aid={answer.aid} framing={answer.framing} framingPending={answer.framingPending ?? false} />
-    );
+  if (answer.kind === "think") return <ThinkBlock aid={answer.aid} />;
 
   if (answer.kind === "pending") {
     return (
@@ -283,8 +296,35 @@ function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
           );
         })}
       </div>
-      {hint.because && (
+      {/* THE REASON. The model's rewrite when it arrived, the authority's own
+          wording when it did not — the authority's is always true, just written
+          for whoever reviews the rulebook rather than for a player. */}
+      {why ? (
+        <p style={{ margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 14, lineHeight: 1.5, color: INK }}>
+          {why.why}
+        </p>
+      ) : hint.because ? (
         <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: MUTED }}>{hint.because}</p>
+      ) : null}
+
+      {/* Why NOT the other card — beside the card it is about, rather than
+          underneath the ones that survived. */}
+      {why?.notThis?.map((n) => (
+        <p key={n.label} style={{ margin: 0, fontSize: 13, lineHeight: 1.45, color: MUTED }}>
+          <span style={{ fontWeight: 700, color: INK }}>not {n.label}</span> — {n.why}
+        </p>
+      ))}
+
+      {/* The authority offered several and cannot separate them. Said plainly
+          rather than left as two chips with no explanation of why there are two. */}
+      {why?.equivalent && (
+        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.45, color: FAINT }}>{why.equivalent}</p>
+      )}
+
+      {whyPending && (
+        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: FAINT, fontStyle: "italic" }}>
+          Putting that into plainer words…
+        </p>
       )}
       {/* The calculation's verdict on the advice — agreement is reassurance,
           disagreement is the interesting case. The card it prefers is NOT shown:
@@ -311,30 +351,9 @@ function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
  * them reads as a recommendation, and a learner picks up that tell faster than
  * they pick up the position. The point of this button is that it does not answer.
  */
-function ThinkBlock({
-  aid, framing, framingPending,
-}: Readonly<{ aid: ThinkAid; framing?: Framing; framingPending: boolean }>) {
-  // What each option DOES comes from the framing; layer 1's `note` is a factual
-  // qualifier and stays as the fallback. Keyed by label, which is why the model is
-  // told to echo labels verbatim and why the validator drops entries that don't.
-  const does = new Map((framing?.does ?? []).map((d) => [d.label, d.does]));
-
+function ThinkBlock({ aid }: Readonly<{ aid: ThinkAid }>) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-      {!!framing?.meanings?.length && (
-        <div>
-          <Head>What the bidding promised</Head>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
-            {framing.meanings.map((m) => (
-              <li key={m.call} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13.5, lineHeight: 1.45 }}>
-                <span style={{ flex: "none", minWidth: 42, fontWeight: 700, color: INK }}>{m.call}</span>
-                <span style={{ color: MUTED }}>{m.promises}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {aid.known.length > 0 && (
         <div>
           <Head>What you can work out</Head>
@@ -358,11 +377,7 @@ function ThinkBlock({
             {aid.candidates.map((c) => (
               <li key={c.label} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13.5, lineHeight: 1.45 }}>
                 <span style={{ flex: "none", minWidth: 42, fontWeight: 700, color: INK }}>{c.label}</span>
-                {does.get(c.label) ? (
-                  <span style={{ color: MUTED }}>{does.get(c.label)}</span>
-                ) : c.note ? (
-                  <span style={{ color: FAINT }}>{c.note}</span>
-                ) : null}
+                {c.note ? <span style={{ color: FAINT }}>{c.note}</span> : null}
               </li>
             ))}
           </ul>
@@ -373,27 +388,9 @@ function ThinkBlock({
         <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: MUTED }}>{aid.noChoice}</p>
       )}
 
-      {/* THE QUESTION, and it is handed back unanswered on purpose. */}
-      {framing?.question && (
-        <p style={{ margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 15, lineHeight: 1.45, fontWeight: 700, color: INK }}>
-          {framing.question}
-        </p>
-      )}
-
-      {framingPending && (
-        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: FAINT, fontStyle: "italic" }}>
-          Working out what the position turns on…
-        </p>
-      )}
-
-      {/* Say what is missing rather than letting the facts pass for the whole
-          feature — otherwise a learner concludes this is all the coach has. */}
-      {!framingPending && !framing && (
-        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: FAINT }}>
-          These are the facts. What each choice would <i>do</i> isn&apos;t available for this
-          position.
-        </p>
-      )}
+      {/* No model here, so nothing to apologise for and nothing to wait on. If the
+          learner wants the answer rather than the position, the other button is
+          right there. */}
     </div>
   );
 }
