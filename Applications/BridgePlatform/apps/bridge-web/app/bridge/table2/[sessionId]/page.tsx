@@ -118,13 +118,20 @@ export default async function PlayTablePage({
     record.seats[actingSeat].kind === "human" &&
     (record.seats[actingSeat] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
 
+  // COACH PARKED "for now" (owner, 2026-08-05: "hide the coach panel"). The panel
+  // is intentionally not rendered — but every wire stays: canCoach still reads
+  // table.coach, and lib/coach, CoachPanel, /api/bridge/play-hint are untouched.
+  // Flip `coachParked` to false to bring it back exactly as it was.
+  const coachParked = true;
+  const showCoach = canCoach && !coachParked;
   // The coach payload (his engine): the facts layer (looking) and the reasoning
   // scaffold (think), computed from THIS learner's seat. Both are null for a
   // watcher — nobody's hand to reason from — and the panel then shows its honest
   // empty state. The on-demand "What should I play?" advice is fetched
-  // client-side. dealer/vul mirror what the table itself is handed.
+  // client-side. dealer/vul mirror what the table itself is handed. While parked,
+  // `showCoach` is false so this expensive build is skipped entirely.
   const coachState = { ...state, dealer: record.board.dealer, vul: state.vul };
-  const coachData: CoachData | undefined = canCoach
+  const coachData: CoachData | undefined = showCoach
     ? {
         phase: state.phase === "auction" ? "auction" : state.phase === "play" ? "play" : "other",
         active: myTurn,
@@ -375,7 +382,7 @@ export default async function PlayTablePage({
             settings={canSettingsMenu ? settings : undefined}
             viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
             appearance={resolvedAppearance}
-            showCoach={canCoach}
+            showCoach={showCoach}
             coach={coachData}
           />
         )}

@@ -1,7 +1,6 @@
 import { roleLabel, stubDisplayName } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
-import { clearDevUser, signOutNexus } from "@/app/actions";
-import { NavLink } from "@/components/NavLink";
+import { BridgeNav } from "@/components/BridgeNav";
 import { getCatalogue } from "@/lib/access";
 import { navForContext } from "@/lib/nav";
 import { getBridgeContext, isEmbeddedLaunch, isFellowDemo, nexusMode } from "@/lib/nexus";
@@ -55,69 +54,20 @@ export default async function BridgeShellLayout({
           was pushed from (Play, Library, Assignments…), which an in-page link
           could only guess at. */}
       {!embedded && (
-      <aside className="flex w-full shrink-0 flex-col overflow-y-auto border-b border-[var(--line)] bg-[var(--card)] md:w-64 md:border-b-0 md:border-r">
-        <div className="border-b border-[var(--line)] px-3 py-2 md:p-4">
-          <p className="hidden text-[11px] tracking-[0.35em] text-neutral-500 md:block">
-            ♠ <span className="text-[var(--madder)]">♥</span> ♣{" "}
-            <span className="text-[var(--madder)]">♦</span>
-          </p>
-          <p className="font-serif text-lg font-medium tracking-tight md:mt-1 md:text-xl">
-            Bridge Platform
-          </p>
-          <p className="hidden text-xs text-neutral-500 md:block">LAIC Bridge Program</p>
-        </div>
-        <nav className="flex flex-row flex-wrap gap-1 px-2 py-1.5 md:flex-1 md:flex-col md:flex-nowrap md:gap-0 md:space-y-1 md:p-3">
-          {navItems.map((item) => (
-            <NavLink key={item.href} href={item.href} label={item.label} />
-          ))}
-        </nav>
-        {/* Exit controls must exist on every screen size — nobody gets
-            trapped in the platform. Identity details stay desktop-only. */}
-        <div className="flex items-center gap-2 border-t border-[var(--line)] px-4 py-2 md:hidden">
-          {showSignOut && (
-            <form action={signOutNexus}>
-              <button type="submit" className="text-xs font-medium text-neutral-600 underline-offset-2 hover:underline">
-                Sign out
-              </button>
-            </form>
-          )}
-        </div>
-        <div className="hidden space-y-1 border-t border-[var(--line)] p-4 text-sm md:block">
-          {showSignOut && (
-            <form action={signOutNexus} className="mb-2">
-              <button
-                type="submit"
-                className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
-              >
-                Sign out
-              </button>
-            </form>
-          )}
-          <p className="font-medium">{displayName}</p>
-          <p className="text-xs text-neutral-500">
-            {/* The person's actual role name (custom roles included) wins over
-                the level→prebuilt fallback in `roles`. */}
-            {context.role_name || context.roles.map(roleLabel).join(", ")}
-          </p>
-          {context.programOrganizationId ? (
-            <p className="text-xs text-neutral-500">
-              Org: {context.programOrganizationId}
-            </p>
-          ) : (
-            <p className="text-xs text-neutral-500">Program-level access</p>
-          )}
-          {nexusMode() === "stub" && !demo && (
-            <form action={clearDevUser}>
-              <button
-                type="submit"
-                className="text-xs text-emerald-700 underline-offset-2 hover:underline"
-              >
-                Switch user
-              </button>
-            </form>
-          )}
-        </div>
-      </aside>
+        <BridgeNav
+          navItems={navItems.map(({ href, label }) => ({ href, label }))}
+          displayName={displayName}
+          // The person's actual role name (custom roles included) wins over
+          // the level→prebuilt fallback in `roles`.
+          roleText={context.role_name || context.roles.map(roleLabel).join(", ")}
+          orgLabel={
+            context.programOrganizationId
+              ? `Org: ${context.programOrganizationId}`
+              : "Program-level access"
+          }
+          showSignOut={showSignOut}
+          showSwitchUser={nexusMode() === "stub" && !demo}
+        />
       )}
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-8">{children}</main>
     </div>
