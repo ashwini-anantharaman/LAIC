@@ -34,6 +34,7 @@
 // The auction's "What should I bid?" is still a surface only, and says so.
 
 import { useState } from "react";
+import type { Framing } from "@/lib/coach/model";
 import type { ThinkAid } from "@/lib/coach/think";
 
 // The table's own palette, as CoachPanel uses it.
@@ -67,7 +68,7 @@ type Answer =
   | { kind: "done"; hint: Hint }
   | { kind: "empty"; reason: string }
   | { kind: "pending"; what: string; will: string }
-  | { kind: "think"; aid: ThinkAid };
+  | { kind: "think"; aid: ThinkAid; framing?: Framing; framingPending?: boolean };
 
 export type TablePhase = "auction" | "play" | "other";
 
@@ -122,14 +123,34 @@ export function CoachPrompts({
     }
   }
 
-  function think() {
-    // No fetch: the scaffold arrived with the page.
-    if (aid) return setAnswer({ kind: "think", aid });
-    setAnswer({
-      kind: "pending",
-      what: "Nothing to work through here.",
-      will: "Take a seat and wait for a decision that is yours, and this will lay the position out.",
-    });
+  async function think() {
+    if (!aid) {
+      setAnswer({
+        kind: "pending",
+        what: "Nothing to work through here.",
+        will: "Take a seat and wait for a decision that is yours, and this will lay the position out.",
+      });
+      return;
+    }
+
+    // TWO SPEEDS. Layer 1 arrived with the page, so it renders on this tick with
+    // no network at all. The framing is one request behind it and streams into the
+    // same block when it lands — the learner reads the facts while it is in flight
+    // rather than watching a spinner.
+    setAnswer({ kind: "think", aid, framingPending: true });
+    try {
+      const res = await fetch(`/api/bridge/help-me-think?sessionId=${encodeURIComponent(sessionId)}`);
+      const body = (await res.json()) as { framing?: Framing | null };
+      setAnswer((prev) =>
+        prev?.kind === "think"
+          ? { kind: "think", aid: prev.aid, framingPending: false, ...(body.framing ? { framing: body.framing } : {}) }
+          : prev,
+      );
+    } catch {
+      // A missing framing is a feature that did not fire, never an error a
+      // learner should see. The facts they are already reading remain true.
+      setAnswer((prev) => (prev?.kind === "think" ? { kind: "think", aid: prev.aid, framingPending: false } : prev));
+    }
   }
 
   return (
@@ -199,7 +220,10 @@ function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
     );
   }
 
-  if (answer.kind === "think") return <ThinkBlock aid={answer.aid} />;
+  if (answer.kind === "think")
+    return (
+      <ThinkBlock aid={answer.aid} framing={answer.framing} framingPending={answer.framingPending ?? false} />
+    );
 
   if (answer.kind === "pending") {
     return (
@@ -287,9 +311,30 @@ function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
  * them reads as a recommendation, and a learner picks up that tell faster than
  * they pick up the position. The point of this button is that it does not answer.
  */
-function ThinkBlock({ aid }: Readonly<{ aid: ThinkAid }>) {
+function ThinkBlock({
+  aid, framing, framingPending,
+}: Readonly<{ aid: ThinkAid; framing?: Framing; framingPending: boolean }>) {
+  // What each option DOES comes from the framing; layer 1's `note` is a factual
+  // qualifier and stays as the fallback. Keyed by label, which is why the model is
+  // told to echo labels verbatim and why the validator drops entries that don't.
+  const does = new Map((framing?.does ?? []).map((d) => [d.label, d.does]));
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+      {!!framing?.meanings?.length && (
+        <div>
+          <Head>What the bidding promised</Head>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+            {framing.meanings.map((m) => (
+              <li key={m.call} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13.5, lineHeight: 1.45 }}>
+                <span style={{ flex: "none", minWidth: 42, fontWeight: 700, color: INK }}>{m.call}</span>
+                <span style={{ color: MUTED }}>{m.promises}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {aid.known.length > 0 && (
         <div>
           <Head>What you can work out</Head>
@@ -313,8 +358,8 @@ function ThinkBlock({ aid }: Readonly<{ aid: ThinkAid }>) {
             {aid.candidates.map((c) => (
               <li key={c.label} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13.5, lineHeight: 1.45 }}>
                 <span style={{ flex: "none", minWidth: 42, fontWeight: 700, color: INK }}>{c.label}</span>
-                {c.does ? (
-                  <span style={{ color: MUTED }}>{c.does}</span>
+                {does.get(c.label) ? (
+                  <span style={{ color: MUTED }}>{does.get(c.label)}</span>
                 ) : c.note ? (
                   <span style={{ color: FAINT }}>{c.note}</span>
                 ) : null}
@@ -328,16 +373,25 @@ function ThinkBlock({ aid }: Readonly<{ aid: ThinkAid }>) {
         <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: MUTED }}>{aid.noChoice}</p>
       )}
 
-      {aid.question && (
-        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, fontWeight: 700, color: INK }}>{aid.question}</p>
+      {/* THE QUESTION, and it is handed back unanswered on purpose. */}
+      {framing?.question && (
+        <p style={{ margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 15, lineHeight: 1.45, fontWeight: 700, color: INK }}>
+          {framing.question}
+        </p>
       )}
 
-      {/* Say what is missing. Letting the facts pass for the finished feature
-          would let a learner conclude this is all the coach has to offer. */}
-      {aid.degraded && (
+      {framingPending && (
+        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: FAINT, fontStyle: "italic" }}>
+          Working out what the position turns on…
+        </p>
+      )}
+
+      {/* Say what is missing rather than letting the facts pass for the whole
+          feature — otherwise a learner concludes this is all the coach has. */}
+      {!framingPending && !framing && (
         <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: FAINT }}>
-          These are the facts. What each choice would <i>do</i>, and what the bidding promises, is
-          the part still being built.
+          These are the facts. What each choice would <i>do</i> isn&apos;t available for this
+          position.
         </p>
       )}
     </div>
