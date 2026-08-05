@@ -112,7 +112,7 @@
     "cardBackColor": ["#0d707c", "#12525e", "#8f1d1d"]
   },
   "fan": {
-    "spread": { "min": 30, "max": 140, "step": 2, "default": 78 },
+    "spread": { "min": 30, "max": 140, "step": 2, "default": 56 },
     "radius": { "min": 120, "max": 900, "default": 0 }
   },
   "defaults": {
@@ -120,7 +120,7 @@
     "handLayout": "row",
     "bidPad": "grid",
     "centreFrame": false,
-    "fanSpread": 78,
+    "fanSpread": 56,
     "fanRadius": 0,
     "overrides": {}
   },

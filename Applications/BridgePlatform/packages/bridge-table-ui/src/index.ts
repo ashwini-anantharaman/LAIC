@@ -38,3 +38,6 @@ export type { ResultCardProps } from "./ResultCard";
 
 export { SeatsPopup } from "./SeatsPopup";
 export type { SeatsPopupProps } from "./SeatsPopup";
+
+export { CoachPanel } from "./CoachPanel";
+export type { CoachPanelProps, CoachLine, CoachAction } from "./CoachPanel";

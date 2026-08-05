@@ -30,7 +30,7 @@
 // it never became a standalone leaf.
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { AuctionCall, Card, Seat } from "@bridge/events";
+import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
 import { resolveSkin, type SkinTokens, type TableAppearance } from "@bridge/table-config";
 import { BidColumns } from "./BidColumns";
 import { EdgeToolbar, type ToolbarItem } from "./EdgeToolbar";
@@ -42,21 +42,54 @@ import { AuctionBox, type AuctionBoxSizing } from "./AuctionBox";
 import { TrickArea } from "./TrickArea";
 import { ResultCard } from "./ResultCard";
 import { SeatsPopup } from "./SeatsPopup";
+import { CoachPanel, type CoachLine, type CoachAction } from "./CoachPanel";
 import {
-  RED, GOLD, GREY, SEAT_BADGE, GLYPH, STRAINS, ORDER, PARTNER,
-  isRed, callText, callColor, sideOf,
+  RED, GOLD, GREY, SEAT_BADGE, GLYPH, STRAINS, ORDER, PARTNER, DISPLAY,
+  isRed, callText, callColor, sideOf, rankText,
 } from "./tokens";
 
 // ---------------------------------------------------------------------------
 // PlayTable-specific stage metrics. The leaf palette + text helpers live in
 // ./tokens, shared byte-for-byte with every extracted component.
 // ---------------------------------------------------------------------------
-/** Wide stage; the mobile stack is 720 wide with a MEASURED height. */
+/** Wide stage; the mobile stack is 720 wide with a COMPUTED height. */
 const BASE_WIDE = { w: 1040, h: 678 };
 const MOBILE_W = 720;
-const MOBILE_FELT_H = 430;
 /** Mobile hand-card metrics (Mobile Table.dc.html). */
 const M_CARD = { w: 54, h: 128, rank: 42, glyph: 38, inset: 5, backW: 52 };
+
+// ---------------------------------------------------------------------------
+// Phone-tier band constants (Mobile Table.dc.html). The stack's content height
+// is COMPUTED from these, never measured: a measured height would feed the
+// scale, and the scale feeds the controls' rendered-size floors, which feed the
+// height back. Constants break that loop, and they are what lets the table
+// promise a SHARE of the screen rather than growing until it fills the phone.
+// ---------------------------------------------------------------------------
+const BAR_BASE = 52;
+const TOUCH = 44;
+const DUMMY_LINE = 54;
+const HAND_H = { row: 172, fan: 238 };
+/** The tray is three touch-floored rows plus its padding, so like the bars its
+    authored height is a function of the scale, not a constant. */
+const trayHeight = (k: number) => 3 * Math.max(52, Math.ceil(TOUCH / (k || 1))) + 30;
+/** The centre is the flexible band: it absorbs the leftover so the table fills
+    exactly its share. The floor is what a four-row auction needs INSIDE the
+    inset — below it the grid scrolls internally rather than being cut. */
+const CENTRE_MIN = 250;
+const CENTRE_MAX = 900;
+const PAD_CENTRE = 150;
+/** Sub-pixel rounding across four bands lands a few px either way; the centre
+    absorbs it, so this reserve guarantees the budget never UNDER-reserves (an
+    over-reserve is invisible, an under-reserve clips the action bar off the
+    bottom). It is a RENDERED quantity, so it divides back through the scale. */
+const slackFor = (k: number) => Math.ceil(24 / (k || 1));
+const GAPS = 0;
+/** One knob drives the whole pad, so its height is a ratio of the cell. */
+const padHeight = (cell: number) => Math.round(cell * 8.8);
+/** Below this a 35-target pad stops being hittable and the level-then-strain
+    tray is the better control even for someone who chose the pad. Measured
+    against the RENDERED size, like every touch floor. */
+const PAD_USABLE = 24;
 /** SeatHand default row metrics — the pre-extraction cardRow defaults. */
 const CARD_ROW: SeatHandMetrics = { w: 50, h: 71, rank: 25, glyph: 22, inset: 3 };
 
@@ -77,7 +110,7 @@ const DEFAULT_LOOK: ResolvedAppearance = {
   handLayout: "row",
   bidPad: "grid",
   centreFrame: false,
-  fanSpread: 78,
+  fanSpread: 56,
   fanRadius: 0,
 };
 
@@ -202,6 +235,18 @@ export interface PlayTableProps {
    * pre-skin table.
    */
   appearance?: ResolvedAppearance;
+
+  // ── phone-tier coach panel (Mobile Table.dc.html / CoachPanel.dc.html) ──────
+  /** Reserve a coach panel below the table region on the phone tier. Default on. */
+  showCoach?: boolean;
+  /** The coach panel's share of the phone screen, 0–55%. Default 30. */
+  coachShare?: number;
+  /** Header title for the coach panel. Default "Coach". */
+  coachTitle?: string;
+  /** Lines the coach panel renders; empty/absent → its honest empty state. */
+  coachLines?: readonly CoachLine[];
+  /** Action buttons in the coach panel's footer. */
+  coachActions?: readonly CoachAction[];
 }
 
 export function PlayTable({
@@ -229,6 +274,11 @@ export function PlayTable({
   settings,
   viewHref,
   appearance,
+  showCoach = true,
+  coachShare = 30,
+  coachTitle = "Coach",
+  coachLines,
+  coachActions,
 }: Readonly<PlayTableProps>) {
   // One skin resolve per render dresses every tier. `tok` carries the colour
   // tokens; the five layout knobs steer fan / columns / frame below.
@@ -253,16 +303,6 @@ export function PlayTable({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-
-  // The mobile stack's height changes with phase (bid tray, dummy row, hand),
-  // so it is MEASURED, never estimated. offsetHeight ignores the ancestor
-  // transform — getBoundingClientRect() would feed the scale it produces.
-  const stackRef = useRef<HTMLDivElement | null>(null);
-  const [contentH, setContentH] = useState(1100);
-  useLayoutEffect(() => {
-    const h = stackRef.current?.offsetHeight;
-    if (h && Math.abs(h - contentH) > 1) setContentH(h);
-  });
 
   // Armed bid level and the staged (unconfirmed) call are instance state.
   const [armed, setArmed] = useState<number | null>(null);
@@ -289,15 +329,6 @@ export function PlayTable({
   const stacked = narrow && !phone;
   const BASE = stacked ? { w: MOBILE_W, h: 1268 } : BASE_WIDE;
 
-  // Wide/stacked: scale to FIT, down or up. Phone: a fixed 720-wide column
-  // scaled by BOTH axes against the measured stack height (never up — thumb
-  // reach, not magnification), so the hand stays above the fold.
-  const scale = phone
-    ? Math.min(1, box.w / MOBILE_W, box.h / contentH) || 1
-    : Math.min(box.w / BASE.w, box.h / BASE.h) || 1;
-  const stageW = phone ? MOBILE_W : Math.max(BASE.w, box.w / scale);
-  const stageH = phone ? Math.max(contentH, box.h / scale) : Math.max(BASE.h, box.h / scale);
-
   const c = state.contract;
   const declarer = c?.declarer ?? null;
   const dummy = declarer && state.phase !== "auction" ? PARTNER[declarer] : null;
@@ -311,6 +342,88 @@ export function PlayTable({
 
   const vulFor = (seat: Seat) => state.vul === "both" || state.vul === "All" || sideOf(seat).toLowerCase() === String(state.vul).toLowerCase();
   const dealerCol = ORDER.indexOf(state.dealer);
+
+  // ── phone-tier band budget (Mobile Table.dc.html) ──────────────────────────
+  // The coach panel takes its share of the phone screen; the table region gets
+  // the rest, and the whole stack is priced against THAT height.
+  const coachOn = showCoach !== false;
+  const coachSharePct = coachOn ? Math.max(0, Math.min(55, coachShare ?? 30)) : 0;
+  const tableSharePct = 100 - coachSharePct;
+
+  // The dummy is a ONE-LINE suit strip unless the human must play from it — then
+  // it stays a full card row (compactness must not cost the declarer controls).
+  const playing = inPlay || complete;
+  const decHuman = declarer ? !!seats[declarer].human : false;
+  const dummyIsRow = playing && !!dummy && dummy !== "S" && decHuman;
+  const dummyIsStrip = playing && !!dummy && dummy !== "S" && !dummyIsRow;
+
+  // Only the BOX is measured (box, above); the content height is COMPUTED from
+  // the band constants and iterated to a FIXED POINT. The bar/tray heights are
+  // functions of the scale they help determine, so a single pass priced at the
+  // width scale under-reserves whenever height binds and the toolbar falls off
+  // the bottom. Each pass prices the bars at the previous pass's scale; the
+  // scale only ever decreases, so this converges — the step cap terminates it.
+  const padOn = columnsPad && inAuction;
+  const widthScale = Math.min(1, box.w / MOBILE_W);
+  const availPx = Math.max(240, box.h * (tableSharePct / 100) || 590);
+  const barFor = (k: number) => {
+    // The touch floor YIELDS rather than eating the layout: capped at 13% of the
+    // budget, targets stay large where there is room and degrade where there is
+    // honestly none, instead of two bars growing taller than the table itself.
+    const want = Math.max(BAR_BASE, Math.ceil(TOUCH / (k || 1)) + 14);
+    return Math.min(want, Math.max(BAR_BASE, Math.round((0.13 * availPx) / (k || 1))));
+  };
+  const fit = (k: number, usePad: boolean) => {
+    const bar = barFor(k);
+    const avail = availPx / (k || 1);
+    const base =
+      bar * 2 + GAPS + slackFor(k) +
+      (dummyIsStrip ? DUMMY_LINE : 0) +
+      (dummyIsRow ? HAND_H.row : 0) +
+      (!usePad && inAuction ? trayHeight(k) : 0) +
+      HAND_H[fanLayout ? "fan" : "row"];
+    let cell = 0;
+    let centre: number;
+    if (usePad) {
+      // While the pad is up it IS the interaction, so it takes the space and the
+      // auction box keeps only a strip; the cell is sized from the leftover.
+      cell = Math.max(30, Math.min(62, Math.floor((avail - base - PAD_CENTRE) / 8.3)));
+      centre = Math.max(PAD_CENTRE, Math.round(avail - base - padHeight(cell)));
+    } else {
+      centre = Math.max(CENTRE_MIN, Math.min(CENTRE_MAX, Math.round(avail - base)));
+    }
+    const content = base + (usePad ? padHeight(cell) : 0) + centre;
+    return { bar, cell, centre, content, usePad, scale: Math.min(1, widthScale, availPx / content) };
+  };
+  const converge = (usePad: boolean) => {
+    let r = fit(widthScale, usePad);
+    for (let i = 0; i < 10 && r.scale < widthScale - 0.0005; i++) {
+      const next = fit(r.scale, usePad);
+      if (Math.abs(next.scale - r.scale) < 0.0005) {
+        r = next;
+        break;
+      }
+      r = next;
+    }
+    return r;
+  };
+  let phoneFit = converge(padOn);
+  // A pad squeezed past the point of being hittable is worse than the tray, so
+  // the budget gets the final say over the preference.
+  if (phoneFit.usePad && phoneFit.cell * phoneFit.scale < PAD_USABLE) phoneFit = converge(false);
+  const phonePadShown = phoneFit.usePad;
+  const phonePadCell = phoneFit.usePad ? phoneFit.cell : 38;
+  const feltH = phoneFit.centre;
+
+  // Wide/stacked: scale to FIT, down or up. Phone: a fixed 720-wide column at
+  // the computed fixed-point scale (never up — thumb reach, not magnification).
+  const genericScale = Math.min(box.w / BASE.w, box.h / BASE.h) || 1;
+  const scale = phone ? phoneFit.scale : genericScale;
+  const stageW = phone ? MOBILE_W : Math.max(BASE.w, box.w / genericScale);
+  const stageH = phone ? phoneFit.content : Math.max(BASE.h, box.h / genericScale);
+  // Rounding across four bands lands a few px either way; the stage bleeds its
+  // scaled-away height back so the region packs to exactly its share.
+  const stageBleed = phone ? -Math.round(phoneFit.content * (1 - phoneFit.scale)) : 0;
 
   // seatModel's plate rule: humans GOLD, the acting seat pale, others grey;
   // the suit panel brightens for the acting seat and the dummy.
@@ -759,10 +872,37 @@ export function PlayTable({
       <SeatsPopup onClose={() => setSeatsOpen(false)}>{railExtra}</SeatsPopup>
     ) : null;
 
-  /** Dummy's hand as a plate-less card row (or fan) across the top (phone play
-      view). Transparent — it sits on the shared felt wrapper. */
-  const dummyRow =
-    inPlay && dummy && dummy !== "S" ? (
+  /** Dummy as a ONE-LINE suit strip (♠AK9 ♥J7652 …) via the handText format —
+      the compact form when the human is NOT playing from dummy. */
+  const dummySuitSpans = (seat: Seat) =>
+    DISPLAY.map((suit) => {
+      const ranks = state.hands[seat]
+        .filter((cd) => cd.suit === suit)
+        .sort((a, b) => b.rank - a.rank)
+        .map((cd) => rankText(cd.rank))
+        .join("");
+      return ranks ? { suit, ranks } : null;
+    }).filter((x): x is { suit: Suit; ranks: string } => x != null);
+
+  const dummyStripEl =
+    dummyIsStrip && dummy ? (
+      <div style={{ flex: "none", height: DUMMY_LINE, display: "flex", alignItems: "center", gap: 14, padding: "0 12px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
+        <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{seats[dummy].name}</span>
+        {visible[dummy]
+          ? dummySuitSpans(dummy).map((s) => (
+              <span key={s.suit} style={{ fontSize: 26, fontWeight: 700, color: "#f2f6f4", whiteSpace: "nowrap" }}>
+                <span style={{ color: isRed(s.suit) ? RED : "#111" }}>{GLYPH[s.suit]}</span>
+                {s.ranks}
+              </span>
+            ))
+          : null}
+      </div>
+    ) : null;
+
+  /** Dummy as a FULL card row (or fan) — kept only when the human is declarer
+      and must play from dummy, so compactness never costs them the controls. */
+  const dummyRowEl =
+    dummyIsRow && dummy ? (
       <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: 0 }}>
         {visible[dummy]
           ? fanLayout
@@ -773,61 +913,68 @@ export function PlayTable({
     ) : null;
 
   // ---- mobile stack (Mobile Table.dc.html) ----------------------------------
+  // The stage is a fixed 720-wide column at the fixed-point scale; its content
+  // height is the sum of the band constants (never measured), and it bleeds its
+  // scaled-away height back so the table packs to exactly its screen share.
   const mobileStack = (
-    <div style={{ width: MOBILE_W, minHeight: stageH, transform: `scale(${scale})`, transformOrigin: "top center", display: "flex", flexDirection: "column", background: "#fff" }}>
-      <div ref={stackRef} style={{ display: "flex", flexDirection: "column", background: "#fff" }}>
-        <EdgeToolbar side="top" items={infoItems} condensed thickness={52} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />
-        {/* ONE felt wrapper behind dummy row, centre, pad and hand. The FLAT
-            skin variant, per Mobile Table.dc.html: the felt spans stacked
-            bands, and a radial gradient reads as a different green in each. */}
-        <div style={{ flex: "none", display: "flex", flexDirection: "column", background: tok.feltFlat }}>
-          {dummyRow}
-          <div style={{ flex: "none", height: MOBILE_FELT_H, overflow: "hidden", padding: inAuction ? 10 : 0 }}>
-            {/* The gold centre frame, when on, wraps the felt centre band. */}
-            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: inAuction ? "flex-start" : "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
-              {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: 330, headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
-              {inAuction && auctionDisplay === "seats" ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
-                  {(["N", "E", "S", "W"] as Seat[]).map((s) => (
-                    <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ width: 30, height: 30, background: SEAT_BADGE, color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
-                      {callsRow(s, 22) ?? <span style={{ fontSize: 18, color: "rgba(255,255,255,.6)" }}>—</span>}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {inPlay ? trickCross(1.6) : null}
-              {complete ? resultCard : null}
-            </div>
-          </div>
-          {/* Columns pad sits directly on the felt at the design's compact 40px
-              cell (Mobile Table.dc.html padCell); the tray only shows in grid
-              mode — one pad on screen at a time. */}
-          {inAuction ? (
-            columnsPad ? (
-              <div style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
-                <BidColumns cell={40} {...bidColumnsProps} />
+    <div style={{ width: MOBILE_W, minHeight: stageH, height: stageH, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}>
+      {/* Single-pricing: the host has already priced this bar against the touch
+          floor (barFor), so EdgeToolbar takes thickness − 14 and is NOT handed
+          the scale — dividing twice produced a control wider than its bar. */}
+      <EdgeToolbar side="top" items={infoItems} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />
+      {/* ONE felt wrapper behind dummy line/row, centre, pad and hand. The FLAT
+          skin variant, per Mobile Table.dc.html. */}
+      <div style={{ flex: "none", display: "flex", flexDirection: "column", background: tok.feltFlat }}>
+        {dummyStripEl}
+        {dummyRowEl}
+        {/* The centre is the ONE flexible band, sized to the leftover (feltH).
+            NO vertical padding: feltH is the border-box height and is also what
+            the auction box is handed, so vertical padding would push the box
+            past feltH and overflow:hidden would eat the newest row. */}
+        <div style={{ flex: "none", height: feltH, display: "flex", alignItems: "flex-start", overflow: "hidden", padding: "0 10px" }}>
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
+            {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: "100%", headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
+            {inAuction && auctionDisplay === "seats" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
+                {(["N", "E", "S", "W"] as Seat[]).map((s) => (
+                  <div key={s} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 30, height: 30, background: SEAT_BADGE, color: "#fff", fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{s}</span>
+                    {callsRow(s, 22) ?? <span style={{ fontSize: 18, color: "rgba(255,255,255,.6)" }}>—</span>}
+                  </div>
+                ))}
               </div>
-            ) : (
-              bidBoxNarrow
-            )
-          ) : null}
-          <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: 0 }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-              {callsRow("S")}
-              {visible.S
-                ? fanLayout
-                  ? fanHand("S", M_CARD)
-                  : cardRow("S", M_CARD)
-                : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
-              {/* Default plate metrics — the design keeps SeatPlate stock here,
-                  and the plate narrows with the hand in fan mode too. */}
-              {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390)}
-            </div>
+            ) : null}
+            {inPlay ? trickCross(1.6) : null}
+            {complete ? resultCard : null}
           </div>
         </div>
-        <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} condensed thickness={52} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />
+        {/* Column pad (cell sized from the leftover) OR the level tray — one on
+            screen at a time. The pad falls back to the tray when the fit could
+            not keep its cells hittable (phonePadShown). */}
+        {inAuction ? (
+          phonePadShown ? (
+            <div style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+              <BidColumns cell={phonePadCell} {...bidColumnsProps} />
+            </div>
+          ) : (
+            bidBoxNarrow
+          )
+        ) : null}
+        <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            {callsRow("S")}
+            {visible.S
+              ? fanLayout
+                ? fanHand("S", M_CARD)
+                : cardRow("S", M_CARD)
+              : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
+            {/* Default plate metrics — the design keeps SeatPlate stock here,
+                and the plate narrows with the hand in fan mode too. */}
+            {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390)}
+          </div>
+        </div>
       </div>
+      <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />
     </div>
   );
 
@@ -918,9 +1065,24 @@ export function PlayTable({
 
   // ---- stage --------------------------------------------------------------
   if (phone) {
+    // The phone splits into two regions (Mobile Table.dc.html): the table takes
+    // tableShare of the screen, the coach panel the rest. wrapRef measures the
+    // whole box; the table budget is that box's height × tableShare — a pure
+    // function of a prop, so no second observer can feed the scale back.
     return (
-      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", justifyContent: "center", fontFamily: tok.font, WebkitFontSmoothing: "antialiased" }}>
-        {mobileStack}
+      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", flexDirection: "column", fontFamily: tok.font, WebkitFontSmoothing: "antialiased" }}>
+        <div style={{ flex: tableSharePct, minHeight: 0, display: "flex", flexDirection: "column", background: "#fff" }}>
+          {/* CSS-driven table region box; the stage scrolls inside it if the
+              scaled content ever exceeds the region (align to the top). */}
+          <div style={{ flex: 1, minHeight: 0, width: "100%", background: "#fff", display: "flex", justifyContent: "center", alignItems: "flex-start", overflowX: "hidden", overflowY: "auto" }}>
+            {mobileStack}
+          </div>
+        </div>
+        {coachOn && (
+          <div style={{ flex: coachSharePct, minHeight: 0, display: "flex", background: "#fff", borderTop: "1px solid #d8ded9" }}>
+            <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} />
+          </div>
+        )}
         {seatsPopup}
         {menuOpen && !onMenu && (
           <SettingsMenu accent={tok.accent} items={menuItems} onClose={() => setMenuOpen(false)} />
