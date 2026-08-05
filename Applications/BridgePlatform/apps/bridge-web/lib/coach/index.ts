@@ -36,7 +36,7 @@ import {
   type InterventionDecision,
 } from "@laic/coach/core";
 
-import type { CoachNote as StripNote } from "@/components/table/play/CoachPanel";
+import type { CoachNote as StripNote } from "./stripNote";
 import { BRIDGE_DOMAIN_ID, CONTRACT_VERSION, coachIdentity, type NoteContext } from "./context";
 import { ALL_AUTHORITIES, assessMove, BUDGET, type MoveUnderReview } from "./assessors/panel";
 import { kbTeaching, type TeachingStore } from "./kbTeaching";

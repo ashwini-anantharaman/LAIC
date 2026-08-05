@@ -3,8 +3,8 @@
 // a table region over a reserved coach panel, with EdgeToolbars that OVERFLOW
 // into a ⋯ group rather than clip or scroll. This spec asserts the properties
 // the design promises: no horizontal overflow on any bar, the coach panel is
-// present with its honest empty state, and the ⋯ popover (when the viewport
-// forced one) opens with clickable items.
+// present and populated (the coach is wired now — a seated board fills it), and
+// the ⋯ popover (when the viewport forced one) opens with clickable items.
 //
 // Runs after kb.spec (alphabetical, serial) so the reviewer's quickplay works.
 
@@ -37,11 +37,11 @@ test.describe("mobile table v3 — phone tier", () => {
     await page.setViewportSize(PHONE);
     await openTableSession(page);
 
-    // The reserved coach panel renders its honest empty state (CoachPanel.dc.html
-    // — a deliberate shell that says so plainly when handed no lines).
-    await expect(
-      page.getByText("Coach commentary appears here as the deal goes on."),
-    ).toBeVisible();
+    // The reserved coach panel is present and, on a seated quickplay board (the
+    // learner sits South), carries his facts layer (phase-2 coach transplant) —
+    // the dealt HCP reading always appears. Its honest empty state now shows only
+    // for a watcher with no hand to reason from.
+    await expect(page.getByText(/HCP/).first()).toBeVisible();
 
     // Both edge toolbars must fit their width: overflow moves into ⋯, so nothing
     // spills past the bar. scrollWidth <= clientWidth is measured in layout px,

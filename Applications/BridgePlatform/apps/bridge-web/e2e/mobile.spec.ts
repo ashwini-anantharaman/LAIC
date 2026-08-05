@@ -24,12 +24,12 @@ test("mobile lobby renders with the tab bar and deals via Quickplay", async ({
   await page.getByRole("button", { name: /Deal a fresh board|Quickplay/ }).click();
   await page.waitForURL(/\/bridge\/table2\/bs_/, { timeout: 30_000 });
 
-  // The phone-tier table renders its reserved coach panel (honest empty state).
+  // The phone-tier table renders its reserved coach panel. Quickplay seats the
+  // learner at South, so the coach (phase-2 transplant) carries his facts layer
+  // rather than the empty state — the dealt HCP always shows.
   // (The redirect leaves the /m shell for /bridge/table2, so the mobile tab bar
   //  no longer applies here — the single table wears the /bridge chrome.)
-  await expect(
-    page.getByText("Coach commentary appears here as the deal goes on."),
-  ).toBeVisible();
+  await expect(page.getByText(/HCP/).first()).toBeVisible();
 });
 
 test("mobile screens render real data", async ({ page, context }) => {
@@ -54,8 +54,8 @@ test("mobile Quickplay lands on the one table — no BBO view or skin toggle", a
   // The learner's table exposes no BBO-view switch and no skin toggle.
   await expect(page.getByRole("link", { name: "Switch to BBO view" })).toHaveCount(0);
   expect(page.url()).not.toContain("skin=");
-  // The one table renders its phone-tier coach panel.
-  await expect(
-    page.getByText("Coach commentary appears here as the deal goes on."),
-  ).toBeVisible();
+  // The one table renders its phone-tier coach panel — seated South via
+  // quickplay, it carries the coach's facts layer (the dealt HCP), not the
+  // empty state.
+  await expect(page.getByText(/HCP/).first()).toBeVisible();
 });

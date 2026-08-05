@@ -23,23 +23,22 @@ import { kbStore } from "@/lib/kb";
 import { libraryKindLabel } from "@/lib/libraryLabels";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
+import { lookingAt } from "@/lib/coach/looking";
+import { thinkAid } from "@/lib/coach/think";
+import type { CoachData } from "@/components/table/play/coachContent";
 import { patchAppearanceAction } from "./actions";
 
-// QUAN-PHASE2: Quan's coach wiring for this page is deferred to the phase-2
-// coach transplant (owner decision 2). On origin/Quan this page also carried:
-//   - imports: CoachPanel (CoachNoteSource, CoachPanelData), a local HandViewer
-//     (@/components/table/play/HandViewer, vs our @bridge/table-ui one), BenRead,
-//     CoachPrompts (+ TablePhase), lib/coach/looking (lookingAt), lib/coach/think
-//     (thinkAid);
-//   - searchParams: `coach` and `reveal`, and an ungated hands view;
-//   - an ungated seats panel (everyone, keyed off canAccessAdminArea) instead of
-//     our catalogue-gated one;
-//   - a computed coachPanel (CoachPanelData) plus bidMeanings / auctionMeanings,
-//     threaded into <LivePlayTable> as coach / bidMeanings / auctionMeanings /
-//     candidatesFooter={<BenRead/>} props.
-// Phase 2 transplants these onto OUR @bridge/table-ui table + CoachPanel region.
-// The coach component files (CoachPanel/CoachPrompts/BenRead) and lib/coach are
-// merged and available; they are simply not wired into this page yet.
+// COACH (phase-2 transplant, owner decision 2 — "his engine, our shell"). His
+// old-path table carried the coach as a felt fab + rising sheet; that UI is
+// gone. His ENGINE — lib/coach's looking (facts) and think (scaffold) layers,
+// plus the on-demand /api/bridge/play-hint advice — is composed HERE and handed
+// to OUR CoachPanel region under the phone-tier table (packages/bridge-table-ui).
+// Gated by table.coach (mirror-today: all roles). His design kept coaching to
+// the phone tier only ("the desktop platform's table doesn't carry coaching;
+// coaching is the app's surface"), which is exactly what our shell reserves —
+// so there is no wide/stacked coach placement, by his intent. His bid-meaning
+// explanations (bidMeanings/auctionMeanings) and BEN's candidates read are NOT
+// wired: our @bridge/table-ui table has no bid-meaning slots to feed — follow-up.
 
 export default async function PlayTablePage({
   params,
@@ -61,6 +60,7 @@ export default async function PlayTablePage({
     canHandsView,
     canSkinSettings,
     canSkinsPage,
+    canCoach,
   ] = await Promise.all([
     canUse(context, "table.seats_panel"),
     canUse(context, "table.ben_seat"),
@@ -71,6 +71,7 @@ export default async function PlayTablePage({
     canUse(context, "table.hands_view"),
     canUse(context, "table.skin_settings"),
     canUse(context, "page.skins"),
+    canUse(context, "table.coach"),
   ]);
   // The viewer's saved skin & layout — resolved once here and threaded to the
   // table. Fails open to the built-in look inside getAppearance.
@@ -116,6 +117,21 @@ export default async function PlayTablePage({
     actingIsHuman &&
     record.seats[actingSeat].kind === "human" &&
     (record.seats[actingSeat] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
+
+  // The coach payload (his engine): the facts layer (looking) and the reasoning
+  // scaffold (think), computed from THIS learner's seat. Both are null for a
+  // watcher — nobody's hand to reason from — and the panel then shows its honest
+  // empty state. The on-demand "What should I play?" advice is fetched
+  // client-side. dealer/vul mirror what the table itself is handed.
+  const coachState = { ...state, dealer: record.board.dealer, vul: state.vul };
+  const coachData: CoachData | undefined = canCoach
+    ? {
+        phase: state.phase === "auction" ? "auction" : state.phase === "play" ? "play" : "other",
+        active: myTurn,
+        looking: lookingAt(coachState, mySeat),
+        think: thinkAid(coachState, mySeat),
+      }
+    : undefined;
 
   const score = scoreBoard(state);
   const seatName = (seat: Seat) => {
@@ -359,6 +375,8 @@ export default async function PlayTablePage({
             settings={canSettingsMenu ? settings : undefined}
             viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
             appearance={resolvedAppearance}
+            showCoach={canCoach}
+            coach={coachData}
           />
         )}
       </div>
