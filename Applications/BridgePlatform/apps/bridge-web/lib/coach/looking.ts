@@ -84,12 +84,18 @@ export function lookingAt(
           ? `You're dummy in ${label} — partner is playing your cards.`
           : `You're defending ${label} by ${SEAT_NAME[declarer]}.`;
 
+    // Declarer plays dummy's cards too, so dummy's turn IS the learner's turn —
+    // and which hand they are playing from is the thing they need told.
+    const playsDummy = mine === "declaring" && state.turn === dummy;
+    const myTurn = state.turn === seat || playsDummy;
+    const fromWhere = playsDummy ? " — you're playing from dummy" : "";
+
     if (inProgress?.plays.length) {
       const led = inProgress.plays[0]!;
       sentence += ` ${relative(led.seat, seat)} led the ${cardLabel(led.card)}`;
-      sentence += state.turn === seat ? " and it's your turn." : ".";
-    } else if (state.turn === seat) {
-      sentence += " You're on lead.";
+      sentence += myTurn ? ` and it's your turn${fromWhere}.` : ".";
+    } else if (myTurn) {
+      sentence += playsDummy ? " Dummy is on lead, so it's your card." : " You're on lead.";
     } else {
       sentence += ` ${relative(state.turn, seat)} to play.`;
     }

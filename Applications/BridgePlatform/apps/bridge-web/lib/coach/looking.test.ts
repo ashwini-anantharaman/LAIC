@@ -157,3 +157,26 @@ describe("lookingAt — the play", () => {
     for (const f of ["A♥", "K♥", "Q♥", "K♠", "J♠", "10♠"]) expect(r.looking).not.toContain(f);
   });
 });
+
+describe("lookingAt — declarer at dummy's turn", () => {
+  const HEARTS = { level: 3, strain: "H", doubled: 0, declarer: "S" } as GameState["contract"];
+
+  it("treats dummy's turn as the declarer's, and says which hand", () => {
+    const s = state({
+      phase: "play", contract: HEARTS, turn: "N",
+      hands: { N: cards("DJ DT D6"), E: [], S: HAND, W: [] },
+      tricks: [{ leader: "W", plays: [{ seat: "W", card: cards("D2")[0]! }] }],
+    });
+    const r = lookingAt(s, "S")!;
+    expect(r.looking).toContain("West led the 2♦ and it's your turn — you're playing from dummy.");
+  });
+
+  it("a defender is not told it is their turn when it is dummy's", () => {
+    const s = state({
+      phase: "play", contract: HEARTS, turn: "N",
+      hands: { N: cards("DJ"), E: [], S: HAND, W: [] },
+      tricks: [{ leader: "W", plays: [{ seat: "W", card: cards("D2")[0]! }] }],
+    });
+    expect(lookingAt(s, "E")!.looking).not.toContain("your turn");
+  });
+});
