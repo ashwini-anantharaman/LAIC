@@ -1,7 +1,12 @@
 import { redirect } from "next/navigation";
 import type { LibraryConfig } from "@laic/library-ui";
 import kitConfig from "@/library.config.json";
-import { bridgeLibrary, canSeeProgramLibrary, libraryPrincipalOf } from "@/lib/libraryComponent";
+import {
+  bridgeLibrary,
+  canSeeProgramLibrary,
+  libraryPrincipalOf,
+  programReadPrincipal,
+} from "@/lib/libraryComponent";
 import { getBridgeContext } from "@/lib/nexus";
 
 /**
@@ -16,8 +21,8 @@ export default async function LibraryKitPage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
 
-  const principal = await libraryPrincipalOf(context);
   const view = (await canSeeProgramLibrary(context)) ? "program" : "mine";
+  const principal = programReadPrincipal(await libraryPrincipalOf(context), context, view);
   const items = await bridgeLibrary()
     .list(principal, { view })
     .catch(() => []);

@@ -292,9 +292,31 @@ export async function listLibraryFor(
   view: "mine" | "program" | "org",
   kind?: LibraryKind,
 ): Promise<LibraryEntry[]> {
-  const principal = await libraryPrincipalOf(context);
+  const principal = programReadPrincipal(await libraryPrincipalOf(context), context, view);
   const items = await bridgeLibrary().list(principal, { view, kind });
   return items.map(itemToEntry);
+}
+
+/**
+ * A program/org-shelf reader who sits ABOVE any single club — a reviewer,
+ * fellow or program admin whose context carries no `programOrganizationId`, so
+ * `orgScopeOf` fell back to the parent laic org — reads the shared shelf
+ * PROGRAM-WIDE, not partitioned to that fallback org. The program library's
+ * items are stamped with whichever club org they were authored in; without this
+ * the very tiers meant to curate the shelf (who hold `library.program_scope`)
+ * see nothing, because their fallback org matches no item. Club-scoped callers
+ * (a club admin/coach with a real `programOrganizationId`) stay partitioned to
+ * their org, and `mine` reads are always owner-scoped. This mirrors the KB,
+ * whose reads are program-wide; the `nexus_program_id` partition, when present
+ * (http mode), still isolates one program from another within the org.
+ */
+export function programReadPrincipal(
+  principal: LibraryPrincipal,
+  context: NexusBridgeContext,
+  view: "mine" | "program" | "org",
+): LibraryPrincipal {
+  if (view === "mine" || context.programOrganizationId) return principal;
+  return { ...principal, orgId: undefined };
 }
 
 /**

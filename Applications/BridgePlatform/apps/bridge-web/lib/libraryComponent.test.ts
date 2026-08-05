@@ -1,17 +1,27 @@
-// Regression: legacy library rows (authored before the 0022/0025 merge) carry
-// their scope in COLUMNS only — the `entry` JSONB predates the scope fields, and
-// 0022's nexus_program_id backfill only stamped the Life-in-AI org, so seed-org
-// rows keep nexus_program_id = NULL ("scope by org only", the pre-0022 state).
+// Regression: a reviewer/fellow saw every library shelf read 0 in prod (stub
+// nexus mode + postgres) while bridge_kb_library held rows. TWO faults on the
+// read path:
 //
-// A reviewer/fellow views the PROGRAM instance; in http mode their principal
-// carries a REAL program uuid. The store's scope filter must NOT drop the
-// null-program legacy rows on an exact nexus_program_id match — that is the prod
-// regression where every shelf read 0 while bridge_kb_library held 16 rows.
+// 1. ORG PARTITION (the prod cause): a program-level caller — reviewer, fellow
+//    or program admin whose context carries no `programOrganizationId` — has
+//    orgScopeOf() fall back to the parent laic org (org_laic). The shared
+//    program shelf's items are stamped with the CLUB org they were authored in
+//    (bporg_sunrise_bridge_club), so a strict org filter matched nothing.
+//    programReadPrincipal drops the org partition for these callers so the
+//    program shelf reads program-wide (like the KB). Club-scoped callers stay
+//    partitioned.
 //
-// This drives the actual prod seam: PgLibraryStore (the pg row→entry mapper +
+// 2. NULL PROGRAM STAMP: 0022's nexus_program_id backfill only stamped the
+//    Life-in-AI org, so seed-org rows keep nexus_program_id = NULL (pre-0022,
+//    "scope by org only"). The store filter must not drop them on an exact
+//    program-id match — matters in http mode, where the principal carries a
+//    real program uuid.
+//
+// These drive the actual prod seam: PgLibraryStore (the pg row→entry mapper +
 // column filters) under the @laic/library-core list policy with a reviewer
-// principal.
+// principal, plus the programReadPrincipal adapter seam.
 
+import type { NexusBridgeContext } from "@laic/learner-contracts";
 import { PgLibraryStore } from "@bridge/pg-stores";
 import type { LibraryEntry } from "@bridge/sessions";
 import {
@@ -23,6 +33,7 @@ import {
   type LibraryPrincipal,
 } from "@laic/library-core";
 import { describe, expect, it } from "vitest";
+import { programReadPrincipal } from "./libraryComponent";
 
 const ORG = "bporg_sunrise_bridge_club";
 const REAL_PROGRAM_UUID = "eef9985b-b85f-4eeb-bd1e-bcc1f66b0f83";
@@ -192,5 +203,69 @@ describe("library-core list over PgLibraryStore — legacy org-scoped rows", () 
     ]);
     const ids = (await service.list(rheaPrincipal, { view: "program" })).map((i) => i.id).sort();
     expect(ids).toEqual(["le_legacy_board", "le_same_program"]);
+  });
+});
+
+// The PROD scenario: stub nexus mode (programId = null), and a reviewer/fellow
+// whose context has no programOrganizationId, so their principal.orgId is the
+// FALLBACK laic org — which matches no item, since the shelf's items are stamped
+// with the club org they were authored in.
+const rheaStub: NexusBridgeContext = {
+  nexusUserId: "user_reviewer_rhea",
+  laicOrgId: "org_laic",
+  programId: "bridge_program",
+  appId: "bridge_ai_coach",
+  roles: ["bridge_reviewer", "bridge_fellow"],
+  // NB: no programOrganizationId — a program-level caller above any single club.
+} as NexusBridgeContext;
+
+/** A club admin IS pinned to a club — they keep their org partition. */
+const oliviaStub: NexusBridgeContext = {
+  ...rheaStub,
+  nexusUserId: "user_orgadmin_olivia",
+  programOrganizationId: ORG,
+  roles: ["bridge_org_admin", "bridge_club_admin"],
+} as NexusBridgeContext;
+
+/** The stub-shape principal: orgId is the laic fallback, programId undefined. */
+function stubPrincipal(orgId: string | undefined): LibraryPrincipal {
+  return {
+    userId: "user_reviewer_rhea",
+    orgId,
+    roles: ["bridge_reviewer", "bridge_fellow"],
+    capabilities: [LIBRARY_CAPABILITIES.viewProgram],
+  };
+}
+
+describe("programReadPrincipal — program-level callers read the shelf program-wide", () => {
+  it("drops the org partition for a program-level caller viewing program/org", () => {
+    expect(programReadPrincipal(stubPrincipal("org_laic"), rheaStub, "program").orgId).toBeUndefined();
+    expect(programReadPrincipal(stubPrincipal("org_laic"), rheaStub, "org").orgId).toBeUndefined();
+  });
+
+  it("keeps the org partition for a club-scoped caller, and for 'mine'", () => {
+    expect(programReadPrincipal(stubPrincipal(ORG), oliviaStub, "program").orgId).toBe(ORG);
+    expect(programReadPrincipal(stubPrincipal("org_laic"), rheaStub, "mine").orgId).toBe("org_laic");
+  });
+
+  it("end-to-end: a club-org shelf is invisible under the fallback org, visible after the drop", async () => {
+    // A program-shelf board stamped with the CLUB org (as authored/seeded), stub
+    // shape: no nexus_program_id.
+    const clubRow = legacyRow({
+      program_organization_id: ORG,
+      nexus_program_id: null,
+      entry: { ...(legacyRow().entry as object), entryId: "le_club_board" },
+      entry_id: "le_club_board",
+    });
+    const service = reviewerService([clubRow]);
+
+    // Before the drop: rhea's fallback laic org matches nothing → empty shelves.
+    const withFallbackOrg = await service.list(stubPrincipal("org_laic"), { view: "program" });
+    expect(withFallbackOrg).toHaveLength(0);
+
+    // After programReadPrincipal drops the org: the club-org shelf is visible.
+    const readPrincipal = programReadPrincipal(stubPrincipal("org_laic"), rheaStub, "program");
+    const items = await service.list(readPrincipal, { view: "program" });
+    expect(items.map((i) => i.id)).toEqual(["le_club_board"]);
   });
 });
