@@ -45,34 +45,45 @@ export function TrickArea({ plays, turn, scale = 1, variant = "cross" }: Readonl
     );
   }
 
+  // ONE-BOX SCALE (TrickArea.dc.html). The compass geometry — the 262px box, the
+  // 56×80 cards, the 182/206 offsets — is tuned as a single unit, so PROMINENCE
+  // is a transform:scale on the WHOLE box (origin centre), never per-card sizes.
+  // Scaling every metric/offset/font individually (the previous model) let the
+  // browser round each element independently, so the four cards desynced in size
+  // and the scaled rank font overflowed its scaled card box and clipped. The box
+  // is fixed and integer; the outer flex is sized to the scaled box so the
+  // transform (which does not affect layout) claims the right footprint and the
+  // whole thing centres in the felt.
   const k = scale;
   return (
-    <div style={{ position: "relative", width: 262 * k, height: 262 * k }}>
-      {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
-        const play = plays.find((p) => p.seat === seat);
-        const pos =
-          seat === "N" ? { left: "50%", top: "0", tr: "translateX(-50%)" }
-          : seat === "S" ? { left: "50%", top: `${182 * k}px`, tr: "translateX(-50%)" }
-          : seat === "W" ? { left: "0", top: "50%", tr: "translateY(-50%)" }
-          : { left: `${206 * k}px`, top: "50%", tr: "translateY(-50%)" };
-        const onTurn = seat === turn;
-        return (
-          <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, transform: pos.tr, zIndex: play ? 2 : 1 }}>
-            {play ? (
-              <span style={{ position: "relative", display: "block", width: 56 * k, height: 80 * k, background: "#fff", border: "1px solid #6b6b6b", borderRadius: 3, boxShadow: "0 2px 5px rgba(0,0,0,.4)" }}>
-                <span style={{ position: "absolute", left: 4 * k, top: 2 * k, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(play.card.suit) ? RED : "#000" }}>
-                  <span style={{ fontSize: 27 * k, fontWeight: 700 }}>{rankText(play.card.rank)}</span>
-                  <span style={{ fontSize: 24 * k }}>{GLYPH[play.card.suit]}</span>
+    <div style={{ width: 262 * k, height: 262 * k, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ position: "relative", width: 262, height: 262, flex: "none", transform: `scale(${k})`, transformOrigin: "center center" }}>
+        {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
+          const play = plays.find((p) => p.seat === seat);
+          const pos =
+            seat === "N" ? { left: "50%", top: "0", tr: "translateX(-50%)" }
+            : seat === "S" ? { left: "50%", top: "182px", tr: "translateX(-50%)" }
+            : seat === "W" ? { left: "0", top: "50%", tr: "translateY(-50%)" }
+            : { left: "206px", top: "50%", tr: "translateY(-50%)" };
+          const onTurn = seat === turn;
+          return (
+            <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, transform: pos.tr, zIndex: play ? 2 : 1 }}>
+              {play ? (
+                <span data-testid="trick-card" style={{ position: "relative", display: "block", width: 56, height: 80, background: "#fff", border: "1px solid #6b6b6b", borderRadius: 3, boxShadow: "0 2px 5px rgba(0,0,0,.4)" }}>
+                  <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(play.card.suit) ? RED : "#000" }}>
+                    <span style={{ fontSize: 27, fontWeight: 700 }}>{rankText(play.card.rank)}</span>
+                    <span style={{ fontSize: 24 }}>{GLYPH[play.card.suit]}</span>
+                  </span>
                 </span>
-              </span>
-            ) : (
-              <span style={{ display: "flex", width: 56 * k, height: 80 * k, alignItems: "center", justifyContent: "center" }}>
-                <span style={{ display: "block", width: onTurn ? 22 * k : 0, height: 12 * k, background: onTurn ? "#9a9a9a" : "transparent" }} />
-              </span>
-            )}
-          </div>
-        );
-      })}
+              ) : (
+                <span style={{ display: "flex", width: 56, height: 80, alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ display: "block", width: onTurn ? 22 : 0, height: 12, background: onTurn ? "#9a9a9a" : "transparent" }} />
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

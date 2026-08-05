@@ -74,4 +74,103 @@ test.describe("mobile table v3 — phone tier", () => {
       }
     }
   });
+
+  // ADDENDUM E — phone-tier PLAY fidelity. Two invariants of the design's
+  // Mobile Table centre + dummy line, exercised on a REAL play state:
+  //   (1) the trick cross scales as ONE box, so every rendered card is the same
+  //       size (the old per-card scaling let the four cards desync);
+  //   (2) the one-line dummy strip labels the SEAT, not the player.
+  // Reaching play deterministically: seat four robots (a "watch" board — a human
+  // seat would stall stepping at its turn) and step via the session API until a
+  // mid-trick moment whose dummy isn't South (declarer ≠ N).
+  test("play phase: trick cards are one size and the dummy strip shows a seat name", async ({
+    page,
+  }) => {
+    await page.context().clearCookies();
+    await signInAs(page.context(), "user_reviewer_rhea");
+
+    // A KB + a COMPLETE house player to fill all four seats.
+    await page.goto("/bridge/library/tables/new");
+    const blocks = page.locator("[data-kb-block]");
+    const nBlocks = await blocks.count();
+    let kbId = "";
+    let playerId = "";
+    for (let i = 0; i < nBlocks && !playerId; i++) {
+      const b = blocks.nth(i);
+      const opts = b.locator('select[name="player:N"] option');
+      const nOpts = await opts.count();
+      for (let j = 0; j < nOpts; j++) {
+        const val = await opts.nth(j).getAttribute("value");
+        const label = (await opts.nth(j).textContent()) ?? "";
+        if (val && !/incomplete/i.test(label)) {
+          playerId = val;
+          kbId = await b.locator('input[name="kbId"]').first().inputValue();
+          break;
+        }
+      }
+    }
+    expect(playerId, "a complete house player to seat four robots").toBeTruthy();
+
+    const PARTNER: Record<string, string> = { N: "S", S: "N", E: "W", W: "E" };
+    type StepState = {
+      phase: string;
+      contract: { declarer: string } | null;
+      tricks: { plays: unknown[] }[];
+    };
+    let sid = "";
+    for (const seed of [7, 3, 5, 11, 13, 2, 17, 19, 23, 4, 29, 31, 6, 8, 9, 10]) {
+      const created = await page.request.post("/api/bridge/sessions", {
+        data: { kbId, seed, players: { N: playerId, E: playerId, S: playerId, W: playerId } },
+      });
+      if (!created.ok()) continue;
+      const { session } = (await created.json()) as { session: { sessionId: string } };
+      const id = session.sessionId;
+      let ready = false;
+      let dead = false;
+      for (let s = 0; s < 90 && !ready && !dead; s++) {
+        const res = await page.request.post(`/api/bridge/sessions/${id}/step`);
+        if (!res.ok()) break;
+        const { state } = (await res.json()) as { state: StepState };
+        if (state.phase === "complete") {
+          dead = true;
+        } else if (state.phase === "play") {
+          const declarer = state.contract?.declarer;
+          if (!declarer || PARTNER[declarer] === "S") {
+            dead = true; // dummy would be South → no strip; try another deal.
+          } else if ((state.tricks.at(-1)?.plays.length ?? 0) >= 2) {
+            ready = true;
+          }
+        }
+      }
+      if (ready) {
+        sid = id;
+        break;
+      }
+    }
+    expect(sid, "a mid-trick all-robot board with a non-South dummy").toBeTruthy();
+
+    // Render that live play state on the phone tier. Boards open PAUSED, so the
+    // server state stays put (no auto-advance past the two-card trick).
+    await page.setViewportSize(PHONE);
+    await page.goto(`/bridge/table2/${sid}`);
+
+    // (1) The 262-box is scaled as a single unit, so any two trick cards render
+    // at identical width AND height (the per-card model desynced them).
+    const cards = page.getByTestId("trick-card");
+    await expect.poll(() => cards.count()).toBeGreaterThanOrEqual(2);
+    const b0 = await cards.nth(0).boundingBox();
+    const b1 = await cards.nth(1).boundingBox();
+    expect(b0, "first trick card box").toBeTruthy();
+    expect(b1, "second trick card box").toBeTruthy();
+    expect(Math.abs(b0!.width - b1!.width), "trick card widths equal").toBeLessThanOrEqual(0.6);
+    expect(Math.abs(b0!.height - b1!.height), "trick card heights equal").toBeLessThanOrEqual(0.6);
+
+    // (2) The dummy strip is labelled with the SEAT name, not the player name.
+    const strip = page.getByTestId("dummy-strip");
+    await expect(strip).toBeVisible();
+    const stripText = ((await strip.textContent()) ?? "").trim();
+    expect(stripText, "dummy strip starts with a seat name").toMatch(
+      /^(North|East|South|West)/,
+    );
+  });
 });

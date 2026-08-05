@@ -886,8 +886,8 @@ export function PlayTable({
 
   const dummyStripEl =
     dummyIsStrip && dummy ? (
-      <div style={{ flex: "none", height: DUMMY_LINE, display: "flex", alignItems: "center", gap: 14, padding: "0 12px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
-        <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{seats[dummy].name}</span>
+      <div data-testid="dummy-strip" style={{ flex: "none", height: DUMMY_LINE, display: "flex", alignItems: "center", gap: 14, padding: "0 12px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
+        <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[dummy]}</span>
         {visible[dummy]
           ? dummySuitSpans(dummy).map((s) => (
               <span key={s.suit} style={{ fontSize: 26, fontWeight: 700, color: "#f2f6f4", whiteSpace: "nowrap" }}>
@@ -903,7 +903,9 @@ export function PlayTable({
       and must play from dummy, so compactness never costs them the controls. */
   const dummyRowEl =
     dummyIsRow && dummy ? (
-      <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: 0 }}>
+      // paddingTop reserves headroom for a playable card's translateY(-6px) lift
+      // (well within the HAND_H.row budget), so the raised top is never clipped.
+      <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
         {visible[dummy]
           ? fanLayout
             ? fanHand(dummy, M_CARD)
@@ -960,7 +962,11 @@ export function PlayTable({
             bidBoxNarrow
           )
         ) : null}
-        <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: 0 }}>
+        {/* paddingTop gives the South hand the headroom the HAND_H.row budget
+            already reserves, so a playable card's translateY(-6px) lift stays
+            fully visible. The 13-card row keeps its natural width (13×54−12 =
+            690 in the 720 stage) — flex:none cards, centred, never stretched. */}
+        <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
             {callsRow("S")}
             {visible.S
