@@ -12,7 +12,6 @@ import { SKIN_ORDER, type SkinName } from "@bridge/table-config";
 import type { Seat } from "@bridge/events";
 import { getCatalogue, requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
-import { listTesterViews } from "@/lib/testerViews";
 import { momentStates } from "./sessions";
 import { TesterClient } from "./TesterClient";
 import type {
@@ -60,6 +59,8 @@ export default async function ComponentTesterPage({
 
   const sp = await searchParams;
   const params: TesterParams = {
+    mode: first(sp.mode) === "build" ? "build" : "inspect",
+    view: first(sp.view) ?? "",
     comp: first(sp.comp) ?? "SeatHand",
     axis: pick(first(sp.axis), AXES, "single"),
     role: pick(first(sp.role), ROLES, "player"),
@@ -86,12 +87,7 @@ export default async function ComponentTesterPage({
     return { role, label: roleLabel(role), features, lacks };
   });
 
-  const [moments, views] = await Promise.all([momentStates(), listTesterViews()]);
-  const savedViews = views.map((v) => ({ id: v.id, name: v.name, config: v.config }));
+  const moments = await momentStates();
 
-  return (
-    <TesterClient
-      data={{ params, moments, platformRoles, savedViews }}
-    />
-  );
+  return <TesterClient data={{ params, moments, platformRoles }} />;
 }

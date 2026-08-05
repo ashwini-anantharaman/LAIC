@@ -12,6 +12,33 @@ export type Density = "comfortable" | "compact";
 export type HandLayout = "row" | "fan";
 export type BidPad = "grid" | "columns";
 export type AxisId = "single" | "role" | "moment" | "skin" | "seat" | "platform";
+export type TesterMode = "inspect" | "build";
+
+// ── Build mode (client-only, persisted to localStorage) ──────────────────────
+export type CanvasLayout = "grid" | "row" | "column";
+export type HandExposure = "auto" | "faces" | "backs" | "hidden";
+
+/** One placed component in a Build view. LAYOUT only — no deal/moment pinned. */
+export interface CanvasSlot {
+  component: string;
+  seat?: Seat;
+  span?: number;
+  /** Per-slot prop overrides (visibility toggles). Deleted, never left {}. */
+  props?: Record<string, unknown>;
+}
+
+/** A saved Build view — the exact localStorage shape (bridge.tester.views.v1). */
+export interface TesterView {
+  id: string;
+  name: string;
+  layout: CanvasLayout;
+  cols: number;
+  gap: number;
+  labels: boolean;
+  hideInactive: boolean;
+  hands: Record<Seat, HandExposure>;
+  slots: CanvasSlot[];
+}
 
 export interface MomentResult {
   line: string;
@@ -45,8 +72,12 @@ export interface PlatformRoleInfo {
   lacks: string[];
 }
 
-/** The parsed URL state — the single source of truth for the grid. */
+/** The parsed URL state — the single source of truth for the Inspect grid.
+    Build's slot arrays live in localStorage; only mode + the open view id ride
+    the URL (mode=build&view=<id>), so a link reopens the right tab and view. */
 export interface TesterParams {
+  mode: TesterMode;
+  view: string;
   comp: string;
   axis: AxisId;
   role: GameRole;
@@ -65,7 +96,6 @@ export interface TesterData {
   params: TesterParams;
   moments: Record<MomentId, MomentSnapshot>;
   platformRoles: PlatformRoleInfo[];
-  savedViews: { id: string; name: string; config: Record<string, string> }[];
 }
 
 // Re-export the leaf types the registry references so it has one import site.

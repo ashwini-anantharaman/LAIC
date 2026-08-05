@@ -16,4 +16,3 @@ export { PgSessionStore } from "./sessions";
 export { PgLibraryStore } from "./library";
 export { PgAccessStore } from "./access";
 export { PgTableConfigStore } from "./tableConfig";
-export { PgTesterViewStore } from "./testerViews";

@@ -1,3 +1,7 @@
+-- UNUSED as of the tester v2 rework: saved views moved to the browser
+-- (localStorage key `bridge.tester.views.v1`); this table is no longer read or
+-- written. Kept as an applied-in-prod historical record — do not drop here.
+--
 -- 0021: saved views for the component tester. One row per named view mapping to
 -- the full TesterView read model (id, name, the URL-state config, createdBy,
 -- createdAt). Jsonb-primary like 0015/0018/0019/0020: the whole view lives in

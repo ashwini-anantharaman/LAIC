@@ -29,7 +29,6 @@
     "@bridge/table-config": "workspace:*",
     "@bridge/table-ui": "workspace:*",
     "@bridge/taxonomy": "workspace:*",
-    "@bridge/tester-views": "workspace:*",
     "@laic/learner-contracts": "link:../../../../Components/laic-learner-contracts",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.110.1",
