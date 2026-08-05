@@ -18,6 +18,7 @@ import { DecisionEntry } from "@/components/table/DecisionEntry";
 import { canUse } from "@/lib/access";
 import { benAvailable } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
+import { libraryKindLabel } from "@/lib/libraryLabels";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { buildRuleIndex } from "@/components/table/decisionText";
@@ -520,7 +521,7 @@ export default async function SessionPage({
             href={`/bridge/library?kind=${saved}`}
             className="font-medium underline-offset-2 hover:underline"
           >
-            Open the {saved} shelf →
+            Open the {libraryKindLabel(saved)} shelf →
           </Link>
         </p>
       )}
@@ -582,9 +583,9 @@ export default async function SessionPage({
                 defaultValue="board"
                 className="rounded border border-neutral-300 px-1.5 py-1"
               >
-                <option value="deal">Deal (cards only)</option>
+                <option value="deal">Pack (cards only)</option>
                 <option value="board">Board (+dealer/vul)</option>
-                <option value="play">Play (calls + cards)</option>
+                <option value="play">Deal (calls + cards)</option>
                 <option value="table">Table lineup</option>
               </select>
               <input

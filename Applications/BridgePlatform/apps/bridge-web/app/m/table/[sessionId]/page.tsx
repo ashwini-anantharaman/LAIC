@@ -31,6 +31,7 @@ import { MobileSheetShell } from "@/components/mobile/table/MobileSheetShell";
 import { SaveSheet } from "@/components/mobile/table/SaveSheet";
 import { canUse, requireFeature } from "@/lib/access";
 import { kbStore } from "@/lib/kb";
+import { libraryKindLabel } from "@/lib/libraryLabels";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { saveItemAction } from "@/app/bridge/kb/actions";
@@ -666,7 +667,7 @@ export default async function MobileTablePage({
         >
           Saved to the library.{" "}
           <Link href={`/m/library?kind=${saved}`} style={{ color: "#fff", textDecoration: "underline" }}>
-            Open the {saved} shelf →
+            Open the {libraryKindLabel(saved)} shelf →
           </Link>
         </p>
       )}

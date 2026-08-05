@@ -14,21 +14,23 @@ import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
+import { libraryKindLabel } from "@/lib/libraryLabels";
 import { libraryStore, sessionService } from "@/lib/sessions";
 
 const SEATS: Seat[] = ["N", "E", "S", "W"];
 
 /**
- * Strip any trailing auto-appended " · deal"/" · board"/" · play"/" · table"
+ * Strip any trailing auto-appended " · pack"/" · board"/" · deal"/" · table"
  * kind suffixes from a board name before we append a fresh one. These stack
- * across save→resume→save cycles ("Board 1 · play · play · deal"), so we peel
- * them off repeatedly. Only touches the auto-generated tail; user-typed names
- * never reach this (they short-circuit the default before it's called).
+ * across save→resume→save cycles ("Board 1 · deal · deal · pack"), so we peel
+ * them off repeatedly. The legacy words "deal"/"play" are still stripped so
+ * names saved before the rename stay clean. Only touches the auto-generated
+ * tail; user-typed names never reach this (they short-circuit the default).
  */
 function stripKindSuffixes(name: string): string {
   let out = name.trim();
   for (;;) {
-    const stripped = out.replace(/\s*·\s*(deal|board|play|table)$/, "").trimEnd();
+    const stripped = out.replace(/\s*·\s*(pack|deal|board|play|table)$/, "").trimEnd();
     if (stripped === out) return out;
     out = stripped;
   }
@@ -432,7 +434,7 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
   const originalHands = record.board.hands ?? seededDeal(record.board.seed);
   const name =
     String(formData.get("name") ?? "").trim() ||
-    `${stripKindSuffixes(record.board.name)} · ${kind}`;
+    `${stripKindSuffixes(record.board.name)} · ${libraryKindLabel(kind)}`;
   const notes = String(formData.get("notes") ?? "").trim();
   const now = new Date().toISOString();
 

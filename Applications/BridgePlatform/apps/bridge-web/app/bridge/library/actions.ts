@@ -57,7 +57,7 @@ export async function createDealAction(formData: FormData): Promise<void> {
     kind,
     name:
       String(formData.get("name") ?? "").trim() ||
-      (kind === "deal" ? "Authored deal" : "Authored board"),
+      (kind === "deal" ? "Authored pack" : "Authored board"),
     tags: [],
     hands,
     // A bare deal is just the card distribution — board facts stay off it.
@@ -222,7 +222,7 @@ export async function resumePlayEntryAction(formData: FormData): Promise<void> {
   const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const entry = await libraryStore().getEntry(entryId);
   if (entry?.kind !== "play" || !entry.hands)
-    throw new Error("This entry is not a saved play");
+    throw new Error("This entry is not a saved deal");
 
   const { kbId, compiled, seats } = await resolveEntryLineup(entry, "", context);
 

@@ -19,10 +19,10 @@ import { ConfirmButton } from "@/components/kb/ConfirmButton";
 /** The fellows' library (2026-07-16 rework): saved deals, boards, table
  *  lineups and plays; drills & puzzles are reserved shelves. */
 const SHELVES: { kind: LibraryKind; label: string; hint: string; reserved?: boolean }[] = [
-  { kind: "deal", label: "Deals", hint: "a card distribution" },
-  { kind: "board", label: "Boards", hint: "deal + dealer + vulnerability" },
+  { kind: "deal", label: "Packs", hint: "a card distribution" },
+  { kind: "board", label: "Boards", hint: "pack + dealer + vulnerability" },
   { kind: "table", label: "Tables", hint: "a saved seat lineup" },
-  { kind: "play", label: "Plays", hint: "board + calls + cards, as recorded" },
+  { kind: "play", label: "Deals", hint: "board + calls + cards, as recorded" },
   { kind: "drill", label: "Drills", hint: "bidding regression checks, run per knowledge base" },
   { kind: "puzzle", label: "Puzzles", hint: "reserved", reserved: true },
 ];
@@ -62,7 +62,7 @@ export default async function LibraryPage({
   // tables through the lineup builder; plays only arrive by recording/import.
   const createLink =
     active === "deal"
-      ? { href: "/bridge/library/new?kind=deal", label: "New deal" }
+      ? { href: "/bridge/library/new?kind=deal", label: "New pack" }
       : active === "board"
         ? { href: "/bridge/library/new", label: "New board" }
         : active === "table"
@@ -157,7 +157,7 @@ export default async function LibraryPage({
                         e.resultLabel,
                       ]
                         .filter(Boolean)
-                        .join(" · ") || "deal only"}
+                        .join(" · ") || "pack only"}
                 </p>
                 <p className="mt-0.5 text-[11px] text-neutral-400">
                   {e.origin}

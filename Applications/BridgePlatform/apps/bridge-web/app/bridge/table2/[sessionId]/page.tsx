@@ -20,6 +20,7 @@ import { canUse, requireFeature } from "@/lib/access";
 import { getAppearance } from "@/lib/appearance";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
+import { libraryKindLabel } from "@/lib/libraryLabels";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { patchAppearanceAction } from "./actions";
@@ -304,7 +305,7 @@ export default async function PlayTablePage({
             href={`/bridge/library?kind=${saved}`}
             className="font-medium underline-offset-2 hover:underline"
           >
-            Open the {saved} shelf →
+            Open the {libraryKindLabel(saved)} shelf →
           </Link>
         </p>
       )}

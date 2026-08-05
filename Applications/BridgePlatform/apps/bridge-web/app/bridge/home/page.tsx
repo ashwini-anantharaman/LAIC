@@ -35,8 +35,8 @@ export default async function HomePage() {
           Jump into <strong>Play</strong> — pick a knowledge set and the house
           players are provisioned for you. <strong>Players</strong> collects
           everyone&apos;s configured players (one click per knowledge set to
-          make your own); the <strong>Library</strong> keeps the deals,
-          boards, lineups and plays worth returning to, and imports LIN/PBN.
+          make your own); the <strong>Library</strong> keeps the packs,
+          boards, lineups and deals worth returning to, and imports LIN/PBN.
           The <strong>Knowledge bases</strong> workspace remains where you
           upload a system document and shape what the players know.
         </p>

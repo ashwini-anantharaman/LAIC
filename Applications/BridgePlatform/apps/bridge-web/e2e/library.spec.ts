@@ -39,7 +39,7 @@ test("deal editor: author a board on the card grid and save it", async ({ page, 
   // AKQJ, and the info panel names the shelf.
   await page.getByRole("link", { name: "Hand viewer" }).click();
   await page.waitForURL(/\/view$/);
-  await expect(page.getByText(/Library · (deal|board)/)).toBeVisible();
+  await expect(page.getByText(/Library · (pack|board)/)).toBeVisible();
   await expect(page.getByText("AKQJ", { exact: true })).toBeVisible();
 });
 

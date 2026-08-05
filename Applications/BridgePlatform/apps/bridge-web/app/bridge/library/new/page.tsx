@@ -15,7 +15,7 @@ export default async function NewDealPage({
   await requireFeature(context, "page.library");
   const { kind: rawKind, error } = await searchParams;
   const kind = rawKind === "deal" ? "deal" : "board";
-  const noun = kind === "deal" ? "deal" : "board";
+  const noun = kind === "deal" ? "pack" : "board";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -43,7 +43,7 @@ export default async function NewDealPage({
         <input type="hidden" name="kind" value={kind} />
         <DealEditor
           hideBoardFacts={kind === "deal"}
-          submitLabel={kind === "deal" ? "Save deal" : "Save board"}
+          submitLabel={kind === "deal" ? "Save pack" : "Save board"}
         />
       </form>
     </div>

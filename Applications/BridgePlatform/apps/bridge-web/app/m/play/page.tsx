@@ -110,7 +110,7 @@ export default async function MobilePlayPage() {
           Quickplay
         </h2>
         <p style={{ font: `400 12px/1.5 ${K}`, color: "#7b7466", margin: "6px 0 0" }}>
-          Pick up a board where you left off, resume a saved play, or deal a
+          Pick up a board where you left off, resume a saved deal, or deal a
           fresh one against the strongest house set.
         </p>
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -229,7 +229,7 @@ export default async function MobilePlayPage() {
                   listStyle: "none",
                 }}
               >
-                <span>Resume a saved play ▾</span>
+                <span>Resume a saved deal ▾</span>
                 <span style={{ color: "#a49d8e", fontSize: 11 }}>
                   {plays.length} saved
                 </span>

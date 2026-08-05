@@ -16,9 +16,9 @@ const K = "var(--font-karla), sans-serif";
 /** Shelf order from the mobile design (Boards default, like desktop). */
 const SHELVES: { kind: LibraryKind; label: string; reserved?: boolean }[] = [
   { kind: "board", label: "Boards" },
-  { kind: "deal", label: "Deals" },
+  { kind: "deal", label: "Packs" },
   { kind: "table", label: "Tables" },
-  { kind: "play", label: "Plays" },
+  { kind: "play", label: "Deals" },
   { kind: "drill", label: "Drills", reserved: true },
   { kind: "puzzle", label: "Puzzles", reserved: true },
 ];
@@ -38,7 +38,7 @@ function metaLine(e: LibraryEntry): string {
       e.resultLabel,
     ]
       .filter(Boolean)
-      .join(" · ") || "deal only"
+      .join(" · ") || "pack only"
   );
 }
 

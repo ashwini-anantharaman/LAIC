@@ -2,6 +2,7 @@ import { callLabel, rankLabel, type Seat, type Suit } from "@bridge/events";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { HandDiagram } from "@/components/library/HandDiagram";
+import { libraryKindLabel } from "@/lib/libraryLabels";
 import { canUse, requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";
@@ -49,12 +50,12 @@ export default async function LibraryEntryPage({
         <Link href={`/bridge/library?kind=${entry.kind}`} className="hover:underline">
           Library
         </Link>{" "}
-        / {entry.kind}
+        / {libraryKindLabel(entry.kind)}
       </p>
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-medium">{entry.name}</h1>
         <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs uppercase tracking-wide text-neutral-500">
-          {entry.kind}
+          {libraryKindLabel(entry.kind)}
         </span>
         <span className="text-xs text-neutral-400">
           {entry.origin}

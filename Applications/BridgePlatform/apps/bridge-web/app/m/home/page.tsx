@@ -67,7 +67,7 @@ export default async function MobileHomePage() {
           house players are provisioned for you. <b style={bold}>Players</b>
           {/* explicit space: the compiler eats the plain-space seam here */}
           {" collects everyone's configured players"}; the{" "}
-          <b style={bold}>Library</b> keeps the deals, boards, lineups and plays
+          <b style={bold}>Library</b> keeps the packs, boards, lineups and deals
           worth returning to.
         </p>
       </div>
