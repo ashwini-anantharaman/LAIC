@@ -25,6 +25,16 @@ export interface OracleVerdict {
   bestCards: string[];
   /** tricks given up versus optimal (0 = the play is double-dummy optimal) */
   tricksLost: number;
+  /**
+   * Every legal card with the tricks it yields, when the oracle can produce one.
+   *
+   * The verdict alone says "this cost you a trick"; the table says WHICH cards
+   * were equivalent and which were disasters. That difference is what lets an
+   * explanation be written without handing over anybody's cards — a cost is a
+   * consequence, not a holding, so the table can be shown to a language model
+   * that must never see the hidden hands.
+   */
+  scores?: { card: string; tricks: number }[];
 }
 
 export interface DoubleDummyOracle {

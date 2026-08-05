@@ -28,10 +28,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import type { CoachNote } from "@/components/table/play/CoachPanel";
 import { coachNotesForBoard } from "./index";
-import { ALL_AUTHORITIES, assessMove, BUDGET, searchDepthFor } from "./assessors/panel";
+import { ALL_AUTHORITIES, assessMove, BUDGET } from "./assessors/panel";
 import { reconcile } from "@laic/coach/core";
 import { livePlayState } from "./cardVerdicts";
-import { advisePlay } from "./advise";
+import { advisePlay, preferOf } from "./advise";
 import { REVEAL_LEVEL } from "./notes";
 import { splitDetail, toStripNote } from "./render";
 import type { TeachingStore } from "./kbTeaching";
@@ -72,6 +72,51 @@ function dealFor(seat: Seat, spec: string): Record<Seat, Card[]> {
   hands[seat] = mine;
   rest.forEach((card, i) => hands[others[i % 3]!]!.push(card));
   return hands;
+}
+
+/**
+ * Have a seat LEAD a card: take one from the hand it is actually holding, and hand
+ * back both the card and the depleted deal.
+ *
+ * TWO FIXTURES HERE USED TO FAKE THIS and the omission hid the solver completely.
+ * Each declared "West led the 5♠" while leaving all thirteen cards in West's hand —
+ * and worse, `dealFor` had given the 5♠ to East, so West never held it at all. West
+ * showed fourteen cards against everyone else's thirteen; `scoreEveryCard` refuses a
+ * deal it cannot reconcile, so the double-dummy assessor abstained on every such
+ * position. Silently, because an abstaining authority looks exactly like an absent
+ * one. Both tests passed, one of them by asserting the solver was NOT the adviser.
+ *
+ * So the card is TAKEN FROM THE HAND rather than named, and the throw is the point:
+ * a fixture that cannot produce the lead it claims should stop the suite, not pick
+ * its own quiet interpretation. `applyEvent` filters the card out of the hand
+ * (apply.ts), so keeping it is not a simplification but a state the engine cannot
+ * reach.
+ */
+/**
+ * The seat after `from`, `n` plays later. Clockwise, N→E→S→W.
+ *
+ * Spelled out because a fixture got it wrong and the mistake was invisible: it said
+ * "West led, South is second to play", and second after West is NORTH. The solver
+ * answered about North's hand, perfectly correctly, and the legality filter turned
+ * that into an empty result.
+ */
+const seatAfter = (from: Seat, n: number): Seat =>
+  (["N", "E", "S", "W"] as Seat[])[((["N", "E", "S", "W"] as Seat[]).indexOf(from) + n) % 4]!;
+
+function playedTo(
+  hands: Record<Seat, Card[]>,
+  seats: Seat[],
+  suit: Suit,
+): { hands: Record<Seat, Card[]>; plays: { seat: Seat; card: Card }[] } {
+  const out = { ...hands };
+  const plays: { seat: Seat; card: Card }[] = [];
+  for (const seat of seats) {
+    const card = out[seat]!.find((c) => c.suit === suit);
+    if (!card) throw new Error(`${seat} holds no ${suit} to play`);
+    out[seat] = out[seat]!.filter((c) => c !== card);
+    plays.push({ seat, card });
+  }
+  return { hands: out, plays };
 }
 
 const bid = (seq: number, seat: Seat, call: string): GameEvent => ({
@@ -533,13 +578,21 @@ describe("the coach reads the table", () => {
     // Two paths with different orders was the bug: a card judged by a general
     // guideline while the hint quoted the learner's own rulebook.
     const c = (suit: Suit, rank: number): Card => ({ suit, rank: rank as Card["rank"] });
+    // West declares, so North makes the opening lead and South is THIRD to play.
+    void c;
+    const opening = playedTo(
+      dealFor("S", "SA SK S4 S3 HK HQ H2 DQ DJ D2 C4 C3 C2"),
+      ["N", "E"],
+      "S",
+    );
+    expect(seatAfter("N", opening.plays.length)).toBe("S");
     const before = {
       boardRef: "b", dealer: "W" as Seat, vul: "none" as const,
-      hands: dealFor("S", "SA SK S4 S3 HK HQ H2 DQ DJ D2 C4 C3 C2"),
+      hands: opening.hands,
       auction: [],
       contract: { level: 3, strain: "N" as const, doubled: 0 as const, declarer: "W" as Seat },
       phase: "play" as const, turn: "S" as Seat,
-      tricks: [{ leader: "W" as Seat, plays: [{ seat: "W" as Seat, card: c("S", 5) }] }],
+      tricks: [{ leader: "N" as Seat, plays: opening.plays }],
       trickCount: { NS: 0, EW: 0 },
     };
     const ctx = { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") }, authorities: ALL_AUTHORITIES };
@@ -549,9 +602,31 @@ describe("the coach reads the table", () => {
     const asked = await assessMove({ action: card, before, actor: "S", learnerSeat: "S", asking: true }, ctx, BUDGET.asked);
 
     const authorities = (x: typeof judged) => [...new Set(x.findings.map((f) => f.authority))].sort();
-    expect(authorities(judged)).toEqual(authorities(asked));
-    // Specifically: the rulebook is consulted in BOTH directions now.
-    expect(authorities(judged)).toContain("system");
+
+    // ONE PANEL, so nothing may speak when judging that was not also consulted when
+    // asking. That is the bug this guards: the hint used to run its own fallback
+    // chain, and a card judged by a general guideline while the hint quoted the
+    // rulebook is two coaches disagreeing in one voice.
+    for (const a of authorities(judged)) expect(authorities(asked)).toContain(a);
+
+    // NOT strict equality, and the exception is deliberate rather than a concession
+    // to a failing test. `kbCardPlay` withholds a catch-all DEFAULT when judging and
+    // offers it when asked: marking someone wrong for departing from a default is
+    // unfair, while "no special agreement here, your system's default is the lowest
+    // card" is a real answer to a real question. So asking may add `system` and
+    // nothing else. The dedicated test below covers that behaviour head-on.
+    const extra = authorities(asked).filter((a) => !authorities(judged).includes(a));
+    expect(extra.filter((a) => a !== "system")).toEqual([]);
+
+    // And both must include the solver, which is what the old fixture hid: it
+    // claimed West led while South was second to play, and second after West is
+    // North, so every solve answered about North's hand and was discarded. The
+    // subset check above would hold vacuously over a set that never included it.
+    expect(authorities(judged)).toContain("solution");
+    expect(authorities(asked)).toContain("solution");
+    // The rulebook is reached in at least one direction — see `extra` for why this
+    // cannot be asserted of judging on this position.
+    expect(authorities(asked)).toContain("system");
   });
 
   it("INVARIANT 4 — silence is always attributable", async () => {
@@ -580,16 +655,6 @@ describe("the coach reads the table", () => {
     const status = listening(notes)!;
     // "2 calls played" alone would invite the assumption both were looked at.
     expect(status.detail).toMatch(/none of them were yours/i);
-  });
-
-  it("the budget, not a constant, sets how deep the search goes", () => {
-    // Two hardcoded caps (5 when judging, 7 when asking) with the reason living
-    // in a comment became one function of the caller's stated budget.
-    expect(searchDepthFor(BUDGET.review.ms)).toBe(5);
-    expect(searchDepthFor(BUDGET.asked.ms)).toBe(7);
-    expect(searchDepthFor(0)).toBe(4);
-    // Nothing above 7 is offered — 8 cards a hand measured 23 seconds.
-    expect(searchDepthFor(10 ** 9)).toBe(7);
   });
 
   it("INVARIANT 6 — only judges moves that were YOURS to make", async () => {
@@ -631,24 +696,31 @@ describe("the coach reads the table", () => {
   // -------------------------------------------------------------------------
 
   const midHand = () => {
-    const c = (suit: Suit, rank: number): Card => ({ suit, rank: rank as Card["rank"] });
+    // West declares 3NT, so the opening lead is North's and South plays third. The
+    // seat order is what this fixture used to get wrong.
+    const opening = playedTo(
+      dealFor("S", "SA SK S4 S3 HK HQ H2 DQ DJ D2 C4 C3 C2"),
+      ["N", "E"],
+      "S",
+    );
     return {
       boardRef: "b", dealer: "W" as Seat, vul: "none" as const,
-      hands: dealFor("S", "SA SK S4 S3 HK HQ H2 DQ DJ D2 C4 C3 C2"),
+      hands: opening.hands,
       auction: [],
       contract: { level: 3, strain: "N" as const, doubled: 0 as const, declarer: "W" as Seat },
       phase: "play" as const, turn: "S" as Seat,
-      // West led a small spade; South is second to play.
-      tricks: [{ leader: "W" as Seat, plays: [{ seat: "W" as Seat, card: c("S", 5) }] }],
+      tricks: [{ leader: "N" as Seat, plays: opening.plays }],
       trickCount: { NS: 0, EW: 0 },
     };
   };
 
-  it("advises from YOUR RULEBOOK first, not the solver", async () => {
-    // The solver sees all four hands, so on about half of all finesse positions
-    // it will talk a learner out of the correct percentage play — no card leaked,
-    // wrong habit taught. Your rulebook only knows what you know, so its advice
-    // is reproducible at the table. That is why it leads.
+  it("advises from THE SOLVER first — the button promises a correct answer", async () => {
+    // Reversed on the owner's instruction, and the cost is worth writing down
+    // because it is invisible in the output. The solver sees all four hands, so on
+    // about half of all finesse positions its pick is right only against the actual
+    // lie, where the percentage play — the one reproducible at a table where you
+    // cannot see the king — is the other card. No card leaks; the habit can still be
+    // wrong. What keeps it honest is the label, and the guideline shown beside it.
     const advice = await advisePlay({
       state: midHand(),
       learnerSeat: "S",
@@ -656,8 +728,150 @@ describe("the coach reads the table", () => {
       system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") },
     });
     expect(advice.best.length).toBeGreaterThan(0);
-    expect(advice.source).not.toBe("solution");
-    expect(["system", "convention"]).toContain(advice.source);
+    expect(advice.source).toBe("solution");
+    // And the cost table rides along, because it is the only thing that makes a
+    // calculated answer explicable to anybody.
+    expect(advice.scores?.length).toBeGreaterThan(0);
+  });
+
+  describe("breaking a tie", () => {
+    // A tie in `best` means the solver has run out of things to say: the trick count
+    // is identical. "8♣, 10♣ or J♣, take your pick" is true and useless, and a
+    // learner who spends the J♣ has thrown a higher card for nothing. Bridge answers
+    // it — the cheapest card that does the job — and that answer is convention's,
+    // never the solver's, which is why it is computed here and labelled as such.
+    it("prefers the cheapest of equals when following suit", () => {
+      expect(preferOf(["CK", "CJ", "CT", "C8"], false)).toBe("C8");
+      expect(preferOf(["CT", "C8"], false)).toBe("C8");
+      // The ten sorts below the jack, not below the eight — "T" is a rank, not a 1.
+      expect(preferOf(["CJ", "CT"], false)).toBe("CT");
+      expect(preferOf(["CA", "CK", "CQ"], false)).toBe("CQ");
+    });
+
+    it("declines when there is nothing to break", () => {
+      expect(preferOf(["C8"], false)).toBeUndefined();
+      expect(preferOf([], false)).toBeUndefined();
+    });
+
+    it("declines ON LEAD, where the convention runs the other way", () => {
+      // From a touching honour sequence you lead the TOP — the K from K-Q-J. Leading
+      // the J costs nothing double-dummy and tells partner something false, so a
+      // blanket "cheapest" would be wrong here about half the time. Detecting
+      // sequences properly is a bigger job; until then leads show the tie.
+      expect(preferOf(["SK", "SQ", "SJ"], true)).toBeUndefined();
+      expect(preferOf(["C8", "CT"], true)).toBeUndefined();
+    });
+
+    it("declines ACROSS SUITS, where 'cheapest' is not even defined", () => {
+      // A tie spanning suits is a discard, and which suit to abandon is real
+      // judgement — length, guards, entries. The solver rates them equal because it
+      // can see the layout; a player choosing between a spade and a club is not
+      // making that decision. Nothing here can help, so nothing pretends to.
+      expect(preferOf(["S2", "C2"], false)).toBeUndefined();
+      expect(preferOf(["S8", "H8", "D8"], false)).toBeUndefined();
+    });
+  });
+
+  it("answers a REAL position: trick two, void in hand, playing from dummy", async () => {
+    // THE POSITION THE COACH WAS SILENT ON, end to end through `advisePlay` rather
+    // than the engine alone. It reported "your system has no agreement for this card,
+    // and the hand is too deep to work out exactly" — a rulebook that was not being
+    // consulted, and a depth limit that had been deleted.
+    //
+    // The cause was neither: `renderHand` writes a void suit as "D:-" and the parser
+    // counted the dash as a card, so South's hand measured 12 against everyone
+    // else's 11, the deal would not reconcile, and every solve abstained. Voids are
+    // ordinary — most deals have one by trick two — so the coach looked switched off
+    // while the engine was healthy and simply never asked.
+    //
+    // Which is why this test goes through the production entry point. Every
+    // engine-level test passed throughout, because they built card lists directly
+    // and never crossed the notation that was broken.
+    const RANK: Record<string, number> = {
+      "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
+      T: 10, J: 11, Q: 12, K: 13, A: 14,
+    };
+    const one = (t: string): Card => ({ suit: t[0] as Suit, rank: RANK[t.slice(1)]! as Card["rank"] });
+    const deal: Record<Seat, string[]> = {
+      N: ["SK","SJ","ST","S8","HA","H7","H6","D8","D7","C9","C8","C7","C6"],
+      E: ["S3","S2","H5","H4","H3","D6","D5","D4","D3","C5","C4","C3","C2"],
+      S: ["SA","SQ","S9","S7","HK","HQ","HJ","HT","H9","H8","D9","CA","CK"],
+      W: ["S6","S5","S4","H2","DA","DK","DQ","DJ","DT","D2","CQ","CJ","CT"],
+    };
+    const hands = Object.fromEntries(
+      (["N", "E", "S", "W"] as Seat[]).map((seat) => [seat, deal[seat]!.map(one)]),
+    ) as Record<Seat, Card[]>;
+
+    // Trick one, complete: West cashes the A♦. South, holding one diamond, plays it —
+    // and is void in diamonds from here, which is the whole point of the fixture.
+    const first = [
+      { seat: "W" as Seat, card: one("DA") },
+      { seat: "N" as Seat, card: one("D7") },
+      { seat: "E" as Seat, card: one("D3") },
+      { seat: "S" as Seat, card: one("D9") },
+    ];
+    // Trick two: East leads a spade, South wins it, West follows. Dummy plays last,
+    // and it is the declarer's decision — three cards down, so the hands are uneven.
+    const second = [
+      { seat: "E" as Seat, card: one("S3") },
+      { seat: "S" as Seat, card: one("SA") },
+      { seat: "W" as Seat, card: one("S4") },
+    ];
+    for (const play of [...first, ...second]) {
+      hands[play.seat] = hands[play.seat]!.filter(
+        (card) => !(card.suit === play.card.suit && card.rank === play.card.rank),
+      );
+    }
+    expect(hands.S.some((card) => card.suit === "D")).toBe(false); // the void is real
+
+    const state = {
+      boardRef: "b", dealer: "N" as Seat, vul: "none" as const,
+      hands,
+      auction: [],
+      contract: { level: 3, strain: "H" as const, doubled: 0 as const, declarer: "S" as Seat },
+      phase: "play" as const, turn: "N" as Seat,
+      tricks: [
+        { leader: "W" as Seat, plays: first },
+        { leader: "E" as Seat, plays: second },
+      ],
+      trickCount: { NS: 1, EW: 1 },
+    };
+
+    // `actor` is dummy while `learnerSeat` is the declarer — the split the route makes.
+    const advice = await advisePlay({
+      state,
+      learnerSeat: "S",
+      actor: "N",
+      system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") },
+    });
+    expect(advice.silentBecause).toBeUndefined();
+    expect(advice.best.length).toBeGreaterThan(0);
+    expect(advice.source).toBe("solution");
+    // And the table, without which the answer cannot be explained to anybody.
+    expect(advice.scores?.length).toBeGreaterThan(0);
+
+    // Dummy holds K-J-10-8 of spades and the trick is already won by South's A♠, so
+    // every one of them ties — a real tie, from a real position, not a contrived
+    // one. Convention picks the cheapest, and the panel shows one card instead of
+    // four. Same suit, and dummy is not on lead, so the rule applies.
+    expect(advice.best.length).toBeGreaterThan(1);
+    expect(advice.prefer).toBe("S8");
+  });
+
+  it("shows the guideline agreeing or dissenting, whichever way round they sit", async () => {
+    // "The cards say one thing and your system says another" is the most
+    // instructive position in the game, and it has to survive the reordering. The
+    // corroboration used to be hardcoded to look for `solution` specifically —
+    // which produced nothing at all once the solver became the adviser.
+    const advice = await advisePlay({
+      state: midHand(),
+      learnerSeat: "S",
+      actor: "S",
+      system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") },
+    });
+    expect(Boolean(advice.corroborated) || Boolean(advice.contradicted)).toBe(true);
+    // Never both — they are the two answers to one question.
+    expect(advice.corroborated && advice.contradicted).toBeFalsy();
   });
 
   it("labels a calculated answer as calculated", async () => {
@@ -747,15 +961,32 @@ describe("the coach reads the table", () => {
     };
     const ctx = { system: { compiled, player: partnershipSystem(seatsWith(["pk_conventions"]), "S") }, authorities: ALL_AUTHORITIES };
 
-    // ASKED: a default is a real answer, offered with lower confidence.
+    // ASKED, RULEBOOK ONLY: a default is a real answer, offered with lower
+    // confidence. Isolated to `system` deliberately — the solver outranks it for
+    // advising now, so asking the whole panel says nothing about whether the
+    // rulebook would have answered. The `authorities` override exists for exactly
+    // this: the same position, one authority at a time, no second code path.
+    const fromRulebook = await advisePlay({
+      state,
+      learnerSeat: "S",
+      actor: "S",
+      ...ctx,
+      authorities: ["system"],
+    });
+    expect(fromRulebook.best.length).toBeGreaterThan(0);
+    expect(fromRulebook.source).toBe("system");
+    expect(fromRulebook.because).toBeTruthy();
+
+    // ASKED, WHOLE PANEL: something answers, and whatever does must be attributed.
+    // Silence here may never blame a search depth — there is no depth limit any
+    // more, and the sentence that claimed one is what users actually saw while a
+    // void-parsing bug had every solve abstaining. A message that makes a bug look
+    // like a boundary is worse than no message.
     const advice = await advisePlay({ state, learnerSeat: "S", actor: "S", ...ctx });
-    if (advice.best.length) {
-      expect(advice.source).toBe("system");
-      expect(advice.because).toBeTruthy();
-    } else {
-      // If it still cannot answer, it must at least say so in learner language —
-      // rulebook first, not "too deep for the search".
-      expect(advice.silentBecause).toMatch(/your system/i);
+    if (advice.best.length) expect(advice.source).toBeTruthy();
+    else {
+      expect(advice.silentBecause).toBeTruthy();
+      expect(advice.silentBecause).not.toMatch(/too deep/i);
     }
 
     // JUDGED: the same default must NOT produce a verdict. Marking a learner

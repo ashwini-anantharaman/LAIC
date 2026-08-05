@@ -125,14 +125,27 @@ function silence(move: MoveUnderReview, applicable: number): string {
       ? "no contract yet — there is no card play to judge"
       : "no authority covers this kind of move";
   }
-  // Learner-facing, so it names the RULEBOOK first — the calculator is the
-  // auditor, not the primary adviser, and leading with "too deep for the search"
-  // put the demoted authority in front. It also has to read as an answer to
-  // "what should I play?", because that is where it appears.
+  // Learner-facing, and it has to read as an answer to "what should I play?",
+  // because that is where it appears.
+  //
+  // THE OLD WORDING WAS A LIE TWICE OVER: "your system has no agreement for this
+  // card, and the hand is too deep to work out exactly". The knowledge base is not
+  // consulted at all right now (`LIVE_AUTHORITIES`), so it cannot have failed to find
+  // an agreement — and nothing is ever too deep any more, since the solver does a
+  // full thirteen-card deal in about 13ms and the depth cap is deleted.
+  //
+  // It was also the sentence the coach printed while a void-parsing bug made every
+  // solve abstain, so the one message a user actually saw was describing a limit that
+  // did not exist, on a position the engine could have answered instantly. A silence
+  // message has one job — to distinguish "nothing to say" from "broken" — and that
+  // one did the opposite.
+  //
+  // Reaching this now means the position genuinely could not be read: hands that do
+  // not reconcile, or a turn the caller and the engine disagree about. Rare, and
+  // worth sounding unusual rather than routine.
   return move.action.kind === "call"
     ? "no agreement in this system covers this position"
-    : "your system has no agreement for this card, and the hand is too deep to work out exactly";
+    : "nothing could work this card out — no guideline fits it and the position would not solve";
 }
 
 export type { AssessContext, BridgeFinding, MoveUnderReview } from "./context";
-export { searchDepthFor } from "./context";

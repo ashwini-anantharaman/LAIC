@@ -9,6 +9,8 @@ import type { GameState } from "@bridge/engine";
 import type { Card, Seat, Suit } from "@bridge/events";
 import { describe, expect, it } from "vitest";
 
+import { cardLabel, codeLabel } from "./position";
+import { cardCode } from "./tableEvents";
 import { leakedCards, positionKey, visibleCards, visiblePosition } from "./visible";
 
 const R: Record<string, number> = {
@@ -142,5 +144,42 @@ describe("INVARIANT — the payload cannot carry a concealed card", () => {
     for (const forbidden of ["hands", "cost", "verdict", "best", "solution", "tricks_lost"]) {
       expect(keys, forbidden).not.toContain(forbidden);
     }
+  });
+});
+
+describe("the two card vocabularies", () => {
+  it("converts every one of the 52 cards from code to label", () => {
+    // THE BUG THIS PINS COST NOTHING TO WRITE AND NEVER THREW. `cardCode` puts the
+    // suit first ("C8"); `cardLabel` puts the rank first with a glyph ("8♣"). The
+    // advice layer speaks codes, `VisiblePosition` speaks labels, and `play-why`
+    // compared one against the other. A string compared to a string is legal, always
+    // false, and every consequence looked like an answer:
+    //
+    //   · "everything legal the authority did not choose" excluded nothing, so the
+    //     CHOSEN cards were handed to the model as cards to argue against;
+    //   · the directed-play guard found no card in `best`, so it would discard a
+    //     correct explanation for "telling the learner to play 8♣" when the 8♣ was
+    //     the answer — good prose thrown away, silently, as a validation failure.
+    //
+    // `codeLabel` is the single conversion. All 52 cards, so the ten cannot be the
+    // one that is wrong: it is "T" in a code and "10" in a label, and it is the rank
+    // every notation gets wrong at least once.
+    const suits: Suit[] = ["S", "H", "D", "C"];
+    let checked = 0;
+    for (const suit of suits) {
+      for (let rank = 2; rank <= 14; rank++) {
+        const card = { suit, rank: rank as Card["rank"] };
+        expect(codeLabel(cardCode(card)), `${suit}${rank}`).toBe(cardLabel(card));
+        checked++;
+      }
+    }
+    expect(checked).toBe(52);
+  });
+
+  it("spells the ten differently in each, which is the whole hazard", () => {
+    const ten = { suit: "C" as Suit, rank: 10 as Card["rank"] };
+    expect(cardCode(ten)).toBe("CT");
+    expect(cardLabel(ten)).toBe("10♣");
+    expect(codeLabel("CT")).toBe("10♣");
   });
 });

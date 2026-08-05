@@ -38,7 +38,7 @@
 //
 // The auction's "What should I bid?" is still a surface only, and says so.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PlayExplanation } from "@/lib/coach/model";
 import type { ThinkAid } from "@/lib/coach/think";
 
@@ -106,6 +106,8 @@ function cardText(card: string): { rank: string; suit: string } {
 
 type Hint = {
   best: string[];
+  /** Which of several tied cards to play. Convention's choice, not the solver's. */
+  prefer?: string;
   source: "system" | "convention" | "solution";
   because?: string;
   corroborated?: boolean;
@@ -142,6 +144,31 @@ export function CoachPrompts({
 
   const tellLabel = phase === "auction" ? "What should I bid?" : "What should I play?";
 
+  // PREFETCH ON OPEN. The sheet mounts this component only when the learner opens
+  // the coach, and opening it mid-play is the strongest signal available that a
+  // question is coming. The model call is output-bound and takes seconds; nothing
+  // client-side can shorten it, so the remaining lever is starting it before the
+  // click. By the time a finger reaches "What should I play?", the server-side
+  // cache usually holds the finished explanation and the click gets it for the
+  // price of a round trip.
+  //
+  // WHAT THIS SPENDS, stated plainly: one model call per sheet-open on the
+  // learner's turn where they never click. The server bounds the waste — the route
+  // runs the solver first and only reaches the model when there is genuinely an
+  // answer for this learner right now, which is the same call the click would have
+  // made. A prefetch racing an actual click does NOT double-spend: the route
+  // single-flights identical requests, so the click joins the prefetch's call.
+  //
+  // Fires once per open, deliberately not per position: the sheet covers the felt,
+  // so it is closed during actual play, and re-arming on every turn would spend a
+  // call per trick for a sheet someone left open.
+  useEffect(() => {
+    if (phase !== "play") return;
+    void fetch(`/api/bridge/play-why?sessionId=${encodeURIComponent(sessionId)}`).catch(() => {
+      // Warming failed; the click will simply pay the full price it always used to.
+    });
+  }, []); // empty on purpose: once per open — see the comment above
+
   async function tell() {
     // The auction has no hint endpoint yet. Say so rather than calling the play
     // route and rendering its "only during the play" refusal as if it were an
@@ -156,6 +183,21 @@ export function CoachPrompts({
       return;
     }
     setAnswer({ kind: "loading" });
+    // BOTH REQUESTS LEAVE TOGETHER. They used to be sequential — hint, then, once
+    // it had rendered, the explanation — which reads naturally and wastes the
+    // hint's entire round trip: `play-why` recomputes the advice server-side from
+    // the session record (it trusts nothing the client learned), so it depends on
+    // no part of the hint response. The model call is the long pole at several
+    // seconds; starting it a round-trip earlier is the one client-side saving
+    // available, and it costs nothing when the hint comes back empty — the
+    // explanation of a position with no answer is `null` either way.
+    //
+    // The card still renders the moment IT arrives. The explanation attaches when
+    // it lands, or silently doesn't — a flourish that failed to arrive, never an
+    // error a learner should see.
+    const whyRequest = fetch(`/api/bridge/play-why?sessionId=${encodeURIComponent(sessionId)}`)
+      .then((r) => r.json() as Promise<{ explanation?: PlayExplanation | null }>)
+      .catch(() => ({ explanation: null }));
     try {
       // The client sends only a session id: the seat and the hand come from the
       // session record server-side, so a crafted request cannot ask about
@@ -167,30 +209,16 @@ export function CoachPrompts({
         return;
       }
       const hint = body.hint;
-      // The card is on screen now. The reason is a second request, so a slow or
-      // absent model never delays the thing the learner asked for.
       setAnswer({ kind: "done", hint, whyPending: true });
-      void explain(hint);
+      void whyRequest.then((why) => {
+        setAnswer((prev) =>
+          prev?.kind === "done" && prev.hint === hint
+            ? { kind: "done", hint, whyPending: false, ...(why.explanation ? { why: why.explanation } : {}) }
+            : prev,
+        );
+      });
     } catch {
       setAnswer({ kind: "empty", reason: "unreachable" });
-    }
-  }
-
-  async function explain(hint: Hint) {
-    try {
-      const res = await fetch(`/api/bridge/play-why?sessionId=${encodeURIComponent(sessionId)}`);
-      const body = (await res.json()) as { explanation?: PlayExplanation | null };
-      setAnswer((prev) =>
-        prev?.kind === "done" && prev.hint === hint
-          ? { kind: "done", hint, whyPending: false, ...(body.explanation ? { why: body.explanation } : {}) }
-          : prev,
-      );
-    } catch {
-      // No explanation is a flourish that did not arrive. The authority's own
-      // wording is still there and still true.
-      setAnswer((prev) =>
-        prev?.kind === "done" && prev.hint === hint ? { kind: "done", hint, whyPending: false } : prev,
-      );
     }
   }
 
@@ -322,7 +350,17 @@ function AnswerBlock({
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: MUTED }}>{lead}</span>
-        {hint.best.map((card) => {
+        {/* ONE CHIP WHERE CONVENTION CAN CHOOSE. Three interchangeable cards is a
+            true statement and useless instruction: a learner who picks the J♣ off
+            the row has spent a higher card for nothing, and "take your pick" is not
+            a habit anybody can carry to the next hand. Bridge already answers it —
+            play the cheapest card that does the job — so the row leads with that one
+            and the tie survives in the `equivalent` line underneath.
+
+            The tie is still shown in full when convention CANNOT choose: on lead,
+            where a touching sequence is led from the top, and across suits, where a
+            discard is real judgement. See `preferOf` in advise.ts. */}
+        {(hint.prefer ? [hint.prefer] : hint.best).map((card) => {
           const { rank, suit } = cardText(card);
           return (
             <span
@@ -378,16 +416,32 @@ function AnswerBlock({
           Putting that into plainer words…
         </p>
       )}
-      {/* The calculation's verdict on the advice — agreement is reassurance,
-          disagreement is the interesting case. The card it prefers is NOT shown:
-          naming it would make the solver the adviser through the back door, and
-          its choice is the one you could not have reasoned your way to. */}
+      {/* WHERE THE ANSWER CAME FROM, and whether the other authority agrees.
+          Reordered along with the advice itself: the solver leads now, so the line
+          reads "worked out from the full deal" first and the guideline's opinion
+          second. Agreement is reassurance; disagreement is the interesting case,
+          and it is the one worth reading, because a guideline that dissents is
+          telling you what you could have reasoned to without seeing the deal.
+
+          THE DISSENTING CARD IS STILL NOT SHOWN. Two answers to "what should I
+          play?" is not an answer, and it is the disagreement rather than the other
+          card that teaches. */}
       {(hint.corroborated || hint.contradicted || hint.source === "solution") && (
         <p style={{ margin: 0, fontSize: 12, lineHeight: 1.4 }}>
-          {hint.corroborated && <span style={{ color: TEAL }}>The cards agree.</span>}
-          {hint.contradicted && <span style={{ color: AMBER }}>Though the cards lie badly for it here.</span>}
           {hint.source === "solution" && (
-            <span style={{ color: FAINT }}>{hint.corroborated || hint.contradicted ? " " : ""}Worked out from the full deal.</span>
+            <span style={{ color: FAINT }}>Worked out from the full deal. </span>
+          )}
+          {hint.corroborated && (
+            <span style={{ color: TEAL }}>
+              {hint.source === "solution" ? "Your guidelines agree." : "The cards agree."}
+            </span>
+          )}
+          {hint.contradicted && (
+            <span style={{ color: AMBER }}>
+              {hint.source === "solution"
+                ? "Your guidelines would play something else here."
+                : "Though the cards lie badly for it here."}
+            </span>
           )}
         </p>
       )}

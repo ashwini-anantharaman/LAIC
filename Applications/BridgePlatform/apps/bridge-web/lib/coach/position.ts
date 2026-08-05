@@ -37,6 +37,28 @@ export function callLabel(call: Call): string {
 export const cardLabel = (c: Card): string => `${RANK[c.rank] ?? c.rank}${GLYPH[c.suit] ?? c.suit}`;
 
 /**
+ * "C8" → "8♣", "CT" → "10♣". The engine's code in the table's own vocabulary.
+ *
+ * TWO VOCABULARIES EXIST and mixing them is silent. `cardCode` writes the suit
+ * first ("C8"); `cardLabel` writes the rank first with a glyph ("8♣"). Both are
+ * strings, so a comparison between them never throws — it just always returns
+ * false, and every consequence looks like a legitimate answer:
+ *
+ *   · `rejected = pos.legal.filter(c => !advice.best.includes(c))` compared labels
+ *     against codes, so nothing matched and the CHOSEN cards were handed to the
+ *     model as cards to argue against;
+ *   · the directed-play guard checked every legal card against `best`, found no
+ *     match, and would therefore discard an explanation for "telling the learner
+ *     to play 8♣" when the 8♣ was the answer.
+ *
+ * So the conversion lives here, once, rather than inline at each boundary.
+ */
+export const codeLabel = (code: string): string => {
+  const rank = code.slice(1);
+  return `${rank === "T" ? "10" : rank}${GLYPH[code.slice(0, 1)] ?? code.slice(0, 1)}`;
+};
+
+/**
  * How to refer to a seat when talking TO `me`.
  *
  * Partner earns the word "partner" because that relationship is what the auction

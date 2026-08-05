@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  bridge-dds@1.4.0:
+    hash: 59e39b7389c788cacd34baa1e12d192e792e7c12a098b8bd82ddd5ea20bac83a
+    path: patches/bridge-dds@1.4.0.patch
+
 importers:
 
   .:
@@ -95,6 +100,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.110.1
         version: 2.110.1
+      bridge-dds:
+        specifier: 1.4.0
+        version: 1.4.0(patch_hash=59e39b7389c788cacd34baa1e12d192e792e7c12a098b8bd82ddd5ea20bac83a)
       next:
         specifier: ^16.0.0
         version: 16.2.10(@playwright/test@1.61.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -1241,6 +1249,9 @@ packages:
   brace-expansion@5.0.7:
     resolution: {integrity: sha512-7oFy703dxfY3/NLxC1fh2SUCQ0H9rmAY+5EpDVfXjUTTs+HEwR2nYaqLv+GWcTsumwxPfiz6CzCNkwXwBUwqCA==}
     engines: {node: 18 || 20 || >=22}
+
+  bridge-dds@1.4.0:
+    resolution: {integrity: sha512-bYcyrZmKALx5dsF+RUWYgyr5mqzK9wstbJ7dn31/8ex2sn97f0NUnzAyZmi6OmX0J12XyXHEjEBU56ALX2wnMQ==}
 
   cac@6.7.14:
     resolution: {integrity: sha512-b6Ilus+c3RrdDk+JhLKUAQfzzgLEPy6wcXqS7f/xe1EETvsDP6GORG7SFuOs6cID5YkqchW/LXZbX5bc8j7ZcQ==}
@@ -2632,6 +2643,8 @@ snapshots:
   brace-expansion@5.0.7:
     dependencies:
       balanced-match: 4.0.4
+
+  bridge-dds@1.4.0(patch_hash=59e39b7389c788cacd34baa1e12d192e792e7c12a098b8bd82ddd5ea20bac83a): {}
 
   cac@6.7.14: {}
 

@@ -18,7 +18,6 @@ import type { LLMLike } from "../../../platform/llm/index";
 import type { FeedbackStyle, ExplanationDepth } from "../../../platform/types/index";
 import { buildBridgeCoach, type BridgeCoach } from "./buildBridgeCoach";
 import { BRIDGE_DOMAIN_ID } from "../plugin/constants";
-import { LocalDoubleDummyOracle } from "../cardplay/dds/LocalDoubleDummyOracle";
 import type { DoubleDummyOracle } from "../cardplay/oracle";
 
 export interface CoachSessionOptions {
@@ -31,9 +30,14 @@ export interface CoachSessionOptions {
   /** Inject a real model client (or proxy). Omit for the offline default. */
   llm?: LLMLike;
   /**
-   * Double-dummy oracle for authoritative live card-play correctness. Defaults
-   * to the in-process LocalDoubleDummyOracle (solves end-game positions). Pass
-   * `null` to disable and coach card play from principles alone.
+   * Double-dummy oracle for authoritative live card-play correctness.
+   *
+   * THERE IS NO DEFAULT, and that is the change. It used to construct an
+   * in-process solver, so every host got authoritative-looking trick counts
+   * without asking for them — and that solver was wrong, right on 17 of 40
+   * measured endings. Omitting this now means card play is coached from
+   * principles alone, which is a weaker coach and an honest one. `null` is
+   * accepted as an explicit way to say the same thing.
    */
   oracle?: DoubleDummyOracle | null;
   /** reuse an already-built coach (e.g. to share a learner model). */
@@ -44,8 +48,7 @@ export interface CoachSessionOptions {
 
 export function createCoachSession(opts: CoachSessionOptions): CoachSession {
   const domainId = opts.domainId ?? BRIDGE_DOMAIN_ID;
-  const oracle =
-    opts.oracle === null ? undefined : (opts.oracle ?? new LocalDoubleDummyOracle());
+  const oracle = opts.oracle ?? undefined;
   const coach =
     opts.coach ?? buildBridgeCoach({ llm: opts.llm ?? new HeuristicLLM(), oracle });
 

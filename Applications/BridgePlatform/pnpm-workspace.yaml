@@ -1,7 +1,17 @@
 packages:
-  - "apps/*"
-  - "packages/*"
-  - "services/*"
+  - apps/*
+  - packages/*
+  - services/*
+
 allowBuilds:
   esbuild: true
   sharp: true
+
+# bridge-dds is the WASM double-dummy solver the coach answers "what should I play?"
+# with. It ships ESM whose entry does `import DdsLoader from "./lib/dds"` — no file
+# extension — which Node's ESM resolver rejects outright, so the package cannot be
+# imported at all as published. The patch adds `.js`. One line, and preferred to
+# vendoring because the alternative is owning 252 lines of generated wrapper plus a
+# 524 KB base64 payload.
+patchedDependencies:
+  bridge-dds@1.4.0: patches/bridge-dds@1.4.0.patch

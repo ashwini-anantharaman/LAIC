@@ -9,7 +9,7 @@ import type { GameState } from "@bridge/engine";
 import type { Card, Suit } from "@bridge/events";
 import { describe, expect, it, vi } from "vitest";
 
-import { explainPlay, validateExplanation, type ExplainInput } from "./model";
+import { capRejected, explainPlay, validateExplanation, type ExplainInput } from "./model";
 import { visiblePosition, type VisiblePosition } from "./visible";
 
 const R: Record<string, number> = {
@@ -146,10 +146,37 @@ describe("validateExplanation — it may not change the answer", () => {
   });
 
   it("rejects hedging about the answer", () => {
-    for (const hedge of ["instead", "however", "alternatively", "arguably", "rather than"]) {
+    for (const hedge of [
+      "alternatively",
+      "arguably",
+      "but you could",
+      "could also",
+      "another option",
+      "might be better",
+      "it depends",
+    ]) {
       const out = validateExplanation({ why: `Dummy plays 6♦, ${hedge} something else.` }, input());
       expect("reason" in out, hedge).toBe(true);
       if ("reason" in out) expect(out.detail).toContain("hedges");
+    }
+  });
+
+  it("ALLOWS contrast, which is how the right answer gets explained", () => {
+    // "instead", "rather than" and "however" were in the list above and are not any
+    // more, on measurement: across real positions "rather than" was the commonest
+    // reason a learner got a card with no reason attached. They are contrast markers,
+    // and contrast is the shape of a good explanation — the sentences below are
+    // exactly what should reach the screen.
+    //
+    // What stops the model changing the answer is not this pattern but the exact
+    // directed-play check: naming a specific other card as the play. A soft net for
+    // tone, set too wide, catches nothing but good prose.
+    for (const why of [
+      "Play the small 6♦ rather than spending an honour you will want later.",
+      "Dummy takes it with the 6♦ instead of wasting anything bigger.",
+      "The 6♦ is enough here; however you look at it, a higher card gains nothing.",
+    ]) {
+      expect("explanation" in validateExplanation({ why }, input()), why).toBe(true);
     }
   });
 });
@@ -174,17 +201,101 @@ describe("validateExplanation — the remaining rules", () => {
   });
 });
 
-describe("explainPlay — the solver is never asked to explain itself", () => {
-  it("returns not-explainable without calling the model at all", async () => {
+describe("explainPlay — the solver is explained from costs, never from cards", () => {
+  it("will not explain a solver answer with no cost table, and makes no request", async () => {
     const create = vi.fn();
     const out = await explainPlay(
       input({ source: "solution", best: ["6♦"] }),
       { client: { create } as never },
     );
-    expect(out).toEqual({ reason: "not-explainable" });
-    // The point: no request was made. The solver's reason IS the hidden hands, so
-    // asking for prose here is asking the model to invent one.
+    expect(out).toEqual({
+      reason: "not-explainable",
+      detail: "solver answer with no cost table",
+    });
+    // The point is the absent request. The solver publishes a verdict and no
+    // reasoning, so a model given only the answer would have to invent the why.
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("does ask, once it has a table — the table is the material", async () => {
+    // This is the change. It used to be a blanket refusal: the solver answered and
+    // the coach said "worked out from the full deal" and stopped, which is honest
+    // and teaches nothing.
+    const create = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: JSON.stringify({ why: "Cashing the 6♦ keeps the lead where the long suit is." }) }],
+      stop_reason: "end_turn",
+    } as never);
+    const out = await explainPlay(
+      input({
+        source: "solution",
+        best: ["6♦"],
+        scores: [
+          { card: "6♦", tricks: 9 },
+          { card: "K♠", tricks: 8 },
+        ],
+      }),
+      { client: { create } as never },
+    );
+    expect("explanation" in out).toBe(true);
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("sends the costs and NOT the hands", async () => {
+    // The invariant the whole opening rests on. A trick count is a consequence and
+    // may cross; a holding may not. If a hand ever reached this payload the
+    // structural guarantee would be gone and no validator downstream could restore
+    // it, because a fluent sentence about a card someone holds looks like insight.
+    const create = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: JSON.stringify({ why: "The 6♦ costs nothing." }) }],
+      stop_reason: "end_turn",
+    } as never);
+    await explainPlay(
+      input({
+        source: "solution",
+        best: ["6♦"],
+        scores: [
+          { card: "6♦", tricks: 9 },
+          { card: "K♠", tricks: 7 },
+        ],
+      }),
+      { client: { create } as never },
+    );
+    const sent = JSON.stringify(create.mock.calls[0]![0]);
+    // The costs are there, expressed as what the alternatives give up.
+    expect(sent).toContain("9 tricks (best)");
+    expect(sent).toContain("2 tricks worse");
+    // And the position carries no field for anybody else's cards, by construction.
+    const payload = create.mock.calls[0]![0] as { messages: { content: string }[] };
+    expect(payload.messages[0]!.content).not.toMatch(/\b(?:east|west|north|south)\s+holds/i);
+  });
+
+  it("discards an explanation that reconstructs a hidden layout", async () => {
+    // The leak with no card token in it. Every other guard scans for cards; "the
+    // king must be offside" names none, passes all of them, and still hands over a
+    // fact from a hand the learner cannot see. Feeding the cost table is what
+    // created the opening, so this is where it is met.
+    for (const why of [
+      "Play the 6♦ — the king must be offside.",
+      "The 6♦ is right because East is short in diamonds.",
+      "Lead the 6♦; West holds the ace and will have to play it.",
+      "The 6♦ works since the finesse fails on the actual layout.",
+      "The 6♦ is best because the queen sits badly for them.",
+    ]) {
+      const out = validateExplanation(
+        { why },
+        input({
+          source: "solution",
+          best: ["6♦"],
+          scores: [{ card: "6♦", tricks: 9 }],
+        }),
+      );
+      expect("reason" in out, why).toBe(true);
+      // Two rules cover this list now: an inherently-hidden claim ("must be
+      // offside") and a shape claim about a hand the learner cannot see ("East is
+      // short"). Either rejection is the right outcome; the split exists so that
+      // "YOU are void in diamonds" stops being caught alongside them.
+      expect((out as { detail?: string }).detail, why).toMatch(/hidden layout|cannot see/);
+    }
   });
 
   it("returns not-explainable when there is no answer to explain", async () => {
@@ -192,6 +303,309 @@ describe("explainPlay — the solver is never asked to explain itself", () => {
     const out = await explainPlay(input({ best: [] }), { client: { create } as never });
     expect(out).toEqual({ reason: "not-explainable" });
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe("capRejected — the model writes less, so the answer arrives sooner", () => {
+  // MEASURED, which is why this exists at all: the call is output-bound. Thinking
+  // on or off barely moved p50; prompt caching cannot touch it; what moved it was
+  // shrinking what the model is asked to WRITE. A clause per rejected card meant a
+  // ten-card position produced ten near-identical clauses ("parting with a trump
+  // costs two tricks", five times over). One representative per cost tier cut p90
+  // by two seconds on the same positions with identical validator survival.
+  const scores = [
+    { card: "A♠", tricks: 9 }, // best
+    { card: "K♠", tricks: 8 },
+    { card: "Q♠", tricks: 8 },
+    { card: "J♠", tricks: 8 },
+    { card: "10♠", tricks: 7 },
+    { card: "9♠", tricks: 7 },
+    { card: "2♠", tricks: 5 },
+  ];
+  const rejected = ["K♠", "Q♠", "J♠", "10♠", "9♠", "2♠"];
+
+  /**
+   * A position that actually CONTAINS the capped cards: dummy holds a long diamond
+   * suit and is on play to a diamond lead, so six legal cards exist and the cap has
+   * something to do. The first draft of the end-to-end test reused the shared
+   * three-card fixture with invented spades — and the unseen-card rule rejected its
+   * own test data, correctly: an A♠ nobody holds is exactly what that rule is for.
+   */
+  function longSuitPos(): VisiblePosition {
+    const s = {
+      boardRef: "b", dealer: "N", vul: "none", phase: "play", turn: "N",
+      contract: { level: 3, strain: "N", doubled: 0, declarer: "S" },
+      hands: {
+        N: cards("DA DK DQ DJ DT D6"), E: cards("SK SJ S9 S8 S7 S6"),
+        S: cards("H2 H3 H4 H5 H7 H8"), W: cards("S3 C2 C3 C4 C5"),
+      },
+      auction: [],
+      tricks: [{ leader: "W", plays: [{ seat: "W", card: one("D2") }] }],
+      trickCount: { NS: 0, EW: 0 },
+    } as unknown as GameState;
+    return visiblePosition(s, "S")!;
+  }
+  const diamondScores = [
+    { card: "A♦", tricks: 9 }, // best
+    { card: "K♦", tricks: 8 },
+    { card: "Q♦", tricks: 8 },
+    { card: "J♦", tricks: 8 },
+    { card: "10♦", tricks: 7 },
+    { card: "6♦", tricks: 5 },
+  ];
+
+  it("keeps one card per cost tier, the highest-ranked, worst tier first", () => {
+    // Three tiers among the rejected: 8 tricks (K,Q,J), 7 (10,9), 5 (the 2). Two
+    // cards on the same tier fail the same way, so the second clause carries
+    // nothing; the highest of each tier is kept because "why not the king?" is the
+    // question a learner has — nobody asks why not the deuce. Worst first, so the
+    // biggest mistake survives the cap.
+    expect(capRejected(rejected, scores, ["A♠"])).toEqual(["2♠", "10♠", "K♠"]);
+  });
+
+  it("leaves a short list alone", () => {
+    expect(capRejected(["K♠", "Q♠"], scores, ["A♠"])).toEqual(["K♠", "Q♠"]);
+  });
+
+  it("caps blind when there is no table to tier by", () => {
+    expect(capRejected(rejected, undefined, ["A♠"])).toEqual(["K♠", "Q♠", "J♠"]);
+  });
+
+  it("is applied inside explainPlay, and the validator agrees with what was sent", async () => {
+    // The cap must happen before the prompt is built AND before validation reads
+    // the list — a notThis entry for a card the model was never asked about is
+    // dropped, so the two views of `rejected` have to be the same view.
+    const create = vi.fn().mockResolvedValue({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            why: "Dummy's A♦ wins this trick outright, and the rest of the suit stays good.",
+            notThis: [
+              { label: "6♦", why: "concedes four tricks" },
+              { label: "Q♦", why: "spends an honour for nothing" }, // capped away
+            ],
+          }),
+        },
+      ],
+      stop_reason: "end_turn",
+    } as never);
+    const pos = longSuitPos();
+    const out = await explainPlay(
+      {
+        pos,
+        best: ["A♦"],
+        source: "solution",
+        rejected: pos.legal.filter((c) => c !== "A♦"),
+        scores: diamondScores,
+      },
+      { client: { create } as never },
+    );
+    const sent = (create.mock.calls[0]![0] as { messages: { content: string }[] }).messages[0]!.content;
+    // The prompt names only the representatives: worst tier first, highest card of
+    // each tier (6♦ alone on its tier, then the 10♦, then K♦ for the 8-trick tier).
+    expect(sent).toContain("Cards it ruled out: 6♦, 10♦, K♦");
+    // …and the validator keeps the capped card's clause while dropping the other.
+    expect("explanation" in out).toBe(true);
+    if ("explanation" in out) {
+      expect(out.explanation.notThis?.map((n) => n.label)).toEqual(["6♦"]);
+    }
+  });
+});
+
+describe("placement claims: whose hand is being described", () => {
+  // MEASURED, NOT GUESSED. Over eighteen real positions the blanket ban on "void"
+  // was the single largest cause of a learner getting a card with no reason, and
+  // both sentences it killed deserved to be shown. A void in your own hand or in
+  // dummy is not a hidden layout — you are looking at it.
+  const check = (why: string) => validateExplanation({ why }, input({ best: ["6♦"] }));
+
+  it("allows a void it can see, in the learner's hand or dummy's", () => {
+    for (const why of [
+      "You are void in diamonds, so this is just a discard — throw the 6♦.",
+      "Dummy is void in spades, so the 6♦ can be ruffed there later.",
+      "Your hand is short in clubs, which is why the 6♦ keeps the entry.",
+      "Dummy's holding is a doubleton, so the 6♦ sets up the ruff.",
+    ]) {
+      expect("explanation" in check(why), why).toBe(true);
+    }
+  });
+
+  it("still rejects a void it cannot see", () => {
+    for (const why of [
+      "East is void in diamonds, so lead the 6♦ now.",
+      "West was short in hearts, which makes the 6♦ safe.",
+      "They are void in clubs, so the 6♦ runs.",
+      "The defender has a singleton, so play the 6♦.",
+    ]) {
+      const out = check(why);
+      expect("reason" in out, why).toBe(true);
+      expect((out as { detail?: string }).detail, why).toMatch(/cannot see/);
+    }
+  });
+
+  it("allows dummy sitting over the lead, the most ordinary explanation in bridge", () => {
+    // Sentences of the shape the blanket rule threw away, written with this
+    // fixture's visible cards so the placement rule is what is being tested rather
+    // than the unseen-card rule.
+    for (const why of [
+      "Dummy's 6♦ sits over the lead, so your Q♦ isn't needed here — play the 6♦.",
+      "Dummy still holds the 6♦ behind your Q♦, so the 6♦ costs no length.",
+      "Your Q♦ sits over the suit, so play the 6♦.",
+    ]) {
+      expect("explanation" in check(why), why).toBe(true);
+    }
+  });
+
+  it("allows a claim about your own hand even when an opponent led", () => {
+    // The regression that killed the first attempt. "West" names who LED a card
+    // that is face up on the table; it says nothing about what West holds, and the
+    // claim itself is attributed to `your`.
+    expect(
+      "explanation" in check("The 2♦ West led is small, and your Q♦ sits behind dummy's 6♦."),
+    ).toBe(true);
+  });
+
+  it("rejects a holding it cannot see sitting over one it can", () => {
+    for (const why of [
+      "The queen sits over your jack, so play the 6♦.",
+      "West's king sits behind dummy's ace, so the 6♦ is safe.",
+    ]) {
+      expect("reason" in check(why), why).toBe(true);
+    }
+  });
+
+  it("does not read 'hold the trick' as holding a card", () => {
+    // "holds the" used to match "lets East hold the trick" — winning a trick, not
+    // holding a card. It is scoped to a named honour now.
+    expect(
+      "explanation" in check("Win it with the 6♦; ducking lets East hold the trick."),
+    ).toBe(true);
+  });
+
+  it("is not fooled by a visible subject standing further away than an opponent", () => {
+    // "you" appears, but East is nearer, and the sentence leaks. Requiring a visible
+    // subject is not enough on its own — the nearest subject is the one that counts.
+    const out = check("You can tell East is void in hearts, so lead the 6♦.");
+    expect("reason" in out).toBe(true);
+  });
+
+  it("keeps rejecting the claims that leak however they are phrased", () => {
+    // These never depend on whose hand it is: an offside king, a marked holding, a
+    // finesse that works are all statements about cards the learner cannot see.
+    for (const why of [
+      "Play the 6♦ — the king must be offside.",
+      "The 6♦ works because the finesse fails here.",
+      "Lead the 6♦; West holds the ace and will have to spend it.",
+      "The 6♦ is best because the queen sits badly for them.",
+    ]) {
+      const out = check(why);
+      expect("reason" in out, why).toBe(true);
+      expect((out as { detail?: string }).detail, why).toMatch(/hidden layout/);
+    }
+  });
+});
+
+describe("a cost figure must be the one in the table", () => {
+  // The model is handed exact trick counts, and the one thing it can do with an
+  // exact number is get it wrong. Every other guard here passes such a sentence: the
+  // card is real, the suit is right, nothing hidden is named. Only the arithmetic is
+  // false, and arithmetic is checkable.
+  const withTable = (why: string, notThis: { label: string; why: string }[]) =>
+    validateExplanation(
+      { why, notThis },
+      input({
+        source: "solution",
+        best: ["6♦"],
+        rejected: ["K♠", "3♣"],
+        scores: [
+          { card: "6♦", tricks: 9 },
+          { card: "K♠", tricks: 7 }, // costs 2
+          { card: "3♣", tricks: 8 }, // costs 1
+        ],
+      }),
+    );
+
+  it("discards an understated cost", () => {
+    const out = withTable("Cash the 6♦ while the timing is right.", [
+      { label: "K♠", why: "costing a trick" }, // it costs two
+    ]);
+    expect("reason" in out).toBe(true);
+    expect((out as { detail?: string }).detail).toBe("said K♠ costs 1, table says 2");
+  });
+
+  it("discards an overstated cost", () => {
+    const out = withTable("Cash the 6♦ while the timing is right.", [
+      { label: "3♣", why: "gives up two tricks here" }, // it costs one
+    ]);
+    expect((out as { detail?: string }).detail).toBe("said 3♣ costs 2, table says 1");
+  });
+
+  it("discards a cost claimed as nothing", () => {
+    const out = withTable("Cash the 6♦ while the timing is right.", [
+      { label: "3♣", why: "costs nothing, it is just slower" },
+    ]);
+    expect((out as { detail?: string }).detail).toBe("said 3♣ costs 0, table says 1");
+  });
+
+  it("accepts the right figures, in words or digits", () => {
+    for (const [label, phrase] of [
+      ["K♠", "costing two tricks"],
+      ["K♠", "loses 2 tricks"],
+      ["K♠", "concedes two tricks"],
+      ["3♣", "gives up a trick"],
+      ["3♣", "costing one trick"],
+    ] as const) {
+      const out = withTable("Cash the 6♦ while the timing is right.", [{ label, why: phrase }]);
+      expect("explanation" in out, `${label}: ${phrase}`).toBe(true);
+    }
+  });
+
+  it("does not read the trick being PLAYED as a price", () => {
+    // The sentence this rule was written against, and the reason it requires a cost
+    // verb: "on a trick the ace already wins" contains "a trick" and claims nothing
+    // about cost. An earlier draft matched any "<number> trick" phrase and would
+    // have rejected a correct explanation of a two-trick error.
+    const out = withTable("Keep the 6♦ where it is.", [
+      { label: "K♠", why: "wastes the king on a trick the ace already wins, costing two tricks" },
+    ]);
+    expect("explanation" in out).toBe(true);
+  });
+
+  it("says nothing about costs it was never given a table for", () => {
+    // No table means no claim to check. Silence, not a rejection.
+    const out = validateExplanation(
+      { why: "Cash the 6♦.", notThis: [{ label: "K♠", why: "costing three tricks" }] },
+      input({ best: ["6♦"], rejected: ["K♠"] }),
+    );
+    expect("explanation" in out).toBe(true);
+  });
+});
+
+describe("a tie broken by convention, not by the solver", () => {
+  it("tells the model the preference is convention's and names the card", async () => {
+    const create = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: JSON.stringify({ why: "Throw the 8♣ — nothing is gained by spending a higher club." }) }],
+      stop_reason: "end_turn",
+    } as never);
+    await explainPlay(
+      input({
+        source: "solution",
+        best: ["8♣", "10♣", "J♣"],
+        prefer: "8♣",
+        scores: [
+          { card: "8♣", tricks: 9 },
+          { card: "10♣", tricks: 9 },
+          { card: "J♣", tricks: 9 },
+        ],
+      }),
+      { client: { create } as never },
+    );
+    const sent = (create.mock.calls[0]![0] as { messages: { content: string }[] }).messages[0]!.content;
+    expect(sent).toContain("8♣");
+    // The provenance matters: a learner told the SOLVER prefers the 8♣ has been
+    // misinformed. The solver rated all three identical; bridge broke the tie.
+    expect(sent).toMatch(/convention/i);
   });
 });
 

@@ -41,11 +41,20 @@ export {
   type DoubleDummyOracle,
   type OracleVerdict,
 } from "./cardplay/oracle";
-export { LocalDoubleDummyOracle } from "./cardplay/dds/LocalDoubleDummyOracle";
+// The hand-written solver and its oracle are GONE, not deprecated. Measured
+// against a play-out of its own recommendations it was correct on 17 of 40
+// five-card endings — it cached alpha-beta values after a cutoff, where the
+// number is only a bound, keyed on position with no record of the window it was
+// valid for. On one position it reported that both sides could win every trick.
+//
+// A wrong reference implementation is worse than none: it gets used as a test
+// oracle and quietly certifies bad behaviour. Hosts supply an oracle through the
+// port instead — bridge-web wires a WASM build of Bo Haglund's dds, which was
+// correct on 40 of 40 and solves a full thirteen-card deal in ~13ms against
+// roughly four days for ours.
 // The principle engine, exported so a host can run it PROSPECTIVELY — over the
 // cards a learner could play, not just the one they did. It is the only thing
 // that can advise in the middle of a hand: a double-dummy search grows about
 // sevenfold per card and cannot reach there, while a principle is O(1) and
 // applies wherever its situation holds.
 export { runPrinciples, type PrincipleFinding } from "./cardplay/principles";
-export { solvePosition, encodeCard, decodeCard } from "./cardplay/dds/solver";
