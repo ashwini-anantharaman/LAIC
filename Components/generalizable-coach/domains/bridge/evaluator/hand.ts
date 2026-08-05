@@ -47,8 +47,8 @@ export function parseHand(hand: string): ParsedHand {
   for (const token of tokens) {
     const m = token.match(/^([SHDC]):(.*)$/i);
     if (!m) continue;
-    const suit = m[1].toUpperCase() as SuitLetter;
-    suits[suit] = m[2];
+    const suit = (m[1] ?? "").toUpperCase() as SuitLetter;
+    suits[suit] = m[2] ?? "";
   }
 
   const lengths: Record<SuitLetter, number> = {
@@ -78,7 +78,7 @@ export function isBalanced(hand: ParsedHand): boolean {
   if (d === 0 || d === 1) return false; // void or singleton
   // at most one doubleton
   const doubletons = hand.shape.filter((n) => n === 2).length;
-  return doubletons <= 1 && a <= 5;
+  return doubletons <= 1 && (a ?? 0) <= 5;
 }
 
 export function longestMajor(hand: ParsedHand): {
@@ -123,7 +123,7 @@ export function parseBid(bid: string): ParsedBid {
   if (b === "P") return { isPass: true, level: 0, strain: "" };
   const m = b.match(/^(\d)(NT|[SHDC])$/);
   if (!m) return { isPass: false, level: 0, strain: "" };
-  return { isPass: false, level: parseInt(m[1], 10), strain: m[2] };
+  return { isPass: false, level: parseInt(m[1] ?? "0", 10), strain: m[2] ?? "" };
 }
 
 export function strainRank(strain: string): number {

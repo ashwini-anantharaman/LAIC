@@ -1,4 +1,6 @@
-# Deploy only the Bridge Platform workspace + the shared contracts package
+# Shared by EVERY Vercel project built from this repo — the whitelist must
+# cover each project's tree, not just Bridge. Builds clone from git, so a
+# whitelisted directory only adds TRACKED files (no node_modules weight).
 /*
 !Applications
 Applications/*
@@ -6,6 +8,14 @@ Applications/*
 !Components
 Components/*
 !Components/laic-learner-contracts
+!Components/laic-learning-platform
+# The coaching engine. bridge-web consumes it as SOURCE over a `link:`
+# dependency, so the directory has to reach the build or pnpm links an absent
+# path, reports the package as 0.0.0, and every subpath export fails to resolve.
+# Adding a `link:` dependency on a new Components/ directory means adding it here.
+!Components/generalizable-coach
+# TheNexusPlatform: app_shell (App Studio), platform_logic (console), backend-ts (API)
+!TheNexusPlatform
 Applications/BridgePlatform/apps/bridge-web/.data
 Applications/BridgePlatform/apps/bridge-web/e2e
 Applications/BridgePlatform/apps/bridge-web/test-results
@@ -13,3 +23,8 @@ Applications/BridgePlatform/apps/bridge-web/test-results
 # 100 MB per-file upload limit and hangs/fails the deploy.
 Applications/BridgePlatform/apps/bridge-web/.next-e2e
 Applications/BridgePlatform/apps/bridge-web/playwright-report
+# Git-clone builds never carry these; a CLI deploy from the repo root would
+# otherwise try to upload every tree's node_modules / build output and hang.
+**/node_modules
+**/.next
+**/dist

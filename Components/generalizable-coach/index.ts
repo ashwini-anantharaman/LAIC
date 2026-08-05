@@ -24,7 +24,7 @@ export {
   type CoreCoachSessionOptions,
   type CoachAnswer,
   type ChatReply,
-} from "./platform/embed/index.js";
+} from "./platform/embed/index";
 // Domain registry (the "front desk"): resolve/open a coach by domainId.
 export {
   registerDomain,
@@ -34,14 +34,14 @@ export {
   type RegisteredDomain,
   type OpenCoachOptions,
   type DomainBuildContext,
-} from "./platform/embed/index.js";
-export { withOfflineFallback } from "./platform/embed/HeuristicLLM.js";
+} from "./platform/embed/index";
+export { withOfflineFallback } from "./platform/embed/HeuristicLLM";
 export type {
   CoachSuggestion,
   SuggestionListener,
   EventSource,
-} from "./platform/embed/ports.js";
-export { HeuristicLLM } from "./platform/embed/HeuristicLLM.js";
+} from "./platform/embed/ports";
+export { HeuristicLLM } from "./platform/embed/HeuristicLLM";
 
 // --- Domain contracts / types ----------------------------------------------
 export type {
@@ -58,7 +58,7 @@ export type {
   EvaluatorContract,
   Correctness,
   Severity,
-} from "./platform/types/index.js";
+} from "./platform/types/index";
 
 // --- Bridge domain: composition root + action/state contracts --------------
 // The bridge-flavored createCoachSession (oracle + persona defaults) is the
@@ -66,22 +66,22 @@ export type {
 export {
   createCoachSession,
   type CoachSessionOptions,
-} from "./domains/bridge/coaching/createBridgeCoachSession.js";
-export { BridgePromptBuilder } from "./domains/bridge/coaching/BridgePromptBuilder.js";
+} from "./domains/bridge/coaching/createBridgeCoachSession";
+export { BridgePromptBuilder } from "./domains/bridge/coaching/BridgePromptBuilder";
 export {
   buildBridgeCoach,
   type BridgeCoach,
   type BuildOptions,
-} from "./domains/bridge/coaching/buildBridgeCoach.js";
-export { MockLLM } from "./domains/bridge/coaching/MockLLM.js";
-export { LLMClient, type LLMClientOptions, type LLMProvider } from "./platform/llm/LLMClient.js";
-export type { LLMLike } from "./platform/llm/index.js";
+} from "./domains/bridge/coaching/buildBridgeCoach";
+export { MockLLM } from "./domains/bridge/coaching/MockLLM";
+export { LLMClient, type LLMClientOptions, type LLMProvider } from "./platform/llm/LLMClient";
+export type { LLMLike } from "./platform/llm/index";
 export type {
   Seat,
   BridgeBidAction,
   BridgeGameState,
-} from "./domains/bridge/plugin/events.js";
-export { BRIDGE_DOMAIN_ID } from "./domains/bridge/plugin/constants.js";
+} from "./domains/bridge/plugin/events";
+export { BRIDGE_DOMAIN_ID } from "./domains/bridge/plugin/constants";
 
 // --- Common Coach (weak-skill detection, recommendations, postmortem) -------
 export {
@@ -93,7 +93,7 @@ export {
   type Recommendation,
   type RecommendationKind,
   type Postmortem,
-} from "./platform/common-coach/index.js";
+} from "./platform/common-coach/index";
 
 // --- Retrieval (hybrid keyword + embeddings) --------------------------------
 export {
@@ -102,18 +102,18 @@ export {
   OpenAIEmbeddingProvider,
   type EmbeddingProvider,
   type HybridOptions,
-} from "./platform/knowledge/embeddings.js";
+} from "./platform/knowledge/embeddings";
 
 // --- Live card-play evaluation (arbitrary positions, not just scenarios) ----
 export {
   LiveCardPlayEvaluator,
   type LiveCardPlayAction,
   type LiveCardPlayState,
-} from "./domains/bridge/cardplay/LiveCardPlayEvaluator.js";
+} from "./domains/bridge/cardplay/LiveCardPlayEvaluator";
 export {
   type DoubleDummyOracle,
   type OracleVerdict,
   NullOracle,
-} from "./domains/bridge/cardplay/oracle.js";
-export { LocalDoubleDummyOracle } from "./domains/bridge/cardplay/dds/LocalDoubleDummyOracle.js";
-export { solvePosition, encodeCard, decodeCard } from "./domains/bridge/cardplay/dds/solver.js";
+} from "./domains/bridge/cardplay/oracle";
+export { LocalDoubleDummyOracle } from "./domains/bridge/cardplay/dds/LocalDoubleDummyOracle";
+export { solvePosition, encodeCard, decodeCard } from "./domains/bridge/cardplay/dds/solver";

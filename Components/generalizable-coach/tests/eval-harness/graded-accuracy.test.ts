@@ -13,17 +13,17 @@ import {
   scoreGradingAccuracy,
   DEFAULT_ACCURACY_BAR,
   type GradingCase,
-} from "../../platform/eval/gradedAccuracy.js";
+} from "../../platform/eval/gradedAccuracy";
 import {
   HeuristicGradingModel,
   LlmGradedEvaluator,
   makeCourseLearningEvaluator,
   type GradingModel,
   type GradingVerdict,
-} from "../../domains/course_learning/gradedEvaluator.js";
-import { decideIntervention } from "../../platform/policy/InterventionPolicyEngine.js";
-import type { CoachingPolicy } from "../../contracts/index.js";
-import { MEMORY_LESSON_CASES } from "./dataset.js";
+} from "../../domains/course_learning/gradedEvaluator";
+import { decideIntervention } from "../../platform/policy/InterventionPolicyEngine";
+import type { CoachingPolicy } from "../../contracts/index";
+import { MEMORY_LESSON_CASES } from "./dataset";
 
 /** A grader that reproduces the labels exactly — the "perfect" upper bound. */
 function perfectModel(cases: GradingCase[]): GradingModel {

@@ -6,9 +6,9 @@
  * bundled course-learning knowledge fixture. (The LLM-graded evaluator and
  * platform-backed knowledge are the M4 upgrade — same shapes, different guts.)
  */
-import type { KnowledgeScope } from "../../contracts/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
-import { CourseQuizEvaluator, type QuizAction } from "./evaluator.js";
+import type { KnowledgeScope } from "../../contracts/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index";
+import { CourseQuizEvaluator, type QuizAction } from "./evaluator";
 
 export const COURSE_LEARNING_DOMAIN_ID = "course_learning";
 
@@ -22,8 +22,8 @@ export {
   type GradingVerdict,
   type GradedQuizAction,
   type GradedCorrectness,
-} from "./gradedEvaluator.js";
-export { LlmGradingModel, type LlmGradingModelOptions } from "./llmGradingModel.js";
+} from "./gradedEvaluator";
+export { LlmGradingModel, type LlmGradingModelOptions } from "./llmGradingModel";
 
 /** A lesson-scoped KnowledgeScope for the sample "memory" lesson. */
 export function memoryLessonScope(): KnowledgeScope {

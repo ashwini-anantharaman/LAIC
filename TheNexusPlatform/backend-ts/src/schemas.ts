@@ -11,7 +11,10 @@ export const accessLevel = z.enum(["view", "edit", "per_level"]);
 // still comes from roleLabel(), not from this stored value.
 export const membershipRole = z.enum(["owner", "administrator", "instructor"]);
 export const joinCodeKind = z.enum(["student", "teacher", "administrator"]);
-export const programCategory = z.enum(["game", "edu"]);
+// Categories are org-defined free text (the old "game"/"edu" presets remain
+// meaningful: "game" flips role words to Coach/Player and skips the edu stage
+// scaffold; anything else behaves like an education program).
+export const programCategory = z.string().trim().min(1).max(60);
 export const deliveryMethod = z.enum(["join_code", "email_direct"]);
 export const integrationType = z.enum(["discord"]);
 export const integrationPermissionLevel = z.enum(["can_edit", "can_view", "per_level"]);
@@ -34,17 +37,80 @@ const isoDateTime = z.string();
 
 const jsonRecord = z.record(z.string(), z.any());
 
+// ── Per-program feature accessibility ───────────────────────────────────────
+// When an org admin creates a program they pick which feature-areas are
+// accessible inside it. These are the same areas custom roles grant access to
+// (Team & Roles) — a role can only grant an area the program has enabled.
+export const PROGRAM_FEATURE_KEYS = [
+  "learning",
+  "bridge",
+  "appbuilder",
+  "community",
+  "teams",
+  "partners",
+] as const;
+export type ProgramFeatureKey = (typeof PROGRAM_FEATURE_KEYS)[number];
+
+// New programs get everything on; the org admin then trims what they don't want.
+export const DEFAULT_PROGRAM_FEATURES: Record<ProgramFeatureKey, boolean> = {
+  learning: true,
+  bridge: true,
+  appbuilder: true,
+  community: true,
+  teams: true,
+  partners: true,
+};
+
+export const programFeatures = z
+  .object(
+    Object.fromEntries(PROGRAM_FEATURE_KEYS.map((k) => [k, z.boolean()])) as Record<
+      ProgramFeatureKey,
+      z.ZodBoolean
+    >,
+  )
+  .partial();
+export type ProgramFeatures = Record<ProgramFeatureKey, boolean>;
+
+/** Fill any unspecified feature with the default (all-on), dropping unknown keys. */
+export function normalizeProgramFeatures(input?: Record<string, unknown> | null): ProgramFeatures {
+  const out = { ...DEFAULT_PROGRAM_FEATURES };
+  for (const k of PROGRAM_FEATURE_KEYS) {
+    if (input && typeof input[k] === "boolean") out[k] = input[k] as boolean;
+  }
+  return out;
+}
+
+/** Per-platform "Partial" provisioning: a capability subset per platform area.
+ *  Keys are platform feature keys (learning/bridge); server validates the ids. */
+export const featureAccessSchema = z.record(
+  z.string(),
+  z.object({ capabilities: z.array(z.string()) }),
+);
+
+export const programFeaturesUpdate = z.object({
+  features: programFeatures,
+  // Per-program platform lock: may this program's own admins/members open the
+  // platform runtimes (Learning, App Shell, Bridge)? Optional so callers that
+  // only touch feature toggles are unchanged.
+  platforms_open: z.boolean().optional(),
+  // Partial-access capability subsets per platform area (optional).
+  feature_access: featureAccessSchema.optional(),
+});
+
 // ── Platform request schemas ────────────────────────────────────────────────
 
 export const programInput = z.object({
   name: z.string(),
   category: programCategory,
+  secondary_categories: z.array(z.string().trim().min(1).max(60)).optional(),
   description: z.string().nullish(),
   icon: z.string().nullish(),
   // Configurable per-program overrides for the instructor/learner display words
   // (defaults are derived from category in roleLabel() when unset).
   instructor_label: z.string().nullish(),
   learner_label: z.string().nullish(),
+  // Which feature-areas are accessible inside this program (see PROGRAM_FEATURE_KEYS).
+  features: programFeatures.optional(),
   // Edu: which single stage level this program's admin group tree is rooted at.
   stage_type: stageType.nullish(),
   // Game: flat "class" names for this program (no multi-level hierarchy).
@@ -282,7 +348,7 @@ export const adminAddRegistrationSchema = z.object({
 });
 
 // ── Audit Log + Entitlements (Nexus v0.3 Sections 32 / 20) ──────────────────
-export const moduleKey = z.enum(["nexus", "learning", "coaching", "analytics"]);
+export const moduleKey = z.enum(["nexus", "learning", "coaching", "analytics", "community"]);
 export const entitlementStatus = z.enum(["active", "trial", "requested", "disabled"]);
 export type ModuleKey = z.infer<typeof moduleKey>;
 

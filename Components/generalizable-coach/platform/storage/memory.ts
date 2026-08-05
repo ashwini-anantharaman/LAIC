@@ -5,8 +5,8 @@
  * ports existed. Swap in the SQLite adapter (sqlite.ts) on the server for
  * durability without touching the engine.
  */
-import type { LearnerProfile } from "../learner-model/types.js";
-import type { LearnerRepo } from "./ports.js";
+import type { LearnerProfile } from "../learner-model/types";
+import type { LearnerRepo } from "./ports";
 
 export class InMemoryLearnerRepo implements LearnerRepo {
   private profiles = new Map<string, LearnerProfile>();
@@ -22,4 +22,4 @@ export class InMemoryLearnerRepo implements LearnerRepo {
 
 // The existing SessionStore already is the in-memory SessionRepo; re-export it
 // here under a name symmetric with InMemoryLearnerRepo.
-export { SessionStore as InMemorySessionStore } from "../session/SessionEngine.js";
+export { SessionStore as InMemorySessionStore } from "../session/SessionEngine";

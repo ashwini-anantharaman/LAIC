@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { LearnerStore, computeMastery } from "./LearnerStore.js";
-import type { EvaluationResult } from "../types/index.js";
-import type { SkillState } from "./types.js";
+import { LearnerStore, computeMastery } from "./LearnerStore";
+import type { EvaluationResult } from "../types/index";
+import type { SkillState } from "./types";
 
 const DOMAIN = "bridge_gameplay";
 const SKILL = "SKILL_OPENING_1SUIT";

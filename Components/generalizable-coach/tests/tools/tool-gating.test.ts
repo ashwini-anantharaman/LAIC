@@ -6,8 +6,8 @@
  * allowlist and per-tool minHintLevel are respected.
  */
 import { describe, it, expect } from "vitest";
-import { gateTools, toolRegistry, type CoachTool } from "../../platform/tools/index.js";
-import type { CoachingPolicy } from "../../contracts/index.js";
+import { gateTools, toolRegistry, type CoachTool } from "../../platform/tools/index";
+import type { CoachingPolicy } from "../../contracts/index";
 
 const mk = (name: string, hints: CoachTool["policyHints"]): CoachTool => ({
   name,

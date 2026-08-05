@@ -9,8 +9,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { BundledKnowledgeSource } from "../../platform/knowledge-source/index.js";
-import { validate } from "../../contracts/index.js";
+import { BundledKnowledgeSource } from "../../platform/knowledge-source/index";
+import { validate } from "../../contracts/index";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const bridgePkg = JSON.parse(

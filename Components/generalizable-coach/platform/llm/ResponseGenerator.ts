@@ -8,10 +8,10 @@ import type {
   CommonCoachPackage,
   EvaluationResult,
   KnowledgeChunk,
-} from "../types/index.js";
-import type { InterventionDecision } from "../coach-runtime/InterventionPolicyEngine.js";
-import { PromptBuilder, type BuiltPrompt, type PromptStrategy } from "./PromptBuilder.js";
-import type { LLMResult } from "./LLMClient.js";
+} from "../types/index";
+import type { InterventionDecision } from "../coach-runtime/InterventionPolicyEngine";
+import { PromptBuilder, type BuiltPrompt, type PromptStrategy } from "./PromptBuilder";
+import type { LLMResult } from "./LLMClient";
 
 /** Anything that can produce a coach message from a prompt. */
 export interface LLMLike {

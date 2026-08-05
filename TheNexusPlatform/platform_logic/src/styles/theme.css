@@ -2,81 +2,115 @@
 
 :root {
   --font-size: 16px;
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-  --card: #f5f5f5;
-  --card-foreground: #0a0a0a;
-  --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
-  --primary: #111111;
+  /* Very light baby-blue canvas; every panel is liquid glass over it. */
+  --background: #eaf4fe;
+  --foreground: #131722;
+  --card: rgba(255, 255, 255, 0.42);
+  --card-foreground: #131722;
+  --popover: rgba(255, 255, 255, 0.74);
+  --popover-foreground: #131722;
+  --primary: #1b2036;
   --primary-foreground: #ffffff;
-  --secondary: #e8e8e8;
-  --secondary-foreground: #111111;
-  --muted: #efefef;
-  --muted-foreground: #666666;
-  --accent: #d9d9d9;
-  --accent-foreground: #111111;
+  --secondary: rgba(19, 23, 34, 0.07);
+  --secondary-foreground: #1b2036;
+  --muted: rgba(19, 23, 34, 0.06);
+  --muted-foreground: #5b6172;
+  --accent: rgba(19, 23, 34, 0.06);
+  --accent-foreground: #1b2036;
   --destructive: #c0392b;
   --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.08);
+  --border: rgba(19, 23, 34, 0.1);
   --input: transparent;
-  --input-background: #ebebeb;
-  --switch-background: #c8c8c8;
+  --input-background: rgba(255, 255, 255, 0.58);
+  --switch-background: #c3cad9;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: rgba(0,0,0,0.25);
-  --chart-1: #111111;
-  --chart-2: #555555;
-  --chart-3: #999999;
-  --chart-4: #cccccc;
-  --chart-5: #eeeeee;
-  --radius: 0.75rem;
-  --sidebar: #f8f8f8;
-  --sidebar-foreground: #0a0a0a;
-  --sidebar-primary: #111111;
+  --ring: rgba(27, 32, 54, 0.3);
+  --chart-1: #1b2036;
+  --chart-2: #555b70;
+  --chart-3: #9aa1b5;
+  --chart-4: #c9cfdd;
+  --chart-5: #e8ecf4;
+  --radius: 0.95rem;
+  --sidebar: rgba(255, 255, 255, 0.34);
+  --sidebar-foreground: #131722;
+  --sidebar-primary: #1b2036;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #efefef;
-  --sidebar-accent-foreground: #111111;
-  --sidebar-border: rgba(0,0,0,0.08);
-  --sidebar-ring: rgba(0,0,0,0.2);
+  --sidebar-accent: rgba(19, 23, 34, 0.07);
+  --sidebar-accent-foreground: #1b2036;
+  --sidebar-border: rgba(19, 23, 34, 0.08);
+  --sidebar-ring: rgba(27, 32, 54, 0.25);
+  /* Liquid glass: deep blur + saturation, a specular top edge (the inset
+     white line panels "catch light" with), and a hairline outer definition. */
+  --glass-blur: 24px;
+  --glass-border: rgba(255, 255, 255, 0.62);
+  --glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 0 0 1px rgba(30, 55, 90, 0.06),
+    0 2px 6px rgba(16, 24, 40, 0.04),
+    0 16px 40px -18px rgba(30, 55, 120, 0.18);
+  --page-gradient:
+    radial-gradient(1300px 820px at 86% -14%, rgba(132, 186, 255, 0.68) 0%, transparent 58%),
+    radial-gradient(1100px 760px at -14% 106%, rgba(120, 224, 202, 0.5) 0%, transparent 56%),
+    radial-gradient(900px 620px at 55% 118%, rgba(168, 198, 255, 0.42) 0%, transparent 56%),
+    radial-gradient(700px 500px at 30% -10%, rgba(196, 181, 253, 0.28) 0%, transparent 55%),
+    linear-gradient(180deg, #e7f2fe 0%, #f0f8ff 55%, #e9f5fb 100%);
 }
 
+
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
+  /* Deep blue-purple liquid glass. */
+  --background: #0d0f1f;
+  --foreground: #e8eaf6;
+  --card: rgba(34, 36, 76, 0.34);
+  --card-foreground: #e8eaf6;
+  --popover: rgba(26, 28, 58, 0.78);
+  --popover-foreground: #e8eaf6;
+  --primary: #a5b0ff;
+  --primary-foreground: #12142a;
+  --secondary: rgba(232, 234, 246, 0.09);
+  --secondary-foreground: #e8eaf6;
+  --muted: rgba(232, 234, 246, 0.07);
+  --muted-foreground: #9aa0c0;
+  --accent: rgba(232, 234, 246, 0.08);
+  --accent-foreground: #e8eaf6;
+  --destructive: #b03a34;
+  --destructive-foreground: #ffb4ab;
+  --border: rgba(232, 234, 246, 0.12);
+  --input: rgba(232, 234, 246, 0.1);
+  --input-background: rgba(232, 234, 246, 0.06);
+  --switch-background: #3a3f63;
+  --ring: rgba(165, 176, 255, 0.4);
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  --chart-1: #a5b0ff;
+  --chart-2: #7f8ae0;
+  --chart-3: #5c65a8;
+  --chart-4: #3c4172;
+  --chart-5: #232748;
+  --sidebar: rgba(22, 23, 50, 0.38);
+  --sidebar-foreground: #e8eaf6;
+  --sidebar-primary: #a5b0ff;
+  --sidebar-primary-foreground: #12142a;
+  --sidebar-accent: rgba(232, 234, 246, 0.09);
+  --sidebar-accent-foreground: #e8eaf6;
+  --sidebar-border: rgba(232, 234, 246, 0.1);
+  --sidebar-ring: rgba(165, 176, 255, 0.35);
+  --glass-blur: 26px;
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 18px 48px -18px rgba(0, 0, 0, 0.55);
+  --page-gradient:
+    radial-gradient(1300px 800px at 84% -14%, rgba(104, 96, 255, 0.44) 0%, transparent 58%),
+    radial-gradient(1100px 740px at -10% 108%, rgba(56, 190, 180, 0.24) 0%, transparent 54%),
+    radial-gradient(900px 620px at 55% 120%, rgba(168, 85, 247, 0.26) 0%, transparent 56%),
+    radial-gradient(700px 500px at 28% -10%, rgba(90, 140, 255, 0.2) 0%, transparent 55%),
+    linear-gradient(180deg, #0d0f1f 0%, #131331 55%, #101230 100%);
 }
+
 
 @theme inline {
   --color-background: var(--background);
@@ -125,7 +159,10 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background: var(--page-gradient);
+    background-attachment: fixed;
+    background-color: var(--background);
   }
 
   /**
@@ -178,4 +215,90 @@
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
   }
+}
+
+/* ── Liquid-glass surfaces ───────────────────────────────────────────────── */
+@layer components {
+  /* A frosted panel: the one card treatment used across the console.
+     Specular top edge + hairline definition live in --glass-shadow. */
+  .glass-card {
+    background: var(--card);
+    border: 1px solid var(--glass-border);
+    border-radius: calc(var(--radius) + 4px);
+    box-shadow: var(--glass-shadow);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.6);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.6);
+  }
+
+  /* Frosted bars (topbar, launch chrome). */
+  .glass-bar {
+    background: color-mix(in srgb, var(--background) 32%, transparent);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.55);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.55);
+  }
+
+  /* The sidebar as a translucent pane of the same glass — the page gradient
+     glows through it (accent-tinted per org via --sidebar in AppShell). */
+  .glass-sidebar {
+    background: var(--sidebar);
+    -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(1.7);
+    backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(1.7);
+    box-shadow: inset -1px 0 0 var(--sidebar-border);
+  }
+}
+
+/* ── Responsive tables ───────────────────────────────────────────────────
+   On phones, a data table can't fit its columns, forcing an awkward
+   left/right scroll inside its card. Below md, reflow every shared table
+   (shadcn data-slot="table") into a stack of row-cards: the header hides and
+   each cell becomes a labelled line (via data-label). Desktop is untouched. */
+@media (max-width: 767px) {
+  [data-slot="table-container"] { overflow-x: visible; }
+  [data-slot="table"],
+  [data-slot="table"] tbody,
+  [data-slot="table"] tr,
+  [data-slot="table"] td {
+    display: block;
+    width: 100%;
+  }
+  [data-slot="table"] thead { display: none; }
+  [data-slot="table"] tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.85rem;
+    margin-bottom: 0.5rem;
+  }
+  [data-slot="table"] tr:last-child { margin-bottom: 0; }
+  [data-slot="table"] td {
+    padding: 0.3rem 0 !important;
+    text-align: left !important;
+    border: 0 !important;
+  }
+  [data-slot="table"] td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted-foreground);
+    margin-bottom: 2px;
+  }
+  /* An empty trailing cell (e.g. an actions column with nothing) collapses. */
+  [data-slot="table"] td:empty { display: none; }
+}
+
+/* Floating surfaces (dialogs, popovers, menus, selects) become the same
+   liquid glass. They already paint bg-popover/bg-background; this layers the
+   blur, specular edge, and hairline on top via their data-slot hooks. */
+[data-slot="dialog-content"],
+[data-slot="alert-dialog-content"],
+[data-slot="popover-content"],
+[data-slot="select-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"] {
+  background: var(--popover);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 4px)) saturate(1.6);
+  backdrop-filter: blur(calc(var(--glass-blur) + 4px)) saturate(1.6);
 }

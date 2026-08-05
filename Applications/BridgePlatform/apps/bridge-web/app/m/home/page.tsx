@@ -13,7 +13,10 @@ export default async function MobileHomePage() {
   if (!context) redirect("/welcome");
   await requireFeature(context, "page.home");
   const firstName = (
-    stubDisplayName(context.nexusUserId) ?? context.nexusUserId
+    // Real name from the Nexus context (http mode); stub roster in dev.
+    context.displayName ??
+    stubDisplayName(context.nexusUserId) ??
+    context.nexusUserId
   ).split(" ")[0];
 
   return (

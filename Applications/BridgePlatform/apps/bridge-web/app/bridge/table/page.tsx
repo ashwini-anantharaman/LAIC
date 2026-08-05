@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireFeature } from "@/lib/access";
 import { ensureSeeds, kbStore } from "@/lib/kb";
-import { getBridgeContext } from "@/lib/nexus";
+import { getBridgeContext, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { libraryStore, sessionService } from "@/lib/sessions";
 import { Dropdown } from "@/components/Dropdown";
 import { resumePlayEntryAction } from "../library/actions";
@@ -24,11 +24,22 @@ export default async function PlayPage() {
   // One parallel round-trip for everything the landing needs — no compiled
   // artifacts are downloaded here (quickPlayAction stays the authority on
   // what actually deals).
+  // 0019/0022: org+program-scoped reads; plays and sessions are personal.
+  const programId = (await nexusProgramIdOf()) ?? undefined;
+  const scope = {
+    programOrganizationId: orgScopeOf(context),
+    ...(programId ? { nexusProgramId: programId } : {}),
+  };
+  const playScope = {
+    ...scope,
+    scopeLevel: "user" as const,
+    createdBy: context.nexusUserId,
+  };
   const [kbs, recent, plays] = await Promise.all([
     kbStore().listKbs(),
-    sessionService().listRecent(),
+    sessionService().listRecent(scope),
     libraryStore()
-      .listEntries("play")
+      .listEntries("play", playScope)
       .then((e) => e.slice(0, 8))
       // Library storage not migrated yet (0015) — the dropdown just hides.
       .catch(() => [] as Awaited<ReturnType<ReturnType<typeof libraryStore>["listEntries"]>>),

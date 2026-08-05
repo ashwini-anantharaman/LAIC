@@ -9,14 +9,14 @@
  * the graded path never hard-blocks. This is the adapter the eval harness scores
  * against a real model (see scripts/eval-graded.mjs).
  */
-import { LLMClient } from "../../platform/llm/LLMClient.js";
+import { LLMClient } from "../../platform/llm/LLMClient";
 import {
   HeuristicGradingModel,
   type GradingModel,
   type GradingRequest,
   type GradingVerdict,
   type GradedCorrectness,
-} from "./gradedEvaluator.js";
+} from "./gradedEvaluator";
 
 export interface LlmGradingModelOptions {
   /** Injectable client (tests/config); defaults to a fresh LLMClient. */

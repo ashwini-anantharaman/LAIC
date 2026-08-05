@@ -1,228 +1,455 @@
-import type { Screen } from "../types";
-import { useApp } from "../store/AppContext";
-import { Shell } from "../components/owlwise/primitives";
-import { StudyFetchShell } from "../components/studyfetch/StudyFetchSidebar";
-import { LandingScreen } from "../screens/LandingScreen";
-import { LoginScreen } from "../screens/LoginScreen";
-import { StudentOnboarding } from "../screens/StudentOnboarding";
-import { InstructorOnboarding } from "../screens/InstructorOnboarding";
-import { StudentHomeContent } from "../screens/StudentHomeScreen";
-import { StudentSetsScreen } from "../screens/StudentSetsScreen";
-import { StudentAssistantChatScreen } from "../screens/StudentAssistantChatScreen";
-import { StudentWorkspaceScreen } from "../screens/StudentWorkspaceScreen";
-import { StudentConceptScreen } from "../screens/StudentConceptScreen";
-import { StudentMasteryScreen } from "../screens/StudentMasteryScreen";
-import { StudentChallengeScreen } from "../screens/StudentChallengeScreen";
-import { StudentToolsScreen } from "../screens/StudentToolsScreen";
-import { StudentSettingsScreen } from "../screens/StudentSettingsScreen";
-import { ReflectionScreen } from "../screens/ReflectionScreen";
-import { InstructorClassroomsScreen } from "../screens/InstructorClassroomsScreen";
-import { InstructorCourseModulesScreen } from "../screens/InstructorCourseModulesScreen";
-import { InstructorStudioScreen } from "../screens/studio/InstructorStudioScreen";
-import { InstructorChallengeScreen } from "../screens/InstructorChallengeScreen";
-import { InstructorSettingsScreen } from "../screens/InstructorSettingsScreen";
-import { TeacherDashboardScreen } from "../screens/TeacherDashboardScreen";
-import { PreviewWorkspaceScreen } from "../screens/preview/PreviewWorkspaceScreen";
-import { PreviewConceptScreen } from "../screens/preview/PreviewConceptScreen";
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import type { Role, Program, LearningObject, ObjectType } from '../lib/types';
+import { USERS, OBJECTS } from '../lib/data';
+import { supabaseEnabled, listObjects, fetchObject, saveObject } from '../lib/supabase';
+import {
+  loadUserObjects,
+  saveUserObjects,
+  mergeObjects,
+  readSessionUserId,
+  writeSessionUserId,
+  isDemoCdUser,
+  loadDemoCdLibrary,
+  remoteObjectsForDemoCd,
+  DEMO_CD_USER_ID,
+} from '../lib/demoAuth';
+import { LoginPortal } from './components/LoginPortal';
+import { Layout } from './components/Layout';
+import { ObjectEmbedPage } from './components/screens/ObjectEmbedPage';
+import { parseObjectEmbedId } from '../lib/objectUrls';
+import {
+  consumeLaunchFromUrl,
+  fetchLearningContext,
+  contextToRole,
+  signOutToNexus,
+} from '../lib/nexus';
+import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
+import { defaultScreenForCapabilities } from '../lib/roleAccess';
 
-const STUDENT_SHELL_SCREENS: Screen[] = [
-  "student-courses",
-  "student-sets",
-  "student-workspace",
-  "student-assistant",
-  "student-mastery",
-  "student-challenge",
-  "student-tools",
-  "student-settings",
-  "student-reflection",
-  "student-concept",
-];
+export interface AppState {
+  role: Role;
+  program: Program;
+  currentScreen: string;
+  activeUserId: string;
+  isLoggedIn: boolean;
+  /** True when the session came from a Nexus launch (vs the demo picker). */
+  nexusMode: boolean;
+  /** Embedded viewer (?embed=1): render ONLY the reader — no sidebar/topbar,
+   *  no back navigation. Used when a host app (e.g. the mobile app) shows one
+   *  object in a WebView and owns the surrounding navigation itself. */
+  embedMode: boolean;
+  /** Custom-role area perms (null = admin/none); admins see everything. */
+  learningPerms: Record<string, AreaLevel> | null;
+  learningIsAdmin: boolean;
+  /** Effective learning-catalogue capability ids from Nexus (null = admin/demo). */
+  learningCapabilities: string[] | null;
+  /** Admin "Test as" a role: preview the app confined to that role's perms. */
+  previewName: string | null;
+  startRolePreview: (name: string, perms: Record<string, AreaLevel>) => void;
+  stopRolePreview: () => void;
+  /** Identity from the Nexus launch (null in standalone demo mode). */
+  nexusProgramName: string | null;
+  nexusUserName: string | null;
+  nexusUserRole: string | null;
+  readerObjectId: string | null;
+  creatorObjectType: string;
+  createdObjects: LearningObject[];
+  /** When set, ObjectCreator opens this library object for editing. */
+  editingObjectId: string | null;
+  /** Template id chosen in Template Library before opening the creator. */
+  pendingTemplateId: string | null;
+  navigate: (screen: string) => void;
+  login: (userId: string) => void;
+  logout: () => void;
+  setRole: (role: Role) => void;
+  setProgram: (program: Program) => void;
+  openReader: (objectId: string) => void;
+  closeReader: () => void;
+  setCreatorObjectType: (type: string) => void;
+  setPendingTemplateId: (id: string | null) => void;
+  addObject: (partial: Partial<LearningObject> & { type: ObjectType; title: string }) => string;
+  openEditor: (objectId: string) => void;
+  clearEditingObject: () => void;
+}
 
-const INSTRUCTOR_SHELL_SCREENS: Screen[] = [
-  "instructor-home",
-  "instructor-course",
-  "instructor-preview",
-  "instructor-dashboard",
-  "instructor-challenge",
-  "instructor-settings",
-];
+export const AppContext = createContext<AppState>({} as AppState);
+export const useApp = () => useContext(AppContext);
 
-const FULLSCREEN_INSTRUCTOR_PREVIEW: Screen[] = ["instructor-preview-concept"];
-const FULLSCREEN_INSTRUCTOR_STUDIO: Screen[] = ["instructor-create"];
+const DEFAULT_SCREEN: Record<Role, string> = {
+  'content-developer': 'cd-library',
+  'object-reviewer': 'or-reviews',
+  'course-reviewer': 'cr-reviews',
+  'administrator': 'admin-overview',
+  'coach': 'coach',
+  'student': 'student-dashboard',
+};
+
+function objectsForUser(all: LearningObject[], userId: string): LearningObject[] {
+  if (isDemoCdUser(userId)) return remoteObjectsForDemoCd(all);
+  return all.filter((o) => o.ownerId === userId);
+}
 
 export default function App() {
-  const {
-    screen,
-    setScreen,
-    setLoginIntent,
-    role,
-    loading,
-    logout,
-    learner,
-    instructor,
-    concepts,
-    courseTitle,
-    modules,
-    courseId,
-    toast,
-    showToast,
-  } = useApp();
+  // Standalone object-embed route (URL-driven) renders before the studio shell,
+  // so the check stays outside the hook-bearing StudioApp (rules of hooks).
+  const embedObjectId = typeof window !== 'undefined' ? parseObjectEmbedId() : null;
+  if (embedObjectId) return <ObjectEmbedPage objectId={embedObjectId} />;
+  return <StudioApp />;
+}
 
-  const userName = role === "student" ? (learner.name || "Student") : (instructor.name || "Instructor");
-  const userInitials = userName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
-  const chapterLabel = modules[0]?.chapter || "General";
+function StudioApp() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [activeUserId, setActiveUserId] = useState('riya');
+  const [role, setRoleState] = useState<Role>('student');
+  const [program, setProgramState] = useState<Program>('bridge');
+  const [currentScreen, setCurrentScreen] = useState('student-dashboard');
+  const [readerObjectId, setReaderObjectId] = useState<string | null>(null);
+  const [creatorObjectType, setCreatorObjectTypeState] = useState<string>('lesson');
+  const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
+  const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
+  const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
+  /** Only persist to localStorage after the library for this user has been loaded. */
+  const [libraryReady, setLibraryReady] = useState(false);
+  const [nexusMode, setNexusMode] = useState(false);
+  const [embedMode, setEmbedMode] = useState(false);
+  const [learningPerms, setLearningPerms] = useState<Record<string, AreaLevel> | null>(null);
+  const [learningIsAdmin, setLearningIsAdmin] = useState(false);
+  const [learningCapabilities, setLearningCapabilities] = useState<string[] | null>(null);
+  const [previewPerms, setPreviewPerms] = useState<Record<string, AreaLevel> | null>(null);
+  const [previewName, setPreviewName] = useState<string | null>(null);
+  const [nexusProgramName, setNexusProgramName] = useState<string | null>(null);
+  const [nexusUserName, setNexusUserName] = useState<string | null>(null);
+  const [nexusUserRole, setNexusUserRole] = useState<string | null>(null);
+  /** Gate first paint until we know whether this is a Nexus launch. */
+  const [booting, setBooting] = useState(true);
 
-  const handleDocuments = () => {
-    if (role === "student") {
-      setScreen(courseId ? "student-workspace" : "student-sets");
-    } else {
-      setScreen(courseId ? "instructor-course" : "instructor-home");
+  const activeUserIdRef = useRef(activeUserId);
+  const createdObjectsRef = useRef(createdObjects);
+  const hydrateGenRef = useRef(0);
+  activeUserIdRef.current = activeUserId;
+  createdObjectsRef.current = createdObjects;
+
+  const hydrateForUser = useCallback(async (userId: string) => {
+    const gen = ++hydrateGenRef.current;
+    setLibraryReady(false);
+
+    const local = isDemoCdUser(userId) ? loadDemoCdLibrary() : loadUserObjects(userId);
+    if (gen !== hydrateGenRef.current) return;
+    setCreatedObjects(local);
+    // Local load is enough to start persisting again (don't wait on network).
+    setLibraryReady(true);
+
+    if (!supabaseEnabled()) return;
+    try {
+      const remote = objectsForUser(await listObjects(), userId);
+      if (gen !== hydrateGenRef.current) return;
+      const claimedRemote = isDemoCdUser(userId)
+        ? remote.map((o) => ({
+            ...o,
+            ownerId: DEMO_CD_USER_ID,
+            ownerName: o.ownerName || 'Course Dev Demo',
+          }))
+        : remote;
+      const merged = mergeObjects(local, claimedRemote);
+      setCreatedObjects(merged);
+      if (merged.length > 0) saveUserObjects(userId, merged);
+    } catch (err: any) {
+      console.warn('[supabase] could not load objects:', err?.message || err);
     }
-  };
+  }, []);
 
-  const handleUpgrade = () => {
-    showToast("Premium plans coming soon — your classroom stays free.");
-  };
+  // Persist only after hydrate — writing [] on login was wiping the demo library.
+  useEffect(() => {
+    if (!isLoggedIn || !libraryReady) return;
+    if (createdObjects.length === 0) return;
+    saveUserObjects(activeUserId, createdObjects);
+  }, [isLoggedIn, activeUserId, createdObjects, libraryReady]);
 
-  const handleInstructorViewSwitch = () => {
-    if (screen === "instructor-preview" || screen === "instructor-preview-concept") {
-      setScreen(courseId ? "instructor-course" : "instructor-home");
+  // Flush on tab close / refresh so mid-session saves aren't lost.
+  useEffect(() => {
+    const flush = () => {
+      if (!isLoggedIn || !libraryReady) return;
+      if (createdObjectsRef.current.length === 0) return;
+      saveUserObjects(activeUserIdRef.current, createdObjectsRef.current);
+    };
+    window.addEventListener('beforeunload', flush);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('beforeunload', flush);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, [isLoggedIn, libraryReady]);
+
+  // Boot: a Nexus launch takes precedence over the demo picker. Exchange any
+  // launch token, then read /learning/context; if we have one, sign in as that
+  // Nexus identity/role. Otherwise fall back to restoring the demo session.
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      // Deep link (?object=<id>) — e.g. the mobile app opening one object in a
+      // WebView. Capture before consumeLaunchFromUrl strips the query string.
+      const bootParams = new URLSearchParams(window.location.search);
+      const deepLinkObjectId = bootParams.get('object');
+      const embedBoot = bootParams.get('embed') === '1';
+      if (embedBoot) setEmbedMode(true);
+      await consumeLaunchFromUrl();
+      // Embed boot renders exactly one object — fetch just that object (not
+      // the whole org library), in parallel with the context read.
+      const embedObjectPromise =
+        deepLinkObjectId && embedBoot ? fetchObject(deepLinkObjectId).catch(() => null) : null;
+      const ctx = await fetchLearningContext();
+      if (!live) return;
+      if (ctx) {
+        const r = contextToRole(ctx);
+        const uid = ctx.nexusUserId || 'nexus';
+        const isAdmin = ctx.is_admin ?? r === 'administrator';
+        const perms = ctx.learning_role?.perms ?? null;
+        const caps = isAdmin ? null : (ctx.capabilities ?? null);
+        setNexusMode(true);
+        setLearningIsAdmin(isAdmin);
+        setLearningPerms(perms);
+        setLearningCapabilities(caps);
+        setNexusProgramName(ctx.program_name ?? null);
+        setNexusUserName(ctx.displayName ?? null);
+        setNexusUserRole(isAdmin ? 'Administrator' : (ctx.learning_role?.role_name ?? ctx.role_name ?? 'Member'));
+        setActiveUserId(uid);
+        setRoleState(r);
+        // Land on the first screen the person's access exposes. Members are gated
+        // by their effective capabilities (Access Catalogue); admins land on the
+        // program overview. Fall back to the legacy area-perms nav.
+        const nav = navItemsForPerms(perms, isAdmin);
+        const memberLanding = caps?.length ? defaultScreenForCapabilities(caps) : (nav[0]?.id ?? DEFAULT_SCREEN[r]);
+        setCurrentScreen(isAdmin ? 'admin-overview' : memberLanding);
+        setIsLoggedIn(true);
+        if (deepLinkObjectId && embedObjectPromise) {
+          // Embedded viewer: one object is all we render — skip the authoring
+          // library hydration entirely; the fetch started before the context.
+          const found = await embedObjectPromise;
+          if (!live) return;
+          if (found) setCreatedObjects([found]);
+          setReaderObjectId(deepLinkObjectId);
+        } else if (deepLinkObjectId) {
+          // Full-app deep link: hydrate first, then resolve the object from the
+          // org library (a learner rarely OWNS the object) and open the reader.
+          await hydrateForUser(uid);
+          if (!live) return;
+          try {
+            const found = (await listObjects()).find((o) => o.id === deepLinkObjectId);
+            if (found) setCreatedObjects((prev) => mergeObjects(prev, [found]));
+          } catch {
+            /* reader still falls back to seed objects */
+          }
+          setReaderObjectId(deepLinkObjectId);
+        } else {
+          void hydrateForUser(uid);
+        }
+        setBooting(false);
+        return;
+      }
+      // No Nexus session — restore the demo session if present.
+      const uid = readSessionUserId();
+      const user = uid ? USERS.find((u) => u.id === uid) : undefined;
+      if (uid && user) {
+        setActiveUserId(uid);
+        setRoleState(user.role);
+        setCurrentScreen(DEFAULT_SCREEN[user.role]);
+        setIsLoggedIn(true);
+        void hydrateForUser(uid);
+        if (deepLinkObjectId) setReaderObjectId(deepLinkObjectId);
+      } else if (uid) {
+        writeSessionUserId(null);
+      }
+      setBooting(false);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [hydrateForUser]);
+
+  const login = useCallback((userId: string) => {
+    const user = USERS.find(u => u.id === userId);
+    if (!user) return;
+    setLibraryReady(false);
+    setActiveUserId(userId);
+    setRoleState(user.role);
+    setCurrentScreen(DEFAULT_SCREEN[user.role]);
+    setReaderObjectId(null);
+    setEditingObjectId(null);
+    setIsLoggedIn(true);
+    writeSessionUserId(userId);
+    void hydrateForUser(userId);
+  }, [hydrateForUser]);
+
+  const logout = useCallback(() => {
+    const uid = activeUserIdRef.current;
+    const objs = createdObjectsRef.current;
+    if (objs.length > 0) saveUserObjects(uid, objs);
+    // Nexus-launched sessions return to the org's own gate; the demo picker
+    // just clears local state.
+    if (nexusMode) {
+      signOutToNexus();
       return;
     }
-    if (!courseId) {
-      showToast("Open a classroom first to preview the student view.");
-      setScreen("instructor-home");
-      return;
+    writeSessionUserId(null);
+    setLibraryReady(false);
+    setIsLoggedIn(false);
+    setReaderObjectId(null);
+    setEditingObjectId(null);
+    setCreatedObjects([]);
+  }, [nexusMode]);
+
+  const navigate = useCallback((screen: string) => {
+    setCurrentScreen(screen);
+    setReaderObjectId(null);
+    if (screen !== 'cd-creator') setEditingObjectId(null);
+  }, []);
+
+  const setRole = useCallback((newRole: Role) => {
+    setRoleState(newRole);
+    setCurrentScreen(DEFAULT_SCREEN[newRole]);
+    setReaderObjectId(null);
+    const match =
+      newRole === 'content-developer'
+        ? USERS.find((u) => u.id === DEMO_CD_USER_ID) || USERS.find((u) => u.role === newRole)
+        : USERS.find((u) => u.role === newRole);
+    if (match) {
+      // Persist current library before switching identity.
+      if (libraryReady && createdObjectsRef.current.length > 0) {
+        saveUserObjects(activeUserIdRef.current, createdObjectsRef.current);
+      }
+      setLibraryReady(false);
+      setActiveUserId(match.id);
+      writeSessionUserId(match.id);
+      void hydrateForUser(match.id);
     }
-    setScreen("instructor-preview");
+  }, [hydrateForUser, libraryReady]);
+
+  const setProgram = useCallback((p: Program) => {
+    setProgramState(p);
+  }, []);
+
+  const openReader = useCallback((objectId: string) => {
+    setReaderObjectId(objectId);
+  }, []);
+
+  const closeReader = useCallback(() => {
+    setReaderObjectId(null);
+  }, []);
+
+  const setCreatorObjectType = useCallback((type: string) => {
+    setCreatorObjectTypeState(type);
+  }, []);
+
+  const addObject = useCallback((partial: Partial<LearningObject> & { type: ObjectType; title: string }) => {
+    const ownerId = activeUserIdRef.current;
+    const user = USERS.find(u => u.id === ownerId);
+    const now = new Date().toISOString().slice(0, 10);
+    const id = partial.id || `obj-new-${Date.now()}`;
+    setCreatedObjects(prev => {
+      const existing = prev.find(o => o.id === id);
+      const obj: LearningObject = {
+        id,
+        type: partial.type,
+        title: partial.title || 'Untitled',
+        ownerId: existing?.ownerId || ownerId,
+        ownerName: existing?.ownerName || user?.name || 'You',
+        status: partial.status || 'draft',
+        scope: partial.scope || existing?.scope || 'bridge',
+        reuseCount: partial.reuseCount ?? existing?.reuseCount ?? 0,
+        description: partial.description || '',
+        estimatedTime: partial.estimatedTime || '10 min',
+        blocks: partial.blocks || [],
+        createdAt: existing?.createdAt || partial.createdAt || now,
+        updatedAt: now,
+        tags: partial.tags || [],
+        sourceIds: partial.sourceIds ?? existing?.sourceIds ?? [],
+        pipelineDraft: partial.pipelineDraft !== undefined ? partial.pipelineDraft : existing?.pipelineDraft,
+      };
+      const nextList = [obj, ...prev.filter(o => o.id !== id)];
+      const result = saveUserObjects(ownerId, nextList);
+      if (!result.ok) {
+        console.warn('[addObject] local persist failed:', result.error);
+      }
+      if (supabaseEnabled()) {
+        saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
+      }
+      return nextList;
+    });
+    // Ensure subsequent effect-based saves are allowed (e.g. first object after empty hydrate).
+    setLibraryReady(true);
+    return id;
+  }, []);
+
+  const openEditor = useCallback((objectId: string) => {
+    const fromCreated = createdObjects.find(o => o.id === objectId);
+    const obj = fromCreated || OBJECTS.find(o => o.id === objectId);
+    if (obj) setCreatorObjectTypeState(obj.type);
+    setEditingObjectId(objectId);
+    setReaderObjectId(null);
+    setCurrentScreen('cd-creator');
+  }, [createdObjects]);
+
+  const clearEditingObject = useCallback(() => {
+    setEditingObjectId(null);
+  }, []);
+
+  const startRolePreview = useCallback((name: string, perms: Record<string, AreaLevel>) => {
+    setPreviewName(name);
+    setPreviewPerms(perms);
+    const nav = navItemsForPerms(perms, false);
+    setCurrentScreen(nav[0]?.id ?? 'student-dashboard');
+    setReaderObjectId(null);
+    setEditingObjectId(null);
+  }, []);
+  const stopRolePreview = useCallback(() => {
+    setPreviewName(null);
+    setPreviewPerms(null);
+    setCurrentScreen('admin-people');
+  }, []);
+
+  const previewing = previewPerms !== null;
+  const ctx: AppState = {
+    role, program, currentScreen, activeUserId, isLoggedIn, nexusMode, embedMode,
+    // While previewing a role, the whole app runs confined to that role's perms.
+    learningPerms: previewing ? previewPerms : learningPerms,
+    learningIsAdmin: previewing ? false : learningIsAdmin,
+    learningCapabilities,
+    previewName, startRolePreview, stopRolePreview,
+    nexusProgramName, nexusUserName, nexusUserRole,
+    readerObjectId, creatorObjectType, createdObjects, editingObjectId, pendingTemplateId,
+    navigate, login, logout,
+    setRole, setProgram, openReader, closeReader, setCreatorObjectType, setPendingTemplateId, addObject,
+    openEditor, clearEditingObject,
   };
 
-  if (loading) {
-    return (
-      <Shell className="bg-[#f8fafc] flex items-center justify-center">
-        <p className="text-sm font-semibold text-gray-500">Loading Owlwise…</p>
-      </Shell>
-    );
-  }
-
-  if (screen === "landing") {
-    return <LandingScreen setScreen={setScreen} setLoginIntent={setLoginIntent} />;
-  }
-  if (screen === "login") return <LoginScreen />;
-  if (screen === "student-onboarding") return <StudentOnboarding />;
-  if (screen === "instructor-onboarding") return <InstructorOnboarding />;
-
-  if (role === "instructor" && FULLSCREEN_INSTRUCTOR_PREVIEW.includes(screen)) {
-    if (screen === "instructor-preview-concept") return <PreviewConceptScreen />;
-  }
-
-  if (role === "instructor" && FULLSCREEN_INSTRUCTOR_STUDIO.includes(screen)) {
-    if (screen === "instructor-create") return <InstructorStudioScreen />;
-  }
-
-  const studentBreadcrumbs = () => {
-    if (screen === "student-workspace") {
-      return [
-        { label: courseTitle, sub: "Classroom", onClick: () => setScreen("student-sets") },
-        { label: chapterLabel, sub: "Workspace" },
-      ];
-    }
-    if (screen === "student-concept") {
-      return [
-        { label: courseTitle, sub: "Classroom", onClick: () => setScreen("student-workspace") },
-        { label: "Lesson", sub: "In progress" },
-      ];
-    }
-    return undefined;
-  };
-
-  const instructorBreadcrumbs = () => {
-    if (
-      screen === "instructor-course" ||
-      screen === "instructor-preview" ||
-      screen === "instructor-preview-concept" ||
-      screen === "instructor-challenge"
-    ) {
-      return [
-        { label: courseTitle, sub: "Classroom", onClick: () => setScreen("instructor-home") },
-        {
-          label: screen === "instructor-challenge" ? "Invite Students" : chapterLabel,
-          sub: screen === "instructor-challenge" ? "Join code & link" : "Workspace",
-          onClick: screen === "instructor-challenge" ? () => setScreen("instructor-course") : undefined,
-        },
-      ];
-    }
-    return undefined;
-  };
-
-  const studentContent = (
-    <>
-      {screen === "student-courses" && <StudentHomeContent />}
-      {screen === "student-sets" && <StudentSetsScreen />}
-      {screen === "student-workspace" && <StudentWorkspaceScreen />}
-      {screen === "student-assistant" && <StudentAssistantChatScreen />}
-      {screen === "student-mastery" && <StudentMasteryScreen />}
-      {screen === "student-challenge" && <StudentChallengeScreen />}
-      {screen === "student-tools" && <StudentToolsScreen />}
-      {screen === "student-settings" && <StudentSettingsScreen />}
-      {screen === "student-reflection" && <ReflectionScreen />}
-      {screen === "student-concept" && <StudentConceptScreen />}
-    </>
-  );
-
-  const instructorContent = (
-    <>
-      {screen === "instructor-home" && <InstructorClassroomsScreen />}
-      {screen === "instructor-course" && <InstructorCourseModulesScreen />}
-      {screen === "instructor-preview" && <PreviewWorkspaceScreen />}
-      {screen === "instructor-dashboard" && <TeacherDashboardScreen />}
-      {screen === "instructor-challenge" && <InstructorChallengeScreen />}
-      {screen === "instructor-settings" && <InstructorSettingsScreen />}
-    </>
-  );
-
-  if (role === "student" && STUDENT_SHELL_SCREENS.includes(screen)) {
-    return (
-      <StudyFetchShell
-        role="student"
-        screen={screen}
-        setScreen={setScreen}
-        onLogout={() => logout().catch(console.error)}
-        userName={userName}
-        userInitials={userInitials}
-        courseTitle={courseTitle}
-        breadcrumbs={studentBreadcrumbs()}
-        toast={toast}
-        onDocuments={handleDocuments}
-        onUpgrade={handleUpgrade}
-        fullWidth={screen === "student-concept"}
+  return (
+    <AppContext.Provider value={ctx}>
+      <div
+        className="min-h-screen w-full"
+        style={{ background: 'linear-gradient(170deg, #A9BBCB 0%, #D4DDE6 40%, #F2F5F8 100%)' }}
       >
-        {studentContent}
-      </StudyFetchShell>
-    );
-  }
-
-  if (role === "instructor" && INSTRUCTOR_SHELL_SCREENS.includes(screen)) {
-    return (
-      <StudyFetchShell
-        role="instructor"
-        screen={screen}
-        setScreen={setScreen}
-        onLogout={() => logout().catch(console.error)}
-        userName={userName}
-        userInitials={userInitials}
-        courseTitle={courseTitle}
-        breadcrumbs={instructorBreadcrumbs()}
-        onSwitchView={handleInstructorViewSwitch}
-        studentPreviewActive={screen === "instructor-preview" || screen === "instructor-preview-concept"}
-        toast={toast}
-        onDocuments={handleDocuments}
-        onUpgrade={handleUpgrade}
-      >
-        {instructorContent}
-      </StudyFetchShell>
-    );
-  }
-
-  return null;
+        {booting ? (
+          <div className="grid min-h-screen place-items-center text-slate-600">
+            <div className="text-sm">Loading…</div>
+          </div>
+        ) : !isLoggedIn ? (
+          <LoginPortal />
+        ) : (
+          <Layout />
+        )}
+        {previewName ? (
+          <div className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 flex items-center gap-3 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
+            <span>Viewing as <b>{previewName}</b></span>
+            <button
+              type="button"
+              onClick={stopRolePreview}
+              className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium hover:bg-white/25"
+            >
+              Exit test view
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </AppContext.Provider>
+  );
 }

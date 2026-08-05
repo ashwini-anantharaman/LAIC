@@ -1,0 +1,27 @@
+{
+  "name": "@laic/library-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Drop-in library UI over @laic/library-core: a host mounts <LibraryBrowser>, feeds it a LibraryConfig document (features, display, theme, kind renderers) and gets a working scoped library with zero library logic of its own. Config controls display and features — never access (the policy stays server-enforced).",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": { "types": "./src/index.ts", "default": "./src/index.ts" }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "dependencies": {
+    "@laic/library-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.9.3"
+  }
+}

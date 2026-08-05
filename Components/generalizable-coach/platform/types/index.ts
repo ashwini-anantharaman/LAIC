@@ -5,8 +5,8 @@
  * from here. The platform core (Zone 1) must never import anything
  * Bridge-specific; it depends only on these interfaces.
  */
-export * from "./events.js";
-export * from "./evaluation.js";
-export * from "./knowledge.js";
-export * from "./coach.js";
-export * from "./plugin.js";
+export * from "./events";
+export * from "./evaluation";
+export * from "./knowledge";
+export * from "./coach";
+export * from "./plugin";

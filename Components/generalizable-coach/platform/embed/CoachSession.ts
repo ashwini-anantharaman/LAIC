@@ -19,27 +19,27 @@
  * ships its own thin convenience wrapper (see the bridge domain's
  * createBridgeCoachSession) that supplies its coach, oracle, and persona.
  */
-import type { AdaptiveCoachRuntime } from "../coach-runtime/index.js";
-import type { LearnerStore } from "../learner-model/index.js";
-import type { KnowledgeRetriever } from "../knowledge/index.js";
-import type { SessionEngine } from "../session/index.js";
+import type { AdaptiveCoachRuntime } from "../coach-runtime/index";
+import type { LearnerStore } from "../learner-model/index";
+import type { KnowledgeRetriever } from "../knowledge/index";
+import type { SessionEngine } from "../session/index";
 import type {
   ActivityEvent,
   AdaptiveCoachResponse,
   EvaluationResult,
   FeedbackStyle,
   ExplanationDepth,
-} from "../types/index.js";
-import type { LLMLike } from "../llm/index.js";
-import { HeuristicLLM } from "./HeuristicLLM.js";
-import { buildChatPrompt, scoreChunks } from "./chat.js";
-import { HybridRetriever, type EmbeddingProvider } from "../knowledge/embeddings.js";
-import { generatePostmortem, type Postmortem } from "../common-coach/index.js";
+} from "../types/index";
+import type { LLMLike } from "../llm/index";
+import { HeuristicLLM } from "./HeuristicLLM";
+import { buildChatPrompt, scoreChunks } from "./chat";
+import { HybridRetriever, type EmbeddingProvider } from "../knowledge/embeddings";
+import { generatePostmortem, type Postmortem } from "../common-coach/index";
 import type {
   CoachSuggestion,
   SuggestionListener,
   EventSource,
-} from "./ports.js";
+} from "./ports";
 
 /**
  * The domain-built engine the facade drives. Any domain's composition root

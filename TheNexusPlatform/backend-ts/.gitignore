@@ -3,3 +3,6 @@ node_modules/
 .local_data/
 dist/
 *.log
+.env*
+api/index.mjs
+.vercel

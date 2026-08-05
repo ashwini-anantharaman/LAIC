@@ -18,12 +18,17 @@ export type {
   CoachInstance,
   CoachingPolicyProfile,
   CoachCapabilityScope,
-} from "./generated/index.js";
+} from "./generated/index";
 
 export {
   validate,
   schemas,
-  CONTRACTS_SCHEMA_VERSION,
   type ContractName,
   type ValidationResult,
-} from "./validate.js";
+} from "./validate";
+
+// Sourced from its own module, not the validator: this barrel pulls ajv and
+// reads contracts/schemas from disk at import time, which an embedded host
+// cannot do. Code that needs only the version imports ./version.js directly
+// (see the note there); it stays exported here for the service and the tests.
+export { CONTRACTS_SCHEMA_VERSION } from "./version";

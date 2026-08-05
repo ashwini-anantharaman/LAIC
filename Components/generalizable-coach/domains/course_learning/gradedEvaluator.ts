@@ -9,8 +9,8 @@
  * already understands. The model is injected — a real LLM in production, a mock
  * in tests, or the offline HeuristicGradingModel when no key is configured.
  */
-import type { EvaluatorContract, EvaluationResult, Severity } from "../../platform/types/index.js";
-import { CourseQuizEvaluator, type QuizAction } from "./evaluator.js";
+import type { EvaluatorContract, EvaluationResult, Severity } from "../../platform/types/index";
+import { CourseQuizEvaluator, type QuizAction } from "./evaluator";
 
 export type GradedCorrectness = "correct" | "partially_correct" | "incorrect";
 

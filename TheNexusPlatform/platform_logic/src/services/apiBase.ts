@@ -20,3 +20,9 @@ export function getApiBaseUrl(): string {
   }
   return "http://localhost:8000";
 }
+
+/** Resolve a backend-relative asset URL (e.g. /api/platform/storage/…) against the API base. */
+export function resolveAssetUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return url.startsWith("/") ? `${getApiBaseUrl()}${url}` : url;
+}

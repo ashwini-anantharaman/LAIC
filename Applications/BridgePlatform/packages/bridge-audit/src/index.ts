@@ -45,6 +45,11 @@ export type AuditAction =
   | "scope.customize"
   | "org.profile.update"
   | "org.affiliation.change"
+  | "play.submitted"
+  | "play.comment"
+  | "assignment.created"
+  | "assignment.started"
+  | "library.shared"
   | "session.undo"
   | "session.fork"
   | "access.catalogue.update";

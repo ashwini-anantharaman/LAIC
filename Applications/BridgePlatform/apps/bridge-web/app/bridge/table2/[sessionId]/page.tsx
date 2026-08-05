@@ -25,6 +25,22 @@ import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { patchAppearanceAction } from "./actions";
 
+// QUAN-PHASE2: Quan's coach wiring for this page is deferred to the phase-2
+// coach transplant (owner decision 2). On origin/Quan this page also carried:
+//   - imports: CoachPanel (CoachNoteSource, CoachPanelData), a local HandViewer
+//     (@/components/table/play/HandViewer, vs our @bridge/table-ui one), BenRead,
+//     CoachPrompts (+ TablePhase), lib/coach/looking (lookingAt), lib/coach/think
+//     (thinkAid);
+//   - searchParams: `coach` and `reveal`, and an ungated hands view;
+//   - an ungated seats panel (everyone, keyed off canAccessAdminArea) instead of
+//     our catalogue-gated one;
+//   - a computed coachPanel (CoachPanelData) plus bidMeanings / auctionMeanings,
+//     threaded into <LivePlayTable> as coach / bidMeanings / auctionMeanings /
+//     candidatesFooter={<BenRead/>} props.
+// Phase 2 transplants these onto OUR @bridge/table-ui table + CoachPanel region.
+// The coach component files (CoachPanel/CoachPrompts/BenRead) and lib/coach are
+// merged and available; they are simply not wired into this page yet.
+
 export default async function PlayTablePage({
   params,
   searchParams,

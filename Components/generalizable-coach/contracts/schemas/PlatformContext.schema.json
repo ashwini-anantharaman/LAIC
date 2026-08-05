@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://laic.nexus/coach/contracts/PlatformContext.schema.json",
+  "title": "PlatformContext",
+  "description": "Tenancy: which app, programme, domain and organisation a record belongs to. Every event, note and observation carries it so that a coach running out-of-process can scope every query by it, and so that adding scoping later never means rewriting stored records. Mirrors PlatformContext in @laic/learner-contracts (Shared Data Model §2.4) — structurally identical, restated here so the coach package stays dependency-free.",
+  "type": "object",
+  "required": ["appId", "programId", "domainId"],
+  "additionalProperties": false,
+  "properties": {
+    "appId": { "type": "string", "description": "The consuming application, e.g. \"bridge_ai_coach\"." },
+    "programId": { "type": "string" },
+    "domainId": { "type": "string", "description": "e.g. \"bridge\", \"course_learning\"." },
+    "offeringId": { "type": "string" },
+    "organizationScopeId": { "type": "string" },
+    "groupId": { "type": "string" }
+  }
+}

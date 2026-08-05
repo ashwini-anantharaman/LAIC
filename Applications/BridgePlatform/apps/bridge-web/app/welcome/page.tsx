@@ -1,8 +1,9 @@
 import { roleLabel, STUB_USERS } from "@bridge/nexus-client";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { setDevUser } from "@/app/actions";
-import { LoginForm } from "@/components/LoginForm";
 import { getBridgeContext, isFellowDemo, isMobileSite, nexusMode } from "@/lib/nexus";
+import { NEXUS_RETURN_COOKIE, safeReturnUrl } from "@/lib/nexusToken";
 
 export default async function WelcomePage() {
   // The mobile host has its own auto-signed-in phone UI — never show the login.
@@ -11,6 +12,11 @@ export default async function WelcomePage() {
   // On the fellows-testing host everyone is auto-signed-in as "Fellow"; there
   // is no login, and Home is hidden — land straight on Play.
   if (context) redirect((await isFellowDemo()) ? "/bridge/table" : "/bridge/home");
+
+  // A person who arrived from Nexus but was refused (no bridge grant, expired
+  // session) lands here — give them the way back to the console.
+  const cookieStore = await cookies();
+  const nexusReturnUrl = safeReturnUrl(cookieStore.get(NEXUS_RETURN_COOKIE)?.value);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-8 p-8">
@@ -64,7 +70,26 @@ export default async function WelcomePage() {
           </p>
         </section>
       ) : (
-        <LoginForm />
+        <section className="space-y-2 text-center">
+          <h2 className="text-xs font-medium uppercase tracking-[0.2em] text-neutral-500">
+            Sign in through Nexus
+          </h2>
+          <p className="mx-auto max-w-sm text-sm text-neutral-600">
+            The Bridge Platform opens from your organization&apos;s Nexus portal — launch it
+            from your program&apos;s workspace and you&apos;ll arrive here signed in.
+          </p>
+        </section>
+      )}
+
+      {nexusReturnUrl && (
+        <p className="text-center">
+          <a
+            href={nexusReturnUrl}
+            className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
+          >
+            ← Back to Nexus
+          </a>
+        </p>
       )}
     </main>
   );

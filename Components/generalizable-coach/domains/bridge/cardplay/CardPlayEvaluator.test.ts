@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { CardPlayEvaluator } from "./CardPlayEvaluator.js";
-import { getScenario, CARD_PLAY_SCENARIOS } from "./scenarios.js";
-import { RouterEvaluator } from "../evaluator/RouterEvaluator.js";
-import * as C from "../plugin/constants.js";
-import type { CardPlayScenario, CardPlayAction } from "./types.js";
+import { CardPlayEvaluator } from "./CardPlayEvaluator";
+import { getScenario, CARD_PLAY_SCENARIOS } from "./scenarios";
+import { RouterEvaluator } from "../evaluator/RouterEvaluator";
+import * as C from "../plugin/constants";
+import type { CardPlayScenario, CardPlayAction } from "./types";
 
 const evaluator = new CardPlayEvaluator();
 

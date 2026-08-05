@@ -24,7 +24,17 @@ const NROLE: Record<string, string> = { teacher: "instructor" };
 const normalizeRole = (r: string): string => NROLE[r] ?? r;
 
 function profileRow(p: typeof profiles.$inferSelect): Row {
-  return { id: p.id, email: p.email, role: p.role, display_name: p.displayName, name: p.name };
+  return {
+    id: p.id,
+    email: p.email,
+    role: p.role,
+    display_name: p.displayName,
+    name: p.name,
+    // The auth CREDENTIAL id — may differ from this row's own id, since one
+    // auth credential can back several org-scoped profiles (0010). Callers
+    // that need a valid session token must use this, not `id`.
+    auth_user_id: p.authUserId ?? p.id,
+  };
 }
 function orgRow(o: typeof organizations.$inferSelect): Row {
   return { id: o.id, name: o.name, slug: o.slug, owner_id: o.ownerId, settings: o.settings, created_at: o.createdAt };
@@ -90,6 +100,13 @@ export async function createOrganization(name: string, ownerAuthId: string): Pro
 export async function getOrganization(orgId: string): Promise<Row | null> {
   return asPrivileged(async (tx) => {
     const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
+    return r.length ? orgRow(r[0]) : null;
+  });
+}
+
+export async function getOrganizationBySlug(slug: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx.select().from(organizations).where(eq(organizations.slug, slug)).limit(1);
     return r.length ? orgRow(r[0]) : null;
   });
 }
@@ -183,7 +200,7 @@ export async function loadUser(authUserId: string): Promise<{ profile: Row | nul
 export async function ensureOrgProfile(
   authUserId: string,
   orgId: string,
-  opts: { email?: string | null; role?: string; displayName?: string | null } = {},
+  opts: { email?: string | null; role?: string; displayName?: string | null; allowSecondOrg?: boolean } = {},
 ): Promise<string> {
   return asPrivileged((tx) => ensureOrgProfileTx(tx, authUserId, orgId, opts));
 }

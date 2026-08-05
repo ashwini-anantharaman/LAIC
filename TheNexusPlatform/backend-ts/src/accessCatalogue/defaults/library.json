@@ -1,0 +1,241 @@
+{
+  "schemaVersion": "1.0",
+  "documentType": "capability_catalogue",
+  "id": "catalogue/library",
+  "name": "Library Component",
+  "description": "The platform library component's own catalogue (@laic/library-core): scoped instances (personal/program/org), copy-with-provenance distribution, partner packaging. Everyone READS and EDITS their own shelf by ownership; every other move is a capability — including creating on your own shelf (library.author.own, granted broadly by default so revoking it makes a role play-only). Host platforms may embed this as a group (bridge does) or bind it directly via cross-catalogue role grants.",
+  "provider": {
+    "kind": "framework",
+    "id": "library"
+  },
+  "catalogueVersion": "v1.0",
+  "capabilities": [
+    {
+      "id": "library.author.own",
+      "label": "Create items in your own library",
+      "description": "Create boards, deals and tables on your personal shelf. Staff and coaches hold this by default; the prebuilt learner role does NOT — learners receive content instead (assigned, shared, or via a designated collection). Grant it to a role to allow practice authoring.",
+      "group": "instances",
+      "supportsResourceConstraints": true,
+      "resourceTypes": [
+        "library_item"
+      ]
+    },
+    {
+      "id": "library.view.program",
+      "label": "View the program library instance",
+      "description": "Read the program's shared shelf",
+      "group": "instances",
+      "supportsResourceConstraints": true,
+      "resourceTypes": [
+        "library_item"
+      ]
+    },
+    {
+      "id": "library.view.org",
+      "label": "View the organization library instance",
+      "description": "Read the organization's shared shelf",
+      "group": "instances",
+      "supportsResourceConstraints": true,
+      "resourceTypes": [
+        "library_item"
+      ]
+    },
+    {
+      "id": "library.author.program",
+      "label": "Author into the program library instance",
+      "description": "Create, edit and delete items on the program's shared shelf",
+      "group": "instances",
+      "supportsResourceConstraints": true,
+      "resourceTypes": [
+        "library_item"
+      ]
+    },
+    {
+      "id": "library.author.org",
+      "label": "Author into the organization library instance",
+      "description": "Create, edit and delete items on the organization's shared shelf",
+      "group": "instances",
+      "supportsResourceConstraints": true,
+      "resourceTypes": [
+        "library_item"
+      ]
+    },
+    {
+      "id": "library.assign",
+      "label": "Assign/copy library items to people",
+      "description": "Copy items into other people's instances (assign, share)",
+      "group": "distribution",
+      "supportsResourceConstraints": true,
+      "resourceTypes": [
+        "library_item"
+      ]
+    },
+    {
+      "id": "library.embed",
+      "label": "Embed library items into external documents",
+      "description": "Snapshot items into external documents (e.g. lessons)",
+      "group": "distribution"
+    },
+    {
+      "id": "library.publish",
+      "label": "Publish library packages for partners",
+      "description": "Package program/org content for partner organizations",
+      "group": "partnerships",
+      "reserved": "program_admin"
+    },
+    {
+      "id": "library.install",
+      "label": "Install published library packages",
+      "description": "Install a partner's published package into this instance",
+      "group": "partnerships",
+      "reserved": "program_admin"
+    }
+  ],
+  "resourceTypes": [
+    {
+      "id": "library_item",
+      "label": "Library item",
+      "description": "One item in a scoped library instance; kinds are host-defined (bridge: deal/board/table/play/drill/puzzle)",
+      "constraintFields": [
+        "kind",
+        "scope_level"
+      ]
+    }
+  ],
+  "uiSurfaces": [
+    {
+      "id": "library.nav",
+      "label": "Library",
+      "kind": "navigation",
+      "group": "library",
+      "routeOrComponent": "/bridge/library",
+      "requiredAnyCapabilities": []
+    },
+    {
+      "id": "library.create_row",
+      "label": "Creation row (New board / deal / table)",
+      "kind": "component",
+      "group": "library",
+      "routeOrComponent": "CreationRow",
+      "requiredAnyCapabilities": [
+        "library.author.own",
+        "library.author.program"
+      ]
+    },
+    {
+      "id": "library.program_shelf",
+      "label": "Program library instance",
+      "kind": "screen",
+      "group": "library",
+      "routeOrComponent": "/bridge/library?scope=program",
+      "requiredAnyCapabilities": [
+        "library.view.program",
+        "library.author.program"
+      ]
+    },
+    {
+      "id": "library.share",
+      "label": "Share dialog (distribute copies)",
+      "kind": "action",
+      "group": "library",
+      "routeOrComponent": "/bridge/library/share",
+      "requiredAnyCapabilities": [
+        "library.assign"
+      ]
+    },
+    {
+      "id": "library.edit",
+      "label": "Edit a deal/board in place",
+      "kind": "action",
+      "group": "library",
+      "routeOrComponent": "/bridge/library/[entryId]/edit",
+      "requiredAnyCapabilities": []
+    }
+  ],
+  "groups": [
+    {
+      "id": "instances",
+      "label": "Instances",
+      "description": "Creating on your own shelf, and reading/authoring the shared (program/org) instances",
+      "order": 1,
+      "capabilityIds": [
+        "library.author.own",
+        "library.view.program",
+        "library.view.org",
+        "library.author.program",
+        "library.author.org"
+      ],
+      "uiSurfaceIds": [
+        "library.nav",
+        "library.program_shelf",
+        "library.create_row",
+        "library.edit"
+      ]
+    },
+    {
+      "id": "distribution",
+      "label": "Distribution",
+      "description": "Moving copies between instances: assign/share to people, embed into external documents",
+      "order": 2,
+      "capabilityIds": [
+        "library.assign",
+        "library.embed"
+      ],
+      "uiSurfaceIds": [
+        "library.share"
+      ]
+    },
+    {
+      "id": "partnerships",
+      "label": "Partnerships",
+      "description": "Publishing packages for partner organizations and installing theirs (Phase C)",
+      "order": 3,
+      "capabilityIds": [
+        "library.publish",
+        "library.install"
+      ],
+      "uiSurfaceIds": []
+    }
+  ],
+  "sampleRoleTemplates": [
+    {
+      "id": "library_curator",
+      "name": "Curator",
+      "description": "Maintains the program's shared collection",
+      "grants": [
+        {
+          "capabilityIds": [
+            "library.view.program",
+            "library.author.program"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "library_distributor",
+      "name": "Distributor",
+      "description": "Shares and assigns content to people (what coaches effectively hold)",
+      "grants": [
+        {
+          "capabilityIds": [
+            "library.view.program",
+            "library.assign"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "library_partnership_manager",
+      "name": "Partnership Manager",
+      "description": "Publishes packages to partners and installs theirs",
+      "grants": [
+        {
+          "capabilityIds": [
+            "library.publish",
+            "library.install"
+          ]
+        }
+      ]
+    }
+  ]
+}

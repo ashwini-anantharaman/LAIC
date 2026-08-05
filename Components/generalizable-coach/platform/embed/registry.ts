@@ -10,13 +10,13 @@
  * domain ships a side-effect module that calls registerDomain (see the bridge
  * domain's register.ts, imported for effect from index.ts).
  */
-import type { LLMLike } from "../llm/index.js";
+import type { LLMLike } from "../llm/index";
 import {
   createCoreCoachSession,
   type CoachCore,
   type CoachSession,
   type CoreCoachSessionOptions,
-} from "./CoachSession.js";
+} from "./CoachSession";
 
 /** Context a domain factory receives when a session is opened. */
 export interface DomainBuildContext {

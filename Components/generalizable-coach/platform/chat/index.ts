@@ -1,5 +1,5 @@
-export { IntentRouter, type Intent, type IntentKind, type ToolHint } from "./IntentRouter.js";
-export { ToolSelector, type ToolSelection, type SelectionContext } from "./ToolSelector.js";
+export { IntentRouter, type Intent, type IntentKind, type ToolHint } from "./IntentRouter";
+export { ToolSelector, type ToolSelection, type SelectionContext } from "./ToolSelector";
 export {
   ChatOrchestrator,
   type ChatOrchestratorOptions,
@@ -7,4 +7,4 @@ export {
   type ChatToolStep,
   type ChatThreadTurn,
   type Phraser,
-} from "./ChatOrchestrator.js";
+} from "./ChatOrchestrator";

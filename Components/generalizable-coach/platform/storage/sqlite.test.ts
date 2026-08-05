@@ -6,10 +6,10 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { openCoachDatabase } from "./sqlite.js";
-import { LearnerStore } from "../learner-model/LearnerStore.js";
-import { SessionEngine } from "../session/SessionEngine.js";
-import type { ActivityEvent, EvaluationResult } from "../types/index.js";
+import { openCoachDatabase } from "./sqlite";
+import { LearnerStore } from "../learner-model/LearnerStore";
+import { SessionEngine } from "../session/SessionEngine";
+import type { ActivityEvent, EvaluationResult } from "../types/index";
 
 const dbPath = join(tmpdir(), "laic-coach-persist-test.db");
 function clean() {

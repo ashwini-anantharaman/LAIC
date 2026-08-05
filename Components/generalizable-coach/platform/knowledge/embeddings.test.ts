@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { cosineSimilarity, HybridRetriever, type EmbeddingProvider } from "./embeddings.js";
-import type { KnowledgeChunk } from "../types/index.js";
+import { cosineSimilarity, HybridRetriever, type EmbeddingProvider } from "./embeddings";
+import type { KnowledgeChunk } from "../types/index";
 
 function chunk(id: string, content: string): KnowledgeChunk {
   return {

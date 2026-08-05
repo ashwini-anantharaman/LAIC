@@ -9,9 +9,9 @@ import type {
   EvaluatorContract,
   EvaluationResult,
   Correctness,
-} from "../../../platform/types/index.js";
-import type { CardPlayScenario, CardPlayAction } from "./types.js";
-import { normalizeCard } from "./scenarios.js";
+} from "../../../platform/types/index";
+import type { CardPlayScenario, CardPlayAction } from "./types";
+import { normalizeCard } from "./scenarios";
 
 export class CardPlayEvaluator
   implements EvaluatorContract<CardPlayScenario, CardPlayAction>

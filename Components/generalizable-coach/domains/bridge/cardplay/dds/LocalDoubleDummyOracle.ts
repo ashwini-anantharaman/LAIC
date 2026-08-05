@@ -9,9 +9,9 @@
  * principle engine. Raise the cap (or move this to a Web Worker) to solve
  * deeper.
  */
-import type { DoubleDummyOracle, OracleVerdict } from "../oracle.js";
-import type { LiveCardPlayState } from "../LiveCardPlayEvaluator.js";
-import { encodeCard, solvePosition, type Position, type SeatId } from "./solver.js";
+import type { DoubleDummyOracle, OracleVerdict } from "../oracle";
+import type { LiveCardPlayState } from "../LiveCardPlayEvaluator";
+import { encodeCard, solvePosition, type Position, type SeatId } from "./solver";
 
 const SUIT_INDEX: Record<string, number> = { S: 0, H: 1, D: 2, C: 3 };
 
@@ -20,8 +20,8 @@ function parseHandCodes(hand: string): number[] {
   for (const token of hand.trim().split(/\s+/)) {
     const m = token.match(/^([SHDC]):(.*)$/i);
     if (!m) continue;
-    const suit = m[1].toUpperCase();
-    for (const ch of m[2].toUpperCase().replace(/10/g, "T")) {
+    const suit = (m[1] ?? "").toUpperCase();
+    for (const ch of (m[2] ?? "").toUpperCase().replace(/10/g, "T")) {
       const code = encodeCard(suit + ch);
       if (code >= 0) codes.push(code);
     }

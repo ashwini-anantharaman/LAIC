@@ -8,7 +8,7 @@
  * pressure. The scoring is deterministic; only the model under test may call an
  * LLM (a real run needs a key — see the harness test for the mock-model path).
  */
-import type { GradingModel, GradedCorrectness } from "../../domains/course_learning/gradedEvaluator.js";
+import type { GradingModel, GradedCorrectness } from "../../domains/course_learning/gradedEvaluator";
 
 export interface GradingCase {
   id: string;

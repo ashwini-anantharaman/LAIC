@@ -1,2 +1,2 @@
-export * from "./KnowledgeRetriever.js";
-export * from "./embeddings.js";
+export * from "./KnowledgeRetriever";
+export * from "./embeddings";

@@ -2,14 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   InterventionPolicyEngine,
   type InterventionInput,
-} from "./InterventionPolicyEngine.js";
+} from "./InterventionPolicyEngine";
 import type {
   EvaluationResult,
   CoachingPolicy,
   Correctness,
   Severity,
-} from "../types/index.js";
-import type { MistakeRecord } from "../learner-model/index.js";
+} from "../types/index";
+import type { MistakeRecord } from "../learner-model/index";
 
 const engine = new InterventionPolicyEngine();
 

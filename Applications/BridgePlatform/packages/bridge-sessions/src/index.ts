@@ -39,8 +39,11 @@ import {
 } from "@bridge/engine";
 import type { CompiledKb, DecisionPolicyId, KbPlayer, KbStore } from "@bridge/kb";
 import { newId } from "@bridge/kb";
+import { matchesScope, type ScopeFilter } from "./library";
 
 export * from "./library";
+export * from "./submissions";
+export * from "./assignments";
 
 // ---------------------------------------------------------------------------
 // Model
@@ -93,6 +96,11 @@ export interface SessionRecord {
   createdAt: string;
   updatedAt: string;
   forkedFromSessionId?: string;
+  /** Org the session was created in (0019 scoping). Additive jsonb field. */
+  programOrganizationId?: string;
+  /** The REAL Nexus program uuid partition (0022). Sessions are always
+   *  personal (createdBy is the owner); this keeps programs disjoint. */
+  nexusProgramId?: string;
 }
 
 export interface SessionStoreData {
@@ -102,7 +110,7 @@ export interface SessionStoreData {
 export interface SessionStore {
   putSession(record: SessionRecord): Promise<void>;
   getSession(sessionId: string): Promise<SessionRecord | null>;
-  listSessions(): Promise<SessionRecord[]>;
+  listSessions(filter?: ScopeFilter): Promise<SessionRecord[]>;
   /** Remove every session of a KB (part of KB deletion — their pinned compiles go with the KB). */
   deleteSessionsForKb(kbId: string): Promise<void>;
 }
@@ -119,8 +127,10 @@ export class InMemorySessionStore implements SessionStore {
   async getSession(sessionId: string) {
     return this.data.sessions.find((s) => s.sessionId === sessionId) ?? null;
   }
-  async listSessions() {
-    return [...this.data.sessions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  async listSessions(filter?: ScopeFilter) {
+    return this.data.sessions
+      .filter((s) => matchesScope(s, filter))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
   async deleteSessionsForKb(kbId: string) {
     this.data.sessions = this.data.sessions.filter((s) => s.kbId !== kbId);
@@ -305,6 +315,10 @@ export class SessionService {
     hands?: Record<Seat, Card[]>;
     boardName?: string;
     createdBy: string;
+    /** Org scope stamp (0019) — pass the caller's context org. */
+    programOrganizationId?: string;
+    /** Program partition stamp (0022). */
+    nexusProgramId?: string;
     forkedFromSessionId?: string;
     /** Adopted event prefix (forks resume mid-board). */
     primedEvents?: GameEvent[];
@@ -329,13 +343,15 @@ export class SessionService {
       createdAt: this.now(),
       updatedAt: this.now(),
       forkedFromSessionId: input.forkedFromSessionId,
+      programOrganizationId: input.programOrganizationId,
+      nexusProgramId: input.nexusProgramId,
     };
     await this.store.putSession(record);
     return record;
   }
 
-  async listRecent(): Promise<SessionRecord[]> {
-    return this.store.listSessions();
+  async listRecent(filter?: ScopeFilter): Promise<SessionRecord[]> {
+    return this.store.listSessions(filter);
   }
 
   /** Part of KB deletion — the pinned compiles vanish with the KB. */
@@ -575,6 +591,8 @@ export class SessionService {
       hands: options.hands ?? source.board.hands,
       boardName: options.boardName ?? source.board.name,
       createdBy,
+      programOrganizationId: source.programOrganizationId,
+      nexusProgramId: source.nexusProgramId,
       forkedFromSessionId: source.sessionId,
       primedEvents: options.fresh ? [] : [...source.events],
     });

@@ -5,9 +5,9 @@
  * plausible input; a gated-out tool is never selectable.
  */
 import { describe, it, expect } from "vitest";
-import { ToolSelector } from "../../platform/chat/index.js";
-import { gateTools, toolRegistry, type CoachTool } from "../../platform/tools/index.js";
-import type { CoachingPolicy } from "../../contracts/index.js";
+import { ToolSelector } from "../../platform/chat/index";
+import { gateTools, toolRegistry, type CoachTool } from "../../platform/tools/index";
+import type { CoachingPolicy } from "../../contracts/index";
 
 const mk = (name: string, hints: CoachTool["policyHints"]): CoachTool => ({
   name,

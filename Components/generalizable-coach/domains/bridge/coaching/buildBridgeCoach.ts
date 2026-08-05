@@ -5,26 +5,26 @@
  * evaluator, and Beginner 1 knowledge package into a ready-to-use coach.
  * This is the only place Bridge wiring meets the platform core.
  */
-import { LearnerStore } from "../../../platform/learner-model/index.js";
-import { KnowledgeRetriever } from "../../../platform/knowledge/index.js";
+import { LearnerStore } from "../../../platform/learner-model/index";
+import { KnowledgeRetriever } from "../../../platform/knowledge/index";
 import {
   InterventionPolicyEngine,
   AdaptiveCoachRuntime,
-} from "../../../platform/coach-runtime/index.js";
+} from "../../../platform/coach-runtime/index";
 import {
   ResponseGenerator,
   LLMClient,
   type LLMLike,
-} from "../../../platform/llm/index.js";
-import { SessionEngine } from "../../../platform/session/index.js";
-import { bridgePlugin } from "../plugin/BridgePlugin.js";
-import { BridgePromptBuilder } from "./BridgePromptBuilder.js";
-import { RouterEvaluator } from "../evaluator/RouterEvaluator.js";
-import { BridgeEvaluator } from "../evaluator/BridgeEvaluator.js";
-import { CardPlayEvaluator } from "../cardplay/CardPlayEvaluator.js";
-import { LiveCardPlayEvaluator } from "../cardplay/LiveCardPlayEvaluator.js";
-import type { DoubleDummyOracle } from "../cardplay/oracle.js";
-import { loadBridgeKnowledge } from "../knowledge/loadPackage.js";
+} from "../../../platform/llm/index";
+import { SessionEngine } from "../../../platform/session/index";
+import { bridgePlugin } from "../plugin/BridgePlugin";
+import { BridgePromptBuilder } from "./BridgePromptBuilder";
+import { RouterEvaluator } from "../evaluator/RouterEvaluator";
+import { BridgeEvaluator } from "../evaluator/BridgeEvaluator";
+import { CardPlayEvaluator } from "../cardplay/CardPlayEvaluator";
+import { LiveCardPlayEvaluator } from "../cardplay/LiveCardPlayEvaluator";
+import type { DoubleDummyOracle } from "../cardplay/oracle";
+import { loadBridgeKnowledge } from "../knowledge/loadPackage";
 
 export interface BridgeCoach {
   runtime: AdaptiveCoachRuntime;

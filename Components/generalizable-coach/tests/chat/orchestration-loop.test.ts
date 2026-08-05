@@ -9,16 +9,16 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { ChatOrchestrator } from "../../platform/chat/index.js";
-import { BundledKnowledgeSource } from "../../platform/knowledge-source/index.js";
-import { InProcessToolExecutor, toolRegistry, type CoachTool } from "../../platform/tools/index.js";
-import { InMemoryTraceStore } from "../../platform/trace/index.js";
-import { InMemoryInteractionMemory } from "../../platform/memory/index.js";
-import { defaultCapabilityScope } from "../../platform/policy/index.js";
-import { resolvePolicy } from "../../platform/config/index.js";
-import { memoryLessonScope, COURSE_LEARNING_DOMAIN_ID } from "../../domains/course_learning/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
-import type { CoachingPolicyProfile } from "../../contracts/index.js";
+import { ChatOrchestrator } from "../../platform/chat/index";
+import { BundledKnowledgeSource } from "../../platform/knowledge-source/index";
+import { InProcessToolExecutor, toolRegistry, type CoachTool } from "../../platform/tools/index";
+import { InMemoryTraceStore } from "../../platform/trace/index";
+import { InMemoryInteractionMemory } from "../../platform/memory/index";
+import { defaultCapabilityScope } from "../../platform/policy/index";
+import { resolvePolicy } from "../../platform/config/index";
+import { memoryLessonScope, COURSE_LEARNING_DOMAIN_ID } from "../../domains/course_learning/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index";
+import type { CoachingPolicyProfile } from "../../contracts/index";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(

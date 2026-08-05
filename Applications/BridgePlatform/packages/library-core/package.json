@@ -1,0 +1,20 @@
+{
+  "name": "@laic/library-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Platform-agnostic content library component: scoped instances (user/program/org), copy-with-provenance sharing, and a declarative access policy fed by the Access Catalogue. The shell never names a content domain — kinds are pluggable; bridge is one plugin (see bridge-web lib/libraryComponent).",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": { "types": "./src/index.ts", "default": "./src/index.ts" }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

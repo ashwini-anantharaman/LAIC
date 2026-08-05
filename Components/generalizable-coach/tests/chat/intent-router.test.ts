@@ -5,7 +5,7 @@
  * into multiple intents; a pure meta recall isn't mis-tagged as an ask.
  */
 import { describe, it, expect } from "vitest";
-import { IntentRouter } from "../../platform/chat/index.js";
+import { IntentRouter } from "../../platform/chat/index";
 
 const router = new IntentRouter();
 const kinds = (msg: string) => router.route(msg).map((i) => i.kind);

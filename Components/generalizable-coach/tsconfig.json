@@ -15,6 +15,6 @@
     "noEmit": true,
     "verbatimModuleSyntax": false
   },
-  "include": ["index.ts", "contracts/**/*", "api/**/*", "platform/**/*", "domains/**/*", "tests/**/*", "*.test.ts"],
+  "include": ["index.ts", "core.ts", "contracts/**/*", "api/**/*", "platform/**/*", "domains/**/*", "tests/**/*", "*.test.ts"],
   "exclude": ["node_modules", "dist"]
 }

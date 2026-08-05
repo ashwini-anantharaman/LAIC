@@ -3,10 +3,10 @@
  *
  * Mirrors the object hierarchy in Nexus_Platform_Implementation_Architecture_v3
  * (§6, §13): an organization owns programs, a program contains offerings, and an
- * offering is either a course (authored on the Learning Platform), an app
+ * offering is either a course (authored on the Content Studio), an app
  * (Registered App + signup hook), or another type. Courses are NOT authored
  * here — "Create course" makes a `course` offering bound to the learning module
- * and hands off to the Learning Platform, exactly like the game/coaching handoff.
+ * and hands off to the Content Studio, exactly like the game/coaching handoff.
  *
  * Theme tokens are shared with the rest of the admin UI (see ../../theme).
  */
@@ -23,12 +23,7 @@ import { DEFAULT_SIGNUP_FIELDS } from "../../../types/platform";
 import type { Offering, OrgMember, Participant, Program, ProgramCategory } from "../../../types/platform";
 import { BORDER, INPUT_BG, MUTED, FONT_HEAD, FONT_BODY } from "../../theme";
 import { OfferingDetail } from "./OfferingDetail";
-// Cross-org panels (ProgramOrgAffiliationsSection, IncomingAffiliationRequests,
-// OrgRelationshipsPanel) are hidden for now — immediate need is one org (LAIC).
-// The backend + tests stay; re-import and re-render them when multi-org matters.
-// AffiliatedProgramsSection stays: it self-hides until a shared program exists
-// and becomes relevant at Learning Platform integration.
-import { GroupsSection, AffiliatedProgramsSection } from "./OrgGraphSections";
+import { GroupsSection, ProgramOrgAffiliationsSection, IncomingAffiliationRequests, AffiliatedProgramsSection, OrgRelationshipsPanel } from "./OrgGraphSections";
 
 const LEARNING_APP_URL =
   (import.meta.env.VITE_LEARNING_APP_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:5180";
@@ -260,6 +255,9 @@ function OrgOverview({
 
       {error && <p className="text-xs text-red-400" style={{ fontFamily: FONT_BODY }}>{error}</p>}
 
+      {/* Incoming affiliation requests from other organizations (accept/decline) */}
+      <IncomingAffiliationRequests orgId={orgId} accent={accent} />
+
       {/* KPI tiles */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {tiles.map((t) => (
@@ -366,6 +364,8 @@ function OrgOverview({
         </div>
       </section>
 
+      {/* Organization relationships (partner / member / chapter networks) */}
+      <OrgRelationshipsPanel orgId={orgId} accent={accent} />
     </div>
   );
 }
@@ -630,7 +630,7 @@ export function ProgramDetail({
     setBusy(true);
     setError("");
     try {
-      // Courses are authored on the Learning Platform. Nexus stores the offering
+      // Courses are authored on the Content Studio. Nexus stores the offering
       // record (module = learning) and routes editors/learners downstream.
       const created = await createOffering(program.id, {
         name: courseName.trim(),
@@ -655,7 +655,7 @@ export function ProgramDetail({
     setBusy(true);
     setError("");
     try {
-      // An app-type offering is the thing an App Shell configures. Default its
+      // An app-type offering is the thing an App Studio configures. Default its
       // downstream module from the program category.
       const created = await createOffering(program.id, {
         name: appName.trim(),
@@ -667,7 +667,7 @@ export function ProgramDetail({
       setOfferings((prev) => [...(prev || []), created]);
       setAppName("");
       setCreatingApp(false);
-      onOpenOffering(created); // jump straight into the App Shell editor
+      onOpenOffering(created); // jump straight into the App Studio editor
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create app");
     } finally {
@@ -676,7 +676,7 @@ export function ProgramDetail({
   }
 
   async function openLearningStudio() {
-    // Author courses in the Learning Platform. If a specific app is bound to a
+    // Author courses in the Content Studio. If a specific app is bound to a
     // course offering, launch through it; otherwise open the studio directly.
     setLaunching(true);
     setError("");
@@ -736,14 +736,14 @@ export function ProgramDetail({
           <BookOpen size={15} style={{ color: "#a99cff", marginTop: 2 }} />
           <div className="flex-1">
             <p className="text-[11px] text-white/80" style={{ fontFamily: FONT_BODY }}>
-              Courses are authored on the <b>Learning Platform</b>. Nexus stores the course offering and routes editors and learners there.
+              Courses are authored on the <b>Content Studio</b>. Nexus stores the course offering and routes editors and learners there.
             </p>
             <button
               type="button" onClick={openLearningStudio} disabled={launching}
               className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold transition-colors focus:outline-none disabled:opacity-50"
               style={{ color: "#a99cff", fontFamily: FONT_BODY }}
             >
-              {launching ? "Opening…" : "Open Learning Platform"} <ArrowUpRight size={13} />
+              {launching ? "Opening…" : "Open Content Studio"} <ArrowUpRight size={13} />
             </button>
           </div>
         </div>
@@ -760,7 +760,7 @@ export function ProgramDetail({
                   style={{ background: INPUT_BG, border: `1px solid ${BORDER}`, fontFamily: FONT_BODY }}
                 />
                 <p className="text-[11px]" style={{ color: MUTED, fontFamily: FONT_BODY }}>
-                  Creates a course offering (module: learning) and opens it. You'll author the lessons on the Learning Platform.
+                  Creates a course offering (module: learning) and opens it. You'll author the lessons on the Content Studio.
                 </p>
                 <button
                   type="button" onClick={createCourse} disabled={busy}
@@ -810,7 +810,7 @@ export function ProgramDetail({
                   style={{ background: INPUT_BG, border: `1px solid ${BORDER}`, fontFamily: FONT_BODY }}
                 />
                 <p className="text-[11px]" style={{ color: MUTED, fontFamily: FONT_BODY }}>
-                  Creates an app offering and opens its <b>App Shell</b> — where you configure branding, onboarding, role labels, auth, and the signup-hook key.
+                  Creates an app offering and opens its <b>App Studio</b> — where you configure branding, onboarding, role labels, auth, and the signup-hook key.
                 </p>
                 <button
                   type="button" onClick={createAppOffering} disabled={busy}
@@ -824,7 +824,7 @@ export function ProgramDetail({
 
         {apps.length === 0 && !creatingApp ? (
           <p className="text-[11px]" style={{ color: MUTED, fontFamily: FONT_BODY }}>
-            No app shells yet. Use <b>New app</b> to create one and configure its App Shell.
+            No app shells yet. Use <b>New app</b> to create one and configure its App Studio.
           </p>
         ) : (
           <div className="flex flex-col gap-2">
@@ -838,6 +838,8 @@ export function ProgramDetail({
       {/* Groups (classes / clubs / cohorts within this program) */}
       <GroupsSection orgId={program.org_id} programId={program.id} offerings={offerings || []} accent={accent} />
 
+      {/* Affiliated organizations (invite another org → they accept) */}
+      <ProgramOrgAffiliationsSection orgId={program.org_id} programId={program.id} accent={accent} />
     </div>
   );
 }

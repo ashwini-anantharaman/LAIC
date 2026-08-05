@@ -14,6 +14,7 @@ import { audit } from "@/lib/audit";
 import { fileToText, uploadDocument } from "@/lib/documents";
 import { createClaudeExtractor, extractionAvailable } from "@/lib/extraction";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
+import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { parseCommon, parsePayload, parseSettings } from "@/lib/itemForm";
 import { B2F3_COLLECTIONS, draftB2f3Collections } from "@/lib/b2f3";
 
@@ -183,6 +184,11 @@ export async function createKbAction(formData: FormData): Promise<void> {
     systemLabel: String(formData.get("systemLabel") ?? "").trim(),
     description: String(formData.get("description") ?? "").trim() || undefined,
     createdBy: context.nexusUserId,
+    // kb-core instance scoping: staff-authored KBs are program-instance
+    // content (legacy unscoped KBs read the same way via the adapter).
+    scopeLevel: "program",
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
   });
   await audit(context, "kb.create", "kb", kb.kbId, { name: kb.name });
   redirect(kbPath(kb.kbId));

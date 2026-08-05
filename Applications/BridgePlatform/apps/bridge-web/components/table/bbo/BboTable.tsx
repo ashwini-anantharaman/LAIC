@@ -37,13 +37,16 @@ const KHAKI = "#CFCB96";
 // Fluid geometry — cqw tracks the felt's width so everything scales with the
 // window; the clamps keep it legible at the extremes. Reserved dimensions
 // (the ones that must NOT follow content) are called out below.
-const COL = "clamp(120px, 20cqw, 172px)"; // a seat column / name-plate width
-const CARD_W = "clamp(30px, 5.2cqw, 48px)"; // a face card in a hand
-const CARD_SM = "clamp(26px, 4.2cqw, 40px)"; // a face card in the trick
-const AUCTION_W = "clamp(224px, 40cqw, 330px)";
+// Small-end minimums are sized so W-column + centre + E-column still FIT a
+// phone-width container (~414px incl. felt padding) — before this, East was
+// pushed off the right edge on phones.
+const COL = "clamp(96px, 20cqw, 172px)"; // a seat column / name-plate width
+const CARD_W = "clamp(26px, 5.2cqw, 48px)"; // a face card in a hand
+const CARD_SM = "clamp(24px, 4.2cqw, 40px)"; // a face card in the trick
+const AUCTION_W = "clamp(176px, 40cqw, 330px)";
 const AUCTION_H = "clamp(118px, 20cqw, 176px)"; // RESERVED — constant across rounds
 const CENTER_H = "clamp(140px, 22cqw, 200px)"; // RESERVED — keeps W/E from moving
-const BID_W = "clamp(360px, 80cqw, 540px)"; // RESERVED — constant across clicks
+const BID_W = "clamp(312px, 80cqw, 540px)"; // RESERVED — constant across clicks
 const TRICK = "clamp(150px, 24cqw, 210px)";
 
 const GLYPH: Record<Suit, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
@@ -434,7 +437,10 @@ export function BboTable({
           background: FELT,
           width: "100%",
           maxWidth: 900,
-          minHeight: "clamp(520px, 78cqw, 680px)",
+          // Phones (narrow containers) get a TALLER felt (140cqw) so the
+          // justify-between spread anchors South near the bottom instead of
+          // leaving dead backdrop below; desktop still caps at 680px.
+          minHeight: "clamp(520px, 170cqw, 680px)",
           padding: "clamp(14px, 2cqw, 22px) clamp(12px, 2.2cqw, 24px) clamp(10px, 1.6cqw, 18px)",
         }}
       >

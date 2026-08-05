@@ -6,15 +6,15 @@
  * discouraged from doing so.
  */
 import { describe, it, expect } from "vitest";
-import { resolvePolicy } from "../../platform/config/index.js";
+import { resolvePolicy } from "../../platform/config/index";
 import {
   decideIntervention,
   applyCapabilityScope,
   defaultCapabilityScope,
-} from "../../platform/policy/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
-import type { CoachingPolicyProfile, CoachCapabilityScope } from "../../contracts/index.js";
-import type { EvaluationResult } from "../../platform/types/index.js";
+} from "../../platform/policy/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index";
+import type { CoachingPolicyProfile, CoachCapabilityScope } from "../../contracts/index";
+import type { EvaluationResult } from "../../platform/types/index";
 
 const evaluation: EvaluationResult = {
   correctness: "incorrect",

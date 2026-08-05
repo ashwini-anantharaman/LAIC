@@ -8,8 +8,8 @@
  * is never silently un-retrievable. Also stamps `schemaVersion` and adapts the
  * Phase-1 `chunkId` field onto the M0 `id` field at the boundary (approach 1b).
  */
-import type { KnowledgeChunk } from "../../contracts/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
+import type { KnowledgeChunk } from "../../contracts/generated/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/version";
 
 /** A loose, producer-supplied chunk — may be a Phase-1 chunk or partially tagged. */
 export interface RawChunk {

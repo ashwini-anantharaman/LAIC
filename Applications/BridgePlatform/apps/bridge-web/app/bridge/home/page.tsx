@@ -12,7 +12,10 @@ export default async function HomePage() {
   if (await isFellowDemo()) redirect("/bridge/table");
 
   const firstName = (
-    stubDisplayName(context.nexusUserId) ?? context.nexusUserId
+    // Real name from the Nexus context (http mode); stub roster in dev.
+    context.displayName ??
+    stubDisplayName(context.nexusUserId) ??
+    context.nexusUserId
   ).split(" ")[0];
 
   return (

@@ -6,11 +6,11 @@
  * difference is driven by the deterministic policy engine, not prompt text.
  */
 import { describe, it, expect } from "vitest";
-import { resolvePolicy } from "../../platform/config/index.js";
-import { decideIntervention } from "../../platform/policy/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
-import type { CoachingPolicyProfile } from "../../contracts/index.js";
-import type { EvaluationResult } from "../../platform/types/index.js";
+import { resolvePolicy } from "../../platform/config/index";
+import { decideIntervention } from "../../platform/policy/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index";
+import type { CoachingPolicyProfile } from "../../contracts/index";
+import type { EvaluationResult } from "../../platform/types/index";
 
 function profile(questioningStyle: "socratic" | "direct"): CoachingPolicyProfile {
   return {

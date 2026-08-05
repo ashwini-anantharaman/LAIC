@@ -1,4 +1,5 @@
 import type { AppShellConfig, EditorTab } from "../types";
+import type { NexusGate } from "../nexus/client";
 import { EDITOR_TABS } from "../data/constants";
 import { PRESET_IDS } from "../data/presets";
 import { IdentityTab } from "./tabs/IdentityTab";
@@ -6,11 +7,18 @@ import { StartTab } from "./tabs/StartTab";
 import { AuthTab } from "./tabs/AuthTab";
 import { OnboardingTab } from "./tabs/OnboardingTab";
 import { HomeTab } from "./tabs/HomeTab";
+import { ContentTab } from "./tabs/ContentTab";
 
 interface EditorProps {
   configs: AppShellConfig[];
   active: AppShellConfig;
   tab: EditorTab;
+  /** Scoped to one app (console launch): no switcher, no other apps. */
+  scoped?: boolean;
+  /** The bound program's participant sign-up gates (Auth-tab gate picker). */
+  signupGates?: NexusGate[];
+  /** The bound program's feature switches (Content-tab tile gating). */
+  programFeatures?: Record<string, boolean>;
   onTab: (t: EditorTab) => void;
   onSelect: (id: string) => void;
   onUpdate: (patch: Partial<AppShellConfig>) => void;
@@ -18,12 +26,13 @@ interface EditorProps {
   onDelete: (id: string) => void;
 }
 
-export function Editor({ configs, active, tab, onTab, onSelect, onUpdate, onDuplicate, onDelete }: EditorProps) {
+export function Editor({ configs, active, tab, scoped, signupGates, programFeatures, onTab, onSelect, onUpdate, onDuplicate, onDelete }: EditorProps) {
   const isPreset = (id: string) => (PRESET_IDS as readonly string[]).includes(id);
 
   return (
     <div className="flex w-[390px] flex-shrink-0 flex-col overflow-hidden" style={{ borderRight: "1px solid rgba(255,255,255,0.06)", backgroundColor: "var(--studio-panel)" }}>
-      {/* app switcher */}
+      {/* app switcher — sandbox only; a scoped Studio IS one app */}
+      {!scoped && (
       <div className="flex flex-shrink-0 flex-wrap gap-1.5 px-4 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
         {configs.map((c) => {
           const on = c.id === active.id;
@@ -59,6 +68,7 @@ export function Editor({ configs, active, tab, onTab, onSelect, onUpdate, onDupl
           ⧉
         </button>
       </div>
+      )}
 
       {/* tab bar */}
       <div className="flex flex-shrink-0 gap-1 overflow-x-auto px-4 py-2.5" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
@@ -78,9 +88,10 @@ export function Editor({ configs, active, tab, onTab, onSelect, onUpdate, onDupl
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {tab === "identity" && <IdentityTab config={active} update={onUpdate} />}
         {tab === "start" && <StartTab config={active} update={onUpdate} />}
-        {tab === "auth" && <AuthTab config={active} update={onUpdate} />}
+        {tab === "auth" && <AuthTab config={active} update={onUpdate} signupGates={signupGates} />}
         {tab === "onboarding" && <OnboardingTab config={active} update={onUpdate} />}
         {tab === "home" && <HomeTab config={active} update={onUpdate} />}
+        {tab === "content" && <ContentTab config={active} update={onUpdate} programFeatures={programFeatures} />}
       </div>
     </div>
   );

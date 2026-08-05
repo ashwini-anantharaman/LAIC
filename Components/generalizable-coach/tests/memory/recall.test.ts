@@ -5,7 +5,7 @@
  * KnowledgeSource chunks), filtered by learner, keyword, and recency.
  */
 import { describe, it, expect } from "vitest";
-import { InMemoryInteractionMemory } from "../../platform/memory/index.js";
+import { InMemoryInteractionMemory } from "../../platform/memory/index";
 
 function seed(): InMemoryInteractionMemory {
   const m = new InMemoryInteractionMemory();

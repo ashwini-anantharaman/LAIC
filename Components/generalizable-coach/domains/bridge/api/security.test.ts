@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Request, Response } from "express";
-import { createSecurity } from "./security.js";
+import { createSecurity } from "./security";
 
 function req(headers: Record<string, string> = {}): Request {
   return {

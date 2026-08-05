@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { LLMClient } from "./LLMClient.js";
-import type { BuiltPrompt } from "./PromptBuilder.js";
+import { LLMClient } from "./LLMClient";
+import type { BuiltPrompt } from "./PromptBuilder";
 
 const prompt: BuiltPrompt = { system: "sys", user: "usr" };
 

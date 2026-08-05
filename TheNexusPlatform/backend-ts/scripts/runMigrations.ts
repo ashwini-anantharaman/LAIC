@@ -11,7 +11,7 @@
  * SQL is read from backend-ts/migrations (this backend owns its schema — v0.4).
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,12 +21,33 @@ const _here = dirname(fileURLToPath(import.meta.url));
 // backend-ts owns its schema now (canonical TS backend, v0.4). Migrations live
 // in backend-ts/migrations and run in lexical order (0000_, 0001_, …).
 const SQL_DIR = join(_here, "..", "migrations");
-const SQL_FILES = existsSync(SQL_DIR)
+const CORE_FILES = existsSync(SQL_DIR)
   ? readdirSync(SQL_DIR)
       .filter((f) => f.endsWith(".sql"))
       .sort()
       .map((f) => join(SQL_DIR, f))
   : [];
+
+// Platform schema packs (Phase 4): each external platform's tables live in
+// this shared cluster inside the org space, under migrations/platforms/<pack>/.
+// Packs run AFTER the core chain (they rely on its roles/helpers), each pack's
+// files in lexical order. Every file must be idempotent — the runner replays
+// everything on each invocation, so packs are END-STATE schemas, never
+// drop-and-rebuild histories.
+const PLATFORMS_DIR = join(SQL_DIR, "platforms");
+const PACK_FILES = existsSync(PLATFORMS_DIR)
+  ? readdirSync(PLATFORMS_DIR)
+      .sort()
+      .filter((d) => statSync(join(PLATFORMS_DIR, d)).isDirectory())
+      .flatMap((pack) =>
+        readdirSync(join(PLATFORMS_DIR, pack))
+          .filter((f) => f.endsWith(".sql"))
+          .sort()
+          .map((f) => join(PLATFORMS_DIR, pack, f)),
+      )
+  : [];
+
+const SQL_FILES = [...CORE_FILES, ...PACK_FILES];
 
 async function main(): Promise<number> {
   const url = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;

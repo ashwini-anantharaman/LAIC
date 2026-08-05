@@ -9,7 +9,7 @@
  *
  * Retrieved chunks conform to the generated M0 `KnowledgeChunk` contract.
  */
-import type { KnowledgeChunk } from "../../contracts/index.js";
+import type { KnowledgeChunk } from "../../contracts/generated/index";
 
 export type ChunkType = NonNullable<KnowledgeChunk["chunkType"]>;
 export type Difficulty = NonNullable<KnowledgeChunk["difficulty"]>;

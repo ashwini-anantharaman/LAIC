@@ -12,18 +12,18 @@
  */
 import { randomUUID } from "node:crypto";
 import express, { type Express, type Request, type Response } from "express";
-import { validate, CONTRACTS_SCHEMA_VERSION } from "../contracts/index.js";
-import type { ActivityEvent } from "../contracts/index.js";
-import { InMemoryEventLogRepo, type EventLogRepo } from "../platform/events/index.js";
-import { ProfileRegistry } from "../platform/studio/index.js";
+import { validate, CONTRACTS_SCHEMA_VERSION } from "../contracts/index";
+import type { ActivityEvent } from "../contracts/index";
+import { InMemoryEventLogRepo, type EventLogRepo } from "../platform/events/index";
+import { ProfileRegistry } from "../platform/studio/index";
 import {
   buildObservation,
   InMemoryObservationStore,
   type ObservationStore,
-} from "../platform/observation/index.js";
-import type { EvaluationResult } from "../platform/types/index.js";
-import type { ChatOrchestrator } from "../platform/chat/index.js";
-import { defaultChatSessionFactory, type ChatSessionFactory } from "./demoChatSession.js";
+} from "../platform/observation/index";
+import type { EvaluationResult } from "../platform/types/index";
+import type { ChatOrchestrator } from "../platform/chat/index";
+import { defaultChatSessionFactory, type ChatSessionFactory } from "./demoChatSession";
 
 export interface CoachServiceOptions {
   /** Inject a durable event log (e.g. Postgres) in production; defaults to in-memory. */

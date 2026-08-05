@@ -2,7 +2,7 @@
  * Zone 1 — Platform core: learner model types.
  * Domain-agnostic. Skill/concept IDs are opaque strings supplied by domains.
  */
-import type { FeedbackStyle, ExplanationDepth } from "../types/index.js";
+import type { FeedbackStyle, ExplanationDepth } from "../types/index";
 
 export type Mastery =
   | "not_started"

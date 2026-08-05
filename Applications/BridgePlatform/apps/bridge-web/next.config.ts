@@ -28,11 +28,19 @@ const nextConfig: NextConfig = {
     "@bridge/nexus-client",
     "@bridge/pg-stores",
     "@bridge/sayc-template",
+    "@bridge/girkar-template",
     "@bridge/profiles",
     "@bridge/sessions",
     "@bridge/table-config",
     "@bridge/table-ui",
     "@laic/learner-contracts",
+    // The coaching engine, consumed as TypeScript source via `@laic/coach/core`
+    // — the domain-free entrypoint, which by construction pulls no dependency
+    // and no bridge code (Components/generalizable-coach/core.ts).
+    "@laic/coach",
+    "@laic/library-core",
+    "@laic/library-ui",
+    "@laic/kb-core",
   ],
   experimental: {
     serverActions: {
@@ -40,6 +48,10 @@ const nextConfig: NextConfig = {
       // request bodies at ~4.5 MB — we stop just under it and reject larger
       // files with a readable error in the action itself.
       bodySizeLimit: "4mb",
+      // Dev behind a tunnel (phone testing): the Origin header carries the
+      // tunnel hostname while Host is localhost — allow it or every form
+      // posts "Invalid Server Actions request".
+      allowedOrigins: ["*.trycloudflare.com"],
     },
   },
 };

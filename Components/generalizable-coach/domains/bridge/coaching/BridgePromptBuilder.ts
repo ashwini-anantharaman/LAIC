@@ -13,8 +13,8 @@ import {
   type BuiltPrompt,
   type PromptInput,
   type PromptStrategy,
-} from "../../../platform/llm/index.js";
-import type { CommonCoachPackage } from "../../../platform/types/index.js";
+} from "../../../platform/llm/index";
+import type { CommonCoachPackage } from "../../../platform/types/index";
 
 export class BridgePromptBuilder implements PromptStrategy {
   build(input: PromptInput): BuiltPrompt {

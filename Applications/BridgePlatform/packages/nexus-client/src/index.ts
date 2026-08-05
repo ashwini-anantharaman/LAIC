@@ -25,6 +25,7 @@ export {
   ADMIN_AREA_ROLES,
   canAccessAdminArea,
   hasAnyRole,
+  hasAnyCapability,
   hasPermission,
   PermissionError,
   requirePermission,

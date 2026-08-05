@@ -3,8 +3,8 @@
  * strings so tests can assert the correct level was requested without a
  * network call.
  */
-import type { LLMLike } from "../../../platform/llm/index.js";
-import type { BuiltPrompt } from "../../../platform/llm/index.js";
+import type { LLMLike } from "../../../platform/llm/index";
+import type { BuiltPrompt } from "../../../platform/llm/index";
 
 export class MockLLM implements LLMLike {
   public calls: BuiltPrompt[] = [];

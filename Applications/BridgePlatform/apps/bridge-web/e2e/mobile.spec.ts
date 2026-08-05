@@ -18,15 +18,18 @@ test("mobile lobby renders with the tab bar and deals via Quickplay", async ({
   // Tab bar present on the lobby.
   await expect(page.getByRole("link", { name: /Guide/ })).toBeVisible();
 
-  // Deal a fresh board — quickPlayAction with mobile=1 lands on /m/table.
+  // Deal a fresh board — quickPlayAction with mobile=1 lands on /m/table, which
+  // now redirects to the one table experience (/bridge/table2; owner decision
+  // 2026-07-30: the design-component table is the table on every screen size).
   await page.getByRole("button", { name: /Deal a fresh board|Quickplay/ }).click();
-  await page.waitForURL(/\/m\/table\/bs_/, { timeout: 30_000 });
+  await page.waitForURL(/\/bridge\/table2\/bs_/, { timeout: 30_000 });
 
-  // Felt chrome: toolbar pills + no tab bar on the table.
+  // The phone-tier table renders its reserved coach panel (honest empty state).
+  // (The redirect leaves the /m shell for /bridge/table2, so the mobile tab bar
+  //  no longer applies here — the single table wears the /bridge chrome.)
   await expect(
-    page.getByRole("button", { name: /Start automatic play|Pause automatic play/ }),
+    page.getByText("Coach commentary appears here as the deal goes on."),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: /Guide/ })).toHaveCount(0);
 });
 
 test("mobile screens render real data", async ({ page, context }) => {
@@ -41,14 +44,18 @@ test("mobile screens render real data", async ({ page, context }) => {
   await expect(page.getByText("How it fits together")).toBeVisible();
 });
 
-test("mobile table renders the BBO felt with no skin toggle", async ({ page, context }) => {
+test("mobile Quickplay lands on the one table — no BBO view or skin toggle", async ({ page, context }) => {
   await signInAs(context, "user_reviewer_rhea");
   await page.goto("/m/play");
   await page.getByRole("button", { name: /Deal a fresh board|Quickplay/ }).click();
-  await page.waitForURL(/\/m\/table\/bs_/);
+  // /m/table redirects to the single table2 experience.
+  await page.waitForURL(/\/bridge\/table2\/bs_/, { timeout: 30_000 });
 
+  // The learner's table exposes no BBO-view switch and no skin toggle.
   await expect(page.getByRole("link", { name: "Switch to BBO view" })).toHaveCount(0);
   expect(page.url()).not.toContain("skin=");
-  // The felt renders the BBO auction header letters.
-  await expect(page.getByText("W", { exact: true }).first()).toBeVisible();
+  // The one table renders its phone-tier coach panel.
+  await expect(
+    page.getByText("Coach commentary appears here as the deal goes on."),
+  ).toBeVisible();
 });

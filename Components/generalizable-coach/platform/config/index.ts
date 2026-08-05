@@ -3,4 +3,4 @@ export {
   policyProfileToLayer,
   platformDefaultPolicy,
   type PolicyLayer,
-} from "./resolvePolicy.js";
+} from "./resolvePolicy";

@@ -8,8 +8,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createCoachService } from "../../api/coachService.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
+import { createCoachService } from "../../api/coachService";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index";
 
 let server: Server;
 let base: string;

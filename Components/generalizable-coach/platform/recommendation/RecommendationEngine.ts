@@ -5,9 +5,9 @@
  * an owning-platform object id so the host renders it. M3 ships the starter
  * rules; the graded/LLM-assisted variants come later.
  */
-import type { Recommendation } from "../../contracts/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
-import type { EvaluationResult } from "../types/index.js";
+import type { Recommendation } from "../../contracts/generated/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/version";
+import type { EvaluationResult } from "../types/index";
 
 export interface RecommendationContext {
   learnerId: string;

@@ -12,12 +12,11 @@
  * A host that wants real model text injects its own LLMLike (e.g. a proxy) via
  * CoachSession's `llm` option; this is the zero-config default.
  */
-import type { LLMLike } from "../llm/index.js";
-import type { BuiltPrompt } from "../llm/index.js";
+import type { LLMLike } from "../llm/index";
+import type { BuiltPrompt } from "../llm/index";
 
 function firstMatch(text: string, re: RegExp): string | null {
-  const m = text.match(re);
-  return m ? m[1].trim() : null;
+  return text.match(re)?.[1]?.trim() ?? null;
 }
 
 export class HeuristicLLM implements LLMLike {

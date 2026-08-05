@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createServer } from "./createServer.js";
-import { buildBridgeCoach, MockLLM } from "../coaching/index.js";
+import { createServer } from "./createServer";
+import { buildBridgeCoach, MockLLM } from "../coaching/index";
 
 let server: Server;
 let base: string;

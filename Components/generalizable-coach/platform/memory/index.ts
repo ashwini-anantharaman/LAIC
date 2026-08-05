@@ -3,4 +3,4 @@ export {
   type InteractionMemory,
   type InteractionRecord,
   type RecallQuery,
-} from "./InteractionMemory.js";
+} from "./InteractionMemory";

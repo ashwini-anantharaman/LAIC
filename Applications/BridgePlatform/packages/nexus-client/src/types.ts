@@ -18,4 +18,11 @@ export class NexusContextError extends Error {
 
 export type NexusClientConfig =
   | { mode: "stub"; devUserId: string }
-  | { mode: "http"; baseUrl: string; accessToken: string; fetchImpl?: typeof fetch };
+  | {
+      mode: "http";
+      baseUrl: string;
+      accessToken: string;
+      /** Scope the context to one Nexus program (the launch origin). */
+      programId?: string;
+      fetchImpl?: typeof fetch;
+    };

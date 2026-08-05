@@ -8,9 +8,9 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { BundledKnowledgeSource } from "../../platform/knowledge-source/index.js";
-import { StudyTutor } from "../../platform/tutor/index.js";
-import { memoryLessonScope, COURSE_LEARNING_DOMAIN_ID } from "../../domains/course_learning/index.js";
+import { BundledKnowledgeSource } from "../../platform/knowledge-source/index";
+import { StudyTutor } from "../../platform/tutor/index";
+import { memoryLessonScope, COURSE_LEARNING_DOMAIN_ID } from "../../domains/course_learning/index";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(

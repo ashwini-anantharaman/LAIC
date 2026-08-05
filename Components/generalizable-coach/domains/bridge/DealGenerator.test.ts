@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { DealGenerator } from "./DealGenerator.js";
-import { BridgeEvaluator } from "./evaluator/BridgeEvaluator.js";
-import * as C from "./plugin/constants.js";
-import type { BridgeGameState } from "./plugin/events.js";
+import { DealGenerator } from "./DealGenerator";
+import { BridgeEvaluator } from "./evaluator/BridgeEvaluator";
+import * as C from "./plugin/constants";
+import type { BridgeGameState } from "./plugin/events";
 
 const evaluator = new BridgeEvaluator();
 const gen = new DealGenerator(evaluator);

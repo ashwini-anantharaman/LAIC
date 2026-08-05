@@ -3,8 +3,8 @@ import {
   detectWeakSkills,
   recommendNextSkill,
   summarizeLearner,
-} from "./index.js";
-import type { DomainLearnerState, LearnerProfile, SkillState } from "../learner-model/types.js";
+} from "./index";
+import type { DomainLearnerState, LearnerProfile, SkillState } from "../learner-model/types";
 
 function skill(over: Partial<SkillState> & { skillId: string }): SkillState {
   return {

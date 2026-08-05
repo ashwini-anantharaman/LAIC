@@ -3,23 +3,29 @@ import { NexusContextError, type NexusClient } from "./types";
 
 /**
  * Real Nexus adapter. Targets `GET /api/platform/bridge/context` on
- * TheNexusPlatform backend (endpoint lands in Phase 10) with a Supabase JWT.
- *
- * Skeleton status: request/response wiring is real; the endpoint does not
- * exist yet. Do not enable `NEXUS_CLIENT_MODE=http` before Phase 10.
+ * TheNexusPlatform backend (LIVE — Nexus integration Phase 3) with a Nexus
+ * session token (dev demo-auth token today, Supabase JWT once shared auth
+ * lands). Nexus derives access from the caller's program-role area grant:
+ * bridge:view→bridge_learner, edit→bridge_coach, comment→bridge_reviewer,
+ * program/org admin→bridge_program_admin; 403 when the role doesn't grant
+ * bridge or the program's bridge feature is off.
  */
 export class HttpNexusClient implements NexusClient {
   constructor(
     private readonly options: {
       baseUrl: string;
       accessToken: string;
+      /** Scope the context to one Nexus program (the launch origin). */
+      programId?: string;
       fetchImpl?: typeof fetch;
     },
   ) {}
 
   async getBridgeContext(): Promise<NexusBridgeContext> {
-    const { baseUrl, accessToken, fetchImpl = fetch } = this.options;
-    const url = `${baseUrl.replace(/\/$/, "")}/api/platform/bridge/context`;
+    const { baseUrl, accessToken, programId, fetchImpl = fetch } = this.options;
+    const url =
+      `${baseUrl.replace(/\/$/, "")}/api/platform/bridge/context` +
+      (programId ? `?program_id=${encodeURIComponent(programId)}` : "");
 
     let response: Response;
     try {

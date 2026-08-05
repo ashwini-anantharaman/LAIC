@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { LiveCardPlayEvaluator, type LiveCardPlayState } from "../LiveCardPlayEvaluator.js";
-import { LocalDoubleDummyOracle } from "./LocalDoubleDummyOracle.js";
+import { LiveCardPlayEvaluator, type LiveCardPlayState } from "../LiveCardPlayEvaluator";
+import { LocalDoubleDummyOracle } from "./LocalDoubleDummyOracle";
 
 // End-game (2 cards each), spades trump. South holds HA H2; dummy North has a
 // small trump. Cashing HA then giving North a ruff wins 2 tricks; leading the

@@ -14,7 +14,7 @@
  * "hybrid" design: the oracle judges correctness, principles + knowledge + LLM
  * explain the why.
  */
-import type { LiveCardPlayState } from "./LiveCardPlayEvaluator.js";
+import type { LiveCardPlayState } from "./LiveCardPlayEvaluator";
 
 export interface OracleVerdict {
   /** tricks the learner's side takes if the played card is chosen, then best play by all */

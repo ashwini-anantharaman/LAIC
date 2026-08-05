@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { DealerControl } from "@/components/mobile/DealerControl";
 import { requireFeature } from "@/lib/access";
 import { ensureSeeds, kbStore } from "@/lib/kb";
-import { getBridgeContext } from "@/lib/nexus";
+import { getBridgeContext, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { libraryStore, sessionService } from "@/lib/sessions";
 import { resumePlayEntryAction } from "@/app/bridge/library/actions";
 import { quickPlayAction } from "@/app/bridge/table/actions";
@@ -37,11 +37,22 @@ export default async function MobilePlayPage() {
   await requireFeature(context, "page.play");
   await ensureSeeds();
 
+  // 0019/0022: org+program-scoped reads; plays and sessions are personal.
+  const programId = (await nexusProgramIdOf()) ?? undefined;
+  const scope = {
+    programOrganizationId: orgScopeOf(context),
+    ...(programId ? { nexusProgramId: programId } : {}),
+  };
+  const playScope = {
+    ...scope,
+    scopeLevel: "user" as const,
+    createdBy: context.nexusUserId,
+  };
   const [kbs, recent, plays] = await Promise.all([
     kbStore().listKbs(),
-    sessionService().listRecent(),
+    sessionService().listRecent(scope),
     libraryStore()
-      .listEntries("play")
+      .listEntries("play", playScope)
       .then((e) => e.slice(0, 8))
       .catch(() => [] as Awaited<ReturnType<ReturnType<typeof libraryStore>["listEntries"]>>),
   ]);

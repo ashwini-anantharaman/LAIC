@@ -1,4 +1,13 @@
-import type { AppType, EditorTab, PreviewScreen, QuestionType, RegistrationPath } from "../types";
+import type {
+  AppShellConfig,
+  AppType,
+  ContentConfig,
+  ContentPlatform,
+  EditorTab,
+  PreviewScreen,
+  QuestionType,
+  RegistrationPath,
+} from "../types";
 
 export const EDITOR_TABS: { id: EditorTab; label: string }[] = [
   { id: "identity", label: "Identity" },
@@ -6,6 +15,7 @@ export const EDITOR_TABS: { id: EditorTab; label: string }[] = [
   { id: "auth", label: "Auth" },
   { id: "onboarding", label: "Onboarding" },
   { id: "home", label: "Home" },
+  { id: "content", label: "Content" },
 ];
 
 export const PREVIEW_STEPS: { id: PreviewScreen; label: string }[] = [
@@ -44,4 +54,23 @@ export function uid(): string {
 /** Replace {name} / {role} tokens in preview copy. */
 export function interpolate(text: string, name: string, role: string): string {
   return text.replace(/\{name\}/g, name).replace(/\{role\}/g, role);
+}
+
+/** Preview glyph + copy for each connectable platform. */
+export const PLATFORM_META: Record<ContentPlatform, { name: string; glyph: string }> = {
+  learning: { name: "Learning Platform", glyph: "▤" },
+  bridge: { name: "Bridge Platform", glyph: "♠" },
+};
+
+const DEFAULT_CONTENT: ContentConfig = {
+  sectionTitle: "Your content",
+  connections: [
+    { platform: "learning", enabled: false, label: "My Courses", description: "Lessons, quizzes, and progress" },
+    { platform: "bridge", enabled: false, label: "Play Bridge", description: "Practice at the table" },
+  ],
+};
+
+/** Content section with a safe default — configs published before it existed have none. */
+export function contentOf(config: AppShellConfig): ContentConfig {
+  return config.content ?? structuredClone(DEFAULT_CONTENT);
 }

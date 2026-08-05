@@ -2,7 +2,38 @@ export type SignupType = "org" | "administrator" | "teacher" | "student";
 export type StageKey = "international" | "national" | "state" | "chapter";
 export type JoinCodeKind = "student" | "teacher" | "administrator";
 export type Permission = "Can Edit" | "Can View" | "Per Level";
-export type ProgramCategory = "game" | "edu";
+/** Org-defined free text ("game" keeps its Coach/Player role words). */
+export type ProgramCategory = string;
+
+// Per-program feature accessibility. An org admin picks which of these areas are
+// accessible inside a program at creation (editable later); role creation then
+// only offers the enabled areas. Keys match the role-permission areas (RoleArea).
+export type ProgramFeatureKey =
+  | "learning"
+  | "bridge"
+  | "appbuilder"
+  | "community"
+  | "teams"
+  | "partners";
+export type ProgramFeatures = Record<ProgramFeatureKey, boolean>;
+
+export const PROGRAM_FEATURES: { key: ProgramFeatureKey; label: string }[] = [
+  { key: "learning", label: "Content Studio" },
+  { key: "bridge", label: "Bridge Platform" },
+  { key: "appbuilder", label: "App Studio" },
+  { key: "community", label: "Community" },
+  { key: "teams", label: "People" },
+  { key: "partners", label: "Partners" },
+];
+
+export const DEFAULT_PROGRAM_FEATURES: ProgramFeatures = {
+  learning: true,
+  bridge: true,
+  appbuilder: true,
+  community: true,
+  teams: true,
+  partners: true,
+};
 export type DeliveryMethod = "join_code" | "email_direct";
 export type IntegrationPermissionLevel = "can_edit" | "can_view" | "per_level";
 
@@ -11,14 +42,41 @@ export interface Program {
   org_id: string;
   name: string;
   category: ProgramCategory;
+  /** Optional extra categories; grouping (stack view) uses the primary only. */
+  secondary_categories?: string[];
   description?: string;
   icon?: string;
   instructor_label?: string;
   learner_label?: string;
+  features?: ProgramFeatures;
   course_count?: number;
   learner_count?: number;
   instructor_count?: number;
+  /** Per-program platform toggles; absent/true = enabled where the org allows it. */
+  platforms?: Record<string, boolean> | null;
+  /**
+   * Program's own branding; null = inherit the organization's. `cover` is the
+   * card background image on the Programs page (distinct from `logo`).
+   */
+  branding?: { accent: string | null; logo: string | null; cover?: string | null; favicon?: string | null } | null;
+  /** Platform lock: may this program's own admins/members open the platform
+   *  runtimes (Learning, App Studio, Bridge)? Absent/true = yes. Org admins are
+   *  never restricted by this. */
+  platforms_open?: boolean;
+  /** Per-platform "Partial" provisioning: a capability subset for a platform
+   *  area (learning/bridge) that clamps what roles can grant. Absent = No/Full. */
+  feature_access?: Record<string, { capabilities: string[] }> | null;
+  /** Partner ("sister program") fields — a partner is a program connected to
+   *  another program, with its own slug/login. Absent/false = ordinary program. */
+  is_partner?: boolean;
+  connected_program_id?: string | null;
+  slug?: string | null;
 }
+
+/** Platform feature keys that support the No/Partial/Full provisioning control
+ *  (they have their own Access Catalog) — matches the role builder's 3-way. */
+export const FEATURE_ACCESS_KEYS = ["learning", "bridge"] as const;
+export const FEATURE_ACCESS_PROVIDER: Record<string, string> = { learning: "learning", bridge: "bridge" };
 
 export interface Integration {
   id: string;
@@ -36,12 +94,15 @@ export interface AuthUser {
   display_name?: string;
   role: string;
   access_token: string;
+  /** Student session (learner participant, no memberships) — apps only, never this console. */
+  participant_only?: boolean;
 }
 
 export interface MembershipSummary {
   id: string;
   org_id: string;
   org_name: string;
+  org_slug?: string | null;
   role: string;
   stage_node_id?: string;
   stage_name?: string;
@@ -71,10 +132,12 @@ export interface Invitation {
   id: string;
   organization_id: string;
   organization_name?: string;
+  organization_slug?: string | null;
   program_id?: string;
   offering_id?: string;
   group_id?: string;
   email?: string;
+  display_name?: string | null;
   role: string;
   status: string;
   expires_at?: string;
@@ -141,6 +204,8 @@ export interface ProgramOrgAffiliation {
   visibility?: string;
   status: string; // invited | active | paused | archived
   created_at?: string;
+  // The partner's granted, catalog-based access to the program (a gated view).
+  metadata_json?: { access?: { capabilities?: string[]; perms?: Record<string, unknown>; updatedAt?: string } } & Record<string, unknown>;
   // Enriched on the incoming-requests inbox only:
   program_name?: string;
   from_organization_id?: string; // the inviting org (Org A)
@@ -161,6 +226,8 @@ export interface MeResponse {
   display_name?: string;
   role: string;
   memberships: MembershipSummary[];
+  /** Confined Nexus operator: a platform-scope custom role (null otherwise). */
+  nexus_role?: { role_id: string; role_name: string | null; perms: Record<string, string> } | null;
 }
 
 export interface DashboardStageTab {
@@ -233,7 +300,8 @@ export type RegistrationStatus =
   | "rejected"
   | "waitlisted"
   | "withdrawn"
-  | "directly_added";
+  | "directly_added"
+  | "removed";
 export type ParticipantType = "learner" | "coach" | "reviewer" | "advisor" | "volunteer" | "organizer" | "instructor";
 
 export interface SignupField {
@@ -269,6 +337,7 @@ export interface Offering {
   registered_app_id?: string;
   external_runtime_url?: string;
   participant_label_singular?: string;
+  content_package?: Record<string, unknown> | null;
   participant_label_plural?: string;
   metadata: Record<string, unknown>;
   registration_count: number;
@@ -290,8 +359,8 @@ export interface RegisteredApp {
   launch_context: Record<string, unknown>;
 }
 
-// ── App Shell (Nexus v0.4 §6) ───────────────────────────────────────────────
-// v0.4 re-adopts the App Shell as the single configurable app object. The
+// ── App Studio (Nexus v0.4 §6) ───────────────────────────────────────────────
+// v0.4 re-adopts the App Studio as the single configurable app object. The
 // backend still persists a RegisteredApp; the extra shell configuration
 // (appType, theme, navigation, feature flags) is carried inside the app's
 // `launch_context.shell` blob until the backend grows dedicated columns.

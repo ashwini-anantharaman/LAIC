@@ -17,14 +17,14 @@ import type {
   EvaluatorContract,
   KnowledgeChunk,
   HintLevel,
-} from "../types/index.js";
-import type { LearnerStore } from "../learner-model/index.js";
-import type { KnowledgeRetriever } from "../knowledge/index.js";
-import type { ResponseGenerator } from "../llm/index.js";
+} from "../types/index";
+import type { LearnerStore } from "../learner-model/index";
+import type { KnowledgeRetriever } from "../knowledge/index";
+import type { ResponseGenerator } from "../llm/index";
 import {
   InterventionPolicyEngine,
   type InterventionDecision,
-} from "./InterventionPolicyEngine.js";
+} from "./InterventionPolicyEngine";
 
 /** Optional session logging hook — implemented by the SessionEngine (Step 9). */
 export interface SessionLogger {

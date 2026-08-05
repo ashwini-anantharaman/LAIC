@@ -37,7 +37,7 @@ export function SeatsPanel({
   );
 
   return (
-    <div className="w-[164px] rounded border border-neutral-600 bg-black/40 p-1.5 text-white">
+    <div className="w-full rounded border border-neutral-600 bg-black/40 p-1.5 text-white">
       <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-wide text-neutral-300">
         Seats
       </p>
@@ -50,7 +50,11 @@ export function SeatsPanel({
             <span className="truncate text-[12px]">{seatLabels[seat]}</span>
             <span className="ml-auto text-[9px] text-neutral-400">▾</span>
           </summary>
-          <div className="absolute left-0 z-30 mt-1 w-52 rounded border border-neutral-300 bg-white p-1 text-black shadow-lg">
+          {/* On a phone this panel lives inside the ☰ menu, which scrolls: an
+              absolute dropdown would be clipped by it, so the options expand
+              in flow. From `md` up the panel is in the rail, where it must
+              overlay the felt instead of pushing the rail's chips around. */}
+          <div className="mt-1 w-full rounded border border-neutral-300 bg-white p-1 text-black shadow-lg md:absolute md:left-0 md:z-30 md:w-52">
             <p className="px-1.5 pb-1 pt-0.5 text-[9px] uppercase tracking-wide text-neutral-400">
               swap (forks this board)
             </p>

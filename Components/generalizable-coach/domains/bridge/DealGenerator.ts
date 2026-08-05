@@ -6,9 +6,9 @@
  * recommendation matches the requested target skill — so every emitted deal is
  * guaranteed consistent with the evaluator (Step 4).
  */
-import { BridgeEvaluator } from "./evaluator/BridgeEvaluator.js";
-import { parseBid, type SuitLetter } from "./evaluator/hand.js";
-import type { BridgeGameState, Seat } from "./plugin/events.js";
+import { BridgeEvaluator } from "./evaluator/BridgeEvaluator";
+import { parseBid, type SuitLetter } from "./evaluator/hand";
+import type { BridgeGameState, Seat } from "./plugin/events";
 
 export interface Deal {
   dealId: string;

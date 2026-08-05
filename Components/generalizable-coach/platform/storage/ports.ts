@@ -7,8 +7,8 @@
  * persistence. Domain-agnostic — the platform never knows which drawer is behind
  * the port.
  */
-import type { LearnerProfile } from "../learner-model/types.js";
-import type { Session } from "../session/SessionEngine.js";
+import type { LearnerProfile } from "../learner-model/types";
+import type { Session } from "../session/SessionEngine";
 
 /** Persistence for learner profiles: read one, write one. */
 export interface LearnerRepo {

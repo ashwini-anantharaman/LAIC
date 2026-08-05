@@ -6,6 +6,7 @@ import { HttpError } from "./httpError";
 import * as local from "./platformLocalStore";
 import { StageNode } from "./permissions";
 import { getSettings } from "./config";
+import type { ProgramFeatures } from "./schemas";
 import { requireClient } from "./supabaseClient";
 import { dbEnabled } from "./db/client";
 import * as pg from "./db/identityRepo";
@@ -194,7 +195,7 @@ export async function createProfile(
 export async function ensureOrgProfile(
   authUserId: string,
   orgId: string,
-  opts: { email?: string | null; role?: string; displayName?: string | null } = {},
+  opts: { email?: string | null; role?: string; displayName?: string | null; allowSecondOrg?: boolean } = {},
 ): Promise<string> {
   if (usePg()) return pg.ensureOrgProfile(authUserId, orgId, opts);
   const p = await createProfile(authUserId, opts.email ?? "", opts.role ?? "student", opts.displayName ?? null);
@@ -247,12 +248,23 @@ export async function getOrganization(orgId: string): Promise<Row | null> {
   return rows.length > 0 ? rows[0] : null;
 }
 
+export async function getOrganizationBySlug(slug: string): Promise<Row | null> {
+  if (usePg()) return pg.getOrganizationBySlug(slug);
+  if (await useLocal()) {
+    return local.localListAllOrganizations().find((o) => o.slug === slug) ?? null;
+  }
+  const client = requireClient();
+  const rows = await _select(client.from("organizations").select("*").eq("slug", slug).limit(1));
+  return rows.length > 0 ? rows[0] : null;
+}
+
 export async function updateOrgTheme(
   orgId: string,
   accentColor: string | null | undefined,
   logoUrl: string | null | undefined,
+  faviconUrl?: string | null | undefined,
 ): Promise<Row> {
-  if (usePg()) return tpg.updateOrgTheme(orgId, accentColor, logoUrl);
+  if (usePg()) return tpg.updateOrgTheme(orgId, accentColor, logoUrl, faviconUrl);
   if (await useLocal()) return local.localUpdateOrgTheme(orgId, accentColor, logoUrl);
   const client = requireClient();
   const org = await getOrganization(orgId);
@@ -261,11 +273,58 @@ export async function updateOrgTheme(
   const theme = { ...(settings.theme ?? {}) };
   if (accentColor != null) theme.accent_color = accentColor;
   if (logoUrl != null) theme.logo_url = logoUrl;
+  if (faviconUrl != null) theme.favicon_url = faviconUrl;
   settings.theme = theme;
   return _mutateOne(
     client.from("organizations").update({ settings }).eq("id", orgId).select("*"),
     "Failed to update organization theme",
   );
+}
+
+// ── Capability envelope (§3.5 governance) — a Nexus operator's boundary
+// controls over what an org may create: program categories, offering types,
+// platform features. Stored in organizations.settings.capabilities.
+function _mergeCapabilities(base: Row, patch: Row): Row {
+  const merge = (a: Row, b: Row): Row => ({ ...a, ...b });
+  const pickBool = (...vals: unknown[]): boolean => {
+    for (const v of vals) if (typeof v === "boolean") return v;
+    return true;
+  };
+  return {
+    programTypes: merge((tpg.DEFAULT_CAPABILITIES.programTypes as Row), merge((base.programTypes as Row) ?? {}, (patch.programTypes as Row) ?? {})),
+    offeringTypes: merge((tpg.DEFAULT_CAPABILITIES.offeringTypes as Row), merge((base.offeringTypes as Row) ?? {}, (patch.offeringTypes as Row) ?? {})),
+    features: merge((tpg.DEFAULT_CAPABILITIES.features as Row), merge((base.features as Row) ?? {}, (patch.features as Row) ?? {})),
+    featureAccess: "featureAccess" in patch ? ((patch.featureAccess as Row) ?? {}) : ((base.featureAccess as Row) ?? {}),
+    adminsEnterPrograms: pickBool(patch.adminsEnterPrograms, base.adminsEnterPrograms),
+  };
+}
+
+export async function getOrgCapabilities(orgId: string): Promise<Row> {
+  if (usePg()) return tpg.getOrgCapabilities(orgId);
+  const org = (await useLocal()) ? local.localGetOrganization(orgId) : await getOrganization(orgId);
+  if (!org) throw new HttpError(404, "Organization not found");
+  const settings = (org.settings as Row) ?? {};
+  return _mergeCapabilities({}, (settings.capabilities as Row) ?? {});
+}
+
+export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row> {
+  if (usePg()) return tpg.setOrgCapabilities(orgId, patch);
+  const org = (await useLocal()) ? local.localGetOrganization(orgId) : await getOrganization(orgId);
+  if (!org) throw new HttpError(404, "Organization not found");
+  const settings: Row = { ...((org.settings as Row) ?? {}) };
+  const merged = _mergeCapabilities({}, { ...((settings.capabilities as Row) ?? {}) });
+  const next = _mergeCapabilities(merged, patch);
+  settings.capabilities = next;
+  if (await useLocal()) {
+    local.localSetOrgSettings(orgId, settings);
+  } else {
+    const client = requireClient();
+    await _mutateOne(
+      client.from("organizations").update({ settings }).eq("id", orgId).select("*"),
+      "Failed to update organization capabilities",
+    );
+  }
+  return next;
 }
 
 export async function getJoinCode(code: string): Promise<Row | null> {
@@ -306,6 +365,94 @@ export async function createProgram(
       })
       .select("*"),
     "Failed to create program",
+  );
+}
+
+// Platform settings + program branding (DB-backed; routes guard dbEnabled).
+export async function getPlatformSetting(key: string): Promise<Row | null> {
+  return tpg.getPlatformSetting(key);
+}
+export async function setPlatformSetting(key: string, value: Row): Promise<Row> {
+  return tpg.setPlatformSetting(key, value);
+}
+export async function updateOrgName(orgId: string, name: string): Promise<Row> {
+  if (usePg()) return tpg.updateOrgName(orgId, name);
+  if (await useLocal()) return local.localUpdateOrgName(orgId, name);
+  const client = requireClient();
+  return _mutateOne(
+    client.from("organizations").update({ name }).eq("id", orgId).select("*"),
+    "Failed to rename organization",
+  );
+}
+export async function updateProgramCategories(
+  programId: string,
+  patch: { category?: string; secondaryCategories?: string[] },
+): Promise<Row | null> {
+  return tpg.updateProgramCategories(programId, patch);
+}
+export async function setProgramBranding(
+  programId: string,
+  branding: { accent?: string | null; logo?: string | null; cover?: string | null; favicon?: string | null } | null,
+): Promise<Row | null> {
+  return tpg.setProgramBranding(programId, branding);
+}
+export async function updateProgramName(programId: string, name: string): Promise<Row | null> {
+  return tpg.updateProgramName(programId, name);
+}
+
+// Org-defined program categories (DB-backed; routes guard dbEnabled). Categories
+// are name-identified with an optional `parent` for nesting (CategoryNode).
+export async function listOrgCategories(orgId: string): Promise<tpg.CategoryNode[]> {
+  return tpg.listOrgCategories(orgId);
+}
+export async function addOrgCategory(orgId: string, name: string, parent?: string | null): Promise<tpg.CategoryNode[]> {
+  return tpg.addOrgCategory(orgId, name, parent);
+}
+export async function setOrgCategoryParent(orgId: string, name: string, parent: string | null): Promise<tpg.CategoryNode[]> {
+  return tpg.setOrgCategoryParent(orgId, name, parent);
+}
+export async function removeOrgCategory(orgId: string, name: string): Promise<tpg.CategoryNode[]> {
+  return tpg.removeOrgCategory(orgId, name);
+}
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<tpg.CategoryNode[]> {
+  return tpg.renameOrgCategory(orgId, from, to);
+}
+
+// ── Partners ("sister programs"; DB-backed only) ────────────────────────────
+export async function createPartner(orgId: string, opts: {
+  name: string; connectedProgramId: string; description?: string | null; slug?: string;
+  features?: Row; featureAccess?: Record<string, { capabilities: string[] }> | null;
+}): Promise<Row> {
+  return tpg.createPartner(orgId, opts);
+}
+export async function listPartnersForProgram(programId: string): Promise<Row[]> {
+  return tpg.listPartnersForProgram(programId);
+}
+export async function getPartnerBySlug(slug: string): Promise<Row | null> {
+  return tpg.getPartnerBySlug(slug);
+}
+
+/** Per-program platform enablement — DB-backed only (route guards dbEnabled). */
+export async function updateProgramFeatures(
+  programId: string,
+  features: ProgramFeatures,
+  platformsOpen?: boolean,
+  featureAccess?: Record<string, { capabilities: string[] }> | null,
+): Promise<Row | null> {
+  if (usePg()) return tpg.updateProgramFeatures(programId, features, platformsOpen, featureAccess);
+  if (await useLocal()) return local.localUpdateProgramFeatures(programId, features);
+  const client = requireClient();
+  const existing = await getProgram(programId);
+  if (!existing) return null;
+  const meta = {
+    ...((existing.metadata_json as Row) ?? {}),
+    features,
+    ...(platformsOpen === undefined ? {} : { platforms_open: platformsOpen }),
+    ...(featureAccess === undefined ? {} : { feature_access: featureAccess ?? {} }),
+  };
+  return _mutateOne(
+    client.from("programs").update({ metadata_json: meta }).eq("id", programId).select("*"),
+    "Failed to update program features",
   );
 }
 
@@ -864,6 +1011,18 @@ export async function updateMemberAccess(memberId: string, access: string): Prom
   );
 }
 
+/** Remove a membership. PG mode only in practice (Slice-11-era feature). */
+export async function deleteMembership(memberId: string): Promise<boolean> {
+  if (usePg()) return tpg.deleteMembership(memberId);
+  if (await useLocal()) throw new HttpError(501, "This feature requires the database backend");
+  const client = requireClient();
+  await _mutateOne(
+    client.from("org_memberships").delete().eq("id", memberId).select("*"),
+    "Member not found",
+  );
+  return true;
+}
+
 export async function getStageNode(stageId: string): Promise<Row | null> {
   if (usePg()) return tpg.getStageNode(stageId);
   if (await useLocal()) return local.localGetStage(stageId);
@@ -1197,11 +1356,12 @@ export async function revokeApp(appId: string): Promise<Row> {
 
 export async function createRegistration(
   orgId: string,
-  offeringId: string,
+  offeringId: string | null,
   opts: local.RegistrationOptions = {},
+  privileged = false,
 ): Promise<Row> {
-  if (usePg()) return tpg.createRegistration(orgId, offeringId, opts);
-  if (await useLocal()) return local.localCreateRegistration(orgId, offeringId, opts);
+  if (usePg()) return tpg.createRegistration(orgId, offeringId, opts, privileged);
+  if (await useLocal()) return local.localCreateRegistration(orgId, offeringId as string, opts);
   const client = requireClient();
   return _mutateOne(
     client
@@ -1314,6 +1474,26 @@ export async function createParticipant(
   );
 }
 
+export async function removeRegistrationParticipants(registrationId: string): Promise<void> {
+  if (usePg()) return tpg.removeParticipantsByRegistration(registrationId);
+  // Demo/local mode: participant removal is a dev-only no-op.
+}
+
+export async function listRegistrationsByProgram(programId: string, status: string | null = null): Promise<Row[]> {
+  if (usePg()) return tpg.listRegistrationsByProgram(programId, status);
+  return [];
+}
+
+export async function createProgramParticipant(
+  orgId: string,
+  programId: string,
+  opts: local.ParticipantOptions = {},
+  privileged = false,
+): Promise<Row> {
+  if (usePg()) return tpg.createProgramParticipant(orgId, programId, opts, privileged);
+  return { id: null };
+}
+
 export async function listParticipants(
   offeringId: string,
   status: string | null = null,
@@ -1327,20 +1507,65 @@ export async function listParticipants(
 }
 
 /** Mark a registration approved and create (or reuse) its participant record. */
+// ── Approval = access (the student funnel's one gate) ───────────────────────
+
+/**
+ * Link an approved/added registrant to their login. Students are NEVER org
+ * members and hold NO role records — they exist only in the Registrations
+ * funnel, and resolvePlatformAccess grants learner entry straight from their
+ * active participant row. All this does is identity linkage:
+ *
+ *   • find their login (the registration's user_id, else matched by email);
+ *     none yet → they stay "awaiting claim", link completes at claim
+ *   • ensure an org-scoped profile (the id platforms receive as nexusUserId)
+ *
+ * Returns the org-scoped profile id to stamp on the participant, or null.
+ */
+export async function grantStudentAccess(registration: Row): Promise<string | null> {
+  const orgId = registration.organization_id as string;
+  const programId = (registration.program_id as string | null) ?? null;
+  const email = String(registration.email ?? "").trim().toLowerCase();
+  if (!programId) return null; // program-less offering: nothing to grant into
+
+  let authId = (registration.user_id as string | null) ?? null;
+  if (!authId && email) {
+    const profile = await getProfileByEmail(email);
+    if (profile) authId = (profile.auth_user_id as string | undefined) ?? (profile.id as string);
+  }
+  if (!authId) return null; // awaiting claim
+
+  return ensureOrgProfile(authId, orgId, {
+    email: email || null,
+    role: "student",
+    displayName: (registration.name as string | null) ?? null,
+  });
+}
+
 export async function approveRegistration(
   registrationId: string,
   reviewerId: string | null,
 ): Promise<Row> {
   let registration = await getRegistration(registrationId);
   if (!registration) throw new HttpError(404, "Registration not found");
+  const wasApproved = registration.status === "approved";
   registration = await setRegistrationStatus(registrationId, "approved", reviewerId);
+  // Approval = access: link login + Student role + learner membership.
+  // Best-effort: a grant hiccup must not lose the approval itself. Re-approval
+  // re-runs the grant (idempotent repair) but never duplicates the participant.
+  let linkedUserId: string | null = (registration.user_id as string | null) ?? null;
+  try {
+    linkedUserId = (await grantStudentAccess(registration)) ?? linkedUserId;
+  } catch (err) {
+    console.error("approveRegistration: access grant failed", err);
+  }
+  if (wasApproved) return { registration, participant: null };
   const participant = await createParticipant(
     registration.organization_id,
     registration.offering_id,
     {
       programId: registration.program_id ?? null,
       stageNodeId: registration.stage_node_id ?? null,
-      userId: registration.user_id ?? null,
+      userId: linkedUserId,
       participantType: "learner",
       addedByUserId: reviewerId,
       registrationId: registration.id,
@@ -1398,6 +1623,14 @@ export async function listAuditEvents(orgId: string, limit = 50): Promise<Row[]>
       .order("created_at", { ascending: false })
       .limit(limit),
   );
+}
+
+/** Platform operator: every audit event across every org (PG mode only). */
+export async function listAllAuditEvents(limit = 100): Promise<Row[]> {
+  if (usePg()) return tpg.listAllAuditEvents(limit);
+  if (await useLocal()) return local.localListAllAuditEvents(limit);
+  const client = requireClient();
+  return _select(client.from("audit_events").select("*").order("created_at", { ascending: false }).limit(limit));
 }
 
 // ── Entitlements: module access grants for orgs/programs/offerings ──────────

@@ -46,6 +46,8 @@ export default async function PlayersPage({
   const ownerOf = (p: KbPlayer) => p.ownerId ?? p.ownerType;
   const creators = activeKb ? [...new Set(activeKb.players.map(ownerOf))] : [];
   const others = creators.filter((c) => c !== myId);
+  // Own rows read "Mine"; other creators resolve via the stub roster (dev) or
+  // fall back to their raw id until a shared people directory exists.
   const creatorLabel = (id: string) =>
     id === myId ? "Mine" : (stubDisplayName(id) ?? (id === "system" ? "System" : id));
   const myCount = activeKb ? activeKb.players.filter((p) => ownerOf(p) === myId).length : 0;

@@ -72,3 +72,9 @@ Components/Generalizable Coach/domains/bridge/knowledge/*.pdf
 # Vercel project link (bridge-platform deploy)
 .vercel
 .env*
+
+# Playwright MCP test artifacts
+.playwright-mcp/
+
+# Dead SDK-57 scaffold kept locally for reference only
+Applications/bridge-coach-app-sdk57-backup/

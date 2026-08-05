@@ -1,2 +1,2 @@
-export * from "./InterventionPolicyEngine.js";
-export * from "./AdaptiveCoachRuntime.js";
+export * from "./InterventionPolicyEngine";
+export * from "./AdaptiveCoachRuntime";

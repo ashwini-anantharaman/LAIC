@@ -9,6 +9,7 @@ import * as local from "./platformLocalStore";
 import type { Membership } from "./permissions";
 import { createEphemeralClient, requireAdminClient, requireClient } from "./supabaseClient";
 import { dbEnabled } from "./db/client";
+import * as demoAuth from "./db/demoAuthRepo";
 import * as pg from "./db/identityRepo";
 
 type Row = Record<string, any>;
@@ -92,7 +93,7 @@ function _bearerToken(c: Context): string | null {
 
 export async function verifyToken(token: string): Promise<{ id: string; email: string }> {
   if (await demoMode()) {
-    const user = local.localAuthGetUser(token);
+    const user = dbEnabled() ? await demoAuth.getDemoAuthUser(token) : local.localAuthGetUser(token);
     if (user === null) throw new HttpError(401, "Invalid token");
     return { id: user.id, email: user.email };
   }
@@ -207,7 +208,9 @@ export async function getOptionalUser(c: Context): Promise<PlatformUser | null> 
 }
 
 export async function createAuthUser(email: string, password: string): Promise<Row> {
-  if (await demoMode()) return local.localAuthCreateUser(email, password);
+  if (await demoMode()) {
+    return dbEnabled() ? demoAuth.createDemoAuthUser(email, password) : local.localAuthCreateUser(email, password);
+  }
   const client = requireAdminClient();
   try {
     const { data, error } = await client.auth.admin.createUser({
@@ -262,37 +265,50 @@ export async function getAuthenticatedApp(c: Context): Promise<AuthenticatedApp>
  * to a user_id at issuance, so a successful consume just mints that user a fresh
  * session. Replaces handing a long-lived platform session token in a URL.
  */
+/**
+ * Mint a real Supabase session (an access-token JWT) for a known user BY EMAIL,
+ * without their password — via an admin-generated magic link that an ephemeral
+ * client immediately verifies. Supabase mode only. Shared by the launch-token
+ * exchange and, in dev, the "test as" quick-login, so both produce a genuine
+ * JWT the rest of the app accepts (never a raw id).
+ */
+export async function mintSupabaseSession(email: string): Promise<string> {
+  const admin = requireAdminClient();
+  const { data: link, error: linkError } = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+  });
+  if (linkError || !link?.properties?.hashed_token) {
+    throw new HttpError(500, `Failed to mint session: ${linkError?.message ?? "no link"}`);
+  }
+  const ephemeral = createEphemeralClient();
+  const { data: verified, error: verifyError } = await ephemeral.auth.verifyOtp({
+    token_hash: link.properties.hashed_token,
+    type: "magiclink",
+  });
+  if (verifyError || !verified?.session) throw new HttpError(500, "Failed to mint session");
+  return verified.session.access_token;
+}
+
 export async function exchangeLaunchToken(rawToken: string): Promise<Row> {
   const consumed = await platformDb.consumeLaunchToken(rawToken);
   if (!consumed) throw new HttpError(401, "Invalid or expired launch token");
   const userId = consumed.user_id;
 
   if (await demoMode()) {
-    // Demo-mode access tokens are the user id itself (see localAuthSignIn).
-    return { access_token: userId };
+    // Demo-mode access tokens are the AUTH credential id (see localAuthSignIn),
+    // but the launch token stores the org-scoped profile id (person-FK rule) —
+    // resolve back to the credential. Legacy/local rows have profile id ==
+    // auth id, so the fallback keeps them working.
+    const profile = await platformDb.getProfile(userId);
+    return { access_token: (profile?.auth_user_id as string) ?? userId };
   }
 
   const profile = await platformDb.getProfile(userId);
   const email = profile?.email;
   if (!email) throw new HttpError(500, "Could not resolve user for launch token");
   try {
-    const admin = requireAdminClient();
-    const { data: link, error: linkError } = await admin.auth.admin.generateLink({
-      type: "magiclink",
-      email,
-    });
-    if (linkError || !link?.properties?.hashed_token) {
-      throw new HttpError(500, `Failed to exchange launch token: ${linkError?.message ?? "no link"}`);
-    }
-    const ephemeral = createEphemeralClient();
-    const { data: verified, error: verifyError } = await ephemeral.auth.verifyOtp({
-      token_hash: link.properties.hashed_token,
-      type: "magiclink",
-    });
-    if (verifyError || !verified?.session) {
-      throw new HttpError(500, "Failed to mint session from launch token");
-    }
-    return { access_token: verified.session.access_token };
+    return { access_token: await mintSupabaseSession(email) };
   } catch (exc) {
     if (exc instanceof HttpError) throw exc;
     throw new HttpError(500, `Failed to exchange launch token: ${exc}`);
@@ -300,7 +316,9 @@ export async function exchangeLaunchToken(rawToken: string): Promise<Row> {
 }
 
 export async function signInUser(email: string, password: string): Promise<Row> {
-  if (await demoMode()) return local.localAuthSignIn(email, password);
+  if (await demoMode()) {
+    return dbEnabled() ? demoAuth.signInDemoAuthUser(email, password) : local.localAuthSignIn(email, password);
+  }
   // Ephemeral client so login never overwrites the admin client's service-role session.
   const client = createEphemeralClient();
   try {

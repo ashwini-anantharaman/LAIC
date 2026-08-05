@@ -35,6 +35,8 @@ export interface AuthToggles {
 
 export interface OnboardingQuestion {
   prompt: string;
+  /** Optional one-line helper under the question. */
+  helper?: string;
   type: QuestionType;
   required: boolean;
   /** Only meaningful for single-choice / multi-select. */
@@ -51,6 +53,27 @@ export interface NavItem {
   label: string;
 }
 
+/** A stat in the hero strip (e.g. Sessions 47). */
+export interface HomeStat {
+  value: string;
+  label: string;
+}
+
+/** A swipeable hero card — the "Continue / Learn" carousel from the design. */
+export interface HomeCard {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  cta?: string;
+}
+
+/** A real activity-feed row (e.g. "Quiz: Fractions"). */
+export interface FeedItem {
+  title: string;
+  subtitle?: string;
+  meta?: string;
+}
+
 export interface HomeConfig {
   greeting: string;
   subtitle: string;
@@ -59,6 +82,33 @@ export interface HomeConfig {
   feedLabel: string;
   navItems: NavItem[];
   activeNavIndex: number;
+  /** Optional rich content from the templates. When present, the home renders
+   * the designed layout (stat strip / carousel / real feed); when absent it
+   * falls back to the tiles grid so older configs still render. */
+  stats?: HomeStat[];
+  cards?: HomeCard[];
+  feedItems?: FeedItem[];
+}
+
+/** A platform the app's content section can connect to. */
+export type ContentPlatform = "learning" | "bridge";
+
+/**
+ * One connected platform in the content section. In the published app this
+ * becomes a launch card: the learner taps it and enters that platform's
+ * learner view via the Nexus launch handoff (token → session). The prototype
+ * previews that flow with a mock platform screen.
+ */
+export interface ContentConnection {
+  platform: ContentPlatform;
+  enabled: boolean;
+  label: string;
+  description: string;
+}
+
+export interface ContentConfig {
+  sectionTitle: string;
+  connections: ContentConnection[];
 }
 
 export interface AppShellConfig {
@@ -74,6 +124,7 @@ export interface AppShellConfig {
   accentForeground: string;
   welcomeTitle: string;
   welcomeSubtitle: string;
+  welcomeImageUrl?: string;
   roles: Role[];
   registrationPath: RegistrationPath;
   requireApproval: boolean;
@@ -81,6 +132,16 @@ export interface AppShellConfig {
   onboardingQuestions: OnboardingQuestion[];
   onboardingOptional: boolean;
   homeConfig: HomeConfig;
+  /** Optional so configs published before the content section still open. */
+  content?: ContentConfig;
+  /**
+   * Which program sign-up gate powers "Create an account". Chosen in Publish
+   * from the program's participant gates (stored as the gate's slug). Empty =
+   * auto-use the program's participant sign-up gate. `signupGateUrl` is the
+   * legacy explicit-URL override, still honored if present.
+   */
+  signupGateSlug?: string;
+  signupGateUrl?: string;
 }
 
 /** A starting point for a brand-new app in the New-app picker. */
@@ -93,6 +154,7 @@ export interface Template {
   accentForeground: string;
   welcomeTitle: string;
   welcomeSubtitle: string;
+  welcomeImageUrl?: string;
   roles: Role[];
   registrationPath: RegistrationPath;
   requireApproval: boolean;
@@ -100,11 +162,12 @@ export interface Template {
   onboardingQuestions: OnboardingQuestion[];
   onboardingOptional: boolean;
   homeConfig: HomeConfig;
+  content?: ContentConfig;
   defaultInitials: string;
   defaultAppType: AppType;
 }
 
 /** Left-panel editor sections. */
-export type EditorTab = "identity" | "start" | "auth" | "onboarding" | "home";
-/** Preview stepper screens. */
-export type PreviewScreen = "start" | "signin" | "onboarding" | "home";
+export type EditorTab = "identity" | "start" | "auth" | "onboarding" | "home" | "content";
+/** Preview stepper screens ("platform" is reached from a content card, not the stepper). */
+export type PreviewScreen = "start" | "signin" | "onboarding" | "home" | "platform";

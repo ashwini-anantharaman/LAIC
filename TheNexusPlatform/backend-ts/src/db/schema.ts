@@ -170,6 +170,77 @@ export const registeredApps = pgTable("registered_apps", {
   status: text("status").notNull().default("active"),
   launchUrl: text("launch_url"),
   launchContext: jsonb("launch_context").notNull().default({}),
+  shellConfig: jsonb("shell_config").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const appConfigVersions = pgTable("app_config_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  registeredAppId: uuid("registered_app_id").notNull(),
+  version: integer("version").notNull(),
+  config: jsonb("config").notNull(),
+  publishedByUserId: uuid("published_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Gates: program-level (later platform-level) sign-up/sign-in pages, each at
+// /@/<org-slug>/<slug>. The entrance to a program — access is still resolved
+// from participation + role (migration 0029).
+export const gates = pgTable("gates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Null for nexus (operator) gates, which admit to the platform altitude and
+  // belong to no organization.
+  organizationId: uuid("organization_id"),
+  // Null for org-level gates (org-scoped, no program) and nexus gates.
+  programId: uuid("program_id"),
+  // 'program' | 'organization' | 'nexus' — which altitude this gate admits to.
+  level: text("level").notNull().default("program"),
+  slug: text("slug").notNull(),
+  title: text("title"),
+  subtitle: text("subtitle"),
+  // 'participant' (students → Registrations) or 'member' (staff → Team & Roles).
+  audience: text("audience").notNull().default("participant"),
+  roleId: uuid("role_id"), // legacy single role; superseded by roleIds
+  // Program roles a member gate offers at sign-up; the signer picks one. Empty
+  // for participant gates (and member gates that assign no role).
+  roleIds: jsonb("role_ids").notNull().default([]),
+  allowSignin: boolean("allow_signin").notNull().default(true),
+  allowSignup: boolean("allow_signup").notNull().default(false),
+  approvalRequired: boolean("approval_required").notNull().default(false),
+  landing: text("landing"),
+  config: jsonb("config").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// A pending membership request from an approval-gated gate (mandatory for nexus
+// gates). Approving applies the offered role; until then the person has an
+// account but no access at the gate's altitude.
+export const gateMemberRequests = pgTable("gate_member_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gateId: uuid("gate_id").notNull(),
+  level: text("level").notNull().default("nexus"),
+  email: text("email").notNull(),
+  displayName: text("display_name"),
+  roleId: uuid("role_id"),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  decidedBy: uuid("decided_by"),
+});
+
+// Per-user data for a published App Shell app (Phase 2) — a student's onboarding
+// answers + completion, keyed by the auth credential.
+export const appUserData = pgTable("app_user_data", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  registeredAppId: uuid("registered_app_id").notNull(),
+  programId: uuid("program_id"),
+  userId: uuid("user_id").notNull(),
+  onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
+  answers: jsonb("answers").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -195,6 +266,7 @@ export const offerings = pgTable("offerings", {
   participantLabelSingular: text("participant_label_singular"),
   participantLabelPlural: text("participant_label_plural"),
   metadata: jsonb("metadata").notNull().default({}),
+  contentPackage: jsonb("content_package"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -203,7 +275,8 @@ export const registrations = pgTable("registrations", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull(),
   programId: uuid("program_id"),
-  offeringId: uuid("offering_id").notNull(),
+  // Nullable: a participant joins the PROGRAM; offering is optional (migration 0025).
+  offeringId: uuid("offering_id"),
   stageNodeId: uuid("stage_node_id"),
   registeredAppId: uuid("registered_app_id"),
   registrationSource: text("registration_source").notNull().default("app_hook"),
@@ -224,7 +297,8 @@ export const participants = pgTable("participants", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull(),
   programId: uuid("program_id"),
-  offeringId: uuid("offering_id").notNull(),
+  // Nullable: a participant joins the PROGRAM; offering is optional (migration 0025).
+  offeringId: uuid("offering_id"),
   stageNodeId: uuid("stage_node_id"),
   userId: uuid("user_id"),
   participantType: text("participant_type").notNull().default("learner"),
@@ -313,7 +387,8 @@ export const identities = pgTable("identities", {
 
 export const groups = pgTable("groups", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").notNull(),
+  // org_id null = a NEXUS (platform) group; program_id null = org-level.
+  organizationId: uuid("organization_id"),
   programId: uuid("program_id"),
   offeringId: uuid("offering_id"),
   name: text("name").notNull(),
@@ -326,11 +401,72 @@ export const groups = pgTable("groups", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const groupMemberships = pgTable("group_memberships", {
+export const programRoles = pgTable("program_roles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id"),
+  programId: uuid("program_id"),
+  name: text("name").notNull(),
+  perms: jsonb("perms").notNull().default({}),
+  /** Discord-style: when true, holding this role also places the person in a
+   * same-named group; when false the role never surfaces as a group. */
+  displayAsGroup: boolean("display_as_group").notNull().default(false),
+  /** Optional parent group — lets a role nest inside the group hierarchy. */
+  parentGroupId: uuid("parent_group_id"),
+  createdByUserId: uuid("created_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const programRoleAssignments = pgTable("program_role_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id"),
+  programId: uuid("program_id"),
+  roleId: uuid("role_id").notNull(),
+  email: text("email").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Pre-built platform-role assignments (e.g. Bridge coach/learner), managed
+ * from the platform's own UI but stored centrally here. Email-keyed. */
+export const platformRoleAssignments = pgTable("platform_role_assignments", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  platform: text("platform").notNull(),
+  email: text("email").notNull(),
+  role: text("role").notNull(),
+  assignedByUserId: uuid("assigned_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Custom Learning-Platform roles (name + per-area view/edit perms) and their
+ * email-keyed assignments — the learning app's own People-tab role system. */
+export const learningRoles = pgTable("learning_roles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  name: text("name").notNull(),
+  perms: jsonb("perms").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const learningRoleAssignments = pgTable("learning_role_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").notNull(),
+  programId: uuid("program_id").notNull(),
+  email: text("email").notNull(),
+  roleId: uuid("role_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const groupMemberships = pgTable("group_memberships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Null for nexus (platform) group placements.
+  organizationId: uuid("organization_id"),
   groupId: uuid("group_id").notNull(),
   userId: uuid("user_id"),
+  /** Email-keyed placement (matches the People tab); set instead of userId when
+   * a person is placed in a group before they have an account. */
+  email: text("email"),
   role: text("role"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -400,12 +536,13 @@ export const roleAssignments = pgTable("role_assignments", {
 
 export const invitations = pgTable("invitations", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").notNull(),
+  organizationId: uuid("organization_id"),
   programId: uuid("program_id"),
   offeringId: uuid("offering_id"),
   groupId: uuid("group_id"),
   tokenHash: text("token_hash").notNull(),
   email: text("email"),
+  displayName: text("display_name"),
   role: text("role").notNull().default("learner"),
   invitedByUserId: uuid("invited_by_user_id"),
   status: text("status").notNull().default("pending"),
@@ -421,3 +558,27 @@ export const schema = {
   orgPermissionDefaults, orgMemberships, studentRegistrations, programs, integrations,
   registeredApps, offerings, registrations, participants, appLaunchTokens, auditEvents, entitlements,
 };
+
+/** Demo-mode auth (Supabase unconfigured): one row per login. Token == id. */
+export const demoAuthUsers = pgTable("demo_auth_users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+
+/** Platform-level settings (Nexus branding etc.) — key/value. */
+export const platformSettings = pgTable("platform_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Small binary assets (logos) stored as base64 — durable on serverless. */
+export const storedFiles = pgTable("stored_files", {
+  key: text("key").primaryKey(),
+  contentType: text("content_type").notNull(),
+  data: text("data").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

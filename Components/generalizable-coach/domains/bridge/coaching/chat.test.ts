@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { createCoachSession } from "./createBridgeCoachSession.js";
-import { scoreChunks } from "../../../platform/embed/index.js";
-import { loadBridgeKnowledge } from "../knowledge/loadPackage.js";
-import type { LLMLike } from "../../../platform/llm/index.js";
+import { createCoachSession } from "./createBridgeCoachSession";
+import { scoreChunks } from "../../../platform/embed/index";
+import { loadBridgeKnowledge } from "../knowledge/loadPackage";
+import type { LLMLike } from "../../../platform/llm/index";
 
 const echoLLM: LLMLike = {
   async generateCoachResponse(prompt) {

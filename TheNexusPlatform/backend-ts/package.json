@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Life in AI Center / Nexus Platform API (TypeScript / Hono port of the FastAPI backend)",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
+    "build:fn": "esbuild api/index.ts --bundle --platform=node --format=esm --packages=external --outfile=api/index.mjs",
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
@@ -12,7 +16,8 @@
     "migrate": "tsx scripts/runMigrations.ts",
     "seed:admin": "tsx scripts/seedPlatformAdmin.ts",
     "import:local": "tsx scripts/importLocalToPostgres.ts",
-    "parity": "tsx scripts/parityCheck.ts"
+    "parity": "tsx scripts/parityCheck.ts",
+    "build:vercel": "esbuild src/vercelEntry.ts --bundle --platform=node --target=node20 --format=esm --outfile=api/index.mjs --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

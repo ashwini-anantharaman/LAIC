@@ -11,8 +11,8 @@ import type {
   CoachingPolicyProfile,
   KnowledgeScope,
   CoachCapabilityScope,
-} from "../../contracts/index.js";
-import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/index.js";
+} from "../../contracts/generated/index";
+import { CONTRACTS_SCHEMA_VERSION } from "../../contracts/version";
 
 export interface PresetBundle {
   profile: CoachProfile;

@@ -5,12 +5,12 @@ export {
   type ChunkType,
   type Difficulty,
   CHUNK_TYPES_BY_HINT_LEVEL,
-} from "./KnowledgeSource.js";
-export { BundledKnowledgeSource } from "./BundledKnowledgeSource.js";
-export { ScopedKnowledgeSource } from "./ScopedKnowledgeSource.js";
+} from "./KnowledgeSource";
+export { BundledKnowledgeSource } from "./BundledKnowledgeSource";
+export { ScopedKnowledgeSource } from "./ScopedKnowledgeSource";
 export {
   PlatformKnowledgeSource,
   type PlatformKnowledgeSourceOptions,
-} from "./PlatformKnowledgeSource.js";
-export { MultiScopeKnowledgeSource } from "./MultiScopeKnowledgeSource.js";
-export { toKnowledgeChunk, DEFAULT_CHUNK_TYPE, type RawChunk } from "./normalize.js";
+} from "./PlatformKnowledgeSource";
+export { MultiScopeKnowledgeSource } from "./MultiScopeKnowledgeSource";
+export { toKnowledgeChunk, DEFAULT_CHUNK_TYPE, type RawChunk } from "./normalize";

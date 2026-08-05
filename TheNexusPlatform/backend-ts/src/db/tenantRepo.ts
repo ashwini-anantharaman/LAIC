@@ -7,16 +7,18 @@
  */
 import { randomInt, randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import * as localKeys from "../platformLocalStore";
+import { HttpError } from "../httpError";
+import { normalizeProgramFeatures, type ProgramFeatures } from "../schemas";
 import type { StageNode } from "../permissions";
 import { withUserContext, asPrivileged, type Tx } from "./context";
 import { currentUserId } from "./requestContext";
 import { resolveProfileId, ensureOrgProfile } from "./resolveProfile";
 import {
   programs, stageNodes, offerings, registeredApps, registrations, participants,
-  orgMemberships, profiles, organizations, entitlements, integrations, auditEvents, appLaunchTokens,
+  orgMemberships, profiles, organizations, entitlements, integrations, auditEvents, appLaunchTokens, platformSettings,
   challenges, challengeStageConfig, orgPermissionDefaults, studentRegistrations,
   joinCodes as joinCodesTable,
 } from "./schema";
@@ -34,7 +36,23 @@ const slugify = (s: string): string =>
 // ── row mappers (camelCase Drizzle → snake_case Row) ────────────────────────
 const programRow = (p: typeof programs.$inferSelect): Row => ({
   id: p.id, org_id: p.orgId, name: p.name, category: p.category, description: p.description,
-  icon: p.icon, instructor_label: p.instructorLabel, learner_label: p.learnerLabel, created_at: p.createdAt,
+  icon: p.icon, instructor_label: p.instructorLabel, learner_label: p.learnerLabel,
+  features: normalizeProgramFeatures((p.metadataJson as Row)?.features as Row),
+  // Per-platform "Partial" provisioning: a capability subset for a platform area
+  // (learning/bridge) that clamps what roles can grant. Absent = No/Full.
+  feature_access: ((p.metadataJson as Row)?.feature_access as Row) ?? null,
+  // Partner ("sister program") fields — a partner is a program row connected to
+  // another program, with its own slug/login and restricted platform views into
+  // the connected program's instances. Absent/false = an ordinary program.
+  is_partner: ((p.metadataJson as Row)?.is_partner as boolean | undefined) ?? false,
+  connected_program_id: ((p.metadataJson as Row)?.connected_program_id as string | undefined) ?? null,
+  slug: ((p.metadataJson as Row)?.slug as string | undefined) ?? null,
+  secondary_categories: ((p.metadataJson as Row)?.secondary_categories as string[]) ?? [],
+  branding: ((p.metadataJson as Row)?.branding as Row) ?? null,
+  // Whether this program's own admins/members may open the platform runtimes
+  // (Learning, App Shell, Bridge). On by default; the org admin can lock it.
+  platforms_open: ((p.metadataJson as Row)?.platforms_open as boolean | undefined) ?? true,
+  created_at: p.createdAt,
 });
 const stageRow = (s: typeof stageNodes.$inferSelect): Row => ({
   id: s.id, org_id: s.orgId, challenge_id: s.challengeId, parent_id: s.parentId, program_id: s.programId,
@@ -47,7 +65,7 @@ const offeringRow = (o: typeof offerings.$inferSelect): Row => ({
   start_date: o.startDate, end_date: o.endDate, registration_open: o.registrationOpen, approval_mode: o.approvalMode,
   signup_fields: o.signupFields, platform_module: o.platformModule, registered_app_id: o.registeredAppId,
   external_runtime_url: o.externalRuntimeUrl, participant_label_singular: o.participantLabelSingular,
-  participant_label_plural: o.participantLabelPlural, metadata: o.metadata, created_at: o.createdAt, updated_at: o.updatedAt,
+  participant_label_plural: o.participantLabelPlural, metadata: o.metadata, content_package: o.contentPackage, created_at: o.createdAt, updated_at: o.updatedAt,
 });
 const appRow = (a: typeof registeredApps.$inferSelect): Row => ({
   id: a.id, organization_id: a.organizationId, program_id: a.programId, offering_id: a.offeringId,
@@ -134,15 +152,123 @@ export async function createProgram(orgId: string, name: string, category: strin
       icon: (opts.icon as string) ?? null,
       instructorLabel: (opts.instructorLabel as string) ?? null,
       learnerLabel: (opts.learnerLabel as string) ?? null,
+      metadataJson: {
+        features: normalizeProgramFeatures(opts.features as Row),
+        secondary_categories: opts.secondaryCategories ?? [],
+      },
     }).returning();
     return programRow(p);
+  });
+}
+
+// ── Partners ("sister programs") ────────────────────────────────────────────
+// A partner is a program row flagged is_partner, connected to another program,
+// with its own slug for a dedicated login portal. Its People/Community/Partners
+// are its own (program-scoped); its platform tabs enter the CONNECTED program's
+// instances, restricted by feature_access. All stored migration-free in metadata.
+async function _uniquePartnerSlug(tx: Tx, base: string): Promise<string> {
+  const want = slugify(base) || "partner";
+  const rows = await tx.select({ meta: programs.metadataJson }).from(programs);
+  const taken = new Set(
+    rows.map((r) => (r.meta as Row | undefined)?.slug).filter((s): s is string => typeof s === "string"),
+  );
+  if (!taken.has(want)) return want;
+  for (let n = 2; ; n++) { const s = `${want}-${n}`; if (!taken.has(s)) return s; }
+}
+
+export async function createPartner(orgId: string, opts: {
+  name: string;
+  connectedProgramId: string;
+  description?: string | null;
+  slug?: string;
+  features?: Row;
+  featureAccess?: Record<string, { capabilities: string[] }> | null;
+}): Promise<Row> {
+  return scoped(async (tx) => {
+    const slug = await _uniquePartnerSlug(tx, opts.slug || opts.name);
+    const [p] = await tx.insert(programs).values({
+      orgId,
+      name: opts.name,
+      category: "partner",
+      description: opts.description ?? null,
+      metadataJson: {
+        features: normalizeProgramFeatures(opts.features),
+        is_partner: true,
+        connected_program_id: opts.connectedProgramId,
+        slug,
+        // A partner is a SEPARATE entity — give it its own default theme so it
+        // never inherits the owning org's logo/favicon/accent. An explicit
+        // (empty) branding object stops the shell from falling back to the org.
+        branding: { accent: null, logo: null, favicon: null },
+        ...(opts.featureAccess ? { feature_access: opts.featureAccess } : {}),
+      },
+    }).returning();
+    return programRow(p);
+  });
+}
+
+/** Partners connected to a program (its Partners tab). */
+export async function listPartnersForProgram(programId: string): Promise<Row[]> {
+  return scoped(async (tx) => {
+    const rows = await tx.select().from(programs);
+    return rows
+      .filter((p) => (p.metadataJson as Row | undefined)?.connected_program_id === programId)
+      .map(programRow);
+  });
+}
+
+/** Resolve a partner by its login slug — privileged (the visitor is a partner
+ *  member, not necessarily a member of the owning org). */
+export async function getPartnerBySlug(slug: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.select().from(programs);
+    const m = rows.find((p) => (p.metadataJson as Row | undefined)?.slug === slug && (p.metadataJson as Row | undefined)?.is_partner);
+    return m ? programRow(m) : null;
+  });
+}
+
+/** Replace a program's accessible-feature set (org-admin config). Optionally
+ * updates the per-program platform lock (platforms_open) in the same write. */
+export async function updateProgramFeatures(
+  programId: string,
+  features: ProgramFeatures,
+  platformsOpen?: boolean,
+  featureAccess?: Record<string, { capabilities: string[] }> | null,
+): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const existing = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
+    if (!existing.length) return null;
+    const meta = {
+      ...(existing[0].metadataJson as Row),
+      features,
+      ...(platformsOpen === undefined ? {} : { platforms_open: platformsOpen }),
+      ...(featureAccess === undefined ? {} : { feature_access: featureAccess ?? {} }),
+    };
+    const [p] = await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId)).returning();
+    if (!p) return null;
+    const caps = await _orgFeatureCaps(tx, p.orgId);
+    const row = programRow(p);
+    return { ...row, features: _clampFeatures(row.features as ProgramFeatures, caps) };
   });
 }
 
 export async function listPrograms(orgId: string): Promise<Row[]> {
   return scoped(async (tx) => {
     const rows = await tx.select().from(programs).where(eq(programs.orgId, orgId));
-    return Promise.all(rows.map(async (p) => ({ ...programRow(p), ...(await programCounts(tx, orgId, p.id)) })));
+    // Every reader sees EFFECTIVE features: the program's toggles clamped by
+    // the org's Nexus-governed envelope. One choke point — routes, launch
+    // guards, role builders, and platform access all read through here.
+    const caps = await _orgFeatureCaps(tx, orgId);
+    return Promise.all(
+      rows.map(async (p) => {
+        const row = programRow(p);
+        return {
+          ...row,
+          features: _clampFeatures(row.features as ProgramFeatures, caps),
+          ...(await programCounts(tx, orgId, p.id)),
+        };
+      }),
+    );
   });
 }
 
@@ -150,7 +276,13 @@ export async function getProgram(programId: string): Promise<Row | null> {
   return scoped(async (tx) => {
     const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
     if (!r.length) return null;
-    return { ...programRow(r[0]), ...(await programCounts(tx, r[0].orgId, r[0].id)) };
+    const caps = await _orgFeatureCaps(tx, r[0].orgId);
+    const row = programRow(r[0]);
+    return {
+      ...row,
+      features: _clampFeatures(row.features as ProgramFeatures, caps),
+      ...(await programCounts(tx, r[0].orgId, r[0].id)),
+    };
   });
 }
 
@@ -375,8 +507,13 @@ export async function revokeApp(appId: string): Promise<Row> {
 }
 
 // ── Registrations ─────────────────────────────────────────────────────────
-export async function createRegistration(orgId: string, offeringId: string, opts: localKeys.RegistrationOptions = {}): Promise<Row> {
-  return scoped(async (tx) => {
+export async function createRegistration(orgId: string, offeringId: string | null, opts: localKeys.RegistrationOptions = {}, privileged = false): Promise<Row> {
+  // `privileged` forces an RLS bypass — used by PUBLIC gate sign-up, where the
+  // caller may be anonymous OR carry an unrelated user's token; the GATE (not
+  // the caller's identity) authorizes the insert. Authenticated routes leave it
+  // false so RLS still scopes them to the acting user.
+  const run = privileged ? asPrivileged : scoped;
+  return run(async (tx) => {
     const userId = await resolveProfileId(tx, (opts.userId as string) ?? null, orgId);
     const createdBy = await resolveProfileId(tx, (opts.createdByUserId as string) ?? null, orgId);
     const [r] = await tx.insert(registrations).values({
@@ -402,6 +539,14 @@ export async function getRegistration(registrationId: string): Promise<Row | nul
 export async function listRegistrations(offeringId: string, status: string | null = null): Promise<Row[]> {
   return scoped(async (tx) => {
     const where = status ? and(eq(registrations.offeringId, offeringId), eq(registrations.status, status)) : eq(registrations.offeringId, offeringId);
+    return (await tx.select().from(registrations).where(where).orderBy(desc(registrations.createdAt))).map(regRow);
+  });
+}
+
+/** All registrations for a PROGRAM — the program's participant roster (both program-level and offering-level). */
+export async function listRegistrationsByProgram(programId: string, status: string | null = null): Promise<Row[]> {
+  return scoped(async (tx) => {
+    const where = status ? and(eq(registrations.programId, programId), eq(registrations.status, status)) : eq(registrations.programId, programId);
     return (await tx.select().from(registrations).where(where).orderBy(desc(registrations.createdAt))).map(regRow);
   });
 }
@@ -444,6 +589,44 @@ export async function listParticipants(offeringId: string, status: string | null
   });
 }
 
+/**
+ * Program-level participant (offering_id null) — a student joining the PROGRAM,
+ * which is what grants platform access. Dedups by program + user + type so a
+ * re-invite doesn't stack rows.
+ */
+export async function createProgramParticipant(orgId: string, programId: string, opts: localKeys.ParticipantOptions = {}, privileged = false): Promise<Row> {
+  // See createRegistration: `privileged` bypasses RLS for public gate sign-up.
+  const run = privileged ? asPrivileged : scoped;
+  return run(async (tx) => {
+    const type = (opts.participantType as string) ?? "learner";
+    const userId = await resolveProfileId(tx, (opts.userId as string) ?? null, orgId);
+    const addedBy = await resolveProfileId(tx, (opts.addedByUserId as string) ?? null, orgId);
+    if (userId) {
+      const existing = await tx.select().from(participants)
+        .where(and(eq(participants.programId, programId), eq(participants.userId, userId), eq(participants.participantType, type), isNull(participants.offeringId))).limit(1);
+      if (existing.length) return partRow(existing[0]);
+    }
+    const [p] = await tx.insert(participants).values({
+      organizationId: orgId, programId, offeringId: null,
+      userId, participantType: type, status: (opts.status as string) ?? "active",
+      addedByUserId: addedBy, registrationId: (opts.registrationId as string) ?? null,
+    }).returning();
+    return partRow(p);
+  });
+}
+
+/**
+ * Deactivate every participant row for a registration (student removal). Access
+ * is derived from the ACTIVE participant row, so flipping status to 'removed'
+ * revokes platform access on the next check — no membership to unwind. Covers
+ * duplicate rows from re-approval.
+ */
+export async function removeParticipantsByRegistration(registrationId: string): Promise<void> {
+  return scoped(async (tx) => {
+    await tx.update(participants).set({ status: "removed" }).where(eq(participants.registrationId, registrationId));
+  });
+}
+
 // ── Members ─────────────────────────────────────────────────────────────────
 export async function listMembers(orgId: string): Promise<Row[]> {
   return scoped(async (tx) => {
@@ -483,9 +666,24 @@ export async function updateMemberAccess(memberId: string, access: string): Prom
   });
 }
 
+/** Remove a membership (org- or program-scoped). Returns true if a row was deleted. */
+export async function deleteMembership(memberId: string): Promise<boolean> {
+  return scoped(async (tx) => {
+    const r = await tx.delete(orgMemberships).where(eq(orgMemberships.id, memberId)).returning({ id: orgMemberships.id });
+    return r.length > 0;
+  });
+}
+
 export async function getUserOrgs(profileId: string): Promise<Row[]> {
   return scoped(async (tx) => {
-    const rows = await tx.select().from(orgMemberships).where(eq(orgMemberships.profileId, profileId));
+    // The caller may hold the auth-credential id, while memberships point at
+    // org-scoped profile ids (one login -> many org profiles). Resolve both.
+    const myProfiles = await tx
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(eq(profiles.authUserId, profileId));
+    const ids = [...new Set([profileId, ...myProfiles.map((p) => p.id)])];
+    const rows = await tx.select().from(orgMemberships).where(inArray(orgMemberships.profileId, ids));
     const oids = [...new Set(rows.map((r) => r.orgId))];
     const orgs = oids.length ? await tx.select().from(organizations).where(inArray(organizations.id, oids)) : [];
     const orgMap = new Map(orgs.map((o) => [o.id, o]));
@@ -531,14 +729,25 @@ export async function createIntegration(orgId: string, integrationType: string, 
 }
 
 // ── Audit (read) ──────────────────────────────────────────────────────────
+function auditRow(e: typeof auditEvents.$inferSelect): Row {
+  return {
+    id: e.id, organization_id: e.organizationId, actor_user_id: e.actorUserId, action: e.action,
+    scope_type: e.scopeType, scope_id: e.scopeId, target_type: e.targetType, target_id: e.targetId,
+    metadata: e.metadata, created_at: e.createdAt,
+  };
+}
+
 export async function listAuditEvents(orgId: string, limit = 50): Promise<Row[]> {
   return scoped(async (tx) =>
     (await tx.select().from(auditEvents).where(eq(auditEvents.organizationId, orgId)).orderBy(desc(auditEvents.createdAt)).limit(limit))
-      .map((e) => ({
-        id: e.id, organization_id: e.organizationId, actor_user_id: e.actorUserId, action: e.action,
-        scope_type: e.scopeType, scope_id: e.scopeId, target_type: e.targetType, target_id: e.targetId,
-        metadata: e.metadata, created_at: e.createdAt,
-      })),
+      .map(auditRow),
+  );
+}
+
+/** Platform operator: every audit event across every org, newest first. */
+export async function listAllAuditEvents(limit = 100): Promise<Row[]> {
+  return asPrivileged(async (tx) =>
+    (await tx.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(limit)).map(auditRow),
   );
 }
 
@@ -586,17 +795,347 @@ const joinCodeRow = (j: typeof joinCodesTable.$inferSelect): Row => ({
   uses_remaining: j.usesRemaining, expires_at: j.expiresAt, created_by_user_id: j.createdByUserId, created_at: j.createdAt,
 });
 
-export async function updateOrgTheme(orgId: string, accentColor: string | null | undefined, logoUrl: string | null | undefined): Promise<Row> {
+export async function updateOrgTheme(
+  orgId: string,
+  accentColor: string | null | undefined,
+  logoUrl: string | null | undefined,
+  faviconUrl?: string | null | undefined,
+): Promise<Row> {
   return scoped(async (tx) => {
     const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
     const settings: Record<string, unknown> = { ...((r[0]?.settings as Record<string, unknown>) ?? {}) };
     const theme: Record<string, unknown> = { ...((settings.theme as Record<string, unknown>) ?? {}) };
     if (accentColor != null) theme.accent_color = accentColor;
     if (logoUrl != null) theme.logo_url = logoUrl;
+    if (faviconUrl != null) theme.favicon_url = faviconUrl;
     settings.theme = theme;
     const [o] = await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId)).returning();
     return { id: o.id, name: o.name, slug: o.slug, owner_id: o.ownerId, settings: o.settings, created_at: o.createdAt };
   });
+}
+
+/** Rename an organization (display name; slug is left untouched so links stay stable). */
+export async function updateOrgName(orgId: string, name: string): Promise<Row> {
+  return scoped(async (tx) => {
+    const [o] = await tx.update(organizations).set({ name }).where(eq(organizations.id, orgId)).returning();
+    if (!o) throw new HttpError(404, "Organization not found");
+    return { id: o.id, name: o.name, slug: o.slug, owner_id: o.ownerId, settings: o.settings, created_at: o.createdAt };
+  });
+}
+
+/** Rename a program (display name). */
+export async function updateProgramName(programId: string, name: string): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const [p] = await tx.update(programs).set({ name }).where(eq(programs.id, programId)).returning();
+    return p ? programRow(p) : null;
+  });
+}
+
+// ── Capability envelope (Nexus §3.5 governance — boundary, not content) ─────
+// Stored in organizations.settings.capabilities, mirroring the theme pattern.
+// Default envelope: a freshly-provisioned org can do everything until an
+// operator restricts it (matches "grant default entitlements" at provisioning
+// — a locked-out-by-default org would be unusable on day one).
+export const DEFAULT_CAPABILITIES = {
+  programTypes: { edu: true, game: true },
+  offeringTypes: { course: true, challenge: true, app: true },
+  // Feature-areas an org may use — the SAME six keys as per-program features,
+  // so the Nexus envelope and the org's program config speak one vocabulary.
+  // Everything on by default; the operator narrows per org.
+  features: { learning: true, bridge: true, appbuilder: true, community: true, teams: true, partners: true },
+  // Per-platform "Partial" provisioning at the org envelope: a capability subset
+  // for a platform area (learning/bridge) that clamps what the org's programs and
+  // roles can grant. Absent key = No/Full (governed by `features`).
+  featureAccess: {} as Record<string, { capabilities: string[] }>,
+  // Max programs the org may create; null = unlimited.
+  programCapacity: null as number | null,
+  // Whether org-level admins/owners automatically get access INTO the org's
+  // programs. On by default. When off, org admins keep org governance (features,
+  // admins, categories) but cannot enter a program workspace without explicit
+  // program-scoped access. A per-program toggle (metadata.admins_can_enter) can
+  // narrow this further for a single program.
+  adminsEnterPrograms: true,
+} as const;
+
+// Older envelopes stored platform-flavored keys — translate on read so a
+// previously-set restriction keeps meaning something.
+const LEGACY_FEATURE_KEYS: Record<string, string> = { learningPlatform: "learning", appShells: "appbuilder" };
+function _normalizeCapFeatures(raw: Row | undefined): Row {
+  const out: Row = {};
+  for (const [k, v] of Object.entries(raw ?? {})) {
+    const key = LEGACY_FEATURE_KEYS[k] ?? k;
+    if (key in DEFAULT_CAPABILITIES.features) out[key] = v;
+  }
+  return out;
+}
+
+function _capsFromSettings(settings: Record<string, unknown>): Row {
+  const caps = (settings.capabilities as Row | undefined) ?? {};
+  return {
+    programTypes: { ...DEFAULT_CAPABILITIES.programTypes, ...((caps.programTypes as Row) ?? {}) },
+    offeringTypes: { ...DEFAULT_CAPABILITIES.offeringTypes, ...((caps.offeringTypes as Row) ?? {}) },
+    features: { ...DEFAULT_CAPABILITIES.features, ..._normalizeCapFeatures(caps.features as Row) },
+    featureAccess: (caps.featureAccess as Row | undefined) ?? {},
+    programCapacity: (caps.programCapacity as number | null | undefined) ?? null,
+    adminsEnterPrograms: (caps.adminsEnterPrograms as boolean | undefined) ?? true,
+  };
+}
+
+export async function getOrgCapabilities(orgId: string): Promise<Row> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
+    if (!r.length) throw new Error("Organization not found");
+    return _capsFromSettings((r[0].settings as Record<string, unknown>) ?? {});
+  });
+}
+
+export async function setOrgCapabilities(orgId: string, patch: Row): Promise<Row> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
+    if (!r.length) throw new Error("Organization not found");
+    const settings: Record<string, unknown> = { ...((r[0].settings as Record<string, unknown>) ?? {}) };
+    const existing = _capsFromSettings(settings);
+    const merged: Row = {
+      programTypes: { ...(existing.programTypes as Row), ...((patch.programTypes as Row) ?? {}) },
+      offeringTypes: { ...(existing.offeringTypes as Row), ...((patch.offeringTypes as Row) ?? {}) },
+      features: { ...(existing.features as Row), ..._normalizeCapFeatures(patch.features as Row) },
+      featureAccess:
+        "featureAccess" in patch ? ((patch.featureAccess as Row) ?? {}) : existing.featureAccess,
+      programCapacity:
+        "programCapacity" in patch ? ((patch.programCapacity as number | null) ?? null) : existing.programCapacity,
+      adminsEnterPrograms:
+        "adminsEnterPrograms" in patch ? patch.adminsEnterPrograms !== false : existing.adminsEnterPrograms,
+    };
+    settings.capabilities = merged;
+    await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));
+    return merged;
+  });
+}
+
+// ── Platform settings (Nexus's own branding) ────────────────────────────────
+// Boundary/platform data — privileged by nature (no org scope exists).
+export async function getPlatformSetting(key: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx.select().from(platformSettings).where(eq(platformSettings.key, key)).limit(1);
+    return r.length ? (r[0].value as Row) : null;
+  });
+}
+
+export async function setPlatformSetting(key: string, value: Row): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    await tx
+      .insert(platformSettings)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
+    return value;
+  });
+}
+
+/** Switch a program's primary category and/or replace its secondary list. */
+export async function updateProgramCategories(
+  programId: string,
+  patch: { category?: string; secondaryCategories?: string[] },
+): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
+    if (!r.length) return null;
+    const primary = patch.category ?? r[0].category;
+    const meta: Row = { ...((r[0].metadataJson as Row) ?? {}) };
+    if (patch.secondaryCategories !== undefined) {
+      meta.secondary_categories = [...new Set(patch.secondaryCategories)].filter((c) => c !== primary);
+    } else {
+      // keep existing secondaries, but never let one duplicate the new primary
+      meta.secondary_categories = (((meta.secondary_categories as string[]) ?? [])).filter((c) => c !== primary);
+    }
+    const [p] = await tx.update(programs)
+      .set({ category: primary, metadataJson: meta })
+      .where(eq(programs.id, programId)).returning();
+    return p ? programRow(p) : null;
+  });
+}
+
+/**
+ * Program branding (accent/logo/cover) in metadata_json.branding; null clears
+ * (revert). `cover` is the card background image on the Programs page — distinct
+ * from `logo`, which paints the shell/sidebar.
+ */
+export async function setProgramBranding(
+  programId: string,
+  branding: { accent?: string | null; logo?: string | null; cover?: string | null; favicon?: string | null } | null,
+): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const r = await tx.select().from(programs).where(eq(programs.id, programId)).limit(1);
+    if (!r.length) return null;
+    const meta: Row = { ...((r[0].metadataJson as Row) ?? {}) };
+    if (branding === null) {
+      delete meta.branding;
+    } else {
+      const cur = (meta.branding as Row) ?? {};
+      meta.branding = {
+        accent: branding.accent !== undefined ? branding.accent : (cur.accent ?? null),
+        logo: branding.logo !== undefined ? branding.logo : (cur.logo ?? null),
+        cover: branding.cover !== undefined ? branding.cover : (cur.cover ?? null),
+        favicon: branding.favicon !== undefined ? branding.favicon : (cur.favicon ?? null),
+      };
+    }
+    await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, programId));
+    return (meta.branding as Row) ?? null;
+  });
+}
+
+// ── Org-defined program categories (Settings → Categories) ──────────────────
+// The taxonomy lives in organizations.settings.program_categories. Categories
+// are identified by NAME (programs reference them by name); nesting adds a
+// `parent` pointer (another category's name, or null for a root). Storage is
+// backward-compatible: a legacy string[] is read as flat root categories.
+// When unset, the effective list derives from categories already in use.
+export interface CategoryNode { name: string; parent: string | null }
+
+function _normalizeCategories(stored: unknown): CategoryNode[] | null {
+  if (!Array.isArray(stored)) return null;
+  return stored.map((c) =>
+    typeof c === "string"
+      ? { name: c, parent: null }
+      : { name: String((c as Row).name), parent: ((c as Row).parent as string | null) ?? null },
+  );
+}
+
+async function _effectiveCategories(tx: Tx, orgId: string): Promise<CategoryNode[]> {
+  const r = await tx.select({ settings: organizations.settings }).from(organizations)
+    .where(eq(organizations.id, orgId)).limit(1);
+  const stored = _normalizeCategories((r[0]?.settings as Row | undefined)?.program_categories);
+  if (stored) {
+    // Drop parent pointers that reference a category no longer present.
+    const names = new Set(stored.map((c) => c.name));
+    return stored.map((c) => ({ name: c.name, parent: c.parent && names.has(c.parent) ? c.parent : null }));
+  }
+  const progs = await tx.select({ category: programs.category }).from(programs).where(eq(programs.orgId, orgId));
+  return [...new Set(progs.map((p) => p.category))].sort((a, b) => a.localeCompare(b)).map((name) => ({ name, parent: null }));
+}
+
+async function _saveCategories(tx: Tx, orgId: string, list: CategoryNode[]): Promise<void> {
+  const r = await tx.select({ settings: organizations.settings }).from(organizations)
+    .where(eq(organizations.id, orgId)).limit(1);
+  const settings: Row = { ...((r[0]?.settings as Row) ?? {}) };
+  settings.program_categories = list;
+  await tx.update(organizations).set({ settings }).where(eq(organizations.id, orgId));
+}
+
+export async function listOrgCategories(orgId: string): Promise<CategoryNode[]> {
+  return scoped((tx) => _effectiveCategories(tx, orgId));
+}
+
+export async function addOrgCategory(orgId: string, name: string, parent?: string | null): Promise<CategoryNode[]> {
+  return scoped(async (tx) => {
+    const list = await _effectiveCategories(tx, orgId);
+    if (!list.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+      const p = parent && list.some((c) => c.name === parent) ? parent : null;
+      list.push({ name, parent: p });
+    }
+    await _saveCategories(tx, orgId, list);
+    return list;
+  });
+}
+
+/** Reparent a category (nesting). Guards against cycles (a category can't be
+ *  nested under itself or a descendant). parent=null lifts it to a root. */
+export async function setOrgCategoryParent(orgId: string, name: string, parent: string | null): Promise<CategoryNode[]> {
+  return scoped(async (tx) => {
+    const list = await _effectiveCategories(tx, orgId);
+    const node = list.find((c) => c.name === name);
+    if (!node) throw new Error("Category not found");
+    if (parent) {
+      if (parent === name) throw new Error("A category can't be nested under itself");
+      if (!list.some((c) => c.name === parent)) throw new Error("Parent category not found");
+      // Walk up from `parent`; if we reach `name`, it's a descendant → cycle.
+      const parentOf = new Map(list.map((c) => [c.name, c.parent]));
+      let cur: string | null = parent;
+      while (cur) { if (cur === name) throw new Error("Can't nest a category under its own descendant"); cur = parentOf.get(cur) ?? null; }
+    }
+    node.parent = parent;
+    await _saveCategories(tx, orgId, list);
+    return list;
+  });
+}
+
+/** Remove a category. Refused while any program uses it as PRIMARY; silently
+ * stripped from secondaries. Its child categories move up to its parent. */
+export async function removeOrgCategory(orgId: string, name: string): Promise<CategoryNode[]> {
+  return scoped(async (tx) => {
+    const inUse = await tx.select({ id: programs.id }).from(programs)
+      .where(and(eq(programs.orgId, orgId), eq(programs.category, name)));
+    if (inUse.length > 0) {
+      throw new Error(`${inUse.length} program${inUse.length !== 1 ? "s" : ""} use this as their primary category — reassign them first`);
+    }
+    const progs = await tx.select().from(programs).where(eq(programs.orgId, orgId));
+    for (const p of progs) {
+      const meta = { ...((p.metadataJson as Row) ?? {}) };
+      const secs = (meta.secondary_categories as string[]) ?? [];
+      if (secs.includes(name)) {
+        meta.secondary_categories = secs.filter((c) => c !== name);
+        await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, p.id));
+      }
+    }
+    const list = await _effectiveCategories(tx, orgId);
+    const removed = list.find((c) => c.name === name);
+    const next = list
+      .filter((c) => c.name !== name)
+      .map((c) => (c.parent === name ? { ...c, parent: removed?.parent ?? null } : c));
+    await _saveCategories(tx, orgId, next);
+    return next;
+  });
+}
+
+/** Rename a category everywhere: the stored list (name + any child's parent
+ * pointer), every program's primary, and every secondary list. Renaming onto an
+ * existing name merges the two. */
+export async function renameOrgCategory(orgId: string, from: string, to: string): Promise<CategoryNode[]> {
+  return scoped(async (tx) => {
+    await tx.update(programs).set({ category: to })
+      .where(and(eq(programs.orgId, orgId), eq(programs.category, from)));
+    const progs = await tx.select().from(programs).where(eq(programs.orgId, orgId));
+    for (const p of progs) {
+      const meta = { ...((p.metadataJson as Row) ?? {}) };
+      const secs = (meta.secondary_categories as string[]) ?? [];
+      if (secs.includes(from)) {
+        // map from→to, dedupe, and drop a secondary that now equals the primary
+        const primary = p.category === from ? to : p.category;
+        meta.secondary_categories = [...new Set(secs.map((c) => (c === from ? to : c)))].filter((c) => c !== primary);
+        await tx.update(programs).set({ metadataJson: meta }).where(eq(programs.id, p.id));
+      }
+    }
+    const list = await _effectiveCategories(tx, orgId);
+    // Rename the node and repoint children; merge if `to` already exists.
+    const merged = new Map<string, CategoryNode>();
+    for (const c of list) {
+      const nm = c.name === from ? to : c.name;
+      const pr = c.parent === from ? to : c.parent;
+      if (!merged.has(nm)) merged.set(nm, { name: nm, parent: pr === nm ? null : pr });
+    }
+    const next = [...merged.values()];
+    await _saveCategories(tx, orgId, next);
+    return next;
+  });
+}
+
+/**
+ * The org's allowed feature-areas (for clamping program features). Reads the
+ * org row inside the SAME transaction the caller already holds.
+ */
+async function _orgFeatureCaps(tx: Tx, orgId: string): Promise<Record<string, boolean>> {
+  const r = await tx.select({ settings: organizations.settings }).from(organizations)
+    .where(eq(organizations.id, orgId)).limit(1);
+  const caps = _capsFromSettings((r[0]?.settings as Record<string, unknown>) ?? {});
+  return caps.features as Record<string, boolean>;
+}
+
+/** Effective program features = program's own toggles AND the org envelope. */
+function _clampFeatures(features: ProgramFeatures, orgCaps: Record<string, boolean>): ProgramFeatures {
+  const out = { ...features };
+  for (const k of Object.keys(out) as (keyof ProgramFeatures)[]) {
+    if (orgCaps[k] === false) out[k] = false;
+  }
+  return out;
 }
 
 export async function createJoinCode(stageNodeId: string, kind: string, opts: localKeys.JoinCodeOptions = {}): Promise<Row> {

@@ -1,9 +1,10 @@
 import { canAccess } from "@bridge/access";
 import type { Metadata } from "next";
 import { Fraunces, Karla } from "next/font/google";
+import { EmbedLocationReporter } from "@/components/mobile/EmbedLocationReporter";
 import { TabBar } from "@/components/mobile/TabBar";
 import { getCatalogue } from "@/lib/access";
-import { getBridgeContext } from "@/lib/nexus";
+import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
 
 /** The mobile tab keys, in bar order. Enforced server-side here so the client
  *  TabBar only ever renders tabs the catalogue permits. */
@@ -50,6 +51,9 @@ export default async function MobileLayout({
         );
       })()
     : [];
+  // Embedded in the coach app: the HOST owns navigation — Bridge shows only
+  // the screen it was asked for (no tab bar, no avatar menu, no way to roam).
+  const embedded = await isEmbeddedLaunch();
   return (
     <div
       className={`${fraunces.variable} ${karla.variable}`}
@@ -73,7 +77,7 @@ export default async function MobileLayout({
         }}
       >
         {children}
-        <TabBar allowedKeys={allowedKeys} />
+        {embedded ? <EmbedLocationReporter /> : <TabBar allowedKeys={allowedKeys} />}
       </div>
     </div>
   );

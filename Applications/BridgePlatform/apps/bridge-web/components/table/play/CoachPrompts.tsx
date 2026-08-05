@@ -1,0 +1,358 @@
+"use client";
+
+// The coach's two buttons — the whole coaching surface at the table.
+//
+// OWNER DECISION 2026-08-04: the coach is these two prompts and nothing else.
+// It does not volunteer. It does not grade every card. It waits to be asked.
+//
+//   · "Help me think"        — the position, without the answer in it.
+//   · "What should I play?"  — the answer, because you asked for it.
+//
+// The pair is the point. We had a hint ladder that decided FOR the learner
+// whether they were ready to be told, built on thresholds picked by feel, and it
+// was removed for exactly that reason (see notes.ts REVEAL_LEVEL). Two buttons
+// put that choice back where it belongs: the learner says whether they want to
+// be guided or told, and neither one is the coach's guess about them.
+//
+// Unprompted notes still exist and still work — the panel renders them, the
+// evaluation panel still produces them — but they are off at the table now,
+// behind `?coach=notes`. Judging every action produced 34 approvals for every 6
+// corrections, and a surface that speaks 40 times a board is not read by trick
+// four.
+//
+// WIRING STATUS. "What should I play?" calls /api/bridge/play-hint, which runs
+// the assessor panel and reports which of its authorities answered.
+//
+// "Help me think" is LAYER 1 ONLY, and needs no network at all: the whole
+// scaffold is computed server-side in lib/coach/think.ts and handed down as a
+// prop, so tapping it is instant and cannot fail. Layer 2 adds what each
+// candidate DOES, what a bid PROMISES, and the framing question — one model call,
+// structurally blind to the solver. Until then the panel says plainly that the
+// reasoning half is missing, rather than letting the facts pass for the whole
+// feature.
+//
+// The auction's "What should I bid?" is still a surface only, and says so.
+
+import { useState } from "react";
+import type { ThinkAid } from "@/lib/coach/think";
+
+// The table's own palette, as CoachPanel uses it.
+const HEAD = "#f2f2ea";
+const LINE = "#8a8a6a";
+const INK = "#2b2b1e";
+const MUTED = "#57573f";
+const FAINT = "#7d7d66";
+const TEAL = "#1f5e56";
+const AMBER = "#9c5a12";
+
+const SUIT_GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
+const RED = new Set(["♥", "♦"]);
+
+/** "DT" → "10♦". The engine's notation, in the table's. */
+function cardText(card: string): { rank: string; suit: string } {
+  const rank = card.slice(1) === "T" ? "10" : card.slice(1);
+  return { rank, suit: SUIT_GLYPH[card[0] ?? ""] ?? card[0] ?? "" };
+}
+
+type Hint = {
+  best: string[];
+  source: "system" | "convention" | "solution";
+  because?: string;
+  corroborated?: boolean;
+  contradicted?: boolean;
+};
+
+type Answer =
+  | { kind: "loading" }
+  | { kind: "done"; hint: Hint }
+  | { kind: "empty"; reason: string }
+  | { kind: "pending"; what: string; will: string }
+  | { kind: "think"; aid: ThinkAid };
+
+export type TablePhase = "auction" | "play" | "other";
+
+export function CoachPrompts({
+  sessionId,
+  phase,
+  active,
+  aid,
+}: Readonly<{
+  sessionId: string;
+  phase: TablePhase;
+  /** Is this actually the learner's decision right now? */
+  active: boolean;
+  /**
+   * The reasoning scaffold, computed on the server. Present means "Help me think"
+   * answers with no request at all; absent means there is nothing to scaffold —
+   * a watcher, or between boards.
+   */
+  aid?: ThinkAid | null;
+}>) {
+  const [answer, setAnswer] = useState<Answer | null>(null);
+
+  const tellLabel = phase === "auction" ? "What should I bid?" : "What should I play?";
+
+  async function tell() {
+    // The auction has no hint endpoint yet. Say so rather than calling the play
+    // route and rendering its "only during the play" refusal as if it were an
+    // answer about bidding.
+    if (phase === "auction") {
+      setAnswer({
+        kind: "pending",
+        what: "Bidding advice isn't wired yet.",
+        will:
+          "It will name the call your system makes here and say what it shows — the same three authorities as the card advice, and the same honesty about which one answered.",
+      });
+      return;
+    }
+    setAnswer({ kind: "loading" });
+    try {
+      // The client sends only a session id: the seat and the hand come from the
+      // session record server-side, so a crafted request cannot ask about
+      // somebody else's cards.
+      const res = await fetch(`/api/bridge/play-hint?sessionId=${encodeURIComponent(sessionId)}`);
+      const body = (await res.json()) as { hint?: Hint | null; reason?: string };
+      setAnswer(
+        body.hint?.best?.length
+          ? { kind: "done", hint: body.hint }
+          : { kind: "empty", reason: body.reason ?? "no answer" },
+      );
+    } catch {
+      setAnswer({ kind: "empty", reason: "unreachable" });
+    }
+  }
+
+  function think() {
+    // No fetch: the scaffold arrived with the page.
+    if (aid) return setAnswer({ kind: "think", aid });
+    setAnswer({
+      kind: "pending",
+      what: "Nothing to work through here.",
+      will: "Take a seat and wait for a decision that is yours, and this will lay the position out.",
+    });
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+      {answer && <AnswerBlock answer={answer} />}
+
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+        <Prompt onClick={think} disabled={!active} primary>
+          Help me think
+        </Prompt>
+        <Prompt onClick={tell} disabled={!active || answer?.kind === "loading"}>
+          {tellLabel}
+        </Prompt>
+      </div>
+
+      {/* Why the buttons are dead, when they are. A disabled control with no
+          reason reads as a broken one. */}
+      {!active && (
+        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.4, color: FAINT }}>
+          {phase === "other"
+            ? "Between boards — nothing to decide yet."
+            : "Waiting for your turn."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Prompt({
+  children, onClick, disabled, primary = false,
+}: Readonly<{ children: React.ReactNode; onClick: () => void; disabled?: boolean; primary?: boolean }>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        flex: "1 1 auto", minWidth: 132, minHeight: 42, padding: "10px 14px",
+        background: primary && !disabled ? TEAL : HEAD,
+        borderWidth: 1, borderStyle: "solid", borderColor: primary && !disabled ? TEAL : LINE,
+        borderRadius: 8, color: primary && !disabled ? "#fff" : TEAL,
+        fontSize: 14, fontWeight: 700, fontFamily: "inherit", lineHeight: 1.2,
+        cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.45 : 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * The answer, with room to be read.
+ *
+ * THREE AUTHORITIES, THREE DIFFERENT CLAIMS, and the wording has to track which
+ * one spoke. Your own agreement, a general maxim, and a calculation over cards
+ * you cannot see are not interchangeable; collapsing them into one confident
+ * phrase is how a heuristic gets presented as a fact. The calculation also
+ * agrees or dissents separately — "your system says this, the cards say
+ * otherwise" is worth showing rather than resolving.
+ */
+function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
+  if (answer.kind === "loading") {
+    return (
+      <p style={{ margin: 0, fontSize: 13.5, color: MUTED, fontStyle: "italic" }}>
+        Working it out — a few seconds…
+      </p>
+    );
+  }
+
+  if (answer.kind === "think") return <ThinkBlock aid={answer.aid} />;
+
+  if (answer.kind === "pending") {
+    return (
+      <div style={{ borderLeftWidth: 3, borderLeftStyle: "solid", borderLeftColor: LINE, paddingLeft: 10 }}>
+        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: INK }}>{answer.what}</p>
+        <p style={{ margin: "3px 0 0", fontSize: 13, lineHeight: 1.45, color: MUTED }}>{answer.will}</p>
+      </div>
+    );
+  }
+
+  if (answer.kind === "empty") {
+    // The panel reports WHY it is silent, so the reason is passed through rather
+    // than guessed at. Inventing a card would be worse than saying nothing, and
+    // saying nothing without a reason reads as broken.
+    const text =
+      answer.reason === "not your turn"
+        ? "Not your turn."
+        : answer.reason === "not playing"
+          ? "Only during the play."
+          : /^(your|no|too)/.test(answer.reason)
+            ? `No suggestion — ${answer.reason}.`
+            : "No suggestion for this position.";
+    return <p style={{ margin: 0, fontSize: 13.5, color: MUTED, fontStyle: "italic" }}>{text}</p>;
+  }
+
+  const { hint } = answer;
+  // "Your system plays" is a fact about your agreements; "usually right" is a
+  // hedge; "by calculation" says plainly that the answer came from working the
+  // deal out rather than from anything you could have deduced — which is exactly
+  // what a learner needs to know about it.
+  const lead =
+    hint.source === "system"
+      ? "Your system plays"
+      : hint.source === "convention"
+        ? "Usually right here"
+        : "By calculation";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: MUTED }}>{lead}</span>
+        {hint.best.map((card) => {
+          const { rank, suit } = cardText(card);
+          return (
+            <span
+              key={card}
+              style={{
+                padding: "3px 9px", background: "#fff",
+                borderWidth: 1, borderStyle: "solid", borderColor: LINE, borderRadius: 4,
+                fontSize: 17, fontWeight: 700, lineHeight: 1.1,
+                color: RED.has(suit) ? "#c00" : "#000",
+              }}
+            >
+              {rank}
+              {suit}
+            </span>
+          );
+        })}
+      </div>
+      {hint.because && (
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: MUTED }}>{hint.because}</p>
+      )}
+      {/* The calculation's verdict on the advice — agreement is reassurance,
+          disagreement is the interesting case. The card it prefers is NOT shown:
+          naming it would make the solver the adviser through the back door, and
+          its choice is the one you could not have reasoned your way to. */}
+      {(hint.corroborated || hint.contradicted || hint.source === "solution") && (
+        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.4 }}>
+          {hint.corroborated && <span style={{ color: TEAL }}>The cards agree.</span>}
+          {hint.contradicted && <span style={{ color: AMBER }}>Though the cards lie badly for it here.</span>}
+          {hint.source === "solution" && (
+            <span style={{ color: FAINT }}>{hint.corroborated || hint.contradicted ? " " : ""}Worked out from the full deal.</span>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The scaffold: what can be worked out, then the choices.
+ *
+ * Candidates render in the order given and are styled identically. That is
+ * load-bearing rather than lazy — any visual or positional difference between
+ * them reads as a recommendation, and a learner picks up that tell faster than
+ * they pick up the position. The point of this button is that it does not answer.
+ */
+function ThinkBlock({ aid }: Readonly<{ aid: ThinkAid }>) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+      {aid.known.length > 0 && (
+        <div>
+          <Head>What you can work out</Head>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 5 }}>
+            {aid.known.map((line) => (
+              <li key={line} style={{ position: "relative", paddingLeft: 13, fontSize: 13.5, lineHeight: 1.45, color: INK }}>
+                <span aria-hidden style={{ position: "absolute", left: 0, top: 0, color: TEAL, fontWeight: 700 }}>
+                  &middot;
+                </span>
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {aid.candidates.length > 0 && (
+        <div>
+          <Head>Your realistic choices</Head>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+            {aid.candidates.map((c) => (
+              <li key={c.label} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13.5, lineHeight: 1.45 }}>
+                <span style={{ flex: "none", minWidth: 42, fontWeight: 700, color: INK }}>{c.label}</span>
+                {c.does ? (
+                  <span style={{ color: MUTED }}>{c.does}</span>
+                ) : c.note ? (
+                  <span style={{ color: FAINT }}>{c.note}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {aid.noChoice && (
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: MUTED }}>{aid.noChoice}</p>
+      )}
+
+      {aid.question && (
+        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, fontWeight: 700, color: INK }}>{aid.question}</p>
+      )}
+
+      {/* Say what is missing. Letting the facts pass for the finished feature
+          would let a learner conclude this is all the coach has to offer. */}
+      {aid.degraded && (
+        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: FAINT }}>
+          These are the facts. What each choice would <i>do</i>, and what the bidding promises, is
+          the part still being built.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Head({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <div
+      style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
+        textTransform: "uppercase", color: FAINT, marginBottom: 6,
+      }}
+    >
+      {children}
+    </div>
+  );
+}

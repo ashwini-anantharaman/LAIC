@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { SessionEngine } from "./SessionEngine.js";
-import type { ActivityEvent, AdaptiveCoachResponse } from "../types/index.js";
+import { SessionEngine } from "./SessionEngine";
+import type { ActivityEvent, AdaptiveCoachResponse } from "../types/index";
 
 function event(eventId: string, eventType: string): ActivityEvent<any> {
   return {

@@ -1,10 +1,10 @@
 import { roleLabel, stubDisplayName } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
-import { clearDevUser } from "@/app/actions";
+import { clearDevUser, signOutNexus } from "@/app/actions";
 import { NavLink } from "@/components/NavLink";
 import { getCatalogue } from "@/lib/access";
 import { navForContext } from "@/lib/nav";
-import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
+import { getBridgeContext, isEmbeddedLaunch, isFellowDemo, nexusMode } from "@/lib/nexus";
 
 /** Hidden on the fellows-testing deployment. */
 const DEMO_HIDDEN_NAV = new Set([
@@ -24,6 +24,11 @@ export default async function BridgeShellLayout({
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
 
+  // Embedded in a host app? The host owns the session + its own exit control,
+  // so we hide Bridge's "Sign out" (signing out here would leave a confusing
+  // half-signed-out state inside the host).
+  const embedded = await isEmbeddedLaunch();
+  const showSignOut = nexusMode() === "http" && !embedded;
   const demo = await isFellowDemo();
   const catalogue = await getCatalogue();
   const navItems = navForContext(catalogue, context).filter(
@@ -31,11 +36,26 @@ export default async function BridgeShellLayout({
   );
 
   const displayName =
-    stubDisplayName(context.nexusUserId) ?? context.nexusUserId;
+    // Real name from the Nexus context (http mode); stub roster in dev.
+    context.displayName ??
+    stubDisplayName(context.nexusUserId) ??
+    context.nexusUserId;
+
+
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
-      <aside className="flex w-full shrink-0 flex-col border-b border-[var(--line)] bg-[var(--card)] md:w-64 md:border-b-0 md:border-r">
+    // The shell owns the viewport and `main` is the scroll container, rather
+    // than the window scrolling the whole shell. That's what lets a page ask
+    // for the space that's actually left (h-full) — the table needs it, and on
+    // a phone the nav bar's height isn't a constant anyone can subtract.
+    <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
+      {/* Embedded in the coach app: the host owns ALL navigation — desktop
+          pages reached from the app render their content only. No in-page
+          back link: the app's own header arrow returns to wherever the screen
+          was pushed from (Play, Library, Assignments…), which an in-page link
+          could only guess at. */}
+      {!embedded && (
+      <aside className="flex w-full shrink-0 flex-col overflow-y-auto border-b border-[var(--line)] bg-[var(--card)] md:w-64 md:border-b-0 md:border-r">
         <div className="border-b border-[var(--line)] px-3 py-2 md:p-4">
           <p className="hidden text-[11px] tracking-[0.35em] text-neutral-500 md:block">
             ♠ <span className="text-[var(--madder)]">♥</span> ♣{" "}
@@ -51,12 +71,33 @@ export default async function BridgeShellLayout({
             <NavLink key={item.href} href={item.href} label={item.label} />
           ))}
         </nav>
-        {/* Identity/role details are desktop chrome — on a phone every pixel
-            above the felt counts. Personas still switch via /welcome. */}
+        {/* Exit controls must exist on every screen size — nobody gets
+            trapped in the platform. Identity details stay desktop-only. */}
+        <div className="flex items-center gap-2 border-t border-[var(--line)] px-4 py-2 md:hidden">
+          {showSignOut && (
+            <form action={signOutNexus}>
+              <button type="submit" className="text-xs font-medium text-neutral-600 underline-offset-2 hover:underline">
+                Sign out
+              </button>
+            </form>
+          )}
+        </div>
         <div className="hidden space-y-1 border-t border-[var(--line)] p-4 text-sm md:block">
+          {showSignOut && (
+            <form action={signOutNexus} className="mb-2">
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
+              >
+                Sign out
+              </button>
+            </form>
+          )}
           <p className="font-medium">{displayName}</p>
           <p className="text-xs text-neutral-500">
-            {context.roles.map(roleLabel).join(", ")}
+            {/* The person's actual role name (custom roles included) wins over
+                the level→prebuilt fallback in `roles`. */}
+            {context.role_name || context.roles.map(roleLabel).join(", ")}
           </p>
           {context.programOrganizationId ? (
             <p className="text-xs text-neutral-500">
@@ -77,7 +118,8 @@ export default async function BridgeShellLayout({
           )}
         </div>
       </aside>
-      <main className="min-w-0 flex-1 p-3 md:p-8">{children}</main>
+      )}
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-8">{children}</main>
     </div>
   );
 }

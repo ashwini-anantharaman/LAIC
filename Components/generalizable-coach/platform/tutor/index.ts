@@ -1,1 +1,1 @@
-export { StudyTutor, type StudyTutorOptions, type Phraser } from "./StudyTutor.js";
+export { StudyTutor, type StudyTutorOptions, type Phraser } from "./StudyTutor";

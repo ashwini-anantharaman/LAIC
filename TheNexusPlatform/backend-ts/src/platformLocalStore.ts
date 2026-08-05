@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { HttpError } from "./httpError";
 import { StageNode } from "./permissions";
+import { normalizeProgramFeatures, type ProgramFeatures } from "./schemas";
 
 const _here = dirname(fileURLToPath(import.meta.url));
 const _ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -233,11 +234,38 @@ export function localUpdateOrgTheme(
   throw new HttpError(404, "Organization not found");
 }
 
+export function localUpdateOrgName(orgId: string, name: string): Row {
+  const orgs = _read("organizations");
+  for (const org of orgs) {
+    if (org.id === orgId) {
+      org.name = name;
+      _write("organizations", orgs);
+      return org;
+    }
+  }
+  throw new HttpError(404, "Organization not found");
+}
+
+/** Generic settings replace (used for capability envelope, etc.). */
+export function localSetOrgSettings(orgId: string, settings: Row): Row {
+  const orgs = _read("organizations");
+  for (const org of orgs) {
+    if (org.id === orgId) {
+      org.settings = settings;
+      _write("organizations", orgs);
+      return org;
+    }
+  }
+  throw new HttpError(404, "Organization not found");
+}
+
 export interface CreateProgramOptions {
   description?: string | null;
   icon?: string | null;
   instructorLabel?: string | null;
   learnerLabel?: string | null;
+  features?: Record<string, boolean> | null;
+  secondaryCategories?: string[] | null;
 }
 
 export function localCreateProgram(
@@ -255,11 +283,25 @@ export function localCreateProgram(
     icon: opts.icon ?? null,
     instructor_label: opts.instructorLabel ?? null,
     learner_label: opts.learnerLabel ?? null,
+    features: normalizeProgramFeatures(opts.features),
   };
   const programs = _read("programs");
   programs.push(row);
   _write("programs", programs);
   return row;
+}
+
+/** Replace a program's accessible-feature set (org-admin config). */
+export function localUpdateProgramFeatures(
+  programId: string,
+  features: ProgramFeatures,
+): Row | null {
+  const programs = _read("programs");
+  const row = programs.find((p) => p.id === programId);
+  if (!row) return null;
+  row.features = features;
+  _write("programs", programs);
+  return { ...row, ..._programCounts(programId) };
 }
 
 /** Best-effort course/learner/instructor counts for a program's workspace card. */
@@ -288,12 +330,13 @@ function _programCounts(programId: string): Row {
 export function localListPrograms(orgId: string): Row[] {
   return _read("programs")
     .filter((p) => p.org_id === orgId)
-    .map((p) => ({ ...p, ..._programCounts(p.id) }));
+    .map((p) => ({ ...p, features: normalizeProgramFeatures(p.features), ..._programCounts(p.id) }));
 }
 
 export function localGetProgram(programId: string): Row | null {
   for (const row of _read("programs")) {
-    if (row.id === programId) return { ...row, ..._programCounts(programId) };
+    if (row.id === programId)
+      return { ...row, features: normalizeProgramFeatures(row.features), ..._programCounts(programId) };
   }
   return null;
 }
@@ -1242,6 +1285,12 @@ export function localRecordAuditEvent(action: string, opts: AuditEventOptions = 
 
 export function localListAuditEvents(orgId: string, limit = 50): Row[] {
   const rows = _read("audit_events").filter((r) => r.organization_id === orgId);
+  rows.sort((a, b) => ((a.created_at ?? "") < (b.created_at ?? "") ? 1 : -1));
+  return rows.slice(0, limit);
+}
+
+export function localListAllAuditEvents(limit = 100): Row[] {
+  const rows = _read("audit_events");
   rows.sort((a, b) => ((a.created_at ?? "") < (b.created_at ?? "") ? 1 : -1));
   return rows.slice(0, limit);
 }

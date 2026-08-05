@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { KnowledgeRetriever } from "./KnowledgeRetriever.js";
-import type { KnowledgePackage } from "../types/index.js";
+import { KnowledgeRetriever } from "./KnowledgeRetriever";
+import type { KnowledgePackage } from "../types/index";
 
 // A self-contained, domain-neutral package. The retriever is Zone-1 platform
 // code and must not depend on any specific domain (e.g. bridge) to be tested —

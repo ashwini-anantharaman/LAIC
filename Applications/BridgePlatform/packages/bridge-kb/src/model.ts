@@ -77,6 +77,15 @@ export interface KnowledgeBase {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Instance scoping (kb-core component, additive jsonb — no migration):
+   * which instance owns this KB. Legacy KBs without a stamp are treated as
+   * `program` (the shared, staff-curated instance) by the adapter.
+   */
+  scopeLevel?: "user" | "program" | "org";
+  programOrganizationId?: string;
+  /** The REAL Nexus program uuid partition. */
+  nexusProgramId?: string;
 }
 
 // ---------------------------------------------------------------------------

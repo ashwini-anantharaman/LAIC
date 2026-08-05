@@ -14,7 +14,8 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 
 import { asPrivileged, type Tx } from "./context";
-import { profiles, organizations, orgMemberships, entitlements, auditEvents } from "./schema";
+import { ensureOrgProfile } from "./resolveProfile";
+import { organizations, orgMemberships, entitlements, auditEvents } from "./schema";
 
 export type ModuleKey = "nexus" | "learning" | "coaching" | "analytics";
 
@@ -25,6 +26,12 @@ export interface ProvisionOrganizationInput {
   theme?: { primaryColor?: string; secondaryColor?: string; logoUrl?: string };
   /** Modules the org starts with. Defaults to nexus + learning. */
   defaultModules?: ModuleKey[];
+  /**
+   * Let the owner's credential belong to a second org (the one-account-per-org
+   * exception). The operator explicitly designating an existing account as owner
+   * is consent, analogous to accepting an invitation.
+   */
+  allowSecondOrg?: boolean;
 }
 
 export interface ProvisionResult {
@@ -84,18 +91,15 @@ export async function provisionOrganization(input: ProvisionOrganizationInput): 
       })
       .returning({ id: organizations.id });
 
-    // 2. Org-scoped owner profile (one login → many org profiles: auth_user_id links).
-    const [ownerProfile] = await tx
-      .insert(profiles)
-      .values({
-        authUserId: ownerAuthUserId,
-        organizationId: org.id,
-        email: input.owner.email,
-        role: "org_admin",
-        displayName: input.owner.displayName ?? null,
-      })
-      .returning({ id: profiles.id });
-    const ownerProfileId = ownerProfile.id;
+    // 2. Org-scoped owner profile, via the single person-enters-an-org chokepoint
+    //    (Phase 2: enforces one credential ↔ one org; 409 aborts the whole
+    //    transaction, so no half-provisioned org is left behind).
+    const ownerProfileId = await ensureOrgProfile(tx, ownerAuthUserId, org.id, {
+      email: input.owner.email,
+      role: "org_admin",
+      displayName: input.owner.displayName ?? null,
+      allowSecondOrg: input.allowSecondOrg,
+    });
 
     const storagePrefix = `orgs/${org.id}/`;
     await tx

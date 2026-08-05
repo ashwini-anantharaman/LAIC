@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { encodeCard, solvePosition, type Position, type SeatId } from "./solver.js";
+import { encodeCard, solvePosition, type Position, type SeatId } from "./solver";
 
 function pos(
   hands: Record<SeatId, string[]>,
