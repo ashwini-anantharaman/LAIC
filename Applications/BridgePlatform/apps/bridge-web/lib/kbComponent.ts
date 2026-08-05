@@ -17,6 +17,7 @@ import {
   type KbOperation,
   type KbPrincipal,
 } from "@laic/kb-core";
+import { canUse } from "./access";
 import { libraryPrincipalOf } from "./libraryComponent";
 
 /** Default policy bound to bridge staff roles: the admin tier holds the whole
@@ -69,8 +70,10 @@ export async function canKb(
   return canPerformKb(bridgeKbPolicy, principal, operation, { level: "program" });
 }
 
-/** Gate for the KB workspace pages — replaces the bare admin-area check, so a
- *  custom role granted `kb.view` in the Access Catalogue can enter. */
+/** Gate for the KB workspace pages. Catalogue-driven (`page.kb`) — the SAME key
+ *  the KB pages already enforce with canUse, so KB visibility is one model: a
+ *  role granted `page.kb` in the Access Catalogue can enter, and the component's
+ *  own lifecycle policy still governs each edit/review/approve action. */
 export function canViewKbWorkspace(context: NexusBridgeContext): Promise<boolean> {
-  return canKb(context, "view");
+  return canUse(context, "page.kb");
 }

@@ -810,13 +810,22 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   await page.getByRole("button", { name: /Confirm Pass/ }).click();
   await expect(page.getByText(/Confirm your call/)).toHaveCount(0);
 
-  // Narrow layout: a phone-sized viewport gets the portrait stage — the
-  // touch bid tray's Pass button is finger-sized, not the wide tray's.
+  // PHONE tier (Mobile Table design): one vertical stack — big Pass button,
+  // and NO West/East seats anywhere (only your hand and, in play, dummy's).
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/bridge/table2/${sid}?paused=1`);
   await expect(page.getByRole("button", { name: "Table menu" })).toBeVisible();
   const narrowPass = await page.getByRole("button", { name: "Pass", exact: true }).boundingBox();
   if (narrowPass) expect(narrowPass.width).toBeGreaterThan(80);
+  await expect(page.getByText(/House · Full/)).toHaveCount(0);
+
+  // STACKED tier (Play Table narrow — Device Preview's split pane): portrait
+  // but wider than a phone, so the seat DIAGRAMS return, W/E plates included.
+  // (The app sidebar eats ~300px, so the TABLE's container is ~700px here.)
+  await page.setViewportSize({ width: 1000, height: 1250 });
+  await page.goto(`/bridge/table2/${sid}?paused=1`);
+  await expect(page.getByRole("button", { name: "Table menu" })).toBeVisible();
+  await expect(page.getByText(/House · Full/).first()).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 720 });
 
   // The rail's "Hands" chip switches to the HandViewer record view: big seat

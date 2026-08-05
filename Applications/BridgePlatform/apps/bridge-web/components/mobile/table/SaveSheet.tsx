@@ -23,9 +23,9 @@ const FROSTED: React.CSSProperties = {
 };
 
 const KIND_HINTS: [string, string, string][] = [
-  ["deal", "Deal", "cards only"],
+  ["deal", "Pack", "cards only"],
   ["board", "Board", "+ dealer / vul"],
-  ["play", "Play", "calls + cards"],
+  ["play", "Deal", "calls + cards"],
   ["table", "Table", "the lineup"],
 ];
 

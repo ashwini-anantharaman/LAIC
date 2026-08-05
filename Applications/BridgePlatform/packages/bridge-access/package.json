@@ -1,0 +1,35 @@
+{
+  "name": "@bridge/access",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Role-based access catalogue: the registry of gateable pages/features, their default role sets, and per-program overrides. A read model the app enforces against — the store seam holds one catalogue, keyed by GLOBAL_CATALOGUE_ID (org overrides land later without migration).",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./fileStore": {
+      "types": "./src/fileStore.ts",
+      "default": "./src/fileStore.ts"
+    },
+    "./sets": {
+      "types": "./src/sets.ts",
+      "default": "./src/sets.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bridge/nexus-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

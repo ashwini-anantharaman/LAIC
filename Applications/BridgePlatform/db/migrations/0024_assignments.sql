@@ -28,3 +28,5 @@ create index if not exists idx_assignments_coach
   on bridge_assignments (coach_id, created_at desc);
 create index if not exists idx_assignments_session
   on bridge_assignments (session_id);
+
+alter table bridge_assignments enable row level security;

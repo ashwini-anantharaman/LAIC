@@ -30,6 +30,9 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
 import { CoachFab, CoachSheet, type CoachFabPos, type CoachPanelData, type CoachPresence } from "./CoachPanel";
+// The shared table-ui package carries its own SettingsMenu now, but without
+// the `extra` slot this table's phone menu leans on — so the legacy table
+// keeps its original local copy.
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DealEditor } from "@/components/library/DealEditor";
-import { canCreateInLibrary } from "@/lib/libraryComponent";
+import { requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 import { createDealAction } from "../actions";
 
@@ -12,12 +12,10 @@ export default async function NewDealPage({
 }: Readonly<{ searchParams: Promise<{ kind?: string; error?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  // Direct URL must respect the capability too, not just the hidden button.
-  if (!(await canCreateInLibrary(context)))
-    redirect("/bridge/library");
+  await requireFeature(context, "page.library");
   const { kind: rawKind, error } = await searchParams;
   const kind = rawKind === "deal" ? "deal" : "board";
-  const noun = kind === "deal" ? "deal" : "board";
+  const noun = kind === "deal" ? "pack" : "board";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -45,7 +43,7 @@ export default async function NewDealPage({
         <input type="hidden" name="kind" value={kind} />
         <DealEditor
           hideBoardFacts={kind === "deal"}
-          submitLabel={kind === "deal" ? "Save deal" : "Save board"}
+          submitLabel={kind === "deal" ? "Save pack" : "Save board"}
         />
       </form>
     </div>

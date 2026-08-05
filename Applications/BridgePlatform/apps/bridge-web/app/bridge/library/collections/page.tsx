@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { bridgeLibrary, canShareLibrary, libraryPrincipalOf } from "@/lib/libraryComponent";
+import { bridgeLibrary, canCurateCollections, libraryPrincipalOf } from "@/lib/libraryComponent";
 import { getBridgeContext } from "@/lib/nexus";
 import { nexusProgramId } from "@/lib/nexusPeople";
 import { getCollectionDesignations, listBridgeRoles } from "@/lib/nexusBridgeRoles";
@@ -14,7 +14,7 @@ export default async function CollectionsPage({
 }: Readonly<{ searchParams: Promise<{ id?: string; saved?: string; deleted?: string; error?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  if (!(await canShareLibrary(context))) redirect("/bridge/library");
+  if (!(await canCurateCollections(context))) redirect("/bridge/library");
   const { id: editId, saved, deleted, error } = await searchParams;
 
   const principal = await libraryPrincipalOf(context);

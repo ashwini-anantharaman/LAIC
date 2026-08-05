@@ -10,7 +10,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { LibraryAccessError } from "@laic/library-core";
-import { bridgeLibrary, libraryPrincipalOf } from "@/lib/libraryComponent";
+import { bridgeLibrary, libraryPrincipalOf, programReadPrincipal } from "@/lib/libraryComponent";
 import { getBridgeContext } from "@/lib/nexus";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const kind = req.nextUrl.searchParams.get("kind") ?? undefined;
 
   try {
-    const principal = await libraryPrincipalOf(context);
+    const principal = programReadPrincipal(await libraryPrincipalOf(context), context, view);
     // The service already returns the generic item envelope — consumers
     // never learn bridge's storage shapes.
     const items = await bridgeLibrary().list(principal, { view, kind });

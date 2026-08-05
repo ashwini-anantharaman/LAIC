@@ -10,7 +10,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
-import { bridgeLibrary, canShareLibrary, libraryPrincipalOf } from "@/lib/libraryComponent";
+import { bridgeLibrary, canCurateCollections, libraryPrincipalOf } from "@/lib/libraryComponent";
 import {
   getCollectionDesignations,
   setCollectionDesignations,
@@ -20,7 +20,7 @@ import { getBridgeContext } from "@/lib/nexus";
 
 async function requireCurator() {
   const context = await requireContext();
-  if (!(await canShareLibrary(context))) throw new Error("Library curation requires distribution access");
+  if (!(await canCurateCollections(context))) throw new Error("Library curation requires collection access");
   return context;
 }
 

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
+    "@bridge/access": "workspace:*",
     "@bridge/audit": "workspace:*",
     "@bridge/b2f-template": "workspace:*",
     "@bridge/config": "workspace:*",
@@ -28,6 +29,8 @@
     "@bridge/profiles": "workspace:*",
     "@bridge/sayc-template": "workspace:*",
     "@bridge/sessions": "workspace:*",
+    "@bridge/table-config": "workspace:*",
+    "@bridge/table-ui": "workspace:*",
     "@bridge/taxonomy": "workspace:*",
     "@laic/coach": "link:../../../../Components/generalizable-coach",
     "@laic/kb-core": "workspace:*",

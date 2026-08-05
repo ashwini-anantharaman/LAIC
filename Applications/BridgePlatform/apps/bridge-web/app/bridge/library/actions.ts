@@ -17,6 +17,7 @@ import {
 } from "@bridge/sessions";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { requireContext } from "@/lib/api";
 import { authoredScope, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { arenaSets, ensureHousePlayer } from "@/lib/arena";
@@ -34,10 +35,7 @@ function fail(message: string): never {
 /** The deal editor's save: four hand-authored hands → one deal/board entry. */
 export async function createDealAction(formData: FormData): Promise<void> {
   const context = await requireContext();
-  // Authoring is a CAPABILITY (library.author.own / .program) — a role
-  // without it is play-only, and this is where that is enforced.
-  const { assertCanCreateInLibrary } = await import("@/lib/libraryComponent");
-  await assertCanCreateInLibrary(context);
+  await requireFeature(context, "library.create");
   const kind = String(formData.get("kind")) === "deal" ? "deal" : "board";
   const mobile = formData.get("mobile") === "1";
   const failNew: (message: string) => never = (message) =>
@@ -63,7 +61,7 @@ export async function createDealAction(formData: FormData): Promise<void> {
     kind,
     name:
       String(formData.get("name") ?? "").trim() ||
-      (kind === "deal" ? "Authored deal" : "Authored board"),
+      (kind === "deal" ? "Authored pack" : "Authored board"),
     tags: [],
     hands,
     // A bare deal is just the card distribution — board facts stay off it.
@@ -139,8 +137,7 @@ export async function updateDealAction(formData: FormData): Promise<void> {
 /** Upload a .lin or .pbn file → one library entry per complete board. */
 export async function importFileAction(formData: FormData): Promise<void> {
   const context = await requireContext();
-  const { assertCanCreateInLibrary } = await import("@/lib/libraryComponent");
-  await assertCanCreateInLibrary(context); // import IS authoring
+  await requireFeature(context, "library.import");
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) fail("Choose a .lin or .pbn file first.");
   if (file.size > MAX_IMPORT_BYTES) fail("That file is over 1 MB — export single sessions.");
@@ -239,6 +236,7 @@ export async function resolveEntryLineup(
 /** Deal a saved deal/board/play onto a fresh table vs. house players. */
 export async function playEntryAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "library.resume");
   await ensureSeeds();
   await assertAiAllowed(context);
   const entryId = String(formData.get("entryId"));
@@ -274,6 +272,7 @@ export async function playEntryAction(formData: FormData): Promise<void> {
  *  (mid-board stays live; a full recording opens as a completed board). */
 export async function resumePlayEntryAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "library.resume");
   await ensureSeeds();
   await assertAiAllowed(context);
   const entryId = String(formData.get("entryId"));
@@ -281,7 +280,7 @@ export async function resumePlayEntryAction(formData: FormData): Promise<void> {
   const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const entry = await libraryStore().getEntry(entryId);
   if (entry?.kind !== "play" || !entry.hands)
-    throw new Error("This entry is not a saved play");
+    throw new Error("This entry is not a saved deal");
 
   const { kbId, compiled, seats } = await resolveEntryLineup(entry, "", context);
 
@@ -329,6 +328,7 @@ export async function resumePlayEntryAction(formData: FormData): Promise<void> {
 /** Start a saved table lineup on a fresh deal. */
 export async function startTableEntryAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "library.resume");
   await ensureSeeds();
   await assertAiAllowed(context);
   const entryId = String(formData.get("entryId"));
@@ -373,6 +373,7 @@ export async function startTableEntryAction(formData: FormData): Promise<void> {
 
 export async function deleteEntryAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "library.delete");
   const entryId = String(formData.get("entryId"));
   const entry = await libraryStore().getEntry(entryId);
   if (entry) {

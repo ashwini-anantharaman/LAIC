@@ -11,7 +11,7 @@
 
 import type { CoachNote } from "@laic/coach/core";
 
-import type { CoachNote as StripNote, CoachNoteSource } from "@/components/table/play/CoachPanel";
+import type { CoachNote as StripNote, CoachNoteSource } from "./stripNote";
 import { REVEAL_LEVEL } from "./notes";
 
 /** `status` is the coach reporting on itself — the table's voice, not the coach's. */

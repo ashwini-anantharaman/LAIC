@@ -5,7 +5,9 @@
 import type { Seat } from "@bridge/events";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { HandViewer } from "@/components/table/play/HandViewer";
+import { HandViewer } from "@bridge/table-ui";
+import { libraryKindLabel } from "@/lib/libraryLabels";
+import { requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";
 
@@ -14,6 +16,8 @@ export default async function LibraryHandViewerPage({
 }: Readonly<{ params: Promise<{ entryId: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.library");
+  await requireFeature(context, "library.hand_viewer");
   const { entryId } = await params;
   const entry = await libraryStore().getEntry(entryId);
   if (!entry?.hands) notFound();
@@ -35,7 +39,7 @@ export default async function LibraryHandViewerPage({
           ⟵ {entry.name}
         </Link>
         <span>
-          Library / {entry.kind} · hand record
+          Library / {libraryKindLabel(entry.kind)} · hand record
         </span>
       </p>
       <div className="overflow-hidden rounded-lg" style={{ height: "calc(100vh - 7.5rem)" }}>
@@ -48,7 +52,7 @@ export default async function LibraryHandViewerPage({
           auction={entry.auction ?? []}
           highlightSeat={entry.dealer ?? null}
           info={[
-            { label: `Library · ${entry.kind}`, value: entry.createdAt.slice(0, 10) },
+            { label: `Library · ${libraryKindLabel(entry.kind)}`, value: entry.createdAt.slice(0, 10) },
             ...(entry.notes ? [{ label: entry.notes, value: "" }] : []),
           ]}
           result={[

@@ -31,6 +31,8 @@ const nextConfig: NextConfig = {
     "@bridge/girkar-template",
     "@bridge/profiles",
     "@bridge/sessions",
+    "@bridge/table-config",
+    "@bridge/table-ui",
     "@laic/learner-contracts",
     // The coaching engine, consumed as TypeScript source via `@laic/coach/core`
     // — the domain-free entrypoint, which by construction pulls no dependency

@@ -10,6 +10,7 @@ import { playerIsValid, validatePlayerStatic, newId } from "@bridge/kb";
 import { SessionService, type SeatConfig } from "@bridge/sessions";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
@@ -21,6 +22,7 @@ import { stubDisplayName } from "@bridge/nexus-client";
 
 export async function createRungPlayerAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "players.create");
   await ensureSeeds();
   const kbId = String(formData.get("kbId"));
   const packId = String(formData.get("packId"));
@@ -77,6 +79,7 @@ export async function createRungPlayerAction(formData: FormData): Promise<void> 
  */
 export async function deletePlayerAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "players.delete");
   const { requireAdminContext } = await import("@/lib/api");
   await requireAdminContext("bridge.knowledge.edit");
   const playerId = String(formData.get("playerId"));
@@ -106,6 +109,8 @@ export async function deletePlayerAction(formData: FormData): Promise<void> {
  */
 export async function tryBenAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "players.try");
+  await requireFeature(context, "table.ben_seat");
   await ensureSeeds();
   const watch = formData.get("watch") === "1";
   const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
@@ -144,6 +149,7 @@ export async function tryBenAction(formData: FormData): Promise<void> {
 /** One-click check: you sit South, three copies of the player fill the rest. */
 export async function tryPlayerAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "players.try");
   await ensureSeeds();
   const playerId = String(formData.get("playerId"));
   const watch = formData.get("watch") === "1";

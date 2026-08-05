@@ -15,3 +15,5 @@ create table if not exists bridge_library_collections (
 
 create index if not exists idx_blc_scope
   on bridge_library_collections (nexus_program_id, scope_level);
+
+alter table bridge_library_collections enable row level security;

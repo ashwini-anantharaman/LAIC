@@ -38,3 +38,7 @@ create table if not exists bridge_play_comments (
 );
 create index if not exists idx_play_comments_submission
   on bridge_play_comments (submission_id, created_at);
+
+-- RLS enabled at apply time (Supabase "Run and enable RLS"); mirrored here so the file matches prod.
+alter table bridge_play_submissions enable row level security;
+alter table bridge_play_comments enable row level security;

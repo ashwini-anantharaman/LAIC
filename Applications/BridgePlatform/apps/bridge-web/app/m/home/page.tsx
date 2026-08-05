@@ -1,6 +1,7 @@
 import { stubDisplayName } from "@bridge/nexus-client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 
 const F = "var(--font-fraunces), serif";
@@ -10,6 +11,7 @@ const bold = { color: "#1d1a15", fontWeight: 700 };
 export default async function MobileHomePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.home");
   const firstName = (
     // Real name from the Nexus context (http mode); stub roster in dev.
     context.displayName ??
@@ -68,7 +70,7 @@ export default async function MobileHomePage() {
           house players are provisioned for you. <b style={bold}>Players</b>
           {/* explicit space: the compiler eats the plain-space seam here */}
           {" collects everyone's configured players"}; the{" "}
-          <b style={bold}>Library</b> keeps the deals, boards, lineups and plays
+          <b style={bold}>Library</b> keeps the packs, boards, lineups and deals
           worth returning to.
         </p>
       </div>

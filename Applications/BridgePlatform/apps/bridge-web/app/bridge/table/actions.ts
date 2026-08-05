@@ -9,26 +9,29 @@ import { AwaitingHumanError, SessionService, type SeatConfig } from "@bridge/ses
 import { handFromSerialized } from "@/lib/dealText";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { requireContext } from "@/lib/api";
 import { authoredScope, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { audit } from "@/lib/audit";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
+import { libraryKindLabel } from "@/lib/libraryLabels";
 import { libraryStore, sessionService } from "@/lib/sessions";
 
 const SEATS: Seat[] = ["N", "E", "S", "W"];
 
 /**
- * Strip any trailing auto-appended " · deal"/" · board"/" · play"/" · table"
+ * Strip any trailing auto-appended " · pack"/" · board"/" · deal"/" · table"
  * kind suffixes from a board name before we append a fresh one. These stack
- * across save→resume→save cycles ("Board 1 · play · play · deal"), so we peel
- * them off repeatedly. Only touches the auto-generated tail; user-typed names
- * never reach this (they short-circuit the default before it's called).
+ * across save→resume→save cycles ("Board 1 · deal · deal · pack"), so we peel
+ * them off repeatedly. The legacy words "deal"/"play" are still stripped so
+ * names saved before the rename stay clean. Only touches the auto-generated
+ * tail; user-typed names never reach this (they short-circuit the default).
  */
 function stripKindSuffixes(name: string): string {
   let out = name.trim();
   for (;;) {
-    const stripped = out.replace(/\s*·\s*(deal|board|play|table)$/, "").trimEnd();
+    const stripped = out.replace(/\s*·\s*(pack|deal|board|play|table)$/, "").trimEnd();
     if (stripped === out) return out;
     out = stripped;
   }
@@ -136,6 +139,7 @@ export async function quickPlayAction(formData: FormData): Promise<void> {
  */
 export async function redealEditedAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "table.deal_editor");
   const sessionId = String(formData.get("sessionId"));
   // Additive, inert by default: the mobile deal editor posts mobile=1 so both
   // the error round-trip and the fork land back in the /m/table chrome.
@@ -274,7 +278,8 @@ export async function stepAction(formData: FormData): Promise<void> {
 }
 
 export async function playToEndAction(formData: FormData): Promise<void> {
-  await requireContext();
+  const context = await requireContext();
+  await requireFeature(context, "table.step_controls");
   const sessionId = String(formData.get("sessionId"));
   const service = sessionService();
   let guard = 0;
@@ -307,6 +312,7 @@ export async function playCardAction(formData: FormData): Promise<void> {
 
 export async function undoAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "table.undo");
   const sessionId = String(formData.get("sessionId"));
   // Additive, inert by default: the mobile felt UI posts mobile=1 so we return
   // to the /m/table chrome instead of the desktop board.
@@ -327,6 +333,7 @@ export async function undoAction(formData: FormData): Promise<void> {
  *  paused for the same reason undo does: rewinding is for re-watching. */
 export async function rewindAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "table.undo");
   const sessionId = String(formData.get("sessionId"));
   const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   await sessionService().rewindToStart(sessionId);
@@ -342,6 +349,7 @@ export async function rewindAction(formData: FormData): Promise<void> {
  */
 export async function newDealAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "table.new_deal");
   const sessionId = String(formData.get("sessionId"));
   const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   const service = sessionService();
@@ -371,6 +379,7 @@ export async function newDealAction(formData: FormData): Promise<void> {
  */
 export async function swapSeatAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "table.seats_panel");
   const sessionId = String(formData.get("sessionId"));
   const seat = String(formData.get("seat")) as Seat;
   const playerId = String(formData.get("playerId"));
@@ -387,6 +396,7 @@ export async function swapSeatAction(formData: FormData): Promise<void> {
     // BEN, the neural engine, as a character. Only offered when the endpoint
     // is configured; checked again here so a stale form can't seat a BEN that
     // will immediately fail to act.
+    await requireFeature(context, "table.ben_seat");
     await assertAiAllowed(context);
     const { benAvailable, BEN_SEAT_LABEL } = await import("@/lib/benSeat");
     if (!benAvailable()) throw new Error("BEN isn't configured on this server (BEN_ENDPOINT)");
@@ -422,6 +432,7 @@ export async function swapSeatAction(formData: FormData): Promise<void> {
  */
 export async function saveToLibraryAction(formData: FormData): Promise<void> {
   const context = await requireContext();
+  await requireFeature(context, "table.save_library");
   const sessionId = String(formData.get("sessionId"));
   const kind = String(formData.get("kind")) as "deal" | "board" | "play" | "table";
   if (!["deal", "board", "play", "table"].includes(kind)) throw new Error("Pick what to save");
@@ -435,7 +446,7 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
   const originalHands = record.board.hands ?? seededDeal(record.board.seed);
   const name =
     String(formData.get("name") ?? "").trim() ||
-    `${stripKindSuffixes(record.board.name)} · ${kind}`;
+    `${stripKindSuffixes(record.board.name)} · ${libraryKindLabel(kind)}`;
   const notes = String(formData.get("notes") ?? "").trim();
   const now = new Date().toISOString();
 
