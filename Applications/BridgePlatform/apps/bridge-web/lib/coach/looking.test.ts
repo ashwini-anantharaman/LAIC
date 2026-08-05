@@ -55,7 +55,8 @@ describe("lookingAt — the auction", () => {
     const r = lookingAt(state(), "S")!;
     expect(hcp(HAND)).toBe(13);
     expect(r.facts.find((f) => f.label === "HCP")?.value).toBe("13");
-    expect(r.facts.find((f) => f.label === "♠♥♦♣")?.value).toBe("3=2=2=6");
+    // The shape spelled per suit, not the column notation ("3=2=2=6").
+    expect(r.facts.some((f) => f.value === "♠3 ♥2 ♦2 ♣6")).toBe(true);
     expect(r.facts.some((f) => f.value === "six-card suit")).toBe(true);
   });
 
@@ -155,6 +156,107 @@ describe("lookingAt — the play", () => {
     });
     const r = lookingAt(s, "S")!;
     for (const f of ["A♥", "K♥", "Q♥", "K♠", "J♠", "10♠"]) expect(r.looking).not.toContain(f);
+  });
+});
+
+describe("lookingAt — event groups", () => {
+  it("itemizes the auction one call per row, named from the learner's side", () => {
+    const r = lookingAt(
+      state({ auction: [call("N", "1D"), call("E", "P"), call("S", "1S")], turn: "W" }),
+      "S",
+    )!;
+    expect(r.eventGroups).toHaveLength(1);
+    const g = r.eventGroups[0]!;
+    expect(g).toMatchObject({ id: "auction", title: "The auction", current: true });
+    expect(g.events.map((e) => e.label)).toEqual(["Partner bid 1♦", "East passed", "You bid 1♠"]);
+    // The structured parts drive the row's badge, actor and card-face chip.
+    expect(g.events[0]).toMatchObject({ seat: "N", who: "Partner", verb: "bid", token: "1♦" });
+    expect(g.events[1]).toMatchObject({ seat: "E", who: "East", verb: "passed" });
+    expect(g.events[1]!.token).toBeUndefined(); // "passed" says it all — no chip
+    // Index-aligned with the auction — that's how the page attaches meanings.
+    expect(g.events.map((e) => e.auctionIndex)).toEqual([0, 1, 2]);
+    expect(g.events.every((e) => e.kind === "call")).toBe(true);
+  });
+
+  it("itemizes the trick on the table — the lead as a lead, the rest as plays", () => {
+    const contract = { level: 3, strain: "N", doubled: 0, declarer: "E" } as GameState["contract"];
+    const s = state({
+      phase: "play", contract, turn: "S",
+      tricks: [{ leader: "W", plays: [{ seat: "W", card: cards("SA")[0]! }, { seat: "N", card: cards("S2")[0]! }] }],
+    });
+    const r = lookingAt(s, "S")!;
+    const trick = r.eventGroups.find((g) => g.id === "trick-0")!;
+    expect(trick).toMatchObject({ title: "This trick", current: true });
+    expect(trick.events.map((e) => e.label)).toEqual(["West led the A♠", "Partner played the 2♠"]);
+    expect(trick.events[0]).toMatchObject({ seat: "W", who: "West", verb: "led", token: "A♠" });
+  });
+
+  it("keeps the whole history: the auction and every past trick stay on the card", () => {
+    const contract = { level: 3, strain: "N", doubled: 0, declarer: "E" } as GameState["contract"];
+    const s = state({
+      phase: "play", contract, turn: "S",
+      auction: [call("N", "1D"), call("E", "P"), call("S", "3N"), call("W", "P")],
+      tricks: [
+        {
+          leader: "W",
+          plays: [
+            { seat: "W", card: cards("SA")[0]! }, { seat: "N", card: cards("S2")[0]! },
+            { seat: "E", card: cards("S4")[0]! }, { seat: "S", card: cards("S3")[0]! },
+          ],
+          winner: "W",
+        },
+        {
+          leader: "W",
+          plays: [
+            { seat: "W", card: cards("H2")[0]! }, { seat: "N", card: cards("H4")[0]! },
+            { seat: "E", card: cards("H5")[0]! }, { seat: "S", card: cards("HJ")[0]! },
+          ],
+          winner: "S",
+        },
+        { leader: "S", plays: [{ seat: "S", card: cards("C3")[0]! }] },
+      ],
+    });
+    const r = lookingAt(s, "S")!;
+    expect(r.eventGroups.map((g) => g.id)).toEqual(["auction", "trick-0", "trick-1", "trick-2"]);
+    expect(r.eventGroups.map((g) => g.title)).toEqual(["The auction", "Trick 1", "Trick 2", "This trick"]);
+    // Completed tricks carry their outcome, from the learner's side of the table.
+    expect(r.eventGroups[1]!.note).toBe("won by West");
+    expect(r.eventGroups[2]!.note).toBe("won by you");
+    // Only where the board is right now is current — the panel opens that one.
+    expect(r.eventGroups.map((g) => Boolean(g.current))).toEqual([false, false, false, true]);
+    // Ids stay stable across tricks, so a question about trick 1 still resolves.
+    expect(r.eventGroups[1]!.events[0]!.id).toBe("play-0-0");
+    expect(r.eventGroups[3]!.events[0]!.id).toBe("play-2-0");
+  });
+
+  it("a just-completed trick stays current until the next lead", () => {
+    const contract = { level: 3, strain: "N", doubled: 0, declarer: "E" } as GameState["contract"];
+    const done = state({
+      phase: "play", contract, turn: "N",
+      tricks: [{
+        leader: "W",
+        plays: [
+          { seat: "W", card: cards("SA")[0]! }, { seat: "N", card: cards("S2")[0]! },
+          { seat: "E", card: cards("S4")[0]! }, { seat: "S", card: cards("S3")[0]! },
+        ],
+        winner: "W",
+      }],
+    });
+    const r = lookingAt(done, "S")!;
+    const trick = r.eventGroups.find((g) => g.id === "trick-0")!;
+    expect(trick.events).toHaveLength(4);
+    expect(trick).toMatchObject({ title: "Trick 1", note: "won by West", current: true });
+  });
+
+  it("has no sections before anything happens", () => {
+    expect(lookingAt(state(), "S")!.eventGroups).toEqual([]);
+    const onLead = state({
+      phase: "play",
+      contract: { level: 3, strain: "N", doubled: 0, declarer: "E" } as GameState["contract"],
+      turn: "S", tricks: [],
+    });
+    // No auction recorded in this fixture and no lead yet — nothing to list.
+    expect(lookingAt(onLead, "S")!.eventGroups).toEqual([]);
   });
 });
 

@@ -1,0 +1,380 @@
+"use client";
+
+// The coach panel's two interaction pieces (owner direction 2026-08-05):
+//
+//   · CoachEventAsk — the QUESTION BOX behind an event's "Ask" toggle. Free
+//     text about that one event, answered by the model through
+//     /api/bridge/event-qa. The server rebuilds everything from the session —
+//     the client sends only ids and the question — and the model answers
+//     blind to the concealed hands (lib/coach/eventQa.ts). Questions only:
+//     the advice button is NOT in here, because an event row is something
+//     that already happened and advice is about what happens next.
+//   · WhatShouldIPlay — the advice for the CURRENT decision, standalone, so
+//     the host can show it BEFORE the card is played (owner decision
+//     2026-08-05: the learner asks before playing, not after). Same two
+//     endpoints the big button used (play-hint for the card, play-why for
+//     the reason), compact rendering. "Help me think" is deliberately NOT
+//     here yet — one action at a time.
+//
+// A NEW FILE rather than a CoachPrompts variant, on purpose: CoachPrompts is
+// mid-rework in another session, and this rendering is deliberately simpler —
+// a chip and a sentence, not the full answer block. When CoachPrompts
+// settles, the fetch plumbing here should fold into it.
+
+import { useState } from "react";
+
+// The table's palette, as CoachPanel uses it.
+const PAPER = "#fbfaf6";
+const INK = "#2b2b1e";
+const MUTED = "#57573f";
+const FAINT = "#7d7d66";
+const TEAL = "#1f5e56";
+const FELT_DEEP = "#14563f";
+const FELT_MID = "#1c6b4f";
+const FELT_LINE = "#c6d6cc";
+
+/** The coach's voice — one serif face for everything it says. */
+const SAYS = {
+  margin: 0,
+  fontFamily: "Georgia, 'Times New Roman', serif",
+  lineHeight: 1.5,
+} as const;
+
+/** Text with ♥ and ♦ in red, as printed hand diagrams have them. */
+function RedSuits({ children }: Readonly<{ children: string }>) {
+  return (
+    <>
+      {children.split(/([♥♦])/).map((part, i) =>
+        part === "♥" || part === "♦" ? (
+          <span key={i} style={{ color: "#c00" }}>
+            {part}
+          </span>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
+type Hint = {
+  best: string[];
+  prefer?: string;
+  source: "system" | "convention" | "solution";
+  because?: string;
+};
+
+type PlayAnswer =
+  | { kind: "loading" }
+  | { kind: "done"; hint: Hint; why?: string }
+  | { kind: "empty"; reason: string };
+
+/** "DT" → "10♦" in the table's notation. */
+function cardText(card: string): string {
+  const glyph: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
+  const rank = card.slice(1) === "T" ? "10" : card.slice(1);
+  return `${rank}${glyph[card[0] ?? ""] ?? card[0] ?? ""}`;
+}
+
+export function CoachEventAsk({
+  sessionId,
+  eventId,
+  eventLabel,
+  flush = false,
+}: Readonly<{
+  sessionId: string;
+  eventId: string;
+  /** "West led the A♠" — echoed as the placeholder so the box names its subject. */
+  eventLabel: string;
+  /** Drop the ledger-row indent — for hosts that already frame this box. */
+  flush?: boolean;
+}>) {
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [qa, setQa] = useState<{ q: string; a: string } | { q: string; failed: true } | null>(null);
+
+  async function ask() {
+    const q = question.trim();
+    if (!q || asking) return;
+    setAsking(true);
+    setQa(null);
+    try {
+      const res = await fetch("/api/bridge/event-qa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, eventId, question: q }),
+      });
+      const body = (await res.json()) as { answer?: string | null };
+      setQa(body.answer ? { q, a: body.answer } : { q, failed: true });
+    } catch {
+      setQa({ q, failed: true });
+    } finally {
+      setAsking(false);
+      setQuestion("");
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: flush ? "2px 0 9px" : "2px 0 9px 29px" }}>
+      {/* ── ask about this event ── */}
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          type="text"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void ask();
+          }}
+          placeholder={`Ask about "${eventLabel}"…`}
+          maxLength={300}
+          style={{
+            flex: 1, minWidth: 0, minHeight: 34, padding: "6px 10px",
+            background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: FELT_LINE,
+            borderRadius: 8, fontSize: 12.5, fontFamily: "inherit", color: INK,
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => void ask()}
+          disabled={asking || !question.trim()}
+          style={{
+            flex: "none", minHeight: 34, padding: "6px 13px",
+            background: asking || !question.trim() ? PAPER : FELT_MID,
+            borderWidth: 1, borderStyle: "solid",
+            borderColor: asking || !question.trim() ? FELT_LINE : FELT_MID,
+            borderRadius: 8, color: asking || !question.trim() ? FAINT : "#fff",
+            fontSize: 12.5, fontWeight: 700, fontFamily: "inherit",
+            cursor: asking || !question.trim() ? "default" : "pointer",
+          }}
+        >
+          Ask
+        </button>
+      </div>
+
+      {asking && (
+        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+          Thinking about it…
+        </p>
+      )}
+      {qa && "a" in qa && (
+        <div>
+          <p style={{ margin: "0 0 3px", fontSize: 11.5, fontWeight: 700, color: FAINT }}>
+            <RedSuits>{qa.q}</RedSuits>
+          </p>
+          <p
+            style={{
+              ...SAYS, fontSize: 13.5, color: MUTED, paddingLeft: 10,
+              borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: FELT_LINE,
+            }}
+          >
+            <RedSuits>{qa.a}</RedSuits>
+          </p>
+        </div>
+      )}
+      {qa && "failed" in qa && (
+        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+          No answer for that one — try asking it another way.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The panel's chat: general questions about the position, no event required.
+ * Same endpoint and same blindness as the per-event ask — each question is
+ * answered independently against the current position (the coach holds no
+ * conversation memory yet), but the exchanges stack up so the surface reads
+ * as a conversation.
+ */
+export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [exchanges, setExchanges] = useState<{ q: string; a: string | null }[]>([]);
+
+  async function ask() {
+    const q = question.trim();
+    if (!q || asking) return;
+    setAsking(true);
+    setQuestion("");
+    try {
+      const res = await fetch("/api/bridge/event-qa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, question: q }),
+      });
+      const body = (await res.json()) as { answer?: string | null };
+      setExchanges((prev) => [...prev, { q, a: body.answer ?? null }]);
+    } catch {
+      setExchanges((prev) => [...prev, { q, a: null }]);
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {exchanges.map((x, i) => (
+        <div key={i}>
+          <p style={{ margin: "0 0 3px", fontSize: 11.5, fontWeight: 700, color: FAINT }}>
+            <RedSuits>{x.q}</RedSuits>
+          </p>
+          <p
+            style={{
+              ...SAYS, fontSize: 13.5, paddingLeft: 10,
+              color: x.a ? MUTED : FAINT,
+              fontStyle: x.a ? undefined : "italic",
+              borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: FELT_LINE,
+            }}
+          >
+            {x.a ? <RedSuits>{x.a}</RedSuits> : "No answer for that one — try asking it another way."}
+          </p>
+        </div>
+      ))}
+      {asking && (
+        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+          Thinking about it…
+        </p>
+      )}
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          type="text"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void ask();
+          }}
+          placeholder="Ask the coach about this position…"
+          maxLength={300}
+          style={{
+            flex: 1, minWidth: 0, minHeight: 36, padding: "6px 10px",
+            background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: FELT_LINE,
+            borderRadius: 8, fontSize: 12.5, fontFamily: "inherit", color: INK,
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => void ask()}
+          disabled={asking || !question.trim()}
+          style={{
+            flex: "none", minHeight: 36, padding: "6px 14px",
+            background: asking || !question.trim() ? PAPER : FELT_MID,
+            borderWidth: 1, borderStyle: "solid",
+            borderColor: asking || !question.trim() ? FELT_LINE : FELT_MID,
+            borderRadius: 8, color: asking || !question.trim() ? FAINT : "#fff",
+            fontSize: 12.5, fontWeight: 700, fontFamily: "inherit",
+            cursor: asking || !question.trim() ? "default" : "pointer",
+          }}
+        >
+          Ask
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The advice for the decision ON the table — standalone, shown by the host
+ * while it is the learner's turn and BEFORE their card is played. Not part of
+ * any event row: a played card is history, and "what should I play?" is a
+ * question about the future.
+ */
+export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) {
+  const [play, setPlay] = useState<PlayAnswer | null>(null);
+
+  // The same two requests the big button made: the card lands first, the
+  // reason catches up, and a slow model never delays the answer itself.
+  async function whatShouldIPlay() {
+    setPlay({ kind: "loading" });
+    try {
+      const res = await fetch(`/api/bridge/play-hint?sessionId=${encodeURIComponent(sessionId)}`);
+      const body = (await res.json()) as { hint?: Hint | null; reason?: string };
+      if (!body.hint?.best?.length) {
+        setPlay({ kind: "empty", reason: body.reason ?? "no answer" });
+        return;
+      }
+      const hint = body.hint;
+      setPlay({ kind: "done", hint });
+      try {
+        const whyRes = await fetch(`/api/bridge/play-why?sessionId=${encodeURIComponent(sessionId)}`);
+        const whyBody = (await whyRes.json()) as { explanation?: { why: string } | null };
+        setPlay((prev) =>
+          prev?.kind === "done" && prev.hint === hint
+            ? { kind: "done", hint, ...(whyBody.explanation ? { why: whyBody.explanation.why } : {}) }
+            : prev,
+        );
+      } catch {
+        // The authority's own wording still stands; the rewrite just didn't arrive.
+      }
+    } catch {
+      setPlay({ kind: "empty", reason: "unreachable" });
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <button
+        type="button"
+        onClick={() => void whatShouldIPlay()}
+        disabled={play?.kind === "loading"}
+        style={{
+          alignSelf: "flex-start", minHeight: 32, padding: "6px 14px",
+          background: FELT_MID, borderWidth: 1, borderStyle: "solid", borderColor: FELT_MID,
+          borderRadius: 16, color: "#fff", fontSize: 12, fontWeight: 700,
+          fontFamily: "inherit", cursor: play?.kind === "loading" ? "default" : "pointer",
+          opacity: play?.kind === "loading" ? 0.6 : 1,
+        }}
+      >
+        What should I play?
+      </button>
+
+      {play?.kind === "loading" && (
+        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+          Working it out — a few seconds…
+        </p>
+      )}
+      {play?.kind === "empty" && (
+        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+          {play.reason === "not your turn" ? "Not your turn." : "No suggestion for this position."}
+        </p>
+      )}
+      {play?.kind === "done" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>
+              {play.hint.source === "system"
+                ? "Your system plays"
+                : play.hint.source === "convention"
+                  ? "Usually right here"
+                  : "By calculation"}
+            </span>
+            {(play.hint.prefer ? [play.hint.prefer] : play.hint.best).map((card) => {
+              const label = cardText(card);
+              return (
+                <span
+                  key={card}
+                  style={{
+                    padding: "2px 8px", background: "#fff",
+                    borderWidth: 1, borderStyle: "solid", borderColor: "#d8d3bf", borderRadius: 4,
+                    fontSize: 14.5, fontWeight: 700, lineHeight: 1.2,
+                    color: /[♥♦]/.test(label) ? "#c00" : "#000",
+                  }}
+                >
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+          {(play.why ?? play.hint.because) && (
+            <p style={{ ...SAYS, fontSize: 13, color: play.why ? INK : MUTED }}>
+              <RedSuits>{play.why ?? play.hint.because ?? ""}</RedSuits>
+            </p>
+          )}
+          {play.hint.source === "solution" && (
+            <p style={{ margin: 0, fontSize: 11.5, color: TEAL }}>Worked out from the full deal.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -29,7 +29,7 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
-import { CoachFab, CoachSheet, type CoachPanelData, type CoachPresence } from "./CoachPanel";
+import { CoachFab, CoachSheet, type CoachFabPos, type CoachPanelData, type CoachPresence } from "./CoachPanel";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
 
 // ---------------------------------------------------------------------------
@@ -293,6 +293,10 @@ export function PlayTable({
   // covers the whole stack, so neither can own the state alone.
   const [coachOpen, setCoachOpen] = useState(Boolean(coach?.defaultOpen));
   const [coachPresence, setCoachPresence] = useState<CoachPresence>("request");
+  // Where the learner dragged the coach's icons. Held here, not in the fab:
+  // the fab unmounts while the sheet is open, and the coach should be found
+  // where it was left.
+  const [coachPos, setCoachPos] = useState<CoachFabPos>({ x: 0, y: 0 });
   const menuItems: SettingsItem[] = [...(settings ?? [])];
 
   /**
@@ -1405,6 +1409,9 @@ export function PlayTable({
             <CoachFab
               presence={coachPresence}
               onOpen={() => setCoachOpen(true)}
+              onPresence={setCoachPresence}
+              pos={coachPos}
+              onPos={setCoachPos}
               busy={coach.busy}
               toReview={
                 coachPresence === "guided"
@@ -1427,7 +1434,6 @@ export function PlayTable({
           <CoachSheet
             data={coach}
             presence={coachPresence}
-            onPresence={setCoachPresence}
             onClose={() => setCoachOpen(false)}
           />
         ) : null}

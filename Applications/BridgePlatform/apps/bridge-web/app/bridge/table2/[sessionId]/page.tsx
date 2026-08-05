@@ -275,6 +275,18 @@ export default async function PlayTablePage({
   // learner's own thirteen cards plus a reading of the auction as played. No KB,
   // no model, no hand the learner cannot see. `null` for a watcher.
   const looking = lookingAt(state, mySeat ?? null);
+  // Each event row, with what a call MEANT when it was made attached from the
+  // same replayed meanings the bidding grid shows on tap — index-aligned with
+  // the auction, so this is a lookup, not a second computation. A call the
+  // system has no agreement for stays a plain row; play events carry no
+  // meaning to attach.
+  const lookingGroups = looking?.eventGroups.map((g) => ({
+    ...g,
+    events: g.events.map((e) => {
+      const m = e.kind === "call" && e.auctionIndex !== undefined ? auctionMeanings[e.auctionIndex] : undefined;
+      return m ? { ...e, detail: `${m.label}${m.shows ? ` — ${m.shows}` : ""}` } : e;
+    }),
+  }));
   // "Help me think", layer 1 — the same deal as the facts card: arithmetic over
   // cards this learner may see, computed here so the button answers with no
   // request and has nothing that can fail.
@@ -286,6 +298,26 @@ export default async function PlayTablePage({
       : {
           title: "Coach",
           ...(looking ? { looking: looking.looking, facts: looking.facts } : {}),
+          ...(lookingGroups?.length ? { eventGroups: lookingGroups } : {}),
+          // The reasoning scaffold, straight onto the panel's Now view — what
+          // "Help me think" used to answer with, now shown without being asked.
+          ...(aid ? { aid } : {}),
+          // Per-event interaction — a question box on every row, plus the play
+          // advice in miniature while it's this learner's decision. Only for a
+          // seated learner: a watcher has no hand to ask from.
+          ...(mySeat
+            ? {
+                ask: {
+                  sessionId,
+                  active: (state.phase === "play" || state.phase === "auction") && myTurn,
+                  phase: (state.phase === "play"
+                    ? "play"
+                    : state.phase === "auction"
+                      ? "auction"
+                      : "other") as "play" | "auction" | "other",
+                },
+              }
+            : {}),
           placeholder: mySeat
             ? "Your coach's notes for this board will appear here."
             : "Take a seat to be coached — right now you're watching.",

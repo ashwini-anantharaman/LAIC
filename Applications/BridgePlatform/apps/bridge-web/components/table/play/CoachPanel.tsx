@@ -16,23 +16,37 @@
 //             still visible above it. More room than the strip could ever
 //             have taken, and none of it borrowed.
 //
-// THE ONE NEW COLOUR IN THE APP IS DELIBERATE. Everything else here is
-// PlayTable's palette — the tray's tan, a bidding-box button's pale head, the
-// felt's hairline, the dealer tint for a correction. But the coach's own accent
-// is a plum that appears nowhere else in the table, because an icon on green
-// felt has to be findable and the app's existing coach teal is within a few
-// degrees of the felt itself. One introduced hue, with a reason.
+// THE COACH WEARS THE TABLE'S OWN COLOURS (2026-08-05, replacing the plum).
+// The plum accent existed for one reason — an icon on green felt has to be
+// findable, and the app's coach teal is within a few degrees of the felt. But
+// the table already owns a colour whose entire job is "look here": the
+// dealer's gold. So the icon is now a gold chip with a spade on it, the
+// sheet's header is the felt itself, and everything inside is PlayTable's
+// palette — the bidding box's paper, the dealer tint for a correction, the
+// felt's greens for the coach's own voice. No introduced hues.
+//
+// THE CHIP IS THE MODE SWITCH (2026-08-05, replacing the gear's panel). The
+// silent / on-request / guided control went from a sheet row to a panel behind
+// the header's gear to, now, the chip itself: tapping it cycles the mode, the
+// chip's glyph says which one you're in (☾ asleep, ? ask me, ! I'll flag
+// things), and a short-lived pill names the change since the panel is closed
+// when you tap. The gear stays in the header as a placeholder — settings will
+// grow back into it — but it does nothing for now. Opening the sheet moved to
+// a small ♠ button riding above the chip.
 //
 // PHONE ONLY (owner decision 2026-08-01). The desktop platform's table doesn't
 // carry coaching; coaching is the app's surface. PlayTable renders this in its
 // portrait layout and nowhere else.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+
+import type { ThinkAid } from "@/lib/coach/think";
+
+import { CoachChat, CoachEventAsk, WhatShouldIPlay } from "./CoachEventAsk";
 
 // ── the table's own palette (PlayTable's constants) ──────────────────────────
 const HEAD = "#f2f2ea";
 const PAPER = "#fbfaf6"; // the auction box's cell white, reused as a card surface
-const LINE = "#8a8a6a";
 const INK = "#2b2b1e";
 const MUTED = "#57573f";
 const FAINT = "#7d7d66";
@@ -40,16 +54,29 @@ const TEAL = "#1f5e56"; // "your system" / agreement
 const TINT = "#f2e2b8"; // PlayTable's DEALER_TINT — a correction's ground
 const TINT_EDGE = "#a8871f";
 
-// ── the coach's own identity, and the only hue introduced ────────────────────
-const PLUM = "#8e3b5e";
-const PLUM_2 = "#a8517a";
-const PLUM_SOFT = "#f3e8ee";
-const PLUM_LINE = "#e2cbd6";
+// ── the coach's identity: the table's felt and the dealer's gold ─────────────
+const FELT_DEEP = "#14563f"; // the felt gradient's far edge (PlayTable's FELT)
+const FELT_MID = "#1c6b4f"; // the felt itself
+const FELT_HI = "#26805e"; // the felt gradient's lit corner
+const FELT_SOFT = "#e6eee8"; // the felt, as a tint on paper
+const FELT_LINE = "#c6d6cc"; // the felt, as a hairline on paper
+const GOLD = "#fecd07"; // PlayTable's GOLD — the table's own "look here"
+const GOLD_DEEP = "#b8901f"; // PlayTable's DEALER_RING
+const CHIP = `radial-gradient(circle at 34% 28%,${GOLD},#e9b60d 55%,${GOLD_DEEP} 100%)`;
+const RED = "#cc0000"; // PlayTable's RED — the alert that reads on gold and felt alike
+
+/**
+ * The big "Ask me" button row, switched off (owner decision 2026-08-05) while
+ * those actions move into the context card's event rows. A flag rather than a
+ * deletion: the buttons and everything behind them still work, and come back
+ * by flipping this.
+ */
+const SHOW_PROMPT_BUTTONS = false as boolean;
 
 const BADGE: Record<CoachNoteSource, { bg: string; label: string }> = {
-  coach: { bg: PLUM, label: "Coach" },
+  coach: { bg: FELT_MID, label: "Coach" },
   ben: { bg: "#384bb3", label: "BEN" },
-  kb: { bg: "#6b4ea8", label: "Rulebook" },
+  kb: { bg: "#0d707c", label: "Rulebook" }, // PlayTable's CARD_BACK
   system: { bg: "#6f6f5a", label: "Table" },
 };
 
@@ -128,6 +155,49 @@ export const PRESENCE: Record<CoachPresence, { label: string; under: string; sub
   guided: { label: "Guided", under: "check my play", sub: "Guided — I'll flag what's worth a look" },
 };
 
+/**
+ * One table event as an interactive row in the context card — a call in the
+ * auction ("West — Pass") or a card in the current trick ("West led the A♠").
+ *
+ * A row with a `detail` expands to show it: for a call, what it meant when it
+ * was made (the same replayed KB meaning the bidding grid shows on tap). Rows
+ * without one render flat for now — the per-event ask actions ("Help me
+ * think" / "What should I play?" in miniature) land here next, once the
+ * answer block they embed settles.
+ */
+export interface CoachLookingEvent {
+  /** Stable key, so re-renders keep the same row open. */
+  id: string;
+  /** The event as one sentence — the accessible name, and the fallback when
+   *  the structured parts below weren't provided. */
+  label: string;
+  /** What it means, shown when the row is expanded. */
+  detail?: string;
+  /** A call in the auction, or a card in a trick. */
+  kind: "call" | "play";
+  /** Seat letter for the row's badge — N/E/S/W. */
+  seat?: string;
+  /** The actor, from the learner's side — "You", "Partner", "East". */
+  who?: string;
+  /** What they did — "led", "played", "bid", "passed". */
+  verb?: string;
+  /** The card or call itself — "A♠", "1♦" — drawn as a small card face. */
+  token?: string;
+}
+
+/** One section of the board's history — the auction, or one trick. */
+export interface CoachEventGroup {
+  /** Stable key — "auction", "trick-0" … */
+  id: string;
+  /** "The auction", "Trick 3", "This trick". */
+  title: string;
+  /** A completed trick's outcome — "won by partner". */
+  note?: string;
+  /** The section the board is in right now — open unless the learner closed it. */
+  current?: boolean;
+  events: readonly CoachLookingEvent[];
+}
+
 export interface CoachPanelData {
   /** Sheet title. Defaults to "Coach". */
   title?: string;
@@ -148,6 +218,26 @@ export interface CoachPanelData {
   facts?: readonly { label: string; value: string }[];
   /** One line on what the coach is looking at, for the context card. */
   looking?: string;
+  /**
+   * The whole board so far, in sections — the auction, then every trick. The
+   * panel keeps past sections collapsed and opens the `current` one, so the
+   * history accumulates without walling the card. Lives on the HISTORY view.
+   */
+  eventGroups?: readonly CoachEventGroup[];
+  /**
+   * The reasoning scaffold — what can be worked out, and the realistic
+   * choices. Deterministic and server-computed (lib/coach/think.ts); the
+   * NOW view shows it without being asked, which is that view's whole job.
+   */
+  aid?: ThinkAid;
+  /**
+   * Context for interaction — present means calls in the auction diagram and
+   * the learner's OWN plays grow an "Ask" question box, and, during the play
+   * while it is the learner's decision, the card shows a standalone "What
+   * should I play?" for the choice still ahead of them. Absent for watchers:
+   * no seat, nothing to ask from.
+   */
+  ask?: { sessionId: string; active: boolean; phase: "auction" | "play" | "other" };
   /** The coach's primary affordances — the buttons the learner pulls on. */
   prompts?: ReactNode;
   /** Secondary host controls. */
@@ -162,7 +252,7 @@ export interface CoachPanelData {
 
 const KEYFRAMES = `@keyframes coachRise{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @keyframes coachFade{from{opacity:0}to{opacity:1}}
-@keyframes coachRing{0%{box-shadow:0 0 0 0 rgba(190,138,30,.5)}70%{box-shadow:0 0 0 9px rgba(190,138,30,0)}100%{box-shadow:0 0 0 0 rgba(190,138,30,0)}}
+@keyframes coachRing{0%{box-shadow:0 0 0 0 rgba(204,0,0,.45)}70%{box-shadow:0 0 0 9px rgba(204,0,0,0)}100%{box-shadow:0 0 0 0 rgba(204,0,0,0)}}
 @keyframes coachNote{from{transform:translateY(8px);opacity:.4}to{transform:translateY(0);opacity:1}}
 @media (prefers-reduced-motion:reduce){.coach-anim{animation:none!important}}`;
 
@@ -170,62 +260,248 @@ const KEYFRAMES = `@keyframes coachRise{from{transform:translateY(100%)}to{trans
    THE ICON — lives on the felt, never over the cards
    ════════════════════════════════════════════════════════════════════════════ */
 
+/** Tap → the next mode, round the circle: silent → request → guided → silent. */
+const NEXT_PRESENCE: Record<CoachPresence, CoachPresence> = {
+  silent: "request",
+  request: "guided",
+  guided: "silent",
+};
+
+/**
+ * Each mode wears its own glyph on the chip, because the chip IS the mode
+ * control now and a control has to show its state: ☾ asleep, ? ask me,
+ * ! I'll flag things. Text glyphs, not emoji — colour and size stay ours.
+ */
+const MODE_GLYPH: Record<CoachPresence, { glyph: string; size: number }> = {
+  silent: { glyph: "☾", size: 21 },
+  request: { glyph: "?", size: 24 },
+  guided: { glyph: "!", size: 24 },
+};
+
+/** Where the learner has dragged the coach to, as a translate off its home corner. */
+export interface CoachFabPos {
+  x: number;
+  y: number;
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
 export function CoachFab({
   presence,
   onOpen,
+  onPresence,
+  pos: posProp,
+  onPos: onPosProp,
   toReview = 0,
   busy = false,
 }: Readonly<{
   presence: CoachPresence;
+  /** Opens the sheet — the small ♠ button, now that the chip switches modes. */
   onOpen: () => void;
+  /** A tap on the chip moves to the next mode; this reports the new one. */
+  onPresence: (p: CoachPresence) => void;
+  /**
+   * Where the learner dragged it, held by the HOST: this component unmounts
+   * while the sheet is open, and a coach that snaps home every time you ask it
+   * something wasn't moved, it was misplaced. Omit both and it still drags,
+   * just without that persistence.
+   */
+  pos?: CoachFabPos;
+  onPos?: (p: CoachFabPos) => void;
   /** Corrections waiting — drives the count bubble. Guided mode only; see below. */
   toReview?: number;
   busy?: boolean;
 }>) {
-  const dot = busy ? TEAL : presence === "silent" ? "#9a9a86" : presence === "guided" ? TINT_EDGE : TEAL;
+  // A tap changes the mode while the panel is closed, so the panel can't be
+  // the feedback. A pill beside the chip names the mode just chosen, then
+  // leaves; the glyph carries the state after that.
+  const [announced, setAnnounced] = useState<CoachPresence | null>(null);
+  useEffect(() => {
+    if (!announced) return;
+    const t = setTimeout(() => setAnnounced(null), 1800);
+    return () => clearTimeout(t);
+  }, [announced]);
+
+  // ── draggable, within the felt ──────────────────────────────────────────
+  // The icons sit over the playing surface, and where they don't cover a card
+  // is the learner's call, not this file's. Plain pointer math rather than a
+  // library: one moving box, clamped to its positioned parent.
+  const [internalPos, setInternalPos] = useState<CoachFabPos>({ x: 0, y: 0 });
+  const pos = posProp ?? internalPos;
+  const onPos = onPosProp ?? setInternalPos;
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  // A drag must not be a tap: once the pointer has moved past a slop of a few
+  // pixels, the release swallows the click that follows it, so letting go of
+  // a dragged chip never cycles the mode underneath it.
+  const suppressClick = useRef(false);
+  // Which side the announce pill hangs on: past the felt's midline it flips
+  // right, so dragging the chip to the left wall can't push the pill offscreen.
+  const pillFlipAt = useRef(-Infinity);
+
+  function onPointerDown(e: React.PointerEvent) {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    const el = wrapRef.current;
+    const parent = el?.offsetParent as HTMLElement | null;
+    if (!el || !parent) return;
+    const r = el.getBoundingClientRect();
+    const p = parent.getBoundingClientRect();
+    // The wide stage draws at design size and scales; a pointer moves in
+    // screen pixels but the translate applies before the scale, so divide the
+    // deltas by it or the chip outruns the finger. 1 on the phone layout.
+    const scale = el.offsetWidth ? r.width / el.offsetWidth : 1;
+    const M = 4; // keep a hairline of felt visible around it
+    const d = {
+      id: e.pointerId,
+      startX: e.clientX, startY: e.clientY,
+      baseX: pos.x, baseY: pos.y, scale,
+      minX: pos.x + (p.left + M - r.left) / scale, maxX: pos.x + (p.right - M - r.right) / scale,
+      minY: pos.y + (p.top + M - r.top) / scale, maxY: pos.y + (p.bottom - M - r.bottom) / scale,
+      moved: false,
+    };
+    pillFlipAt.current = (d.minX + d.maxX) / 2;
+
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== d.id) return;
+      if (!d.moved && Math.hypot(ev.clientX - d.startX, ev.clientY - d.startY) > 6) d.moved = true;
+      if (!d.moved) return;
+      onPos({
+        x: clamp(d.baseX + (ev.clientX - d.startX) / d.scale, d.minX, d.maxX),
+        y: clamp(d.baseY + (ev.clientY - d.startY) / d.scale, d.minY, d.maxY),
+      });
+    };
+    const up = (ev: PointerEvent) => {
+      if (ev.pointerId !== d.id) return;
+      if (d.moved) suppressClick.current = true;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }
+
+  // The dot reads against the chip's gold AND the felt behind it, so its
+  // colours come from what survives on both: teal for at-work, red for guided.
+  const dot = busy ? TEAL : presence === "silent" ? "#9a9a86" : presence === "guided" ? RED : TEAL;
   // A count on the icon IS volunteering, so only Guided may show one. Enforced
   // here rather than left to the caller: "On request never volunteers" is the
   // promise the mode makes, and a promise a caller can forget to keep is not one.
   const count = presence === "guided" ? toReview : 0;
+  const next = NEXT_PRESENCE[presence];
+
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label="Open the coach"
+    <div
+      ref={wrapRef}
+      onPointerDown={onPointerDown}
+      onClickCapture={(e) => {
+        // The click after a drag is the hand letting go, not a request.
+        if (suppressClick.current) {
+          suppressClick.current = false;
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}
       style={{
         position: "absolute", right: 10, bottom: 10, zIndex: 6,
-        width: 52, height: 52, borderRadius: "50%",
-        background: `linear-gradient(145deg,${PLUM_2},${PLUM})`,
-        borderWidth: 0, padding: 0, cursor: "pointer",
-        boxShadow: "0 3px 10px rgba(40,10,25,.45)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        // Silent still shows — otherwise there is no way back to the setting.
-        filter: presence === "silent" ? "saturate(.5) brightness(.92)" : undefined,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+        transform: pos.x || pos.y ? `translate(${pos.x}px,${pos.y}px)` : undefined,
+        touchAction: "none", // the drag is ours; don't let the page scroll with it
       }}
     >
       <style>{KEYFRAMES}</style>
-      <span aria-hidden style={{ color: "#fff", fontSize: 21, lineHeight: 1, transform: "translateY(1px)" }}>♠</span>
-      <span
-        aria-hidden
-        className={presence === "guided" ? "coach-anim" : undefined}
+      {/* The way into the panel — a small card face with the coach's ♠. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Open the coach"
         style={{
-          position: "absolute", right: -1, top: -1, width: 14, height: 14, borderRadius: "50%",
-          background: dot, borderWidth: 2, borderStyle: "solid", borderColor: "#1c6b4f",
-          animation: presence === "guided" ? "coachRing 2.2s infinite" : undefined,
+          width: 30, height: 30, borderRadius: "50%", padding: 0,
+          background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "rgba(8,30,20,.35)",
+          boxShadow: "0 2px 6px rgba(8,30,20,.4)",
+          color: FELT_DEEP, fontSize: 14, lineHeight: 1, cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
         }}
-      />
-      {count > 0 && (
-        <span
+      >
+        <span aria-hidden style={{ transform: "translateY(0.5px)" }}>♠</span>
+      </button>
+
+      <div style={{ position: "relative" }}>
+        {announced && (
+          <span
+            role="status"
+            className="coach-anim"
+            style={{
+              position: "absolute", top: "50%", transform: "translateY(-50%)",
+              ...(pos.x < pillFlipAt.current ? { left: 60 } : { right: 60 }),
+              whiteSpace: "nowrap", background: "rgba(8,26,18,.85)", color: "#fff",
+              borderRadius: 15, padding: "6px 11px", fontSize: 12, fontWeight: 700,
+              animation: "coachFade .15s ease",
+            }}
+          >
+            {PRESENCE[announced].label}
+            <span style={{ fontWeight: 500, opacity: 0.8 }}> — {PRESENCE[announced].under}</span>
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            onPresence(next);
+            setAnnounced(next);
+          }}
+          aria-label={`Coach mode: ${PRESENCE[presence].label}. Tap to switch to ${PRESENCE[next].label}.`}
           style={{
-            position: "absolute", left: -3, top: -3, minWidth: 18, height: 18, padding: "0 4px",
-            borderRadius: 9, background: TINT_EDGE, color: "#fff",
-            fontSize: 11, fontWeight: 700, lineHeight: "18px", textAlign: "center",
+            width: 52, height: 52, borderRadius: "50%",
+            // The dealer's chip: the table's gold, because gold is the one colour
+            // this felt already uses to mean "look here".
+            background: CHIP,
+            borderWidth: 0, padding: 0, cursor: "pointer",
+            boxShadow: "0 3px 10px rgba(8,30,20,.5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            // Silent still shows, dimmed — the chip is the way back out of it.
+            filter: presence === "silent" ? "saturate(.5) brightness(.92)" : undefined,
           }}
         >
-          {count}
-        </span>
-      )}
-    </button>
+          {/* a chip's inner ring */}
+          <span
+            aria-hidden
+            style={{
+              position: "absolute", inset: 4, borderRadius: "50%",
+              borderWidth: 1.5, borderStyle: "dashed", borderColor: "rgba(20,86,63,.5)",
+            }}
+          />
+          <span
+            aria-hidden
+            style={{
+              color: FELT_DEEP, fontSize: MODE_GLYPH[presence].size, fontWeight: 700,
+              lineHeight: 1, transform: "translateY(1px)",
+            }}
+          >
+            {MODE_GLYPH[presence].glyph}
+          </span>
+          <span
+            aria-hidden
+            className={presence === "guided" ? "coach-anim" : undefined}
+            style={{
+              position: "absolute", right: -1, top: -1, width: 14, height: 14, borderRadius: "50%",
+              background: dot, borderWidth: 2, borderStyle: "solid", borderColor: "#f2f2ea",
+              animation: presence === "guided" ? "coachRing 2.2s infinite" : undefined,
+            }}
+          />
+          {count > 0 && (
+            <span
+              style={{
+                position: "absolute", left: -3, top: -3, minWidth: 18, height: 18, padding: "0 4px",
+                borderRadius: 9, background: RED, color: "#fff",
+                fontSize: 11, fontWeight: 700, lineHeight: "18px", textAlign: "center",
+              }}
+            >
+              {count}
+            </span>
+          )}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -236,15 +512,34 @@ export function CoachFab({
 export function CoachSheet({
   data,
   presence,
-  onPresence,
   onClose,
 }: Readonly<{
   data: CoachPanelData;
   presence: CoachPresence;
-  onPresence: (p: CoachPresence) => void;
   onClose: () => void;
 }>) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  // The context card's event rows: an accordion, one open at a time. Reading
+  // two meanings side by side is not a real use, and one-at-a-time keeps a
+  // 10-call auction from unfolding into a wall.
+  const [openEvent, setOpenEvent] = useState<string | null>(null);
+  // The ask surface, same discipline: one open at a time. Separate from the
+  // meaning accordion — reading what a call means while asking about it is a
+  // real use, so the two don't close each other.
+  const [openAsk, setOpenAsk] = useState<string | null>(null);
+  // Which history sections the learner has toggled. Anything untouched falls
+  // back to the data's own default — the current section open, the past
+  // collapsed — so a NEW trick arrives open without wiping the learner's
+  // choices about the old ones.
+  const [groupToggles, setGroupToggles] = useState<Record<string, boolean>>({});
+  const groupOpen = (g: CoachEventGroup) => groupToggles[g.id] ?? Boolean(g.current);
+  // The auction renders as a bidding diagram, and one call at a time is
+  // selected: its meaning and its ask box show below the grid.
+  const [selectedCall, setSelectedCall] = useState<string | null>(null);
+  // TWO SCREENS (owner direction 2026-08-05). "Now" is the default and faces
+  // forward: the position, the think-it-through scaffold, the advice button,
+  // the chat. "History" faces backward: the auction diagram and every trick.
+  const [view, setView] = useState<"now" | "history">("now");
 
   // Escape closes it, like every other overlay at this table.
   useEffect(() => {
@@ -288,101 +583,125 @@ export function CoachSheet({
           animation: "coachRise .3s cubic-bezier(.22,1,.36,1)",
         }}
       >
-        {/* grabber */}
-        <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "8px 0 2px" }}>
-          <span style={{ width: 36, height: 4, borderRadius: 2, background: "#d3cdb9" }} />
-        </div>
-
-        {/* ── who is talking, and how present they are ── */}
+        {/* ── the header IS the felt: the sheet rises out of the table ── */}
         <div
           style={{
-            flex: "none", display: "flex", alignItems: "center", gap: 10,
-            padding: "4px 14px 11px",
-            borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: "#e0dcc8",
+            flex: "none",
+            background: `linear-gradient(160deg,${FELT_HI},${FELT_DEEP})`,
+            color: "#fff",
           }}
         >
-          <span
-            aria-hidden
-            style={{
-              flex: "none", width: 38, height: 38, borderRadius: "50%",
-              background: `linear-gradient(160deg,${PLUM_2},${PLUM})`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "#fff", fontSize: 17,
-            }}
-          >
-            ♠
-          </span>
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: "block", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 17, fontWeight: 700, lineHeight: 1.2 }}>
-              {data.title ?? "Coach"}
+          {/* grabber */}
+          <div style={{ display: "flex", justifyContent: "center", padding: "8px 0 2px" }}>
+            <span style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255,255,255,.4)" }} />
+          </div>
+
+          {/* who is talking — with the settings gear beside the coach */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 14px 11px" }}>
+            <span
+              aria-hidden
+              style={{
+                flex: "none", width: 38, height: 38, borderRadius: "50%",
+                background: CHIP,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: FELT_DEEP, fontSize: 17,
+              }}
+            >
+              ♠
             </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: MUTED }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: data.busy ? TEAL : presence === "silent" ? FAINT : TEAL }} />
-              {data.busy ? "Working it out…" : PRESENCE[presence].sub}
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 17, fontWeight: 700, lineHeight: 1.2 }}>
+                {data.title ?? "Coach"}
+              </span>
+              {/* Which mode the coach is in — named, not just described, since
+                  the chip on the felt is what changes it now. */}
+              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "rgba(235,242,236,.85)" }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: data.busy || presence !== "silent" ? GOLD : "rgba(255,255,255,.45)" }} />
+                {data.busy ? (
+                  "Working it out…"
+                ) : (
+                  <span>
+                    <b style={{ color: "#fff" }}>{PRESENCE[presence].label}</b>
+                    {` · ${PRESENCE[presence].sub}`}
+                  </span>
+                )}
+              </span>
             </span>
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              flex: "none", width: 32, height: 32, borderRadius: 8, background: "#e8e4d4",
-              borderWidth: 0, color: "#6f6858", fontSize: 16, lineHeight: 1, cursor: "pointer",
-            }}
-          >
-            ×
-          </button>
+            {/* A PLACEHOLDER, ON PURPOSE (owner decision 2026-08-05): the mode
+                moved out to the chip on the felt, and nothing else lives in
+                settings yet — the gear stays for the settings that will, and
+                does nothing until they do. */}
+            <button
+              type="button"
+              aria-label="Coach settings (nothing here yet)"
+              aria-disabled="true"
+              style={{
+                flex: "none", width: 32, height: 32, borderRadius: 8,
+                background: "rgba(255,255,255,.14)",
+                borderWidth: 0, color: "#f2f2ea",
+                fontSize: 16, lineHeight: 1, cursor: "default",
+              }}
+            >
+              ⚙︎
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              style={{
+                flex: "none", width: 32, height: 32, borderRadius: 8,
+                background: "rgba(255,255,255,.14)",
+                borderWidth: 0, color: "#f2f2ea", fontSize: 16, lineHeight: 1, cursor: "pointer",
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        {/* ── the two screens: Now faces forward, History faces back ── */}
+        <div style={{ flex: "none", display: "flex", gap: 6, padding: "10px 14px 0" }}>
+          {(["now", "history"] as const).map((v) => {
+            const on = view === v;
+            return (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setView(v)}
+                style={{
+                  minHeight: 30, padding: "4px 15px", borderRadius: 15,
+                  background: on ? FELT_MID : "transparent",
+                  borderWidth: 1, borderStyle: "solid", borderColor: on ? FELT_MID : FELT_LINE,
+                  color: on ? "#fff" : "#75705f", fontSize: 12, fontWeight: 700,
+                  fontFamily: "inherit", cursor: "pointer",
+                }}
+              >
+                {v === "now" ? "Now" : "History"}
+              </button>
+            );
+          })}
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "13px 14px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
-          {/* ── presence ── */}
-          <div>
-            <Label>How present should I be?</Label>
-            <div style={{ display: "flex", background: "#e6e2d0", borderRadius: 10, padding: 3, gap: 3 }}>
-              {(["silent", "request", "guided"] as CoachPresence[]).map((p) => {
-                const on = p === presence;
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    role="tab"
-                    aria-selected={on}
-                    onClick={() => onPresence(p)}
-                    style={{
-                      flex: 1, minHeight: 42, borderWidth: 0, borderRadius: 8, cursor: "pointer",
-                      background: on ? PAPER : "transparent", color: on ? PLUM : "#75705f",
-                      fontSize: 12, fontWeight: 700, fontFamily: "inherit", lineHeight: 1.2,
-                      boxShadow: on ? "0 1px 2px rgba(0,0,0,.12)" : undefined,
-                    }}
-                  >
-                    {PRESENCE[p].label}
-                    <span style={{ display: "block", fontSize: 9.5, fontWeight: 500, color: on ? PLUM_2 : "#9a9483", marginTop: 2 }}>
-                      {PRESENCE[p].under}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ── what it's looking at ── */}
-          {(data.looking || !!data.facts?.length) && (
+          {/* ── NOW: the position, in prose and numbers ── */}
+          {view === "now" && (data.looking || !!data.facts?.length) && (
             <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0", borderRadius: 11, padding: "10px 12px" }}>
-              <Label color={PLUM}>What I'm looking at</Label>
+              <Label color={FELT_DEEP}>What I'm looking at</Label>
               {data.looking && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45 }}>{data.looking}</p>}
               {!!data.facts?.length && (
                 <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: data.looking ? 9 : 0 }}>
                   {data.facts.map((f, i) => (
                     <span
-                      key={f.label}
+                      key={`${f.label}|${f.value}`}
                       style={{
                         fontSize: 11.5, fontWeight: 700, padding: "4px 9px", borderRadius: 20,
-                        background: i === 0 ? PLUM_SOFT : "#eeece0", color: i === 0 ? PLUM : "#5b5648",
+                        background: i === 0 ? FELT_SOFT : "#eeece0", color: i === 0 ? FELT_DEEP : "#5b5648",
                         fontVariantNumeric: "tabular-nums",
                       }}
                     >
-                      {f.value}
-                      <span style={{ fontWeight: 500, opacity: 0.75 }}> {f.label}</span>
+                      <RedSuits>{f.value}</RedSuits>
+                      {f.label && <span style={{ fontWeight: 500, opacity: 0.75 }}> {f.label}</span>}
                     </span>
                   ))}
                 </div>
@@ -390,23 +709,144 @@ export function CoachSheet({
             </div>
           )}
 
+          {/* ── NOW: the reasoning scaffold, shown without being asked ── */}
+          {view === "now" && data.aid && <ThinkCard aid={data.aid} />}
+
+          {/* ── NOW: the advice, before the card is played ── */}
+          {view === "now" && data.ask && data.ask.phase === "play" && data.ask.active && (
+            <WhatShouldIPlay sessionId={data.ask.sessionId} />
+          )}
+
+          {/* ── NOW: the chat — anything about the position ── */}
+          {view === "now" && data.ask && (
+            <div>
+              <Label>Ask the coach</Label>
+              <CoachChat sessionId={data.ask.sessionId} />
+            </div>
+          )}
+
+          {/* ── HISTORY: the board so far, in sections ── */}
+          {view === "history" &&
+            (data.eventGroups?.length ? (
+              <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0", borderRadius: 11, padding: "10px 12px" }}>
+                <Label color={FELT_DEEP}>The board so far</Label>
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  {data.eventGroups.map((group) => {
+                    const isOpen = groupOpen(group);
+                    return (
+                      <div key={group.id}>
+                        <button
+                          type="button"
+                          aria-expanded={isOpen}
+                          onClick={() => setGroupToggles((prev) => ({ ...prev, [group.id]: !isOpen }))}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6, width: "100%",
+                            minHeight: 30, padding: "4px 1px",
+                            background: "transparent", borderWidth: 0,
+                            borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#e4e0d0",
+                            fontFamily: "inherit", textAlign: "left", cursor: "pointer",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6,
+                              textTransform: "uppercase", color: isOpen ? FELT_DEEP : FAINT,
+                            }}
+                          >
+                            {group.title}
+                          </span>
+                          {group.note && (
+                            <span style={{ fontSize: 10.5, fontWeight: 500, color: FAINT }}>
+                              · {group.note}
+                            </span>
+                          )}
+                          <span style={{ flex: 1 }} />
+                          {!isOpen && (
+                            <span style={{ fontSize: 10, color: FAINT, fontVariantNumeric: "tabular-nums" }}>
+                              {group.events.length}
+                            </span>
+                          )}
+                          <span
+                            aria-hidden
+                            style={{
+                              flex: "none", width: 13, textAlign: "center", color: FELT_MID, fontSize: 9,
+                              transform: isOpen ? "rotate(180deg)" : undefined, transition: "transform .15s ease",
+                            }}
+                          >
+                            ▼
+                          </span>
+                        </button>
+                        {isOpen &&
+                          (group.id === "auction" ? (
+                            // The auction reads best the way a bidding box
+                            // prints it: a column per seat, calls in order.
+                            <AuctionDiagram
+                              events={group.events}
+                              selectedId={selectedCall}
+                              onSelect={setSelectedCall}
+                              {...(data.ask ? { ask: data.ask } : {})}
+                            />
+                          ) : (
+                            group.events.map((ev) => (
+                              <EventRow
+                                key={ev.id}
+                                event={ev}
+                                open={openEvent === ev.id}
+                                onToggle={() => setOpenEvent(openEvent === ev.id ? null : ev.id)}
+                                {...(data.ask && ev.who === "You"
+                                  ? {
+                                      // Only the learner's OWN plays take an
+                                      // Ask (owner decision 2026-08-05); the
+                                      // other seats' cards stay plain rows.
+                                      askOpen: openAsk === ev.id,
+                                      onToggleAsk: () => setOpenAsk(openAsk === ev.id ? null : ev.id),
+                                      ask: (
+                                        <CoachEventAsk
+                                          sessionId={data.ask.sessionId}
+                                          eventId={ev.id}
+                                          eventLabel={ev.label}
+                                        />
+                                      ),
+                                    }
+                                  : {})}
+                              />
+                            ))
+                          ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                Nothing has happened on this board yet.
+              </p>
+            ))}
+
           {/* ── the buttons ── */}
-          {presence !== "silent" && data.prompts && (
+          {/* HIDDEN, NOT GONE (owner decision 2026-08-05). The big "Help me
+              think" / "What should I play?" row is coming off the sheet: those
+              actions are moving into the event rows above, in miniature, once
+              the answer block they embed settles. Everything behind them —
+              CoachPrompts, both API routes, the think scaffold — stays wired,
+              and the host still passes `prompts`; flip this to bring the row
+              back. */}
+          {view === "now" && SHOW_PROMPT_BUTTONS && presence !== "silent" && data.prompts && (
             <div>
               <Label>Ask me</Label>
               {data.prompts}
             </div>
           )}
 
-          {presence === "silent" && (
+          {view === "now" && presence === "silent" && (
             <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
               I'm keeping out of the way. Nothing will interrupt you, and I won't offer anything
-              unless you switch me to <b>On request</b>.
+              unless you switch me to <b>On request</b> — tap my chip on the felt to change mode.
             </p>
           )}
 
           {/* ── what it flagged, in Guided ── */}
-          {showNotes && (
+          {view === "now" && showNotes && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <Label>{corrections.length ? "Worth a look" : "This board so far"}</Label>
               {corrections.length === 0 && approvals.length === 0 && status.length === 0 && (
@@ -446,7 +886,9 @@ export function CoachSheet({
             </div>
           )}
 
-          {data.actions && <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>{data.actions}</div>}
+          {view === "now" && data.actions && (
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>{data.actions}</div>
+          )}
         </div>
       </div>
     </>
@@ -457,6 +899,385 @@ function Label({ children, color = FAINT }: Readonly<{ children: ReactNode; colo
   return (
     <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.7, textTransform: "uppercase", color, marginBottom: 7 }}>
       {children}
+    </div>
+  );
+}
+
+/**
+ * Text with its ♥ and ♦ in red, as every printed hand diagram has them. Not
+ * decoration: at row size, ♦ and ♠ are near-identical shapes, and these labels
+ * exist to be told apart at a glance.
+ */
+function RedSuits({ children }: Readonly<{ children: string }>) {
+  return (
+    <>
+      {children.split(/([♥♦])/).map((part, i) =>
+        part === "♥" || part === "♦" ? (
+          <span key={i} style={{ color: "#c00" }}>
+            {part}
+          </span>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
+/**
+ * The reasoning scaffold, shown on the NOW view without being asked — this is
+ * what the "Help me think" button used to answer with, promoted to the
+ * default screen's centrepiece. Candidates render in given order and are
+ * styled identically, same as CoachPrompts' block: any visual difference
+ * between them reads as a recommendation, and the point of the scaffold is
+ * that it does not answer.
+ */
+function ThinkCard({ aid }: Readonly<{ aid: ThinkAid }>) {
+  return (
+    <div
+      style={{
+        background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0",
+        borderRadius: 11, padding: "10px 12px",
+        display: "flex", flexDirection: "column", gap: 11,
+      }}
+    >
+      {aid.known.length > 0 && (
+        <div>
+          <Label color={FELT_DEEP}>What you can work out</Label>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 5 }}>
+            {aid.known.map((line) => (
+              <li key={line} style={{ position: "relative", paddingLeft: 13, fontSize: 13.5, lineHeight: 1.45, color: INK }}>
+                <span aria-hidden style={{ position: "absolute", left: 0, top: 0, color: FELT_MID, fontWeight: 700 }}>
+                  &middot;
+                </span>
+                <RedSuits>{line}</RedSuits>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {aid.candidates.length > 0 && (
+        <div>
+          <Label>Your realistic choices</Label>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+            {aid.candidates.map((c) => (
+              <li key={c.label} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13.5, lineHeight: 1.45 }}>
+                <span style={{ flex: "none", minWidth: 42, fontWeight: 700, color: INK }}>
+                  <RedSuits>{c.label}</RedSuits>
+                </span>
+                {c.note ? (
+                  <span style={{ color: FAINT }}>
+                    <RedSuits>{c.note}</RedSuits>
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {aid.noChoice && (
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: MUTED }}>{aid.noChoice}</p>
+      )}
+    </div>
+  );
+}
+
+/* ── the auction, printed as a bidding box ──────────────────────────────────
+   A column per seat in rotation from the dealer, each call a token in bidding
+   order — the shape every bridge app and every printed deal uses, so the
+   learner reads it without translating. Tapping a call selects it; its
+   meaning and its ask box open below the grid. */
+
+const SEAT_ROTATION = ["N", "E", "S", "W"];
+
+/** One call as a token: bids as card faces, Pass/Dbl/Rdbl as coloured chips. */
+function CallToken({
+  event, selected, onSelect,
+}: Readonly<{ event: CoachLookingEvent; selected: boolean; onSelect: () => void }>) {
+  const isBid = Boolean(event.token);
+  const text = event.token ?? (event.verb === "passed" ? "Pass" : event.verb === "doubled" ? "Dbl" : "Rdbl");
+  const red = /[♥♦]/.test(text);
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      aria-label={event.label}
+      onClick={onSelect}
+      style={{
+        width: "100%", minHeight: 28, padding: "3px 2px",
+        background: isBid ? "#fff" : event.verb === "passed" ? FELT_MID : "#a03434",
+        borderWidth: 1, borderStyle: "solid",
+        borderColor: selected ? FELT_DEEP : isBid ? "#d8d3bf" : "transparent",
+        borderRadius: 6, cursor: "pointer",
+        boxShadow: selected ? `0 0 0 2px ${GOLD}` : "0 1px 1px rgba(0,0,0,.07)",
+        fontSize: isBid ? 14 : 10.5, fontWeight: 700, fontFamily: "inherit",
+        lineHeight: 1.2, textAlign: "center",
+        color: isBid ? (red ? "#c00" : "#20201a") : "#fff",
+        textTransform: isBid ? undefined : "uppercase",
+        letterSpacing: isBid ? undefined : 0.4,
+      }}
+    >
+      {text}
+    </button>
+  );
+}
+
+function AuctionDiagram({
+  events, selectedId, onSelect, ask,
+}: Readonly<{
+  events: readonly CoachLookingEvent[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  /** Present means the selected call's meaning panel carries a question box. */
+  ask?: { sessionId: string };
+}>) {
+  // The first call is the dealer's, so the column order falls out of the data.
+  const dealer = events[0]?.seat ?? "N";
+  const start = Math.max(0, SEAT_ROTATION.indexOf(dealer));
+  const cols = [0, 1, 2, 3].map((i) => SEAT_ROTATION[(start + i) % 4]!);
+  const bySeat = new Map<string, CoachLookingEvent[]>(cols.map((s) => [s, []]));
+  for (const ev of events) bySeat.get(ev.seat ?? "")?.push(ev);
+  const youSeat = events.find((e) => e.who === "You")?.seat;
+  const selected = selectedId ? events.find((e) => e.id === selectedId) : undefined;
+
+  return (
+    <div style={{ padding: "7px 0 2px" }}>
+      <div style={{ display: "flex", gap: 5 }}>
+        {cols.map((s) => (
+          <div key={s} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+            {/* seat header — your seat wears the gold chip, the dealer is underlined */}
+            <span
+              style={{
+                alignSelf: "center", minWidth: 21, height: 21, padding: "0 4px", borderRadius: 5,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 700,
+                background: s === youSeat ? CHIP : "#12525e",
+                color: s === youSeat ? FELT_DEEP : "#fff",
+                textDecoration: s === dealer ? "underline" : undefined,
+                textUnderlineOffset: 2,
+              }}
+            >
+              {s}
+            </span>
+            <div
+              style={{
+                display: "flex", flexDirection: "column", gap: 3,
+                background: FELT_SOFT, borderRadius: 8, padding: 4, minHeight: 40,
+              }}
+            >
+              {(bySeat.get(s) ?? []).map((ev) => (
+                <CallToken
+                  key={ev.id}
+                  event={ev}
+                  selected={ev.id === selectedId}
+                  onSelect={() => onSelect(ev.id === selectedId ? null : ev.id)}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── the selected call: its meaning, and the way to ask about it ── */}
+      {selected && (
+        <div
+          style={{
+            marginTop: 8, borderRadius: 9, padding: "9px 11px 4px",
+            background: FELT_SOFT,
+            borderWidth: 1, borderStyle: "solid", borderColor: FELT_LINE,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6,
+              textTransform: "uppercase", color: FELT_DEEP, marginBottom: 4,
+            }}
+          >
+            Meaning ·{" "}
+            <RedSuits>
+              {`${
+                selected.token ??
+                (selected.verb === "doubled" ? "Double" : selected.verb === "redoubled" ? "Redouble" : "Pass")
+              } by ${selected.who ?? "?"}`}
+            </RedSuits>
+          </div>
+          <p
+            style={{
+              margin: "0 0 6px", fontFamily: "Georgia, 'Times New Roman', serif",
+              fontSize: 13.5, lineHeight: 1.5, color: selected.detail ? MUTED : FAINT,
+            }}
+          >
+            {selected.detail ? (
+              <RedSuits>{selected.detail}</RedSuits>
+            ) : (
+              "Your system notes don't cover this call."
+            )}
+          </p>
+          {ask && (
+            <CoachEventAsk
+              key={selected.id}
+              sessionId={ask.sessionId}
+              eventId={selected.id}
+              eventLabel={selected.label}
+              flush
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The card or call itself, drawn as a small card face — red for ♥/♦, as printed. */
+function TokenChip({ token }: Readonly<{ token: string }>) {
+  return (
+    <span
+      style={{
+        flex: "none", padding: "2px 8px",
+        background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: "#d8d3bf",
+        borderRadius: 4, boxShadow: "0 1px 1px rgba(0,0,0,.07)",
+        fontSize: 13.5, fontWeight: 700, lineHeight: 1.3,
+        color: /[♥♦]/.test(token) ? "#c00" : "#20201a",
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {token}
+    </span>
+  );
+}
+
+/**
+ * One table event in the context card, as a ledger line: seat badge, actor
+ * and verb, then the card or call itself as a small card face — and, when the
+ * host provides ask context, an "Ask" toggle opening this event's interaction
+ * surface (a question box, and the play advice in miniature).
+ *
+ * The label area and the "Ask" pill are SEPARATE buttons inside one row —
+ * tapping the label expands the meaning, tapping Ask opens the conversation.
+ * The learner's own rows get the coach's gold badge — the same chip that sits
+ * on the felt — so "which of these was me" needs no reading at all.
+ */
+function EventRow({
+  event, open, onToggle, askOpen = false, onToggleAsk, ask,
+}: Readonly<{
+  event: CoachLookingEvent;
+  open: boolean;
+  onToggle: () => void;
+  askOpen?: boolean;
+  onToggleAsk?: () => void;
+  /** The interaction surface, rendered when askOpen. */
+  ask?: ReactNode;
+}>) {
+  const expandable = Boolean(event.detail);
+  const isYou = event.who === "You";
+  const structured = Boolean(event.who && event.verb);
+
+  const content = structured ? (
+    <>
+      <span
+        aria-hidden
+        style={{
+          flex: "none", width: 21, height: 21, borderRadius: 5,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 11, fontWeight: 700,
+          background: isYou ? CHIP : "#12525e",
+          color: isYou ? FELT_DEEP : "#fff",
+        }}
+      >
+        {event.seat}
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontWeight: 700 }}>{event.who}</span>
+        <span style={{ color: MUTED }}> {event.verb}</span>
+      </span>
+      {event.token && <TokenChip token={event.token} />}
+    </>
+  ) : (
+    <span style={{ flex: 1, fontWeight: 600 }}>
+      <RedSuits>{event.label}</RedSuits>
+    </span>
+  );
+
+  // A fixed slot whether or not there is a chevron, so the card faces line up
+  // down the column like a ledger's figures.
+  const chevron = (
+    <span
+      aria-hidden
+      style={{
+        flex: "none", width: 13, textAlign: "center", color: FELT_MID, fontSize: 10,
+        transform: open ? "rotate(180deg)" : undefined, transition: "transform .15s ease",
+      }}
+    >
+      {expandable ? "▼" : ""}
+    </span>
+  );
+
+  const label = {
+    display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0,
+    fontSize: 13, color: INK, lineHeight: 1.35,
+  } as const;
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          minHeight: 36, padding: "5px 1px",
+          borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#eeebe0",
+        }}
+      >
+        {expandable ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={event.label}
+            onClick={onToggle}
+            style={{
+              ...label, background: "transparent", borderWidth: 0, padding: 0,
+              fontFamily: "inherit", textAlign: "left", cursor: "pointer",
+            }}
+          >
+            {content}
+            {chevron}
+          </button>
+        ) : (
+          <div style={label} aria-label={event.label}>
+            {content}
+            {chevron}
+          </div>
+        )}
+        {onToggleAsk && (
+          <button
+            type="button"
+            aria-expanded={askOpen}
+            aria-label={`Ask about ${event.label}`}
+            onClick={onToggleAsk}
+            style={{
+              flex: "none", minHeight: 26, padding: "3px 11px",
+              background: askOpen ? FELT_MID : "transparent",
+              borderWidth: 1, borderStyle: "solid", borderColor: askOpen ? FELT_MID : FELT_LINE,
+              borderRadius: 13, color: askOpen ? "#fff" : FELT_DEEP,
+              fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer",
+            }}
+          >
+            Ask
+          </button>
+        )}
+      </div>
+      {open && (
+        <p
+          style={{
+            // Indented to the text column, under the actor it belongs to.
+            margin: "0 0 9px 29px", paddingLeft: 10,
+            fontFamily: "Georgia, 'Times New Roman', serif",
+            fontSize: 13.5, lineHeight: 1.5, color: MUTED,
+            borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: FELT_LINE,
+          }}
+        >
+          <RedSuits>{event.detail ?? ""}</RedSuits>
+        </p>
+      )}
+      {askOpen && ask}
     </div>
   );
 }
@@ -545,9 +1366,9 @@ function NoteBody({
                   }
                   style={{
                     minHeight: 34, padding: "7px 13px",
-                    background: isOpen ? PLUM : PAPER,
-                    borderWidth: 1, borderStyle: "solid", borderColor: isOpen ? PLUM : PLUM_LINE,
-                    borderRadius: 17, color: isOpen ? "#fff" : PLUM,
+                    background: isOpen ? FELT_MID : PAPER,
+                    borderWidth: 1, borderStyle: "solid", borderColor: isOpen ? FELT_MID : FELT_LINE,
+                    borderRadius: 17, color: isOpen ? "#fff" : FELT_DEEP,
                     fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer",
                   }}
                 >
@@ -565,7 +1386,7 @@ function NoteBody({
                 style={{
                   margin: 0, paddingLeft: 11, fontFamily: "Georgia, 'Times New Roman', serif",
                   fontSize: 14, lineHeight: 1.55, color: MUTED,
-                  borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: PLUM_LINE,
+                  borderLeftWidth: 2, borderLeftStyle: "solid", borderLeftColor: FELT_LINE,
                 }}
               >
                 {up.a}
@@ -592,8 +1413,8 @@ function NoteBody({
           href={note.action.href}
           style={{
             alignSelf: "flex-start", minHeight: 34, padding: "7px 13px",
-            background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: PLUM_LINE,
-            borderRadius: 17, color: PLUM, fontSize: 12.5, fontWeight: 700,
+            background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: FELT_LINE,
+            borderRadius: 17, color: FELT_DEEP, fontSize: 12.5, fontWeight: 700,
             textDecoration: "none", display: "inline-flex", alignItems: "center",
           }}
         >
