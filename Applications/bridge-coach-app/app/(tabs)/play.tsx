@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { OptionCard, Screen } from "../../components/ui";
-import { Colors, Spacing } from "../../constants/theme";
+import { Colors, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
 import { prefetchLaunch } from "../../lib/launch-cache";
@@ -143,8 +143,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: "uppercase",
     color: Colors.textMuted,
+    fontFamily: Fonts.heading,
   },
-  title: { fontSize: 26, fontWeight: "700", color: Colors.text },
+  title: { fontSize: 26, color: Colors.text, fontFamily: Fonts.display, },
   dealLoading: { paddingVertical: 34, alignItems: "center" },
   dealEmpty: {
     marginTop: 16,
@@ -161,14 +162,15 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 4,
   },
-  dealName: { fontSize: 18, fontWeight: "700", color: "#fff" },
-  dealMeta: { fontSize: 12.5, color: "rgba(255,255,255,.75)" },
-  dealCta: { marginTop: 8, fontSize: 13, fontWeight: "700", color: "#ffe6a7" },
-  options: { flex: 1, paddingTop: 24, gap: 12 },
+  dealName: { fontSize: 18, color: "#fff", fontFamily: Fonts.display, },
+  dealMeta: { fontSize: 12.5, color: "rgba(255,255,255,.75)", fontFamily: Fonts.body, },
+  dealCta: { marginTop: 8, fontSize: 13, color: "#ffe6a7", fontFamily: Fonts.heading, },
+  options: { flex: 1, paddingTop: 24, gap: 12, paddingBottom: TAB_BAR_CLEARANCE },
   stateText: {
     fontSize: 14,
     color: Colors.textMuted,
     textAlign: "center",
     lineHeight: 21,
+    fontFamily: Fonts.body,
   },
 });

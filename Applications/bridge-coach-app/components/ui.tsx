@@ -1,3 +1,12 @@
+// Shared primitives. Restyling these is what carries the BirdBridge look into
+// every screen that has not been hand-designed yet.
+//
+// Type hierarchy (from the Learn design): a screen's main title is Neco Bold,
+// headings are Neco Regular, and subheadings / body are General Sans Regular.
+//
+// Box colours follow the deck: cards are the maroon/green "suits" with cream and
+// white type on them, and pass an `index` to alternate the way a dealt row does.
+
 import { router, type Href } from "expo-router";
 import { ReactNode } from "react";
 import {
@@ -11,7 +20,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Colors, Radius, Spacing } from "../constants/theme";
+import { Brand, Colors, Fonts, Radius, Spacing, Type } from "../constants/theme";
 
 export function Screen({
   children,
@@ -23,6 +32,16 @@ export function Screen({
   return (
     <SafeAreaView style={[styles.screen, style]}>{children}</SafeAreaView>
   );
+}
+
+/** A screen's main title — Neco Bold. */
+export function ScreenTitle({ children }: { children: string }) {
+  return <Text style={styles.screenTitle}>{children}</Text>;
+}
+
+/** A section heading inside a screen — Neco Regular. */
+export function SectionHeading({ children }: { children: string }) {
+  return <Text style={styles.sectionHeading}>{children}</Text>;
 }
 
 export function ScreenHeader({
@@ -90,17 +109,22 @@ export function OptionCard({
   subtitle,
   onPress,
   selected,
+  /** Position in a list — alternates the suit colour like a dealt row. */
+  index = 0,
 }: {
   title: string;
   subtitle?: string;
   onPress: () => void;
   selected?: boolean;
+  index?: number;
 }) {
+  const suit = index % 2 === 0 ? Brand.maroon : Brand.green;
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.card,
+        { backgroundColor: suit },
         selected && styles.cardSelected,
         pressed && styles.pressed,
       ]}
@@ -123,7 +147,7 @@ export function FormField({
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         style={styles.fieldInput}
-        placeholderTextColor={Colors.textMuted}
+        placeholderTextColor="rgba(255,255,255,0.5)"
         {...inputProps}
       />
     </View>
@@ -136,33 +160,24 @@ export function ErrorText({ message }: { message: string | null }) {
 }
 
 const styles = StyleSheet.create({
-  field: {
-    marginBottom: 20,
-  },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  fieldInput: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.card,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: Colors.text,
-  },
-  errorText: {
-    color: "#b91c1c",
-    fontSize: 14,
-    marginBottom: 16,
-  },
   screen: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Brand.cream,
   },
+
+  // ── Type ────────────────────────────────────────────────────────────────
+  screenTitle: {
+    fontFamily: Fonts.display,
+    fontSize: Type.screenTitle,
+    color: Brand.ink,
+  },
+  sectionHeading: {
+    fontFamily: Fonts.heading,
+    fontSize: Type.sectionHeading,
+    color: Brand.ink,
+  },
+
+  // ── Header ──────────────────────────────────────────────────────────────
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -177,15 +192,17 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 28,
     lineHeight: 30,
-    color: Colors.text,
+    color: Brand.ink,
   },
   headerTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: Colors.text,
+    fontFamily: Fonts.heading,
+    fontSize: 19,
+    color: Brand.ink,
   },
+
+  // ── Buttons ─────────────────────────────────────────────────────────────
   primaryButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Brand.maroon,
     borderRadius: Radius.button,
     paddingVertical: 16,
     alignItems: "center",
@@ -194,42 +211,69 @@ const styles = StyleSheet.create({
     opacity: 0.35,
   },
   primaryButtonText: {
-    color: Colors.primaryText,
+    fontFamily: Fonts.bodySemibold,
+    color: Brand.cream,
     fontSize: 16,
-    fontWeight: "600",
   },
+
+  // ── Cards ───────────────────────────────────────────────────────────────
   card: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.cardBackground,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.card,
+    borderWidth: 2,
+    borderColor: "transparent",
+    borderRadius: Radius.field,
     padding: Spacing.card,
   },
   cardSelected: {
-    borderColor: Colors.text,
-    borderWidth: 2,
+    borderColor: Brand.cream,
   },
   cardBody: {
     flex: 1,
   },
   cardTitle: {
+    fontFamily: Fonts.displayMedium,
     fontSize: 16,
-    fontWeight: "600",
-    color: Colors.text,
+    color: Brand.white,
   },
   cardSubtitle: {
+    fontFamily: Fonts.body,
     fontSize: 13,
-    color: Colors.textMuted,
-    marginTop: 2,
+    color: "rgba(255,244,215,0.75)",
+    marginTop: 3,
   },
   cardChevron: {
     fontSize: 22,
-    color: Colors.textMuted,
+    color: Brand.cream,
     marginLeft: 8,
   },
-  pressed: {
-    opacity: 0.7,
+
+  // ── Fields ──────────────────────────────────────────────────────────────
+  field: {
+    marginBottom: 20,
   },
+  fieldLabel: {
+    fontFamily: Fonts.heading,
+    fontSize: Type.fieldLabel,
+    color: Brand.ink,
+    marginBottom: 8,
+  },
+  fieldInput: {
+    fontFamily: Fonts.body,
+    backgroundColor: Brand.green,
+    borderWidth: 2,
+    borderColor: Brand.cream,
+    borderRadius: Radius.field,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: Type.fieldValue,
+    color: Brand.white,
+  },
+  errorText: {
+    fontFamily: Fonts.body,
+    color: Colors.danger,
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  pressed: { opacity: 0.75 },
 });

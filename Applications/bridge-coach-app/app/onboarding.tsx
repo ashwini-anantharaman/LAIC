@@ -3,7 +3,7 @@ import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { OptionCard, PrimaryButton, Screen } from "../components/ui";
-import { Colors, Spacing } from "../constants/theme";
+import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 
 const LEVELS = [
@@ -37,9 +37,10 @@ export default function OnboardingScreen() {
       </View>
 
       <View style={styles.options}>
-        {LEVELS.map((level) => (
+        {LEVELS.map((level, i) => (
           <OptionCard
             key={level.id}
+            index={i}
             title={level.title}
             subtitle={level.subtitle}
             selected={selected === level.id}
@@ -74,10 +75,12 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "700",
     color: Colors.text,
+    fontFamily: Fonts.display,
   },
   subtitle: {
     fontSize: 15,
     color: Colors.textMuted,
+    fontFamily: Fonts.body,
   },
   options: {
     flex: 1,

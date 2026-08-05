@@ -6,7 +6,7 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { OptionCard, Screen, ScreenHeader } from "../components/ui";
-import { Colors, Spacing } from "../constants/theme";
+import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { fetchBridgeSummary, type InProgressBoard } from "../lib/nexus";
 
@@ -37,9 +37,10 @@ export default function ResumeScreen() {
       )}
       {boards && (
         <View style={styles.list}>
-          {boards.map((b) => (
+          {boards.map((b, i) => (
             <OptionCard
               key={b.session_id}
+              index={i}
               title={b.board_name}
               subtitle={b.updated_at ? `last played ${b.updated_at.slice(0, 10)}` : "in progress"}
               onPress={() =>
@@ -67,5 +68,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
     paddingTop: 24,
+    fontFamily: Fonts.body,
   },
 });

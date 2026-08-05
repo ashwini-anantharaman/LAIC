@@ -4,7 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { ContentWebView } from "../../../components/content-webview";
 import { PrimaryButton, Screen, ScreenHeader } from "../../../components/ui";
-import { Colors, Spacing } from "../../../constants/theme";
+import { Colors, Fonts, Spacing } from "../../../constants/theme";
 import { LEARNING_PLATFORM_URL, PROGRAM_ID } from "../../../lib/config";
 import { useAuth } from "../../../lib/auth-context";
 import { takeLaunch } from "../../../lib/launch-cache";
@@ -94,5 +94,6 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: "center",
     lineHeight: 22,
+    fontFamily: Fonts.body,
   },
 });

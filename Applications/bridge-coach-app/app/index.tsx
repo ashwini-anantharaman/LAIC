@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { PrimaryButton, Screen } from "../components/ui";
-import { Colors, Spacing } from "../constants/theme";
+import { Colors, Fonts, Spacing } from "../constants/theme";
 
 export default function LandingScreen() {
   return (
@@ -39,11 +39,13 @@ const styles = StyleSheet.create({
   logo: {
     fontSize: 56,
     color: Colors.text,
+    fontFamily: Fonts.display,
   },
   title: {
     fontSize: 32,
     fontWeight: "700",
     color: Colors.text,
+    fontFamily: Fonts.display,
   },
   tagline: {
     fontSize: 16,
@@ -51,6 +53,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 24,
     maxWidth: 300,
+    fontFamily: Fonts.body,
   },
   actions: {
     gap: 16,
@@ -61,5 +64,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "500",
     color: Colors.text,
+    fontFamily: Fonts.body,
   },
 });

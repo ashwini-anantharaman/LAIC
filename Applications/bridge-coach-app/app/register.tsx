@@ -16,7 +16,7 @@ import {
   Screen,
   ScreenHeader,
 } from "../components/ui";
-import { Colors, Spacing } from "../constants/theme";
+import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { NexusError } from "../lib/nexus";
 
@@ -135,6 +135,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textMuted,
     marginBottom: 20,
+    fontFamily: Fonts.body,
   },
   actions: {
     paddingBottom: 24,
@@ -150,6 +151,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.text,
     textAlign: "center",
+    fontFamily: Fonts.display,
   },
   pendingText: {
     fontSize: 15,
@@ -157,5 +159,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
     marginBottom: 8,
+    fontFamily: Fonts.body,
   },
 });

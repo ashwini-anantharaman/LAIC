@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { PrimaryButton, Screen, ScreenHeader } from "../components/ui";
-import { Colors, Radius, Spacing } from "../constants/theme";
+import { Colors, Fonts, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { BridgeContext, getBridgeContextCached, isCoach } from "../lib/bridge-role";
 import { fetchMyCoach, MyCoach } from "../lib/nexus";
@@ -102,6 +102,7 @@ const styles = StyleSheet.create({
     color: Colors.primaryText,
     fontSize: 28,
     fontWeight: "700",
+    fontFamily: Fonts.display,
   },
   card: {
     alignSelf: "stretch",
@@ -125,12 +126,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: Colors.textMuted,
+    fontFamily: Fonts.heading,
   },
   rowValue: {
     flex: 1,
     fontSize: 15,
     color: Colors.text,
     textAlign: "right",
+    fontFamily: Fonts.body,
   },
   actions: {
     paddingHorizontal: Spacing.screen,

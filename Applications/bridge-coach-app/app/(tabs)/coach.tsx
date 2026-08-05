@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { OptionCard, Screen } from "../../components/ui";
-import { Colors, Spacing } from "../../constants/theme";
+import { Colors, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
 import { fetchBridgeSummary, type BridgeSummary } from "../../lib/nexus";
@@ -125,8 +125,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: "uppercase",
     color: Colors.textMuted,
+    fontFamily: Fonts.heading,
   },
-  title: { fontSize: 26, fontWeight: "700", color: Colors.text },
-  subtitle: { fontSize: 14, color: Colors.textMuted, lineHeight: 20 },
-  options: { flex: 1, paddingTop: 24, gap: 12 },
+  title: { fontSize: 26, color: Colors.text, fontFamily: Fonts.display, },
+  subtitle: { fontSize: 14, color: Colors.textMuted, lineHeight: 20, fontFamily: Fonts.body, },
+  options: { flex: 1, paddingTop: 24, gap: 12, paddingBottom: TAB_BAR_CLEARANCE },
 });

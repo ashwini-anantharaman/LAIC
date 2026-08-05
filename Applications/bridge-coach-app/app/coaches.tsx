@@ -15,7 +15,7 @@ import {
   Screen,
   ScreenHeader,
 } from "../components/ui";
-import { Colors, Spacing } from "../constants/theme";
+import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { Coach, fetchCoaches, fetchMyCoach, hireCoach, NexusError } from "../lib/nexus";
 
@@ -96,10 +96,11 @@ export default function CoachesScreen() {
                 No coaches in the program yet. Check back soon.
               </Text>
             }
-            renderItem={({ item }) => {
+            renderItem={({ item, index }) => {
               const isCurrent = item.coach_id === currentId;
               return (
                 <OptionCard
+                  index={index}
                   title={item.name}
                   subtitle={
                     isCurrent
@@ -160,6 +161,7 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     lineHeight: 21,
     marginBottom: 16,
+    fontFamily: Fonts.body,
   },
   separator: {
     height: 12,
@@ -169,6 +171,7 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: "center",
     lineHeight: 22,
+    fontFamily: Fonts.body,
   },
   actions: {
     paddingHorizontal: Spacing.screen,

@@ -9,7 +9,7 @@ import {
 } from "react-native";
 
 import { OptionCard, PrimaryButton, Screen, ScreenHeader } from "../components/ui";
-import { Colors, Spacing } from "../constants/theme";
+import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { fetchProgramLearners, NexusError, ProgramLearner } from "../lib/nexus";
 
@@ -75,8 +75,9 @@ export default function LearnersScreen() {
               coach, they appear here.
             </Text>
           }
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <OptionCard
+              index={index}
               title={item.name || item.email || "Unnamed learner"}
               subtitle={[item.email, _joined(item.joined_at)]
                 .filter(Boolean)
@@ -119,6 +120,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.6,
     marginBottom: 12,
+    fontFamily: Fonts.heading,
   },
   separator: {
     height: 12,
@@ -128,5 +130,6 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: "center",
     lineHeight: 22,
+    fontFamily: Fonts.body,
   },
 });
