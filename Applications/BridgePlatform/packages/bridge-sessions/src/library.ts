@@ -25,9 +25,14 @@ export interface SourceRef {
 
 /**
  * Scope filter for list reads (org scoping Phase 0; instance scoping 0022).
- * When a field is provided, only records stamped with the SAME value match —
- * legacy records without a stamp are excluded (production rows are
- * backfilled by migrations 0019/0022).
+ * When a field is provided, only records stamped with the SAME value match.
+ * EXCEPTION — `nexusProgramId`: a record whose program stamp is NULL/absent is
+ * pre-0022 and ORG-scoped ("null program id = scope by org only"). 0022's
+ * program backfill only stamped the Life-in-AI org, so seed-org rows keep a null
+ * nexus_program_id; they must still surface for a program-partitioned read
+ * within their org, or a reviewer whose principal carries a real program uuid
+ * would see an empty shelf. Org/owner/scopeLevel stamps ARE backfilled and match
+ * exactly.
  */
 export interface ScopeFilter {
   programOrganizationId?: string;
@@ -53,7 +58,11 @@ export function matchesScope(
     return false;
   if (filter.createdBy !== undefined && rec.createdBy !== filter.createdBy) return false;
   if (filter.scopeLevel !== undefined && rec.scopeLevel !== filter.scopeLevel) return false;
-  if (filter.nexusProgramId !== undefined && rec.nexusProgramId !== filter.nexusProgramId)
+  if (
+    filter.nexusProgramId !== undefined &&
+    rec.nexusProgramId != null && // null/absent = org-scoped (pre-0022), matches any program in the org
+    rec.nexusProgramId !== filter.nexusProgramId
+  )
     return false;
   return true;
 }

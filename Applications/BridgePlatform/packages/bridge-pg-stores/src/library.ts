@@ -61,8 +61,11 @@ export class PgLibraryStore implements LibraryStore {
       query = query.eq("program_organization_id", filter.programOrganizationId);
     if (filter?.createdBy !== undefined) query = query.eq("created_by", filter.createdBy);
     if (filter?.scopeLevel !== undefined) query = query.eq("scope_level", filter.scopeLevel);
+    // A null nexus_program_id is a pre-0022, ORG-scoped row (0022 only stamped
+    // the Life-in-AI org). Match it alongside the exact program so legacy rows
+    // don't vanish for a caller whose principal carries a real program uuid.
     if (filter?.nexusProgramId !== undefined)
-      query = query.eq("nexus_program_id", filter.nexusProgramId);
+      query = query.or(`nexus_program_id.eq.${filter.nexusProgramId},nexus_program_id.is.null`);
     const rows = check(await query, "library.list");
     return rows.map(overlayScopeColumns);
   }
@@ -111,8 +114,9 @@ export class PgLibraryStore implements LibraryStore {
       query = query.eq("program_organization_id", filter.programOrganizationId);
     if (filter?.createdBy !== undefined) query = query.eq("created_by", filter.createdBy);
     if (filter?.scopeLevel !== undefined) query = query.eq("scope_level", filter.scopeLevel);
+    // Null nexus_program_id = pre-0022 org-scoped (see listEntries).
     if (filter?.nexusProgramId !== undefined)
-      query = query.eq("nexus_program_id", filter.nexusProgramId);
+      query = query.or(`nexus_program_id.eq.${filter.nexusProgramId},nexus_program_id.is.null`);
     const rows = check(await query, "library.collection.list");
     return rows.map((r) => (r as { record: LibraryCollectionRow }).record);
   }
