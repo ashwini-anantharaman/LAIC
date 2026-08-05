@@ -345,9 +345,12 @@ export function PlayTable({
 
   // ── phone-tier band budget (Mobile Table.dc.html) ──────────────────────────
   // The coach panel takes its share of the phone screen; the table region gets
-  // the rest, and the whole stack is priced against THAT height.
+  // the rest, and the whole stack is priced against THAT height. A HIDDEN coach
+  // still reserves its share: redistributing it lets the flexible felt band
+  // balloon (a towering auction box), and the owner wants the table to keep its
+  // proportions with plain white space where the panel will return.
   const coachOn = showCoach !== false;
-  const coachSharePct = coachOn ? Math.max(0, Math.min(55, coachShare ?? 30)) : 0;
+  const coachSharePct = Math.max(0, Math.min(55, coachShare ?? 30));
   const tableSharePct = 100 - coachSharePct;
 
   // The dummy is a ONE-LINE suit strip unless the human must play from it — then
@@ -1084,9 +1087,12 @@ export function PlayTable({
             {mobileStack}
           </div>
         </div>
-        {coachOn && (
+        {coachSharePct > 0 && (
           <div style={{ flex: coachSharePct, minHeight: 0, display: "flex", background: "#fff", borderTop: "1px solid #d8ded9" }}>
-            <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} />
+            {/* Hidden coach keeps its reserved band as plain white space. */}
+            {coachOn && (
+              <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} />
+            )}
           </div>
         )}
         {seatsPopup}
