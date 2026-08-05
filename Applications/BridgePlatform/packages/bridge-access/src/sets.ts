@@ -3,7 +3,7 @@
 // sets, and each set unlocks a fixed list of live feature keys ("surfaces").
 // This layer is pure metadata on top of the enforcement registry — it compiles
 // DOWN to the flat feature->roles rules the app already enforces, so the
-// designer never invents its own gating. The 13 sets partition all 37
+// designer never invents its own gating. The 15 sets partition all 41
 // ACCESS_FEATURES keys: every key lives in exactly one set.
 
 import { ALL_BRIDGE_ROLES } from "./index";
@@ -30,7 +30,7 @@ const ADMIN: readonly BridgeRole[] = [
 const ALL = ALL_BRIDGE_ROLES;
 
 /**
- * The 13 capability sets. Their featureKeys partition every ACCESS_FEATURES key
+ * The 15 capability sets. Their featureKeys partition every ACCESS_FEATURES key
  * — see sets.test.ts, which asserts the partition and the defaults invariant.
  */
 export const CAPABILITY_SETS: readonly CapabilitySet[] = [
@@ -52,6 +52,7 @@ export const CAPABILITY_SETS: readonly CapabilitySet[] = [
       "table.settings_menu",
       "table.hands_view",
       "table.skin_settings",
+      "table.coach",
     ],
   },
   {
@@ -133,6 +134,18 @@ export const CAPABILITY_SETS: readonly CapabilitySet[] = [
     description: "Managing teams & roles and reading the audit log.",
     featureKeys: ["page.teams", "page.audit"],
   },
+  {
+    id: "program_library",
+    name: "Program library",
+    description: "Seeing the shared program library instance (the curated shelf) rather than only your own.",
+    featureKeys: ["library.program_scope"],
+  },
+  {
+    id: "library_sharing",
+    name: "Library sharing",
+    description: "Distributing library items to people and curating designated collections.",
+    featureKeys: ["library.share", "library.collections"],
+  },
 ];
 
 /** set id -> roles holding it. */
@@ -158,6 +171,8 @@ export const DEFAULT_ASSIGNMENT: SetAssignment = {
   org_visibility: ["bridge_coach", "bridge_org_admin", "bridge_club_admin", "bridge_program_admin"],
   org_management: ["bridge_org_admin", "bridge_club_admin", "bridge_program_admin"],
   governance: [...ADMIN],
+  program_library: [...ADMIN],
+  library_sharing: ["bridge_coach", "bridge_program_admin"],
 };
 
 /**

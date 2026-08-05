@@ -258,6 +258,14 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     description: "The skin & appearance rows in the table settings menu; hidden, appearance is fixed to the default.",
     defaultRoles: ALL,
   },
+  {
+    key: "table.coach",
+    label: "Table coach panel",
+    group: "Table",
+    kind: "feature",
+    description: "The coach panel under the phone-tier table (What I'm looking at / Help me think / hint); hidden, the table carries no coaching surface.",
+    defaultRoles: ALL,
+  },
 
   // Players: roster actions.
   {
@@ -343,6 +351,37 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     kind: "feature",
     description: "The full-screen hand-record viewer; hidden, records open inline only.",
     defaultRoles: ALL,
+  },
+  {
+    // Whether the shared PROGRAM library instance is visible. Off, the caller
+    // works in their own shelf and receives content by share/assign copies.
+    // Mirrors the library component's programViewers (the admin area) default.
+    key: "library.program_scope",
+    label: "See the program library",
+    group: "Library",
+    kind: "feature",
+    description: "Seeing the shared program library instance; hidden, only your own shelf shows.",
+    defaultRoles: ADMIN,
+  },
+  {
+    // Distributing program items into other people's own libraries (each gets
+    // a copy). Mirrors the component's sharers default (coach + program admin).
+    key: "library.share",
+    label: "Share library items",
+    group: "Library",
+    kind: "feature",
+    description: "Distributing program items into people's own libraries; hidden, the Share control is gone.",
+    defaultRoles: ["bridge_coach", "bridge_program_admin"],
+  },
+  {
+    // Creating library collections and designating which roles receive them.
+    // Mirrors today's curation surface (coach + program admin).
+    key: "library.collections",
+    label: "Curate collections",
+    group: "Library",
+    kind: "feature",
+    description: "Creating and designating library collections; hidden, the Collections surface is gone.",
+    defaultRoles: ["bridge_coach", "bridge_program_admin"],
   },
 
   // Organization: org-profile editing.

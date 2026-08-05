@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ChipRow } from "@/components/ChipTabs";
 import { canUse, requireFeature } from "@/lib/access";
 import {
+  canCurateCollections,
   canSeeProgramLibrary,
   canShareLibrary,
   listLibraryFor,
@@ -52,7 +53,10 @@ export default async function LibraryPage({
   // by the access policy — admins curate the program instance, everyone else
   // works in their own. No toggle; content moves between instances only by
   // Share/Assign copies.
-  const canShare = await canShareLibrary(context);
+  const [canShare, canCurate] = await Promise.all([
+    canShareLibrary(context),
+    canCurateCollections(context),
+  ]);
   const scope = (await canSeeProgramLibrary(context)) ? "program" : "mine";
 
   let all: LibraryEntry[] = [];
@@ -90,7 +94,7 @@ export default async function LibraryPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {canShare && (
+          {canCurate && (
             <Link
               href="/bridge/library/collections"
               className="rounded border border-sky-700 px-3 py-1.5 text-sm font-medium text-sky-800 hover:bg-sky-50"

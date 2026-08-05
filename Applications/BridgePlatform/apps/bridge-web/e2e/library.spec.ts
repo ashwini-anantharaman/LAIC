@@ -43,6 +43,49 @@ test("deal editor: author a board on the card grid and save it", async ({ page, 
   await expect(page.getByText("AKQJ", { exact: true })).toBeVisible();
 });
 
+// Post-merge regression fix (Phase 2a gating unification): entries that live in
+// the PROGRAM instance must stay visible to the tiers that saw them before the
+// merge. Program-scope visibility now follows the access catalogue
+// (library.program_scope, default = the admin tier). The reviewer authored the
+// board above into the program instance, so their shelf shows it again; a
+// learner works in their own (empty) shelf and never sees the program shelf.
+test("library shelves show program entries to a reviewer, and hide them from a learner", async ({
+  page,
+  context,
+}) => {
+  await context.clearCookies();
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto("/bridge/library?kind=board");
+  await expect(page.getByRole("link", { name: "E2E authored board" })).toBeVisible();
+
+  await context.clearCookies();
+  await signInAs(context, "user_learner_lena");
+  await page.goto("/bridge/library?kind=board");
+  await expect(page.getByRole("link", { name: "E2E authored board" })).toHaveCount(0);
+});
+
+// The new catalogue keys gate the distribution surfaces: library.share (the
+// per-row Share link) and library.collections (the Collections button) default
+// to coach + program admin. A program admin sees both; a reviewer/fellow — who
+// holds neither key by default — sees neither, even though they see the shelf.
+test("share and collections surfaces are gated by the new library keys", async ({
+  page,
+  context,
+}) => {
+  await context.clearCookies();
+  await signInAs(context, "user_progadmin_paul");
+  await page.goto("/bridge/library?kind=board");
+  await expect(page.getByRole("link", { name: "Collections" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Share" }).first()).toBeVisible();
+
+  await context.clearCookies();
+  await signInAs(context, "user_reviewer_rhea");
+  await page.goto("/bridge/library?kind=board");
+  await expect(page.getByRole("link", { name: "E2E authored board" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Collections" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Share" })).toHaveCount(0);
+});
+
 test("save a play from a live board, then resume it from the library", async ({
   page,
   context,

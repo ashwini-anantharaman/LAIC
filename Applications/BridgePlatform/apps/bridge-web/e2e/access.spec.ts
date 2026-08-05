@@ -118,7 +118,7 @@ test.describe("access catalogue editor", () => {
 
     // Drop learners from the Library capability set: all 6 library keys lose
     // learner, so 6 cells now differ from the live catalogue.
-    await page.getByLabel("Library — Learner").uncheck();
+    await page.getByLabel("Library — Learner", { exact: true }).uncheck();
     await expect(
       page.getByText("6 cells differ from the live catalogue"),
     ).toBeVisible();

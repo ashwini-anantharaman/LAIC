@@ -7,11 +7,29 @@ import {
 import { canAccessAdminArea, roleLabel } from "@bridge/nexus-client";
 import type { BridgeRole } from "@laic/learner-contracts";
 import { redirect } from "next/navigation";
-import { saveCatalogueAction, resetCatalogueAction } from "./actions";
+import {
+  assignRoleAction,
+  inviteAction,
+  removePersonAction,
+  resetCatalogueAction,
+  saveCatalogueAction,
+  testAsAction,
+} from "./actions";
 import { ConfirmButton } from "@/components/kb/ConfirmButton";
 import { canEditCatalogue, getCatalogue, requireFeature } from "@/lib/access";
-import { getBridgeContext, isFellowDemo } from "@/lib/nexus";
+import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
+import { listBridgePeople, nexusProgramId, type BridgePerson } from "@/lib/nexusPeople";
 import { profileService } from "@/lib/profiles";
+
+/** Standard bridge roles an admin can assign directly from the roster (admin
+ *  itself comes from Nexus membership, never granted here). */
+const ASSIGNABLE_ROLES: readonly BridgeRole[] = [
+  "bridge_coach",
+  "bridge_reviewer",
+  "bridge_fellow",
+  "bridge_learner",
+  "bridge_guest",
+];
 
 /** Compact column headers — the matrix is 8 roles wide. Full name in title. */
 const SHORT_ROLE: Record<BridgeRole, string> = {
@@ -54,7 +72,7 @@ function differsFromDefault(
 export default async function TeamsPage({
   searchParams,
 }: Readonly<{
-  searchParams: Promise<{ saved?: string; reset?: string }>;
+  searchParams: Promise<{ saved?: string; reset?: string; invited?: string; who?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
@@ -72,6 +90,15 @@ export default async function TeamsPage({
   const canEdit = canEditCatalogue(context);
   const groups = groupFeatures();
   const hasOverrides = Object.keys(catalogue.rules).length > 0;
+
+  // People management (ported, catalogue-compatible slice): live only against a
+  // real Nexus program (http mode). Bridge admins may assign the STANDARD roles
+  // our catalogue gates, invite, remove, and "Test as".
+  const programId = nexusProgramId(context);
+  const peopleLive = nexusMode() === "http" && !!programId && context.is_admin === true;
+  const people: BridgePerson[] = peopleLive
+    ? await listBridgePeople(programId!).catch(() => [])
+    : [];
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -131,6 +158,175 @@ export default async function TeamsPage({
               : "No bridge org profile configured yet."}{" "}
             Manage it on the Organization page.
           </p>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 p-4">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-medium">People</h2>
+          {peopleLive && (
+            <span className="text-xs text-neutral-500">
+              {people.length} in this program
+            </span>
+          )}
+        </div>
+
+        {params.invited && (
+          <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            {params.who ?? "They"} — invited. Share this activation link:{" "}
+            <a className="break-all font-mono underline" href={params.invited}>
+              {params.invited}
+            </a>
+          </p>
+        )}
+
+        {!peopleLive ? (
+          <p className="rounded border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            People management needs a live Nexus connection — launch Bridge from the Nexus
+            console (http mode) as a bridge admin to invite people and assign the standard
+            roles this catalogue gates.
+          </p>
+        ) : (
+          <>
+            <form action={inviteAction} className="mb-4 flex flex-wrap items-end gap-2">
+              <label className="text-sm">
+                <span className="block text-xs text-neutral-500">Email</span>
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="block text-xs text-neutral-500">Name (optional)</span>
+                <input
+                  name="displayName"
+                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="block text-xs text-neutral-500">Role</span>
+                <select
+                  name="role"
+                  defaultValue="none"
+                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                >
+                  <option value="none">No role</option>
+                  {ASSIGNABLE_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {roleLabel(r)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
+                Invite
+              </button>
+            </form>
+
+            <div className="overflow-x-auto rounded border border-neutral-200">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-200 bg-neutral-50 text-xs text-neutral-500">
+                    <th className="px-3 py-2 text-left font-medium">Person</th>
+                    <th className="px-3 py-2 text-left font-medium">Role</th>
+                    <th className="px-3 py-2 text-left font-medium">Status</th>
+                    <th className="px-3 py-2 text-right font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {people.map((p) => (
+                    <tr
+                      key={p.email ?? p.membership_id ?? p.display_name ?? ""}
+                      className="border-b border-neutral-100 last:border-b-0"
+                    >
+                      <td className="px-3 py-2">
+                        <span className="font-medium text-neutral-800">
+                          {p.display_name ?? "—"}
+                        </span>
+                        <span className="block text-xs text-neutral-500">{p.email}</span>
+                      </td>
+                      <td className="px-3 py-2">
+                        {p.is_admin ? (
+                          <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
+                            Super Admin
+                          </span>
+                        ) : (
+                          <form action={assignRoleAction} className="flex items-center gap-2">
+                            <input type="hidden" name="email" value={p.email ?? ""} />
+                            <select
+                              name="role"
+                              defaultValue={
+                                p.bridge_role &&
+                                (ASSIGNABLE_ROLES as readonly string[]).includes(p.bridge_role)
+                                  ? p.bridge_role
+                                  : "none"
+                              }
+                              className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                            >
+                              <option value="none">No role</option>
+                              {ASSIGNABLE_ROLES.map((r) => (
+                                <option key={r} value={r}>
+                                  {roleLabel(r)}
+                                </option>
+                              ))}
+                            </select>
+                            <button className="rounded border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900">
+                              Save
+                            </button>
+                          </form>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            p.status === "active"
+                              ? "bg-emerald-50 text-emerald-800"
+                              : "bg-amber-50 text-amber-900"
+                          }`}
+                        >
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {p.email && (
+                            <form action={testAsAction}>
+                              <input type="hidden" name="email" value={p.email} />
+                              <button
+                                title="Sign in as this person (test)"
+                                className="rounded border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-600 hover:border-emerald-400 hover:text-neutral-900"
+                              >
+                                Test as
+                              </button>
+                            </form>
+                          )}
+                          {!p.is_admin && (
+                            <ConfirmButton
+                              action={removePersonAction}
+                              hidden={{ email: p.email ?? "" }}
+                              confirm={`Remove ${p.email ?? "this person"} from the program?`}
+                              label="Remove"
+                              title="Remove from program"
+                              className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-400 hover:border-red-300 hover:text-red-700"
+                            />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {people.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-6 text-center text-sm text-neutral-500">
+                        No people yet — invite someone above.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 

@@ -15,6 +15,7 @@ import {
 import type { LibraryEntry, LibraryKind, LibraryStore } from "@bridge/sessions";
 import {
   defaultLibraryPolicy,
+  LIBRARY_CAPABILITIES,
   LibraryService,
   type ContentKindSpec,
   type LibraryBackend,
@@ -22,6 +23,7 @@ import {
   type LibraryItem,
   type LibraryPrincipal,
 } from "@laic/library-core";
+import { canUse } from "./access";
 import { authoredScope, getMyCollectionGrants, nexusProgramIdOf, orgScopeOf } from "./nexus";
 import { libraryStore } from "./sessions";
 
@@ -222,11 +224,50 @@ export async function libraryPrincipalOf(
     programId: (await nexusProgramIdOf()) ?? undefined,
     isAdmin: context.is_admin === true,
     roles: context.roles,
-    capabilities: context.capabilities ?? [],
+    // ONE access model at runtime: the live @bridge/access catalogue is the
+    // sole gate. We translate the caller's catalogue grants into the component's
+    // own capability ids and hand them to the principal, so the component's
+    // policy (which reads anyCapability) agrees with the catalogue — the
+    // exported helpers below and the service enforcement can never diverge.
+    capabilities: [
+      ...(context.capabilities ?? []),
+      ...(await catalogueLibraryCapabilities(context)),
+    ],
     // Role-designated collections (later: + subscriptions/packages) — the
     // component enforces, whoever issued the grant.
     collectionGrants: await getMyCollectionGrants().catch(() => []),
   };
+}
+
+/**
+ * The library-component capability ids the caller holds by virtue of the live
+ * access catalogue. This is the adapter seam: @laic/library-core stays
+ * untouched (it already honors anyCapability grants), while the catalogue keys
+ * — library.program_scope / library.create / library.share / library.collections
+ * — become the single source of truth an admin can edit.
+ */
+async function catalogueLibraryCapabilities(context: NexusBridgeContext): Promise<string[]> {
+  const [seeProgram, create, share, curate] = await Promise.all([
+    canUse(context, "library.program_scope"),
+    canUse(context, "library.create"),
+    canUse(context, "library.share"),
+    canUse(context, "library.collections"),
+  ]);
+  const caps: string[] = [];
+  if (seeProgram) caps.push(LIBRARY_CAPABILITIES.viewProgram);
+  if (create) {
+    caps.push(LIBRARY_CAPABILITIES.authorOwn);
+    // Staff author into the PROGRAM instance (authoredScope); grant the
+    // program-author capability so their create lands where it always did.
+    if (authoredScope(context) === "program") caps.push(LIBRARY_CAPABILITIES.authorProgram);
+  }
+  if (share) caps.push(LIBRARY_CAPABILITIES.assign);
+  // Curating collections is an EDIT on the program instance — the component's
+  // program-author capability covers collection save/delete. Item authoring
+  // stays routed by authoredScope, so this does not let non-staff author
+  // program ITEMS through the UI.
+  if (curate) caps.push(LIBRARY_CAPABILITIES.authorProgram);
+  return caps;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -256,25 +297,28 @@ export async function listLibraryFor(
   return items.map(itemToEntry);
 }
 
-/** Policy-backed replacement for the pages' staff/coach checks. */
+/**
+ * Whether the shared PROGRAM library instance is visible to this caller — the
+ * page decides program-vs-personal scope on it. Now catalogue-driven
+ * (`library.program_scope`, default = the admin tier, mirroring the component's
+ * historic programViewers) so an admin can grant program visibility to any role
+ * without a code change. This fixes the post-merge regression where entries
+ * that live in the program instance were invisible to the tiers that saw them
+ * before: those tiers hold `library.program_scope` by default.
+ */
 export async function canSeeProgramLibrary(context: NexusBridgeContext): Promise<boolean> {
-  const principal = await libraryPrincipalOf(context);
-  return bridgeLibrary().can(principal, "view", { level: "program" });
+  return canUse(context, "library.program_scope");
 }
 
 /**
  * May this caller CREATE in the instance their authored content lands in?
  * (`authoredScope`: staff → program, everyone else → their own shelf.) The
- * create surfaces gate on this, and the create paths assert it — so revoking
- * `library.author.own` from a role genuinely makes it play-only.
+ * create surfaces gate on this, and the create paths assert it. Catalogue-driven
+ * (`library.create`) — the same key the desktop create button and actions
+ * already enforce, so there is ONE create gate across desktop and mobile.
  */
 export async function canCreateInLibrary(context: NexusBridgeContext): Promise<boolean> {
-  const principal = await libraryPrincipalOf(context);
-  const level = authoredScope(context);
-  return bridgeLibrary().can(principal, "create", {
-    level,
-    ownerId: level === "user" ? principal.userId : undefined,
-  });
+  return canUse(context, "library.create");
 }
 
 /** Throws unless the caller may create — for the create server actions. */
@@ -284,12 +328,20 @@ export async function assertCanCreateInLibrary(context: NexusBridgeContext): Pro
   }
 }
 
-/** May this caller distribute program items into other people's instances? */
+/**
+ * May this caller distribute program items into other people's instances?
+ * Catalogue-driven (`library.share`, default = coach + program admin, mirroring
+ * the component's historic sharers).
+ */
 export async function canShareLibrary(context: NexusBridgeContext): Promise<boolean> {
-  const principal = await libraryPrincipalOf(context);
-  const service = bridgeLibrary();
-  return (
-    service.can(principal, "copy", { level: "program" }) &&
-    service.can(principal, "assign", { level: "user" })
-  );
+  return canUse(context, "library.share");
+}
+
+/**
+ * May this caller create/designate library collections? Catalogue-driven
+ * (`library.collections`). The curation surfaces gate on this; the injected
+ * program-author capability lets the service's collection writes succeed.
+ */
+export async function canCurateCollections(context: NexusBridgeContext): Promise<boolean> {
+  return canUse(context, "library.collections");
 }
