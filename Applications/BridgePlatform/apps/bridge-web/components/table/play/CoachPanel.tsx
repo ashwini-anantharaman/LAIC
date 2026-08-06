@@ -44,26 +44,32 @@ import type { ThinkAid } from "@/lib/coach/think";
 
 import { CoachChat, CoachEventAsk, WhatShouldIPlay } from "./CoachEventAsk";
 
-// ── the table's own palette (PlayTable's constants) ──────────────────────────
-const HEAD = "#f2f2ea";
-const PAPER = "#fbfaf6"; // the auction box's cell white, reused as a card surface
-const INK = "#2b2b1e";
-const MUTED = "#57573f";
-const FAINT = "#7d7d66";
-const TEAL = "#1f5e56"; // "your system" / agreement
-const TINT = "#f2e2b8"; // PlayTable's DEALER_TINT — a correction's ground
+// ── the BirdBridge palette (owner direction 2026-08-06: the coach wears the
+// app's brand — bridge-coach-app/constants/theme.ts is the source of truth).
+// The felt/gold identity is retired: maroon takes the headings and the
+// header band, forest green takes the actions, cream takes the surfaces,
+// and the coach's chip glows the home screen's sunset orange. The constant
+// NAMES keep their old felt vocabulary so every usage below maps 1:1. ──────
+const HEAD = "#fff4d7"; // Brand.cream — the app's page background
+const PAPER = "#ffffff"; // cards on cream, as the app's cardBackground
+const INK = "#1f1f1f"; // Brand.ink
+const MUTED = "#7b7466"; // body-muted, as the /m pages already use on cream
+const FAINT = "#a49d8e"; // uppercase labels, same source
+const TEAL = "#105431"; // Brand.green — "your system" / agreement
+const TINT = "#f2e2b8"; // a correction's warm ground — already at home on cream
 const TINT_EDGE = "#a8871f";
 
-// ── the coach's identity: the table's felt and the dealer's gold ─────────────
-const FELT_DEEP = "#14563f"; // the felt gradient's far edge (PlayTable's FELT)
-const FELT_MID = "#1c6b4f"; // the felt itself
-const FELT_HI = "#26805e"; // the felt gradient's lit corner
-const FELT_SOFT = "#e6eee8"; // the felt, as a tint on paper
-const FELT_LINE = "#c6d6cc"; // the felt, as a hairline on paper
-const GOLD = "#fecd07"; // PlayTable's GOLD — the table's own "look here"
-const GOLD_DEEP = "#b8901f"; // PlayTable's DEALER_RING
-const CHIP = `radial-gradient(circle at 34% 28%,${GOLD},#e9b60d 55%,${GOLD_DEEP} 100%)`;
-const RED = "#cc0000"; // PlayTable's RED — the alert that reads on gold and felt alike
+const FELT_DEEP = "#541015"; // Brand.maroon — headings, labels, the header band
+const FELT_MID = "#105431"; // Brand.green — buttons, pills, active states
+const FELT_HI = "#7a1c23"; // the maroon band's lit corner
+const FELT_SOFT = "#f6ead0"; // cream tint on a white card
+const FELT_LINE = "#e0d7c2"; // hairlines on cream
+const GOLD = "#f5a95b"; // the home screen's sunset orange
+const GOLD_DEEP = "#c96f33";
+const CHIP = `radial-gradient(circle at 34% 28%,${GOLD},#e8853f 55%,${GOLD_DEEP} 100%)`;
+const RED = "#cc0000"; // suit red — unchanged, ♥/♦ read the same everywhere
+/** The stacked-edge shadow behind the app's playing cards (Brand.cardShadow). */
+const CARD_EDGE = "0 2px 0 rgba(42,5,6,.75)";
 
 /**
  * The big "Ask me" button row, switched off (owner decision 2026-08-05) while
@@ -417,8 +423,8 @@ export function CoachFab({
         aria-label="Open the coach"
         style={{
           width: 30, height: 30, borderRadius: "50%", padding: 0,
-          background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "rgba(8,30,20,.35)",
-          boxShadow: "0 2px 6px rgba(8,30,20,.4)",
+          background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "rgba(42,5,6,.35)",
+          boxShadow: "0 2px 6px rgba(42,5,6,.4)",
           color: FELT_DEEP, fontSize: 14, lineHeight: 1, cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
         }}
@@ -434,7 +440,7 @@ export function CoachFab({
             style={{
               position: "absolute", top: "50%", transform: "translateY(-50%)",
               ...(pos.x < pillFlipAt.current ? { left: 60 } : { right: 60 }),
-              whiteSpace: "nowrap", background: "rgba(8,26,18,.85)", color: "#fff",
+              whiteSpace: "nowrap", background: "rgba(42,5,6,.85)", color: "#fff",
               borderRadius: 15, padding: "6px 11px", fontSize: 12, fontWeight: 700,
               animation: "coachFade .15s ease",
             }}
@@ -456,7 +462,7 @@ export function CoachFab({
             // this felt already uses to mean "look here".
             background: CHIP,
             borderWidth: 0, padding: 0, cursor: "pointer",
-            boxShadow: "0 3px 10px rgba(8,30,20,.5)",
+            boxShadow: "0 3px 10px rgba(42,5,6,.5)",
             display: "flex", alignItems: "center", justifyContent: "center",
             // Silent still shows, dimmed — the chip is the way back out of it.
             filter: presence === "silent" ? "saturate(.5) brightness(.92)" : undefined,
@@ -467,7 +473,7 @@ export function CoachFab({
             aria-hidden
             style={{
               position: "absolute", inset: 4, borderRadius: "50%",
-              borderWidth: 1.5, borderStyle: "dashed", borderColor: "rgba(20,86,63,.5)",
+              borderWidth: 1.5, borderStyle: "dashed", borderColor: "rgba(84,16,21,.5)",
             }}
           />
           <span
@@ -567,7 +573,7 @@ export function CoachSheet({
         className="coach-anim"
         style={{
           position: "absolute", inset: 0, zIndex: 8, borderWidth: 0, padding: 0,
-          background: "rgba(8,26,18,.44)", cursor: "pointer", animation: "coachFade .2s ease",
+          background: "rgba(42,5,6,.44)", cursor: "pointer", animation: "coachFade .2s ease",
         }}
       />
       <div
@@ -616,7 +622,7 @@ export function CoachSheet({
               </span>
               {/* Which mode the coach is in — named, not just described, since
                   the chip on the felt is what changes it now. */}
-              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "rgba(235,242,236,.85)" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "rgba(255,244,215,.85)" }}>
                 <span style={{ width: 7, height: 7, borderRadius: "50%", background: data.busy || presence !== "silent" ? GOLD : "rgba(255,255,255,.45)" }} />
                 {data.busy ? (
                   "Working it out…"
@@ -674,7 +680,7 @@ export function CoachSheet({
                   minHeight: 30, padding: "4px 15px", borderRadius: 15,
                   background: on ? FELT_MID : "transparent",
                   borderWidth: 1, borderStyle: "solid", borderColor: on ? FELT_MID : FELT_LINE,
-                  color: on ? "#fff" : "#75705f", fontSize: 12, fontWeight: 700,
+                  color: on ? "#fff" : "#8a8071", fontSize: 12, fontWeight: 700,
                   fontFamily: "inherit", cursor: "pointer",
                 }}
               >
@@ -700,7 +706,7 @@ export function CoachSheet({
                 );
               }
               return (
-                <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0", borderRadius: 11, padding: "10px 12px" }}>
+                <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
                   <Label color={FELT_DEEP}>The play so far</Label>
                   <div style={{ display: "flex", flexDirection: "column" }}>
                     {tricks.map((group) => {
@@ -715,7 +721,7 @@ export function CoachSheet({
                               display: "flex", alignItems: "center", gap: 6, width: "100%",
                               minHeight: 30, padding: "4px 1px",
                               background: "transparent", borderWidth: 0,
-                              borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#e4e0d0",
+                              borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#e8ddc3",
                               fontFamily: "inherit", textAlign: "left", cursor: "pointer",
                             }}
                           >
@@ -793,7 +799,7 @@ export function CoachSheet({
                 );
               }
               return (
-                <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0", borderRadius: 11, padding: "10px 12px" }}>
+                <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
                   <Label color={FELT_DEEP}>The auction</Label>
                   {/* Its own screen now, so no collapsible header — the
                       bidding box prints straight onto the card. */}
@@ -927,7 +933,7 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* the position, in prose and numbers */}
       {(data.looking || !!data.facts?.length) && (
-        <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0", borderRadius: 11, padding: "10px 12px" }}>
+        <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
           <Label color={FELT_DEEP}>What I'm looking at</Label>
           {data.looking && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45 }}>{data.looking}</p>}
           {!!data.facts?.length && (
@@ -937,7 +943,7 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
                   key={`${f.label}|${f.value}`}
                   style={{
                     fontSize: 11.5, fontWeight: 700, padding: "4px 9px", borderRadius: 20,
-                    background: i === 0 ? FELT_SOFT : "#eeece0", color: i === 0 ? FELT_DEEP : "#5b5648",
+                    background: i === 0 ? FELT_SOFT : "#f3ead4", color: i === 0 ? FELT_DEEP : "#6b5f50",
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
@@ -1045,7 +1051,7 @@ function ThinkCard({ aid }: Readonly<{ aid: ThinkAid }>) {
   return (
     <div
       style={{
-        background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0",
+        background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3",
         borderRadius: 11, padding: "10px 12px",
         display: "flex", flexDirection: "column", gap: 11,
       }}
@@ -1114,11 +1120,11 @@ function CallToken({
       onClick={onSelect}
       style={{
         width: "100%", minHeight: 28, padding: "3px 2px",
-        background: isBid ? "#fff" : event.verb === "passed" ? FELT_MID : "#a03434",
+        background: isBid ? "#fff" : event.verb === "passed" ? FELT_MID : "#b91c1c",
         borderWidth: 1, borderStyle: "solid",
         borderColor: selected ? FELT_DEEP : isBid ? "#d8d3bf" : "transparent",
         borderRadius: 6, cursor: "pointer",
-        boxShadow: selected ? `0 0 0 2px ${GOLD}` : "0 1px 1px rgba(0,0,0,.07)",
+        boxShadow: selected ? `0 0 0 2px ${GOLD}` : CARD_EDGE,
         fontSize: isBid ? 14 : 10.5, fontWeight: 700, fontFamily: "inherit",
         lineHeight: 1.2, textAlign: "center",
         color: isBid ? (red ? "#c00" : "#20201a") : "#fff",
@@ -1160,7 +1166,7 @@ function AuctionDiagram({
                 alignSelf: "center", minWidth: 21, height: 21, padding: "0 4px", borderRadius: 5,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 11, fontWeight: 700,
-                background: s === youSeat ? CHIP : "#12525e",
+                background: s === youSeat ? CHIP : "#105431",
                 color: s === youSeat ? FELT_DEEP : "#fff",
                 textDecoration: s === dealer ? "underline" : undefined,
                 textUnderlineOffset: 2,
@@ -1244,7 +1250,7 @@ function TokenChip({ token }: Readonly<{ token: string }>) {
       style={{
         flex: "none", padding: "2px 8px",
         background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: "#d8d3bf",
-        borderRadius: 4, boxShadow: "0 1px 1px rgba(0,0,0,.07)",
+        borderRadius: 4, boxShadow: CARD_EDGE,
         fontSize: 13.5, fontWeight: 700, lineHeight: 1.3,
         color: /[♥♦]/.test(token) ? "#c00" : "#20201a",
         fontVariantNumeric: "tabular-nums",
@@ -1289,7 +1295,7 @@ function EventRow({
           flex: "none", width: 21, height: 21, borderRadius: 5,
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 11, fontWeight: 700,
-          background: isYou ? CHIP : "#12525e",
+          background: isYou ? CHIP : "#105431",
           color: isYou ? FELT_DEEP : "#fff",
         }}
       >
@@ -1332,7 +1338,7 @@ function EventRow({
         style={{
           display: "flex", alignItems: "center", gap: 8,
           minHeight: 36, padding: "5px 1px",
-          borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#eeebe0",
+          borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#f2e8d2",
         }}
       >
         {expandable ? (
@@ -1429,7 +1435,7 @@ function NoteBody({
         style={
           tinted && correction
             ? { background: TINT, borderRadius: 8, padding: "10px 12px", borderLeftWidth: 3, borderLeftStyle: "solid", borderLeftColor: TINT_EDGE }
-            : { background: PAPER, borderRadius: 8, padding: "10px 12px", borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0" }
+            : { background: PAPER, borderRadius: 8, padding: "10px 12px", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }
         }
       >
         {badge && (

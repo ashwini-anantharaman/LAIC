@@ -23,15 +23,18 @@
 
 import { useState } from "react";
 
-// The table's palette, as CoachPanel uses it.
-const PAPER = "#fbfaf6";
-const INK = "#2b2b1e";
-const MUTED = "#57573f";
-const FAINT = "#7d7d66";
-const TEAL = "#1f5e56";
-const FELT_DEEP = "#14563f";
-const FELT_MID = "#1c6b4f";
-const FELT_LINE = "#c6d6cc";
+// The BirdBridge palette, as CoachPanel uses it (the app's theme.ts is the
+// source of truth; the felt names are kept so usages map 1:1).
+const PAPER = "#ffffff";
+const INK = "#1f1f1f";
+const MUTED = "#7b7466";
+const FAINT = "#a49d8e";
+const TEAL = "#105431"; // Brand.green
+const FELT_DEEP = "#541015"; // Brand.maroon
+const FELT_MID = "#105431"; // Brand.green — actions
+const FELT_LINE = "#e0d7c2";
+/** The stacked-edge shadow behind the app's playing cards. */
+const CARD_EDGE = "0 2px 0 rgba(42,5,6,.75)";
 
 /** The coach's voice — one serif face for everything it says. */
 const SAYS = {
@@ -389,6 +392,7 @@ export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) 
                   style={{
                     padding: "2px 8px", background: "#fff",
                     borderWidth: 1, borderStyle: "solid", borderColor: "#d8d3bf", borderRadius: 4,
+                    boxShadow: CARD_EDGE,
                     fontSize: 14.5, fontWeight: 700, lineHeight: 1.2,
                     color: /[♥♦]/.test(label) ? "#c00" : "#000",
                   }}
@@ -417,7 +421,7 @@ export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) 
           onClick={() => setInfoOpen(false)}
           style={{
             position: "fixed", inset: 0, zIndex: 950,
-            background: "rgba(8,26,18,.45)",
+            background: "rgba(42,5,6,.45)",
             display: "flex", alignItems: "center", justifyContent: "center", padding: 18,
           }}
         >
@@ -448,7 +452,7 @@ export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) 
                 onClick={() => setInfoOpen(false)}
                 style={{
                   flex: "none", width: 26, height: 26, borderRadius: 7,
-                  background: "#eeece0", borderWidth: 0, color: MUTED,
+                  background: "#f3ead4", borderWidth: 0, color: MUTED,
                   fontSize: 13, lineHeight: 1, cursor: "pointer",
                 }}
               >
