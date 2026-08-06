@@ -21,16 +21,23 @@ input[type=range]{accent-color:#0d707c}
 </helmet>
 
 <!--
-  PLAY COMPARISON — the challenge review surface (spec Â§6).
+  PLAY COMPARISON - the challenge review surface (spec section 6).
   ONE shared timeline scrubber drives TWO frozen play lines of the SAME deal.
-    DESKTOP  : two synced mini-boards side by side (yours left, comparison right).
-    PHONE    : one board; the comparison line renders as a translucent GHOST,
-               a Flip control swaps which line is primary.
-  The trick view is the verbatim TrickArea compass geometry (262-box, 56x80 cards,
-  182/206 offsets) composed at a reduced scale, so prominence is a scale on the
-  whole box rather than per-card sizes that would desync from the offsets.
+    DESKTOP : two synced mini-boards side by side (yours left, comparison right)
+              with a center SYNC column that, at the scrubbed ply, tells you
+              whether the two lines are playing the same card or have split.
+    PHONE   : one board; the comparison line renders as a translucent GHOST.
+              A labelled two-segment toggle (You / <name>) picks the primary
+              line - no lone glyph affordance. The core loop (header, board,
+              scrubber, controls) fits ONE 844px viewport; the player list and
+              notes live behind a bottom sheet.
+  The trick view is the verbatim TrickArea compass geometry (262-box, 56x80
+  cards, 182/206 offsets) composed at a reduced scale, so prominence is a scale
+  on the whole box rather than per-card sizes that would desync from the offsets.
   All hands / auctions / results come from bridge.js pure functions, so the demo
   data is legal and self-consistent by construction, not hand-guessed.
+  This file is 7-bit ASCII end to end: template glyphs are HTML entities
+  (&#xXXXX;) and JS-string glyphs are \uXXXX escapes, matching bridge.js.
 -->
 
 <div style="{{rootStyle}}">
@@ -55,7 +62,7 @@ input[type=range]{accent-color:#0d707c}
 <button onClick="{{t.on}}" style="height:30px;padding:0 13px;border:0;border-radius:6px;background:{{t.bg}};color:{{t.color}};font-family:inherit;font-size:12.5px;font-weight:{{t.weight}};cursor:pointer">{{t.label}}</button>
 </sc-for>
 <div style="position:relative">
-<button onClick="{{onPlayersToggle}}" style="height:30px;padding:0 12px;border:0;border-radius:6px;background:{{playersBg}};color:{{playersColor}};font-family:inherit;font-size:12.5px;font-weight:{{playersWeight}};cursor:pointer">{{playersLabel}} â–¾</button>
+<button onClick="{{onPlayersToggle}}" style="height:30px;padding:0 12px;border:0;border-radius:6px;background:{{playersBg}};color:{{playersColor}};font-family:inherit;font-size:12.5px;font-weight:{{playersWeight}};cursor:pointer">{{playersLabel}} &#x25BE;</button>
 <sc-if value="{{playersOpen}}" hint-placeholder-val="{{false}}">
 <div style="position:absolute;top:37px;left:0;z-index:60;width:270px;padding:7px;background:#fff;border:1px solid #d7ddd9;border-radius:11px;box-shadow:0 14px 34px rgba(20,40,34,.20)">
 <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#8a958f;padding:4px 8px 6px">Finished players</div>
@@ -63,7 +70,7 @@ input[type=range]{accent-color:#0d707c}
 <button onClick="{{p.on}}" style="display:flex;align-items:center;gap:9px;width:100%;padding:8px 9px;margin-bottom:2px;border:0;border-radius:8px;background:{{p.bg}};text-align:left;cursor:pointer">
 <span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;flex:none;border-radius:13px;background:{{p.avatarBg}};color:#fff;font-size:11px;font-weight:700">{{p.initials}}</span>
 <span style="flex:1;min-width:0">
-<span style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#1b2a26">{{p.name}}<sc-if value="{{p.editor}}" hint-placeholder-val="{{false}}"><span title="Opened the pack editor" style="font-size:10px;font-weight:700;color:#0d707c">â—† set the boards</span></sc-if></span>
+<span style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#1b2a26">{{p.name}}<sc-if value="{{p.editor}}" hint-placeholder-val="{{false}}"><span title="Opened the pack editor" style="font-size:10px;font-weight:700;color:#0d707c">&#x25C6; set the boards</span></sc-if></span>
 <span style="font-size:11px;color:#6a766f">{{p.sub}}</span>
 </span>
 <span style="flex:none;font-size:12px;font-weight:800;color:{{p.resColor}}">{{p.res}}</span>
@@ -90,13 +97,46 @@ input[type=range]{accent-color:#0d707c}
 <div style="flex:none;display:flex;align-items:center;gap:12px;padding:10px 18px;background:#fdf3e8;border-bottom:1px solid #f0d9bc">
 <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;border-radius:11px;background:#e07a3a;color:#fff;font-size:13px;font-weight:800">!</span>
 <span style="flex:1;font-size:13px;line-height:1.45;color:#7a4a1c"><b>Different contracts.</b> Your line is {{mineContractPlain}}; {{cmpName}}'s line is {{cmpContractPlain}}. Trick-by-trick play isn't directly comparable across contracts.</span>
-<button onClick="{{onBannerBaseline}}" style="flex:none;height:32px;padding:0 14px;border:1px solid #d98f4e;border-radius:7px;background:#fff;color:#a4571f;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">Compare BEN in your contract â†’</button>
+<button onClick="{{onBannerBaseline}}" style="flex:none;height:32px;padding:0 14px;border:1px solid #d98f4e;border-radius:7px;background:#fff;color:#a4571f;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">Compare BEN in your contract &#x2192;</button>
 </div>
 </sc-if>
 
-<!-- boards -->
-<div style="flex:1;min-height:0;overflow:auto;padding:16px 18px 6px;background:{{pageBg}}">
-<div style="display:flex;gap:16px;align-items:stretch;justify-content:center;min-width:max-content;margin:0 auto">
+<!-- boards + sync spine (read as ONE instrument) -->
+<div style="flex:1;min-height:0;overflow:auto;padding:14px 18px 8px;background:{{pageBg}}">
+<div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:11px">
+
+<!-- SYNC SPINE: shared readout that ties BOTH boards to the scrubbed ply -->
+<div style="display:flex;align-items:stretch;gap:13px;background:#fff;border:1px solid #dbe1de;border-radius:12px;padding:9px 14px;box-shadow:0 2px 8px rgba(20,40,34,.05)">
+<div style="flex:none;display:flex;flex-direction:column;justify-content:center;min-width:140px">
+<div style="font-size:13.5px;font-weight:800;color:#1b2a26">{{posLabel}}</div>
+<div style="font-size:11px;color:#6a766f">{{posSub}}</div>
+</div>
+<div style="width:1px;background:#e6ebe8;flex:none"></div>
+<div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center">
+<sc-if value="{{sync.inSync}}" hint-placeholder-val="{{false}}">
+<span style="display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:#1a7a4b;background:#e5f4ea;border:1px solid #bfe6cf;border-radius:13px;padding:6px 14px"><span style="font-size:13px">&#x2713;</span> Both lines in sync &#x2014; {{sync.seatName}} played <span style="color:{{sync.mineColor}};font-weight:800;font-size:14px">{{sync.mineRank}}{{sync.mineGlyph}}</span></span>
+</sc-if>
+<sc-if value="{{sync.split}}" hint-placeholder-val="{{true}}">
+<span style="display:inline-flex;align-items:center;gap:10px;font-size:12px;font-weight:700;color:#a4571f;background:#fdf3e8;border:1px solid #f0d9bc;border-radius:13px;padding:6px 13px">
+<span style="color:#e07a3a;display:inline-flex;align-items:center;gap:5px">&#x25C6; Lines differ here</span>
+<span style="display:inline-flex;align-items:center;gap:5px;color:#33413b"><span style="width:8px;height:8px;border-radius:2px;background:{{mineAccent}};flex:none"></span>You <span style="color:{{sync.mineColor}};font-weight:800;font-size:15px">{{sync.mineRank}}{{sync.mineGlyph}}</span></span>
+<span style="color:#9aa5a0;font-weight:600">vs</span>
+<span style="display:inline-flex;align-items:center;gap:5px;color:#33413b"><span style="width:8px;height:8px;border-radius:2px;background:{{benAccent}};flex:none"></span>{{sync.cmpWho}} <span style="color:{{sync.cmpColor}};font-weight:800;font-size:15px">{{sync.cmpRank}}{{sync.cmpGlyph}}</span></span>
+</span>
+</sc-if>
+<sc-if value="{{sync.auction}}" hint-placeholder-val="{{false}}">
+<span style="display:inline-flex;align-items:center;gap:10px;font-size:12px;font-weight:700;color:#33413b;background:{{sync.aucBg}};border:1px solid {{sync.aucBorder}};border-radius:13px;padding:6px 13px">
+<span style="text-transform:uppercase;letter-spacing:.08em;font-size:10px;color:#8a958f">{{sync.aucTag}}</span>
+<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:2px;background:{{mineAccent}};flex:none"></span>You <span style="color:{{sync.mineCallColor}};font-weight:800;font-size:14px">{{sync.mineCall}}</span></span>
+<span style="color:#9aa5a0;font-weight:600">vs</span>
+<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:2px;background:{{benAccent}};flex:none"></span>{{sync.cmpWho}} <span style="color:{{sync.cmpCallColor}};font-weight:800;font-size:14px">{{sync.cmpCall}}</span></span>
+</span>
+</sc-if>
+</div>
+</div>
+
+<!-- the two synced boards -->
+<div style="display:flex;gap:16px;align-items:stretch;justify-content:center">
 <sc-for list="{{boards}}" as="b" hint-placeholder-count="2">
 <div style="{{b.panelStyle}}">
 
@@ -104,7 +144,7 @@ input[type=range]{accent-color:#0d707c}
 <div style="flex:none;display:flex;align-items:center;gap:9px;padding:11px 13px;border-bottom:1px solid #e6eae7;background:{{b.headerBg}}">
 <span style="display:flex;align-items:center;justify-content:center;height:22px;padding:0 9px;flex:none;border-radius:6px;background:{{b.accent}};color:#fff;font-size:11px;font-weight:800;letter-spacing:.03em">{{b.badge}}</span>
 <span style="font-size:14px;font-weight:800;color:#1b2a26">{{b.who}}</span>
-<sc-if value="{{b.editor}}" hint-placeholder-val="{{false}}"><span title="Opened the pack editor" style="font-size:10px;font-weight:700;color:#0d707c">â—† set the boards</span></sc-if>
+<sc-if value="{{b.editor}}" hint-placeholder-val="{{false}}"><span title="Opened the pack editor" style="font-size:10px;font-weight:700;color:#0d707c">&#x25C6; set the boards</span></sc-if>
 <span style="flex:1"></span>
 <span style="display:flex;align-items:baseline;gap:6px">
 <span style="font-size:20px;font-weight:800;letter-spacing:.01em;color:{{b.contractColor}}">{{b.contract}}</span>
@@ -117,8 +157,8 @@ input[type=range]{accent-color:#0d707c}
 <span style="font-size:12.5px;font-weight:700;color:{{b.resColor}}">{{b.resLine}}</span>
 <span style="font-size:12.5px;font-weight:800;color:{{b.resColor}}">{{b.resPts}}</span>
 <span style="flex:1"></span>
-<sc-if value="{{b.loading}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;color:#6d4bc9;font-weight:700">computingâ€¦</span></sc-if>
-<sc-if value="{{b.fromHere}}" hint-placeholder-val="{{false}}"><button onClick="{{onFromHereExit}}" title="Exit from-here" style="height:22px;padding:0 8px;border:1px solid #d9d0ee;border-radius:11px;background:#f3effc;color:#6d4bc9;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">Ã— exit</button></sc-if>
+<sc-if value="{{b.loading}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;color:#6d4bc9;font-weight:700">computing&#x2026;</span></sc-if>
+<sc-if value="{{b.fromHere}}" hint-placeholder-val="{{false}}"><button onClick="{{onFromHereExit}}" title="Exit from-here" style="height:22px;padding:0 8px;border:1px solid #d9d0ee;border-radius:11px;background:#f3effc;color:#6d4bc9;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">&#xD7; exit</button></sc-if>
 </div>
 
 <!-- body -->
@@ -127,7 +167,7 @@ input[type=range]{accent-color:#0d707c}
 <sc-if value="{{b.loading}}" hint-placeholder-val="{{false}}">
 <div style="position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(247,249,248,.86)">
 <div style="{{spinnerStyle}}"></div>
-<div style="font-size:13.5px;font-weight:800;color:#6d4bc9">BEN is thinkingâ€¦</div>
+<div style="font-size:13.5px;font-weight:800;color:#6d4bc9">BEN is thinking&#x2026;</div>
 <div style="font-size:11.5px;color:#6a766f;max-width:220px;text-align:center;line-height:1.45">Adopting your line through {{fromHereWhere}}, then playing your seat forward.</div>
 </div>
 </sc-if>
@@ -151,8 +191,8 @@ input[type=range]{accent-color:#0d707c}
 </div>
 </div>
 
-<!-- felt + trick geometry -->
-<div style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center;margin:0 10px 8px;border-radius:10px;background:{{feltStyle}}">
+<!-- felt + trick geometry (definite height so the compass never collapses) -->
+<div style="{{b.feltBoxStyle}}">
 <sc-if value="{{b.isAuctionPhase}}" hint-placeholder-val="{{false}}">
 <div style="display:flex;flex-direction:column;align-items:center;gap:7px;color:#d7ecdf">
 <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85">Auction in progress</div>
@@ -196,7 +236,7 @@ input[type=range]{accent-color:#0d707c}
 </sc-if>
 </div>
 
-<!-- per-board footnote (e.g. "same cards â€” swing was the bidding") -->
+<!-- per-board footnote (e.g. "same cards - swing was the bidding") -->
 <sc-if value="{{b.note}}" hint-placeholder-val="{{false}}">
 <div style="flex:none;padding:0 13px 11px"><span style="display:inline-block;font-size:11px;line-height:1.4;color:{{b.noteColor}};background:{{b.noteBg}};border-radius:7px;padding:6px 10px">{{b.noteText}}</span></div>
 </sc-if>
@@ -206,28 +246,21 @@ input[type=range]{accent-color:#0d707c}
 </sc-for>
 </div>
 
-<!-- diverged chip -->
-<sc-if value="{{diverged}}" hint-placeholder-val="{{true}}">
-<div style="display:flex;justify-content:center;margin-top:2px"><span style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#a4571f;background:#fdf3e8;border:1px solid #f0d9bc;border-radius:14px;padding:5px 13px"><span style="color:#e07a3a">â—†</span>{{divergedText}}</span></div>
-</sc-if>
-
+</div>
 </div>
 
 <!-- shared timeline scrubber -->
 <div style="flex:none;padding:12px 18px 16px;background:#fff;border-top:1px solid #d7ddd9">
-<div style="display:flex;align-items:center;gap:14px;margin-bottom:9px">
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px">
 <div style="display:flex;align-items:center;gap:6px">
-<button onClick="{{onFirst}}" title="To start" style="{{btnGhost}}">â®</button>
-<button onClick="{{onPrev}}" title="Step back" style="{{btnGhost}}">â—€</button>
-<button onClick="{{onNext}}" title="Step forward" style="{{btnGhost}}">â–¶</button>
-<button onClick="{{onLast}}" title="To end" style="{{btnGhost}}">â­</button>
+<button onClick="{{onFirst}}" title="To start" style="{{btnGhost}}">&#x23EE;</button>
+<button onClick="{{onPrev}}" title="Step one card back" style="{{btnStep}}">&#x25C0; Prev</button>
+<button onClick="{{onNext}}" title="Step one card forward" style="{{btnStep}}">Next &#x25B6;</button>
+<button onClick="{{onLast}}" title="To end" style="{{btnGhost}}">&#x23ED;</button>
 </div>
-<div style="display:flex;flex-direction:column;gap:1px">
-<div style="font-size:13px;font-weight:800;color:#1b2a26">{{posLabel}}</div>
-<div style="font-size:11px;color:#6a766f">{{posSub}}</div>
-</div>
+<div style="font-size:11.5px;color:#6a766f">Step or drag the track &#x2014; both boards move together</div>
 <div style="flex:1"></div>
-<button onClick="{{onJumpDiverge}}" style="height:31px;padding:0 13px;border:1px solid #f0d9bc;border-radius:8px;background:#fdf3e8;color:#a4571f;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">â—† Jump to divergence</button>
+<button onClick="{{onJumpDiverge}}" title="Jump to where the lines first differ" style="height:34px;padding:0 13px;border:1px solid #f0d9bc;border-radius:8px;background:#fdf3e8;color:#a4571f;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer">&#x25C6; Jump to divergence</button>
 <button onClick="{{onFromHere}}" style="{{fromHereBtnStyle}}">{{fromHereBtnLabel}}</button>
 </div>
 
@@ -255,62 +288,66 @@ input[type=range]{accent-color:#0d707c}
 </div>
 
 <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9aa5a0">
-<span>Auction</span><span>Play â€” 13 tricks</span><span>Result</span>
+<span>Auction</span><span>Play &#x2014; 13 tricks</span><span>Result</span>
 </div>
-<div style="margin-top:7px;font-size:11px;color:#8a958f">Drag the timeline â€” both boards move together. <span style="color:#a4571f">Amber</span> marks where the two lines first differ.</div>
+<div style="margin-top:7px;font-size:11px;color:#8a958f">The <span style="color:#a4571f">amber</span> marker and band show where the two lines first differ &#x2014; click it, or "Jump to divergence", to land there.</div>
 </div>
 
 </div>
 </sc-if>
 
 <!-- ============================= PHONE ============================= -->
+<!-- One 844px viewport: header / toggle / board (flex absorber) / scrubber all
+     visible together. Player list + notes live behind the bottom sheet. -->
 <sc-if value="{{isPhone}}" hint-placeholder-val="{{false}}">
-<div style="display:flex;align-items:flex-start;justify-content:center;height:100%;min-height:0;padding:16px 0;background:#2a2f2c;overflow:auto">
-<div style="width:390px;flex:none;display:flex;flex-direction:column;min-height:0;max-height:100%;background:{{pageBg}};border-radius:26px;overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.4);font-family:'Segoe UI',ui-sans-serif,-apple-system,Helvetica,Arial,sans-serif;color:#1b2a26">
+<div style="display:flex;align-items:stretch;justify-content:center;height:100%;min-height:0;padding:8px 0;background:#2a2f2c;overflow:hidden">
+<div style="width:390px;flex:none;position:relative;display:flex;flex-direction:column;min-height:0;background:{{pageBg}};border-radius:22px;overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.4);font-family:'Segoe UI',ui-sans-serif,-apple-system,Helvetica,Arial,sans-serif;color:#1b2a26">
 
-<!-- compact top -->
-<div style="flex:none;padding:12px 14px 10px;background:#fff;border-bottom:1px solid #d7ddd9">
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
-<div style="flex:1"><div style="font-size:15px;font-weight:800">Compare play</div><div style="font-size:11px;color:#6a766f">{{dealLine}}</div></div>
-<div style="display:flex;gap:2px;padding:2px;background:#eef1ef;border:1px solid #dde3df;border-radius:8px">
+<!-- header band -->
+<div style="flex:none;padding:9px 13px 10px;background:#fff;border-bottom:1px solid #d7ddd9">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+<div style="flex:1;min-width:0"><div style="font-size:14.5px;font-weight:800">Compare play</div><div style="font-size:10.5px;color:#6a766f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{dealLine}}</div></div>
+<div style="display:flex;gap:2px;padding:2px;background:#eef1ef;border:1px solid #dde3df;border-radius:8px;flex:none">
 <sc-for list="{{viewportTabs}}" as="v" hint-placeholder-count="2">
-<button onClick="{{v.on}}" style="height:26px;padding:0 10px;border:0;border-radius:5px;background:{{v.bg}};color:{{v.color}};font-family:inherit;font-size:11px;font-weight:{{v.weight}};cursor:pointer">{{v.label}}</button>
+<button onClick="{{v.on}}" style="height:24px;padding:0 9px;border:0;border-radius:5px;background:{{v.bg}};color:{{v.color}};font-family:inherit;font-size:11px;font-weight:{{v.weight}};cursor:pointer">{{v.label}}</button>
 </sc-for>
 </div>
 </div>
-<div style="display:flex;gap:5px">
-<button onClick="{{onSourceCycle}}" style="flex:1;height:34px;padding:0 11px;border:1px solid #dde3df;border-radius:8px;background:#eef1ef;color:#33413b;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">{{phoneSourceLabel}} <span style="color:#8a958f;font-size:11px">tap to change</span></button>
-</div>
+<button onClick="{{onOpenSource}}" style="width:100%;height:34px;padding:0 12px;border:1px solid #dde3df;border-radius:9px;background:#eef1ef;color:#33413b;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px"><span style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#8a958f;flex:none">vs</span><span style="flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{sourceChipLabel}}</span><span style="flex:none;color:#0d707c;font-size:11px;font-weight:800">Change &#x25BE;</span></button>
 </div>
 
 <!-- mismatch banner (compact) -->
 <sc-if value="{{hasBanner}}" hint-placeholder-val="{{false}}">
-<div style="flex:none;display:flex;align-items:center;gap:9px;padding:9px 13px;background:#fdf3e8;border-bottom:1px solid #f0d9bc">
-<span style="flex:1;font-size:11.5px;line-height:1.4;color:#7a4a1c"><b>Different contracts</b> Â· {{mineContractPlain}} vs {{cmpContractPlain}}</span>
-<button onClick="{{onBannerBaseline}}" style="flex:none;height:28px;padding:0 10px;border:1px solid #d98f4e;border-radius:7px;background:#fff;color:#a4571f;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">your contract â†’</button>
+<div style="flex:none;display:flex;align-items:center;gap:9px;padding:8px 13px;background:#fdf3e8;border-bottom:1px solid #f0d9bc">
+<span style="flex:1;font-size:11px;line-height:1.35;color:#7a4a1c"><b>Different contracts</b> &#xB7; {{mineContractPlain}} vs {{cmpContractPlain}}</span>
+<button onClick="{{onBannerBaseline}}" style="flex:none;height:27px;padding:0 10px;border:1px solid #d98f4e;border-radius:7px;background:#fff;color:#a4571f;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">your contract &#x2192;</button>
 </div>
 </sc-if>
 
-<!-- flip control -->
-<div style="flex:none;display:flex;align-items:stretch;gap:8px;padding:11px 14px 6px">
-<div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:8px 12px;border-radius:10px;background:{{primary.headerBg}};border:1px solid {{primary.accent}}">
-<span style="display:flex;align-items:center;gap:7px"><span style="display:flex;align-items:center;justify-content:center;height:19px;padding:0 7px;border-radius:5px;background:{{primary.accent}};color:#fff;font-size:10px;font-weight:800">{{primary.badge}}</span><span style="font-size:13px;font-weight:800">{{primary.who}}</span></span>
-<span style="display:flex;align-items:baseline;gap:6px;margin-top:3px"><span style="font-size:18px;font-weight:800;color:{{primary.contractColor}}">{{primary.contract}}</span><span style="font-size:12px;font-weight:700;color:{{primary.resColor}}">{{primary.resLine}} {{primary.resPts}}</span></span>
+<!-- labelled line toggle (replaces the lone-glyph swap) -->
+<div style="flex:none;padding:9px 13px 3px">
+<div style="font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:#8a958f;margin-bottom:5px">Show as main line</div>
+<div style="display:flex;gap:7px">
+<sc-for list="{{lineToggle}}" as="t" hint-placeholder-count="2">
+<button onClick="{{t.on}}" style="{{t.wrapStyle}}">
+<span style="display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:3px;background:{{t.accent}};flex:none;opacity:{{t.dot}}"></span><span style="font-size:12.5px;font-weight:{{t.nameWeight}};color:{{t.nameColor}}">{{t.who}}</span><sc-if value="{{t.active}}" hint-placeholder-val="{{true}}"><span style="margin-left:auto;font-size:9px;font-weight:800;letter-spacing:.06em;color:{{t.accent}}">MAIN</span></sc-if></span>
+<span style="display:flex;align-items:baseline;gap:6px;margin-top:3px"><span style="font-size:16px;font-weight:800;color:{{t.contractColor}}">{{t.contract}}</span><span style="font-size:11px;font-weight:700;color:{{t.resColor}}">{{t.res}}</span></span>
+</button>
+</sc-for>
 </div>
-<button onClick="{{onFlip}}" title="Flip primary line" style="flex:none;width:52px;border:1px solid #dde3df;border-radius:10px;background:#fff;color:#0d707c;font-size:22px;font-weight:800;cursor:pointer">â‡„</button>
+<div style="padding:6px 1px 0;font-size:10.5px;color:#6a766f">{{toggleCaption}}</div>
 </div>
-<div style="flex:none;padding:2px 14px 0;font-size:11px;color:#6a766f">Showing <b style="color:{{primary.accent}}">{{primary.who}}</b> Â· <span style="color:{{ghost.accent}}">{{ghost.who}}</span> ghosted behind. Tap â‡„ to swap.</div>
 
-<!-- single board -->
-<div style="flex:1;min-height:0;overflow:auto;padding:8px 14px 6px">
+<!-- board band (flex absorber) -->
+<div style="flex:1;min-height:0;display:flex;flex-direction:column;padding:6px 13px 8px;overflow:hidden">
 
-<!-- auction with ghost overlay -->
-<div style="margin-bottom:9px">
-<div style="font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:#8a958f;margin-bottom:5px">Auction</div>
+<!-- compact auction with ghost overlay -->
+<div style="flex:none;display:flex;align-items:flex-start;gap:9px;margin-bottom:7px">
+<div style="font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:#8a958f;padding-top:5px;flex:none">Bid</div>
 <div style="display:inline-flex;flex-direction:column;border:1px solid #dfe4e0;border-radius:8px;overflow:hidden;background:#fff">
 <div style="display:flex">
 <sc-for list="{{primary.auctionHead}}" as="h" hint-placeholder-count="4">
-<div style="width:56px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:{{h.bg}};color:{{h.fg}};border-right:1px solid #eceeec">{{h.t}}</div>
+<div style="width:52px;height:21px;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;background:{{h.bg}};color:{{h.fg}};border-right:1px solid #eceeec">{{h.t}}</div>
 </sc-for>
 </div>
 <sc-for list="{{primary.auctionRows}}" as="r" hint-placeholder-count="3">
@@ -323,8 +360,8 @@ input[type=range]{accent-color:#0d707c}
 </div>
 </div>
 
-<!-- felt: primary trick + ghost card -->
-<div style="position:relative;display:flex;align-items:center;justify-content:center;padding:10px 6px;border-radius:12px;background:{{feltStyle}};min-height:210px">
+<!-- felt: primary trick + ghost card (flexes to fill the band) -->
+<div style="flex:1;min-height:184px;position:relative;display:flex;align-items:center;justify-content:center;padding:8px 6px;border-radius:12px;background:{{feltStyle}}">
 <sc-if value="{{primary.isAuctionPhase}}" hint-placeholder-val="{{false}}">
 <div style="display:flex;flex-direction:column;align-items:center;gap:9px;color:#d7ecdf">
 <div style="display:flex;align-items:center;gap:9px"><span style="font-size:13px;font-weight:700">{{primary.auctionCurrentSeat}}</span><span style="display:flex;align-items:center;justify-content:center;height:36px;min-width:46px;padding:0 12px;border-radius:8px;background:#fff;color:{{primary.auctionCurrentColor}};font-size:20px;font-weight:800">{{primary.auctionCurrentCall}}</span></div>
@@ -354,17 +391,21 @@ input[type=range]{accent-color:#0d707c}
 </div>
 </div>
 </sc-if>
+<!-- in-sync / split badge: the phone's cross-line connector -->
 <sc-if value="{{ghostInSync}}" hint-placeholder-val="{{false}}">
-<span style="position:absolute;right:9px;bottom:8px;font-size:10px;font-weight:700;color:#d7ecdf;background:rgba(0,0,0,.22);border-radius:10px;padding:3px 9px">âœ“ lines in sync</span>
+<span style="position:absolute;right:9px;bottom:8px;font-size:10px;font-weight:700;color:#d7ecdf;background:rgba(0,0,0,.24);border-radius:10px;padding:3px 9px">&#x2713; lines in sync</span>
+</sc-if>
+<sc-if value="{{ghostCardShow}}" hint-placeholder-val="{{true}}">
+<span style="position:absolute;left:9px;bottom:8px;font-size:10px;font-weight:700;color:#fbe4d1;background:rgba(122,44,12,.42);border-radius:10px;padding:3px 9px">&#x25C6; {{ghost.who}} played here</span>
 </sc-if>
 </div>
 
 <!-- hand strip + tally -->
-<div style="display:flex;align-items:center;gap:9px;margin-top:9px">
-<span style="font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:#8a958f;flex:none">Hand</span>
+<div style="flex:none;display:flex;align-items:center;gap:9px;margin-top:7px">
+<span style="font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:#8a958f;flex:none">Hand</span>
 <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1;min-width:0">
 <sc-for list="{{primary.handRows}}" as="h" hint-placeholder-count="4">
-<span style="display:flex;align-items:center;gap:2px;font-size:13.5px"><span style="color:{{h.color}};font-weight:700">{{h.glyph}}</span><span style="color:#26332e;letter-spacing:.03em">{{h.text}}</span></span>
+<span style="display:flex;align-items:center;gap:2px;font-size:13px"><span style="color:{{h.color}};font-weight:700">{{h.glyph}}</span><span style="color:#26332e;letter-spacing:.03em">{{h.text}}</span></span>
 </sc-for>
 </div>
 <sc-if value="{{showTally}}" hint-placeholder-val="{{true}}">
@@ -375,32 +416,51 @@ input[type=range]{accent-color:#0d707c}
 </sc-if>
 </div>
 
-<sc-if value="{{diverged}}" hint-placeholder-val="{{true}}">
-<div style="margin-top:9px;text-align:center"><span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#a4571f;background:#fdf3e8;border:1px solid #f0d9bc;border-radius:13px;padding:4px 11px"><span style="color:#e07a3a">â—†</span>{{divergedText}}</span></div>
-</sc-if>
-
 </div>
 
-<!-- compact scrubber -->
-<div style="flex:none;padding:9px 14px 14px;background:#fff;border-top:1px solid #d7ddd9">
-<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
-<button onClick="{{onPrev}}" style="{{btnGhost}}">â—€</button>
-<button onClick="{{onNext}}" style="{{btnGhost}}">â–¶</button>
-<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{posLabel}}</div><div style="font-size:10.5px;color:#6a766f">{{posSub}}</div></div>
-<button onClick="{{onJumpDiverge}}" title="Jump to divergence" style="flex:none;height:30px;padding:0 10px;border:1px solid #f0d9bc;border-radius:8px;background:#fdf3e8;color:#a4571f;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">â—†</button>
+<!-- compact scrubber band -->
+<div style="flex:none;padding:8px 13px 12px;background:#fff;border-top:1px solid #d7ddd9">
+<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
+<button onClick="{{onPrev}}" title="Step back" style="{{btnStep}}">&#x25C0; Prev</button>
+<button onClick="{{onNext}}" title="Step forward" style="{{btnStep}}">Next &#x25B6;</button>
+<div style="flex:1;min-width:0;text-align:center"><div style="font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{posLabel}}</div><div style="font-size:10px;color:#6a766f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{posSub}}</div></div>
+<button onClick="{{onJumpDiverge}}" title="Jump to divergence" style="flex:none;height:30px;padding:0 10px;border:1px solid #f0d9bc;border-radius:8px;background:#fdf3e8;color:#a4571f;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">&#x25C6; Split</button>
 </div>
-<div ref="{{trackRef}}" onMouseDown="{{onTrackDown}}" onTouchStart="{{onTrackTouch}}" style="position:relative;height:38px;cursor:pointer;user-select:none;touch-action:none">
-<div style="position:absolute;left:0;top:13px;height:12px;width:{{aucBandW}};border-radius:6px 0 0 6px;background:#e4e9e6"></div>
-<div style="position:absolute;top:13px;height:12px;left:{{aucBandW}};right:0;border-radius:0 6px 6px 0;background:#eef1ef"></div>
-<div style="position:absolute;top:13px;height:12px;left:{{divZoneLeft}};right:0;border-radius:0 6px 6px 0;background:rgba(224,122,58,.16)"></div>
-<div style="position:absolute;top:8px;height:22px;width:2px;left:{{aucBandW}};background:#b6c1bb"></div>
+<div ref="{{trackRef}}" onMouseDown="{{onTrackDown}}" onTouchStart="{{onTrackTouch}}" style="position:relative;height:34px;cursor:pointer;user-select:none;touch-action:none">
+<div style="position:absolute;left:0;top:11px;height:12px;width:{{aucBandW}};border-radius:6px 0 0 6px;background:#e4e9e6"></div>
+<div style="position:absolute;top:11px;height:12px;left:{{aucBandW}};right:0;border-radius:0 6px 6px 0;background:#eef1ef"></div>
+<div style="position:absolute;top:11px;height:12px;left:{{divZoneLeft}};right:0;border-radius:0 6px 6px 0;background:rgba(224,122,58,.16)"></div>
+<div style="position:absolute;top:6px;height:22px;width:2px;left:{{aucBandW}};background:#b6c1bb"></div>
 <sc-if value="{{hasDivMarker}}" hint-placeholder-val="{{true}}">
-<div onClick="{{onDivMarker}}" style="position:absolute;top:1px;left:{{divMarkerLeft}};transform:translateX(-50%);cursor:pointer"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid #e07a3a"></div></div>
+<div onClick="{{onDivMarker}}" title="Lines diverge here" style="position:absolute;top:0;left:{{divMarkerLeft}};transform:translateX(-50%);cursor:pointer"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid #e07a3a"></div></div>
 </sc-if>
-<div style="position:absolute;top:5px;left:{{thumbLeft}};transform:translateX(-50%);width:14px;height:28px;border-radius:5px;background:#0d707c;border:2px solid #fff;box-shadow:0 2px 5px rgba(13,112,124,.45)"></div>
+<div style="position:absolute;top:3px;left:{{thumbLeft}};transform:translateX(-50%);width:14px;height:28px;border-radius:5px;background:#0d707c;border:2px solid #fff;box-shadow:0 2px 5px rgba(13,112,124,.45)"></div>
 </div>
 <button onClick="{{onFromHere}}" style="{{fromHereBtnStyle}}">{{fromHereBtnLabel}}</button>
 </div>
+
+<!-- bottom sheet: comparison source + players + note (secondary content) -->
+<sc-if value="{{sheetOpen}}" hint-placeholder-val="{{false}}">
+<div onClick="{{onCloseSheet}}" style="position:absolute;inset:0;z-index:40;background:rgba(20,30,26,.42)"></div>
+<div style="position:absolute;left:0;right:0;bottom:0;z-index:41;max-height:82%;display:flex;flex-direction:column;background:#fff;border-radius:20px 20px 22px 22px;box-shadow:0 -12px 34px rgba(0,0,0,.32)">
+<div style="flex:none;display:flex;align-items:center;padding:12px 15px 8px"><span style="flex:1;font-size:14px;font-weight:800">Compare against</span><button onClick="{{onCloseSheet}}" style="flex:none;width:28px;height:28px;border:1px solid #e2e7e3;border-radius:14px;background:#f4f6f5;color:#5c6862;font-size:14px;font-weight:800;cursor:pointer">&#xD7;</button></div>
+<div style="flex:1;min-height:0;overflow:auto;padding:0 11px 12px">
+<sc-for list="{{phoneSources}}" as="p" hint-placeholder-count="5">
+<button onClick="{{p.on}}" style="display:flex;align-items:center;gap:11px;width:100%;padding:10px 11px;margin-bottom:6px;border:1px solid {{p.border}};border-radius:11px;background:{{p.bg}};text-align:left;cursor:pointer">
+<span style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;flex:none;border-radius:15px;background:{{p.avatarBg}};color:#fff;font-size:11px;font-weight:800">{{p.initials}}</span>
+<span style="flex:1;min-width:0">
+<span style="display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:700;color:#1b2a26">{{p.name}}<sc-if value="{{p.editor}}" hint-placeholder-val="{{false}}"><span style="font-size:9.5px;font-weight:700;color:#0d707c">&#x25C6; set the boards</span></sc-if></span>
+<span style="font-size:11px;color:#6a766f">{{p.sub}}</span>
+</span>
+<span style="flex:none;display:flex;align-items:center;gap:8px"><span style="font-size:12.5px;font-weight:800;color:{{p.resColor}}">{{p.res}}</span><sc-if value="{{p.active}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;font-weight:800;color:#0d707c">&#x2713;</span></sc-if></span>
+</button>
+</sc-for>
+<sc-if value="{{sheetNote}}" hint-placeholder-val="{{false}}">
+<div style="margin:4px 4px 0;padding:9px 11px;border-radius:9px;background:#fdf3e8;font-size:11.5px;line-height:1.45;color:#7a4a1c">{{sheetNote}}</div>
+</sc-if>
+</div>
+</div>
+</sc-if>
 
 </div>
 </div>
@@ -411,7 +471,7 @@ input[type=range]{accent-color:#0d707c}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1200,&quot;height&quot;:840},&quot;viewport&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;phone&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;section&quot;:&quot;View&quot;,&quot;label&quot;:&quot;Viewport&quot;},&quot;source&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;your-contract&quot;,&quot;full-ben&quot;,&quot;player&quot;],&quot;default&quot;:&quot;your-contract&quot;,&quot;section&quot;:&quot;View&quot;,&quot;label&quot;:&quot;Comparison source&quot;},&quot;divergedEarly&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Demo lines&quot;,&quot;label&quot;:&quot;Split early (trick 2 vs trick 7)&quot;},&quot;startPly&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;min&quot;:-1,&quot;max&quot;:57,&quot;default&quot;:-1,&quot;section&quot;:&quot;Demo lines&quot;,&quot;label&quot;:&quot;Start position (-1 = at divergence)&quot;},&quot;trickScale&quot;:{&quot;type&quot;:&quot;range&quot;,&quot;min&quot;:0.42,&quot;max&quot;:0.9,&quot;step&quot;:0.02,&quot;default&quot;:0.62,&quot;section&quot;:&quot;Trick&quot;,&quot;label&quot;:&quot;Mini-board trick scale&quot;},&quot;ghostOpacity&quot;:{&quot;type&quot;:&quot;range&quot;,&quot;min&quot;:0.2,&quot;max&quot;:0.65,&quot;step&quot;:0.05,&quot;default&quot;:0.42,&quot;section&quot;:&quot;Trick&quot;,&quot;label&quot;:&quot;Ghost opacity (phone)&quot;},&quot;showTally&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Trick&quot;,&quot;label&quot;:&quot;Show running trick tally&quot;},&quot;mineColor&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#0d707c&quot;,&quot;section&quot;:&quot;Colors&quot;,&quot;label&quot;:&quot;Your line accent&quot;},&quot;benColor&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#6d4bc9&quot;,&quot;section&quot;:&quot;Colors&quot;,&quot;label&quot;:&quot;Comparison line accent&quot;},&quot;divColor&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#e07a3a&quot;,&quot;section&quot;:&quot;Colors&quot;,&quot;label&quot;:&quot;Divergence accent&quot;},&quot;felt&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#1d6b4f&quot;,&quot;section&quot;:&quot;Colors&quot;,&quot;label&quot;:&quot;Felt&quot;}}">
 // ======================================================================
-// Play Comparison â€” design canvas.
+// Play Comparison - design canvas.
 //
 // The two lines are generated at render time from bridge.js PURE functions
 // (deal/applyCall/applyPlay/resolveTrick/robotPlay), so every card is legal and
@@ -419,18 +479,22 @@ input[type=range]{accent-color:#0d707c}
 //
 // Deal: board 3 (dealer South = you, vul EW). Hearts break 4-0 offside (West
 // holds J532, East void), so 4H is a genuine one-down and 3H is the making spot
-// â€” a real bidding-judgement swing that also triggers the contract-mismatch
+// - a real bidding-judgement swing that also triggers the contract-mismatch
 // banner. That is the demo's teaching backbone.
 //
 // Lines (all seat South = you; N/E/W are BEN robots):
-//   mine          4H by You  â€” the natural line            â†’ Down 1  (-50)
-//   your-contract 4H by You  â€” BEN plays your seat forward, deviates at the
-//                              split trick (2 early / 7 late)  â†’ Down 1
-//   full-ben      3H by You  â€” BEN's own board: stops a level lower, MAKES
-//                              (+140). Same cards, different contract â‡’ BANNER.
-//   players       Devan 4H Down 2 (-100) Â· Priya 4H Down 1 Â· Lars 3H +140 (creator, editor badge)
+//   mine          4H by You  - the natural line            -> Down 1  (-50)
+//   your-contract 4H by You  - BEN plays your seat forward, deviates at the
+//                              split trick (2 early / 7 late)  -> Down 1
+//   full-ben      3H by You  - BEN's own board: stops a level lower, MAKES
+//                              (+140). Same cards, diff contract => BANNER.
+//   players       Devan 4H Down 2 (-100), Priya 4H Down 1, Lars 3H +140 (editor)
 //   from-here     branch off YOUR line at the scrubbed ply; BEN takes your seat
-//                 on from there (computed on demand, "BEN is thinkingâ€¦").
+//                 on from there (computed on demand, "BEN is thinking...").
+//
+// The center SYNC column (desktop) and the ghost overlay (phone) read the same
+// per-line frame at the scrubbed ply, so "in sync" vs "split here" is derived,
+// never asserted. All display glyphs are \uXXXX escapes to keep the file ASCII.
 // ======================================================================
 
 const AUC = 6;            // auction plies for every line (all authored to 6)
@@ -440,7 +504,7 @@ const BOARD = 3, DEALER = "S", VUL = "EW";
 const MY_AUC  = ["1H", "P", "4H", "P", "P", "P"];   // 4H by South
 const BEN_AUC = ["1H", "P", "3H", "P", "P", "P"];   // 3H by South (BEN's board)
 // Verbatim TrickArea compass positions (wide/cards variant), also in bridge.js
-// trickModel â€” kept here so the ghost overlay can be placed on the same grid.
+// trickModel - kept here so the ghost overlay can be placed on the same grid.
 const POS = {
   N: { left: "50%", top: "0", tr: "translateX(-50%)" },
   S: { left: "50%", top: "182px", tr: "translateX(-50%)" },
@@ -460,7 +524,8 @@ class Component extends DCLogic {
     srcOverride: null,    // "your-contract" | "full-ben" | "player:devan|priya|lars"
     vpOverride: null,     // "desktop" | "phone"
     earlyOverride: null,  // bool
-    playersOpen: false,
+    playersOpen: false,   // desktop players dropdown
+    sheet: null,          // phone bottom sheet: null | "source"
     primary: "mine",      // phone: which line is solid
     dragging: false,
     fromHereActive: false, fromHereLoading: false, fromHereAt: 0,
@@ -469,7 +534,7 @@ class Component extends DCLogic {
   componentDidMount() {
     this._cache = new Map();
     // Live scrubbing via document-level pointer + touch listeners (the track
-    // ref gives us the box to map clientX â†’ ply).
+    // ref gives us the box to map clientX -> ply).
     this._move = (e) => {
       if (!this.state.dragging || !this._track) return;
       const x = e.touches ? e.touches[0].clientX : e.clientX;
@@ -681,10 +746,15 @@ class Component extends DCLogic {
     const seats = f.phase !== "auction" ? this.trickSeats(f, scale, opts.accent) : [];
     const handRows = B.handTextRows(f.handsS);
     const nsLead = f.tally.NS !== (other ? this.frame(other, ply).tally.NS : f.tally.NS);
+    // Desktop panels have no definite outer height, so the felt cannot rely on
+    // flex:1 to size itself (it collapses and the absolute trick escapes). Give
+    // it a DEFINITE height derived from the trick box + breathing room.
+    const trickPx = Math.round(262 * scale);
+    const feltH = trickPx + 34;
     return {
       accent: opts.accent, headerBg: opts.headerBg, badge: opts.badge, who: opts.who,
       editor: !!opts.editor,
-      contract: B.contractText(line.contract) || "â€”",
+      contract: B.contractText(line.contract) || "\u2014",
       contractColor: contractRed ? "#c0201f" : "#16231e",
       byLine: "by " + opts.byName,
       resLine: line.res.line, resPts: line.res.text,
@@ -695,7 +765,8 @@ class Component extends DCLogic {
       auctionCurrentSeat: B.SEAT_NAME[f.curSeat] || "",
       auctionCurrentCall: f.curCall ? B.callText(f.curCall) : "",
       auctionCurrentColor: f.curCall ? B.callColor(f.curCall) : "#000",
-      trickWrapStyle: "position:relative;width:" + Math.round(262 * scale) + "px;height:" + Math.round(262 * scale) + "px;flex:none",
+      feltBoxStyle: "flex:none;height:" + feltH + "px;display:flex;align-items:center;justify-content:center;margin:2px 10px 8px;border-radius:10px;background:" + (opts.felt || "#1d6b4f"),
+      trickWrapStyle: "position:relative;width:" + trickPx + "px;height:" + trickPx + "px;flex:none",
       trickBoxStyle: "position:absolute;left:50%;top:50%;width:262px;height:262px;transform:translate(-50%,-50%) scale(" + scale + ");transform-origin:center center",
       seats,
       handRows,
@@ -715,7 +786,7 @@ class Component extends DCLogic {
   // ---- interaction helpers ---------------------------------------------
   setPly(n) { this.setState({ ply: clamp(n, 0, MAXPLY) }); }
   stepBy(d) { this.setState((s) => ({ ply: clamp((s.ply == null ? this._auto : s.ply) + d, 0, MAXPLY) })); }
-  pickSource(key) { this.setState({ srcOverride: key, playersOpen: false, ply: null, fromHereActive: false, fromHereLoading: false }); }
+  pickSource(key) { this.setState({ srcOverride: key, playersOpen: false, sheet: null, ply: null, fromHereActive: false, fromHereLoading: false }); }
   toggleFromHere() {
     if (this.state.fromHereActive || this.state.fromHereLoading) {
       this.setState({ fromHereActive: false, fromHereLoading: false });
@@ -747,8 +818,10 @@ class Component extends DCLogic {
     const isPhone = this.effViewport() === "phone";
     const shell = {
       isDesktop: !isPhone, isPhone, pageBg,
-      dealLine: "Board " + BOARD + " Â· dealer You Â· E/W vulnerable",
+      mineAccent: mineColor, benAccent: benColor,
+      dealLine: "Board " + BOARD + " \u00b7 dealer You \u00b7 E/W vulnerable",
       btnGhost: "width:34px;height:34px;flex:none;border:1px solid #dbe1de;border-radius:8px;background:#fff;color:#33413b;font-size:13px;cursor:pointer",
+      btnStep: "height:34px;padding:0 11px;flex:none;border:1px solid #dbe1de;border-radius:8px;background:#fff;color:#33413b;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap",
       spinnerStyle: "width:30px;height:30px;border-radius:50%;border:3px solid #e4dcf6;border-top-color:#6d4bc9;animation:none;transform:rotate(35deg)",
       rootStyle: "width:100%;height:100vh;min-height:0;background:" + (isPhone ? "#2a2f2c" : pageBg),
       showTally, ghostOpacity,
@@ -769,7 +842,7 @@ class Component extends DCLogic {
       const at = this.state.fromHereAt;
       const branchIdx = Math.max(0, at - AUC);
       cmp = this.fromHereLine(early, branchIdx);
-      cmpMeta = { badge: "BEN Â· FROM HERE", who: "BEN from here", byName: "BEN", accent: benColor, fromHere: true, loading: this.state.fromHereLoading };
+      cmpMeta = { badge: "BEN \u00b7 FROM HERE", who: "BEN from here", byName: "BEN", accent: benColor, fromHere: true, loading: this.state.fromHereLoading };
     } else if (src === "full-ben") {
       cmp = L.fullBen; cmpMeta = { badge: "BEN", who: "BEN's board", byName: "BEN", accent: benColor };
     } else if (src === "your-contract") {
@@ -794,19 +867,19 @@ class Component extends DCLogic {
     // per-board notes: full-ben plays identical cards to mine (swing is bidding)
     let cmpNote = null;
     if (src === "full-ben" && ply >= AUC) {
-      cmpNote = { note: "Same cards as your line â€” the swing here was the bidding, not the play.", noteColor: "#7a4a1c", noteBg: "#fdf3e8" };
+      cmpNote = { note: "Same cards as your line \u2014 the swing here was the bidding, not the play.", noteColor: "#7a4a1c", noteBg: "#fdf3e8" };
     }
 
-    const mineVM = this.boardVM(mine, cmp, ply, { accent: mineColor, headerBg: "#eff6f6", badge: "YOUR LINE", who: "You", byName: "You" });
-    const cmpVM = this.boardVM(cmp, mine, ply, Object.assign({ accent: benColor, headerBg: "#f4f0fc", byName: cmpMeta.byName, who: cmpMeta.who, badge: cmpMeta.badge, editor: cmpMeta.editor, fromHere: cmpMeta.fromHere, loading: cmpMeta.loading }, cmpNote || {}));
+    const mineVM = this.boardVM(mine, cmp, ply, { accent: mineColor, headerBg: "#eff6f6", badge: "YOUR LINE", who: "You", byName: "You", scale: trickScale, felt });
+    const cmpVM = this.boardVM(cmp, mine, ply, Object.assign({ accent: benColor, headerBg: "#f4f0fc", byName: cmpMeta.byName, who: cmpMeta.who, badge: cmpMeta.badge, editor: cmpMeta.editor, fromHere: cmpMeta.fromHere, loading: cmpMeta.loading, scale: trickScale, felt }, cmpNote || {}));
 
     // position labels
     const posLabel = this.posLabel(ply, mine);
-    const posSub = ply < AUC ? "Bidding Â· ply " + (ply + 1) + " of " + AUC : ("Card " + (((ply - AUC) % 4) + 1) + " of 4  Â·  play ply " + (ply - AUC + 1) + " of " + PLAY);
+    const posSub = ply < AUC ? "Bidding \u00b7 ply " + (ply + 1) + " of " + AUC : ("Card " + (((ply - AUC) % 4) + 1) + " of 4  \u00b7  play ply " + (ply - AUC + 1) + " of " + PLAY);
 
     // diverged chip
     const diverged = dvp >= 0 && ply >= dvp;
-    const divergedText = dvp < 0 ? "" : (dvp < AUC ? "Lines diverge in the auction" : "Lines diverged here Â· Trick " + (Math.floor((dvp - AUC) / 4) + 1));
+    const divergedText = dvp < 0 ? "" : (dvp < AUC ? "Lines diverge in the auction" : "Lines diverged here \u00b7 Trick " + (Math.floor((dvp - AUC) / 4) + 1));
 
     // scrubber geometry (percentages, no measurement)
     const pct = (n) => (100 * n / MAXPLY) + "%";
@@ -836,8 +909,8 @@ class Component extends DCLogic {
 
     // from-here button
     const fhOn = this.state.fromHereActive || this.state.fromHereLoading;
-    const fromHereBtnStyle = "height:34px;padding:0 14px;border:1px solid " + (fhOn ? "#6d4bc9" : "#c9bff0") + ";border-radius:8px;background:" + (fhOn ? "#6d4bc9" : "#f3effc") + ";color:" + (fhOn ? "#fff" : "#6d4bc9") + ";font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;" + (isPhone ? "width:100%;margin-top:9px;" : "");
-    const fromHereBtnLabel = this.state.fromHereLoading ? "BEN is thinkingâ€¦" : this.state.fromHereActive ? "âœ• Exit from-here" : "âš¡ Compare from here";
+    const fromHereBtnStyle = "height:34px;padding:0 14px;border:1px solid " + (fhOn ? "#6d4bc9" : "#c9bff0") + ";border-radius:8px;background:" + (fhOn ? "#6d4bc9" : "#f3effc") + ";color:" + (fhOn ? "#fff" : "#6d4bc9") + ";font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;" + (isPhone ? "width:100%;margin-top:8px;height:30px;font-size:11.5px;" : "");
+    const fromHereBtnLabel = this.state.fromHereLoading ? "BEN is thinking..." : this.state.fromHereActive ? "Exit from-here" : "Compare from here";
 
     // phone primary/ghost
     const primaryIsMine = this.state.primary === "mine";
@@ -862,6 +935,69 @@ class Component extends DCLogic {
     // ghost call in auction phase
     let ghostCallShow = false, ghostCallText = "";
     if (pf.phase === "auction" && gf.curCall && gf.curCall !== pf.curCall) { ghostCallShow = true; ghostCallText = B.callText(gf.curCall); }
+
+    // ---- DESKTOP sync spine: compare mine vs cmp AT THIS PLY (the cross-board tie)
+    const suitCol = (s) => B.isRedSuit(s) ? "#c0201f" : "#16231e";
+    const mf = mineVM._frame, cf = cmpVM._frame;
+    const cmpShort = cmpMeta.byName;
+    const sync = { inSync: false, split: false, auction: false, seatName: "", cmpWho: cmpShort,
+      mineColor: "#16231e", mineRank: "", mineGlyph: "", cmpColor: "#16231e", cmpRank: "", cmpGlyph: "",
+      mineCall: "", mineCallColor: "#000", cmpCall: "", cmpCallColor: "#000",
+      aucTag: "Bidding", aucBg: "#eef1ef", aucBorder: "#dde3df" };
+    if (mf.phase === "auction" || cf.phase === "auction") {
+      sync.auction = true;
+      sync.mineCall = mf.curCall ? B.callText(mf.curCall) : "\u2014";
+      sync.mineCallColor = mf.curCall ? B.callColor(mf.curCall) : "#000";
+      sync.cmpCall = cf.curCall ? B.callText(cf.curCall) : "\u2014";
+      sync.cmpCallColor = cf.curCall ? B.callColor(cf.curCall) : "#000";
+      const callsDiffer = mf.curCall !== cf.curCall;
+      sync.aucTag = callsDiffer ? "Bids differ" : "Bidding";
+      if (callsDiffer) { sync.aucBg = "#fdf3e8"; sync.aucBorder = "#f0d9bc"; }
+    } else if (mf.just && cf.just) {
+      const same = mf.just.seat === cf.just.seat && mf.just.card.s === cf.just.card.s && mf.just.card.r === cf.just.card.r;
+      sync.inSync = same; sync.split = !same;
+      sync.seatName = B.SEAT_NAME[mf.just.seat];
+      sync.mineRank = B.rankText(mf.just.card.r); sync.mineGlyph = B.GLYPH[mf.just.card.s]; sync.mineColor = suitCol(mf.just.card.s);
+      sync.cmpRank = B.rankText(cf.just.card.r); sync.cmpGlyph = B.GLYPH[cf.just.card.s]; sync.cmpColor = suitCol(cf.just.card.s);
+    } else {
+      // one line ran shorter at this ply: show whatever each has, mark as split
+      sync.split = true;
+      sync.mineRank = mf.just ? B.rankText(mf.just.card.r) : "\u2014"; sync.mineGlyph = mf.just ? B.GLYPH[mf.just.card.s] : ""; sync.mineColor = mf.just ? suitCol(mf.just.card.s) : "#9aa5a0";
+      sync.cmpRank = cf.just ? B.rankText(cf.just.card.r) : "\u2014"; sync.cmpGlyph = cf.just ? B.GLYPH[cf.just.card.s] : ""; sync.cmpColor = cf.just ? suitCol(cf.just.card.s) : "#9aa5a0";
+    }
+
+    // ---- PHONE labelled line toggle (replaces the lone-glyph swap) ----
+    const seg = (who, vm, accent, tint, key, active) => ({
+      who, on: () => this.setState({ primary: key }), active, accent,
+      contract: vm.contract, contractColor: vm.contractColor,
+      res: (vm.resLine + " " + vm.resPts).trim(), resColor: vm.resColor,
+      nameColor: active ? "#1b2a26" : "#8a958f", nameWeight: active ? 800 : 700,
+      dot: active ? "1" : ".4",
+      wrapStyle: "flex:1;min-width:0;text-align:left;padding:8px 11px;border-radius:10px;cursor:pointer;font-family:inherit;"
+        + (active ? ("background:" + tint + ";border:1.5px solid " + accent + ";") : "background:#f4f6f5;border:1px solid #e6ebe8;opacity:.82;"),
+    });
+    const lineToggle = [
+      seg("You", mineVM, mineColor, "#e4f1f1", "mine", primaryIsMine),
+      seg(cmpShort, cmpVM, benColor, "#f1ecfb", "cmp", !primaryIsMine),
+    ];
+    const toggleCaption = "Solid board: " + primaryVM.who + "   \u00b7   ghost card: " + ghostVMmeta.who + " at each step.";
+
+    // ---- PHONE source sheet (players + BEN lines behind a sheet) ----
+    const srcRows = [
+      ["your-contract", "BEN in your contract", "B", L.yourContract, false, "#6d4bc9"],
+      ["full-ben", "BEN's board", "B", L.fullBen, false, "#6d4bc9"],
+      ["player:devan", "Devan Rao", "DR", L.devan, false, "#8a7bbf"],
+      ["player:priya", "Priya Menon", "PM", L.priya, false, "#8a7bbf"],
+      ["player:lars", "Lars Ohanian", "LO", L.lars, true, "#0d707c"],
+    ];
+    const phoneSources = srcRows.map(([key, name, initials, line, editor, avatarBg]) => ({
+      on: () => this.pickSource(key), name, initials, editor, avatarBg,
+      sub: B.contractText(line.contract) + " by " + (line.declarer === "S" ? "you" : B.SEAT_NAME[line.declarer]),
+      res: line.res.text, resColor: line.res.made ? "#1a7a4b" : "#b3402f",
+      active: src === key && !this.state.fromHereActive,
+      bg: (src === key && !this.state.fromHereActive) ? "#f1ecfb" : "#fff",
+      border: (src === key && !this.state.fromHereActive) ? "#c9bff0" : "#e6ebe8",
+    }));
 
     return Object.assign(shell, {
       // source picker
@@ -897,7 +1033,16 @@ class Component extends DCLogic {
       aucBandW, divZoneLeft, trickTicks,
       thumbLeft: pct(ply),
       hasDivMarker: dvp >= 0, divMarkerLeft: pct(dvp >= 0 ? dvp : 0),
+      // desktop sync spine (cross-board tie at the scrubbed ply)
+      sync,
       // phone
+      sourceChipLabel: cmpMeta.who,
+      onOpenSource: () => this.setState({ sheet: "source" }),
+      onCloseSheet: () => this.setState({ sheet: null }),
+      sheetOpen: this.state.sheet === "source",
+      phoneSources,
+      sheetNote: cmpNote ? cmpNote.note : "",
+      lineToggle, toggleCaption,
       onSourceCycle: () => this.cycleSource(src),
       phoneSourceLabel: cmpMeta.who,
       onFlip: () => this.setState((s) => ({ primary: s.primary === "mine" ? "cmp" : "mine" })),
@@ -916,7 +1061,7 @@ class Component extends DCLogic {
 
   posLabel(ply, mine) {
     const B = window.Bridge;
-    if (ply < AUC) { const c = mine.auction[ply]; return "Auction Â· " + B.SEAT_NAME[c.seat] + " " + B.callText(c.call); }
+    if (ply < AUC) { const c = mine.auction[ply]; return "Auction \u00b7 " + B.SEAT_NAME[c.seat] + " " + B.callText(c.call); }
     const j = ply - AUC, tn = Math.floor(j / 4) + 1;
     return "Trick " + tn;
   }
@@ -925,12 +1070,15 @@ class Component extends DCLogic {
     return {
       sourceTabs: [], players: [], boards: [], hasBanner: false, diverged: false, divergedText: "",
       playersOpen: false, playersLabel: "Players", playersBg: "transparent", playersColor: "#5c6862", playersWeight: 600,
-      posLabel: "Loadingâ€¦", posSub: "", trickTicks: [], aucBandW: "10%", divZoneLeft: "100%", thumbLeft: "0%",
+      posLabel: "Loading...", posSub: "", trickTicks: [], aucBandW: "10%", divZoneLeft: "100%", thumbLeft: "0%",
       hasDivMarker: false, divMarkerLeft: "0%", feltStyle: "#1d6b4f",
       fromHereBtnStyle: "", fromHereBtnLabel: "", fromHereWhere: "",
       mineContractPlain: "", cmpContractPlain: "", cmpName: "",
       phoneSourceLabel: "", primary: {}, ghost: {},
       ghostCardShow: false, ghostCallShow: false, ghostInSync: false, ghostCardStyle: "",
+      sync: { inSync: false, split: false, auction: false, seatName: "", cmpWho: "", mineColor: "#000", mineRank: "", mineGlyph: "", cmpColor: "#000", cmpRank: "", cmpGlyph: "", mineCall: "", mineCallColor: "#000", cmpCall: "", cmpCallColor: "#000", aucTag: "", aucBg: "#eef1ef", aucBorder: "#dde3df" },
+      sourceChipLabel: "", sheetOpen: false, phoneSources: [], sheetNote: "", lineToggle: [], toggleCaption: "",
+      onOpenSource: () => {}, onCloseSheet: () => {},
       onFirst: () => {}, onPrev: () => {}, onNext: () => {}, onLast: () => {}, onJumpDiverge: () => {},
       onDivMarker: () => {}, onFromHere: () => {}, onTrackDown: () => {}, onTrackTouch: () => {}, trackRef: () => {},
       onPlayersToggle: () => {}, onBannerBaseline: () => {}, onSourceCycle: () => {}, onFlip: () => {}, onFromHereExit: () => {},

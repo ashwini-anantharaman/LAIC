@@ -26,10 +26,10 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
 
 <!-- ============================ TOP STRIP ============================ -->
 <div style="flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-  <span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;flex:none;border-radius:8px;background:{{accent}};color:#fff;font-size:15px;font-weight:800">♣</span>
+  <span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;flex:none;border-radius:8px;background:{{accent}};color:#fff;font-size:15px;font-weight:800">&clubs;</span>
   <div style="margin-right:auto">
     <div style="font-size:14px;font-weight:800;letter-spacing:.01em;color:#17211d">Challenge</div>
-    <div style="font-size:11px;color:#8b9a93">{{roleLabel}} · {{phaseLabel}}</div>
+    <div style="font-size:11px;color:#8b9a93">{{roleLabel}} &middot; {{phaseLabel}}</div>
   </div>
   <div style="display:flex;gap:3px;padding:3px;background:#eef2f0;border:1px solid #dde3df;border-radius:9px">
     <sc-for list="{{viewChips}}" as="v" hint-placeholder-count="2">
@@ -55,10 +55,10 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
 
 <sc-if value="{{showDeclined}}" hint-placeholder-val="{{false}}">
 <div style="flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:13px 15px;margin-bottom:14px;border:1px solid #e6ded5;border-radius:14px;background:#faf6f1">
-  <span style="font-size:20px;flex:none">✕</span>
+  <span style="font-size:20px;flex:none">&#x2715;</span>
   <div style="flex:1;min-width:170px">
     <div style="font-size:13.5px;font-weight:800;color:#7a4b2a">You declined this invite</div>
-    <div style="font-size:12px;color:#9a7b5e">It stays in your list in case you change your mind — the boards lock only when someone starts, invites never close.</div>
+    <div style="font-size:12px;color:#9a7b5e">It stays in your list in case you change your mind &mdash; the boards lock only when someone starts, invites never close.</div>
   </div>
   <button onClick="{{onReopen}}" style="height:36px;padding:0 15px;flex:none;border:1px solid #d9e0db;border-radius:9px;background:#fff;color:#4a5c55;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">Reconsider</button>
 </div>
@@ -66,8 +66,8 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
 
 <sc-if value="{{showJoinedNote}}" hint-placeholder-val="{{false}}">
 <div style="flex:none;display:flex;align-items:center;gap:9px;padding:9px 13px;margin-bottom:14px;border:1px solid #cfe6d8;border-radius:11px;background:#eef8f1">
-  <span style="color:#2f8f57;font-size:15px;font-weight:800">✓</span>
-  <span style="font-size:12.5px;color:#2c6b48;font-weight:600">You joined. Board 1 is ready whenever you are — one attempt each, play in any order.</span>
+  <span style="color:#2f8f57;font-size:15px;font-weight:800">&#x2713;</span>
+  <span style="font-size:12.5px;color:#2c6b48;font-weight:600">You joined. Board 1 is ready whenever you are &mdash; one attempt each, play in any order.</span>
 </div>
 </sc-if>
 
@@ -86,13 +86,13 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
       <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;border-radius:11px;background:{{creatorAvColor}};color:#fff;font-size:10px;font-weight:800">{{creatorAvInit}}</span>
       <span style="font-size:12px;color:#3f4f48"><span style="color:#93a199">{{createdByPrefix}}</span> <b style="color:#31413a">{{creatorLabel}}</b></span>
       <sc-if value="{{showEditorBadge}}" hint-placeholder-val="{{true}}">
-      <span title="Opened the pack editor — has seen the hands" style="flex:none;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:4px;padding:2px 5px">◆ set the boards</span>
+      <span title="Opened the pack editor &mdash; has seen the hands" style="flex:none;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:4px;padding:2px 5px">&#x25C6; set the boards</span>
       </sc-if>
     </span>
     <span style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border:1px solid #cfe1de;border-radius:15px;background:#eff7f6;font-size:12px;font-weight:700;color:#0d707c">{{scoringChip}}</span>
     <span style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border:1px solid #e4e9e5;border-radius:15px;background:#fbfcfb;font-size:12px;font-weight:700;color:#4a5a53">{{boardsChip}}</span>
     <sc-if value="{{lockShown}}" hint-placeholder-val="{{true}}">
-    <span title="{{lockHint}}" style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border:1px solid #e6e2d6;border-radius:15px;background:#faf7ee;font-size:12px;font-weight:700;color:#8a7a4a">🔒 {{lockLabel}}</span>
+    <span title="{{lockHint}}" style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border:1px solid #e6e2d6;border-radius:15px;background:#faf7ee;font-size:12px;font-weight:700;color:#8a7a4a">&#x1F512; {{lockLabel}}</span>
     </sc-if>
   </div>
 
@@ -101,12 +101,12 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
     <span style="font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:#9aa8a1;margin-right:3px;align-self:center">In</span>
     <sc-for list="{{joined}}" as="p" hint-placeholder-count="6">
     <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px 0 3px;border:1px solid {{p.line}};border-radius:13px;background:{{p.bg}}">
-      <span style="position:relative;display:flex;align-items:center;justify-content:center;width:20px;height:20px;flex:none;border-radius:10px;background:{{p.color}};color:#fff;font-size:9px;font-weight:800">{{p.initials}}<span style="position:absolute;right:-3px;bottom:-3px;display:flex;align-items:center;justify-content:center;width:11px;height:11px;border-radius:6px;background:#2f8f57;color:#fff;font-size:7px;border:1.5px solid #fff">✓</span></span>
+      <span style="position:relative;display:flex;align-items:center;justify-content:center;width:20px;height:20px;flex:none;border-radius:10px;background:{{p.color}};color:#fff;font-size:9px;font-weight:800">{{p.initials}}<span style="position:absolute;right:-3px;bottom:-3px;display:flex;align-items:center;justify-content:center;width:11px;height:11px;border-radius:6px;background:#2f8f57;color:#fff;font-size:7px;border:1.5px solid #fff">&#x2713;</span></span>
       <span style="font-size:11.5px;font-weight:{{p.weight}};color:{{p.textColor}}">{{p.name}}</span>
-      <sc-if value="{{p.editor}}" hint-placeholder-val="{{false}}"><span style="flex:none;font-size:8px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:3px;padding:1px 4px">◆</span></sc-if>
+      <sc-if value="{{p.editor}}" hint-placeholder-val="{{false}}"><span style="flex:none;font-size:8px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:3px;padding:1px 4px">&#x25C6;</span></sc-if>
     </span>
     </sc-for>
-    <span style="display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:13px;background:#eef2f0;font-size:11px;font-weight:700;color:#6f7d76">● still playing: {{stillPlaying}}</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:13px;background:#eef2f0;font-size:11px;font-weight:700;color:#6f7d76">&#x25CF; still playing: {{stillPlaying}}</span>
     <sc-if value="{{pendingShown}}" hint-placeholder-val="{{true}}">
     <span style="width:1px;height:18px;background:#e4e9e5;margin:0 2px"></span>
     <sc-for list="{{pending}}" as="q" hint-placeholder-count="2">
@@ -121,10 +121,50 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
 
   <sc-if value="{{creatorNoteShown}}" hint-placeholder-val="{{false}}">
   <div style="display:flex;align-items:center;gap:8px;margin-top:11px;padding:8px 11px;border-radius:10px;background:#f4faf9;border:1px solid #d6e8e5">
-    <span style="font-size:12px">🛠</span>
+    <span style="font-size:12px">&#x1F6E0;</span>
     <span style="font-size:12px;color:#3c6b63;font-weight:600">{{creatorNote}}</span>
   </div>
   </sc-if>
+</div>
+
+<!-- ========================= STANDINGS STRIP (finished) ========================= -->
+<sc-if value="{{stripShown}}" hint-placeholder-val="{{true}}">
+<div onClick="{{onStripToResults}}" title="Open the Results tab" style="flex:none;display:flex;align-items:center;gap:9px;padding:9px 12px;margin-bottom:12px;border:1px solid #dbe4e0;border-radius:13px;background:#fff;cursor:pointer;overflow-x:auto;-webkit-overflow-scrolling:touch">
+  <span style="flex:none;display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#9aa8a1">&#x1F3C6; Standings</span>
+  <sc-for list="{{stripTop}}" as="s" hint-placeholder-count="3">
+  <span style="{{s.style}}">
+    <span style="font-size:11px;font-weight:800;color:{{s.rankColor}}">{{s.rank}}</span>
+    <span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;flex:none;border-radius:10px;background:{{s.avColor}};color:#fff;font-size:9px;font-weight:800">{{s.initials}}</span>
+    <span style="font-size:12px;font-weight:{{s.nameWeight}};color:#25332c;white-space:nowrap">{{s.name}}</span>
+    <span style="font-size:12px;font-weight:800;color:{{s.totalColor}};white-space:nowrap">{{s.total}}</span>
+  </span>
+  </sc-for>
+  <sc-if value="{{stripYouShown}}" hint-placeholder-val="{{false}}">
+  <span style="flex:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:9px;background:#eff7f6;border:1px solid #bfe0db;white-space:nowrap">
+    <span style="font-size:11px;font-weight:800;color:#0d707c">{{stripYouRank}}</span>
+    <span style="font-size:11.5px;font-weight:800;color:#0d707c">You</span>
+    <span style="font-size:12px;font-weight:800;color:{{stripYouColor}}">{{stripYouTotal}}</span>
+  </span>
+  </sc-if>
+  <span style="flex:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:9px;background:#f2f1fc;border:1px dashed #cfccf1;white-space:nowrap">
+    <span style="font-size:11px">&#x1F916;</span>
+    <span style="font-size:11px;font-weight:800;color:#4a49a0">BEN</span>
+    <span style="font-size:12px;font-weight:800;color:#4a49a0">{{benTotal}}</span>
+  </span>
+  <span style="flex:1;min-width:10px"></span>
+  <span style="flex:none;font-size:11.5px;font-weight:700;color:#0d707c;white-space:nowrap">Full results &rarr;</span>
+</div>
+</sc-if>
+
+<!-- ============================== TAB BAR ============================== -->
+<div style="{{tabBarStyle}}">
+  <sc-for list="{{tabs}}" as="t" hint-placeholder-count="2">
+  <button onClick="{{t.on}}" style="{{t.style}}">
+    <span>{{t.label}}</span>
+    <sc-if value="{{t.chipShown}}" hint-placeholder-val="{{true}}"><span style="{{t.chipStyle}}">{{t.chipText}}</span></sc-if>
+    <sc-if value="{{t.lockShown}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;color:#a2ada7">&#x1F512;</span></sc-if>
+  </button>
+  </sc-for>
 </div>
 
 <!-- =============================== BODY =============================== -->
@@ -152,8 +192,8 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
       <span style="font-size:11px;color:#9aa8a1">{{boardsSubLabel}}</span>
       <span style="flex:1"></span>
       <div style="display:flex;gap:2px;padding:2px;background:#eef2f0;border:1px solid #dde3df;border-radius:8px">
-        <button onClick="{{onGrid}}" title="Grid" style="height:24px;padding:0 9px;border:0;border-radius:6px;background:{{gridBg}};color:{{gridColor}};font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">▦ Grid</button>
-        <button onClick="{{onList}}" title="List" style="height:24px;padding:0 9px;border:0;border-radius:6px;background:{{listBg}};color:{{listColor}};font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">☰ List</button>
+        <button onClick="{{onGrid}}" title="Grid" style="height:24px;padding:0 9px;border:0;border-radius:6px;background:{{gridBg}};color:{{gridColor}};font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">&#x25A6; Grid</button>
+        <button onClick="{{onList}}" title="List" style="height:24px;padding:0 9px;border:0;border-radius:6px;background:{{listBg}};color:{{listColor}};font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">&#x2630; List</button>
       </div>
     </div>
 
@@ -171,14 +211,14 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
         <span style="display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:11px;background:{{b.pillBg}};font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:{{b.pillColor}}">{{b.pillLabel}}</span>
       </div>
 
-      <!-- completed → ResultCard (grid) -->
+      <!-- completed &rarr; ResultCard (grid) -->
       <sc-if value="{{b.showResultCard}}" hint-placeholder-val="{{true}}">
       <div style="display:flex;justify-content:center;padding:2px 0">
         <dc-import name="ResultCard" dc-props="{{b.result}}" hint-size="240px,150px"></dc-import>
       </div>
       </sc-if>
 
-      <!-- completed → compact strip (list) -->
+      <!-- completed &rarr; compact strip (list) -->
       <sc-if value="{{b.showResultStrip}}" hint-placeholder-val="{{false}}">
       <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:9px;background:#f7faf8;border:1px solid #ebf0ec">
         <span style="font-size:13px;font-weight:800;color:#2c3a34">{{b.resLine}}</span>
@@ -188,7 +228,7 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
       </div>
       </sc-if>
 
-      <!-- completed → challenge score + entry points -->
+      <!-- completed &rarr; challenge score + entry points -->
       <sc-if value="{{b.showFinishedRow}}" hint-placeholder-val="{{false}}">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="display:inline-flex;align-items:baseline;gap:5px;height:26px;padding:0 10px;border-radius:8px;background:{{b.chBg}};border:1px solid {{b.chLine}}">
@@ -196,19 +236,19 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
           <span style="font-size:13px;font-weight:800;color:{{b.chColor}}">{{b.chScore}}</span>
         </span>
         <span style="flex:1"></span>
-        <button onClick="{{b.onCompare}}" style="height:28px;padding:0 11px;border:1px solid #cfe1de;border-radius:8px;background:#eff7f6;color:#0d707c;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer">⇄ Compare</button>
-        <button onClick="{{b.onReplay}}" title="Opens an unscored practice copy at a normal table" style="height:28px;padding:0 11px;border:1px solid #e4e9e5;border-radius:8px;background:#fff;color:#6d7a73;font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer">↻ Practice</button>
+        <button onClick="{{b.onCompare}}" style="height:28px;padding:0 11px;border:1px solid #cfe1de;border-radius:8px;background:#eff7f6;color:#0d707c;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer">&#x21C4; Compare</button>
+        <button onClick="{{b.onReplay}}" title="Opens an unscored practice copy at a normal table" style="height:28px;padding:0 11px;border:1px solid #e4e9e5;border-radius:8px;background:#fff;color:#6d7a73;font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer">&#x21BB; Practice</button>
       </div>
       </sc-if>
 
-      <!-- completed but locked (playing) → scored, one-attempt note -->
+      <!-- completed but locked (playing) &rarr; scored, one-attempt note -->
       <sc-if value="{{b.showScoredLocked}}" hint-placeholder-val="{{false}}">
       <div style="display:flex;align-items:center;gap:8px;padding:6px 2px">
-        <span style="font-size:11px;color:#93a199">🔒 Your score unlocks when you finish all boards · <b style="color:#7a877f">one attempt, result is final</b></span>
+        <span style="font-size:11px;color:#93a199">&#x1F512; Your score unlocks when you finish all boards &middot; <b style="color:#7a877f">one attempt, result is final</b></span>
       </div>
       </sc-if>
 
-      <!-- not started / in progress → play/resume -->
+      <!-- not started / in progress &rarr; play/resume -->
       <sc-if value="{{b.showPlayRow}}" hint-placeholder-val="{{true}}">
       <div style="display:flex;align-items:center;gap:8px">
         <sc-if value="{{b.showNextTag}}" hint-placeholder-val="{{true}}"><span style="font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:{{b.nextTagColor}}">Next in sequence</span></sc-if>
@@ -223,34 +263,50 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
     </sc-for>
     </div>
 
+  </div>
+
+  <!-- ------------------------- DETAIL ASIDE (right column on desktop) ------------------------- -->
+  <sc-if value="{{asideShown}}" hint-placeholder-val="{{false}}">
+  <div style="{{asideColStyle}}">
+
     <!-- expanded board detail -->
     <sc-if value="{{detailShown}}" hint-placeholder-val="{{false}}">
     <div style="flex:none;border:1px solid {{accent}};border-radius:14px;background:#fbfefe;padding:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
       <div style="flex:none;display:flex;flex-direction:column;gap:8px;align-items:center">
         <dc-import name="VulBoardCard" dc-props="{{detailVul}}" hint-size="150px,150px"></dc-import>
-        <span style="font-size:11px;color:#8b9a93">Board {{detailNo}} · Deal {{detailDealer}} · {{detailVulLabel}}</span>
+        <span style="font-size:11px;color:#8b9a93">Board {{detailNo}} &middot; Deal {{detailDealer}} &middot; {{detailVulLabel}}</span>
       </div>
       <div style="flex:1;min-width:180px;display:flex;flex-direction:column;gap:10px">
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:14px;font-weight:800;color:#22302a">Board {{detailNo}}</span>
           <span style="flex:1"></span>
-          <button onClick="{{onCloseDetail}}" style="height:26px;width:26px;border:1px solid #e4e9e5;border-radius:8px;background:#fff;color:#93a199;font-family:inherit;font-size:13px;cursor:pointer">✕</button>
+          <button onClick="{{onCloseDetail}}" style="height:26px;width:26px;border:1px solid #e4e9e5;border-radius:8px;background:#fff;color:#93a199;font-family:inherit;font-size:13px;cursor:pointer">&#x2715;</button>
         </div>
         <sc-if value="{{detailSeatShown}}" hint-placeholder-val="{{true}}">
         <div>
-          <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9aa8a1;margin-bottom:6px">Your hand — {{detailSeatName}}</div>
+          <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9aa8a1;margin-bottom:6px">Your hand &mdash; {{detailSeatName}}</div>
           <dc-import name="SeatDiagram" dc-props="{{detailSeat}}" hint-size="200px,150px"></dc-import>
         </div>
         </sc-if>
         <div style="font-size:12.5px;line-height:1.55;color:#5b6a63">{{detailNote}}</div>
         <sc-if value="{{detailCompareShown}}" hint-placeholder-val="{{false}}">
-        <button onClick="{{onDetailCompare}}" style="align-self:flex-start;height:34px;padding:0 15px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">⇄ Compare this board</button>
+        <button onClick="{{onDetailCompare}}" style="align-self:flex-start;height:34px;padding:0 15px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">&#x21C4; Compare this board</button>
         </sc-if>
       </div>
     </div>
     </sc-if>
 
+    <!-- placeholder when nothing is expanded (desktop only) -->
+    <sc-if value="{{detailPlaceholderShown}}" hint-placeholder-val="{{true}}">
+    <div style="flex:none;border:1px dashed #dbe4e0;border-radius:14px;background:#fbfcfb;padding:22px 16px;text-align:center">
+      <div style="font-size:24px;color:#c4d2cc">&#x25A6;</div>
+      <div style="font-size:12.5px;font-weight:700;color:#5a6a63;margin-top:8px">Preview a board here</div>
+      <div style="font-size:11.5px;line-height:1.5;color:#9aa8a1;margin-top:4px">Tap Deal &amp; seat on any board to see the deal and your hand &mdash; spoiler-safe.</div>
+    </div>
+    </sc-if>
+
   </div>
+  </sc-if>
 
   <!-- ------------------------- RESULTS COLUMN ------------------------- -->
   <div style="{{resultsColStyle}}">
@@ -259,7 +315,7 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
     <sc-if value="{{lockedShown}}" hint-placeholder-val="{{false}}">
     <div style="flex:none;border:1px solid #e2e7e3;border-radius:16px;background:#fff;padding:16px">
       <div style="display:flex;align-items:center;gap:9px">
-        <span style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;flex:none;border-radius:10px;background:#f1f4f2;font-size:16px">🔒</span>
+        <span style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;flex:none;border-radius:10px;background:#f1f4f2;font-size:16px">&#x1F512;</span>
         <div>
           <div style="font-size:14px;font-weight:800;color:#22302a">{{lockedTitle}}</div>
           <div style="font-size:12px;color:#8b9a93">{{lockedSub}}</div>
@@ -283,7 +339,7 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
 
       <sc-if value="{{yourResultsShown}}" hint-placeholder-val="{{true}}">
       <div style="margin-top:13px">
-        <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9aa8a1;margin-bottom:7px">Your boards so far · spoiler-safe</div>
+        <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9aa8a1;margin-bottom:7px">Your boards so far &middot; spoiler-safe</div>
         <div style="display:flex;flex-direction:column;gap:5px">
         <sc-for list="{{yourResults}}" as="r" hint-placeholder-count="3">
         <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:9px;background:#fbfcfb;border:1px solid #eef2ef">
@@ -300,7 +356,7 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
     </div>
     </sc-if>
 
-    <!-- FINISHED → LEADERBOARD -->
+    <!-- FINISHED &rarr; LEADERBOARD -->
     <sc-if value="{{lbShown}}" hint-placeholder-val="{{true}}">
     <div style="flex:none;border:1px solid #e2e7e3;border-radius:16px;background:#fff;padding:15px 15px 13px">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:11px">
@@ -317,7 +373,7 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px">
             <span style="font-size:13px;font-weight:{{r.nameWeight}};color:#25332c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.name}}</span>
-            <sc-if value="{{r.editor}}" hint-placeholder-val="{{false}}"><span title="Opened the pack editor" style="flex:none;font-size:8px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:3px;padding:1px 4px">◆ set the boards</span></sc-if>
+            <sc-if value="{{r.editor}}" hint-placeholder-val="{{false}}"><span title="Opened the pack editor" style="flex:none;font-size:8px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:3px;padding:1px 4px">&#x25C6; set the boards</span></sc-if>
             <sc-if value="{{r.tie}}" hint-placeholder-val="{{false}}"><span style="flex:none;font-size:8px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#93a199">tie</span></sc-if>
           </div>
           <div style="height:4px;margin-top:4px;border-radius:2px;background:#eef2ef;overflow:hidden"><div style="height:100%;width:{{r.barPct}}%;background:{{r.barColor}};border-radius:2px"></div></div>
@@ -329,10 +385,10 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
 
       <!-- BEN benchmark line -->
       <div style="display:flex;align-items:center;gap:9px;margin-top:8px;padding:9px 10px;border-radius:11px;background:#f2f1fc;border:1px dashed #cfccf1">
-        <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex:none;border-radius:8px;background:#5b63d6;color:#fff;font-size:13px">🤖</span>
+        <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex:none;border-radius:8px;background:#5b63d6;color:#fff;font-size:13px">&#x1F916;</span>
         <div style="flex:1;min-width:0">
-          <div style="font-size:12.5px;font-weight:800;color:#3b3a86">BEN — benchmark</div>
-          <div style="font-size:10.5px;color:#8a88b8">Reference robot line · not ranked, excluded from the field</div>
+          <div style="font-size:12.5px;font-weight:800;color:#3b3a86">BEN &mdash; benchmark</div>
+          <div style="font-size:10.5px;color:#8a88b8">Reference robot line &middot; not ranked, excluded from the field</div>
         </div>
         <span style="flex:none;font-size:14px;font-weight:800;color:#4a49a0;min-width:52px;text-align:right">{{benTotal}}</span>
       </div>
@@ -346,12 +402,12 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
   </div>
 </div>
 
-<!-- ======================= SCORECARD (full width) ======================= -->
+<!-- ======================= SCORECARD (Results tab, expandable) ======================= -->
 <sc-if value="{{scorecardShown}}" hint-placeholder-val="{{false}}">
-<div style="flex:none;margin-top:14px;border:1px solid #e2e7e3;border-radius:16px;background:#fff;padding:14px">
+<div style="flex:none;max-width:760px;margin-top:14px;border:1px solid #e2e7e3;border-radius:16px;background:#fff;padding:14px">
   <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:11px">
     <span style="font-size:14px;font-weight:800;color:#22302a">Scorecard</span>
-    <span style="font-size:11px;color:#9aa8a1">Boards × players · {{lbUnit}} · your column highlighted, BEN shown apart</span>
+    <span style="font-size:11px;color:#9aa8a1">Boards &times; players &middot; {{lbUnit}} &middot; your column highlighted, BEN shown apart</span>
   </div>
   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
     <div style="min-width:{{scMinWidth}}px">
@@ -373,7 +429,7 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
         <sc-for list="{{row.cells}}" as="c" hint-placeholder-count="7">
         <span style="{{c.style}}">{{c.text}}</span>
         </sc-for>
-        <button onClick="{{row.onCompare}}" style="width:74px;flex:none;border:1px solid #cfe1de;border-radius:7px;background:#eff7f6;color:#0d707c;font-family:inherit;font-size:10.5px;font-weight:700;cursor:pointer">⇄ Compare</button>
+        <button onClick="{{row.onCompare}}" style="width:74px;flex:none;border:1px solid #cfe1de;border-radius:7px;background:#eff7f6;color:#0d707c;font-family:inherit;font-size:10.5px;font-weight:700;cursor:pointer">&#x21C4; Compare</button>
       </div>
       </sc-for>
       <!-- totals row -->
@@ -392,7 +448,7 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
 <!-- toast -->
 <sc-if value="{{toastShown}}" hint-placeholder-val="{{false}}">
 <div onClick="{{onToastDismiss}}" style="position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:50;max-width:90%;display:flex;align-items:center;gap:9px;padding:11px 15px;border-radius:11px;background:#17211d;color:#eaf2ee;font-size:12.5px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.28);cursor:pointer">
-  <span style="color:{{accent}};font-size:14px">◆</span><span>{{toastText}}</span>
+  <span style="color:{{accent}};font-size:14px">&#x25C6;</span><span>{{toastText}}</span>
 </div>
 </sc-if>
 
@@ -401,9 +457,9 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:980},&quot;viewport&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewport&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;phone&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;viewerRole&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewer role&quot;,&quot;options&quot;:[&quot;participant&quot;,&quot;creator&quot;,&quot;pending-invitee&quot;],&quot;default&quot;:&quot;participant&quot;,&quot;section&quot;:&quot;View&quot;},&quot;phase&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Phase&quot;,&quot;options&quot;:[&quot;playing&quot;,&quot;finished&quot;],&quot;default&quot;:&quot;finished&quot;,&quot;section&quot;:&quot;View&quot;},&quot;scoring&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Scoring&quot;,&quot;options&quot;:[&quot;imps&quot;,&quot;mp&quot;,&quot;total&quot;],&quot;default&quot;:&quot;imps&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;title&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Title&quot;,&quot;default&quot;:&quot;Tuesday Night Teams — Set 12&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;description&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Description&quot;,&quot;default&quot;:&quot;Same deals for everyone, BEN robots in the other three seats, one attempt per board. Your standings unlock once you have finished them all.&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;creatorName&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Creator name&quot;,&quot;default&quot;:&quot;Marta Okonkwo&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;editorBadge&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Creator opened pack editor&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Challenge&quot;},&quot;boardsCount&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Boards&quot;,&quot;min&quot;:2,&quot;max&quot;:8,&quot;default&quot;:8,&quot;section&quot;:&quot;Challenge&quot;},&quot;locked&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Locked (first play)&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Challenge&quot;},&quot;accent&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Accent&quot;,&quot;default&quot;:&quot;#0d707c&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;pageBg&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Backdrop&quot;,&quot;default&quot;:&quot;#dfe4e0&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:980},&quot;viewport&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewport&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;phone&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;viewerRole&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewer role&quot;,&quot;options&quot;:[&quot;participant&quot;,&quot;creator&quot;,&quot;pending-invitee&quot;],&quot;default&quot;:&quot;participant&quot;,&quot;section&quot;:&quot;View&quot;},&quot;phase&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Phase&quot;,&quot;options&quot;:[&quot;playing&quot;,&quot;finished&quot;],&quot;default&quot;:&quot;finished&quot;,&quot;section&quot;:&quot;View&quot;},&quot;scoring&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Scoring&quot;,&quot;options&quot;:[&quot;imps&quot;,&quot;mp&quot;,&quot;total&quot;],&quot;default&quot;:&quot;imps&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;title&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Title&quot;,&quot;default&quot;:&quot;Tuesday Night Teams \u2014 Set 12&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;description&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Description&quot;,&quot;default&quot;:&quot;Same deals for everyone, BEN robots in the other three seats, one attempt per board. Your standings unlock once you have finished them all.&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;creatorName&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Creator name&quot;,&quot;default&quot;:&quot;Marta Okonkwo&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;editorBadge&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Creator opened pack editor&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Challenge&quot;},&quot;boardsCount&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Boards&quot;,&quot;min&quot;:2,&quot;max&quot;:8,&quot;default&quot;:8,&quot;section&quot;:&quot;Challenge&quot;},&quot;locked&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Locked (first play)&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Challenge&quot;},&quot;accent&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Accent&quot;,&quot;default&quot;:&quot;#0d707c&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;pageBg&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Backdrop&quot;,&quot;default&quot;:&quot;#dfe4e0&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
 // ======================================================================
-// Challenge page — spec §6. What an invitee / participant / creator sees for
+// Challenge page \u2014 spec \u00A76. What an invitee / participant / creator sees for
 // ONE challenge: header + participants, a boards grid/list, and a results area
 // that is spoiler-safe while playing and a leaderboard + scorecard once every
 // board is finished (the whole-challenge unlock rule).
@@ -448,14 +504,14 @@ const MATRIX = {
 
 // Your board-by-board raw line (only your own boards are ever shown as results).
 const YOUR_LINE = [
-  { line: "4♠ +1", detail: "You declared · 11 tricks" },
-  { line: "3NT −1", detail: "You declared · vulnerable" },
-  { line: "4♠ =", detail: "You declared · 10 tricks" },
-  { line: "6♥ made", detail: "You declared · small slam" },
-  { line: "3♦ +1", detail: "You declared · part-score" },
-  { line: "Doubled +2", detail: "You defended · set them two" },
-  { line: "3NT =", detail: "You declared · 9 tricks" },
-  { line: "E-W 4♠", detail: "You defended · their game" },
+  { line: "4\u2660 +1", detail: "You declared \u00B7 11 tricks" },
+  { line: "3NT \u22121", detail: "You declared \u00B7 vulnerable" },
+  { line: "4\u2660 =", detail: "You declared \u00B7 10 tricks" },
+  { line: "6\u2665 made", detail: "You declared \u00B7 small slam" },
+  { line: "3\u2666 +1", detail: "You declared \u00B7 part-score" },
+  { line: "Doubled +2", detail: "You defended \u00B7 set them two" },
+  { line: "3NT =", detail: "You declared \u00B7 9 tricks" },
+  { line: "E-W 4\u2660", detail: "You defended \u00B7 their game" },
 ];
 
 // Per-board human seat: creator may set it, default South. Two overrides so the
@@ -519,6 +575,8 @@ class Component extends DCLogic {
     invite: null,        // pending-invitee response: null | "accepted" | "declined"
     toast: null,
     lastRole: null,      // reset invite response when the role prop changes
+    tab: null,           // active tab (null = follow the phase-driven default): "boards" | "results"
+    lastDefaultTab: null,// tracks the default so the tab re-syncs when the owner flips phase
   };
 
   componentDidMount() {
@@ -534,7 +592,7 @@ class Component extends DCLogic {
   }
 
   // A paused, deal-only session so SeatDiagram can show your real hand for a
-  // completed board (you have already seen it — no spoiler).
+  // completed board (you have already seen it \u2014 no spoiler).
   seatPropsFor(no) {
     if (!window.Bridge) return null;
     const seat = SEAT_MAP[no] || "S";
@@ -553,7 +611,7 @@ class Component extends DCLogic {
     const pageBg = p.pageBg || "#dfe4e0";
     const scoring = ["imps", "mp", "total"].indexOf(p.scoring) >= 0 ? p.scoring : "imps";
     const N = Math.max(2, Math.min(8, Math.round(Number(p.boardsCount ?? 8) || 8)));
-    const title = p.title || "Tuesday Night Teams — Set 12";
+    const title = p.title || "Tuesday Night Teams \u2014 Set 12";
     const description = p.description ||
       "Same deals for everyone, BEN robots in the other three seats, one attempt per board.";
     const locked = p.locked !== false;
@@ -587,6 +645,19 @@ class Component extends DCLogic {
     const yourDone = phase === "finished" ? N : (pending || declined ? 0 : justJoined ? 0 : Math.min(3, N - 1));
     const inProgress = (phase === "playing" && !justJoined && !pending && !declined && yourDone < N) ? yourDone + 1 : null;
 
+    // ---- tabs: Boards | Results ----
+    // Results holds the leaderboard + expandable scorecard (or the spoiler-safe
+    // locked teaser while playing). Default tab = Boards while playing, Results
+    // once the viewer has finished (their first question is "how did I do?").
+    const showLeaderboard = phase === "finished" && !pending && !declined;
+    const defaultTab = showLeaderboard ? "results" : "boards";
+    let tab = this.state.tab;
+    if (this.state.lastDefaultTab !== defaultTab) { tab = defaultTab; this._tabSync = defaultTab; }
+    tab = (tab === "boards" || tab === "results") ? tab : defaultTab;
+    const boardsTabActive = tab === "boards";
+    const resultsTabActive = tab === "results";
+    const goResults = () => this.setState({ tab: "results", lastDefaultTab: defaultTab });
+
     const v = {
       accent, ready: this.state.ready,
       outerStyle: "height:100%;min-height:100%;background:" + pageBg + ";display:flex;justify-content:center;overflow-y:auto;overflow-x:hidden;font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -608,8 +679,8 @@ class Component extends DCLogic {
     v.bannerAvInit = PEOPLE.Marta.initials;
     v.bannerAvColor = PEOPLE.Marta.color;
     v.bannerTitle = (p.creatorName || "Marta Okonkwo") + " invited you to this challenge";
-    v.bannerBody = "Accept to play the boards; decline and it just leaves your list. You can join even after others have started — invites never close.";
-    v.onAccept = () => { this.setState({ invite: "accepted", lastRole: role }); this.flash("Joined — you're in the field now."); };
+    v.bannerBody = "Accept to play the boards; decline and it just leaves your list. You can join even after others have started \u2014 invites never close.";
+    v.onAccept = () => { this.setState({ invite: "accepted", lastRole: role }); this.flash("Joined \u2014 you're in the field now."); };
     v.onDecline = () => { this.setState({ invite: "declined", lastRole: role }); };
     v.showDeclined = declined;
     v.onReopen = () => this.setState({ invite: null, lastRole: role });
@@ -630,8 +701,8 @@ class Component extends DCLogic {
     v.lockHint = "Boards, seats and control overrides locked when the first player started. Invites stay open.";
     v.creatorNoteShown = isCreator;
     v.creatorNote = locked
-      ? "Boards are locked since first play — but you can still invite more people any time."
-      : "No one has started yet — you can still re-roll boards, change seats and controls.";
+      ? "Boards are locked since first play \u2014 but you can still invite more people any time."
+      : "No one has started yet \u2014 you can still re-roll boards, change seats and controls.";
 
     // ---- participants strip ----
     // Joined = accepted players. "You" appear once you are a real participant.
@@ -647,7 +718,7 @@ class Component extends DCLogic {
         textColor: isYou ? "#0d707c" : "#3f4f48", weight: isYou ? 800 : 600,
       };
     }).filter(Boolean);
-    // Nadia is accepted but still playing — she shows in the strip too.
+    // Nadia is accepted but still playing \u2014 she shows in the strip too.
     v.joined.push({ initials: NADIA.initials, color: NADIA.color, name: "Nadia", editor: false,
       bg: "#fff", line: "#e8ece9", textColor: "#3f4f48", weight: 600 });
 
@@ -660,8 +731,8 @@ class Component extends DCLogic {
 
     // ================= BOARDS =================
     v.boardsSubLabel = phase === "finished"
-      ? "All played · tap any for the deal & your hand"
-      : "Play in any order — sequential is only a suggestion";
+      ? "All played \u00B7 tap any for the deal & your hand"
+      : "Play in any order \u2014 sequential is only a suggestion";
     v.onGrid = () => this.setState({ view: "grid" });
     v.onList = () => this.setState({ view: "list" });
     const grid = this.state.view === "grid";
@@ -673,19 +744,19 @@ class Component extends DCLogic {
 
     // sequential CTA
     let cta = null;
-    if (pending) cta = { title: "You're invited", sub: "Accept above to start playing — the first board opens at the table.", btn: null, tone: "muted" };
+    if (pending) cta = { title: "You're invited", sub: "Accept above to start playing \u2014 the first board opens at the table.", btn: null, tone: "muted" };
     else if (declined) cta = { title: "Invite declined", sub: "Reconsider above to join and play these boards.", btn: null, tone: "muted" };
     else if (phase === "finished") cta = {
       title: "You finished all " + N + " boards", sub: "Your results are in. Replay any board for unscored practice below.",
-      btnLabel: "↻ Practice a board", tone: "done", on: () => this.flash("Opens a fresh, unscored copy at a normal table."),
+      btnLabel: "\u21BB Practice a board", tone: "done", on: () => this.flash("Opens a fresh, unscored copy at a normal table."),
     };
     else if (inProgress) cta = {
-      title: "Resume Board " + inProgress, sub: "One attempt — you can leave and come back; it never restarts.",
-      btnLabel: "Resume Board " + inProgress + " →", tone: "go", on: () => this.flash("Resumes Board " + inProgress + " — BEN warming up…"),
+      title: "Resume Board " + inProgress, sub: "One attempt \u2014 you can leave and come back; it never restarts.",
+      btnLabel: "Resume Board " + inProgress + " \u2192", tone: "go", on: () => this.flash("Resumes Board " + inProgress + " \u2014 BEN warming up\u2026"),
     };
     else cta = {
       title: "Play next: Board " + (yourDone + 1), sub: "Any board below is open too (free order). BEN sits the other three seats.",
-      btnLabel: "Play Board " + (yourDone + 1) + " →", tone: "go", on: () => this.flash("Opens Board " + (yourDone + 1) + " at the table — BEN warming up…"),
+      btnLabel: "Play Board " + (yourDone + 1) + " \u2192", tone: "go", on: () => this.flash("Opens Board " + (yourDone + 1) + " at the table \u2014 BEN warming up\u2026"),
     };
     v.ctaShown = true;
     v.ctaTitle = cta.title; v.ctaSub = cta.sub;
@@ -718,7 +789,7 @@ class Component extends DCLogic {
         noBg: now ? accent : done ? "#e9f1ee" : "#f1f4f2",
         noColor: now ? "#fff" : done ? "#0d707c" : "#5a6a63",
         onToggle: () => this.setState((s) => ({ openBoard: s.openBoard === no ? null : no })),
-        detailLabel: this.state.openBoard === no ? "Hide deal ▲" : "Deal & seat ▾",
+        detailLabel: this.state.openBoard === no ? "Hide deal \u25B2" : "Deal & seat \u25BE",
       };
       // status pill
       if (done) { tile.pillLabel = phase === "finished" ? "Complete" : "Scored"; tile.pillBg = "#e9f1ee"; tile.pillColor = "#2f8f57"; }
@@ -726,7 +797,7 @@ class Component extends DCLogic {
       else { tile.pillLabel = "Not started"; tile.pillBg = "#f1f4f2"; tile.pillColor = "#8b9a93"; }
 
       // result rendering
-      const yl = YOUR_LINE[b] || { line: "—", detail: "" };
+      const yl = YOUR_LINE[b] || { line: "\u2014", detail: "" };
       const raw = MATRIX.You[b];
       const rawStr = (raw >= 0 ? "+" : "") + raw + " N-S";
       tile.result = { line: yl.line, score: rawStr, detail: yl.detail, layout: "wide", showNext: false };
@@ -744,7 +815,7 @@ class Component extends DCLogic {
         tile.chScore = fmtCell(scoring, cv);
         tile.chColor = valColor(scoring, cv);
         tile.chBg = "#fbfcfb"; tile.chLine = "#e4e9e5";
-        tile.onCompare = () => this.flash("Compare Board " + no + " — your line vs BEN and the field.");
+        tile.onCompare = () => this.flash("Compare Board " + no + " \u2014 your line vs BEN and the field.");
         tile.onReplay = () => this.flash("Practice copy of Board " + no + " (unscored) opens at a normal table.");
       } else if (done) {
         tile.showScoredLocked = true;
@@ -753,14 +824,14 @@ class Component extends DCLogic {
       // play/resume row
       if (now) {
         tile.showPlayRow = true; tile.showNextTag = false;
-        tile.playLabel = "Resume →";
-        tile.onPlay = () => this.flash("Resumes Board " + no + " — BEN warming up…");
+        tile.playLabel = "Resume \u2192";
+        tile.onPlay = () => this.flash("Resumes Board " + no + " \u2014 BEN warming up\u2026");
         tile.playBtnStyle = "height:30px;padding:0 13px;border:0;border-radius:8px;background:" + accent + ";color:#fff;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer";
       } else if (later) {
         tile.showPlayRow = true; tile.showNextTag = nextToStart && canPlay; tile.nextTagColor = accent;
         if (canPlay) {
-          tile.playLabel = "Play →";
-          tile.onPlay = () => this.flash("Opens Board " + no + " at the table (free order) — BEN warming up…");
+          tile.playLabel = "Play \u2192";
+          tile.onPlay = () => this.flash("Opens Board " + no + " at the table (free order) \u2014 BEN warming up\u2026");
           tile.playBtnStyle = "height:30px;padding:0 13px;border:1px solid " + (nextToStart ? accent : "#dbe4e0") + ";border-radius:8px;background:" + (nextToStart ? "#f0faf9" : "#fff") + ";color:" + (nextToStart ? "#0c5e56" : "#4a5c55") + ";font-family:inherit;font-size:12px;font-weight:700;cursor:pointer";
         } else {
           tile.playLabel = pending ? "Accept to play" : "Reconsider to play";
@@ -777,6 +848,7 @@ class Component extends DCLogic {
     // ---- expanded board detail ----
     const ob = this.state.openBoard;
     v.detailShown = ob != null && ob <= N;
+    v.detailSeatShown = false; v.detailCompareShown = false; // defaults so bindings always resolve
     if (v.detailShown) {
       const dealer = SEATS4[(ob - 1) % 4];
       const rawVul = VUL_RAW[(ob - 1) % 4];
@@ -788,26 +860,32 @@ class Component extends DCLogic {
       v.detailSeatShown = doneBoard && this.state.ready;
       v.detailSeat = doneBoard ? this.seatPropsFor(ob) : null;
       v.detailNote = doneBoard
-        ? "You sat " + SEAT_NAME[seat] + " here. One attempt — this line is frozen. The other three hands stay hidden until the whole challenge is finished."
-        : "You'll sit " + SEAT_NAME[seat] + " on Board " + ob + ". Dealer " + SEAT_NAME[dealer] + ", " + VUL_DISP[rawVul] + ". The hands stay hidden until you play — one attempt, resume anytime.";
+        ? "You sat " + SEAT_NAME[seat] + " here. One attempt \u2014 this line is frozen. The other three hands stay hidden until the whole challenge is finished."
+        : "You'll sit " + SEAT_NAME[seat] + " on Board " + ob + ". Dealer " + SEAT_NAME[dealer] + ", " + VUL_DISP[rawVul] + ". The hands stay hidden until you play \u2014 one attempt, resume anytime.";
       v.detailCompareShown = doneBoard && phase === "finished";
-      v.onDetailCompare = () => this.flash("Compare Board " + ob + " — your line vs BEN and the field.");
+      v.onDetailCompare = () => this.flash("Compare Board " + ob + " \u2014 your line vs BEN and the field.");
       v.onCloseDetail = () => this.setState({ openBoard: null });
     }
 
-    // ================= RESULTS =================
-    const showLeaderboard = phase === "finished" && !pending && !declined;
-    v.lockedShown = !showLeaderboard;
-    v.lbShown = showLeaderboard;
+    // ================= RESULTS (their own tab) =================
+    // Visibility is tab-aware; the DATA is computed whenever the phase allows it
+    // so the header standings strip can read the leaderboard even from Boards.
+    v.lockedShown = resultsTabActive && !showLeaderboard;
+    v.lbShown = resultsTabActive && showLeaderboard;
+    // defaults so every conditional binding + list resolves in any state
+    v.progressShown = false; v.yourResultsShown = false; v.yourResults = [];
+    v.lbRows = []; v.stripTop = []; v.stripYouShown = false;
+    v.stripYouRank = ""; v.stripYouTotal = ""; v.stripYouColor = NEU; v.benTotal = "";
+    v.scHeaders = []; v.scRows = []; v.scTotals = []; v.scMinWidth = 0;
 
-    // locked / spoiler-safe panel
-    if (v.lockedShown) {
+    // locked / spoiler-safe panel (the Results tab's teaser state while playing)
+    if (!showLeaderboard) {
       if (pending || declined) {
         v.lockedTitle = "Standings are hidden";
         v.lockedSub = "Join and finish every board to unlock them.";
       } else {
         v.lockedTitle = "Results are locked";
-        v.lockedSub = "Whole-challenge unlock — finish all " + N + " boards.";
+        v.lockedSub = "Whole-challenge unlock \u2014 finish all " + N + " boards.";
       }
       v.progressShown = canPlay;
       const pct = Math.round((yourDone / N) * 100);
@@ -815,21 +893,21 @@ class Component extends DCLogic {
       v.ringStyle = "conic-gradient(" + accent + " " + pct + "%, #e4e9e5 0)";
       v.progressLabel = yourDone === 0 ? "Not started yet" : yourDone + " of " + N + " boards finished";
       v.progressHint = "The leaderboard, scorecard and comparisons all open together the moment you complete the set.";
-      // your own boards so far — spoiler-safe (no field, no ranks)
+      // your own boards so far \u2014 spoiler-safe (no field, no ranks)
       v.yourResultsShown = canPlay && yourDone > 0;
       v.yourResults = [];
       for (let no = 1; no <= yourDone; no++) {
         const raw = MATRIX.You[no - 1];
         v.yourResults.push({
-          no, line: (YOUR_LINE[no - 1] || {}).line || "—",
+          no, line: (YOUR_LINE[no - 1] || {}).line || "\u2014",
           score: (raw >= 0 ? "+" : "") + raw, scoreColor: raw >= 0 ? POS : NEG,
         });
       }
-      v.yourResultsFoot = "You can see your own contracts and raw scores — everyone's IMPs, matchpoints and ranks stay sealed until you finish.";
+      v.yourResultsFoot = "You can see your own contracts and raw scores \u2014 everyone's IMPs, matchpoints and ranks stay sealed until you finish.";
     }
 
-    // leaderboard
-    if (v.lbShown) {
+    // leaderboard + header standings strip (data computed whenever finished)
+    if (showLeaderboard) {
       v.lbUnit = { imps: "IMPs vs datum", mp: "Matchpoints %", total: "Total points" }[scoring];
       const vals = FIELD.map((k) => ({ key: k, v: totalValue(scoring, N, k) }));
       const rows = vals.slice().sort((a, b) => b.v - a.v);
@@ -860,9 +938,28 @@ class Component extends DCLogic {
         };
       });
       v.benTotal = fmtTotal(scoring, benV);
-      v.lbStillPlaying = "Still playing: " + v.stillPlaying + " (incl. Nadia El-Amin) — they join the ranks when they finish. "
+
+      // compact standings strip: top-3 + your rank (if outside top-3) + BEN chip
+      v.stripTop = rows.slice(0, 3).map((r) => {
+        const isYou = r.key === "You";
+        return {
+          rank: r.rank, rankColor: r.rank <= 3 ? "#22302a" : "#8b9a93",
+          initials: PEOPLE[r.key].initials, avColor: isYou ? accent : PEOPLE[r.key].color,
+          name: isYou ? "You" : SHORT[r.key], nameWeight: isYou ? 800 : 600,
+          total: fmtTotal(scoring, r.v), totalColor: valColor(scoring, r.v),
+          style: "flex:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:9px;border:1px solid "
+            + (isYou ? "#bfe0db" : "#eef2ef") + ";background:" + (isYou ? "#eff7f6" : "#fbfcfb"),
+        };
+      });
+      const youRow = rows.find((r) => r.key === "You");
+      v.stripYouShown = !!youRow && youRow.rank > 3;
+      v.stripYouRank = youRow ? youRow.rank : "";
+      v.stripYouTotal = youRow ? fmtTotal(scoring, youRow.v) : "";
+      v.stripYouColor = youRow ? valColor(scoring, youRow.v) : NEU;
+
+      v.lbStillPlaying = "Still playing: " + v.stillPlaying + " (incl. Nadia El-Amin) \u2014 they join the ranks when they finish. "
         + PENDING.length + " invites pending.";
-      v.scorecardBtnLabel = this.state.scorecard ? "Hide scorecard ▲" : "Open scorecard (boards × players) ▾";
+      v.scorecardBtnLabel = this.state.scorecard ? "Hide scorecard \u25B2" : "Open scorecard (boards \u00D7 players) \u25BE";
       v.onToggleScorecard = () => this.setState((s) => ({ scorecard: !s.scorecard }));
     }
 
@@ -891,12 +988,12 @@ class Component extends DCLogic {
       for (let no = 1; no <= N; no++) {
         const b = no - 1;
         v.scRows.push({
-          no, meta: SEATS4[(no - 1) % 4] + " · " + (VUL_RAW[(no - 1) % 4] === "None" ? "—" : VUL_RAW[(no - 1) % 4]),
+          no, meta: SEATS4[(no - 1) % 4] + " \u00B7 " + (VUL_RAW[(no - 1) % 4] === "None" ? "\u2014" : VUL_RAW[(no - 1) % 4]),
           cells: cols.map((k) => {
             const cv = cellValue(scoring, N, k, b);
             return { text: fmtCell(scoring, cv), style: cellStyle(k, valColor(scoring, cv)) };
           }),
-          onCompare: () => this.flash("Compare Board " + no + " — synced boards: your line vs BEN and the field."),
+          onCompare: () => this.flash("Compare Board " + no + " \u2014 synced boards: your line vs BEN and the field."),
         });
       }
       v.scTotals = cols.map((k) => {
@@ -911,16 +1008,51 @@ class Component extends DCLogic {
       });
     }
 
-    // body layout
+    // ---- standings strip + tab bar ----
+    v.stripShown = showLeaderboard;
+    v.onStripToResults = goResults;
+    v.tabs = [
+      { key: "boards", label: "Boards", chipShown: true,
+        chipText: (canPlay && phase !== "finished") ? (yourDone + "/" + N) : (N + " boards"),
+        lockShown: false },
+      { key: "results", label: "Results", chipShown: false, chipText: "",
+        lockShown: !showLeaderboard },
+    ].map((t) => {
+      const active = tab === t.key;
+      return {
+        label: t.label, chipShown: t.chipShown, chipText: t.chipText, lockShown: t.lockShown,
+        on: () => this.setState({ tab: t.key, lastDefaultTab: defaultTab }),
+        style: "appearance:none;background:transparent;border:0;border-bottom:2px solid " + (active ? accent : "transparent")
+          + ";margin-bottom:-1px;padding:0 2px 11px;font-family:inherit;font-size:14px;font-weight:" + (active ? 800 : 600)
+          + ";color:" + (active ? "#16201c" : "#8b9a93") + ";cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap",
+        chipStyle: "display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 6px;border-radius:9px;background:"
+          + (active ? "#e9f1ee" : "#eef2f0") + ";color:" + (active ? "#0d707c" : "#93a199") + ";font-size:10px;font-weight:800",
+      };
+    });
+    v.tabBarStyle = "flex:none;display:flex;gap:20px;align-items:flex-end;border-bottom:1px solid #e2e7e3;margin-bottom:16px"
+      + (phone ? ";position:sticky;top:0;z-index:20;background:#f4f6f4;margin-left:-13px;margin-right:-13px;padding:8px 13px 0" : "");
+
+    // ---- detail aside (Boards tab keeps a two-column feel on desktop) ----
+    v.boardsTabShown = boardsTabActive;
+    v.detailPlaceholderShown = boardsTabActive && !phone && !v.detailShown;
+    v.asideShown = boardsTabActive && (v.detailShown || v.detailPlaceholderShown);
+
+    // body layout. Columns are shown/hidden by the active tab: Boards shows the
+    // boards + detail aside; Results shows the leaderboard/scorecard column.
     v.bodyStyle = phone
       ? "display:flex;flex-direction:column;gap:14px"
       : "display:flex;flex-direction:row;gap:18px;align-items:flex-start";
-    v.boardsColStyle = phone
+    v.boardsColStyle = (phone
       ? "width:100%;display:flex;flex-direction:column;gap:11px"
-      : "flex:1.35;min-width:0;display:flex;flex-direction:column;gap:11px";
-    v.resultsColStyle = phone
+      : "flex:1.35;min-width:0;display:flex;flex-direction:column;gap:11px")
+      + (boardsTabActive ? "" : ";display:none");
+    v.asideColStyle = phone
       ? "width:100%;display:flex;flex-direction:column;gap:12px"
       : "flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;position:sticky;top:16px";
+    v.resultsColStyle = (phone
+      ? "width:100%;display:flex;flex-direction:column;gap:12px"
+      : "flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;max-width:760px")
+      + (resultsTabActive ? "" : ";display:none");
 
     // toast
     v.toastShown = !!this.state.toast;
@@ -929,6 +1061,8 @@ class Component extends DCLogic {
 
     // persist role for the invite-reset guard
     if (this._roleReset) { this._roleReset = false; setTimeout(() => this.setState({ lastRole: role }), 0); }
+    // re-sync the active tab when the phase-driven default flips (owner prop edit)
+    if (this._tabSync != null) { const dt = this._tabSync; this._tabSync = null; setTimeout(() => this.setState({ tab: dt, lastDefaultTab: dt }), 0); }
 
     return v;
 
