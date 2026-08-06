@@ -7,7 +7,7 @@
 // screen for it; PlayTable threads its lines/actions through. Nothing here
 // decides content — that stays with the host.
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 const DEFAULT_ACCENT = "#384bb3";
 
@@ -31,6 +31,13 @@ export interface CoachPanelProps {
   lines?: readonly CoachLine[];
   /** Footer action buttons. Absent/empty → no footer. */
   actions?: readonly CoachAction[];
+  /**
+   * A host-supplied body. When present it replaces `lines` (and the empty
+   * state) wholesale — the shell still draws its header and reserves the
+   * band; the host draws everything inside. Content stays with the host,
+   * exactly as this shell promises.
+   */
+  content?: ReactNode;
 }
 
 const shell: CSSProperties = {
@@ -49,6 +56,7 @@ export function CoachPanel({
   accent = DEFAULT_ACCENT,
   lines,
   actions,
+  content,
 }: Readonly<CoachPanelProps>) {
   const body: { text: string; color: string }[] = (lines && lines.length ? lines : []).map((l) =>
     typeof l === "string"
@@ -68,17 +76,22 @@ export function CoachPanel({
         <span style={{ fontSize: 11, letterSpacing: ".09em", textTransform: "uppercase", color: "#6b7570" }}>{status}</span>
       </div>
 
-      {/* Body: the handed lines, or the honest empty-state line. */}
+      {/* Body: the host's content when handed one, else the handed lines, else
+          the honest empty-state line. */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
-        {body.map((l, i) => (
-          <div key={i} style={{ fontSize: 14, lineHeight: 1.45, color: l.color }}>
-            {l.text}
-          </div>
-        ))}
-        {empty && (
-          <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#6b7570" }}>
-            Coach commentary appears here as the deal goes on.
-          </div>
+        {content ?? (
+          <>
+            {body.map((l, i) => (
+              <div key={i} style={{ fontSize: 14, lineHeight: 1.45, color: l.color }}>
+                {l.text}
+              </div>
+            ))}
+            {empty && (
+              <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#6b7570" }}>
+                Coach commentary appears here as the deal goes on.
+              </div>
+            )}
+          </>
         )}
       </div>
 

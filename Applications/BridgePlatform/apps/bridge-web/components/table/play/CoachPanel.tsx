@@ -684,46 +684,8 @@ export function CoachSheet({
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "13px 14px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
-          {/* ── NOW: the position, in prose and numbers ── */}
-          {view === "now" && (data.looking || !!data.facts?.length) && (
-            <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0", borderRadius: 11, padding: "10px 12px" }}>
-              <Label color={FELT_DEEP}>What I'm looking at</Label>
-              {data.looking && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45 }}>{data.looking}</p>}
-              {!!data.facts?.length && (
-                <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: data.looking ? 9 : 0 }}>
-                  {data.facts.map((f, i) => (
-                    <span
-                      key={`${f.label}|${f.value}`}
-                      style={{
-                        fontSize: 11.5, fontWeight: 700, padding: "4px 9px", borderRadius: 20,
-                        background: i === 0 ? FELT_SOFT : "#eeece0", color: i === 0 ? FELT_DEEP : "#5b5648",
-                        fontVariantNumeric: "tabular-nums",
-                      }}
-                    >
-                      <RedSuits>{f.value}</RedSuits>
-                      {f.label && <span style={{ fontWeight: 500, opacity: 0.75 }}> {f.label}</span>}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── NOW: the reasoning scaffold, shown without being asked ── */}
-          {view === "now" && data.aid && <ThinkCard aid={data.aid} />}
-
-          {/* ── NOW: the advice, before the card is played ── */}
-          {view === "now" && data.ask && data.ask.phase === "play" && data.ask.active && (
-            <WhatShouldIPlay sessionId={data.ask.sessionId} />
-          )}
-
-          {/* ── NOW: the chat — anything about the position ── */}
-          {view === "now" && data.ask && (
-            <div>
-              <Label>Ask the coach</Label>
-              <CoachChat sessionId={data.ask.sessionId} />
-            </div>
-          )}
+          {/* ── NOW: the default screen, shared with the table's coach band ── */}
+          {view === "now" && <CoachNow data={data} />}
 
           {/* ── HISTORY: the board so far, in sections ── */}
           {view === "history" &&
@@ -921,6 +883,96 @@ function RedSuits({ children }: Readonly<{ children: string }>) {
         ),
       )}
     </>
+  );
+}
+
+/**
+ * The Now screen's content — the position, the scaffold, the advice before
+ * the card is played, the chat. Exported standalone because it is also the
+ * DEFAULT SCREEN of the new table's coach band (owner direction 2026-08-05):
+ * the band shows this, and the full original sheet is one expand away.
+ */
+export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* the position, in prose and numbers */}
+      {(data.looking || !!data.facts?.length) && (
+        <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0", borderRadius: 11, padding: "10px 12px" }}>
+          <Label color={FELT_DEEP}>What I'm looking at</Label>
+          {data.looking && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45 }}>{data.looking}</p>}
+          {!!data.facts?.length && (
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: data.looking ? 9 : 0 }}>
+              {data.facts.map((f, i) => (
+                <span
+                  key={`${f.label}|${f.value}`}
+                  style={{
+                    fontSize: 11.5, fontWeight: 700, padding: "4px 9px", borderRadius: 20,
+                    background: i === 0 ? FELT_SOFT : "#eeece0", color: i === 0 ? FELT_DEEP : "#5b5648",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  <RedSuits>{f.value}</RedSuits>
+                  {f.label && <span style={{ fontWeight: 500, opacity: 0.75 }}> {f.label}</span>}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* the reasoning scaffold, shown without being asked */}
+      {data.aid && <ThinkCard aid={data.aid} />}
+
+      {/* the advice, before the card is played */}
+      {data.ask && data.ask.phase === "play" && data.ask.active && (
+        <WhatShouldIPlay sessionId={data.ask.sessionId} />
+      )}
+
+      {/* the chat — anything about the position */}
+      {data.ask && (
+        <div>
+          <Label>Ask the coach</Label>
+          <CoachChat sessionId={data.ask.sessionId} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The original coach, inside the NEW table's reserved coach band (owner
+ * direction 2026-08-05: "the panel displays the default screen; an icon
+ * expands the entire original coach panel"). Inline it shows CoachNow; the
+ * expand button opens the full original CoachSheet — the felt header, the
+ * Now/History tabs, the bidding diagram, every trick, the per-event Q&A —
+ * as an overlay above the whole table.
+ */
+export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: "relative", minHeight: "100%" }}>
+      <button
+        type="button"
+        aria-label="Open the full coach"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+        style={{
+          position: "absolute", top: 0, right: 0, zIndex: 2,
+          width: 30, height: 30, borderRadius: 8,
+          background: FELT_MID, borderWidth: 0, color: "#fff",
+          fontSize: 14, lineHeight: 1, cursor: "pointer",
+          boxShadow: "0 1px 3px rgba(0,0,0,.25)",
+        }}
+      >
+        ⤢
+      </button>
+      <CoachNow data={data} />
+      {open && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 900 }}>
+          <CoachSheet data={data} presence="request" onClose={() => setOpen(false)} />
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -247,6 +247,8 @@ export interface PlayTableProps {
   coachLines?: readonly CoachLine[];
   /** Action buttons in the coach panel's footer. */
   coachActions?: readonly CoachAction[];
+  /** A host-supplied coach body; when present it replaces lines/actions. */
+  coachContent?: ReactNode;
 }
 
 export function PlayTable({
@@ -279,6 +281,7 @@ export function PlayTable({
   coachTitle = "Coach",
   coachLines,
   coachActions,
+  coachContent,
 }: Readonly<PlayTableProps>) {
   // One skin resolve per render dresses every tier. `tok` carries the colour
   // tokens; the five layout knobs steer fan / columns / frame below.
@@ -1091,7 +1094,7 @@ export function PlayTable({
           <div style={{ flex: coachSharePct, minHeight: 0, display: "flex", background: "#fff", borderTop: "1px solid #d8ded9" }}>
             {/* Hidden coach keeps its reserved band as plain white space. */}
             {coachOn && (
-              <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} />
+              <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} content={coachContent} />
             )}
           </div>
         )}

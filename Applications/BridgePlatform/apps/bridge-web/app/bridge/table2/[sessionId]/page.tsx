@@ -25,7 +25,9 @@ import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { lookingAt } from "@/lib/coach/looking";
 import { thinkAid } from "@/lib/coach/think";
+import { bidMeaningReader } from "@/lib/bidMeanings";
 import type { CoachData } from "@/components/table/play/coachContent";
+import { CoachDock, type CoachPanelData } from "@/components/table/play/CoachPanel";
 import { patchAppearanceAction } from "./actions";
 
 // COACH (phase-2 transplant, owner decision 2 — "his engine, our shell"). His
@@ -130,12 +132,68 @@ export default async function PlayTablePage({
   // client-side. dealer/vul mirror what the table itself is handed. While parked,
   // `showCoach` is false so this expensive build is skipped entirely.
   const coachState = { ...state, dealer: record.board.dealer, vul: state.vul };
+  const coachLooking = showCoach ? lookingAt(coachState, mySeat) : null;
+  const coachAid = showCoach ? thinkAid(coachState, mySeat) : null;
   const coachData: CoachData | undefined = showCoach
     ? {
         phase: state.phase === "auction" ? "auction" : state.phase === "play" ? "play" : "other",
         active: myTurn,
-        looking: lookingAt(coachState, mySeat),
-        think: thinkAid(coachState, mySeat),
+        looking: coachLooking,
+        think: coachAid,
+      }
+    : undefined;
+
+  // THE ORIGINAL COACH, WHOLE (owner direction 2026-08-05: "bring everything
+  // from my original coach back"). The coach band's default screen is the Quan
+  // panel's Now view — position, scaffold, advice-before-the-card, chat — and
+  // the expand icon opens the entire original sheet: Now/History tabs, the
+  // auction as a bidding diagram with each call's replayed meaning, every
+  // trick kept, and per-event Q&A. Meanings are replayed from the compiled KB
+  // exactly as the old page did — index-aligned with the auction, a lookup.
+  const coachMeanings = showCoach
+    ? bidMeaningReader({ compiled: await sessionService().compiledFor(record) }).forAuction({
+        boardRef: record.board.name,
+        dealer: record.board.dealer,
+        vul: state.vul,
+        hands: {
+          N: originalHand(state, "N"),
+          E: originalHand(state, "E"),
+          S: originalHand(state, "S"),
+          W: originalHand(state, "W"),
+        },
+        auction: state.auction,
+      })
+    : [];
+  const coachGroups = coachLooking?.eventGroups.map((g) => ({
+    ...g,
+    events: g.events.map((e) => {
+      const m =
+        e.kind === "call" && e.auctionIndex !== undefined ? coachMeanings[e.auctionIndex] : undefined;
+      return m ? { ...e, detail: `${m.label}${m.shows ? ` — ${m.shows}` : ""}` } : e;
+    }),
+  }));
+  const quanCoach: CoachPanelData | undefined = showCoach
+    ? {
+        title: "Coach",
+        ...(coachLooking ? { looking: coachLooking.looking, facts: coachLooking.facts } : {}),
+        ...(coachGroups?.length ? { eventGroups: coachGroups } : {}),
+        ...(coachAid ? { aid: coachAid } : {}),
+        ...(mySeat
+          ? {
+              ask: {
+                sessionId,
+                active: (state.phase === "play" || state.phase === "auction") && myTurn,
+                phase: (state.phase === "play"
+                  ? "play"
+                  : state.phase === "auction"
+                    ? "auction"
+                    : "other") as "play" | "auction" | "other",
+              },
+            }
+          : {}),
+        placeholder: mySeat
+          ? "Your coach's notes for this board will appear here."
+          : "Take a seat to be coached — right now you're watching.",
       }
     : undefined;
 
@@ -383,6 +441,7 @@ export default async function PlayTablePage({
             appearance={resolvedAppearance}
             showCoach={showCoach}
             coach={coachData}
+            {...(quanCoach ? { coachContent: <CoachDock data={quanCoach} /> } : {})}
           />
         )}
       </div>
