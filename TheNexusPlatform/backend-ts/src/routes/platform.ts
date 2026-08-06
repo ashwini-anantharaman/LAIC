@@ -2412,6 +2412,14 @@ async function _requireNexusArea(user: PlatformUser, area: NexusArea, level: "vi
   throw new HttpError(403, "Nexus operator access required");
 }
 
+/**
+ * The org's Super Admin — its owner. Deliberately org-LEVEL only (`!m.program_id`):
+ * ownership is a property of the organization, never of one program inside it.
+ */
+function _isOrgOwner(user: PlatformUser, orgId: string): boolean {
+  return user.memberships.some((m) => m.org_id === orgId && m.role === "owner" && !m.program_id);
+}
+
 function _canManageMembers(user: PlatformUser, orgId: string, programId: string | null): boolean {
   return user.memberships.some(
     (m) =>
@@ -2431,18 +2439,18 @@ platformRouter.delete("/members/:member_id", async (c) => {
   const row = await db.getMembership(memberId);
   if (!row) throw new HttpError(404, "Member not found");
   if (row.role === "owner") throw new HttpError(400, "The organization owner cannot be removed");
-  if (row.program_id) {
+  if (row.role === "administrator") {
+    // Super Admin only: only the org owner may remove an administrator — a
+    // regular admin cannot remove a peer, at EITHER altitude. Previously this
+    // rule guarded org-level admins only, so inside a program (e.g. the Club 1
+    // partner view) one administrator could remove another via
+    // _canManageMembers, which counts a program-scoped administrator.
+    if (!_isOrgOwner(user, row.org_id)) {
+      throw new HttpError(403, "Only the Super Admin can remove an administrator");
+    }
+  } else if (row.program_id) {
     if (!_canManageMembers(user, row.org_id, row.program_id)) {
       throw new HttpError(403, "Program admin access required");
-    }
-  } else if (row.role === "administrator") {
-    // Super Admin only: only the org owner may remove another administrator —
-    // a regular admin (or a custom Team·edit role) cannot remove admins.
-    const isOwner = user.memberships.some(
-      (m) => m.org_id === row.org_id && m.role === "owner" && !m.program_id,
-    );
-    if (!isOwner) {
-      throw new HttpError(403, "Only the organization owner (Super Admin) can remove an administrator");
     }
   } else {
     await _requireOrgArea(user, row.org_id, "team", "edit");

@@ -1011,6 +1011,11 @@ export async function updateMemberAccess(memberId: string, access: string): Prom
   );
 }
 
+export async function updateMemberRole(memberId: string, role: string): Promise<Row> {
+  if (usePg()) return tpg.updateMemberRole(memberId, role);
+  throw new HttpError(400, "Changing a membership role requires the database backend");
+}
+
 /** Remove a membership. PG mode only in practice (Slice-11-era feature). */
 export async function deleteMembership(memberId: string): Promise<boolean> {
   if (usePg()) return tpg.deleteMembership(memberId);

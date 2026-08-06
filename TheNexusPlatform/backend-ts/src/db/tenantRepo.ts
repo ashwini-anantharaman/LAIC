@@ -666,6 +666,18 @@ export async function updateMemberAccess(memberId: string, access: string): Prom
   });
 }
 
+/**
+ * Change a membership's ROLE — the promote/demote path (e.g. member →
+ * administrator inside a program). Distinct from updateMemberAccess, which
+ * changes capability (view/edit) and not standing.
+ */
+export async function updateMemberRole(memberId: string, role: string): Promise<Row> {
+  return scoped(async (tx) => {
+    const [m] = await tx.update(orgMemberships).set({ role }).where(eq(orgMemberships.id, memberId)).returning();
+    return { id: m.id, org_id: m.orgId, profile_id: m.profileId, role: m.role, program_id: m.programId, stage_node_id: m.stageNodeId, access: m.access };
+  });
+}
+
 /** Remove a membership (org- or program-scoped). Returns true if a row was deleted. */
 export async function deleteMembership(memberId: string): Promise<boolean> {
   return scoped(async (tx) => {
