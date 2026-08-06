@@ -319,6 +319,38 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
 </div>
 </sc-if>
 
+<!-- ===================== REVIEW CONTROL (harness chrome) ===================== -->
+<!-- NOT product UI. An in-canvas review pill so a reviewer without the props
+     panel can switch state. Docked fixed to the canvas top-right corner, on the
+     background outside the centered page frame; position:fixed so it never
+     pushes page content, and the page column is left-aligned so it covers none. -->
+<div style="position:fixed;top:12px;right:12px;z-index:2147483000;display:flex;flex-direction:column;gap:8px;width:168px;padding:10px 11px 11px;border-radius:12px;background:#171f1c;box-shadow:0 8px 26px rgba(0,0,0,.34);font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <div style="display:flex;align-items:center;gap:6px">
+    <span style="flex:none;width:6px;height:6px;border-radius:3px;background:#f2b64d"></span>
+    <span style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8f9a94">Preview</span>
+    <span style="flex:1"></span>
+    <span style="font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#5c6863">review only</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font-size:8px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6b7873">Viewport</span>
+    <div style="display:flex;gap:2px;padding:2px;border-radius:8px;background:#0d1310">
+    <sc-for list="{{rcViewport}}" as="vp" hint-placeholder-count="2"><button onClick="{{vp.on}}" style="{{vp.style}}">{{vp.label}}</button></sc-for>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font-size:8px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6b7873">Phase</span>
+    <div style="display:flex;gap:2px;padding:2px;border-radius:8px;background:#0d1310">
+    <sc-for list="{{rcPhase}}" as="ph" hint-placeholder-count="3"><button onClick="{{ph.on}}" style="{{ph.style}}">{{ph.label}}</button></sc-for>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font-size:8px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6b7873">Viewer</span>
+    <div style="display:flex;gap:2px;padding:2px;border-radius:8px;background:#0d1310">
+    <sc-for list="{{rcRole}}" as="vr" hint-placeholder-count="3"><button onClick="{{vr.on}}" style="{{vr.style}}">{{vr.label}}</button></sc-for>
+    </div>
+  </div>
+</div>
+
 </div>
 </div>
 </div>
@@ -427,6 +459,11 @@ class Component extends DCLogic {
     scorecard: false,     // board-by-board scorecard expanded
     selBoard: null,       // finished: selected done square -> review detail
     toast: null,
+    // review control (harness chrome) : each override mirrors its own prop and
+    // re-syncs when that prop changes, same lastX-guard as invite / tab above.
+    ovViewport: null, lastViewportProp: null,
+    ovPhase: null, lastPhaseProp: null,
+    ovRole: null, lastRoleProp: null,
   };
 
   flash(msg) {
@@ -446,8 +483,28 @@ class Component extends DCLogic {
     const hasDesc = !!description;
     const editorBadge = p.editorBadge !== false;
 
+    // ---- review control overrides (harness chrome) ----
+    // The in-canvas review pill (docked to the canvas, rendered near the toast)
+    // drives viewport / phase / viewerRole for a reviewer who has no props panel.
+    // Each override defaults to its prop and re-syncs whenever the prop changes,
+    // mirroring the lastRole / lastDefaultTab guards used elsewhere in this file.
+    const viewportProp = p.viewport === "phone" ? "phone" : "desktop";
+    let ovViewport = this.state.ovViewport;
+    if (this.state.lastViewportProp !== viewportProp) { ovViewport = viewportProp; this._vpSync = viewportProp; }
+    if (ovViewport !== "phone" && ovViewport !== "desktop") ovViewport = viewportProp;
+
+    const phaseRaw = ["pre-start", "playing", "finished"].indexOf(p.phase) >= 0 ? p.phase : "finished";
+    let ovPhase = this.state.ovPhase;
+    if (this.state.lastPhaseProp !== phaseRaw) { ovPhase = phaseRaw; this._phSync = phaseRaw; }
+    if (["pre-start", "playing", "finished"].indexOf(ovPhase) < 0) ovPhase = phaseRaw;
+
+    const roleRaw = ["participant", "creator", "pending-invitee"].indexOf(p.viewerRole) >= 0 ? p.viewerRole : "participant";
+    let ovRole = this.state.ovRole;
+    if (this.state.lastRoleProp !== roleRaw) { ovRole = roleRaw; this._roSync = roleRaw; }
+    if (["participant", "creator", "pending-invitee"].indexOf(ovRole) < 0) ovRole = roleRaw;
+
     // ---- role / invite state ----
-    const role = ["participant", "creator", "pending-invitee"].indexOf(p.viewerRole) >= 0 ? p.viewerRole : "participant";
+    const role = ovRole;
     const isCreator = role === "creator";
     const isPendingRole = role === "pending-invitee";
     let invite = this.state.invite;
@@ -456,7 +513,7 @@ class Component extends DCLogic {
     // ---- phase / mode resolution ----
     // A pending invitee (until they accept) or a pre-start viewer sees the COVER;
     // otherwise the main page renders in playing or finished mode.
-    const phaseProp = ["pre-start", "playing", "finished"].indexOf(p.phase) >= 0 ? p.phase : "finished";
+    const phaseProp = ovPhase;
     let cover = null, live = null;   // cover: invite|declined|start ; live: playing|finished
     if (isPendingRole) {
       if (invite === "declined") cover = "declined";
@@ -470,7 +527,7 @@ class Component extends DCLogic {
     const finished = live === "finished";
     const playing = live === "playing";
 
-    const phone = p.viewport === "phone";
+    const phone = ovViewport === "phone";
 
     // ---- subtitle : "N boards . Scoring . by <creator> <diamond?>" ----
     const creatorFirst = isCreator ? "you" : ((p.creatorName || "Marta Okonkwo").split(" ")[0]);
@@ -748,9 +805,24 @@ class Component extends DCLogic {
     v.toastText = this.state.toast || "";
     v.onToastDismiss = () => this.setState({ toast: null });
 
+    // ---- review control (harness chrome) : three segmented switches ----
+    const seg = (opts, current, setKey) => opts.map((o) => ({
+      label: o.label,
+      on: () => this.setState({ [setKey]: o.val }),
+      style: "appearance:none;font-family:inherit;cursor:pointer;border:0;flex:1;padding:5px 4px;border-radius:6px;font-size:10px;font-weight:700;line-height:1;white-space:nowrap;text-align:center;"
+        + (o.val === current ? "background:#eef2f0;color:#12201b" : "background:transparent;color:#8b978f"),
+    }));
+    v.rcViewport = seg([{ val: "phone", label: "Phone" }, { val: "desktop", label: "Desktop" }], ovViewport, "ovViewport");
+    v.rcPhase = seg([{ val: "pre-start", label: "Pre-start" }, { val: "playing", label: "Playing" }, { val: "finished", label: "Finished" }], ovPhase, "ovPhase");
+    v.rcRole = seg([{ val: "participant", label: "Participant" }, { val: "creator", label: "Creator" }, { val: "pending-invitee", label: "Invitee" }], ovRole, "ovRole");
+
     // persist role for the invite-reset guard; re-sync the tab on phase flip
     if (this._roleReset) { this._roleReset = false; setTimeout(() => this.setState({ lastRole: role }), 0); }
     if (this._tabSync != null) { const dt = this._tabSync; this._tabSync = null; setTimeout(() => this.setState({ tab: dt, lastDefaultTab: dt }), 0); }
+    // persist the review-control overrides so each re-syncs only when its prop changes
+    if (this._vpSync != null) { const x = this._vpSync; this._vpSync = null; setTimeout(() => this.setState({ ovViewport: x, lastViewportProp: x }), 0); }
+    if (this._phSync != null) { const x = this._phSync; this._phSync = null; setTimeout(() => this.setState({ ovPhase: x, lastPhaseProp: x }), 0); }
+    if (this._roSync != null) { const x = this._roSync; this._roSync = null; setTimeout(() => this.setState({ ovRole: x, lastRoleProp: x }), 0); }
 
     return v;
   }
