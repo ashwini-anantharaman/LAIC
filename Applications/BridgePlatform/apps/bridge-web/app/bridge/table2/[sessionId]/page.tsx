@@ -21,7 +21,7 @@ import { getAppearance } from "@/lib/appearance";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
 import { libraryKindLabel } from "@/lib/libraryLabels";
-import { getBridgeContext } from "@/lib/nexus";
+import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { lookingAt } from "@/lib/coach/looking";
 import { thinkAid } from "@/lib/coach/think";
@@ -52,6 +52,9 @@ export default async function PlayTablePage({
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   await requireFeature(context, "page.play");
+  // Inside the coach app's WebView the host owns the frame and the table
+  // renders its phone tier; on the desktop platform it keeps the wide view.
+  const embedded = await isEmbeddedLaunch();
   const [
     canSeatsPanel,
     canBenSeat,
@@ -431,12 +434,19 @@ export default async function PlayTablePage({
         {handsView ? (
           handViewer
         ) : (
-          // MOBILE VIEW ONLY (owner decision 2026-08-06): the play table always
-          // renders the phone tier, whatever the window. The tier decision in
-          // table-ui is geometric — phone = narrow aspect AND width < 640 — so
-          // capping the container at a phone width IS the switch: widening the
-          // browser letterboxes the table instead of swapping to the wide tier.
-          <div style={{ maxWidth: 480, height: "100%", margin: "0 auto" }}>
+          // PHONE TIER ONLY WHEN EMBEDDED (owner decisions 2026-08-06, both
+          // ways): inside the coach app the table always renders the phone
+          // tier, whatever the window — the tier decision in table-ui is
+          // geometric (phone = narrow aspect AND width < 640), so capping the
+          // container at a phone width IS the switch. On the desktop platform
+          // the cap comes off and the table carries its full desktop view.
+          <div
+            style={
+              embedded
+                ? { maxWidth: 480, height: "100%", margin: "0 auto" }
+                : { height: "100%" }
+            }
+          >
             <LivePlayTable
               sessionId={sessionId}
             state={{ ...state, dealer: record.board.dealer, vul: state.vul }}
