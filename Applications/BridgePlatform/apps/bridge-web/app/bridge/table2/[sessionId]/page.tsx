@@ -118,11 +118,10 @@ export default async function PlayTablePage({
     record.seats[actingSeat].kind === "human" &&
     (record.seats[actingSeat] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
 
-  // COACH PARKED "for now" (owner, 2026-08-05: "hide the coach panel"). The panel
-  // is intentionally not rendered — but every wire stays: canCoach still reads
-  // table.coach, and lib/coach, CoachPanel, /api/bridge/play-hint are untouched.
-  // Flip `coachParked` to false to bring it back exactly as it was.
-  const coachParked = true;
+  // COACH UNPARKED (owner, 2026-08-05 post-merge: "where is my coach?"). Main
+  // had parked the panel while the table chrome settled; the wires never moved,
+  // so bringing it back is this one flag. Gating stays with table.coach.
+  const coachParked = false;
   const showCoach = canCoach && !coachParked;
   // The coach payload (his engine): the facts layer (looking) and the reasoning
   // scaffold (think), computed from THIS learner's seat. Both are null for a
