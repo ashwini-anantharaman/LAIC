@@ -12,11 +12,15 @@ import { Colors, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../../constants/theme
 import { useAuth } from "../../lib/auth-context";
 import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
 import { prefetchLaunch } from "../../lib/launch-cache";
-import { fetchBridgeSummary, type BridgeSummary } from "../../lib/nexus";
+import { type BridgeSummary } from "../../lib/nexus";
+import { peekSummary, refreshSummary } from "../../lib/summary-cache";
 
 export default function PlayScreen() {
   const { token } = useAuth();
-  const [summary, setSummary] = useState<BridgeSummary | null>(null);
+  // Last known summary renders immediately; the focus effect refreshes it.
+  const [summary, setSummary] = useState<BridgeSummary | null>(() =>
+    token ? peekSummary(token) : null,
+  );
   const [error, setError] = useState<string | null>(null);
   // Assignments are something a coach GIVES, not receives — a coach's Play
   // tab is just the day's board, resume and new. Theirs live in the Coach tab.
@@ -40,9 +44,11 @@ export default function PlayScreen() {
       prefetchLaunch(token, "bridge"); // keep a launch warm — one tap away
       let cancelled = false;
       setError(null);
-      fetchBridgeSummary(token)
+      refreshSummary(token)
         .then((s) => !cancelled && setSummary(s))
-        .catch(() => !cancelled && setError("Couldn't load your boards."));
+        // A failed refresh with stale data on screen stays silent — the
+        // stale summary beats an error banner.
+        .catch(() => !cancelled && !peekSummary(token) && setError("Couldn't load your boards."));
       return () => {
         cancelled = true;
       };

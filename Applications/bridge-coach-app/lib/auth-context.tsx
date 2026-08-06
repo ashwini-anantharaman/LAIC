@@ -11,6 +11,7 @@ import {
 import { clearBridgeRoleCache } from "./bridge-role";
 import { clearLaunchCache } from "./launch-cache";
 import { clearLearningCache } from "./learning";
+import { clearSummaryCache } from "./summary-cache";
 import { fetchGate, fetchMe, gateSignup, login, NexusUser } from "./nexus";
 import { clearToken, getToken, setToken } from "./token-store";
 
@@ -105,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearLearningCache();
     clearLaunchCache();
     clearBridgeRoleCache();
+    clearSummaryCache();
     setTokenState(null);
     setUser(null);
     setNeedsOnboarding(false);

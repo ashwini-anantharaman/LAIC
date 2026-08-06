@@ -12,12 +12,16 @@ import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { getBridgeContextCached, isCoach } from "../lib/bridge-role";
 import { prefetchLaunch } from "../lib/launch-cache";
-import { fetchBridgeSummary, type BridgeSummary } from "../lib/nexus";
+import { type BridgeSummary } from "../lib/nexus";
+import { peekSummary, refreshSummary } from "../lib/summary-cache";
 
 export default function TodayScreen() {
   const { user, token } = useAuth();
   const [coach, setCoach] = useState(false);
-  const [summary, setSummary] = useState<BridgeSummary | null>(null);
+  // Last known summary renders immediately; the focus effect refreshes it.
+  const [summary, setSummary] = useState<BridgeSummary | null>(() =>
+    token ? peekSummary(token) : null,
+  );
 
   const firstName = user?.display_name?.split(" ")[0];
 
@@ -37,7 +41,7 @@ export default function TodayScreen() {
       if (!token) return;
       prefetchLaunch(token, "bridge");
       let cancelled = false;
-      fetchBridgeSummary(token)
+      refreshSummary(token)
         .then((s) => {
           if (!cancelled) setSummary(s);
         })

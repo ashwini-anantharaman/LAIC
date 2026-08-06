@@ -10,12 +10,16 @@ import { OptionCard, Screen } from "../../components/ui";
 import { Colors, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
-import { fetchBridgeSummary, type BridgeSummary } from "../../lib/nexus";
+import { type BridgeSummary } from "../../lib/nexus";
+import { peekSummary, refreshSummary } from "../../lib/summary-cache";
 
 export default function CoachScreen() {
   const { token } = useAuth();
   const [coach, setCoach] = useState(false);
-  const [summary, setSummary] = useState<BridgeSummary | null>(null);
+  // Last known summary renders immediately; the focus effect refreshes it.
+  const [summary, setSummary] = useState<BridgeSummary | null>(() =>
+    token ? peekSummary(token) : null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -32,7 +36,7 @@ export default function CoachScreen() {
     useCallback(() => {
       if (!token) return;
       let cancelled = false;
-      fetchBridgeSummary(token)
+      refreshSummary(token)
         .then((s) => !cancelled && setSummary(s))
         .catch(() => {});
       return () => {
