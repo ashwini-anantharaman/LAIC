@@ -536,10 +536,11 @@ export function CoachSheet({
   // The auction renders as a bidding diagram, and one call at a time is
   // selected: its meaning and its ask box show below the grid.
   const [selectedCall, setSelectedCall] = useState<string | null>(null);
-  // TWO SCREENS (owner direction 2026-08-05). "Now" is the default and faces
-  // forward: the position, the think-it-through scaffold, the advice button,
-  // the chat. "History" faces backward: the auction diagram and every trick.
-  const [view, setView] = useState<"now" | "history">("now");
+  // THREE SCREENS (owner direction 2026-08-06). "Now" is the default and
+  // faces forward: the position, the think-it-through scaffold, the advice
+  // button, the chat. The history split in two: "Play" holds every trick,
+  // "Auction" holds the bidding diagram.
+  const [view, setView] = useState<"now" | "play" | "auction">("now");
 
   // Escape closes it, like every other overlay at this table.
   useEffect(() => {
@@ -659,9 +660,9 @@ export function CoachSheet({
           </div>
         </div>
 
-        {/* ── the two screens: Now faces forward, History faces back ── */}
+        {/* ── the three screens: Now faces forward; Play and Auction face back ── */}
         <div style={{ flex: "none", display: "flex", gap: 6, padding: "10px 14px 0" }}>
-          {(["now", "history"] as const).map((v) => {
+          {(["now", "play", "auction"] as const).map((v) => {
             const on = view === v;
             return (
               <button
@@ -677,7 +678,7 @@ export function CoachSheet({
                   fontFamily: "inherit", cursor: "pointer",
                 }}
               >
-                {v === "now" ? "Now" : "History"}
+                {v === "now" ? "Now" : v === "play" ? "Play" : "Auction"}
               </button>
             );
           })}
@@ -687,68 +688,67 @@ export function CoachSheet({
           {/* ── NOW: the default screen, shared with the table's coach band ── */}
           {view === "now" && <CoachNow data={data} />}
 
-          {/* ── HISTORY: the board so far, in sections ── */}
-          {view === "history" &&
-            (data.eventGroups?.length ? (
-              <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0", borderRadius: 11, padding: "10px 12px" }}>
-                <Label color={FELT_DEEP}>The board so far</Label>
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  {data.eventGroups.map((group) => {
-                    const isOpen = groupOpen(group);
-                    return (
-                      <div key={group.id}>
-                        <button
-                          type="button"
-                          aria-expanded={isOpen}
-                          onClick={() => setGroupToggles((prev) => ({ ...prev, [group.id]: !isOpen }))}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 6, width: "100%",
-                            minHeight: 30, padding: "4px 1px",
-                            background: "transparent", borderWidth: 0,
-                            borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#e4e0d0",
-                            fontFamily: "inherit", textAlign: "left", cursor: "pointer",
-                          }}
-                        >
-                          <span
+          {/* ── PLAY: every trick, in collapsible sections ── */}
+          {view === "play" &&
+            (() => {
+              const tricks = (data.eventGroups ?? []).filter((g) => g.id !== "auction");
+              if (!tricks.length) {
+                return (
+                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                    No cards have been played yet.
+                  </p>
+                );
+              }
+              return (
+                <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0", borderRadius: 11, padding: "10px 12px" }}>
+                  <Label color={FELT_DEEP}>The play so far</Label>
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    {tricks.map((group) => {
+                      const isOpen = groupOpen(group);
+                      return (
+                        <div key={group.id}>
+                          <button
+                            type="button"
+                            aria-expanded={isOpen}
+                            onClick={() => setGroupToggles((prev) => ({ ...prev, [group.id]: !isOpen }))}
                             style={{
-                              fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6,
-                              textTransform: "uppercase", color: isOpen ? FELT_DEEP : FAINT,
+                              display: "flex", alignItems: "center", gap: 6, width: "100%",
+                              minHeight: 30, padding: "4px 1px",
+                              background: "transparent", borderWidth: 0,
+                              borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#e4e0d0",
+                              fontFamily: "inherit", textAlign: "left", cursor: "pointer",
                             }}
                           >
-                            {group.title}
-                          </span>
-                          {group.note && (
-                            <span style={{ fontSize: 10.5, fontWeight: 500, color: FAINT }}>
-                              · {group.note}
+                            <span
+                              style={{
+                                fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6,
+                                textTransform: "uppercase", color: isOpen ? FELT_DEEP : FAINT,
+                              }}
+                            >
+                              {group.title}
                             </span>
-                          )}
-                          <span style={{ flex: 1 }} />
-                          {!isOpen && (
-                            <span style={{ fontSize: 10, color: FAINT, fontVariantNumeric: "tabular-nums" }}>
-                              {group.events.length}
+                            {group.note && (
+                              <span style={{ fontSize: 10.5, fontWeight: 500, color: FAINT }}>
+                                · {group.note}
+                              </span>
+                            )}
+                            <span style={{ flex: 1 }} />
+                            {!isOpen && (
+                              <span style={{ fontSize: 10, color: FAINT, fontVariantNumeric: "tabular-nums" }}>
+                                {group.events.length}
+                              </span>
+                            )}
+                            <span
+                              aria-hidden
+                              style={{
+                                flex: "none", width: 13, textAlign: "center", color: FELT_MID, fontSize: 9,
+                                transform: isOpen ? "rotate(180deg)" : undefined, transition: "transform .15s ease",
+                              }}
+                            >
+                              ▼
                             </span>
-                          )}
-                          <span
-                            aria-hidden
-                            style={{
-                              flex: "none", width: 13, textAlign: "center", color: FELT_MID, fontSize: 9,
-                              transform: isOpen ? "rotate(180deg)" : undefined, transition: "transform .15s ease",
-                            }}
-                          >
-                            ▼
-                          </span>
-                        </button>
-                        {isOpen &&
-                          (group.id === "auction" ? (
-                            // The auction reads best the way a bidding box
-                            // prints it: a column per seat, calls in order.
-                            <AuctionDiagram
-                              events={group.events}
-                              selectedId={selectedCall}
-                              onSelect={setSelectedCall}
-                              {...(data.ask ? { ask: data.ask } : {})}
-                            />
-                          ) : (
+                          </button>
+                          {isOpen &&
                             group.events.map((ev) => (
                               <EventRow
                                 key={ev.id}
@@ -772,18 +772,40 @@ export function CoachSheet({
                                     }
                                   : {})}
                               />
-                            ))
-                          ))}
-                      </div>
-                    );
-                  })}
+                            ))}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
-                Nothing has happened on this board yet.
-              </p>
-            ))}
+              );
+            })()}
+
+          {/* ── AUCTION: the bidding diagram, whole screen to itself ── */}
+          {view === "auction" &&
+            (() => {
+              const auction = (data.eventGroups ?? []).find((g) => g.id === "auction");
+              if (!auction?.events.length) {
+                return (
+                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                    Nobody has called yet.
+                  </p>
+                );
+              }
+              return (
+                <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e4e0d0", borderRadius: 11, padding: "10px 12px" }}>
+                  <Label color={FELT_DEEP}>The auction</Label>
+                  {/* Its own screen now, so no collapsible header — the
+                      bidding box prints straight onto the card. */}
+                  <AuctionDiagram
+                    events={auction.events}
+                    selectedId={selectedCall}
+                    onSelect={setSelectedCall}
+                    {...(data.ask ? { ask: data.ask } : {})}
+                  />
+                </div>
+              );
+            })()}
 
           {/* ── the buttons ── */}
           {/* HIDDEN, NOT GONE (owner decision 2026-08-05). The big "Help me
