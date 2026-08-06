@@ -91,8 +91,6 @@ export default async function PlayTablePage({
   };
   const { sessionId } = await params;
   const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
-  // Denied the hands-record view: the ?view=hands param is treated as absent.
-  const handsView = viewParam === "hands" && canHandsView;
 
   let view;
   try {
@@ -101,6 +99,12 @@ export default async function PlayTablePage({
     notFound();
   }
   const { record, state, actingSeat, actingIsHuman } = view;
+  const complete = state.phase === "complete";
+  // Denied the hands-record view: the ?view=hands param is treated as absent —
+  // UNLESS the board is complete. The gate exists so a live viewer can't peek,
+  // and a finished board has nothing left to hide (canSee below already opens
+  // every hand). My Games' "View board" links straight here.
+  const handsView = viewParam === "hands" && (canHandsView || complete);
 
   const mySeat =
     (Object.entries(record.seats) as [Seat, (typeof record.seats)[Seat]][]).find(
@@ -350,7 +354,6 @@ export default async function PlayTablePage({
   // The hand-record view (HandViewer design): all four panels big, the full
   // auction, and honest info panels. Mid-play it shows the REMAINING cards
   // (and respects visibility); a completed board shows the original deal.
-  const complete = state.phase === "complete";
   const viewerHands = complete
     ? { N: originalHand(state, "N"), E: originalHand(state, "E"), S: originalHand(state, "S"), W: originalHand(state, "W") }
     : state.hands;
@@ -368,6 +371,7 @@ export default async function PlayTablePage({
       names={{ N: seatName("N"), E: seatName("E"), S: seatName("S"), W: seatName("W") }}
       visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
       auction={state.auction}
+      tricks={state.tricks}
       highlightSeat={complete ? (state.contract?.declarer ?? null) : state.turn}
       info={[
         { label: `NS · ${seatName("N")} & ${seatName("S")}`, value: `${state.trickCount.NS} tricks` },
@@ -377,15 +381,30 @@ export default async function PlayTablePage({
         { label: contractText, value: score ? `${resultLabel(score)} · ${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : "" },
       ]}
       nav={
-        <div style={{ display: "flex", flexDirection: "column", gap: 20, alignItems: "flex-start" }}>
-          <Link
-            href={settingsHref({ view: undefined })}
-            style={{ width: 261, height: 64, background: "#acc5c5", border: "3px solid #f2f4f4", borderRadius: 10, color: "#000", fontSize: 30, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
-          >
-            ⟵ table
-          </Link>
-          {canStepControls && controlsAt(1.9)}
-        </div>
+        // The nav is the page's to size: the embedded app gets the viewer's
+        // phone tier, so it gets phone-sized controls; the desktop platform
+        // keeps the design's big ones.
+        embedded ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+            <Link
+              href={settingsHref({ view: undefined })}
+              style={{ height: 34, padding: "0 16px", background: "#acc5c5", border: "2px solid #f2f4f4", borderRadius: 8, color: "#000", fontSize: 14, fontWeight: 700, display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+            >
+              ⟵ table
+            </Link>
+            {canStepControls && controlsAt(1)}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20, alignItems: "flex-start" }}>
+            <Link
+              href={settingsHref({ view: undefined })}
+              style={{ width: 261, height: 64, background: "#acc5c5", border: "3px solid #f2f4f4", borderRadius: 10, color: "#000", fontSize: 30, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
+            >
+              ⟵ table
+            </Link>
+            {canStepControls && controlsAt(1.9)}
+          </div>
+        )
       }
     />
   );
@@ -411,8 +430,11 @@ export default async function PlayTablePage({
       {/* Every control lives INSIDE the canvas — rail chips on the table, the
           nav cell on the hand viewer. Nothing floats above the design. */}
       <div
-        className="overflow-hidden rounded-lg"
-        style={{ height: "calc(100vh - 5.5rem)" }}
+        // Embedded: the WebView is the whole screen — full-bleed, full
+        // height (the 5.5rem was desktop headroom that starved the phone
+        // fit and letterboxed the table).
+        className={embedded ? "overflow-hidden" : "overflow-hidden rounded-lg"}
+        style={{ height: embedded ? "100dvh" : "calc(100vh - 5.5rem)" }}
       >
         {/* THE ROBOTS PLAY FOR EVERYONE. AutoAdvance is both the transport
             chips AND the engine that steps AI seats; the chips are gated by
