@@ -4,12 +4,17 @@ import { StyleSheet, Text, View } from "react-native";
 import { PrimaryButton, Screen, ScreenHeader } from "../components/ui";
 import { Colors, Fonts, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
-import { BridgeContext, getBridgeContextCached, isCoach } from "../lib/bridge-role";
+import {
+  RoleContext,
+  getBridgeContextCached,
+  isCoach,
+  primaryMembership,
+} from "../lib/bridge-role";
 import { fetchMyCoach, MyCoach } from "../lib/nexus";
 
 export default function ProfileScreen() {
   const { user, token, signOut } = useAuth();
-  const [context, setContext] = useState<BridgeContext | null>(null);
+  const [context, setContext] = useState<RoleContext | null>(null);
   const [myCoach, setMyCoach] = useState<MyCoach>(null);
 
   useEffect(() => {
@@ -40,12 +45,24 @@ export default function ProfileScreen() {
     {
       label: "Role",
       value: context
-        ? context.role_name || (amCoach ? "Coach" : "Learner")
+        ? primaryMembership(context)?.role ||
+          context.bridge?.role_name ||
+          (amCoach ? "Coach" : "Learner")
         : "Learner",
     },
     ...(amCoach ? [] : [{ label: "My coach", value: myCoach?.name ?? "None yet" }]),
-    { label: "Program", value: context?.program_name || "Bridge Program" },
-    { label: "Organization", value: "Life in AI Center" },
+    {
+      label: "Program",
+      value:
+        (context ? primaryMembership(context)?.program_name : null) ||
+        context?.bridge?.program_name ||
+        "Bridge Program",
+    },
+    {
+      label: "Organization",
+      value:
+        (context ? primaryMembership(context)?.org_name : null) || "Life in AI Center",
+    },
   ];
 
   return (

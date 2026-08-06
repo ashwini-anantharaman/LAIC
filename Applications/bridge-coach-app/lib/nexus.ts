@@ -79,11 +79,35 @@ export type GateSignupResult = {
   landing: string | null;
 };
 
+/**
+ * One org/program membership from /auth/me.
+ *
+ * `role` is the membership's role in that program — "owner", "administrator",
+ * "instructor", "member", "student" — and it is what decides whether this app
+ * shows the coach view or the learner view. `program_category` is "partner" for
+ * a partner org (a "sister program", e.g. Club 1).
+ */
+export type NexusMembership = {
+  id: string;
+  org_id: string;
+  org_slug: string;
+  org_name: string;
+  role: string;
+  program_id: string | null;
+  program_name: string | null;
+  program_category: string | null;
+  /** "edit" | "view" | … — the membership's capability in that program. */
+  access: string | null;
+};
+
 export type NexusUser = {
   id: string;
   email: string;
   display_name: string | null;
+  /** Profile-level role: "org_admin", "teacher", "student", "platform_admin". */
   role: string;
+  /** Present on /auth/me; absent from the login response. */
+  memberships?: NexusMembership[];
 };
 
 /** One section of a concept card (fields are optional; render what's present).
