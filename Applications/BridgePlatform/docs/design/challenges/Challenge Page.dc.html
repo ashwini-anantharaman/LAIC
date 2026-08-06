@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./skins.js"></script>
+<script src="./bridge.js"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
+*{box-sizing:border-box}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#c7d0ca;border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
+</style>
+</helmet>
+
+<div style="{{outerStyle}}">
+<div style="{{appStyle}}">
+<div style="{{contentStyle}}">
+
+<!-- ============================ TOP STRIP ============================ -->
+<div style="flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+  <span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;flex:none;border-radius:8px;background:{{accent}};color:#fff;font-size:15px;font-weight:800">♣</span>
+  <div style="margin-right:auto">
+    <div style="font-size:14px;font-weight:800;letter-spacing:.01em;color:#17211d">Challenge</div>
+    <div style="font-size:11px;color:#8b9a93">{{roleLabel}} · {{phaseLabel}}</div>
+  </div>
+  <div style="display:flex;gap:3px;padding:3px;background:#eef2f0;border:1px solid #dde3df;border-radius:9px">
+    <sc-for list="{{viewChips}}" as="v" hint-placeholder-count="2">
+    <button onClick="{{v.on}}" style="height:26px;padding:0 12px;border:0;border-radius:6px;background:{{v.bg}};color:{{v.color}};font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">{{v.label}}</button>
+    </sc-for>
+  </div>
+</div>
+
+<!-- ======================= PENDING-INVITE BANNER ======================= -->
+<sc-if value="{{showBanner}}" hint-placeholder-val="{{false}}">
+<div style="flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:14px 15px;margin-bottom:14px;border:1px solid {{accent}};border-radius:14px;background:#f4faf9">
+  <span style="display:flex;align-items:center;justify-content:center;width:38px;height:38px;flex:none;border-radius:19px;background:{{bannerAvColor}};color:#fff;font-size:13px;font-weight:800">{{bannerAvInit}}</span>
+  <div style="flex:1;min-width:170px">
+    <div style="font-size:14px;font-weight:800;color:#17211d">{{bannerTitle}}</div>
+    <div style="font-size:12.5px;line-height:1.5;color:#5b6a63">{{bannerBody}}</div>
+  </div>
+  <div style="display:flex;gap:8px;flex:none">
+    <button onClick="{{onDecline}}" style="height:38px;padding:0 15px;border:1px solid #d9e0db;border-radius:9px;background:#fff;color:#6d7a73;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">Decline</button>
+    <button onClick="{{onAccept}}" style="height:38px;padding:0 20px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:13px;font-weight:800;cursor:pointer">Accept &amp; join</button>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{showDeclined}}" hint-placeholder-val="{{false}}">
+<div style="flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:13px 15px;margin-bottom:14px;border:1px solid #e6ded5;border-radius:14px;background:#faf6f1">
+  <span style="font-size:20px;flex:none">✕</span>
+  <div style="flex:1;min-width:170px">
+    <div style="font-size:13.5px;font-weight:800;color:#7a4b2a">You declined this invite</div>
+    <div style="font-size:12px;color:#9a7b5e">It stays in your list in case you change your mind — the boards lock only when someone starts, invites never close.</div>
+  </div>
+  <button onClick="{{onReopen}}" style="height:36px;padding:0 15px;flex:none;border:1px solid #d9e0db;border-radius:9px;background:#fff;color:#4a5c55;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">Reconsider</button>
+</div>
+</sc-if>
+
+<sc-if value="{{showJoinedNote}}" hint-placeholder-val="{{false}}">
+<div style="flex:none;display:flex;align-items:center;gap:9px;padding:9px 13px;margin-bottom:14px;border:1px solid #cfe6d8;border-radius:11px;background:#eef8f1">
+  <span style="color:#2f8f57;font-size:15px;font-weight:800">✓</span>
+  <span style="font-size:12.5px;color:#2c6b48;font-weight:600">You joined. Board 1 is ready whenever you are — one attempt each, play in any order.</span>
+</div>
+</sc-if>
+
+<!-- ============================== HEADER ============================== -->
+<div style="flex:none;border:1px solid #e2e7e3;border-radius:16px;background:#fff;padding:16px 16px 14px;margin-bottom:14px">
+  <div style="display:flex;align-items:flex-start;gap:10px">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:20px;line-height:1.2;font-weight:800;letter-spacing:-.01em;color:#16201c">{{title}}</div>
+      <div style="font-size:13px;line-height:1.5;color:#5f6f68;margin-top:5px">{{description}}</div>
+    </div>
+  </div>
+
+  <!-- meta chips -->
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:12px">
+    <span style="display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 10px 0 4px;border:1px solid #e4e9e5;border-radius:15px;background:#fbfcfb">
+      <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;border-radius:11px;background:{{creatorAvColor}};color:#fff;font-size:10px;font-weight:800">{{creatorAvInit}}</span>
+      <span style="font-size:12px;color:#3f4f48"><span style="color:#93a199">{{createdByPrefix}}</span> <b style="color:#31413a">{{creatorLabel}}</b></span>
+      <sc-if value="{{showEditorBadge}}" hint-placeholder-val="{{true}}">
+      <span title="Opened the pack editor — has seen the hands" style="flex:none;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:4px;padding:2px 5px">◆ set the boards</span>
+      </sc-if>
+    </span>
+    <span style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border:1px solid #cfe1de;border-radius:15px;background:#eff7f6;font-size:12px;font-weight:700;color:#0d707c">{{scoringChip}}</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border:1px solid #e4e9e5;border-radius:15px;background:#fbfcfb;font-size:12px;font-weight:700;color:#4a5a53">{{boardsChip}}</span>
+    <sc-if value="{{lockShown}}" hint-placeholder-val="{{true}}">
+    <span title="{{lockHint}}" style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border:1px solid #e6e2d6;border-radius:15px;background:#faf7ee;font-size:12px;font-weight:700;color:#8a7a4a">🔒 {{lockLabel}}</span>
+    </sc-if>
+  </div>
+
+  <!-- participants strip -->
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid #eef2ef">
+    <span style="font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:#9aa8a1;margin-right:3px;align-self:center">In</span>
+    <sc-for list="{{joined}}" as="p" hint-placeholder-count="6">
+    <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px 0 3px;border:1px solid {{p.line}};border-radius:13px;background:{{p.bg}}">
+      <span style="position:relative;display:flex;align-items:center;justify-content:center;width:20px;height:20px;flex:none;border-radius:10px;background:{{p.color}};color:#fff;font-size:9px;font-weight:800">{{p.initials}}<span style="position:absolute;right:-3px;bottom:-3px;display:flex;align-items:center;justify-content:center;width:11px;height:11px;border-radius:6px;background:#2f8f57;color:#fff;font-size:7px;border:1.5px solid #fff">✓</span></span>
+      <span style="font-size:11.5px;font-weight:{{p.weight}};color:{{p.textColor}}">{{p.name}}</span>
+      <sc-if value="{{p.editor}}" hint-placeholder-val="{{false}}"><span style="flex:none;font-size:8px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:3px;padding:1px 4px">◆</span></sc-if>
+    </span>
+    </sc-for>
+    <span style="display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:13px;background:#eef2f0;font-size:11px;font-weight:700;color:#6f7d76">● still playing: {{stillPlaying}}</span>
+    <sc-if value="{{pendingShown}}" hint-placeholder-val="{{true}}">
+    <span style="width:1px;height:18px;background:#e4e9e5;margin:0 2px"></span>
+    <sc-for list="{{pending}}" as="q" hint-placeholder-count="2">
+    <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px 0 3px;border:1px dashed #cdd6cf;border-radius:13px;background:#fff">
+      <span style="display:flex;align-items:center;justify-content:center;width:20px;height:20px;flex:none;border-radius:10px;background:#e7ece9;color:#8b9a93;font-size:9px;font-weight:800">{{q.initials}}</span>
+      <span style="font-size:11.5px;font-weight:600;color:#9aa8a1">{{q.name}}</span>
+      <span style="flex:none;font-size:8px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#b3bfb8">invited</span>
+    </span>
+    </sc-for>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{creatorNoteShown}}" hint-placeholder-val="{{false}}">
+  <div style="display:flex;align-items:center;gap:8px;margin-top:11px;padding:8px 11px;border-radius:10px;background:#f4faf9;border:1px solid #d6e8e5">
+    <span style="font-size:12px">🛠</span>
+    <span style="font-size:12px;color:#3c6b63;font-weight:600">{{creatorNote}}</span>
+  </div>
+  </sc-if>
+</div>
+
+<!-- =============================== BODY =============================== -->
+<div style="{{bodyStyle}}">
+
+  <!-- ------------------------- BOARDS COLUMN ------------------------- -->
+  <div style="{{boardsColStyle}}">
+
+    <!-- sequential CTA -->
+    <sc-if value="{{ctaShown}}" hint-placeholder-val="{{true}}">
+    <div style="{{ctaWrapStyle}}">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14.5px;font-weight:800;color:{{ctaTitleColor}}">{{ctaTitle}}</div>
+        <div style="font-size:11.5px;line-height:1.45;color:{{ctaSubColor}};margin-top:2px">{{ctaSub}}</div>
+      </div>
+      <sc-if value="{{ctaBtnShown}}" hint-placeholder-val="{{true}}">
+      <button onClick="{{onCta}}" style="{{ctaBtnStyle}}">{{ctaBtnLabel}}</button>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <!-- boards header + grid/list toggle -->
+    <div style="flex:none;display:flex;align-items:center;gap:8px">
+      <span style="font-size:13px;font-weight:800;color:#31413a">Boards</span>
+      <span style="font-size:11px;color:#9aa8a1">{{boardsSubLabel}}</span>
+      <span style="flex:1"></span>
+      <div style="display:flex;gap:2px;padding:2px;background:#eef2f0;border:1px solid #dde3df;border-radius:8px">
+        <button onClick="{{onGrid}}" title="Grid" style="height:24px;padding:0 9px;border:0;border-radius:6px;background:{{gridBg}};color:{{gridColor}};font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">▦ Grid</button>
+        <button onClick="{{onList}}" title="List" style="height:24px;padding:0 9px;border:0;border-radius:6px;background:{{listBg}};color:{{listColor}};font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">☰ List</button>
+      </div>
+    </div>
+
+    <!-- boards -->
+    <div style="{{boardsContainerStyle}}">
+    <sc-for list="{{boards}}" as="b" hint-placeholder-count="8">
+    <div style="{{b.tileStyle}}">
+      <!-- head chips -->
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="display:flex;align-items:center;justify-content:center;min-width:30px;height:26px;padding:0 7px;flex:none;border-radius:8px;background:{{b.noBg}};color:{{b.noColor}};font-size:13px;font-weight:800">{{b.no}}</span>
+        <span style="display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;background:#f1f4f2;font-size:10.5px;font-weight:700;color:#5a6a63">Deal {{b.dealer}}</span>
+        <span style="display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;background:{{b.vulBg}};font-size:10.5px;font-weight:700;color:{{b.vulColor}}">{{b.vulLabel}}</span>
+        <span style="display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;background:#eef4f3;font-size:10.5px;font-weight:700;color:#0d707c">Seat {{b.seat}}</span>
+        <span style="flex:1"></span>
+        <span style="display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:11px;background:{{b.pillBg}};font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:{{b.pillColor}}">{{b.pillLabel}}</span>
+      </div>
+
+      <!-- completed → ResultCard (grid) -->
+      <sc-if value="{{b.showResultCard}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;justify-content:center;padding:2px 0">
+        <dc-import name="ResultCard" dc-props="{{b.result}}" hint-size="240px,150px"></dc-import>
+      </div>
+      </sc-if>
+
+      <!-- completed → compact strip (list) -->
+      <sc-if value="{{b.showResultStrip}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:9px;background:#f7faf8;border:1px solid #ebf0ec">
+        <span style="font-size:13px;font-weight:800;color:#2c3a34">{{b.resLine}}</span>
+        <span style="font-size:12px;font-weight:700;color:{{b.resScoreColor}}">{{b.resScore}}</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;color:#93a199">{{b.resDetail}}</span>
+      </div>
+      </sc-if>
+
+      <!-- completed → challenge score + entry points -->
+      <sc-if value="{{b.showFinishedRow}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="display:inline-flex;align-items:baseline;gap:5px;height:26px;padding:0 10px;border-radius:8px;background:{{b.chBg}};border:1px solid {{b.chLine}}">
+          <span style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#93a199">{{b.scoreUnit}}</span>
+          <span style="font-size:13px;font-weight:800;color:{{b.chColor}}">{{b.chScore}}</span>
+        </span>
+        <span style="flex:1"></span>
+        <button onClick="{{b.onCompare}}" style="height:28px;padding:0 11px;border:1px solid #cfe1de;border-radius:8px;background:#eff7f6;color:#0d707c;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer">⇄ Compare</button>
+        <button onClick="{{b.onReplay}}" title="Opens an unscored practice copy at a normal table" style="height:28px;padding:0 11px;border:1px solid #e4e9e5;border-radius:8px;background:#fff;color:#6d7a73;font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer">↻ Practice</button>
+      </div>
+      </sc-if>
+
+      <!-- completed but locked (playing) → scored, one-attempt note -->
+      <sc-if value="{{b.showScoredLocked}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 2px">
+        <span style="font-size:11px;color:#93a199">🔒 Your score unlocks when you finish all boards · <b style="color:#7a877f">one attempt, result is final</b></span>
+      </div>
+      </sc-if>
+
+      <!-- not started / in progress → play/resume -->
+      <sc-if value="{{b.showPlayRow}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;align-items:center;gap:8px">
+        <sc-if value="{{b.showNextTag}}" hint-placeholder-val="{{true}}"><span style="font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:{{b.nextTagColor}}">Next in sequence</span></sc-if>
+        <span style="flex:1"></span>
+        <button onClick="{{b.onPlay}}" style="{{b.playBtnStyle}}">{{b.playLabel}}</button>
+      </div>
+      </sc-if>
+
+      <!-- details toggle -->
+      <button onClick="{{b.onToggle}}" style="align-self:flex-start;height:24px;padding:0 3px;border:0;background:transparent;color:#93a199;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer">{{b.detailLabel}}</button>
+    </div>
+    </sc-for>
+    </div>
+
+    <!-- expanded board detail -->
+    <sc-if value="{{detailShown}}" hint-placeholder-val="{{false}}">
+    <div style="flex:none;border:1px solid {{accent}};border-radius:14px;background:#fbfefe;padding:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+      <div style="flex:none;display:flex;flex-direction:column;gap:8px;align-items:center">
+        <dc-import name="VulBoardCard" dc-props="{{detailVul}}" hint-size="150px,150px"></dc-import>
+        <span style="font-size:11px;color:#8b9a93">Board {{detailNo}} · Deal {{detailDealer}} · {{detailVulLabel}}</span>
+      </div>
+      <div style="flex:1;min-width:180px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:14px;font-weight:800;color:#22302a">Board {{detailNo}}</span>
+          <span style="flex:1"></span>
+          <button onClick="{{onCloseDetail}}" style="height:26px;width:26px;border:1px solid #e4e9e5;border-radius:8px;background:#fff;color:#93a199;font-family:inherit;font-size:13px;cursor:pointer">✕</button>
+        </div>
+        <sc-if value="{{detailSeatShown}}" hint-placeholder-val="{{true}}">
+        <div>
+          <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9aa8a1;margin-bottom:6px">Your hand — {{detailSeatName}}</div>
+          <dc-import name="SeatDiagram" dc-props="{{detailSeat}}" hint-size="200px,150px"></dc-import>
+        </div>
+        </sc-if>
+        <div style="font-size:12.5px;line-height:1.55;color:#5b6a63">{{detailNote}}</div>
+        <sc-if value="{{detailCompareShown}}" hint-placeholder-val="{{false}}">
+        <button onClick="{{onDetailCompare}}" style="align-self:flex-start;height:34px;padding:0 15px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">⇄ Compare this board</button>
+        </sc-if>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+
+  <!-- ------------------------- RESULTS COLUMN ------------------------- -->
+  <div style="{{resultsColStyle}}">
+
+    <!-- LOCKED (playing / preview) -->
+    <sc-if value="{{lockedShown}}" hint-placeholder-val="{{false}}">
+    <div style="flex:none;border:1px solid #e2e7e3;border-radius:16px;background:#fff;padding:16px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;flex:none;border-radius:10px;background:#f1f4f2;font-size:16px">🔒</span>
+        <div>
+          <div style="font-size:14px;font-weight:800;color:#22302a">{{lockedTitle}}</div>
+          <div style="font-size:12px;color:#8b9a93">{{lockedSub}}</div>
+        </div>
+      </div>
+
+      <sc-if value="{{progressShown}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;align-items:center;gap:14px;margin-top:14px;padding:12px;border-radius:12px;background:#f7faf8;border:1px solid #ebf0ec">
+        <div style="position:relative;width:64px;height:64px;flex:none;border-radius:32px;background:{{ringStyle}}">
+          <div style="position:absolute;inset:7px;border-radius:26px;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center">
+            <span style="font-size:15px;font-weight:800;line-height:1;color:#22302a">{{progressFrac}}</span>
+            <span style="font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:#9aa8a1">boards</span>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12.5px;font-weight:700;color:#3f4f48">{{progressLabel}}</div>
+          <div style="font-size:11.5px;line-height:1.5;color:#8b9a93;margin-top:2px">{{progressHint}}</div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{yourResultsShown}}" hint-placeholder-val="{{true}}">
+      <div style="margin-top:13px">
+        <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#9aa8a1;margin-bottom:7px">Your boards so far · spoiler-safe</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+        <sc-for list="{{yourResults}}" as="r" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:9px;background:#fbfcfb;border:1px solid #eef2ef">
+          <span style="display:flex;align-items:center;justify-content:center;min-width:24px;height:22px;flex:none;border-radius:6px;background:#f1f4f2;font-size:11px;font-weight:800;color:#5a6a63">{{r.no}}</span>
+          <span style="font-size:12.5px;font-weight:700;color:#2c3a34">{{r.line}}</span>
+          <span style="flex:1"></span>
+          <span style="font-size:12px;font-weight:700;color:{{r.scoreColor}}">{{r.score}}</span>
+        </div>
+        </sc-for>
+        </div>
+        <div style="font-size:11px;line-height:1.5;color:#9aa8a1;margin-top:8px">{{yourResultsFoot}}</div>
+      </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <!-- FINISHED → LEADERBOARD -->
+    <sc-if value="{{lbShown}}" hint-placeholder-val="{{true}}">
+    <div style="flex:none;border:1px solid #e2e7e3;border-radius:16px;background:#fff;padding:15px 15px 13px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:11px">
+        <span style="font-size:14px;font-weight:800;color:#22302a">Final standings</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;font-weight:700;color:#0d707c;background:#eff7f6;border-radius:11px;padding:3px 9px">{{lbUnit}}</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:4px">
+      <sc-for list="{{lbRows}}" as="r" hint-placeholder-count="6">
+      <div style="{{r.rowStyle}}">
+        <span style="display:flex;align-items:center;justify-content:center;width:26px;flex:none;font-size:13px;font-weight:800;color:{{r.rankColor}}">{{r.rank}}</span>
+        <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex:none;border-radius:14px;background:{{r.avColor}};color:#fff;font-size:10px;font-weight:800">{{r.initials}}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:13px;font-weight:{{r.nameWeight}};color:#25332c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.name}}</span>
+            <sc-if value="{{r.editor}}" hint-placeholder-val="{{false}}"><span title="Opened the pack editor" style="flex:none;font-size:8px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:3px;padding:1px 4px">◆ set the boards</span></sc-if>
+            <sc-if value="{{r.tie}}" hint-placeholder-val="{{false}}"><span style="flex:none;font-size:8px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#93a199">tie</span></sc-if>
+          </div>
+          <div style="height:4px;margin-top:4px;border-radius:2px;background:#eef2ef;overflow:hidden"><div style="height:100%;width:{{r.barPct}}%;background:{{r.barColor}};border-radius:2px"></div></div>
+        </div>
+        <span style="flex:none;font-size:14px;font-weight:800;color:{{r.totalColor}};min-width:52px;text-align:right">{{r.total}}</span>
+      </div>
+      </sc-for>
+      </div>
+
+      <!-- BEN benchmark line -->
+      <div style="display:flex;align-items:center;gap:9px;margin-top:8px;padding:9px 10px;border-radius:11px;background:#f2f1fc;border:1px dashed #cfccf1">
+        <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex:none;border-radius:8px;background:#5b63d6;color:#fff;font-size:13px">🤖</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12.5px;font-weight:800;color:#3b3a86">BEN — benchmark</div>
+          <div style="font-size:10.5px;color:#8a88b8">Reference robot line · not ranked, excluded from the field</div>
+        </div>
+        <span style="flex:none;font-size:14px;font-weight:800;color:#4a49a0;min-width:52px;text-align:right">{{benTotal}}</span>
+      </div>
+
+      <div style="font-size:11px;line-height:1.5;color:#9aa8a1;margin-top:9px">{{lbStillPlaying}}</div>
+
+      <button onClick="{{onToggleScorecard}}" style="width:100%;height:38px;margin-top:11px;border:1px solid #dbe4e0;border-radius:10px;background:#f7faf8;color:#3f5a56;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">{{scorecardBtnLabel}}</button>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+
+<!-- ======================= SCORECARD (full width) ======================= -->
+<sc-if value="{{scorecardShown}}" hint-placeholder-val="{{false}}">
+<div style="flex:none;margin-top:14px;border:1px solid #e2e7e3;border-radius:16px;background:#fff;padding:14px">
+  <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:11px">
+    <span style="font-size:14px;font-weight:800;color:#22302a">Scorecard</span>
+    <span style="font-size:11px;color:#9aa8a1">Boards × players · {{lbUnit}} · your column highlighted, BEN shown apart</span>
+  </div>
+  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+    <div style="min-width:{{scMinWidth}}px">
+      <!-- header row -->
+      <div style="display:flex;gap:4px;margin-bottom:5px">
+        <span style="width:58px;flex:none"></span>
+        <sc-for list="{{scHeaders}}" as="h" hint-placeholder-count="7">
+        <span style="{{h.style}}">{{h.label}}</span>
+        </sc-for>
+        <span style="width:74px;flex:none"></span>
+      </div>
+      <!-- board rows -->
+      <sc-for list="{{scRows}}" as="row" hint-placeholder-count="8">
+      <div style="display:flex;gap:4px;margin-bottom:3px;align-items:stretch">
+        <span style="width:58px;flex:none;display:flex;flex-direction:column;justify-content:center;padding:0 6px;border-radius:7px;background:#f7faf8">
+          <span style="font-size:12px;font-weight:800;color:#3f4f48">Bd {{row.no}}</span>
+          <span style="font-size:9px;color:#9aa8a1">{{row.meta}}</span>
+        </span>
+        <sc-for list="{{row.cells}}" as="c" hint-placeholder-count="7">
+        <span style="{{c.style}}">{{c.text}}</span>
+        </sc-for>
+        <button onClick="{{row.onCompare}}" style="width:74px;flex:none;border:1px solid #cfe1de;border-radius:7px;background:#eff7f6;color:#0d707c;font-family:inherit;font-size:10.5px;font-weight:700;cursor:pointer">⇄ Compare</button>
+      </div>
+      </sc-for>
+      <!-- totals row -->
+      <div style="display:flex;gap:4px;margin-top:6px;padding-top:6px;border-top:2px solid #eef2ef;align-items:stretch">
+        <span style="width:58px;flex:none;display:flex;align-items:center;padding:0 6px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#8b9a93">Total</span>
+        <sc-for list="{{scTotals}}" as="t" hint-placeholder-count="7">
+        <span style="{{t.style}}">{{t.text}}</span>
+        </sc-for>
+        <span style="width:74px;flex:none"></span>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- toast -->
+<sc-if value="{{toastShown}}" hint-placeholder-val="{{false}}">
+<div onClick="{{onToastDismiss}}" style="position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:50;max-width:90%;display:flex;align-items:center;gap:9px;padding:11px 15px;border-radius:11px;background:#17211d;color:#eaf2ee;font-size:12.5px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.28);cursor:pointer">
+  <span style="color:{{accent}};font-size:14px">◆</span><span>{{toastText}}</span>
+</div>
+</sc-if>
+
+</div>
+</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:980},&quot;viewport&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewport&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;phone&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;viewerRole&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewer role&quot;,&quot;options&quot;:[&quot;participant&quot;,&quot;creator&quot;,&quot;pending-invitee&quot;],&quot;default&quot;:&quot;participant&quot;,&quot;section&quot;:&quot;View&quot;},&quot;phase&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Phase&quot;,&quot;options&quot;:[&quot;playing&quot;,&quot;finished&quot;],&quot;default&quot;:&quot;finished&quot;,&quot;section&quot;:&quot;View&quot;},&quot;scoring&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Scoring&quot;,&quot;options&quot;:[&quot;imps&quot;,&quot;mp&quot;,&quot;total&quot;],&quot;default&quot;:&quot;imps&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;title&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Title&quot;,&quot;default&quot;:&quot;Tuesday Night Teams — Set 12&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;description&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Description&quot;,&quot;default&quot;:&quot;Same deals for everyone, BEN robots in the other three seats, one attempt per board. Your standings unlock once you have finished them all.&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;creatorName&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Creator name&quot;,&quot;default&quot;:&quot;Marta Okonkwo&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;editorBadge&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Creator opened pack editor&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Challenge&quot;},&quot;boardsCount&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Boards&quot;,&quot;min&quot;:2,&quot;max&quot;:8,&quot;default&quot;:8,&quot;section&quot;:&quot;Challenge&quot;},&quot;locked&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Locked (first play)&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Challenge&quot;},&quot;accent&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Accent&quot;,&quot;default&quot;:&quot;#0d707c&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;pageBg&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Backdrop&quot;,&quot;default&quot;:&quot;#dfe4e0&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+// ======================================================================
+// Challenge page — spec §6. What an invitee / participant / creator sees for
+// ONE challenge: header + participants, a boards grid/list, and a results area
+// that is spoiler-safe while playing and a leaderboard + scorecard once every
+// board is finished (the whole-challenge unlock rule).
+//
+// Nothing here mutates a server: every button is a mock intent that flashes a
+// toast, so the whole canvas is clickable for owner review. The leaderboard and
+// scorecard are computed from ONE per-board points matrix through a real field
+// scoring model (IMP table + matchpoints + IMPs-vs-datum), so the three scoring
+// modes stay consistent with each other and with the boards. BEN is scored the
+// same way but kept OUT of the field and shown as an unranked benchmark line.
+// ======================================================================
+
+const SEATS4 = ["N", "E", "S", "W"];
+const SEAT_NAME = { N: "North", E: "East", S: "South", W: "West" };
+const VUL_RAW = ["None", "NS", "EW", "All"];      // standard board cycle
+const VUL_DISP = { None: "None vul", NS: "N-S vul", EW: "E-W vul", All: "All vul" };
+
+// Standard IMP table: absolute point difference -> IMPs (signed by the caller).
+const IMP_STEPS = [15, 45, 85, 125, 165, 215, 265, 315, 365, 425, 495, 595, 745,
+  895, 1095, 1295, 1495, 1745, 1995, 2245, 2495, 2995, 3495, 3995];
+function impOf(diff) {
+  const a = Math.abs(diff);
+  let n = 0;
+  for (let i = 0; i < IMP_STEPS.length; i++) { if (a > IMP_STEPS[i]) n = i + 1; else break; }
+  return diff < 0 ? -n : n;
+}
+
+// The field = completed human participants. Per-board points from each player's
+// OWN perspective (N-S), all sitting the same seat. Verified to give a clean
+// spread with a genuine shared rank (Devang & Lena tie at -7 IMPs, rank 5
+// skipped) and BEN clearly ahead of the field as the benchmark.
+const FIELD = ["You", "Marta", "Devang", "Priya", "Tomas", "Lena"];
+const MATRIX = {
+  You:    [630, -100, 620, 980, 170, 300, 400, -420],
+  Marta:  [600, 140, 620, 480, 140, -200, 620, -420],
+  Devang: [630, 110, 170, 480, 140, 100, 400, -450],
+  Priya:  [660, 140, 650, 980, -50, 300, 430, -420],
+  Tomas:  [-100, 140, 620, 480, 170, -500, 400, -200],
+  Lena:   [630, -50, 140, 450, 140, 100, 620, -420],
+  BEN:    [660, 140, 650, 980, 170, 300, 620, -420],
+};
+
+// Your board-by-board raw line (only your own boards are ever shown as results).
+const YOUR_LINE = [
+  { line: "4♠ +1", detail: "You declared · 11 tricks" },
+  { line: "3NT −1", detail: "You declared · vulnerable" },
+  { line: "4♠ =", detail: "You declared · 10 tricks" },
+  { line: "6♥ made", detail: "You declared · small slam" },
+  { line: "3♦ +1", detail: "You declared · part-score" },
+  { line: "Doubled +2", detail: "You defended · set them two" },
+  { line: "3NT =", detail: "You declared · 9 tricks" },
+  { line: "E-W 4♠", detail: "You defended · their game" },
+];
+
+// Per-board human seat: creator may set it, default South. Two overrides so the
+// seat chip visibly varies.
+const SEAT_MAP = { 3: "W", 6: "E" };
+
+// Roster identity (avatars). Marta is the default creator; when the VIEWER is
+// the creator, "You" become the creator instead (see renderVals).
+const PEOPLE = {
+  You:    { initials: "YO", color: "#0d707c" },
+  Marta:  { initials: "MO", color: "#c2410c" },
+  Priya:  { initials: "PS", color: "#be3f8f" },
+  Devang: { initials: "DR", color: "#2563b8" },
+  Tomas:  { initials: "TB", color: "#4f7a2f" },
+  Lena:   { initials: "LF", color: "#7a5bd0" },
+};
+const SHORT = { You: "You", Marta: "Marta", Priya: "Priya", Devang: "Devang", Tomas: "Tomas", Lena: "Lena" };
+const NADIA = { key: "Nadia", initials: "NE", color: "#0e8a9c", name: "Nadia El-Amin" }; // accepted, still playing
+const PENDING = [{ initials: "SW", name: "Sam Whitfield" }, { initials: "AT", name: "Aiko Tanaka" }];
+
+const POS = "#1c8a5a", NEG = "#c0392b", NEU = "#8b9a93";
+
+// ---- field scoring model ----
+function datumAt(N, b) { let s = 0; for (const p of FIELD) s += MATRIX[p][b]; return s / FIELD.length; }
+function cellValue(mode, N, key, b) {
+  if (mode === "total") return MATRIX[key][b];
+  if (mode === "imps") return impOf(MATRIX[key][b] - datumAt(N, b));
+  // matchpoints: % of the field this player beats on this board
+  const others = key === "BEN" ? FIELD : FIELD.filter((x) => x !== key);
+  let mp = 0;
+  for (const q of others) { const a = MATRIX[key][b], c = MATRIX[q][b]; mp += a > c ? 1 : a === c ? 0.5 : 0; }
+  return others.length ? (mp / others.length) * 100 : 0;
+}
+function totalValue(mode, N, key) {
+  let s = 0;
+  for (let b = 0; b < N; b++) s += cellValue(mode, N, key, b);
+  return mode === "mp" ? s / N : s;
+}
+function fmtTotal(mode, v) {
+  if (mode === "mp") return v.toFixed(1) + "%";
+  if (mode === "total") return (v >= 0 ? "+" : "") + Math.round(v).toLocaleString();
+  return (v >= 0 ? "+" : "") + Math.round(v);
+}
+function fmtCell(mode, v) {
+  if (mode === "mp") return Math.round(v) + "";
+  if (mode === "total") return (v > 0 ? "+" : "") + Math.round(v);
+  return (v > 0 ? "+" : "") + Math.round(v);
+}
+function valColor(mode, v) {
+  if (mode === "mp") return v >= 55 ? POS : v <= 45 ? NEG : NEU;
+  return v > 0 ? POS : v < 0 ? NEG : NEU;
+}
+
+class Component extends DCLogic {
+  state = {
+    ready: false,
+    vp: null,            // viewport override (null = follow prop)
+    view: "grid",        // grid | list
+    scorecard: false,    // scorecard expanded
+    openBoard: null,     // expanded board detail (board number)
+    invite: null,        // pending-invitee response: null | "accepted" | "declined"
+    toast: null,
+    lastRole: null,      // reset invite response when the role prop changes
+  };
+
+  componentDidMount() {
+    this._sess = new Map();
+    if (window.Bridge) this.setState({ ready: true });
+    else window.addEventListener("bridge-ready", () => this.setState({ ready: true }), { once: true });
+  }
+
+  flash(msg) {
+    this.setState({ toast: msg });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => this.setState({ toast: null }), 2800);
+  }
+
+  // A paused, deal-only session so SeatDiagram can show your real hand for a
+  // completed board (you have already seen it — no spoiler).
+  seatPropsFor(no) {
+    if (!window.Bridge) return null;
+    const seat = SEAT_MAP[no] || "S";
+    if (!this._sess.has(no)) {
+      this._sess.set(no, window.Bridge.createSession({
+        config: { humanSeats: [seat], showAll: true, robots: false, paused: true, handLayout: "row" },
+        board: no,
+      }));
+    }
+    return Object.assign(window.Bridge.seatModel(this._sess.get(no), seat, { kind: "col" }), { panelBg: "#ffffff" });
+  }
+
+  renderVals() {
+    const p = this.props || {};
+    const accent = p.accent || "#0d707c";
+    const pageBg = p.pageBg || "#dfe4e0";
+    const scoring = ["imps", "mp", "total"].indexOf(p.scoring) >= 0 ? p.scoring : "imps";
+    const N = Math.max(2, Math.min(8, Math.round(Number(p.boardsCount ?? 8) || 8)));
+    const title = p.title || "Tuesday Night Teams — Set 12";
+    const description = p.description ||
+      "Same deals for everyone, BEN robots in the other three seats, one attempt per board.";
+    const locked = p.locked !== false;
+
+    // ---- role / invite state ----
+    const role = ["participant", "creator", "pending-invitee"].indexOf(p.viewerRole) >= 0 ? p.viewerRole : "participant";
+    // Reset a stale accept/decline when the owner switches the role prop.
+    let invite = this.state.invite;
+    if (this.state.lastRole !== role) { invite = null; this._roleReset = true; }
+    const isPendingRole = role === "pending-invitee";
+    const pending = isPendingRole && invite === null;      // showing accept/decline
+    const declined = isPendingRole && invite === "declined";
+    const justJoined = isPendingRole && invite === "accepted";
+    const isCreator = role === "creator";
+
+    // A pending/declined viewer has not started, so the phase is effectively
+    // "playing" for them regardless of the phase prop.
+    const phase = (isPendingRole) ? "playing" : (p.phase === "finished" ? "finished" : "playing");
+    const canPlay = !pending && !declined;
+
+    // Who is the creator, and does their row wear the editor badge.
+    const creatorKey = isCreator ? "You" : "Marta";
+    const editorBadge = p.editorBadge !== false;
+    const creatorName = isCreator ? "you" : (p.creatorName || "Marta Okonkwo");
+
+    // ---- viewport ----
+    const vp = this.state.vp ?? (p.viewport === "phone" ? "phone" : "desktop");
+    const phone = vp === "phone";
+
+    // ---- your progress ----
+    const yourDone = phase === "finished" ? N : (pending || declined ? 0 : justJoined ? 0 : Math.min(3, N - 1));
+    const inProgress = (phase === "playing" && !justJoined && !pending && !declined && yourDone < N) ? yourDone + 1 : null;
+
+    const v = {
+      accent, ready: this.state.ready,
+      outerStyle: "height:100%;min-height:100%;background:" + pageBg + ";display:flex;justify-content:center;overflow-y:auto;overflow-x:hidden;font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
+      appStyle: (phone
+        ? "width:412px;max-width:100%;min-height:100%;background:#f4f6f4;border-left:1px solid #d7ddd8;border-right:1px solid #d7ddd8"
+        : "width:100%;max-width:1200px;min-height:100%;background:transparent"),
+      contentStyle: "padding:" + (phone ? "14px 13px 40px" : "22px 24px 48px"),
+      roleLabel: { participant: "You are playing", creator: "You created this", "pending-invitee": "You are invited" }[role],
+      phaseLabel: pending ? "invite pending" : declined ? "invite declined"
+        : phase === "finished" ? "you have finished" : "in progress",
+      viewChips: [["desktop", "Desktop"], ["phone", "Phone"]].map(([k, l]) => ({
+        label: l, on: () => this.setState({ vp: k }),
+        bg: vp === k ? accent : "transparent", color: vp === k ? "#fff" : "#7a877f",
+      })),
+    };
+
+    // ---- invite banner ----
+    v.showBanner = pending;
+    v.bannerAvInit = PEOPLE.Marta.initials;
+    v.bannerAvColor = PEOPLE.Marta.color;
+    v.bannerTitle = (p.creatorName || "Marta Okonkwo") + " invited you to this challenge";
+    v.bannerBody = "Accept to play the boards; decline and it just leaves your list. You can join even after others have started — invites never close.";
+    v.onAccept = () => { this.setState({ invite: "accepted", lastRole: role }); this.flash("Joined — you're in the field now."); };
+    v.onDecline = () => { this.setState({ invite: "declined", lastRole: role }); };
+    v.showDeclined = declined;
+    v.onReopen = () => this.setState({ invite: null, lastRole: role });
+    v.showJoinedNote = justJoined;
+
+    // ---- header ----
+    v.title = title;
+    v.description = description;
+    v.createdByPrefix = "Created by";
+    v.creatorLabel = creatorName;
+    v.creatorAvInit = isCreator ? PEOPLE.You.initials : PEOPLE.Marta.initials;
+    v.creatorAvColor = isCreator ? accent : PEOPLE.Marta.color;
+    v.showEditorBadge = editorBadge;
+    v.scoringChip = { imps: "IMPs vs datum", mp: "Matchpoints", total: "Total points" }[scoring];
+    v.boardsChip = N + " boards";
+    v.lockShown = locked;
+    v.lockLabel = "Locked";
+    v.lockHint = "Boards, seats and control overrides locked when the first player started. Invites stay open.";
+    v.creatorNoteShown = isCreator;
+    v.creatorNote = locked
+      ? "Boards are locked since first play — but you can still invite more people any time."
+      : "No one has started yet — you can still re-roll boards, change seats and controls.";
+
+    // ---- participants strip ----
+    // Joined = accepted players. "You" appear once you are a real participant.
+    const joinedKeys = FIELD.slice(); // You, Marta, Devang, Priya, Tomas, Lena
+    v.joined = joinedKeys.map((k) => {
+      const isYou = k === "You";
+      if (isYou && (pending || declined)) return null; // "You" appear only once you have joined
+      return {
+        initials: PEOPLE[k].initials, color: isYou ? accent : PEOPLE[k].color,
+        name: isYou ? "You" : SHORT[k],
+        editor: k === creatorKey && editorBadge,
+        bg: isYou ? "#eff7f6" : "#fff", line: isYou ? "#bfe0db" : "#e8ece9",
+        textColor: isYou ? "#0d707c" : "#3f4f48", weight: isYou ? 800 : 600,
+      };
+    }).filter(Boolean);
+    // Nadia is accepted but still playing — she shows in the strip too.
+    v.joined.push({ initials: NADIA.initials, color: NADIA.color, name: "Nadia", editor: false,
+      bg: "#fff", line: "#e8ece9", textColor: "#3f4f48", weight: 600 });
+
+    // still playing = accepted-not-finished. You count only while you are a
+    // participant who has not finished.
+    const youStillPlaying = (isCreator || justJoined || role === "participant") && phase !== "finished" && !pending && !declined;
+    v.stillPlaying = (youStillPlaying ? 1 : 0) + 1; // + Nadia
+    v.pendingShown = true;
+    v.pending = PENDING.map((q) => ({ initials: q.initials, name: q.name }));
+
+    // ================= BOARDS =================
+    v.boardsSubLabel = phase === "finished"
+      ? "All played · tap any for the deal & your hand"
+      : "Play in any order — sequential is only a suggestion";
+    v.onGrid = () => this.setState({ view: "grid" });
+    v.onList = () => this.setState({ view: "list" });
+    const grid = this.state.view === "grid";
+    v.gridBg = grid ? "#fff" : "transparent"; v.gridColor = grid ? "#0d707c" : "#7a877f";
+    v.listBg = !grid ? "#fff" : "transparent"; v.listColor = !grid ? "#0d707c" : "#7a877f";
+    v.boardsContainerStyle = grid
+      ? "flex:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(" + (phone ? "150px" : "212px") + ",1fr));gap:10px"
+      : "flex:none;display:flex;flex-direction:column;gap:8px";
+
+    // sequential CTA
+    let cta = null;
+    if (pending) cta = { title: "You're invited", sub: "Accept above to start playing — the first board opens at the table.", btn: null, tone: "muted" };
+    else if (declined) cta = { title: "Invite declined", sub: "Reconsider above to join and play these boards.", btn: null, tone: "muted" };
+    else if (phase === "finished") cta = {
+      title: "You finished all " + N + " boards", sub: "Your results are in. Replay any board for unscored practice below.",
+      btnLabel: "↻ Practice a board", tone: "done", on: () => this.flash("Opens a fresh, unscored copy at a normal table."),
+    };
+    else if (inProgress) cta = {
+      title: "Resume Board " + inProgress, sub: "One attempt — you can leave and come back; it never restarts.",
+      btnLabel: "Resume Board " + inProgress + " →", tone: "go", on: () => this.flash("Resumes Board " + inProgress + " — BEN warming up…"),
+    };
+    else cta = {
+      title: "Play next: Board " + (yourDone + 1), sub: "Any board below is open too (free order). BEN sits the other three seats.",
+      btnLabel: "Play Board " + (yourDone + 1) + " →", tone: "go", on: () => this.flash("Opens Board " + (yourDone + 1) + " at the table — BEN warming up…"),
+    };
+    v.ctaShown = true;
+    v.ctaTitle = cta.title; v.ctaSub = cta.sub;
+    v.ctaBtnShown = !!cta.btnLabel; v.ctaBtnLabel = cta.btnLabel || ""; v.onCta = cta.on || (() => {});
+    const ctaGo = cta.tone === "go", ctaDone = cta.tone === "done";
+    v.ctaWrapStyle = "flex:none;display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:14px;border:1px solid "
+      + (ctaGo ? accent : ctaDone ? "#cfe6d8" : "#e4e9e5") + ";background:" + (ctaGo ? "#f0faf9" : ctaDone ? "#f1f9f4" : "#fbfcfb");
+    v.ctaTitleColor = ctaGo ? "#0c5e56" : ctaDone ? "#2c6b48" : "#5a6a63";
+    v.ctaSubColor = "#8b9a93";
+    v.ctaBtnStyle = "flex:none;height:40px;padding:0 18px;border:0;border-radius:10px;background:" + (ctaDone ? "#fff" : accent)
+      + ";color:" + (ctaDone ? "#2f8f57" : "#fff") + ";font-family:inherit;font-size:13px;font-weight:800;cursor:pointer"
+      + (ctaDone ? ";border:1px solid #cfe6d8" : "");
+
+    // board tiles
+    v.boards = [];
+    for (let no = 1; no <= N; no++) {
+      const b = no - 1;
+      const dealer = SEATS4[(no - 1) % 4];
+      const rawVul = VUL_RAW[(no - 1) % 4];
+      const seat = SEAT_MAP[no] || "S";
+      const nsVul = rawVul === "NS" || rawVul === "All";
+      const done = phase === "finished" ? true : (canPlay && no <= yourDone);
+      const now = phase !== "finished" && inProgress === no;
+      const later = !done && !now;
+      const nextToStart = later && no === (inProgress ? inProgress : yourDone + 1); // lowest unplayed
+
+      const tile = {
+        no, dealer, seat,
+        vulLabel: VUL_DISP[rawVul], vulBg: nsVul ? "#fbeaea" : "#f1f4f2", vulColor: nsVul ? "#b23a3a" : "#5a6a63",
+        noBg: now ? accent : done ? "#e9f1ee" : "#f1f4f2",
+        noColor: now ? "#fff" : done ? "#0d707c" : "#5a6a63",
+        onToggle: () => this.setState((s) => ({ openBoard: s.openBoard === no ? null : no })),
+        detailLabel: this.state.openBoard === no ? "Hide deal ▲" : "Deal & seat ▾",
+      };
+      // status pill
+      if (done) { tile.pillLabel = phase === "finished" ? "Complete" : "Scored"; tile.pillBg = "#e9f1ee"; tile.pillColor = "#2f8f57"; }
+      else if (now) { tile.pillLabel = "In progress"; tile.pillBg = "#fff2e2"; tile.pillColor = "#c2410c"; }
+      else { tile.pillLabel = "Not started"; tile.pillBg = "#f1f4f2"; tile.pillColor = "#8b9a93"; }
+
+      // result rendering
+      const yl = YOUR_LINE[b] || { line: "—", detail: "" };
+      const raw = MATRIX.You[b];
+      const rawStr = (raw >= 0 ? "+" : "") + raw + " N-S";
+      tile.result = { line: yl.line, score: rawStr, detail: yl.detail, layout: "wide", showNext: false };
+      tile.resLine = yl.line; tile.resScore = rawStr; tile.resDetail = yl.detail;
+      tile.resScoreColor = raw >= 0 ? POS : NEG;
+
+      tile.showResultCard = done && grid;
+      tile.showResultStrip = done && !grid;
+
+      // finished: challenge score + entry points; playing done: locked note
+      if (done && phase === "finished") {
+        const cv = cellValue(scoring, N, "You", b);
+        tile.showFinishedRow = true;
+        tile.scoreUnit = { imps: "IMP", mp: "MP %", total: "pts" }[scoring];
+        tile.chScore = fmtCell(scoring, cv);
+        tile.chColor = valColor(scoring, cv);
+        tile.chBg = "#fbfcfb"; tile.chLine = "#e4e9e5";
+        tile.onCompare = () => this.flash("Compare Board " + no + " — your line vs BEN and the field.");
+        tile.onReplay = () => this.flash("Practice copy of Board " + no + " (unscored) opens at a normal table.");
+      } else if (done) {
+        tile.showScoredLocked = true;
+      }
+
+      // play/resume row
+      if (now) {
+        tile.showPlayRow = true; tile.showNextTag = false;
+        tile.playLabel = "Resume →";
+        tile.onPlay = () => this.flash("Resumes Board " + no + " — BEN warming up…");
+        tile.playBtnStyle = "height:30px;padding:0 13px;border:0;border-radius:8px;background:" + accent + ";color:#fff;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer";
+      } else if (later) {
+        tile.showPlayRow = true; tile.showNextTag = nextToStart && canPlay; tile.nextTagColor = accent;
+        if (canPlay) {
+          tile.playLabel = "Play →";
+          tile.onPlay = () => this.flash("Opens Board " + no + " at the table (free order) — BEN warming up…");
+          tile.playBtnStyle = "height:30px;padding:0 13px;border:1px solid " + (nextToStart ? accent : "#dbe4e0") + ";border-radius:8px;background:" + (nextToStart ? "#f0faf9" : "#fff") + ";color:" + (nextToStart ? "#0c5e56" : "#4a5c55") + ";font-family:inherit;font-size:12px;font-weight:700;cursor:pointer";
+        } else {
+          tile.playLabel = pending ? "Accept to play" : "Reconsider to play";
+          tile.onPlay = () => this.flash(pending ? "Accept the invite above first." : "Reopen the invite above to play.");
+          tile.playBtnStyle = "height:30px;padding:0 13px;border:1px solid #e4e9e5;border-radius:8px;background:#f6f7f6;color:#a9b4ad;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer";
+        }
+      }
+
+      tile.tileStyle = "border:1px solid " + (now ? accent : "#e4e9e5") + ";border-radius:12px;background:"
+        + (now ? "#f6fdfc" : "#fff") + ";padding:11px 12px;display:flex;flex-direction:column;gap:9px";
+      v.boards.push(tile);
+    }
+
+    // ---- expanded board detail ----
+    const ob = this.state.openBoard;
+    v.detailShown = ob != null && ob <= N;
+    if (v.detailShown) {
+      const dealer = SEATS4[(ob - 1) % 4];
+      const rawVul = VUL_RAW[(ob - 1) % 4];
+      const seat = SEAT_MAP[ob] || "S";
+      const doneBoard = phase === "finished" || (canPlay && ob <= yourDone);
+      v.detailNo = ob; v.detailDealer = dealer; v.detailVulLabel = VUL_DISP[rawVul];
+      v.detailVul = { board: ob, dealer, vul: rawVul };
+      v.detailSeatName = SEAT_NAME[seat];
+      v.detailSeatShown = doneBoard && this.state.ready;
+      v.detailSeat = doneBoard ? this.seatPropsFor(ob) : null;
+      v.detailNote = doneBoard
+        ? "You sat " + SEAT_NAME[seat] + " here. One attempt — this line is frozen. The other three hands stay hidden until the whole challenge is finished."
+        : "You'll sit " + SEAT_NAME[seat] + " on Board " + ob + ". Dealer " + SEAT_NAME[dealer] + ", " + VUL_DISP[rawVul] + ". The hands stay hidden until you play — one attempt, resume anytime.";
+      v.detailCompareShown = doneBoard && phase === "finished";
+      v.onDetailCompare = () => this.flash("Compare Board " + ob + " — your line vs BEN and the field.");
+      v.onCloseDetail = () => this.setState({ openBoard: null });
+    }
+
+    // ================= RESULTS =================
+    const showLeaderboard = phase === "finished" && !pending && !declined;
+    v.lockedShown = !showLeaderboard;
+    v.lbShown = showLeaderboard;
+
+    // locked / spoiler-safe panel
+    if (v.lockedShown) {
+      if (pending || declined) {
+        v.lockedTitle = "Standings are hidden";
+        v.lockedSub = "Join and finish every board to unlock them.";
+      } else {
+        v.lockedTitle = "Results are locked";
+        v.lockedSub = "Whole-challenge unlock — finish all " + N + " boards.";
+      }
+      v.progressShown = canPlay;
+      const pct = Math.round((yourDone / N) * 100);
+      v.progressFrac = yourDone + "/" + N;
+      v.ringStyle = "conic-gradient(" + accent + " " + pct + "%, #e4e9e5 0)";
+      v.progressLabel = yourDone === 0 ? "Not started yet" : yourDone + " of " + N + " boards finished";
+      v.progressHint = "The leaderboard, scorecard and comparisons all open together the moment you complete the set.";
+      // your own boards so far — spoiler-safe (no field, no ranks)
+      v.yourResultsShown = canPlay && yourDone > 0;
+      v.yourResults = [];
+      for (let no = 1; no <= yourDone; no++) {
+        const raw = MATRIX.You[no - 1];
+        v.yourResults.push({
+          no, line: (YOUR_LINE[no - 1] || {}).line || "—",
+          score: (raw >= 0 ? "+" : "") + raw, scoreColor: raw >= 0 ? POS : NEG,
+        });
+      }
+      v.yourResultsFoot = "You can see your own contracts and raw scores — everyone's IMPs, matchpoints and ranks stay sealed until you finish.";
+    }
+
+    // leaderboard
+    if (v.lbShown) {
+      v.lbUnit = { imps: "IMPs vs datum", mp: "Matchpoints %", total: "Total points" }[scoring];
+      const vals = FIELD.map((k) => ({ key: k, v: totalValue(scoring, N, k) }));
+      const rows = vals.slice().sort((a, b) => b.v - a.v);
+      let rank = 0, seen = 0, prev = null;
+      rows.forEach((r) => { seen++; if (prev === null || r.v !== prev) { rank = seen; prev = r.v; } r.rank = rank; });
+      const byRank = {}; rows.forEach((r) => { byRank[r.rank] = (byRank[r.rank] || 0) + 1; });
+      const benV = totalValue(scoring, N, "BEN");
+      const all = rows.map((r) => r.v).concat([benV]);
+      const lo = Math.min.apply(null, all.concat([scoring === "mp" ? 0 : 0]));
+      const hi = Math.max.apply(null, all);
+      const span = hi - lo || 1;
+      v.lbRows = rows.map((r) => {
+        const isYou = r.key === "You";
+        const isCreatorRow = r.key === creatorKey;
+        const name = isYou ? "You" : (r.key === "Marta" ? (isCreator ? "Marta Okonkwo" : (p.creatorName || "Marta Okonkwo")) : NAMES(r.key));
+        return {
+          rank: r.rank,
+          rankColor: r.rank <= 3 ? "#22302a" : "#8b9a93",
+          tie: byRank[r.rank] > 1,
+          initials: PEOPLE[r.key].initials, avColor: isYou ? accent : PEOPLE[r.key].color,
+          name, nameWeight: isYou ? 800 : 600,
+          editor: isCreatorRow && editorBadge,
+          total: fmtTotal(scoring, r.v), totalColor: valColor(scoring, r.v),
+          barPct: Math.max(4, Math.round(((r.v - lo) / span) * 100)),
+          barColor: isYou ? accent : "#c4d2cc",
+          rowStyle: "display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:10px;"
+            + (isYou ? "background:#eff7f6;border:1px solid #bfe0db" : "background:#fff;border:1px solid #eef2ef"),
+        };
+      });
+      v.benTotal = fmtTotal(scoring, benV);
+      v.lbStillPlaying = "Still playing: " + v.stillPlaying + " (incl. Nadia El-Amin) — they join the ranks when they finish. "
+        + PENDING.length + " invites pending.";
+      v.scorecardBtnLabel = this.state.scorecard ? "Hide scorecard ▲" : "Open scorecard (boards × players) ▾";
+      v.onToggleScorecard = () => this.setState((s) => ({ scorecard: !s.scorecard }));
+    }
+
+    // ================= SCORECARD =================
+    v.scorecardShown = v.lbShown && this.state.scorecard;
+    if (v.scorecardShown) {
+      const cols = FIELD.concat(["BEN"]);
+      const cellW = phone ? 46 : 58;
+      v.scMinWidth = 58 + cols.length * (cellW + 4) + 74 + 10;
+      const headStyle = (key) => {
+        const isYou = key === "You", isBen = key === "BEN";
+        return "width:" + cellW + "px;flex:none;text-align:center;padding:5px 2px;border-radius:7px 7px 0 0;font-size:10.5px;font-weight:800;"
+          + (isBen ? "background:#f2f1fc;color:#4a49a0;" : isYou ? "background:#eff7f6;color:#0d707c;" : "background:#f7faf8;color:#5a6a63;");
+      };
+      v.scHeaders = cols.map((k) => ({
+        label: k === "BEN" ? "BEN" : k === "You" ? "You" : PEOPLE[k].initials, style: headStyle(k),
+      }));
+      const cellStyle = (key, tone) => {
+        const isYou = key === "You", isBen = key === "BEN";
+        const bg = isBen ? "#faf9ff" : isYou ? "#f3faf9" : "#fff";
+        return "width:" + cellW + "px;flex:none;display:flex;align-items:center;justify-content:center;padding:6px 2px;border-radius:6px;"
+          + "background:" + bg + ";border:1px solid " + (isYou ? "#dcefec" : isBen ? "#e7e5f7" : "#eef2ef")
+          + ";font-size:12px;font-weight:" + (isYou || isBen ? 800 : 600) + ";color:" + tone + ";";
+      };
+      v.scRows = [];
+      for (let no = 1; no <= N; no++) {
+        const b = no - 1;
+        v.scRows.push({
+          no, meta: SEATS4[(no - 1) % 4] + " · " + (VUL_RAW[(no - 1) % 4] === "None" ? "—" : VUL_RAW[(no - 1) % 4]),
+          cells: cols.map((k) => {
+            const cv = cellValue(scoring, N, k, b);
+            return { text: fmtCell(scoring, cv), style: cellStyle(k, valColor(scoring, cv)) };
+          }),
+          onCompare: () => this.flash("Compare Board " + no + " — synced boards: your line vs BEN and the field."),
+        });
+      }
+      v.scTotals = cols.map((k) => {
+        const tv = totalValue(scoring, N, k);
+        const isYou = k === "You", isBen = k === "BEN";
+        return {
+          text: fmtTotal(scoring, tv),
+          style: "width:" + cellW + "px;flex:none;display:flex;align-items:center;justify-content:center;padding:6px 2px;border-radius:6px;"
+            + "background:" + (isBen ? "#f2f1fc" : isYou ? "#eff7f6" : "#f7faf8") + ";font-size:11.5px;font-weight:800;color:"
+            + (isBen ? "#4a49a0" : valColor(scoring, tv)) + ";",
+        };
+      });
+    }
+
+    // body layout
+    v.bodyStyle = phone
+      ? "display:flex;flex-direction:column;gap:14px"
+      : "display:flex;flex-direction:row;gap:18px;align-items:flex-start";
+    v.boardsColStyle = phone
+      ? "width:100%;display:flex;flex-direction:column;gap:11px"
+      : "flex:1.35;min-width:0;display:flex;flex-direction:column;gap:11px";
+    v.resultsColStyle = phone
+      ? "width:100%;display:flex;flex-direction:column;gap:12px"
+      : "flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;position:sticky;top:16px";
+
+    // toast
+    v.toastShown = !!this.state.toast;
+    v.toastText = this.state.toast || "";
+    v.onToastDismiss = () => this.setState({ toast: null });
+
+    // persist role for the invite-reset guard
+    if (this._roleReset) { this._roleReset = false; setTimeout(() => this.setState({ lastRole: role }), 0); }
+
+    return v;
+
+    function NAMES(key) {
+      return { Priya: "Priya Sundaram", Devang: "Devang Rao", Tomas: "Tomas Berg", Lena: "Lena Fischer", Marta: "Marta Okonkwo" }[key] || key;
+    }
+  }
+}
+</script>
+</body>
+</html>
