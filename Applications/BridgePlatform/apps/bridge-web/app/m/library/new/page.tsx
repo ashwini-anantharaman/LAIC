@@ -21,7 +21,9 @@ export default async function MobileNewDealPage({
     redirect("/m/library");
   const { kind: rawKind, error } = await searchParams;
   const kind = rawKind === "deal" ? "deal" : "board";
-  const noun = kind === "deal" ? "deal" : "board";
+  // Display noun: the "deal" kind (a bare card distribution) is a "pack" in the
+  // library's vocabulary; the stored `kind` discriminator stays "deal".
+  const noun = kind === "deal" ? "pack" : "board";
 
   return (
     <main
@@ -72,7 +74,7 @@ export default async function MobileNewDealPage({
         <input type="hidden" name="mobile" value="1" />
         <DealEditor
           hideBoardFacts={kind === "deal"}
-          submitLabel={kind === "deal" ? "Save deal" : "Save board"}
+          submitLabel={kind === "deal" ? "Save pack" : "Save board"}
         />
       </form>
     </main>
