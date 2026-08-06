@@ -1041,6 +1041,17 @@ export async function getProfileByEmail(email: string): Promise<Row | null> {
   return rows.length > 0 ? rows[0] : null;
 }
 
+/** Username identity is DB-backed only — the local JSON store has no column. */
+export async function getProfileByUsername(username: string): Promise<Row | null> {
+  if (!usePg()) return null;
+  return pg.getProfileByUsername(username);
+}
+
+export async function setProfileUsername(profileId: string, username: string | null): Promise<Row> {
+  if (!usePg()) throw new HttpError(400, "Usernames require the database backend");
+  return pg.setProfileUsername(profileId, username);
+}
+
 export async function getMembership(memberId: string): Promise<Row | null> {
   if (usePg()) return tpg.getMembership(memberId);
   if (await useLocal()) return local.localGetMembership(memberId);

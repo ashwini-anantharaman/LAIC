@@ -34,6 +34,23 @@ export async function createDemoAuthUser(email: string, password: string): Promi
   });
 }
 
+/** Overwrite a demo auth user's password, found by email. Admin-initiated. */
+export async function setDemoAuthPassword(email: string, password: string): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .select({ id: demoAuthUsers.id, email: demoAuthUsers.email })
+      .from(demoAuthUsers)
+      .where(sql`lower(${demoAuthUsers.email}) = lower(${email})`);
+    const user = rows[0];
+    if (!user) throw new HttpError(404, "No account for that email");
+    await tx
+      .update(demoAuthUsers)
+      .set({ passwordHash: hashPw(password) })
+      .where(eq(demoAuthUsers.id, user.id));
+    return { id: user.id, email: user.email };
+  });
+}
+
 export async function signInDemoAuthUser(email: string, password: string): Promise<Row> {
   return asPrivileged(async (tx) => {
     const rows = await tx

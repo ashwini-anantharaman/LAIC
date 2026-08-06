@@ -9,6 +9,8 @@ import { useNavigate, useParams } from "react-router";
 import { ChevronRight, Copy, Eye, Layers, LayoutGrid, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { CredentialsButton } from "@/nexus/people/CredentialsButton";
+
 import { Button } from "@/app/components/ui/button";
 import {
   Dialog,
@@ -385,6 +387,14 @@ export function ProgramTeam() {
         </TableCell>
         <TableCell className="text-right">
           <div className="inline-flex items-center gap-1">
+            {m.membership_id && m.email ? (
+              <CredentialsButton
+                membershipId={m.membership_id}
+                personLabel={m.display_name ?? m.email}
+                currentUsername={m.username ?? null}
+                onSaved={load}
+              />
+            ) : null}
             {DEV_ENABLED && m.email ? (
               <Button size="sm" variant="ghost" onClick={() => testAsPerson(m)} title="Sign in as this person (dev)">
                 <Eye className="size-3.5" /> Test as
