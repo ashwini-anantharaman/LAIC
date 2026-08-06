@@ -51,7 +51,9 @@ export default function TabsLayout() {
         // wobbly) tap on the tab bar reads as a maybe-swipe and the press
         // cancels: the infamous "have to tap twice". Web taps, native swipes.
         swipeEnabled: Platform.OS !== "web",
-        animationEnabled: Platform.OS !== "web",
+        // The SLIDE stays everywhere (owner request): tapping a tab still
+        // glides the pages across — only the drag GESTURE is web-disabled.
+        animationEnabled: true,
         // Keep the neighbours mounted so a swipe reveals a real page rather than
         // a blank placeholder, without paying to mount all six up front (Home
         // carries the tree's vector artwork).
