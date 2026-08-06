@@ -80,30 +80,34 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
     </div>
   </div>
 
-  <!-- meta chips -->
-  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:12px">
-    <span style="display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 10px 0 4px;border:1px solid #e4e9e5;border-radius:15px;background:#fbfcfb">
+  <!-- meta: ONE clean line - creator identity, then scoring / boards / lock as
+       plain middot-separated text instead of four bordered pills -->
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:11px;font-size:12px">
+    <span style="display:inline-flex;align-items:center;gap:7px">
       <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;border-radius:11px;background:{{creatorAvColor}};color:#fff;font-size:10px;font-weight:800">{{creatorAvInit}}</span>
-      <span style="font-size:12px;color:#3f4f48"><span style="color:#93a199">{{createdByPrefix}}</span> <b style="color:#31413a">{{creatorLabel}}</b></span>
+      <span style="color:#3f4f48"><span style="color:#93a199">{{createdByPrefix}}</span> <b style="color:#31413a">{{creatorLabel}}</b></span>
       <sc-if value="{{showEditorBadge}}" hint-placeholder-val="{{true}}">
-      <span title="Opened the pack editor &mdash; has seen the hands" style="flex:none;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:4px;padding:2px 5px">&#x25C6; set the boards</span>
+      <span title="Opened the pack editor &mdash; has seen the hands" style="flex:none;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#0d707c;background:#e9f1ee;border-radius:4px;padding:2px 5px">&#x25C6; set the boards</span>
       </sc-if>
     </span>
-    <span style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border:1px solid #cfe1de;border-radius:15px;background:#eff7f6;font-size:12px;font-weight:700;color:#0d707c">{{scoringChip}}</span>
-    <span style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border:1px solid #e4e9e5;border-radius:15px;background:#fbfcfb;font-size:12px;font-weight:700;color:#4a5a53">{{boardsChip}}</span>
+    <span style="color:#c4d0ca">&middot;</span>
+    <span style="font-weight:700;color:#0d707c">{{scoringChip}}</span>
+    <span style="color:#c4d0ca">&middot;</span>
+    <span style="font-weight:600;color:#5a6a63">{{boardsChip}}</span>
     <sc-if value="{{lockShown}}" hint-placeholder-val="{{true}}">
-    <span title="{{lockHint}}" style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border:1px solid #e6e2d6;border-radius:15px;background:#faf7ee;font-size:12px;font-weight:700;color:#8a7a4a">&#x1F512; {{lockLabel}}</span>
+    <span style="color:#c4d0ca">&middot;</span>
+    <span title="{{lockHint}}" style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#7a877f">&#x1F512; {{lockLabel}}</span>
     </sc-if>
   </div>
 
-  <!-- participants strip -->
+  <!-- participants: the checked avatars + "still playing" read as the roster;
+       no caption needed -->
   <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid #eef2ef">
-    <span style="font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:#9aa8a1;margin-right:3px;align-self:center">In</span>
     <sc-for list="{{joined}}" as="p" hint-placeholder-count="6">
     <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px 0 3px;border:1px solid {{p.line}};border-radius:13px;background:{{p.bg}}">
       <span style="position:relative;display:flex;align-items:center;justify-content:center;width:20px;height:20px;flex:none;border-radius:10px;background:{{p.color}};color:#fff;font-size:9px;font-weight:800">{{p.initials}}<span style="position:absolute;right:-3px;bottom:-3px;display:flex;align-items:center;justify-content:center;width:11px;height:11px;border-radius:6px;background:#2f8f57;color:#fff;font-size:7px;border:1.5px solid #fff">&#x2713;</span></span>
       <span style="font-size:11.5px;font-weight:{{p.weight}};color:{{p.textColor}}">{{p.name}}</span>
-      <sc-if value="{{p.editor}}" hint-placeholder-val="{{false}}"><span style="flex:none;font-size:8px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:3px;padding:1px 4px">&#x25C6;</span></sc-if>
+      <sc-if value="{{p.editor}}" hint-placeholder-val="{{false}}"><span style="flex:none;font-size:8px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#0d707c;background:#e9f1ee;border-radius:3px;padding:1px 4px">&#x25C6;</span></sc-if>
     </span>
     </sc-for>
     <span style="display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:13px;background:#eef2f0;font-size:11px;font-weight:700;color:#6f7d76">&#x25CF; still playing: {{stillPlaying}}</span>
@@ -120,7 +124,7 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
   </div>
 
   <sc-if value="{{creatorNoteShown}}" hint-placeholder-val="{{false}}">
-  <div style="display:flex;align-items:center;gap:8px;margin-top:11px;padding:8px 11px;border-radius:10px;background:#f4faf9;border:1px solid #d6e8e5">
+  <div style="display:flex;align-items:center;gap:8px;margin-top:11px;padding:8px 11px;border-radius:10px;background:#f4faf9">
     <span style="font-size:12px">&#x1F6E0;</span>
     <span style="font-size:12px;color:#3c6b63;font-weight:600">{{creatorNote}}</span>
   </div>
@@ -146,10 +150,10 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
     <span style="font-size:12px;font-weight:800;color:{{stripYouColor}}">{{stripYouTotal}}</span>
   </span>
   </sc-if>
-  <span style="flex:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:9px;background:#f2f1fc;border:1px dashed #cfccf1;white-space:nowrap">
+  <span style="flex:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:9px;background:#eef1f4;border:1px dashed #d5dce1;white-space:nowrap">
     <span style="font-size:11px">&#x1F916;</span>
-    <span style="font-size:11px;font-weight:800;color:#4a49a0">BEN</span>
-    <span style="font-size:12px;font-weight:800;color:#4a49a0">{{benTotal}}</span>
+    <span style="font-size:11px;font-weight:800;color:#4a5661">BEN</span>
+    <span style="font-size:12px;font-weight:800;color:#4a5661">{{benTotal}}</span>
   </span>
   <span style="flex:1;min-width:10px"></span>
   <span style="flex:none;font-size:11.5px;font-weight:700;color:#0d707c;white-space:nowrap">Full results &rarr;</span>
@@ -201,12 +205,10 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
     <div style="{{boardsContainerStyle}}">
     <sc-for list="{{boards}}" as="b" hint-placeholder-count="8">
     <div style="{{b.tileStyle}}">
-      <!-- head chips -->
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <!-- head: board number, ONE plain meta line (deal / vul / seat), status pill -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="display:flex;align-items:center;justify-content:center;min-width:30px;height:26px;padding:0 7px;flex:none;border-radius:8px;background:{{b.noBg}};color:{{b.noColor}};font-size:13px;font-weight:800">{{b.no}}</span>
-        <span style="display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;background:#f1f4f2;font-size:10.5px;font-weight:700;color:#5a6a63">Deal {{b.dealer}}</span>
-        <span style="display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;background:{{b.vulBg}};font-size:10.5px;font-weight:700;color:{{b.vulColor}}">{{b.vulLabel}}</span>
-        <span style="display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;background:#eef4f3;font-size:10.5px;font-weight:700;color:#0d707c">Seat {{b.seat}}</span>
+        <span style="font-size:10.5px;font-weight:600;color:#7a877f">Deal {{b.dealer}} &middot; <span style="color:{{b.vulColor}}">{{b.vulLabel}}</span> &middot; seat {{b.seat}}</span>
         <span style="flex:1"></span>
         <span style="display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:11px;background:{{b.pillBg}};font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:{{b.pillColor}}">{{b.pillLabel}}</span>
       </div>
@@ -373,7 +375,7 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px">
             <span style="font-size:13px;font-weight:{{r.nameWeight}};color:#25332c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.name}}</span>
-            <sc-if value="{{r.editor}}" hint-placeholder-val="{{false}}"><span title="Opened the pack editor" style="flex:none;font-size:8px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:3px;padding:1px 4px">&#x25C6; set the boards</span></sc-if>
+            <sc-if value="{{r.editor}}" hint-placeholder-val="{{false}}"><span title="Opened the pack editor" style="flex:none;font-size:8px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#0d707c;background:#e9f1ee;border-radius:3px;padding:1px 4px">&#x25C6; set the boards</span></sc-if>
             <sc-if value="{{r.tie}}" hint-placeholder-val="{{false}}"><span style="flex:none;font-size:8px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#93a199">tie</span></sc-if>
           </div>
           <div style="height:4px;margin-top:4px;border-radius:2px;background:#eef2ef;overflow:hidden"><div style="height:100%;width:{{r.barPct}}%;background:{{r.barColor}};border-radius:2px"></div></div>
@@ -384,13 +386,13 @@ html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
       </div>
 
       <!-- BEN benchmark line -->
-      <div style="display:flex;align-items:center;gap:9px;margin-top:8px;padding:9px 10px;border-radius:11px;background:#f2f1fc;border:1px dashed #cfccf1">
-        <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex:none;border-radius:8px;background:#5b63d6;color:#fff;font-size:13px">&#x1F916;</span>
+      <div style="display:flex;align-items:center;gap:9px;margin-top:8px;padding:9px 10px;border-radius:11px;background:#eef1f4;border:1px dashed #d5dce1">
+        <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;flex:none;border-radius:8px;background:#64748b;color:#fff;font-size:13px">&#x1F916;</span>
         <div style="flex:1;min-width:0">
-          <div style="font-size:12.5px;font-weight:800;color:#3b3a86">BEN &mdash; benchmark</div>
-          <div style="font-size:10.5px;color:#8a88b8">Reference robot line &middot; not ranked, excluded from the field</div>
+          <div style="font-size:12.5px;font-weight:800;color:#3f4a54">BEN &mdash; benchmark</div>
+          <div style="font-size:10.5px;color:#8a949c">Reference robot line &middot; not ranked, excluded from the field</div>
         </div>
-        <span style="flex:none;font-size:14px;font-weight:800;color:#4a49a0;min-width:52px;text-align:right">{{benTotal}}</span>
+        <span style="flex:none;font-size:14px;font-weight:800;color:#4a5661;min-width:52px;text-align:right">{{benTotal}}</span>
       </div>
 
       <div style="font-size:11px;line-height:1.5;color:#9aa8a1;margin-top:9px">{{lbStillPlaying}}</div>
@@ -947,8 +949,8 @@ class Component extends DCLogic {
           initials: PEOPLE[r.key].initials, avColor: isYou ? accent : PEOPLE[r.key].color,
           name: isYou ? "You" : SHORT[r.key], nameWeight: isYou ? 800 : 600,
           total: fmtTotal(scoring, r.v), totalColor: valColor(scoring, r.v),
-          style: "flex:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:9px;border:1px solid "
-            + (isYou ? "#bfe0db" : "#eef2ef") + ";background:" + (isYou ? "#eff7f6" : "#fbfcfb"),
+          style: "flex:none;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:9px;background:"
+            + (isYou ? "#eff7f6" : "#f5f7f6") + (isYou ? ";border:1px solid #bfe0db" : ""),
         };
       });
       const youRow = rows.find((r) => r.key === "You");
@@ -972,16 +974,16 @@ class Component extends DCLogic {
       const headStyle = (key) => {
         const isYou = key === "You", isBen = key === "BEN";
         return "width:" + cellW + "px;flex:none;text-align:center;padding:5px 2px;border-radius:7px 7px 0 0;font-size:10.5px;font-weight:800;"
-          + (isBen ? "background:#f2f1fc;color:#4a49a0;" : isYou ? "background:#eff7f6;color:#0d707c;" : "background:#f7faf8;color:#5a6a63;");
+          + (isBen ? "background:#eef1f4;color:#4a5661;" : isYou ? "background:#eff7f6;color:#0d707c;" : "background:#f7faf8;color:#5a6a63;");
       };
       v.scHeaders = cols.map((k) => ({
         label: k === "BEN" ? "BEN" : k === "You" ? "You" : PEOPLE[k].initials, style: headStyle(k),
       }));
       const cellStyle = (key, tone) => {
         const isYou = key === "You", isBen = key === "BEN";
-        const bg = isBen ? "#faf9ff" : isYou ? "#f3faf9" : "#fff";
+        const bg = isBen ? "#f6f8f9" : isYou ? "#f3faf9" : "#fff";
         return "width:" + cellW + "px;flex:none;display:flex;align-items:center;justify-content:center;padding:6px 2px;border-radius:6px;"
-          + "background:" + bg + ";border:1px solid " + (isYou ? "#dcefec" : isBen ? "#e7e5f7" : "#eef2ef")
+          + "background:" + bg + ";border:1px solid " + (isYou ? "#dcefec" : isBen ? "#dde3e7" : "#eef2ef")
           + ";font-size:12px;font-weight:" + (isYou || isBen ? 800 : 600) + ";color:" + tone + ";";
       };
       v.scRows = [];
@@ -1002,8 +1004,8 @@ class Component extends DCLogic {
         return {
           text: fmtTotal(scoring, tv),
           style: "width:" + cellW + "px;flex:none;display:flex;align-items:center;justify-content:center;padding:6px 2px;border-radius:6px;"
-            + "background:" + (isBen ? "#f2f1fc" : isYou ? "#eff7f6" : "#f7faf8") + ";font-size:11.5px;font-weight:800;color:"
-            + (isBen ? "#4a49a0" : valColor(scoring, tv)) + ";",
+            + "background:" + (isBen ? "#eef1f4" : isYou ? "#eff7f6" : "#f7faf8") + ";font-size:11.5px;font-weight:800;color:"
+            + (isBen ? "#4a5661" : valColor(scoring, tv)) + ";",
         };
       });
     }
