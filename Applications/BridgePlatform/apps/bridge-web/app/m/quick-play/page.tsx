@@ -41,8 +41,11 @@ export default async function MobileQuickPlayPage({
     // the moment it was dealt, not the seed that dealt it. Five rows of
     // "seeded-38302" read as a lottery; "Aug 6 · 2:14 PM" reads as your
     // afternoon. The seed still deals the board — it just doesn't name it.
+    // Named in the club's own timezone, not the server's: Vercel runs in UTC,
+    // and "Aug 6 · 8:08 PM" for a board dealt at 1:08 PM reads as a glitch.
+    const TZ = "America/Los_Angeles";
     const dealt = new Date();
-    const boardName = `${dealt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} · ${dealt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+    const boardName = `${dealt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: TZ })} · ${dealt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: TZ })}`;
     const record = await sessionService().createSession({
       kbId: kb.kbId,
       compiled,

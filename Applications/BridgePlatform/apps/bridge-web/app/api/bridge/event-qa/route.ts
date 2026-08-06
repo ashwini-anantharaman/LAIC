@@ -26,6 +26,11 @@ import { sessionService } from "@/lib/sessions";
 
 const MAX_QUESTION = 300;
 
+// Serverless time limit. The default (10-15s depending on plan) sits right on
+// top of a thinking model's answer time; a killed function reads to the
+// learner as "no answer", indistinguishable from a bad key. 60s clears it.
+export const maxDuration = 60;
+
 /**
  * Same position, same question → same answer, verbatim — the play-why rule
  * ("a learner who meets the same ending twice should be told the same thing")
@@ -144,11 +149,10 @@ export async function POST(request: Request): Promise<NextResponse> {
       question,
     });
     if (!("answer" in result)) {
-      // Leaks and drift are logged for whoever is watching; the learner just
-      // sees that the coach has no answer, which is the honest surface.
-      if (result.reason === "leaked" || result.reason === "malformed") {
-        console.warn(`[coach] event-qa rejected (${result.reason}) for ${eventId ?? "chat"}`);
-      }
+      // EVERY no-answer is logged with its reason; the learner just sees that
+      // the coach has no answer, which is the honest surface — but whoever is
+      // reading the function logs must be able to tell a leak from a dead key.
+      console.warn(`[coach] event-qa no-answer (${result.reason}) for ${eventId ?? "chat"}`);
       return null;
     }
     remember(key, result.answer);
