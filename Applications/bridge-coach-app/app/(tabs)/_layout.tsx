@@ -24,6 +24,7 @@ import {
 } from "@react-navigation/material-top-tabs";
 import type { ParamListBase, TabNavigationState } from "@react-navigation/native";
 import { withLayoutContext } from "expo-router";
+import { Platform } from "react-native";
 
 import { BrandTabBar } from "../../components/brand-tab-bar";
 import { Brand } from "../../constants/theme";
@@ -44,7 +45,13 @@ export default function TabsLayout() {
       tabBarPosition="bottom"
       tabBar={(props) => <BrandTabBar {...props} />}
       screenOptions={{
-        swipeEnabled: true,
+        // Swiping between tabs is a NATIVE gesture. In a mobile browser it
+        // fights Safari's own edge-swipes — and worse, the pager's gesture
+        // detector watches every touch for movement, so a normal (slightly
+        // wobbly) tap on the tab bar reads as a maybe-swipe and the press
+        // cancels: the infamous "have to tap twice". Web taps, native swipes.
+        swipeEnabled: Platform.OS !== "web",
+        animationEnabled: Platform.OS !== "web",
         // Keep the neighbours mounted so a swipe reveals a real page rather than
         // a blank placeholder, without paying to mount all six up front (Home
         // carries the tree's vector artwork).

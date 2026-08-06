@@ -143,20 +143,26 @@ export function BrandTabBar({
             extrapolate: "clamp",
           });
 
+          // jumpTo takes a route KEY, not a name: it resolves the target with
+          // routes.findIndex(r => r.key === key), and an unmatched key yields
+          // -1, which the navigator then reads as routes[-1] and crashes on.
+          const go = () => {
+            const event = navigation.emit({
+              type: "tabPress",
+              target: route.key,
+              canPreventDefault: true,
+            });
+            if (!event.defaultPrevented) jumpTo(route.key);
+          };
+
           return (
             <Pressable
               key={route.key}
-              // jumpTo takes a route KEY, not a name: it resolves the target with
-              // routes.findIndex(r => r.key === key), and an unmatched key yields
-              // -1, which the navigator then reads as routes[-1] and crashes on.
-              onPress={() => {
-                const event = navigation.emit({
-                  type: "tabPress",
-                  target: route.key,
-                  canPreventDefault: true,
-                });
-                if (!event.defaultPrevented) jumpTo(route.key);
-              }}
+              // Web: fire on pointer DOWN. A touch tap wobbles a few pixels,
+              // and anything watching for drags can steal the touch before
+              // release — press-in is immune, and a browser tab bar has no
+              // press-cancel gesture to respect anyway. Native keeps onPress.
+              {...(Platform.OS === "web" ? { onPressIn: go } : { onPress: go })}
               accessibilityRole="button"
               accessibilityState={{ selected: state.index === i }}
               accessibilityLabel={meta.label}
