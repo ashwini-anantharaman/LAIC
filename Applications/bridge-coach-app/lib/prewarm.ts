@@ -11,8 +11,48 @@
 
 import { Platform } from "react-native";
 
+import { LEARNING_PLATFORM_URL, NEXUS_API_URL } from "./config";
+
 const TTL = 4 * 60_000; // functions stay warm ~10min; refresh well inside it
 const last = new Map<string, number>();
+
+// ── Whole-stack warm-up from the sign-in screen ──────────────────────────────
+// The sign-in screen is dead time: the learner is typing a password while
+// every backend sits cold. Start touching ALL of them the moment the screen
+// mounts — the Nexus API, the bridge pages the app embeds, the learning
+// platform — and let sign-in itself WAIT for the sweep (owner request
+// 2026-08-06: "sign in once everything has been accessed once"). The wait is
+// capped: a hung ping must never hold the door shut.
+
+const WARM_CAP_MS = 8_000;
+let allWarm: Promise<void> | null = null;
+
+export function startPrewarmAll(): void {
+  if (Platform.OS !== "web" || typeof window === "undefined") return;
+  if (allWarm) return;
+  const targets = [
+    `${NEXUS_API_URL}/health`,
+    LEARNING_PLATFORM_URL,
+    // Same-origin bridge pages (the vercel.json proxy). Without a session
+    // cookie they bounce to /welcome, but the bounce itself warms the
+    // function, the Next.js render path and the DB pool — the expensive part.
+    ...(window.location.protocol === "https:"
+      ? ["/welcome", "/m/plays", "/m/library", "/m/assigned", "/m/reviews"].map(
+          (p) => `${window.location.origin}${p}`,
+        )
+      : []),
+  ];
+  const sweep = Promise.allSettled(
+    targets.map((u) => fetch(u, { credentials: "include" })),
+  ).then(() => undefined);
+  const cap = new Promise<void>((resolve) => setTimeout(resolve, WARM_CAP_MS));
+  allWarm = Promise.race([sweep, cap]);
+}
+
+/** Resolves when the sweep has settled (or immediately if none started). */
+export function prewarmAllDone(): Promise<void> {
+  return allWarm ?? Promise.resolve();
+}
 
 export function prewarmBridgePages(paths: readonly string[]): void {
   if (Platform.OS !== "web" || typeof window === "undefined") return;

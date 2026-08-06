@@ -11,6 +11,7 @@ import {
 import { clearBridgeRoleCache } from "./bridge-role";
 import { clearLaunchCache } from "./launch-cache";
 import { clearLearningCache } from "./learning";
+import { prewarmAllDone } from "./prewarm";
 import { clearSummaryCache } from "./summary-cache";
 import { fetchGate, fetchMe, gateSignup, login, NexusUser } from "./nexus";
 import { clearToken, getToken, setToken } from "./token-store";
@@ -80,7 +81,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(
     async (email: string, password: string) => {
-      const session = await login({ email, password });
+      // Sign-in lands only after the warm-up sweep the login screen started
+      // has settled (owner request 2026-08-06): the app is entered with every
+      // backend already touched once, instead of paying cold starts screen by
+      // screen. The sweep is time-capped, so this can never hang the door.
+      const [session] = await Promise.all([
+        login({ email, password }),
+        prewarmAllDone(),
+      ]);
       await adoptSession(session.access_token);
     },
     [adoptSession],
