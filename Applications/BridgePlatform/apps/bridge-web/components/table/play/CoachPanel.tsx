@@ -893,6 +893,14 @@ function RedSuits({ children }: Readonly<{ children: string }>) {
  * the band shows this, and the full original sheet is one expand away.
  */
 export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
+  // A new trick is a new conversation. The chat and the advice answer hold
+  // their exchanges in component state, so they are keyed by where the board
+  // is (the current history section): the next trick remounts them empty
+  // rather than carrying last trick's answers into a different position.
+  const epoch =
+    data.eventGroups?.find((g) => g.current)?.id ??
+    data.eventGroups?.[data.eventGroups.length - 1]?.id ??
+    "start";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* the position, in prose and numbers */}
@@ -925,14 +933,14 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
 
       {/* the advice, before the card is played */}
       {data.ask && data.ask.phase === "play" && data.ask.active && (
-        <WhatShouldIPlay sessionId={data.ask.sessionId} />
+        <WhatShouldIPlay key={epoch} sessionId={data.ask.sessionId} />
       )}
 
       {/* the chat — anything about the position */}
       {data.ask && (
         <div>
           <Label>Ask the coach</Label>
-          <CoachChat sessionId={data.ask.sessionId} />
+          <CoachChat key={epoch} sessionId={data.ask.sessionId} />
         </div>
       )}
     </div>
