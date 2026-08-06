@@ -411,6 +411,23 @@ export default async function PlayTablePage({
         className="overflow-hidden rounded-lg"
         style={{ height: "calc(100vh - 5.5rem)" }}
       >
+        {/* THE ROBOTS PLAY FOR EVERYONE. AutoAdvance is both the transport
+            chips AND the engine that steps AI seats; the chips are gated by
+            table.step_controls, but a viewer without them must not inherit a
+            board frozen at an AI's turn. Headless instance, mounted only when
+            the visible one (inside controlsAt) is denied — never both. */}
+        {!canStepControls && (
+          <AutoAdvance
+            key={paused ?? "run"}
+            sessionId={sessionId}
+            active={!actingIsHuman && state.phase !== "complete"}
+            seq={record.events.length}
+            complete={state.phase === "complete"}
+            beatMs={beatMs}
+            initialPaused={Boolean(paused)}
+            hidden
+          />
+        )}
         {handsView ? (
           handViewer
         ) : (

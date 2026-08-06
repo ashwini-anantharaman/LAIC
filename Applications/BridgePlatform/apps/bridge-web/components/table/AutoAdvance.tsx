@@ -19,6 +19,7 @@ export function AutoAdvance({
   initialPaused = true,
   variant = "bar",
   railScale,
+  hidden = false,
 }: Readonly<{
   sessionId: string;
   /** Server truth: an AI seat is to act and the board isn't complete. */
@@ -41,6 +42,13 @@ export function AutoAdvance({
    * transform, which paints outside its layout box.
    */
   railScale?: number;
+  /**
+   * Drive the board without drawing any controls. For viewers whose access
+   * catalogue hides the transport chips (table.step_controls): the robots
+   * must still play — an AI seat waiting forever is a stuck game, not a
+   * permission. The stepping effect runs; nothing renders.
+   */
+  hidden?: boolean;
 }>) {
   const router = useRouter();
   const [paused, setPaused] = useState(initialPaused);
@@ -65,6 +73,8 @@ export function AutoAdvance({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, paused, seq, sessionId, beatMs, router]);
 
+  // Headless: the effect above keeps stepping; there is nothing to draw.
+  if (hidden) return null;
   if (complete) return null;
   if (variant === "rail") {
     // The EdgeToolbar design's transport pair: Pause/Play as a toolbar
