@@ -70,7 +70,7 @@ export default async function LearnerProfilePage({
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "48px 18px calc(96px + env(safe-area-inset-bottom))",
       }}
     >
@@ -79,7 +79,7 @@ export default async function LearnerProfilePage({
         style={{
           display: "inline-block",
           font: `600 13px ${K}`,
-          color: "#205e63",
+          color: "#105431",
           textDecoration: "none",
           marginBottom: 10,
         }}

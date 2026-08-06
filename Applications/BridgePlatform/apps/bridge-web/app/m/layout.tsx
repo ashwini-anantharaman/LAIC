@@ -1,6 +1,7 @@
 import { canAccess } from "@bridge/access";
 import type { Metadata } from "next";
 import { Fraunces, Karla } from "next/font/google";
+import localFont from "next/font/local";
 import { EmbedLocationReporter } from "@/components/mobile/EmbedLocationReporter";
 import { TabBar } from "@/components/mobile/TabBar";
 import { getCatalogue } from "@/lib/access";
@@ -31,6 +32,26 @@ const karla = Karla({
   display: "swap",
 });
 
+// The BirdBridge app's own typefaces (copied from bridge-coach-app/assets/
+// fonts), so screens the app embeds can match it letter-for-letter: Neco for
+// display, General Sans for UI/body.
+const neco = localFont({
+  src: [
+    { path: "./fonts/Neco-Medium.otf", weight: "500" },
+    { path: "./fonts/Neco-Bold.otf", weight: "700" },
+  ],
+  variable: "--font-neco",
+  display: "swap",
+});
+const generalSans = localFont({
+  src: [
+    { path: "./fonts/GeneralSans-Regular.otf", weight: "400" },
+    { path: "./fonts/GeneralSans-Semibold.otf", weight: "600" },
+  ],
+  variable: "--font-gs",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Bridge Platform",
 };
@@ -56,7 +77,7 @@ export default async function MobileLayout({
   const embedded = await isEmbeddedLaunch();
   return (
     <div
-      className={`${fraunces.variable} ${karla.variable}`}
+      className={`${fraunces.variable} ${karla.variable} ${neco.variable} ${generalSans.variable}`}
       style={{
         minHeight: "100dvh",
         background: "#ded7c6",
@@ -71,7 +92,7 @@ export default async function MobileLayout({
           width: "100%",
           maxWidth: 430,
           height: "100dvh",
-          background: "#faf8f2",
+          background: "#fff4d7",
           overflow: "hidden",
           boxShadow: "0 0 60px rgba(0,0,0,.12)",
         }}

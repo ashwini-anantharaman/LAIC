@@ -90,7 +90,7 @@ export default async function MobileLibraryPage({
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "56px 18px calc(96px + env(safe-area-inset-bottom))",
       }}
     >
@@ -125,9 +125,9 @@ export default async function MobileLibraryPage({
             key={b.href}
             href={b.href}
             style={{
-              border: "1px solid #205e63",
+              border: "1px solid #105431",
               background: "#fff",
-              color: "#205e63",
+              color: "#105431",
               borderRadius: 22,
               padding: "9px 16px",
               font: `600 13px ${K}`,
@@ -153,10 +153,12 @@ export default async function MobileLibraryPage({
                 key={c.id}
                 href={`/m/collection/${c.id}`}
                 style={{
-                  border: "1px solid #d8e4e2",
-                  background: "#eef4f3",
+                  // The app's card language: maroon face, cream text, the
+                  // stacked-edge shadow the lesson cards wear.
+                  background: "#541015",
                   borderRadius: 14,
                   padding: "13px 16px",
+                  boxShadow: "0 3px 0 #2a0506",
                   textDecoration: "none",
                   display: "flex",
                   alignItems: "center",
@@ -165,13 +167,13 @@ export default async function MobileLibraryPage({
               >
                 <span style={{ fontSize: 18 }}>🗂️</span>
                 <span style={{ minWidth: 0, flex: 1 }}>
-                  <span style={{ display: "block", font: `600 14px ${K}`, color: "#1d1a15" }}>{c.name}</span>
-                  <span style={{ display: "block", font: `400 11.5px ${K}`, color: "#7b7466", marginTop: 2 }}>
+                  <span style={{ display: "block", font: `600 14px ${K}`, color: "#fff4d7" }}>{c.name}</span>
+                  <span style={{ display: "block", font: `400 11.5px ${K}`, color: "rgba(255,244,215,.72)", marginTop: 2 }}>
                     {c.itemIds.length} item{c.itemIds.length === 1 ? "" : "s"}
                     {c.description ? ` · ${c.description}` : ""}
                   </span>
                 </span>
-                <span style={{ font: `600 14px ${K}`, color: "#205e63" }}>›</span>
+                <span style={{ font: `600 14px ${K}`, color: "#fff4d7" }}>›</span>
               </Link>
             ))}
           </div>
@@ -201,8 +203,8 @@ export default async function MobileLibraryPage({
               href={`/m/library?kind=${s.kind}`}
               style={{
                 flex: "none",
-                border: `1px solid ${on ? "#205e63" : "#d3ccbb"}`,
-                background: on ? "#205e63" : "#fff",
+                border: `1px solid ${on ? "#105431" : "#d3ccbb"}`,
+                background: on ? "#105431" : "#fff",
                 color: on ? "#fff" : "#5e5749",
                 borderRadius: 22,
                 padding: "8px 15px",
@@ -249,9 +251,9 @@ export default async function MobileLibraryPage({
                 <div
                   key={e.entryId}
                   style={{
-                    border: "1px solid #e7e1d3",
+                    border: "1px solid #e0d7c2",
                     borderRadius: 14,
-                    background: "#fffefa",
+                    background: "#ffffff",
                     padding: "15px 16px",
                     display: "flex",
                     alignItems: "center",
@@ -288,9 +290,9 @@ export default async function MobileLibraryPage({
                       href={`/m/assign?entry=${encodeURIComponent(e.entryId)}`}
                       style={{
                         flex: "none",
-                        border: "1px solid #205e63",
+                        border: "1px solid #105431",
                         background: "#fff",
-                        color: "#205e63",
+                        color: "#105431",
                         borderRadius: 8,
                         padding: "5px 12px",
                         font: `600 12px ${K}`,
@@ -309,7 +311,7 @@ export default async function MobileLibraryPage({
                         style={{
                           flex: "none",
                           border: "none",
-                          background: "#205e63",
+                          background: "#105431",
                           color: "#fff",
                           borderRadius: 8,
                           padding: "6px 13px",

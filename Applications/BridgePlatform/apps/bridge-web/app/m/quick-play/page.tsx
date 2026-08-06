@@ -37,12 +37,19 @@ export default async function MobileQuickPlayPage({
     const ai = SessionService.seatFromPlayer(house, compiled);
     const seats = { N: ai, E: ai, S: ai, W: ai } as Record<Seat, SeatConfig>;
     seats.S = { kind: "human", nexusUserId: context.nexusUserId };
+    // A name a person can tell apart at a glance (owner request 2026-08-06):
+    // the moment it was dealt, not the seed that dealt it. Five rows of
+    // "seeded-38302" read as a lottery; "Aug 6 · 2:14 PM" reads as your
+    // afternoon. The seed still deals the board — it just doesn't name it.
+    const dealt = new Date();
+    const boardName = `${dealt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} · ${dealt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
     const record = await sessionService().createSession({
       kbId: kb.kbId,
       compiled,
       seats,
       seed: (Date.now() % 100_000) + 1,
       dealer,
+      boardName,
       createdBy: context.nexusUserId,
       programOrganizationId: orgScopeOf(context),
       nexusProgramId: (await nexusProgramIdOf()) ?? undefined,

@@ -28,7 +28,7 @@ export default async function MobileNewDealPage({
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "40px 16px calc(40px + env(safe-area-inset-bottom))",
       }}
     >

@@ -45,7 +45,7 @@ export default async function MobileReviewDetailPage({
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "56px 18px calc(96px + env(safe-area-inset-bottom))",
       }}
     >
@@ -170,7 +170,7 @@ export default async function MobileReviewDetailPage({
             style={{
               marginTop: 8,
               font: `600 13px ${K}`,
-              background: "#1f5e56",
+              background: "#105431",
               color: "#fff",
               border: "none",
               borderRadius: 999,

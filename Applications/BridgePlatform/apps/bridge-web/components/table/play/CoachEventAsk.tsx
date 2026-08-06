@@ -23,15 +23,18 @@
 
 import { useState } from "react";
 
-// The table's palette, as CoachPanel uses it.
-const PAPER = "#fbfaf6";
-const INK = "#2b2b1e";
-const MUTED = "#57573f";
-const FAINT = "#7d7d66";
-const TEAL = "#1f5e56";
-const FELT_DEEP = "#14563f";
-const FELT_MID = "#1c6b4f";
-const FELT_LINE = "#c6d6cc";
+// The BirdBridge palette, as CoachPanel uses it (the app's theme.ts is the
+// source of truth; the felt names are kept so usages map 1:1).
+const PAPER = "#ffffff";
+const INK = "#1f1f1f";
+const MUTED = "#7b7466";
+const FAINT = "#a49d8e";
+const TEAL = "#105431"; // Brand.green
+const FELT_DEEP = "#541015"; // Brand.maroon
+const FELT_MID = "#105431"; // Brand.green — actions
+const FELT_LINE = "#e0d7c2";
+/** The stacked-edge shadow behind the app's playing cards. */
+const CARD_EDGE = "0 2px 0 rgba(42,5,6,.75)";
 
 /** The coach's voice — one serif face for everything it says. */
 const SAYS = {
@@ -273,6 +276,25 @@ export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
   );
 }
 
+/** Where each kind of answer comes from, for the ⓘ popup. */
+const SOURCE_INFO: Record<Hint["source"], { title: string; from: string }> = {
+  system: {
+    title: "Your system plays",
+    from: "Your partnership's system notes cover this position — this is what your side agreed to play.",
+  },
+  convention: {
+    title: "Usually right here",
+    from: "A general bridge guideline — the standard habit for positions like this.",
+  },
+  solution: {
+    title: "By calculation",
+    from: "A solver saw all four hands and tried every line. Each card shown keeps the maximum tricks — they are equals.",
+  },
+};
+
+const WHY_DIFFERENT =
+  "Your realistic choices is a neutral checklist of what you can see — it never peeks at the answer. This is the answer. A sensible-looking card can still cost a trick once every hand is known.";
+
 /**
  * The advice for the decision ON the table — standalone, shown by the host
  * while it is the learner's turn and BEFORE their card is played. Not part of
@@ -281,6 +303,9 @@ export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
  */
 export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) {
   const [play, setPlay] = useState<PlayAnswer | null>(null);
+  // The ⓘ beside the answer's source line — where this came from, and why it
+  // can differ from the realistic-choices scaffold above it.
+  const [infoOpen, setInfoOpen] = useState(false);
 
   // The same two requests the big button made: the card lands first, the
   // reason catches up, and a slow model never delays the answer itself.
@@ -342,12 +367,23 @@ export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) 
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>
-              {play.hint.source === "system"
-                ? "Your system plays"
-                : play.hint.source === "convention"
-                  ? "Usually right here"
-                  : "By calculation"}
+              {SOURCE_INFO[play.hint.source].title}
             </span>
+            <button
+              type="button"
+              aria-label="Where this answer comes from"
+              aria-expanded={infoOpen}
+              onClick={() => setInfoOpen(true)}
+              style={{
+                flex: "none", width: 17, height: 17, padding: 0, borderRadius: "50%",
+                background: "transparent", borderWidth: 1, borderStyle: "solid", borderColor: FELT_LINE,
+                color: FELT_DEEP, fontSize: 10.5, fontWeight: 700, lineHeight: 1,
+                fontFamily: "Georgia, 'Times New Roman', serif", fontStyle: "italic",
+                cursor: "pointer",
+              }}
+            >
+              i
+            </button>
             {(play.hint.prefer ? [play.hint.prefer] : play.hint.best).map((card) => {
               const label = cardText(card);
               return (
@@ -356,6 +392,7 @@ export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) 
                   style={{
                     padding: "2px 8px", background: "#fff",
                     borderWidth: 1, borderStyle: "solid", borderColor: "#d8d3bf", borderRadius: 4,
+                    boxShadow: CARD_EDGE,
                     fontSize: 14.5, fontWeight: 700, lineHeight: 1.2,
                     color: /[♥♦]/.test(label) ? "#c00" : "#000",
                   }}
@@ -373,6 +410,68 @@ export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) 
           {play.hint.source === "solution" && (
             <p style={{ margin: 0, fontSize: 11.5, color: TEAL }}>Worked out from the full deal.</p>
           )}
+        </div>
+      )}
+
+      {/* ── the ⓘ popup: where the answer comes from, and why it can differ
+          from the realistic-choices scaffold ── */}
+      {infoOpen && play?.kind === "done" && (
+        <div
+          role="presentation"
+          onClick={() => setInfoOpen(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 950,
+            background: "rgba(42,5,6,.45)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 18,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Where this answer comes from"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 340, maxHeight: "80%", overflowY: "auto",
+              background: PAPER, borderRadius: 12, padding: "13px 15px 15px",
+              boxShadow: "0 8px 26px rgba(0,0,0,.35)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+              <span
+                style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: 0.7,
+                  textTransform: "uppercase", color: FELT_DEEP,
+                }}
+              >
+                {SOURCE_INFO[play.hint.source].title}
+              </span>
+              <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setInfoOpen(false)}
+                style={{
+                  flex: "none", width: 26, height: 26, borderRadius: 7,
+                  background: "#f3ead4", borderWidth: 0, color: MUTED,
+                  fontSize: 13, lineHeight: 1, cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <p style={{ ...SAYS, fontSize: 13.5, color: INK, marginBottom: 9 }}>
+              {SOURCE_INFO[play.hint.source].from}
+            </p>
+            <p
+              style={{
+                margin: "0 0 5px", fontSize: 10, fontWeight: 700,
+                letterSpacing: 0.7, textTransform: "uppercase", color: FAINT,
+              }}
+            >
+              Why it differs from your choices
+            </p>
+            <p style={{ ...SAYS, fontSize: 13.5, color: MUTED }}>{WHY_DIFFERENT}</p>
+          </div>
         </div>
       )}
     </div>

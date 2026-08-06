@@ -43,11 +43,11 @@ export default async function CollectionPage({
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "48px 18px calc(96px + env(safe-area-inset-bottom))",
       }}
     >
-      <Link href="/m/library" style={{ display: "inline-block", font: `600 13px ${K}`, color: "#205e63", textDecoration: "none", marginBottom: 10 }}>
+      <Link href="/m/library" style={{ display: "inline-block", font: `600 13px ${K}`, color: "#105431", textDecoration: "none", marginBottom: 10 }}>
         ‹ Library
       </Link>
       <p style={{ font: `600 10px ${K}`, letterSpacing: ".28em", textTransform: "uppercase", color: "#a49d8e", margin: 0 }}>
@@ -98,7 +98,7 @@ export default async function CollectionPage({
                         href={`/m/play-entry/${encodeURIComponent(i.id)}`}
                         style={{
                           flex: "none",
-                          background: "#205e63",
+                          background: "#105431",
                           color: "#fff",
                           borderRadius: 999,
                           padding: "7px 15px",

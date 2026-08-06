@@ -59,7 +59,7 @@ export default async function MobilePlayersPage({
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "56px 18px calc(96px + env(safe-area-inset-bottom))",
       }}
     >
@@ -90,7 +90,7 @@ export default async function MobilePlayersPage({
         <Link
           href="/m/players"
           style={{
-            borderBottom: `2px solid ${aiTab ? "transparent" : "#205e63"}`,
+            borderBottom: `2px solid ${aiTab ? "transparent" : "#105431"}`,
             paddingBottom: 8,
             font: `${aiTab ? 400 : 600} 13px ${K}`,
             color: aiTab ? "#a49d8e" : "#173c40",
@@ -102,7 +102,7 @@ export default async function MobilePlayersPage({
         <Link
           href="/m/players?tab=ai"
           style={{
-            borderBottom: `2px solid ${aiTab ? "#205e63" : "transparent"}`,
+            borderBottom: `2px solid ${aiTab ? "#105431" : "transparent"}`,
             paddingBottom: 8,
             font: `${aiTab ? 600 : 400} 13px ${K}`,
             color: aiTab ? "#173c40" : "#a49d8e",
@@ -140,7 +140,7 @@ export default async function MobilePlayersPage({
                   font: `700 8px ${K}`,
                   letterSpacing: ".05em",
                   textTransform: "uppercase",
-                  color: "#205e63",
+                  color: "#105431",
                   background: "#e2ecec",
                   padding: "3px 7px",
                   borderRadius: 6,
@@ -162,7 +162,7 @@ export default async function MobilePlayersPage({
                     type="submit"
                     style={{
                       border: "none",
-                      background: "#205e63",
+                      background: "#105431",
                       color: "#fff",
                       borderRadius: 8,
                       padding: "6px 14px",
@@ -218,8 +218,8 @@ export default async function MobilePlayersPage({
               href={`/m/players?kb=${kb.kbId}`}
               style={{
                 flex: "none",
-                border: `1px solid ${active ? "#205e63" : "#d3ccbb"}`,
-                background: active ? "#205e63" : "#fff",
+                border: `1px solid ${active ? "#105431" : "#d3ccbb"}`,
+                background: active ? "#105431" : "#fff",
                 color: active ? "#fff" : "#5e5749",
                 borderRadius: 20,
                 padding: "5px 12px",
@@ -292,7 +292,7 @@ export default async function MobilePlayersPage({
                       type="submit"
                       style={{
                         border: "none",
-                        background: "#205e63",
+                        background: "#105431",
                         color: "#fff",
                         borderRadius: 8,
                         padding: "6px 14px",

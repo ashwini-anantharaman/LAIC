@@ -52,7 +52,7 @@ export default async function MobileAssignedPage() {
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "56px 18px calc(96px + env(safe-area-inset-bottom))",
       }}
     >
@@ -130,9 +130,9 @@ export default async function MobileAssignedPage() {
                       href={reviewLink.get(a.assignmentId)!}
                       style={{
                         flex: "none",
-                        border: "1px solid #1f5e56",
+                        border: "1px solid #105431",
                         background: "#fff",
-                        color: "#1f5e56",
+                        color: "#105431",
                         borderRadius: 999,
                         padding: "8px 16px",
                         font: `600 12.5px ${K}`,
@@ -150,7 +150,7 @@ export default async function MobileAssignedPage() {
                         style={{
                           flex: "none",
                           border: "none",
-                          background: "#1f5e56",
+                          background: "#105431",
                           color: "#fff",
                           borderRadius: 999,
                           padding: "8px 16px",

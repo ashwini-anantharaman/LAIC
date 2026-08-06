@@ -411,11 +411,34 @@ export default async function PlayTablePage({
         className="overflow-hidden rounded-lg"
         style={{ height: "calc(100vh - 5.5rem)" }}
       >
+        {/* THE ROBOTS PLAY FOR EVERYONE. AutoAdvance is both the transport
+            chips AND the engine that steps AI seats; the chips are gated by
+            table.step_controls, but a viewer without them must not inherit a
+            board frozen at an AI's turn. Headless instance, mounted only when
+            the visible one (inside controlsAt) is denied — never both. */}
+        {!canStepControls && (
+          <AutoAdvance
+            key={paused ?? "run"}
+            sessionId={sessionId}
+            active={!actingIsHuman && state.phase !== "complete"}
+            seq={record.events.length}
+            complete={state.phase === "complete"}
+            beatMs={beatMs}
+            initialPaused={Boolean(paused)}
+            hidden
+          />
+        )}
         {handsView ? (
           handViewer
         ) : (
-          <LivePlayTable
-            sessionId={sessionId}
+          // MOBILE VIEW ONLY (owner decision 2026-08-06): the play table always
+          // renders the phone tier, whatever the window. The tier decision in
+          // table-ui is geometric — phone = narrow aspect AND width < 640 — so
+          // capping the container at a phone width IS the switch: widening the
+          // browser letterboxes the table instead of swapping to the wide tier.
+          <div style={{ maxWidth: 480, height: "100%", margin: "0 auto" }}>
+            <LivePlayTable
+              sessionId={sessionId}
             state={{ ...state, dealer: record.board.dealer, vul: state.vul }}
             seats={{
               N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "", strip: seatStrip("N"), human: record.seats.N.kind === "human" },
@@ -442,7 +465,8 @@ export default async function PlayTablePage({
             showCoach={showCoach}
             coach={coachData}
             {...(quanCoach ? { coachContent: <CoachDock data={quanCoach} /> } : {})}
-          />
+            />
+          </div>
         )}
       </div>
     </div>

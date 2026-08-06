@@ -20,10 +20,41 @@ import { originalHand } from "@/lib/benSeat";
 import { bidMeaningReader } from "@/lib/bidMeanings";
 import { answerEventQuestion, qaConfigured, qaPosition } from "@/lib/coach/eventQa";
 import { lookingAt } from "@/lib/coach/looking";
+import { positionKey } from "@/lib/coach/visible";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 
 const MAX_QUESTION = 300;
+
+/**
+ * Same position, same question → same answer, verbatim — the play-why rule
+ * ("a learner who meets the same ending twice should be told the same thing")
+ * applied to Q&A. Without this, asking "why 2♥?" twice produced two fluent,
+ * subtly different stories, and a coach that paraphrases itself reads as a
+ * coach that isn't sure. Keyed on the POSITION (not the session), so the same
+ * ending answers identically across boards and across learners.
+ */
+const MAX_ENTRIES = 500;
+const cache = new Map<string, string>();
+
+/** Identical requests in the air share one model call (see play-why). */
+const inFlight = new Map<string, Promise<string | null>>();
+
+function remember(key: string, answer: string): void {
+  if (cache.size >= MAX_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, answer);
+}
+
+/**
+ * "Why 2 heart?" and "why 2 heart" are the same question. Case, runs of
+ * whitespace and trailing punctuation carry no meaning here — folding them
+ * widens cache hits without ever conflating genuinely different questions.
+ */
+const normalize = (q: string): string =>
+  q.toLowerCase().replace(/\s+/g, " ").replace(/[?.!\s]+$/, "").trim();
 
 export async function POST(request: Request): Promise<NextResponse> {
   const context = await getBridgeContext();
@@ -93,20 +124,42 @@ export async function POST(request: Request): Promise<NextResponse> {
   const pos = qaPosition(state, seat as never);
   if (!pos) return NextResponse.json({ answer: null, reason: "nothing to ask about" });
 
-  const result = await answerEventQuestion({
-    pos,
-    eventLabel: event?.label ?? "the position as it stands",
-    ...(meaning ? { meaning } : {}),
-    question,
-  });
+  // Keyed on the position AND the event AND the question — the meaning rides
+  // along implicitly, since it is a pure function of the position and event.
+  const key = `${positionKey(pos)}:${eventId ?? "-"}:${normalize(question)}`;
+  const hit = cache.get(key);
+  if (hit) return NextResponse.json({ answer: hit, cached: true });
 
-  if (!("answer" in result)) {
-    // Leaks and drift are logged for whoever is watching; the learner just
-    // sees that the coach has no answer, which is the honest surface.
-    if (result.reason === "leaked" || result.reason === "malformed") {
-      console.warn(`[coach] event-qa rejected (${result.reason}) for ${eventId}`);
-    }
-    return NextResponse.json({ answer: null, reason: result.reason });
+  const running = inFlight.get(key);
+  if (running) {
+    const joined = await running;
+    return NextResponse.json({ answer: joined, ...(joined ? { cached: true } : {}) });
   }
-  return NextResponse.json({ answer: result.answer });
+
+  const work = (async (): Promise<string | null> => {
+    const result = await answerEventQuestion({
+      pos,
+      eventLabel: event?.label ?? "the position as it stands",
+      ...(meaning ? { meaning } : {}),
+      question,
+    });
+    if (!("answer" in result)) {
+      // Leaks and drift are logged for whoever is watching; the learner just
+      // sees that the coach has no answer, which is the honest surface.
+      if (result.reason === "leaked" || result.reason === "malformed") {
+        console.warn(`[coach] event-qa rejected (${result.reason}) for ${eventId ?? "chat"}`);
+      }
+      return null;
+    }
+    remember(key, result.answer);
+    return result.answer;
+  })();
+  inFlight.set(key, work);
+
+  try {
+    const answer = await work;
+    return NextResponse.json({ answer });
+  } finally {
+    inFlight.delete(key);
+  }
 }
