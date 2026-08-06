@@ -11,6 +11,7 @@ import { Colors, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../../constants/theme
 import { useAuth } from "../../lib/auth-context";
 import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
 import { type BridgeSummary } from "../../lib/nexus";
+import { prewarmBridgePages } from "../../lib/prewarm";
 import { peekSummary, refreshSummary } from "../../lib/summary-cache";
 
 export default function CoachScreen() {
@@ -35,6 +36,9 @@ export default function CoachScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!token) return;
+      // Warm the screens this tab's cards open (role decides which are shown,
+      // but warming both costs one idempotent GET each).
+      prewarmBridgePages(["/m/reviews", "/m/plays"]);
       let cancelled = false;
       refreshSummary(token)
         .then((s) => !cancelled && setSummary(s))

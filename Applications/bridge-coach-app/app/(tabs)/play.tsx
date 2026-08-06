@@ -13,6 +13,7 @@ import { useAuth } from "../../lib/auth-context";
 import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
 import { prefetchLaunch } from "../../lib/launch-cache";
 import { type BridgeSummary } from "../../lib/nexus";
+import { prewarmBridgePages } from "../../lib/prewarm";
 import { peekSummary, refreshSummary } from "../../lib/summary-cache";
 
 export default function PlayScreen() {
@@ -42,6 +43,9 @@ export default function PlayScreen() {
     useCallback(() => {
       if (!token) return;
       prefetchLaunch(token, "bridge"); // keep a launch warm — one tap away
+      // Warm the screens this tab's cards open, so tapping one lands on a
+      // warm function instead of a cold start.
+      prewarmBridgePages(["/m/assigned", "/welcome"]);
       let cancelled = false;
       setError(null);
       refreshSummary(token)

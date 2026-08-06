@@ -17,6 +17,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Brand, Fonts, Radius, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { getBridgeContextCached, isCoach } from "../lib/bridge-role";
+import { prewarmBridgePages } from "../lib/prewarm";
 
 // Library is coach-only for now: learners reach boards through Play and
 // My Games, so the shelf browser would only be an empty detour for them.
@@ -38,6 +39,8 @@ export function MenuSheetBody({ onClose }: { onClose: () => void }) {
     getBridgeContextCached(token).then((ctx) => {
       if (!cancelled) setCoach(isCoach(ctx));
     });
+    // Warm the screens these rows open while the menu is still up.
+    prewarmBridgePages(["/m/plays", "/m/library"]);
     return () => {
       cancelled = true;
     };
