@@ -32,10 +32,10 @@ export interface CoachPanelProps {
   /** Footer action buttons. Absent/empty → no footer. */
   actions?: readonly CoachAction[];
   /**
-   * A host-supplied body. When present it replaces `lines` (and the empty
-   * state) wholesale — the shell still draws its header and reserves the
-   * band; the host draws everything inside. Content stays with the host,
-   * exactly as this shell promises.
+   * A host-supplied body. When present the shell contributes ONLY the
+   * reserved band: no header, no padding — the content fills the whole
+   * panel and the host draws everything, header included. Content stays
+   * with the host, exactly as this shell promises.
    */
   content?: ReactNode;
 }
@@ -66,6 +66,11 @@ export function CoachPanel({
   const empty = body.length === 0;
   const acts = actions && actions.length ? actions : [];
 
+  // A host body occupies the ENTIRE panel — the shell is just the band.
+  if (content) {
+    return <div style={{ width: "100%", height: "100%", minHeight: 0, overflow: "hidden" }}>{content}</div>;
+  }
+
   return (
     <div style={shell}>
       {/* Header: accent roundel · title · status. */}
@@ -76,22 +81,17 @@ export function CoachPanel({
         <span style={{ fontSize: 11, letterSpacing: ".09em", textTransform: "uppercase", color: "#6b7570" }}>{status}</span>
       </div>
 
-      {/* Body: the host's content when handed one, else the handed lines, else
-          the honest empty-state line. */}
+      {/* Body: the handed lines, or the honest empty-state line. */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
-        {content ?? (
-          <>
-            {body.map((l, i) => (
-              <div key={i} style={{ fontSize: 14, lineHeight: 1.45, color: l.color }}>
-                {l.text}
-              </div>
-            ))}
-            {empty && (
-              <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#6b7570" }}>
-                Coach commentary appears here as the deal goes on.
-              </div>
-            )}
-          </>
+        {body.map((l, i) => (
+          <div key={i} style={{ fontSize: 14, lineHeight: 1.45, color: l.color }}>
+            {l.text}
+          </div>
+        ))}
+        {empty && (
+          <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#6b7570" }}>
+            Coach commentary appears here as the deal goes on.
+          </div>
         )}
       </div>
 

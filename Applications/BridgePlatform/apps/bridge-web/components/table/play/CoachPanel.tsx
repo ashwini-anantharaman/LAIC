@@ -950,23 +950,50 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
 export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ position: "relative", minHeight: "100%" }}>
-      <button
-        type="button"
-        aria-label="Open the full coach"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-        style={{
-          position: "absolute", top: 0, right: 0, zIndex: 2,
-          width: 30, height: 30, borderRadius: 8,
-          background: FELT_MID, borderWidth: 0, color: "#fff",
-          fontSize: 14, lineHeight: 1, cursor: "pointer",
-          boxShadow: "0 1px 3px rgba(0,0,0,.25)",
-        }}
-      >
-        ⤢
-      </button>
-      <CoachNow data={data} />
+    // The dock IS the panel (owner direction 2026-08-05: "the entire default
+    // screen occupies the entire coach panel"): the shell hands over the whole
+    // band, and this draws everything — its own slim identity row, its own
+    // scroll, the coach's own paper.
+    <div
+      style={{
+        position: "relative", width: "100%", height: "100%", minHeight: 0,
+        display: "flex", flexDirection: "column",
+        background: HEAD, fontFamily: "Arial, Helvetica, sans-serif",
+      }}
+    >
+      <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "7px 12px 5px" }}>
+        <span
+          aria-hidden
+          style={{
+            flex: "none", width: 22, height: 22, borderRadius: "50%",
+            background: CHIP, display: "flex", alignItems: "center", justifyContent: "center",
+            color: FELT_DEEP, fontSize: 11,
+          }}
+        >
+          ♠
+        </span>
+        <span style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 14.5, fontWeight: 700, color: INK }}>
+          Coach
+        </span>
+        <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          aria-label="Open the full coach"
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+          style={{
+            flex: "none", width: 30, height: 26, borderRadius: 8,
+            background: FELT_MID, borderWidth: 0, color: "#fff",
+            fontSize: 13, lineHeight: 1, cursor: "pointer",
+            boxShadow: "0 1px 3px rgba(0,0,0,.25)",
+          }}
+        >
+          ⤢
+        </button>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 12px 14px" }}>
+        <CoachNow data={data} />
+      </div>
       {open && (
         <div style={{ position: "fixed", inset: 0, zIndex: 900 }}>
           <CoachSheet data={data} presence="request" onClose={() => setOpen(false)} />
