@@ -7,7 +7,7 @@
 // flicked back down.
 
 import { Ionicons } from "@expo/vector-icons";
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -46,8 +46,15 @@ export function BrandSheet({
   const offset = useSharedValue(SCREEN_H);
   const backdrop = useSharedValue(0);
 
+  // Tap-through guard: on web the app-bar icons open sheets on pointer DOWN,
+  // so the same tap's click lands moments later — on this sheet's backdrop,
+  // which would close it instantly. Ignore backdrop presses in the opening
+  // beat; a deliberate close always comes later than that.
+  const openedAt = useRef(0);
+
   useEffect(() => {
     if (visible) {
+      openedAt.current = Date.now();
       offset.value = withSpring(0, SPRING);
       backdrop.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) });
     } else {
@@ -87,7 +94,13 @@ export function BrandSheet({
   return (
     <View style={styles.host} pointerEvents="box-none">
       <Animated.View style={[styles.backdrop, backdropStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => {
+            if (Date.now() - openedAt.current > 350) onClose();
+          }}
+          accessibilityLabel="Close"
+        />
       </Animated.View>
 
       <GestureDetector gesture={pan}>
