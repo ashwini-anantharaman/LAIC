@@ -28,7 +28,7 @@ export default async function MobileAssignPage({
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "56px 18px calc(96px + env(safe-area-inset-bottom))",
       }}
     >
@@ -94,7 +94,7 @@ export default async function MobileAssignPage({
                 type="checkbox"
                 name="learner"
                 value={l.user_id as string}
-                style={{ width: 18, height: 18, accentColor: "#1f5e56" }}
+                style={{ width: 18, height: 18, accentColor: "#105431" }}
               />
               <span style={{ font: `600 14.5px ${K}`, color: "#1d1a15" }}>
                 {l.name ?? l.email ?? "Learner"}
@@ -124,7 +124,7 @@ export default async function MobileAssignPage({
           style={{
             marginTop: 12,
             font: `600 13.5px ${K}`,
-            background: "#1f5e56",
+            background: "#105431",
             color: "#fff",
             border: "none",
             borderRadius: 999,

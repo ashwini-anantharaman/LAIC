@@ -61,7 +61,7 @@ export default async function MobileAssignmentsPage({
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "56px 18px calc(96px + env(safe-area-inset-bottom))",
       }}
     >
@@ -145,7 +145,7 @@ export default async function MobileAssignmentsPage({
                     {chip.label}
                   </span>
                   {href && (
-                    <span style={{ font: `600 12px ${K}`, color: "#205e63" }}>Review ›</span>
+                    <span style={{ font: `600 12px ${K}`, color: "#105431" }}>Review ›</span>
                   )}
                 </>
               );

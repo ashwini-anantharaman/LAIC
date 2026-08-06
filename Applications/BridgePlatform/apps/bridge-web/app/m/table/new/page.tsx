@@ -70,7 +70,7 @@ export default async function MobileNewTablePage() {
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "56px 18px calc(96px + env(safe-area-inset-bottom))",
       }}
     >
@@ -158,7 +158,7 @@ export default async function MobileNewTablePage() {
                       type="submit"
                       style={{
                         border: "none",
-                        background: "#205e63",
+                        background: "#105431",
                         color: "#fff",
                         borderRadius: 8,
                         padding: "6px 14px",
@@ -282,7 +282,7 @@ export default async function MobileNewTablePage() {
                   type="submit"
                   style={{
                     border: "none",
-                    background: "#205e63",
+                    background: "#105431",
                     color: "#fff",
                     borderRadius: 10,
                     padding: 12,
@@ -320,7 +320,7 @@ export default async function MobileNewTablePage() {
           width: "100%",
           border: "none",
           background: "none",
-          color: "#205e63",
+          color: "#105431",
           padding: 8,
           font: `500 13px ${K}`,
           textDecoration: "underline",

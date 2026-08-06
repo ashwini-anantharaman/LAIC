@@ -24,7 +24,7 @@ export default async function MobileHomePage() {
       style={{
         height: "100%",
         overflowY: "auto",
-        background: "#faf8f2",
+        background: "#fff4d7",
         padding: "56px 20px calc(96px + env(safe-area-inset-bottom))",
       }}
     >
@@ -80,7 +80,7 @@ export default async function MobileHomePage() {
           marginTop: 22,
           width: "100%",
           border: "none",
-          background: "#205e63",
+          background: "#105431",
           color: "#fff",
           borderRadius: 12,
           padding: 15,
