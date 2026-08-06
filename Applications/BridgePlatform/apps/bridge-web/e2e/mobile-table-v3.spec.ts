@@ -3,8 +3,8 @@
 // with EdgeToolbars that OVERFLOW into a ⋯ group rather than clip or scroll.
 // This spec asserts the properties the design promises: no horizontal overflow
 // on any bar, and the ⋯ popover (when the viewport forced one) opens with
-// clickable items. The coach panel is PARKED for now (owner 2026-08-05), so it
-// no longer reserves a band under the table — asserted absent below.
+// clickable items. The coach panel is live (owner 2026-08-06), reserving its
+// band under the table — asserted present below.
 //
 // Runs after kb.spec (alphabetical, serial) so the reviewer's quickplay works.
 
@@ -37,12 +37,11 @@ test.describe("mobile table v3 — phone tier", () => {
     await page.setViewportSize(PHONE);
     await openTableSession(page);
 
-    // The coach panel is PARKED (owner 2026-08-05; page flag coachParked in the
-    // table2 page), so it no longer reserves space under the table — its layer
-    // buttons are absent. The table region below still occupies the freed space.
+    // The coach panel is live and reserves its band under the table — a seated
+    // learner sees its facts-layer button.
     await expect(
       page.getByRole("button", { name: "What am I looking at?" }),
-    ).toHaveCount(0);
+    ).toBeVisible();
 
     // Both edge toolbars must fit their width: overflow moves into ⋯, so nothing
     // spills past the bar. scrollWidth <= clientWidth is measured in layout px,
