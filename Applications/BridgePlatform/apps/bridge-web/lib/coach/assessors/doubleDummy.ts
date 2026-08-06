@@ -16,17 +16,19 @@
 // Which is also why the reconciler ranks the learner's own rulebook above it for
 // explaining, however much more this one knows.
 //
-// Reach is set by the caller's time budget rather than a constant: ~53ms at five
-// cards a hand, ~400ms at six, ~3s at seven, ~23s at eight. See `searchDepthFor`.
+// Reach is now the whole hand. This used to be budget-gated — the hand-written
+// solver took ~53ms at five cards a hand and ~23s at eight, so anything before
+// trick 7 was simply unanswerable. The engine underneath is a WASM build of Bo
+// Haglund's dds: 0.4ms at eight cards, ~13ms at thirteen. Every card of every
+// trick can be asked about, and the answers are right, which the old solver's
+// were not.
 
 import type { Correctness, EvaluationBudget, Finding, Severity } from "@laic/coach/core";
-import { LiveCardPlayEvaluator, LocalDoubleDummyOracle } from "@laic/coach/domains/bridge";
-import type { Seat } from "@bridge/events";
+import { LiveCardPlayEvaluator } from "@laic/coach/domains/bridge";
+import { DdsOracle, scoreEveryCard } from "../ddsOracle";
 
 import { livePlayState } from "../cardVerdicts";
-import { searchDepthFor, type AssessContext, type MoveUnderReview } from "./context";
-
-const SEATS: Seat[] = ["N", "E", "S", "W"];
+import type { AssessContext, MoveUnderReview } from "./context";
 
 export const doubleDummyAssessor = {
   id: "dds",
@@ -41,9 +43,11 @@ export const doubleDummyAssessor = {
     _ctx: AssessContext,
     budget: EvaluationBudget,
   ): Promise<Finding | null> {
-    const depth = searchDepthFor(budget.ms);
-    const cardsLeft = Math.max(...SEATS.map((s) => move.before.hands[s]?.length ?? 0));
-    if (cardsLeft > depth) return null; // too deep for what the caller can wait
+    // NO DEPTH CAP ANY MORE. The old solver grew about sevenfold per card and
+    // could not be asked about anything before trick 7; this engine does a full
+    // thirteen-card deal in ~13ms, so every card of every trick is answerable and
+    // the budget-to-depth lookup that used to gate this is gone.
+    void budget;
 
     const live = livePlayState(move.before, move.learnerSeat, move.actor);
     if (!live) return null;
@@ -53,28 +57,42 @@ export const doubleDummyAssessor = {
     const subject = move.asking ? live.legalCards[0] : move.action.card;
     if (!subject) return null;
 
-    const oracle = new LocalDoubleDummyOracle(depth);
-    const evaluator = new LiveCardPlayEvaluator(oracle);
+    // THE SOLVER SPEAKS FIRST, AND ITS SILENCE IS THE ABSTENTION. This assessor
+    // exists to carry one authority's opinion; if the solver could not read the
+    // position there is no finding to make, whatever else might have an opinion.
+    //
+    // It used to be decided the other way round — the evaluator ran, and a
+    // low-confidence "acceptable" from its fallback principle engine meant abstain.
+    // That made the solution authority appear or vanish according to what a
+    // DIFFERENT layer thought of one specific card, and it broke the invariant that
+    // judging and asking consult the same authorities: judging looked at the card
+    // played, asking probed the first legal card, the principle engine rated them
+    // differently, and only one of the two produced a `solution` finding.
+    const scores = await scoreEveryCard(live);
+    if (!scores?.length) return null;
+    // A card the solver did not score is one it cannot speak about — an illegal
+    // play, or a position the caller and the engine disagree about.
+    const played = scores.find((s) => s.card === subject);
+    if (!played) return null;
+
+    const evaluator = new LiveCardPlayEvaluator(new DdsOracle());
     const result = await evaluator.evaluate(live, {
       card: subject,
       position: move.actor,
       live: true,
     });
 
-    // The evaluator returns a low-confidence "acceptable" to mean "I could not
-    // judge this". Treat that as no finding rather than a quiet endorsement of a
-    // card nobody actually checked.
-    if (result.correctness === "acceptable" && (result.confidence ?? 0) < 0.5) return null;
+    // Every card that ties for best, not just the first. "Either black ace" is true
+    // where "the A♠" is arbitrary, and a learner who played the A♣ deserves to be
+    // told they were right. The evaluator's `bestAction` is a single card, which is
+    // how the coach came to name one of several equals as though it mattered.
+    const bestTricks = Math.max(...scores.map((s) => s.tricks));
+    const best = scores.filter((s) => s.tricks === bestTricks).map((s) => s.card);
 
-    const best = typeof result.bestAction === "string" ? [result.bestAction] : [];
-    const tricksLost =
-      move.asking || result.correctness === "correct"
-        ? 0
-        : result.severity === "critical"
-          ? 3
-          : result.severity === "major"
-            ? 2
-            : 1;
+    // The exact figure. This used to be reverse-engineered from the severity band —
+    // critical→3, major→2, otherwise 1 — a guess made in front of an engine holding
+    // the number.
+    const tricksLost = move.asking ? 0 : bestTricks - played.tricks;
 
     return {
       assessor: "dds",
@@ -88,6 +106,11 @@ export const doubleDummyAssessor = {
       // the cost below is the part they are owed, and the note states it plainly.
       ...(tricksLost > 0 ? { cost: { tricks: tricksLost } } : {}),
       ...(best.length ? { recommends: best } : {}),
+      // THE COST TABLE, carried so an explanation can be written. It says which
+      // cards were equivalent and which were disasters — the discriminating
+      // information — while naming no hidden card, because a trick count is a
+      // consequence and not a holding.
+      ...(scores.length ? { bridge: { scores } } : {}),
       ...(result.skillIds?.length ? { skillIds: result.skillIds } : {}),
       ...(result.conceptIds?.length ? { conceptIds: result.conceptIds } : {}),
     };

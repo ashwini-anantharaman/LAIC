@@ -41,6 +41,16 @@ export interface BridgeFinding extends Finding {
      * bridge coaching from evidence the decider already produced.
      */
     whyNot?: WhyNot;
+    /**
+     * Every legal card with the tricks it takes — the solver's cost table.
+     *
+     * Bridge-shaped for the same reason as the rest of this interface: a generic
+     * `Finding` has `cost: { tricks }` for what ONE action cost, and no place for
+     * a per-alternative table. It rides here so an explanation can say which
+     * cards were equivalent and which threw a trick, which is the whole
+     * difference between an answer and a reason.
+     */
+    scores?: { card: string; tricks: number }[];
   };
 }
 
@@ -75,20 +85,8 @@ export interface AssessContext {
   teaching?: { forRule(ruleId: string | undefined): Promise<{ text?: string; citations: { label: string; sourceId?: string }[]; itemId?: string }> };
 }
 
-/**
- * Cards per hand the double-dummy search can afford for a given time budget.
- *
- * Measured on this solver, notrump, mixed hands: 4 → 11ms, 5 → 53ms, 6 → 400ms,
- * 7 → 2,956ms, 8 → 22,971ms. Roughly sevenfold per card, which is why this is a
- * lookup rather than a formula and why nothing above 7 is offered.
- *
- * Deriving depth from the budget is what removed two hardcoded caps: judging a
- * whole board used to pin 5 and the on-demand hint used to pin 7, with the
- * reason living in a comment. Now the caller states what it can wait for.
- */
-export function searchDepthFor(budgetMs: number): number {
-  if (budgetMs >= 2500) return 7;
-  if (budgetMs >= 350) return 6;
-  if (budgetMs >= 45) return 5;
-  return 4;
-}
+// `searchDepthFor` USED TO LIVE HERE and is deleted, not deprecated. It mapped a
+// time budget onto cards-per-hand because the old solver cost 53ms at five cards
+// and 23 seconds at eight, so the coach was blind before trick 7. The engine that
+// replaced it does a full deal in ~13ms. There is no depth to choose any more, and
+// a function that still offered one would only invite a cap back.

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 
 /** The in-app guide (2026-07-22): how knowledge works, written for fellows,
@@ -47,6 +48,7 @@ function Section({
 export default async function GuidePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.guide");
 
   return (
     <div className="mx-auto max-w-3xl space-y-12 pb-16">
@@ -101,7 +103,7 @@ export default async function GuidePage() {
             <p className="mt-1 text-sm text-neutral-600">
               <b>Quickplay</b> resumes your unfinished board, or deals a fresh one immediately —
               you sit South against three house players carrying the strongest knowledge set —
-              and the Quickplay card lists your resumable boards and saved plays as dropdowns,
+              and the Quickplay card lists your resumable boards and saved deals as dropdowns,
               so picking up any earlier game is one click.
               <b> Customize</b> opens the table builder: pick a knowledge set to play against or
               watch, choose <i>every</i> seat&apos;s player yourself, set the deal seed, start
@@ -139,10 +141,10 @@ export default async function GuidePage() {
             <h3 className="text-sm font-semibold">Everything else on the table bar</h3>
             <p className="mt-1 text-sm text-neutral-600">
               <b>show all hands</b> reveals the other seats. <b>save to library</b> asks for a
-              name and notes and lets you pick what to keep — the <b>deal</b> (just the cards),
-              the <b>board</b> (cards plus conditions), the <b>play</b> (everything that
+              name and notes and lets you pick what to keep — the <b>pack</b> (just the cards),
+              the <b>board</b> (cards plus conditions), the <b>deal</b> (everything that
               happened), or the <b>table</b> (the lineup itself). In the library, a board&apos;s
-              action is <b>Play</b>; a saved play&apos;s is <b>Resume</b> — resuming replays the
+              action is <b>Play</b>; a saved deal&apos;s is <b>Resume</b> — resuming replays the
               recorded auction and cards into a live board you can continue, undo, and rewind
               like any other. <b>edit deal</b> opens the mid-play deal editor —
               the game continues on the edited cards, played cards locked where they fell.

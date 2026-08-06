@@ -1,0 +1,13 @@
+diff --git a/dist/api.js b/dist/api.js
+index d5ad0448d7e9a59371acb2d2c32ac69238af46e5..5f88f82b08283efb891014bee3362c4e27140e42 100644
+--- a/dist/api.js
++++ b/dist/api.js
+@@ -4,7 +4,7 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
+     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+ };
+ var _Dds_instances, _Dds_pointerToDdTableResults, _Dds_ddTableResultsToPointer, _Dds_dealPbnToPointer, _Dds_playPbnToPointer, _Dds_ddTableDealPbnToPointer, _Dds_pointerToParResultsDealer, _Dds_pointerToSolvedPlay, _Dds_pointerToFutureTricks;
+-import DdsLoader from "./lib/dds";
++import DdsLoader from "./lib/dds.js";
+ export const loadDds = () => DdsLoader();
+ export class Dds {
+     constructor(module) {

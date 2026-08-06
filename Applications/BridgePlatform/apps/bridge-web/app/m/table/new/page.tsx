@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { arenaSets } from "@/lib/arena";
+import { requireFeature } from "@/lib/access";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { createTableEntryAction } from "@/app/bridge/library/tables/new/actions";
@@ -44,6 +45,7 @@ const fieldLabel: React.CSSProperties = {
 export default async function MobileNewTablePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.library");
   await ensureSeeds();
 
   const store = kbStore();

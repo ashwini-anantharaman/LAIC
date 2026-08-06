@@ -115,5 +115,15 @@ export {
   type OracleVerdict,
   NullOracle,
 } from "./domains/bridge/cardplay/oracle";
-export { LocalDoubleDummyOracle } from "./domains/bridge/cardplay/dds/LocalDoubleDummyOracle";
-export { solvePosition, encodeCard, decodeCard } from "./domains/bridge/cardplay/dds/solver";
+// NO SOLVER IS EXPORTED, and none is bundled. The hand-written one that used to
+// live here was wrong: it cached alpha-beta values after a cutoff, where the number
+// is a bound rather than a result, keyed on position with no record of the window it
+// was valid for. Played out against its own recommendations it was correct on 17 of
+// 40 five-card endings, and on one position it reported that both sides could win
+// every trick.
+//
+// A wrong reference implementation is worse than none, because it gets used as a
+// test oracle and quietly certifies bad behaviour as good. `DoubleDummyOracle` above
+// is the PORT; hosts supply the engine. bridge-web wires a WASM build of Bo Haglund
+// and Søren Hein's dds, which was correct on 40 of 40 and solves a full thirteen-card
+// deal in about 13ms against roughly four days for ours.

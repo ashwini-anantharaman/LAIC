@@ -1,6 +1,7 @@
 import type { LibraryEntry, LibraryKind } from "@bridge/sessions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { canUse, requireFeature } from "@/lib/access";
 import {
   bridgeLibrary,
   canCreateInLibrary,
@@ -21,9 +22,9 @@ const K = "var(--font-karla), sans-serif";
 /** Shelf order from the mobile design (Boards default, like desktop). */
 const SHELVES: { kind: LibraryKind; label: string; reserved?: boolean }[] = [
   { kind: "board", label: "Boards" },
-  { kind: "deal", label: "Deals" },
+  { kind: "deal", label: "Packs" },
   { kind: "table", label: "Tables" },
-  { kind: "play", label: "Plays" },
+  { kind: "play", label: "Deals" },
   { kind: "drill", label: "Drills", reserved: true },
   { kind: "puzzle", label: "Puzzles", reserved: true },
 ];
@@ -43,7 +44,7 @@ function metaLine(e: LibraryEntry): string {
       e.resultLabel,
     ]
       .filter(Boolean)
-      .join(" · ") || "deal only"
+      .join(" · ") || "pack only"
   );
 }
 
@@ -54,6 +55,8 @@ export default async function MobileLibraryPage({
 }: Readonly<{ searchParams: Promise<{ kind?: string; scope?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.library");
+  const canResume = await canUse(context, "library.resume");
   const params = await searchParams;
   const active = (SHELVES.find((s) => s.kind === params.kind) ?? SHELVES[0]!).kind;
 
@@ -241,7 +244,7 @@ export default async function MobileLibraryPage({
                   : e.kind === "play"
                     ? { form: resumePlayEntryAction, label: "Resume" }
                     : { form: playEntryAction, label: "Play" };
-              const playable = e.kind === "table" || !!e.hands;
+              const playable = canResume && (e.kind === "table" || !!e.hands);
               return (
                 <div
                   key={e.entryId}

@@ -21,8 +21,62 @@ import type { Call, Seat } from "@bridge/events";
 
 import {
   callLabel, cardLabel, dealtHand, GLYPH, partnerOf, Relative,
-  relative, SEAT_NAME, shapeOf,
+  relative, SEAT_NAME, shapeOf, SUITS,
 } from "./position";
+
+/**
+ * One event at the table, as an addressable row rather than prose.
+ *
+ * The sentence above summarizes; these itemize, so the panel can hang
+ * interaction off each one — expand a call to see what it meant, ask about a
+ * card. Same discipline as the rest of this file: the label is a restatement
+ * of what happened, never a judgment of it.
+ */
+export interface LookingEvent {
+  /** Stable key — "call-3" for auction[3], "play-6-1" for tricks[6].plays[1]. */
+  id: string;
+  /** The whole event as one sentence — "West led the A♠" — for screen readers
+   *  and any surface that can't draw the structured parts below. */
+  label: string;
+  /** A call in the auction, or a card in a trick. */
+  kind: "call" | "play";
+  /** Who acted, for the seat badge. */
+  seat: Seat;
+  /** The actor from the learner's side of the table — "You", "Partner", "East". */
+  who: string;
+  /** What they did — "led", "played", "bid", "passed", "doubled", "redoubled". */
+  verb: string;
+  /** The card or call itself — "A♠", "1♦" — drawn as a small card face. Absent
+   *  where the verb already says everything (passed, doubled). */
+  token?: string;
+  /**
+   * For a call: its index into the auction. What a call MEANT is the KB's to
+   * say, not this file's (no authority here) — the index is how the caller
+   * attaches the meaning it already computed for the bidding grid.
+   */
+  auctionIndex?: number;
+}
+
+/**
+ * One section of the board's history — the auction, or one trick.
+ *
+ * Groups exist because the history ACCUMULATES (owner decision 2026-08-05):
+ * past tricks and the auction stay on the card for the whole board rather
+ * than being replaced at each new trick. Thirteen tricks of four cards is a
+ * wall as a flat list; as sections it is a table of contents, with only the
+ * current one open by default.
+ */
+export interface LookingEventGroup {
+  /** Stable key — "auction", "trick-0" … */
+  id: string;
+  /** "The auction", "Trick 3", "This trick". */
+  title: string;
+  /** A completed trick's outcome — "won by partner". */
+  note?: string;
+  /** The section the board is in right now; the panel opens it by default. */
+  current?: boolean;
+  events: LookingEvent[];
+}
 
 /** What the sheet's context card draws. */
 export interface LookingAt {
@@ -30,6 +84,8 @@ export interface LookingAt {
   looking: string;
   /** Compact chips. `label` may be empty for a value that reads alone. */
   facts: { label: string; value: string }[];
+  /** The whole board so far — the auction and every trick, one group each. */
+  eventGroups: LookingEventGroup[];
 }
 
 /**
@@ -48,18 +104,47 @@ export function lookingAt(
 
   const dealt = dealtHand(state, seat);
   const points = hcp(dealt);
-  const { pattern, kind } = shapeOf(dealt);
+  const { kind } = shapeOf(dealt);
+  // The shape spelled per suit — "♠4 ♥4 ♦4 ♣1" — rather than the bridge
+  // column's "4=4=4=1": the glyphs say which suit is which without a legend,
+  // and a learner shouldn't need the notation to read their own hand.
+  const shape = SUITS
+    .map((s) => `${GLYPH[s]}${dealt.filter((c) => c.suit === s).length}`)
+    .join(" ");
   const system = opts.systemLabel?.trim();
+
+  // The auction as rows — built the same way whichever phase we are in,
+  // because the calls stay on the card for the whole board.
+  const callEvents = (): LookingEvent[] =>
+    state.auction.map((a, i) => {
+      const who = Relative(a.seat, seat);
+      const verb =
+        a.call === "P" ? "passed" : a.call === "X" ? "doubled" : a.call === "XX" ? "redoubled" : "bid";
+      const token = verb === "bid" ? callLabel(a.call) : undefined;
+      return {
+        id: `call-${i}`,
+        label: token ? `${who} bid ${token}` : `${who} ${verb}`,
+        kind: "call" as const,
+        seat: a.seat,
+        who,
+        verb,
+        ...(token ? { token } : {}),
+        auctionIndex: i,
+      };
+    });
 
   if (state.phase === "auction") {
     return {
       looking: auctionSentence(state.auction, seat, state.turn),
       facts: [
         { label: "HCP", value: String(points) },
-        { label: "♠♥♦♣", value: pattern },
+        { label: "", value: shape },
         { label: "", value: kind },
         ...(system ? [{ label: "", value: system }] : []),
       ],
+      eventGroups: state.auction.length
+        ? [{ id: "auction", title: "The auction", current: true, events: callEvents() }]
+        : [],
     };
   }
 
@@ -84,15 +169,55 @@ export function lookingAt(
           ? `You're dummy in ${label} — partner is playing your cards.`
           : `You're defending ${label} by ${SEAT_NAME[declarer]}.`;
 
+    // Declarer plays dummy's cards too, so dummy's turn IS the learner's turn —
+    // and which hand they are playing from is the thing they need told.
+    const playsDummy = mine === "declaring" && state.turn === dummy;
+    const myTurn = state.turn === seat || playsDummy;
+    const fromWhere = playsDummy ? " — you're playing from dummy" : "";
+
     if (inProgress?.plays.length) {
       const led = inProgress.plays[0]!;
       sentence += ` ${relative(led.seat, seat)} led the ${cardLabel(led.card)}`;
-      sentence += state.turn === seat ? " and it's your turn." : ".";
-    } else if (state.turn === seat) {
-      sentence += " You're on lead.";
+      sentence += myTurn ? ` and it's your turn${fromWhere}.` : ".";
+    } else if (myTurn) {
+      sentence += playsDummy ? " Dummy is on lead, so it's your card." : " You're on lead.";
     } else {
       sentence += ` ${relative(state.turn, seat)} to play.`;
     }
+
+    // The whole board so far, one group per section: the auction first, then
+    // every trick in order. Nothing is replaced — a new lead ADDS a group.
+    const groups: LookingEventGroup[] = [];
+    if (state.auction.length) {
+      groups.push({ id: "auction", title: "The auction", events: callEvents() });
+    }
+    state.tricks.forEach((t, ti) => {
+      if (!t.plays.length) return;
+      groups.push({
+        id: `trick-${ti}`,
+        // An unfinished trick can only be the last one; every completed trick
+        // keeps its number and its outcome.
+        title: t.winner ? `Trick ${ti + 1}` : "This trick",
+        ...(t.winner ? { note: `won by ${relative(t.winner, seat)}` } : {}),
+        events: t.plays.map((p, i) => {
+          const who = Relative(p.seat, seat);
+          const verb = i === 0 ? "led" : "played";
+          const token = cardLabel(p.card);
+          return {
+            id: `play-${ti}-${i}`,
+            label: `${who} ${verb} the ${token}`,
+            kind: "play" as const,
+            seat: p.seat,
+            who,
+            verb,
+            token,
+          };
+        }),
+      });
+    });
+    // Where the board is right now — a just-finished trick stays current (and
+    // open in the panel) until the next lead, exactly when you'd ask about it.
+    if (groups.length) groups[groups.length - 1]!.current = true;
 
     return {
       looking: sentence,
@@ -102,6 +227,7 @@ export function lookingAt(
         { label: "theirs", value: String(done - ours) },
         { label: "HCP dealt", value: String(points) },
       ],
+      eventGroups: groups,
     };
   }
 
@@ -110,7 +236,8 @@ export function lookingAt(
     looking: state.contract
       ? `The board is done — ${state.contract.level}${state.contract.strain === "N" ? "NT" : GLYPH[state.contract.strain]} by ${SEAT_NAME[state.contract.declarer]}.`
       : "Nothing in play yet.",
-    facts: [{ label: "HCP dealt", value: String(points) }, { label: "♠♥♦♣", value: pattern }],
+    facts: [{ label: "HCP dealt", value: String(points) }, { label: "", value: shape }],
+    eventGroups: [],
   };
 }
 

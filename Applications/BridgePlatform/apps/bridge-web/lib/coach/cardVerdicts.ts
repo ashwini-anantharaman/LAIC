@@ -12,10 +12,10 @@
 // does not, and the one place the host defers to it rather than the reverse.
 //
 // Two layers, in the component's `LiveCardPlayEvaluator`:
-//   · the DOUBLE-DUMMY ORACLE, authoritative, but only on end-game positions.
-//     `LocalDoubleDummyOracle` caps itself at a few cards per hand, because an
-//     alpha-beta search over thirteen is not something to run while a page
-//     renders. Past the cap it returns nothing rather than guessing.
+//   · the DOUBLE-DUMMY ORACLE, authoritative, and now over the whole hand. The
+//     oracle arrives through a port; bridge-web supplies a WASM build of dds,
+//     which solves a full thirteen-card deal in about 13ms, so the end-game-only
+//     restriction that used to apply here is gone.
 //   · the PRINCIPLE ENGINE, which names the tactic ("second hand low") and
 //     covers the rest of the hand.
 // Where neither can judge, the result is low-confidence "acceptable", which the
@@ -34,12 +34,7 @@ import { cardCode } from "./tableEvents";
 import type { CompiledKb } from "@bridge/kb";
 import type { EvaluationResult, VerdictSource } from "@laic/coach/core";
 export { partnershipSystem } from "./verdicts";
-import {
-  LiveCardPlayEvaluator,
-  LocalDoubleDummyOracle,
-  runPrinciples,
-  type LiveCardPlayState,
-} from "@laic/coach/domains/bridge";
+import { runPrinciples, type LiveCardPlayState } from "@laic/coach/domains/bridge";
 
 /** "S:AK4 H:Q2 D:- C:9" — the shape the evaluator parses. */
 const SUIT_ORDER = ["S", "H", "D", "C"] as const;

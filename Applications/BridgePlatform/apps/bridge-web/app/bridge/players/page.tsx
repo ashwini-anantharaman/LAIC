@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ChipRow, UnderlineTabs } from "@/components/ChipTabs";
 import { ValidityBadge } from "@/components/kb/badges";
 import { ConfirmButton } from "@/components/kb/ConfirmButton";
+import { canUse, requireFeature } from "@/lib/access";
 import { benAvailable, BEN_SEAT_LABEL } from "@/lib/benSeat";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
@@ -20,6 +21,14 @@ export default async function PlayersPage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.players");
+  const [canCreate, canEdit, canDelete, canTry, canAiTab] = await Promise.all([
+    canUse(context, "players.create"),
+    canUse(context, "players.edit"),
+    canUse(context, "players.delete"),
+    canUse(context, "players.try"),
+    canUse(context, "players.ai_tab"),
+  ]);
   await ensureSeeds();
   const { tab, kb: kbParam, by, deleted } = await searchParams;
 
@@ -96,7 +105,7 @@ export default async function PlayersPage({
       />
 
       {aiTab ? (
-        benAvailable() ? (
+        canAiTab && benAvailable() ? (
           <ul className="mt-8 grid gap-3 sm:grid-cols-2">
             <li className="rounded-lg border border-neutral-200 p-4">
               <div className="flex items-start justify-between gap-2">
@@ -114,27 +123,29 @@ export default async function PlayersPage({
               <p className="mt-0.5 text-xs text-neutral-400">
                 Also seatable anywhere from a live board&apos;s seat menus.
               </p>
-              <div className="mt-3 flex gap-2">
-                <form action={tryBenAction}>
-                  {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
-                  <button
-                    type="submit"
-                    className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
-                  >
-                    Play
-                  </button>
-                </form>
-                <form action={tryBenAction}>
-                  {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
-                  <input type="hidden" name="watch" value="1" />
-                  <button
-                    type="submit"
-                    className="rounded border border-neutral-300 px-3 py-1 text-xs hover:border-emerald-400"
-                  >
-                    Watch 4 copies
-                  </button>
-                </form>
-              </div>
+              {canTry && (
+                <div className="mt-3 flex gap-2">
+                  <form action={tryBenAction}>
+                    {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                    <button
+                      type="submit"
+                      className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+                    >
+                      Play
+                    </button>
+                  </form>
+                  <form action={tryBenAction}>
+                    {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                    <input type="hidden" name="watch" value="1" />
+                    <button
+                      type="submit"
+                      className="rounded border border-neutral-300 px-3 py-1 text-xs hover:border-emerald-400"
+                    >
+                      Watch 4 copies
+                    </button>
+                  </form>
+                </div>
+              )}
             </li>
           </ul>
         ) : (
@@ -214,6 +225,7 @@ export default async function PlayersPage({
             })()}
 
           {/* Make a player: one click per set, the wizard, or by hand */}
+          {canCreate && (
           <section className="mt-6 rounded-lg border border-neutral-200 bg-[var(--card)] p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-medium">New player</p>
@@ -259,6 +271,7 @@ export default async function PlayersPage({
               </>
             )}
           </section>
+          )}
 
           {/* The roster */}
           <ul className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -284,40 +297,48 @@ export default async function PlayersPage({
                   by {creatorLabel(p.ownerId ?? p.ownerType)}
                 </p>
                 <div className="mt-3 flex gap-2">
-                  <form action={tryPlayerAction}>
-                    <input type="hidden" name="playerId" value={p.playerId} />
-                    <button
-                      type="submit"
-                      className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
-                    >
-                      Play
-                    </button>
-                  </form>
-                  <form action={tryPlayerAction}>
-                    <input type="hidden" name="playerId" value={p.playerId} />
-                    <input type="hidden" name="watch" value="1" />
-                    <button
-                      type="submit"
+                  {canTry && (
+                    <>
+                      <form action={tryPlayerAction}>
+                        <input type="hidden" name="playerId" value={p.playerId} />
+                        <button
+                          type="submit"
+                          className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+                        >
+                          Play
+                        </button>
+                      </form>
+                      <form action={tryPlayerAction}>
+                        <input type="hidden" name="playerId" value={p.playerId} />
+                        <input type="hidden" name="watch" value="1" />
+                        <button
+                          type="submit"
+                          className="rounded border border-neutral-300 px-3 py-1 text-xs hover:border-emerald-400"
+                        >
+                          Watch 4 copies
+                        </button>
+                      </form>
+                    </>
+                  )}
+                  {canEdit && (
+                    <Link
+                      href={`/bridge/kb/${p.kbId}/players/${p.playerId}`}
                       className="rounded border border-neutral-300 px-3 py-1 text-xs hover:border-emerald-400"
                     >
-                      Watch 4 copies
-                    </button>
-                  </form>
-                  <Link
-                    href={`/bridge/kb/${p.kbId}/players/${p.playerId}`}
-                    className="rounded border border-neutral-300 px-3 py-1 text-xs hover:border-emerald-400"
-                  >
-                    Edit
-                  </Link>
-                  <span className="ml-auto">
-                    <ConfirmButton
-                      action={deletePlayerAction}
-                      hidden={{ playerId: p.playerId, returnTo: playersHref({ tab, kb: kbParam, by }) }}
-                      confirm={`Delete "${p.name}"? Boards already dealt with it keep playing; this can't be undone.`}
-                      label="Delete"
-                      className="rounded border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
-                    />
-                  </span>
+                      Edit
+                    </Link>
+                  )}
+                  {canDelete && (
+                    <span className="ml-auto">
+                      <ConfirmButton
+                        action={deletePlayerAction}
+                        hidden={{ playerId: p.playerId, returnTo: playersHref({ tab, kb: kbParam, by }) }}
+                        confirm={`Delete "${p.name}"? Boards already dealt with it keep playing; this can't be undone.`}
+                        label="Delete"
+                        className="rounded border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                      />
+                    </span>
+                  )}
                 </div>
               </li>
             ))}

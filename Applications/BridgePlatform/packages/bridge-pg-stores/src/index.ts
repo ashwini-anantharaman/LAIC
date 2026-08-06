@@ -14,5 +14,7 @@ export { PgAuditStore } from "./audit";
 export { PgKbStore } from "./kb";
 export { PgSessionStore } from "./sessions";
 export { PgLibraryStore } from "./library";
+export { PgAccessStore } from "./access";
+export { PgTableConfigStore } from "./tableConfig";
 export { PgSubmissionStore } from "./submissions";
 export { PgAssignmentStore } from "./assignments";

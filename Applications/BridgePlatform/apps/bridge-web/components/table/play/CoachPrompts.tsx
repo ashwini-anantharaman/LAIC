@@ -20,20 +20,26 @@
 // corrections, and a surface that speaks 40 times a board is not read by trick
 // four.
 //
-// WIRING STATUS. "What should I play?" calls /api/bridge/play-hint, which runs
-// the assessor panel and reports which of its authorities answered.
+// WHERE THE MODEL SITS (owner decision 2026-08-05): behind the ANSWER, not behind
+// the reasoning.
 //
-// "Help me think" is LAYER 1 ONLY, and needs no network at all: the whole
-// scaffold is computed server-side in lib/coach/think.ts and handed down as a
-// prop, so tapping it is instant and cannot fail. Layer 2 adds what each
-// candidate DOES, what a bid PROMISES, and the framing question — one model call,
-// structurally blind to the solver. Until then the panel says plainly that the
-// reasoning half is missing, rather than letting the facts pass for the whole
-// feature.
+// "What should I play?" calls /api/bridge/play-hint for the card, then
+// /api/bridge/play-why for the reason. Two requests on purpose: the card lands
+// immediately and the explanation catches up, so nothing useful waits on a model.
+// The model may only explain the card an authority already chose — and it is
+// never asked when the double-dummy search is the adviser, because that reason IS
+// the hidden hands and no honest sentence can be written from the learner's side.
+//
+// "Help me think" is deterministic, end to end. No model, no network: the facts
+// and the realistic choices are computed server-side in lib/coach/think.ts and
+// handed down as a prop, so tapping it answers on the tick it is pressed and
+// cannot fail. That is the point of it — one button that cannot be wrong, and one
+// that can be explained.
 //
 // The auction's "What should I bid?" is still a surface only, and says so.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { PlayExplanation } from "@/lib/coach/model";
 import type { ThinkAid } from "@/lib/coach/think";
 
 // The table's own palette, as CoachPanel uses it.
@@ -47,6 +53,50 @@ const AMBER = "#9c5a12";
 
 const SUIT_GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const RED = new Set(["♥", "♦"]);
+const RED_INK = "#c00";
+
+/**
+ * The coach's voice: one serif face for everything it SAYS, so the reason, the
+ * why-not line and the tie note read as one person talking.
+ *
+ * They were three different faces and three different sizes — the main reason in
+ * Georgia and the two lines under it in the app's Arial, which made a single
+ * thought look like three unrelated remarks. Size carries the hierarchy now;
+ * family and colour carry who is speaking.
+ */
+const SAYS = {
+  margin: 0,
+  fontFamily: "Georgia, 'Times New Roman', serif",
+  lineHeight: 1.5,
+} as const;
+
+/** A card inside prose: "10♦", "K♠". Captured so the split keeps them. */
+const CARD_IN_PROSE = /((?:10|[2-9AKQJ])[♠♥♦♣])/g;
+
+/**
+ * Prose with its suit symbols coloured — red for hearts and diamonds, black for
+ * spades and clubs, as every printed hand diagram has done for a century.
+ *
+ * This is not decoration. At body-text size in a serif face, ♦ and ♠ are close
+ * enough that a reader genuinely cannot tell which one a sentence named — a real
+ * reader asked "why is it saying 9 spade?" of a sentence about a diamond. Colour
+ * makes the suit unmistakable at a glance and costs nothing.
+ */
+function SuitText({ children }: Readonly<{ children: string }>) {
+  return (
+    <>
+      {children.split(CARD_IN_PROSE).map((part, i) =>
+        CARD_IN_PROSE.test(part) && RED.has(part.slice(-1)) ? (
+          <span key={i} style={{ color: RED_INK, fontWeight: 600 }}>
+            {part}
+          </span>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
 
 /** "DT" → "10♦". The engine's notation, in the table's. */
 function cardText(card: string): { rank: string; suit: string } {
@@ -56,6 +106,8 @@ function cardText(card: string): { rank: string; suit: string } {
 
 type Hint = {
   best: string[];
+  /** Which of several tied cards to play. Convention's choice, not the solver's. */
+  prefer?: string;
   source: "system" | "convention" | "solution";
   because?: string;
   corroborated?: boolean;
@@ -64,7 +116,7 @@ type Hint = {
 
 type Answer =
   | { kind: "loading" }
-  | { kind: "done"; hint: Hint }
+  | { kind: "done"; hint: Hint; why?: PlayExplanation; whyPending?: boolean }
   | { kind: "empty"; reason: string }
   | { kind: "pending"; what: string; will: string }
   | { kind: "think"; aid: ThinkAid };
@@ -92,6 +144,31 @@ export function CoachPrompts({
 
   const tellLabel = phase === "auction" ? "What should I bid?" : "What should I play?";
 
+  // PREFETCH ON OPEN. The sheet mounts this component only when the learner opens
+  // the coach, and opening it mid-play is the strongest signal available that a
+  // question is coming. The model call is output-bound and takes seconds; nothing
+  // client-side can shorten it, so the remaining lever is starting it before the
+  // click. By the time a finger reaches "What should I play?", the server-side
+  // cache usually holds the finished explanation and the click gets it for the
+  // price of a round trip.
+  //
+  // WHAT THIS SPENDS, stated plainly: one model call per sheet-open on the
+  // learner's turn where they never click. The server bounds the waste — the route
+  // runs the solver first and only reaches the model when there is genuinely an
+  // answer for this learner right now, which is the same call the click would have
+  // made. A prefetch racing an actual click does NOT double-spend: the route
+  // single-flights identical requests, so the click joins the prefetch's call.
+  //
+  // Fires once per open, deliberately not per position: the sheet covers the felt,
+  // so it is closed during actual play, and re-arming on every turn would spend a
+  // call per trick for a sheet someone left open.
+  useEffect(() => {
+    if (phase !== "play") return;
+    void fetch(`/api/bridge/play-why?sessionId=${encodeURIComponent(sessionId)}`).catch(() => {
+      // Warming failed; the click will simply pay the full price it always used to.
+    });
+  }, []); // empty on purpose: once per open — see the comment above
+
   async function tell() {
     // The auction has no hint endpoint yet. Say so rather than calling the play
     // route and rendering its "only during the play" refusal as if it were an
@@ -106,24 +183,48 @@ export function CoachPrompts({
       return;
     }
     setAnswer({ kind: "loading" });
+    // BOTH REQUESTS LEAVE TOGETHER. They used to be sequential — hint, then, once
+    // it had rendered, the explanation — which reads naturally and wastes the
+    // hint's entire round trip: `play-why` recomputes the advice server-side from
+    // the session record (it trusts nothing the client learned), so it depends on
+    // no part of the hint response. The model call is the long pole at several
+    // seconds; starting it a round-trip earlier is the one client-side saving
+    // available, and it costs nothing when the hint comes back empty — the
+    // explanation of a position with no answer is `null` either way.
+    //
+    // The card still renders the moment IT arrives. The explanation attaches when
+    // it lands, or silently doesn't — a flourish that failed to arrive, never an
+    // error a learner should see.
+    const whyRequest = fetch(`/api/bridge/play-why?sessionId=${encodeURIComponent(sessionId)}`)
+      .then((r) => r.json() as Promise<{ explanation?: PlayExplanation | null }>)
+      .catch(() => ({ explanation: null }));
     try {
       // The client sends only a session id: the seat and the hand come from the
       // session record server-side, so a crafted request cannot ask about
       // somebody else's cards.
       const res = await fetch(`/api/bridge/play-hint?sessionId=${encodeURIComponent(sessionId)}`);
       const body = (await res.json()) as { hint?: Hint | null; reason?: string };
-      setAnswer(
-        body.hint?.best?.length
-          ? { kind: "done", hint: body.hint }
-          : { kind: "empty", reason: body.reason ?? "no answer" },
-      );
+      if (!body.hint?.best?.length) {
+        setAnswer({ kind: "empty", reason: body.reason ?? "no answer" });
+        return;
+      }
+      const hint = body.hint;
+      setAnswer({ kind: "done", hint, whyPending: true });
+      void whyRequest.then((why) => {
+        setAnswer((prev) =>
+          prev?.kind === "done" && prev.hint === hint
+            ? { kind: "done", hint, whyPending: false, ...(why.explanation ? { why: why.explanation } : {}) }
+            : prev,
+        );
+      });
     } catch {
       setAnswer({ kind: "empty", reason: "unreachable" });
     }
   }
 
   function think() {
-    // No fetch: the scaffold arrived with the page.
+    // No fetch, ever. The scaffold arrived with the page, so this answers on the
+    // tick it is pressed and has no failure mode to design around.
     if (aid) return setAnswer({ kind: "think", aid });
     setAnswer({
       kind: "pending",
@@ -134,7 +235,13 @@ export function CoachPrompts({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-      {answer && <AnswerBlock answer={answer} />}
+      {answer && (
+        <AnswerBlock
+          answer={answer}
+          {...(answer.kind === "done" && answer.why ? { why: answer.why } : {})}
+          whyPending={answer.kind === "done" && Boolean(answer.whyPending)}
+        />
+      )}
 
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
         <Prompt onClick={think} disabled={!active} primary>
@@ -190,7 +297,9 @@ function Prompt({
  * agrees or dissents separately — "your system says this, the cards say
  * otherwise" is worth showing rather than resolving.
  */
-function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
+function AnswerBlock({
+  answer, why, whyPending,
+}: Readonly<{ answer: Answer; why?: PlayExplanation; whyPending: boolean }>) {
   if (answer.kind === "loading") {
     return (
       <p style={{ margin: 0, fontSize: 13.5, color: MUTED, fontStyle: "italic" }}>
@@ -241,7 +350,17 @@ function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: MUTED }}>{lead}</span>
-        {hint.best.map((card) => {
+        {/* ONE CHIP WHERE CONVENTION CAN CHOOSE. Three interchangeable cards is a
+            true statement and useless instruction: a learner who picks the J♣ off
+            the row has spent a higher card for nothing, and "take your pick" is not
+            a habit anybody can carry to the next hand. Bridge already answers it —
+            play the cheapest card that does the job — so the row leads with that one
+            and the tie survives in the `equivalent` line underneath.
+
+            The tie is still shown in full when convention CANNOT choose: on lead,
+            where a touching sequence is led from the top, and across suits, where a
+            discard is real judgement. See `preferOf` in advise.ts. */}
+        {(hint.prefer ? [hint.prefer] : hint.best).map((card) => {
           const { rank, suit } = cardText(card);
           return (
             <span
@@ -259,19 +378,70 @@ function AnswerBlock({ answer }: Readonly<{ answer: Answer }>) {
           );
         })}
       </div>
-      {hint.because && (
-        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: MUTED }}>{hint.because}</p>
+      {/* THE REASON. The model's rewrite when it arrived, the authority's own
+          wording when it did not — the authority's is always true, just written
+          for whoever reviews the rulebook rather than for a player. */}
+      {why ? (
+        <p style={{ ...SAYS, fontSize: 14, color: INK }}>
+          <SuitText>{why.why}</SuitText>
+        </p>
+      ) : hint.because ? (
+        <p style={{ ...SAYS, fontSize: 13.5, color: MUTED }}>
+          <SuitText>{hint.because}</SuitText>
+        </p>
+      ) : null}
+
+      {/* Why NOT the other card — beside the card it is about, rather than
+          underneath the ones that survived. */}
+      {why?.notThis?.map((n) => (
+        <p key={n.label} style={{ ...SAYS, fontSize: 13.5, color: MUTED }}>
+          <span style={{ fontWeight: 700, color: INK }}>
+            not <SuitText>{n.label}</SuitText>
+          </span>
+          {" — "}
+          <SuitText>{n.why}</SuitText>
+        </p>
+      ))}
+
+      {/* The authority offered several and cannot separate them. Said plainly
+          rather than left as two chips with no explanation of why there are two. */}
+      {why?.equivalent && (
+        <p style={{ ...SAYS, fontSize: 13, color: FAINT }}>
+          <SuitText>{why.equivalent}</SuitText>
+        </p>
       )}
-      {/* The calculation's verdict on the advice — agreement is reassurance,
-          disagreement is the interesting case. The card it prefers is NOT shown:
-          naming it would make the solver the adviser through the back door, and
-          its choice is the one you could not have reasoned your way to. */}
+
+      {whyPending && (
+        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: FAINT, fontStyle: "italic" }}>
+          Putting that into plainer words…
+        </p>
+      )}
+      {/* WHERE THE ANSWER CAME FROM, and whether the other authority agrees.
+          Reordered along with the advice itself: the solver leads now, so the line
+          reads "worked out from the full deal" first and the guideline's opinion
+          second. Agreement is reassurance; disagreement is the interesting case,
+          and it is the one worth reading, because a guideline that dissents is
+          telling you what you could have reasoned to without seeing the deal.
+
+          THE DISSENTING CARD IS STILL NOT SHOWN. Two answers to "what should I
+          play?" is not an answer, and it is the disagreement rather than the other
+          card that teaches. */}
       {(hint.corroborated || hint.contradicted || hint.source === "solution") && (
         <p style={{ margin: 0, fontSize: 12, lineHeight: 1.4 }}>
-          {hint.corroborated && <span style={{ color: TEAL }}>The cards agree.</span>}
-          {hint.contradicted && <span style={{ color: AMBER }}>Though the cards lie badly for it here.</span>}
           {hint.source === "solution" && (
-            <span style={{ color: FAINT }}>{hint.corroborated || hint.contradicted ? " " : ""}Worked out from the full deal.</span>
+            <span style={{ color: FAINT }}>Worked out from the full deal. </span>
+          )}
+          {hint.corroborated && (
+            <span style={{ color: TEAL }}>
+              {hint.source === "solution" ? "Your guidelines agree." : "The cards agree."}
+            </span>
+          )}
+          {hint.contradicted && (
+            <span style={{ color: AMBER }}>
+              {hint.source === "solution"
+                ? "Your guidelines would play something else here."
+                : "Though the cards lie badly for it here."}
+            </span>
           )}
         </p>
       )}
@@ -313,11 +483,7 @@ function ThinkBlock({ aid }: Readonly<{ aid: ThinkAid }>) {
             {aid.candidates.map((c) => (
               <li key={c.label} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13.5, lineHeight: 1.45 }}>
                 <span style={{ flex: "none", minWidth: 42, fontWeight: 700, color: INK }}>{c.label}</span>
-                {c.does ? (
-                  <span style={{ color: MUTED }}>{c.does}</span>
-                ) : c.note ? (
-                  <span style={{ color: FAINT }}>{c.note}</span>
-                ) : null}
+                {c.note ? <span style={{ color: FAINT }}>{c.note}</span> : null}
               </li>
             ))}
           </ul>
@@ -328,18 +494,9 @@ function ThinkBlock({ aid }: Readonly<{ aid: ThinkAid }>) {
         <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: MUTED }}>{aid.noChoice}</p>
       )}
 
-      {aid.question && (
-        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, fontWeight: 700, color: INK }}>{aid.question}</p>
-      )}
-
-      {/* Say what is missing. Letting the facts pass for the finished feature
-          would let a learner conclude this is all the coach has to offer. */}
-      {aid.degraded && (
-        <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: FAINT }}>
-          These are the facts. What each choice would <i>do</i>, and what the bidding promises, is
-          the part still being built.
-        </p>
-      )}
+      {/* No model here, so nothing to apologise for and nothing to wait on. If the
+          learner wants the answer rather than the position, the other button is
+          right there. */}
     </div>
   );
 }

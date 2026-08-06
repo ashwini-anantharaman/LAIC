@@ -69,5 +69,26 @@ export async function GET(request: Request): Promise<NextResponse> {
   if (!advice.best.length) {
     return NextResponse.json({ hint: null, reason: advice.silentBecause ?? "no answer" });
   }
-  return NextResponse.json({ hint: advice });
+  // FIELD BY FIELD, not `{ hint: advice }`.
+  //
+  // The advice now carries the solver's cost table, and spreading the object shipped
+  // it to the browser. A trick count is not a card, so nothing was technically
+  // leaked — but a table pricing EVERY legal card is derived from all four hands, and
+  // enough of them tells a determined player about the layout. The panel has no use
+  // for it either: the explanation is written server-side in `play-why`.
+  //
+  // So the response is built explicitly. The next server-only field added to
+  // `PlayAdvice` then reaches the client only if somebody names it here.
+  return NextResponse.json({
+    hint: {
+      best: advice.best,
+      source: advice.source,
+      // The card to lead with when several tie. Convention's choice, not the
+      // solver's — the panel labels it accordingly.
+      ...(advice.prefer ? { prefer: advice.prefer } : {}),
+      ...(advice.because ? { because: advice.because } : {}),
+      ...(advice.corroborated ? { corroborated: true } : {}),
+      ...(advice.contradicted ? { contradicted: true } : {}),
+    },
+  });
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { requireFeature } from "@/lib/access";
 import { ensureSeeds, kbStore } from "@/lib/kb";
 import { getBridgeContext, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { libraryStore, sessionService } from "@/lib/sessions";
@@ -17,6 +18,7 @@ import { quickPlayAction } from "./actions";
 export default async function PlayPage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.play");
   await ensureSeeds();
 
   // One parallel round-trip for everything the landing needs — no compiled
@@ -98,7 +100,7 @@ export default async function PlayPage() {
             <h2 className="font-serif text-xl font-medium">Quickplay</h2>
             <p className="mt-2 flex-1 text-sm text-neutral-600">
               {resumable
-                ? "Pick up a board or a saved play where you left off, or deal a fresh one."
+                ? "Pick up a board or a saved deal where you left off, or deal a fresh one."
                 : "A fresh board, dealt now: you sit South against three house players carrying the strongest knowledge set."}
             </p>
             <div className="mt-4 space-y-2">
@@ -134,7 +136,7 @@ export default async function PlayPage() {
               {plays.length > 0 && (
                 <Dropdown className="relative">
                   <summary className="block w-full cursor-pointer rounded border border-neutral-300 px-4 py-2 text-center text-sm hover:border-emerald-400">
-                    Resume play ▾
+                    Resume deal ▾
                   </summary>
                   <div className="absolute left-0 right-0 z-10 mt-1 rounded-lg border border-neutral-200 bg-[var(--card)] p-1 shadow-lg">
                     {plays.map((p) => (

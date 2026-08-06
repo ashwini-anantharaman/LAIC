@@ -79,7 +79,10 @@ export function thinkAid(state: ThinkState, seat: Seat | null): ThinkAid | null 
   }
 
   if (state.phase === "play" && state.contract) {
-    if (seat === partnerOf(state.contract.declarer)) {
+    const declarer = state.contract.declarer;
+    const dummy = partnerOf(declarer);
+
+    if (seat === dummy) {
       return {
         known: ["You're dummy — partner is playing your cards, so there's nothing here to decide."],
         candidates: [],
@@ -87,12 +90,35 @@ export function thinkAid(state: ThinkState, seat: Seat | null): ThinkAid | null 
         degraded: true,
       };
     }
-    const legal = legalPlays(state as GameState, seat);
+
+    // WHOSE CARD IS ON OFFER IS NOT ALWAYS YOUR OWN HAND. Declarer plays both
+    // hands, so at dummy's turn the decision is which of DUMMY's cards to play.
+    // Reading candidates out of the learner's own hand there was a real bug: on a
+    // 3♥ with West leading, the panel offered the declarer's ♦Q and ♦7 when the
+    // card to play was one of dummy's ♦J ♦10 ♦6. The facts were right — the point
+    // count and the suit count already included dummy — but the choices were from
+    // the wrong hand, and the note called them "your" diamonds.
+    const controlled: Seat[] = seat === declarer ? [seat, dummy] : [seat];
+    const actor = controlled.includes(state.turn) ? state.turn : undefined;
+
+    if (!actor) {
+      return {
+        known: knownInPlay(state, seat),
+        candidates: [],
+        noChoice: `${Relative(state.turn, seat)} to play — nothing for you to choose yet.`,
+        degraded: true,
+      };
+    }
+
+    const legal = legalPlays(state as GameState, actor);
+    const fromDummy = actor === dummy;
     return {
       known: knownInPlay(state, seat),
-      candidates: legal.length <= 1 ? [] : playCandidates(legal, state, seat),
+      candidates: legal.length <= 1 ? [] : playCandidates(legal, state, fromDummy),
       ...(legal.length === 1
-        ? { noChoice: `Only one legal card: the ${cardLabel(legal[0]!)}.` }
+        ? {
+            noChoice: `Only one legal card${fromDummy ? " in dummy" : ""}: the ${cardLabel(legal[0]!)}.`,
+          }
         : {}),
       degraded: true,
     };
@@ -271,7 +297,10 @@ function longestOwn(state: ThinkState, seat: Seat): Suit | undefined {
  * When the learner cannot follow suit it is one card per suit instead, because
  * the decision is which suit to let go of, not which card within it.
  */
-function playCandidates(legal: Card[], state: ThinkState, seat: Seat): ThinkCandidate[] {
+function playCandidates(legal: Card[], state: ThinkState, fromDummy: boolean): ThinkCandidate[] {
+  // "your lowest diamond" is false when the card belongs to dummy, and a coach
+  // that misattributes a card is worse than one that says nothing about it.
+  const whose = fromDummy ? "dummy's" : "your";
   const led = (() => {
     const current = state.tricks[state.tricks.length - 1];
     const inProgress = current && !current.winner ? current : undefined;
@@ -288,7 +317,10 @@ function playCandidates(legal: Card[], state: ThinkState, seat: Seat): ThinkCand
       const low = inSuit.reduce((a, b) => (b.rank < a.rank ? b : a));
       out.push({
         label: cardLabel(low),
-        note: `${inSuit.length === 1 ? "your only" : "lowest of your"} ${inSuit.length > 1 ? `${inSuit.length} ` : ""}${SUIT_WORD[s]}${inSuit.length > 1 ? "s" : ""}`,
+        note:
+          inSuit.length === 1
+            ? `${whose} only ${SUIT_WORD[s]}`
+            : `lowest of ${whose} ${inSuit.length} ${SUIT_WORD[s]}s`,
       });
     }
     return out;
@@ -305,9 +337,9 @@ function playCandidates(legal: Card[], state: ThinkState, seat: Seat): ThinkCand
     label: cardLabel(c),
     note:
       i === 0
-        ? `your lowest ${SUIT_WORD[c.suit]}`
+        ? `${whose} lowest ${SUIT_WORD[c.suit]}`
         : c === high
-          ? `your highest ${SUIT_WORD[c.suit]}`
+          ? `${whose} highest ${SUIT_WORD[c.suit]}`
           : "in between",
   }));
 }

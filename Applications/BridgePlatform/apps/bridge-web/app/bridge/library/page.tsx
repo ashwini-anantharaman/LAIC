@@ -3,8 +3,9 @@ import type { LibraryEntry, LibraryKind } from "@bridge/sessions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChipRow } from "@/components/ChipTabs";
+import { canUse, requireFeature } from "@/lib/access";
 import {
-  canCreateInLibrary,
+  canCurateCollections,
   canSeeProgramLibrary,
   canShareLibrary,
   listLibraryFor,
@@ -23,10 +24,10 @@ import { ConfirmButton } from "@/components/kb/ConfirmButton";
 /** The fellows' library (2026-07-16 rework): saved deals, boards, table
  *  lineups and plays; drills & puzzles are reserved shelves. */
 const SHELVES: { kind: LibraryKind; label: string; hint: string; reserved?: boolean }[] = [
-  { kind: "deal", label: "Deals", hint: "a card distribution" },
-  { kind: "board", label: "Boards", hint: "deal + dealer + vulnerability" },
+  { kind: "deal", label: "Packs", hint: "a card distribution" },
+  { kind: "board", label: "Boards", hint: "pack + dealer + vulnerability" },
   { kind: "table", label: "Tables", hint: "a saved seat lineup" },
-  { kind: "play", label: "Plays", hint: "board + calls + cards, as recorded" },
+  { kind: "play", label: "Deals", hint: "board + calls + cards, as recorded" },
   { kind: "drill", label: "Drills", hint: "bidding regression checks, run per knowledge base" },
   { kind: "puzzle", label: "Puzzles", hint: "reserved", reserved: true },
 ];
@@ -38,6 +39,13 @@ export default async function LibraryPage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  await requireFeature(context, "page.library");
+  const [canCreate, canImport, canResume, canDelete] = await Promise.all([
+    canUse(context, "library.create"),
+    canUse(context, "library.import"),
+    canUse(context, "library.resume"),
+    canUse(context, "library.delete"),
+  ]);
   const params = await searchParams;
   const active = (SHELVES.find((s) => s.kind === params.kind) ?? SHELVES[1]!).kind;
 
@@ -45,9 +53,10 @@ export default async function LibraryPage({
   // by the access policy — admins curate the program instance, everyone else
   // works in their own. No toggle; content moves between instances only by
   // Share/Assign copies.
-  const canShare = await canShareLibrary(context);
-  // Authoring is capability-driven (library.author.own / .program).
-  const canCreate = await canCreateInLibrary(context);
+  const [canShare, canCurate] = await Promise.all([
+    canShareLibrary(context),
+    canCurateCollections(context),
+  ]);
   const scope = (await canSeeProgramLibrary(context)) ? "program" : "mine";
 
   let all: LibraryEntry[] = [];
@@ -67,7 +76,7 @@ export default async function LibraryPage({
   // tables through the lineup builder; plays only arrive by recording/import.
   const createLink =
     active === "deal"
-      ? { href: "/bridge/library/new?kind=deal", label: "New deal" }
+      ? { href: "/bridge/library/new?kind=deal", label: "New pack" }
       : active === "board"
         ? { href: "/bridge/library/new", label: "New board" }
         : active === "table"
@@ -85,7 +94,7 @@ export default async function LibraryPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {canShare && (
+          {canCurate && (
             <Link
               href="/bridge/library/collections"
               className="rounded border border-sky-700 px-3 py-1.5 text-sm font-medium text-sky-800 hover:bg-sky-50"
@@ -101,7 +110,7 @@ export default async function LibraryPage({
               {createLink.label}
             </Link>
           )}
-          {canCreate && <ImportForm action={importFileAction} />}
+          {canImport && <ImportForm action={importFileAction} />}
         </div>
       </header>
 
@@ -175,7 +184,7 @@ export default async function LibraryPage({
                         e.resultLabel,
                       ]
                         .filter(Boolean)
-                        .join(" · ") || "deal only"}
+                        .join(" · ") || "pack only"}
                 </p>
                 <p className="mt-0.5 text-[11px] text-neutral-400">
                   {e.origin}
@@ -212,46 +221,49 @@ export default async function LibraryPage({
                     Edit
                   </Link>
                 )}
-                {e.kind === "table" ? (
-                  <form action={startTableEntryAction}>
-                    <input type="hidden" name="entryId" value={e.entryId} />
-                    <button
-                      type="submit"
-                      className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
-                    >
-                      Start · fresh deal
-                    </button>
-                  </form>
-                ) : e.kind === "drill" ? (
-                  e.kbId && (
-                    <Link
-                      href={`/bridge/kb/${e.kbId}/drills`}
-                      className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
-                    >
-                      Run
-                    </Link>
-                  )
-                ) : (
-                  e.hands && (
-                    <form action={e.kind === "play" ? resumePlayEntryAction : playEntryAction}>
+                {canResume &&
+                  (e.kind === "table" ? (
+                    <form action={startTableEntryAction}>
                       <input type="hidden" name="entryId" value={e.entryId} />
                       <button
                         type="submit"
                         className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
                       >
-                        {e.kind === "play" ? "Resume" : "Play"}
+                        Start · fresh deal
                       </button>
                     </form>
-                  )
+                  ) : e.kind === "drill" ? (
+                    e.kbId && (
+                      <Link
+                        href={`/bridge/kb/${e.kbId}/drills`}
+                        className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+                      >
+                        Run
+                      </Link>
+                    )
+                  ) : (
+                    e.hands && (
+                      <form action={e.kind === "play" ? resumePlayEntryAction : playEntryAction}>
+                        <input type="hidden" name="entryId" value={e.entryId} />
+                        <button
+                          type="submit"
+                          className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+                        >
+                          {e.kind === "play" ? "Resume" : "Play"}
+                        </button>
+                      </form>
+                    )
+                  ))}
+                {canDelete && (
+                  <ConfirmButton
+                    action={deleteEntryAction}
+                    hidden={{ entryId: e.entryId }}
+                    confirm={`Delete "${e.name}" from the library? This can't be undone.`}
+                    label="Delete"
+                    title="Delete this library item"
+                    className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-400 hover:border-red-300 hover:text-red-700"
+                  />
                 )}
-                <ConfirmButton
-                  action={deleteEntryAction}
-                  hidden={{ entryId: e.entryId }}
-                  confirm={`Delete "${e.name}" from the library? This can't be undone.`}
-                  label="Delete"
-                  title="Delete this library item"
-                  className="rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-400 hover:border-red-300 hover:text-red-700"
-                />
               </div>
             </li>
           ))}

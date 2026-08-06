@@ -216,3 +216,67 @@ describe("thinkAid — the play", () => {
     expect(t).toContain("unaccounted for");
   });
 });
+
+describe("thinkAid — declarer plays two hands", () => {
+  // The board from the bug report. South declares 3♥, North is dummy and face up,
+  // West has led the 2♦ — so the card to play is one of DUMMY's diamonds.
+  const SOUTH = cards("SA SK S5 S4 S2 HK HT H8 CJ C9 DQ D9 D7");
+  const NORTH = cards("SQ ST S8 HA H9 H7 H5 H4 C6 C3 DJ DT D6");
+  const HEARTS = { level: 3, strain: "H", doubled: 0, declarer: "S" } as GameState["contract"];
+
+  const atDummysTurn = () =>
+    state({
+      phase: "play", contract: HEARTS, turn: "N",
+      hands: { N: NORTH, E: cards("SJ S9 S7 HQ HJ H6 H3 CA CK CQ DA DK D5"), S: SOUTH, W: cards("S6 S3 HT2 C8 C7 C5 C4 C2 DT3 D8 D4 D2 D3") },
+      tricks: [{ leader: "W", plays: [{ seat: "W", card: one("D2") }] }],
+    });
+
+  it("offers DUMMY's cards when it is dummy's turn, not the declarer's own", () => {
+    const a = thinkAid(atDummysTurn(), "S")!;
+    const labels = a.candidates.map((c) => c.label);
+    // Dummy holds ♦J ♦10 ♦6 — lowest, highest, and the ten in between.
+    expect(labels).toEqual(["6♦", "10♦", "J♦"]);
+    // And never the declarer's own diamonds, which was the bug.
+    for (const mine of ["Q♦", "9♦", "7♦"]) expect(labels, mine).not.toContain(mine);
+  });
+
+  it("attributes them to dummy — 'your lowest diamond' would be false", () => {
+    const a = thinkAid(atDummysTurn(), "S")!;
+    expect(a.candidates[0]!.note).toBe("dummy's lowest diamond");
+    for (const c of a.candidates) expect(c.note ?? "").not.toContain("your");
+  });
+
+  it("still counts BOTH hands for the facts — that part was already right", () => {
+    const a = thinkAid(atDummysTurn(), "S")!;
+    // 40 − South's 13 − dummy's 7 = 20.
+    expect(a.known[0]).toBe("20 points are unaccounted for, between the two defenders.");
+    // 3 of yours + 3 of dummy's + West's led card = 7 seen, so 6 out.
+    expect(a.known.join(" ")).toContain("6 ♦ are still out");
+  });
+
+  it("says nothing to choose when the turn belongs to an opponent", () => {
+    const s = state({
+      phase: "play", contract: HEARTS, turn: "E",
+      hands: { N: NORTH, E: cards("SJ S9 S7"), S: SOUTH, W: cards("S6 S3") },
+      tricks: [{ leader: "W", plays: [{ seat: "W", card: one("D2") }, { seat: "N", card: one("D6") }] }],
+    });
+    const a = thinkAid(s, "S")!;
+    expect(a.candidates).toEqual([]);
+    expect(a.noChoice).toContain("East to play");
+  });
+
+  it("uses the declarer's own hand at the declarer's own turn", () => {
+    const s = state({
+      phase: "play", contract: HEARTS, turn: "S",
+      hands: { N: NORTH, E: cards("SJ"), S: SOUTH, W: cards("S6") },
+      tricks: [
+        { leader: "W", plays: [
+          { seat: "W", card: one("D2") }, { seat: "N", card: one("D6") }, { seat: "E", card: one("DA") },
+        ] },
+      ],
+    });
+    const labels = thinkAid(s, "S")!.candidates.map((c) => c.label);
+    expect(labels).toEqual(["7♦", "Q♦"]);   // yours: ♦Q ♦9 ♦7 → lowest and highest
+    expect(thinkAid(s, "S")!.candidates[0]!.note).toBe("your lowest diamond");
+  });
+});

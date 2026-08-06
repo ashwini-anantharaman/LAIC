@@ -1,9 +1,9 @@
-import { canAccessAdminArea } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
+import { canUse } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 
 /**
- * Role gate for the knowledge admin area. Server-side check:
+ * Access gate for the audit area. Server-side check:
  * hiding the nav item is cosmetic; this layout is the enforcement point for
  * every /bridge/admin/* route.
  */
@@ -12,6 +12,6 @@ export default async function AdminLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  if (!canAccessAdminArea(context)) redirect("/bridge/home");
+  if (!(await canUse(context, "page.audit"))) redirect("/bridge/home");
   return <>{children}</>;
 }

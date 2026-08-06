@@ -1,8 +1,7 @@
-import { canViewKbWorkspace } from "@/lib/kbComponent";
-import { canAccessKnowledge } from "@/lib/nav";
 import { playerIsValid, validatePlayerStatic } from "@bridge/kb";
 import { notFound, redirect } from "next/navigation";
 import { TabLink } from "@/components/kb/TabLink";
+import { canUse } from "@/lib/access";
 import { benchmarkEnabled } from "@/lib/benchmark";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
@@ -19,10 +18,7 @@ export default async function KbLayout({
 }: Readonly<{ children: React.ReactNode; params: Promise<{ kbId: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  // Either gate admits: legacy bridge.knowledge.* capabilities (custom roles)
-  // or the kb-core policy (staff roles / kb.* capabilities).
-  if (!(canAccessKnowledge(context) || (await canViewKbWorkspace(context))))
-    redirect("/bridge/home");
+  if (!(await canUse(context, "page.kb"))) redirect("/bridge/home");
   await ensureSeeds();
 
   const { kbId } = await params;

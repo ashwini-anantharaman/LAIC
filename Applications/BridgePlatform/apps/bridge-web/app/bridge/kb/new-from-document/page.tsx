@@ -1,8 +1,7 @@
 import { AutoRead } from "@/components/kb/AutoRead";
-import { canViewKbWorkspace } from "@/lib/kbComponent";
-import { canAccessKnowledge } from "@/lib/nav";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { canUse } from "@/lib/access";
 import { ensureSeeds, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { INGEST_MODELS, storageAvailable, visionAvailable } from "@/lib/visualIngest";
@@ -111,10 +110,7 @@ export default async function NewFromDocumentPage({
 }: Readonly<{ searchParams: Promise<Search> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  // Either gate admits: legacy bridge.knowledge.* capabilities (custom roles)
-  // or the kb-core policy (staff roles / kb.* capabilities).
-  if (!(canAccessKnowledge(context) || (await canViewKbWorkspace(context))))
-    redirect("/bridge/home");
+  if (!(await canUse(context, "page.kb"))) redirect("/bridge/home");
   await ensureSeeds();
   const sp = await searchParams;
 

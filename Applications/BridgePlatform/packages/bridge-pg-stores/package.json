@@ -17,6 +17,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@bridge/access": "workspace:*",
+    "@bridge/table-config": "workspace:*",
     "@bridge/audit": "workspace:*",
     "@bridge/kb": "workspace:*",
     "@bridge/profiles": "workspace:*",
