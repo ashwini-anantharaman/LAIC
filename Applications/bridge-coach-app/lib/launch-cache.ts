@@ -59,9 +59,31 @@ export async function takeLaunch(
   return MINT[target](token);
 }
 
+// One SIGNED-IN bridge origin per session token: after the first launch
+// handshake, the embed's cookie session lives on that origin — so every later
+// screen can load its destination directly and skip the mint + exchange
+// round-trips entirely (the slow part of screen switching). Keyed by session
+// token for the same reason the cache above is: no cross-user leaks.
+let bridgeOrigin: { token: string; origin: string } | null = null;
+
+export function rememberBridgeOrigin(token: string, origin: string): void {
+  bridgeOrigin = { token, origin };
+}
+
+/** The signed-in origin for this token, or null when a handshake is needed. */
+export function peekBridgeOrigin(token: string): string | null {
+  return bridgeOrigin?.token === token ? bridgeOrigin.origin : null;
+}
+
+/** The session died on that origin (bounced to /welcome) — handshake again. */
+export function forgetBridgeOrigin(): void {
+  bridgeOrigin = null;
+}
+
 export function clearLaunchCache(): void {
   cached.learning = undefined;
   cached.bridge = undefined;
   inflight.learning = undefined;
   inflight.bridge = undefined;
+  bridgeOrigin = null;
 }

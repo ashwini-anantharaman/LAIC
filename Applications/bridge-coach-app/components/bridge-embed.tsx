@@ -7,7 +7,12 @@ import { PrimaryButton, Screen, ScreenHeader } from "./ui";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { BRIDGE_LAUNCH_URL_OVERRIDE, PROGRAM_ID } from "../lib/config";
 import { useAuth } from "../lib/auth-context";
-import { takeLaunch } from "../lib/launch-cache";
+import {
+  forgetBridgeOrigin,
+  peekBridgeOrigin,
+  rememberBridgeOrigin,
+  takeLaunch,
+} from "../lib/launch-cache";
 
 /**
  * Opens one bridge-platform page inside the app: mint a single-use launch
@@ -42,11 +47,24 @@ export function BridgeEmbed({
     if (!token) return;
     setError(null);
     setUrl(null);
+    // A signed-in origin from an earlier screen: the cookie session is
+    // already there, so load the destination DIRECTLY — no launch mint, no
+    // token exchange, no redirect. This is what makes switching screens
+    // fast; the /welcome watchdog below handshakes again if the session
+    // ever dies.
+    const known = peekBridgeOrigin(token);
+    if (known) {
+      originRef.current = known;
+      setUrl(`${known}${next}`);
+      return;
+    }
     try {
       const launch = await takeLaunch(token, "bridge");
       const base = BRIDGE_LAUNCH_URL_OVERRIDE ?? launch.launch_url;
       if (!base) throw new Error("bridge platform URL not configured");
-      originRef.current = new URL(base).origin;
+      const origin = new URL(base).origin;
+      originRef.current = origin;
+      rememberBridgeOrigin(token, origin);
       const params = new URLSearchParams({
         launch_token: launch.launch_token,
         program_id: PROGRAM_ID,
@@ -70,6 +88,9 @@ export function BridgeEmbed({
       currentUrl.current = u;
       if (u.includes("/welcome") && Date.now() - lastRelaunch.current > 5000) {
         lastRelaunch.current = Date.now();
+        // The session on the remembered origin is dead — a direct load would
+        // just bounce here again, so force the full handshake.
+        forgetBridgeOrigin();
         load();
       }
     },
