@@ -277,20 +277,20 @@ export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
 const SOURCE_INFO: Record<Hint["source"], { title: string; from: string }> = {
   system: {
     title: "Your system plays",
-    from: "This answer comes from your partnership's system notes — an agreement that covers this exact position. It tells you what your side has agreed to do, not what a calculation found.",
+    from: "Your partnership's system notes cover this position — this is what your side agreed to play.",
   },
   convention: {
     title: "Usually right here",
-    from: "This answer comes from a general bridge guideline — the standard habit for positions like this one. It is judgement distilled from practice, not a calculation.",
+    from: "A general bridge guideline — the standard habit for positions like this.",
   },
   solution: {
     title: "By calculation",
-    from: "This answer comes from a double-dummy solver: it can see all four hands and tries every line of play to the end of the deal. The cards shown are every card that keeps the maximum number of tricks — none of them is better than another, by the numbers.",
+    from: "A solver saw all four hands and tried every line. Each card shown keeps the maximum tricks — they are equals.",
   },
 };
 
 const WHY_DIFFERENT =
-  "“Your realistic choices” answers a different question on purpose. It is a neutral checklist built only from what you can see — mechanical, like your lowest card in each suit — and it never peeks at the answer, so it cannot spoil your own thinking. This answer says which cards actually work. The two can disagree in both directions: a realistic-looking card can cost a trick once every hand is known, and the winning card is not always one the simple checklist names.";
+  "Your realistic choices is a neutral checklist of what you can see — it never peeks at the answer. This is the answer. A sensible-looking card can still cost a trick once every hand is known.";
 
 /**
  * The advice for the decision ON the table — standalone, shown by the host
@@ -439,7 +439,7 @@ export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) 
                   textTransform: "uppercase", color: FELT_DEEP,
                 }}
               >
-                {SOURCE_INFO[play.hint.source].title} · where it comes from
+                {SOURCE_INFO[play.hint.source].title}
               </span>
               <span style={{ flex: 1 }} />
               <button
@@ -464,7 +464,7 @@ export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) 
                 letterSpacing: 0.7, textTransform: "uppercase", color: FAINT,
               }}
             >
-              Why it can differ from your realistic choices
+              Why it differs from your choices
             </p>
             <p style={{ ...SAYS, fontSize: 13.5, color: MUTED }}>{WHY_DIFFERENT}</p>
           </div>
