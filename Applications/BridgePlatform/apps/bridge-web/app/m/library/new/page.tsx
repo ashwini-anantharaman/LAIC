@@ -5,23 +5,28 @@ import { canCreateInLibrary } from "@/lib/libraryComponent";
 import { getBridgeContext } from "@/lib/nexus";
 import { createDealAction } from "@/app/bridge/library/actions";
 
-const F = "var(--font-fraunces), serif";
-const K = "var(--font-karla), sans-serif";
+// BirdBridge typefaces (loaded in the /m layout): Neco for display, General
+// Sans for body — with the older mobile faces as fallbacks.
+const F = "var(--font-neco), var(--font-fraunces), serif";
+const K = "var(--font-gs), var(--font-karla), sans-serif";
 
 /** Mobile authoring: the same DealEditor as desktop inside the phone shell.
  *  ?kind=deal saves the bare distribution; default is a board. The action's
  *  `mobile` flag routes errors and the post-save landing back to /m. */
 export default async function MobileNewDealPage({
   searchParams,
-}: Readonly<{ searchParams: Promise<{ kind?: string; error?: string }> }>) {
+}: Readonly<{ searchParams: Promise<{ kind?: string; error?: string; flow?: string }> }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   // Direct URL must respect the capability too, not just the hidden button.
   if (!(await canCreateInLibrary(context)))
     redirect("/m/library");
-  const { kind: rawKind, error } = await searchParams;
+  const { kind: rawKind, error, flow } = await searchParams;
   const kind = rawKind === "deal" ? "deal" : "board";
   const noun = kind === "deal" ? "deal" : "board";
+  // The coach app's Create Assignment flow: same editor, but the save
+  // continues to the assign picker (createDealAction reads the flag).
+  const flowAssign = flow === "assign";
 
   return (
     <main
@@ -32,33 +37,39 @@ export default async function MobileNewDealPage({
         padding: "40px 16px calc(40px + env(safe-area-inset-bottom))",
       }}
     >
-      <Link
-        href="/m/library"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          border: "1px solid #d3ccbb",
-          background: "#fff",
-          color: "#1d1a15",
-          borderRadius: 20,
-          padding: "6px 14px",
-          font: `600 13px ${K}`,
-          textDecoration: "none",
-          marginBottom: 14,
-        }}
-      >
-        ‹ Library
-      </Link>
+      {/* No way back to the library from the ASSIGNMENT flow (owner decision
+          2026-08-07): the coach app frames this page, its own header carries
+          the exit, and the library is not part of that journey. */}
+      {!flowAssign && (
+        <Link
+          href="/m/library"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            border: "1px solid #d3ccbb",
+            background: "#fff",
+            color: "#1d1a15",
+            borderRadius: 20,
+            padding: "6px 14px",
+            font: `600 13px ${K}`,
+            textDecoration: "none",
+            marginBottom: 14,
+          }}
+        >
+          ‹ Library
+        </Link>
+      )}
       <p style={{ font: `600 10px ${K}`, letterSpacing: ".28em", textTransform: "uppercase", color: "#a49d8e", margin: 0 }}>
-        Library
+        {flowAssign ? "New assignment" : "Library"}
       </p>
-      <h1 style={{ font: `500 26px ${F}`, color: "#1d1a15", margin: "4px 0 2px" }}>
+      <h1 style={{ font: `700 26px ${F}`, color: "#1f1f1f", margin: "4px 0 2px" }}>
         New {noun}
       </h1>
       <p style={{ font: `400 12px/1.5 ${K}`, color: "#7b7466", margin: "0 0 12px" }}>
-        Type or tap each hand suit by suit — the saved {noun} lands in your
-        library, ready to play.
+        {flowAssign
+          ? `Type or tap each hand suit by suit — after saving you'll pick which learners play it.`
+          : `Type or tap each hand suit by suit — the saved ${noun} lands in your library, ready to play.`}
       </p>
 
       {error && (
@@ -70,9 +81,11 @@ export default async function MobileNewDealPage({
       <form action={createDealAction}>
         <input type="hidden" name="kind" value={kind} />
         <input type="hidden" name="mobile" value="1" />
+        {flowAssign && <input type="hidden" name="flow" value="assign" />}
         <DealEditor
           hideBoardFacts={kind === "deal"}
-          submitLabel={kind === "deal" ? "Save deal" : "Save board"}
+          submitLabel={flowAssign ? "Save & pick learners" : kind === "deal" ? "Save deal" : "Save board"}
+          skin="app"
         />
       </form>
     </main>

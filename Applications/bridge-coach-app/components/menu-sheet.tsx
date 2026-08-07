@@ -16,22 +16,26 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Brand, Fonts, Radius, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
-import { getBridgeContextCached, isCoach } from "../lib/bridge-role";
+import { getBridgeContextCached, isCoach, peekRoleContext } from "../lib/bridge-role";
 import { prewarmBridgePages } from "../lib/prewarm";
 
-// Library is coach-only for now: learners reach boards through Play and
-// My Games, so the shelf browser would only be an empty detour for them.
-const ITEMS: { label: string; hint: string; href: Href; coachOnly?: boolean }[] = [
-  { label: "Today", hint: "What's waiting for you right now", href: "/today" },
-  { label: "Library", hint: "Boards, deals, tables and collections", href: "/library", coachOnly: true },
-  { label: "My Games", hint: "Boards you've played — send one for feedback", href: "/plays" },
+// PARKED, NOT DELETED (owner decision 2026-08-07). Three rows came off this
+// menu: Today and Library have no version either role wants yet, and My Games
+// moved to where boards already live — the Play tab. The routes, the screens
+// and everything behind them stay wired; a row returns by setting `show: true`.
+const ITEMS: { label: string; hint: string; href: Href; coachOnly?: boolean; show?: boolean }[] = [
+  { label: "Today", hint: "What's waiting for you right now", href: "/today", show: false },
+  { label: "Library", hint: "Boards, deals, tables and collections", href: "/library", coachOnly: true, show: false },
+  { label: "My Games", hint: "Boards you've played — send one for feedback", href: "/plays", show: false },
   { label: "Account details", hint: "Role, program and organisation", href: "/profile" },
 ];
 
 export function MenuSheetBody({ onClose }: { onClose: () => void }) {
   const { user, token } = useAuth();
-  // Learner until proven coach — same safe default as the tabs.
-  const [coach, setCoach] = useState(false);
+  // The sign-in prime usually has the role cached already — read it NOW so a
+  // coach-only row is there the moment the sheet rises, not a fetch later.
+  // Learner until proven coach stays the fallback for an unprimed cache.
+  const [coach, setCoach] = useState(() => isCoach(token ? peekRoleContext(token) : null));
 
   useEffect(() => {
     let cancelled = false;
@@ -39,8 +43,8 @@ export function MenuSheetBody({ onClose }: { onClose: () => void }) {
     getBridgeContextCached(token).then((ctx) => {
       if (!cancelled) setCoach(isCoach(ctx));
     });
-    // Warm the screens these rows open while the menu is still up.
-    prewarmBridgePages(["/m/plays", "/m/library"]);
+    // Nothing to warm while the parked rows are off: every remaining row is a
+    // native screen. Warming follows the rows, so it comes back with them.
     return () => {
       cancelled = true;
     };
@@ -58,7 +62,7 @@ export function MenuSheetBody({ onClose }: { onClose: () => void }) {
       <Text style={styles.email}>{user?.email ?? ""}</Text>
 
       <View style={styles.rows}>
-        {ITEMS.filter((item) => coach || !item.coachOnly).map((item) => (
+        {ITEMS.filter((item) => item.show !== false && (coach || !item.coachOnly)).map((item) => (
           <Pressable
             key={item.label}
             onPress={() => go(item.href)}

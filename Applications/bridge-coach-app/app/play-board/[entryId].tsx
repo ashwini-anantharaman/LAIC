@@ -11,6 +11,9 @@ export default function PlayBoardScreen() {
       title="Play"
       next={`/m/play-entry/${encodeURIComponent(entryId ?? "")}`}
       backTo="/play"
+      // The deep link creates a session; leaving it mid-board asks the same
+      // save-or-discard question as any other table.
+      confirmUnfinishedExit
     />
   );
 }

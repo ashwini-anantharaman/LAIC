@@ -14,6 +14,8 @@ export default function TableScreen() {
       // whichever. With no history (a reloaded web tab, a deep link) a board
       // belongs to Play.
       backTo="/play"
+      // Leaving mid-board asks: save it for Resume, or discard it.
+      confirmUnfinishedExit
     />
   );
 }

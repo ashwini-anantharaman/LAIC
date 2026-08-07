@@ -10,14 +10,15 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { OptionCard, Screen, ScreenHeader } from "../components/ui";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
-import { getBridgeContextCached, isCoach } from "../lib/bridge-role";
+import { getBridgeContextCached, isCoach, peekRoleContext } from "../lib/bridge-role";
 import { prefetchLaunch } from "../lib/launch-cache";
 import { type BridgeSummary } from "../lib/nexus";
 import { peekSummary, refreshSummary } from "../lib/summary-cache";
 
 export default function TodayScreen() {
   const { user, token } = useAuth();
-  const [coach, setCoach] = useState(false);
+  // Seeded from the sign-in prime; false only before the first resolve.
+  const [coach, setCoach] = useState(() => isCoach(token ? peekRoleContext(token) : null));
   // Last known summary renders immediately; the focus effect refreshes it.
   const [summary, setSummary] = useState<BridgeSummary | null>(() =>
     token ? peekSummary(token) : null,

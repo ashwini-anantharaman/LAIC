@@ -8,13 +8,17 @@ import {
   RoleContext,
   getBridgeContextCached,
   isCoach,
+  peekRoleContext,
   primaryMembership,
 } from "../lib/bridge-role";
 import { fetchMyCoach, MyCoach } from "../lib/nexus";
 
 export default function ProfileScreen() {
   const { user, token, signOut } = useAuth();
-  const [context, setContext] = useState<RoleContext | null>(null);
+  // Seeded from the sign-in prime; null only before the first resolve.
+  const [context, setContext] = useState<RoleContext | null>(() =>
+    token ? peekRoleContext(token) : null,
+  );
   const [myCoach, setMyCoach] = useState<MyCoach>(null);
 
   useEffect(() => {

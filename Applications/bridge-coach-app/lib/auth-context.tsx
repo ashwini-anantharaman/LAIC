@@ -8,11 +8,11 @@ import {
   useState,
 } from "react";
 
-import { clearBridgeRoleCache } from "./bridge-role";
+import { clearBridgeRoleCache, getRoleContext } from "./bridge-role";
 import { clearLaunchCache } from "./launch-cache";
 import { clearLearningCache } from "./learning";
 import { prewarmAllDone } from "./prewarm";
-import { clearSummaryCache } from "./summary-cache";
+import { clearSummaryCache, refreshSummary } from "./summary-cache";
 import { fetchGate, fetchMe, gateSignup, login, NexusUser } from "./nexus";
 import { clearToken, getToken, setToken } from "./token-store";
 
@@ -38,6 +38,19 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/**
+ * Fill the session caches the moment a session exists, instead of letting the
+ * first screen that needs them pay the round-trip in front of the user. This
+ * is what kept the menu's Library row and the Coach tab's name arriving late:
+ * the role context and the bridge summary each waited for their first caller.
+ * Both fetches are fire-and-forget — failures just mean the screens fall back
+ * to fetching on demand, exactly as before.
+ */
+function primeSessionCaches(accessToken: string): void {
+  getRoleContext(accessToken).catch(() => {});
+  refreshSummary(accessToken).catch(() => {});
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<NexusUser | null>(null);
@@ -54,6 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       try {
+        // Prime alongside the verification round-trip, not after it — on an
+        // expired token these are two caught failures, on a live one they're
+        // a head start. Same ordering as adoptSession.
+        primeSessionCaches(stored);
         const me = await fetchMe(stored);
         if (!cancelled) {
           setTokenState(stored);
@@ -72,6 +89,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const adoptSession = useCallback(async (accessToken: string) => {
+    // Prime FIRST: the caches' fetches ride alongside our own /auth/me below
+    // instead of queueing behind it — the summary (the Coach tab's name and
+    // counts) is one round-trip closer by the time the tabs appear.
+    primeSessionCaches(accessToken);
     const me = await fetchMe(accessToken);
     await setToken(accessToken);
     setTokenState(accessToken);

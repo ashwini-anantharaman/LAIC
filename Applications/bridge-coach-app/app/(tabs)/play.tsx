@@ -1,16 +1,20 @@
-// Play — a native launcher, not a library. The day's board on top, then the
-// three ways into a table: pick up an unfinished board, deal a fresh one, or
-// play what your coach assigned. Everything it launches is the bridge
-// platform (the table itself stays an embed); this screen is only the door.
+// Play — a native launcher, not a library. The ways into a table: pick up an
+// unfinished board, deal a fresh one, revisit a finished one, or play what
+// your coach assigned. Everything it launches is the bridge platform (the
+// table itself stays an embed); this screen is only the door.
+//
+// "Deal of the Day" used to sit on top; removed 2026-08-07 (owner decision).
+// The summary still carries it, so bringing it back is a render, not a
+// backend change.
 
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { OptionCard, Screen } from "../../components/ui";
 import { Colors, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
-import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
+import { getBridgeContextCached, isCoach, peekRoleContext } from "../../lib/bridge-role";
 import { prefetchLaunch } from "../../lib/launch-cache";
 import { type BridgeSummary } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
@@ -25,7 +29,8 @@ export default function PlayScreen() {
   const [error, setError] = useState<string | null>(null);
   // Assignments are something a coach GIVES, not receives — a coach's Play
   // tab is just the day's board, resume and new. Theirs live in the Coach tab.
-  const [coach, setCoach] = useState(false);
+  // Seeded from the sign-in prime; false only before the first resolve.
+  const [coach, setCoach] = useState(() => isCoach(token ? peekRoleContext(token) : null));
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +50,7 @@ export default function PlayScreen() {
       prefetchLaunch(token, "bridge"); // keep a launch warm — one tap away
       // Warm the screens this tab's cards open, so tapping one lands on a
       // warm function instead of a cold start.
-      prewarmBridgePages(["/m/assigned", "/welcome"]);
+      prewarmBridgePages(["/m/assigned", "/m/plays", "/welcome"]);
       let cancelled = false;
       setError(null);
       refreshSummary(token)
@@ -59,7 +64,6 @@ export default function PlayScreen() {
     }, [token]),
   );
 
-  const deal = summary?.deal_of_the_day ?? null;
   const inProgress = summary?.in_progress ?? [];
 
   const openBoard = (sessionId: string) =>
@@ -70,57 +74,21 @@ export default function PlayScreen() {
     else router.push("/resume");
   }
 
-  const dealMeta = deal
-    ? [deal.dealer && `dealer ${deal.dealer}`, deal.vul && `vul ${deal.vul}`, deal.contract_label]
-        .filter(Boolean)
-        .join(" · ")
-    : "";
-
   return (
     <Screen style={styles.screen}>
       <View style={styles.headerBlock}>
         <Text style={styles.eyebrow}>Play</Text>
-        <Text style={styles.title}>Deal of the Day</Text>
+        <Text style={styles.title}>Your boards</Text>
       </View>
 
-      {/* The day's board — one for everyone in the program, until midnight. */}
-      {!summary && !error && (
-        <View style={styles.dealLoading}>
-          <ActivityIndicator color={Colors.text} />
-        </View>
-      )}
       {error && <Text style={styles.stateText}>{error}</Text>}
-      {summary && !deal && (
-        <View style={styles.dealEmpty}>
-          <Text style={styles.stateText}>
-            No board today — an admin can curate a “Deal of the Day” collection in the
-            library.
-          </Text>
-        </View>
-      )}
-      {deal && (
-        <Pressable
-          style={styles.dealCard}
-          onPress={() =>
-            router.push({ pathname: "/play-board/[entryId]", params: { entryId: deal.entry_id } })
-          }
-        >
-          <Text style={styles.dealName}>{deal.name ?? "Today's board"}</Text>
-          {!!dealMeta && <Text style={styles.dealMeta}>{dealMeta}</Text>}
-          <Text style={styles.dealCta}>Play today's board →</Text>
-        </Pressable>
-      )}
 
       <View style={styles.options}>
         <OptionCard
           title="Resume"
-          subtitle={
-            inProgress.length === 0
-              ? "No unfinished boards"
-              : inProgress.length === 1
-                ? `Continue “${inProgress[0]!.board_name}”`
-                : `${inProgress.length} unfinished boards`
-          }
+          // The count lives in the cream circle, not a sentence (owner
+          // request 2026-08-07).
+          badge={inProgress.length}
           onPress={inProgress.length === 0 ? () => {} : resume}
         />
         <OptionCard
@@ -128,9 +96,21 @@ export default function PlayScreen() {
           subtitle="Deal a fresh board against the house"
           onPress={() => router.push("/new-board")}
         />
+        {/* MOVED HERE from the ☰ menu (owner decision 2026-08-07): finished
+            boards belong beside the ones you're still playing, not in a
+            drawer. Both roles get it — a coach plays boards too. */}
+        <OptionCard
+          title="My Games"
+          subtitle={
+            summary && summary.plays_reviewed > 0
+              ? `Boards you've finished — ${summary.plays_reviewed} reviewed`
+              : "Boards you've finished — send one for feedback"
+          }
+          onPress={() => router.push("/plays")}
+        />
         {!coach && (
           <OptionCard
-            title="Coach's Assignments"
+            title="From Coach"
             subtitle={
               summary && summary.assignments_open > 0
                 ? `${summary.assignments_open} waiting for you`
@@ -156,25 +136,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.heading,
   },
   title: { fontSize: 26, color: Colors.text, fontFamily: Fonts.display, },
-  dealLoading: { paddingVertical: 34, alignItems: "center" },
-  dealEmpty: {
-    marginTop: 16,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: "#d3ccbb",
-    borderRadius: 14,
-    padding: 16,
-  },
-  dealCard: {
-    marginTop: 16,
-    backgroundColor: "#1f5e56",
-    borderRadius: 16,
-    padding: 18,
-    gap: 4,
-  },
-  dealName: { fontSize: 18, color: "#fff", fontFamily: Fonts.display, },
-  dealMeta: { fontSize: 12.5, color: "rgba(255,255,255,.75)", fontFamily: Fonts.body, },
-  dealCta: { marginTop: 8, fontSize: 13, color: "#ffe6a7", fontFamily: Fonts.heading, },
   options: { flex: 1, paddingTop: 24, gap: 12, paddingBottom: TAB_BAR_CLEARANCE },
   stateText: {
     fontSize: 14,

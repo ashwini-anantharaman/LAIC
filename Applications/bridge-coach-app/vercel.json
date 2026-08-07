@@ -8,6 +8,30 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/nexus/:path*",
+      "destination": "https://bridge-platform-git-quan-the-nexus-dev-team.vercel.app/nexus/:path*"
+    },
+    {
+      "source": "/m/:path*",
+      "destination": "https://bridge-platform-git-quan-the-nexus-dev-team.vercel.app/m/:path*"
+    },
+    {
+      "source": "/bridge/:path*",
+      "destination": "https://bridge-platform-git-quan-the-nexus-dev-team.vercel.app/bridge/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "https://bridge-platform-git-quan-the-nexus-dev-team.vercel.app/api/:path*"
+    },
+    {
+      "source": "/welcome",
+      "destination": "https://bridge-platform-git-quan-the-nexus-dev-team.vercel.app/welcome"
+    },
+    {
+      "source": "/_next/:path*",
+      "destination": "https://bridge-platform-git-quan-the-nexus-dev-team.vercel.app/_next/:path*"
+    },
+    {
       "source": "/table/:sessionId",
       "destination": "/table/%5BsessionId%5D"
     },

@@ -27,6 +27,7 @@ import { withLayoutContext } from "expo-router";
 import { Platform } from "react-native";
 
 import { BrandTabBar } from "../../components/brand-tab-bar";
+import { BridgeSessionWarmer } from "../../components/bridge-session-warmer";
 import { Brand } from "../../constants/theme";
 
 const { Navigator } = createMaterialTopTabNavigator();
@@ -41,7 +42,12 @@ const SwipeTabs = withLayoutContext<
 
 export default function TabsLayout() {
   return (
-    <SwipeTabs
+    <>
+      {/* Runs the bridge launch handshake invisibly the moment the tabs
+          exist, so the first embed anyone opens (Create Assignment, a table)
+          loads directly instead of paying the handshake at the tap. */}
+      <BridgeSessionWarmer />
+      <SwipeTabs
       tabBarPosition="bottom"
       tabBar={(props) => <BrandTabBar {...props} />}
       screenOptions={{
@@ -68,6 +74,7 @@ export default function TabsLayout() {
       <SwipeTabs.Screen name="coach" options={{ title: "Coach" }} />
       <SwipeTabs.Screen name="club" options={{ title: "Club" }} />
       <SwipeTabs.Screen name="analysis" options={{ title: "Analysis" }} />
-    </SwipeTabs>
+      </SwipeTabs>
+    </>
   );
 }

@@ -12,6 +12,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { undoAction } from "@/app/bridge/table/actions";
 import { HandViewer } from "@bridge/table-ui";
+import { EmbedTableState } from "@/components/mobile/EmbedTableState";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
@@ -47,7 +48,7 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
@@ -90,7 +91,7 @@ export default async function PlayTablePage({
     fanRadius: appearance.fanRadius,
   };
   const { sessionId } = await params;
-  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
+  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error, from } = await searchParams;
 
   let view;
   try {
@@ -384,7 +385,12 @@ export default async function PlayTablePage({
         // The nav is the page's to size: the embedded app gets the viewer's
         // phone tier, so it gets phone-sized controls; the desktop platform
         // keeps the design's big ones.
-        embedded ? (
+        //
+        // FROM MY GAMES there is no "⟵ table" (owner decision 2026-08-07):
+        // that journey is "read the record of a finished game", the app's own
+        // header arrow is the way back, and a live-table door would only
+        // invite wandering into a board that's already over.
+        embedded && from === "games" && complete ? undefined : embedded ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
             <Link
               href={settingsHref({ view: undefined })}
@@ -411,6 +417,9 @@ export default async function PlayTablePage({
 
   return (
     <div className="mx-auto w-full">
+      {/* The host app's back arrow asks this page's state before deciding
+          whether leaving needs a save-or-discard prompt. */}
+      <EmbedTableState sessionId={sessionId} phase={state.phase} />
       {error && (
         <p className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}

@@ -42,7 +42,7 @@ import { tintSvg } from "../../components/svg-tint";
 import { ICON_AVATAR, ICON_CHALLENGE_CARD } from "../../constants/brand-vectors";
 import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
-import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
+import { getBridgeContextCached, isCoach, peekRoleContext } from "../../lib/bridge-role";
 
 /** Design-space geometry, scaled to the real screen width like the home tree. */
 const DESIGN_WIDTH = 390;
@@ -212,7 +212,8 @@ export default function ClubScreen() {
   const carousel = useRef<ScrollView>(null);
 
   // Only a coach can configure challenges — same role check the other tabs use.
-  const [coach, setCoach] = useState(false);
+  // Seeded from the sign-in prime; false only before the first resolve.
+  const [coach, setCoach] = useState(() => isCoach(token ? peekRoleContext(token) : null));
   useEffect(() => {
     let cancelled = false;
     if (!token) return;

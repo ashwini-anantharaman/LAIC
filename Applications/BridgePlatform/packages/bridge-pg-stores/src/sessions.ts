@@ -48,6 +48,12 @@ export class PgSessionStore implements SessionStore {
     const rows = check(await query, "sessions.list");
     return rows.map((r: any) => r.record as SessionRecord);
   }
+  async deleteSession(sessionId: string) {
+    check(
+      await this.db.from("bridge_kb_sessions").delete().eq("session_id", sessionId),
+      "sessions.delete",
+    );
+  }
   async deleteSessionsForKb(kbId: string) {
     check(
       await this.db.from("bridge_kb_sessions").delete().eq("kb_id", kbId),

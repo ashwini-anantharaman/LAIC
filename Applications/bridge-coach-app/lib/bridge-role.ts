@@ -18,8 +18,8 @@
 
 import {
   BridgeContext,
+  NexusError,
   NexusMembership,
-  NexusUser,
   fetchBridgeContext,
   fetchMe,
 } from "./nexus";
@@ -41,24 +41,58 @@ export type RoleContext = {
 
 // Session-scoped cache, keyed by TOKEN: an in-flight fetch from a previous
 // session that resolves after sign-out must never leak its role into the next.
+// The in-flight promise is shared too, so the sign-in prime and the first
+// screen to ask don't race each other into duplicate round-trips.
 let cached: { token: string; value: RoleContext } | null = null;
+let inflight: { token: string; promise: Promise<RoleContext> } | null = null;
+
+/** The last resolved context for this token, synchronously — render it NOW.
+ *  Null only before the first resolve (the sign-in prime usually beats any
+ *  screen here). */
+export function peekRoleContext(token: string): RoleContext | null {
+  return cached?.token === token ? cached.value : null;
+}
+
+/**
+ * A 4xx is an ANSWER (403 = "no bridge grant", by design for partner-program
+ * members); a network failure or 5xx is a hiccup. The distinction decides
+ * whether the resolve below may be cached: caching a hiccup would pin the
+ * safe-default learner view on a real coach for the whole session.
+ */
+async function settle<T>(promise: Promise<T>): Promise<{ answered: boolean; value: T | null }> {
+  try {
+    return { answered: true, value: await promise };
+  } catch (e) {
+    const answered = e instanceof NexusError && e.status >= 400 && e.status < 500;
+    return { answered, value: null };
+  }
+}
 
 export async function getRoleContext(token: string): Promise<RoleContext> {
   if (cached && cached.token === token) return cached.value;
+  if (inflight && inflight.token === token) return inflight.promise;
 
-  // Independent and both optional — one failing must not deny the other.
-  const [bridge, me] = await Promise.all([
-    fetchBridgeContext(token).catch(() => null),
-    fetchMe(token).catch(() => null as NexusUser | null),
-  ]);
+  const promise = (async () => {
+    // Independent and both optional — one failing must not deny the other.
+    const [bridge, me] = await Promise.all([
+      settle(fetchBridgeContext(token)),
+      settle(fetchMe(token)),
+    ]);
 
-  const value: RoleContext = {
-    bridge,
-    memberships: me?.memberships ?? [],
-    profileRole: me?.role ?? null,
-  };
-  cached = { token, value };
-  return value;
+    const value: RoleContext = {
+      bridge: bridge.value,
+      memberships: me.value?.memberships ?? [],
+      profileRole: me.value?.role ?? null,
+    };
+    // Only an ANSWERED resolve is worth remembering; a hiccup retries on the
+    // next call instead of masquerading as "learner" until sign-out.
+    if (bridge.answered || me.answered) cached = { token, value };
+    return value;
+  })().finally(() => {
+    if (inflight?.token === token) inflight = null;
+  });
+  inflight = { token, promise };
+  return promise;
 }
 
 /** True when any membership — or the profile role — administers. */
@@ -107,6 +141,7 @@ export function primaryMembership(context: RoleContext): NexusMembership | null 
 
 export function clearBridgeRoleCache(): void {
   cached = null;
+  inflight = null;
 }
 
 /**

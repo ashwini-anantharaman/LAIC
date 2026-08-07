@@ -60,11 +60,28 @@ export const NEXUS_API_URL = ACTIVE.api;
 export const LEARNING_PLATFORM_URL = ACTIVE.learning;
 
 /**
+ * The DEPLOYED web build launches the bridge through its OWN origin —
+ * vercel.json rewrites proxy /nexus, /m, /bridge, /api, /welcome and /_next
+ * to the platform — so the iframe is same-origin and its cookie session is
+ * first-party. Safari (and every third-party-cookie-blocking browser) drops
+ * a cross-site iframe's cookies, CHIPS or not; same-origin is the fix the
+ * local web preview always used, applied to production.
+ */
+const webSameOrigin =
+  Platform.OS === "web" &&
+  typeof window !== "undefined" &&
+  window.location.protocol === "https:"
+    ? `${window.location.origin}/nexus/launch`
+    : null;
+
+/**
  * Bridge platform launch URL override. null = trust the launch endpoint's
  * launch_url (the backend's BRIDGE_PLATFORM_URL). The web preview overrides
- * to localhost so its iframe stays same-site (cookie sessions survive).
+ * to localhost so its iframe stays same-site (cookie sessions survive);
+ * the deployed web build overrides to its own origin for the same reason.
  */
-export const BRIDGE_LAUNCH_URL_OVERRIDE: string | null = ACTIVE.bridgeLaunch;
+export const BRIDGE_LAUNCH_URL_OVERRIDE: string | null =
+  webSameOrigin ?? ACTIVE.bridgeLaunch;
 
 // ── Program identity ─────────────────────────────────────────────────────────
 

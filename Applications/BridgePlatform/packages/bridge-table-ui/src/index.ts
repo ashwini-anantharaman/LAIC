@@ -6,7 +6,7 @@ export { PlayTable } from "./PlayTable";
 export type { PlayTableProps, PlayTableSeat, ResolvedAppearance } from "./PlayTable";
 
 export { HandViewer } from "./HandViewer";
-export type { HandViewerProps } from "./HandViewer";
+export type { HandViewerProps, TrickLine } from "./HandViewer";
 
 export { BidColumns } from "./BidColumns";
 export type { BidColumnsProps } from "./BidColumns";

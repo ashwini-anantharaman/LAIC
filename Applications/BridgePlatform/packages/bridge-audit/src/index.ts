@@ -52,6 +52,7 @@ export type AuditAction =
   | "library.shared"
   | "session.undo"
   | "session.fork"
+  | "session.discard"
   | "access.catalogue.update";
 
 export interface AuditRecord {

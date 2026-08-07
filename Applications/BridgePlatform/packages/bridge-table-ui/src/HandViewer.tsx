@@ -9,6 +9,13 @@
 // Reusable like PlayTable: fills its own container and scales the fixed
 // design stage to fit — up as well as down, since a viewer's job is to be
 // big and readable.
+//
+// PHONE TIER (2026-08-06). Scaling a 1992px stage into a 360px WebView made
+// every figure eyestrain-small, so like PlayTable the tier decision is
+// geometric: under 640px of width the viewer stops scaling the 3×3 stage and
+// STACKS the record instead — hands, auction, the play, the panels — at
+// phone-native sizes, with the page scrolling vertically. Same palette, same
+// panels, different arrangement.
 
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
@@ -36,6 +43,13 @@ const isRed = (s: string) => s === "H" || s === "D";
 const isBid = (c: string) => /^[1-7][CDHSN]$/.test(c);
 const rankText = (r: number) => (({ 11: "J", 12: "Q", 13: "K", 14: "A" }) as Record<number, string>)[r] ?? String(r);
 
+/** One trick as the record shows it — the engine's Trick, structurally. */
+export interface TrickLine {
+  leader: Seat;
+  plays: readonly { seat: Seat; card: Card }[];
+  winner?: Seat | undefined;
+}
+
 export interface HandViewerProps {
   boardLabel: string | number;
   dealer: Seat;
@@ -46,6 +60,12 @@ export interface HandViewerProps {
   /** Face-down seats render suit dashes — a live viewer must not leak. */
   visible?: Record<Seat, boolean>;
   auction?: readonly AuctionCall[];
+  /**
+   * The play, trick by trick, for the centre cell — the one part of a full
+   * hand record the grid didn't carry. Lead underlined, winner's card on
+   * gold: the two marks a printed deal analysis uses.
+   */
+  tricks?: readonly TrickLine[];
   /** Gold plate — the seat on turn, or the declarer on a finished record. */
   highlightSeat?: Seat | null;
   /** Bottom-left panel: table context (who plays whom, tricks so far…). */
@@ -64,6 +84,7 @@ export function HandViewer({
   names,
   visible,
   auction = [],
+  tricks,
   highlightSeat = null,
   info = [],
   result = [],
@@ -82,6 +103,14 @@ export function HandViewer({
   }, []);
   const scale = Math.min(box.w / BASE.w, box.h / BASE.h) || 1;
 
+  // The tier switch, and the metric that carries it: every figure below is a
+  // design-stage size passed through px(). On the stage k is 1 and the design
+  // numbers hold verbatim; on the phone tier the panels are drawn at a fixed
+  // comfortable fraction and laid out in a column instead of being scaled.
+  const phone = box.w < 640;
+  const k = phone ? 0.36 : 1;
+  const px = (v: number) => Math.max(1, Math.round(v * k));
+
   const sideVul = (seat: Seat) => {
     const v = vul.toLowerCase();
     const side = seat === "N" || seat === "S" ? "ns" : "ew";
@@ -90,13 +119,13 @@ export function HandViewer({
 
   // ---- vul/board card: the classic cross — arms red for vulnerable sides,
   // the dealer's arm marked gold, the board number in the middle.
-  const arm = 57;
-  const mid = 145;
+  const arm = px(57);
+  const mid = px(145);
   const vulArm = (seat: Seat) => {
     const v = sideVul(seat);
     const isDealer = seat === dealer;
     return (
-      <div style={{ background: isDealer ? GOLD : v ? RED : "#fff", color: v && !isDealer ? "#fff" : "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, fontWeight: 700 }}>
+      <div style={{ background: isDealer ? GOLD : v ? RED : "#fff", color: v && !isDealer ? "#fff" : "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: px(30), fontWeight: 700 }}>
         {seat}
       </div>
     );
@@ -107,7 +136,7 @@ export function HandViewer({
       {vulArm("N")}
       <div style={{ background: "#000" }} />
       {vulArm("W")}
-      <div title={String(boardLabel)} style={{ background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: String(boardLabel).length > 8 ? 24 : String(boardLabel).length > 3 ? 40 : 104, fontWeight: 700, color: "#000", overflow: "hidden", padding: "0 4px", textAlign: "center", lineHeight: 1.05, wordBreak: "break-all" }}>{boardLabel}</div>
+      <div title={String(boardLabel)} style={{ background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: px(String(boardLabel).length > 8 ? 24 : String(boardLabel).length > 3 ? 40 : 104), fontWeight: 700, color: "#000", overflow: "hidden", padding: "0 4px", textAlign: "center", lineHeight: 1.05, wordBreak: "break-all" }}>{boardLabel}</div>
       {vulArm("E")}
       <div style={{ background: "#000" }} />
       {vulArm("S")}
@@ -120,17 +149,17 @@ export function HandViewer({
     const see = visible?.[seat] ?? true;
     return (
       <div style={{ display: "flex", flexDirection: "column", alignSelf: "stretch" }}>
-        <div style={{ display: "flex", alignItems: "center", height: 70, background: seat === highlightSeat ? GOLD : "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.35)" }}>
-          <span style={{ flex: "none", width: 70, height: 70, background: BADGE, color: "#fff", fontSize: 52, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{seat}</span>
-          <span style={{ padding: "0 14px", fontSize: 52, color: "#000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{names[seat]}</span>
-          {!see && <span style={{ marginLeft: "auto", paddingRight: 14, fontSize: 24, color: "#666" }}>hidden</span>}
+        <div style={{ display: "flex", alignItems: "center", height: px(70), background: seat === highlightSeat ? GOLD : "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.35)" }}>
+          <span style={{ flex: "none", width: px(70), height: px(70), background: BADGE, color: "#fff", fontSize: px(52), fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{seat}</span>
+          <span style={{ padding: `0 ${px(14)}px`, fontSize: px(52), color: "#000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{names[seat]}</span>
+          {!see && <span style={{ marginLeft: "auto", paddingRight: px(14), fontSize: px(24), color: "#666" }}>hidden</span>}
         </div>
-        <div style={{ flex: 1, background: PANEL_BG, padding: "4px 14px 10px" }}>
+        <div style={{ flex: 1, background: PANEL_BG, padding: `${px(4)}px ${px(14)}px ${px(10)}px` }}>
           {DISPLAY.map((su) => {
             const cards = [...hands[seat]].filter((x) => x.suit === su).sort((a, b) => b.rank - a.rank);
             return (
-              <div key={su} style={{ display: "flex", alignItems: "baseline", gap: 10, lineHeight: 1.35, fontSize: 58, color: isRed(su) ? RED : "#000" }}>
-                <span style={{ flex: "none", width: 58 }}>{GLYPH[su]}</span>
+              <div key={su} style={{ display: "flex", alignItems: "baseline", gap: px(10), lineHeight: 1.35, fontSize: px(58), color: isRed(su) ? RED : "#000" }}>
+                <span style={{ flex: "none", width: px(58) }}>{GLYPH[su]}</span>
                 <span style={{ color: "#000", letterSpacing: 1, whiteSpace: "nowrap", overflow: "hidden" }}>
                   {see ? (cards.length ? cards.map((x) => rankText(x.rank)).join("") : "—") : "—"}
                 </span>
@@ -159,39 +188,109 @@ export function HandViewer({
       </>
     ) : call === "P" ? "P" : call;
   const auctionBox = (
-    <div style={{ width: "100%", height: 374, background: AQUA, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
+    <div style={{ width: "100%", height: phone ? "auto" : 374, background: AQUA, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
       <div style={{ flex: "none", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 2, padding: 2, textAlign: "center" }}>
         {ORDER.map((s) => (
-          <span key={s} style={{ padding: "2px 0", fontSize: 42, fontWeight: 700, lineHeight: 1.15, background: sideVul(s) ? RED : "#fff", color: sideVul(s) ? "#fff" : "#000" }}>{s}</span>
+          <span key={s} style={{ padding: "2px 0", fontSize: px(42), fontWeight: 700, lineHeight: 1.15, background: sideVul(s) ? RED : "#fff", color: sideVul(s) ? "#fff" : "#000" }}>{s}</span>
         ))}
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "2px 8px" }}>
+      <div style={{ flex: phone ? "none" : 1, minHeight: 0, overflowY: phone ? "visible" : "auto", padding: "2px 8px" }}>
         {auctionRows.map((row, i) => (
           <div key={i} style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", textAlign: "center" }}>
             {[0, 1, 2, 3].map((j) => (
-              <span key={j} style={{ fontSize: 42, lineHeight: 1.25, color: "#000" }}>
+              <span key={j} style={{ fontSize: px(42), lineHeight: 1.25, color: "#000" }}>
                 {row[j] ? callCell(row[j]!.call) : ""}
               </span>
             ))}
           </div>
         ))}
         {auction.length === 0 && (
-          <div style={{ textAlign: "center", fontSize: 32, color: "#1e4747", paddingTop: 10 }}>No calls yet</div>
+          <div style={{ textAlign: "center", fontSize: px(32), color: "#1e4747", padding: `${px(10)}px 0` }}>No calls yet</div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ---- the play, trick by trick: seat columns like the auction box, one row
+  // per trick. The lead is underlined, the winner's card sits on gold.
+  const playedTricks = (tricks ?? []).filter((t) => t.plays.length > 0);
+  const cardText = (card: Card) => (
+    <>
+      {rankText(card.rank)}
+      <span style={{ color: isRed(card.suit) ? RED : "#000" }}>{GLYPH[card.suit]}</span>
+    </>
+  );
+  const tricksBox = tricks && (
+    <div style={{ width: "100%", height: phone ? "auto" : "100%", background: AQUA, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
+      <div style={{ flex: "none", display: "grid", gridTemplateColumns: `${px(64)}px repeat(4,1fr)`, gap: 2, padding: 2, textAlign: "center" }}>
+        <span style={{ padding: "2px 0", fontSize: px(34), fontWeight: 700, lineHeight: 1.15, background: "#fff", color: "#666" }}>#</span>
+        {ORDER.map((s) => (
+          <span key={s} style={{ padding: "2px 0", fontSize: px(34), fontWeight: 700, lineHeight: 1.15, background: "#fff", color: "#000" }}>{s}</span>
+        ))}
+      </div>
+      <div style={{ flex: phone ? "none" : 1, minHeight: 0, overflowY: phone ? "visible" : "auto", padding: "2px 8px" }}>
+        {playedTricks.map((t, i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: `${px(64)}px repeat(4,1fr)`, textAlign: "center", alignItems: "baseline" }}>
+            <span style={{ fontSize: px(28), lineHeight: 1.3, color: "#1e4747" }}>{i + 1}</span>
+            {ORDER.map((s) => {
+              const card = t.plays.find((p) => p.seat === s)?.card;
+              return (
+                <span
+                  key={s}
+                  style={{
+                    fontSize: px(34), lineHeight: 1.3, color: "#000",
+                    background: card && t.winner === s ? GOLD : undefined,
+                    textDecoration: card && t.leader === s ? "underline" : undefined,
+                    textUnderlineOffset: px(4),
+                  }}
+                >
+                  {card ? cardText(card) : ""}
+                </span>
+              );
+            })}
+          </div>
+        ))}
+        {playedTricks.length === 0 && (
+          <div style={{ textAlign: "center", fontSize: px(32), color: "#1e4747", padding: `${px(10)}px 0` }}>No cards played yet</div>
         )}
       </div>
     </div>
   );
 
   const infoPanel = (lines: readonly { label: string; value: string }[]) => (
-    <div style={{ width: "100%", alignSelf: "end", background: AQUA, padding: "10px 16px", boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
+    <div style={{ width: "100%", alignSelf: "end", background: AQUA, padding: `${px(10)}px ${px(16)}px`, boxShadow: "0 2px 6px rgba(0,0,0,.4)" }}>
       {lines.map((line, i) => (
-        <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: 40, lineHeight: 1.3, color: "#000" }}>
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: px(16), fontSize: px(40), lineHeight: 1.3, color: "#000" }}>
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{line.label}</span>
           <span style={{ flex: "none", fontWeight: 700 }}>{line.value}</span>
         </div>
       ))}
     </div>
   );
+
+  // ---- phone: the record as a column, at native sizes, scrolling ------------
+  if (phone) {
+    return (
+      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflowY: "auto", background: GREEN, fontFamily: "Arial, Helvetica, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 8 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+            {vulBoardCard}
+            {nav}
+          </div>
+          {seatPanel("N")}
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{seatPanel("W")}</div>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>{seatPanel("E")}</div>
+          </div>
+          {seatPanel("S")}
+          {auctionBox}
+          {tricksBox}
+          {infoPanel(info)}
+          {infoPanel(result)}
+        </div>
+      </div>
+    );
+  }
 
   // ---- stage ----------------------------------------------------------------
   return (
@@ -208,7 +307,7 @@ export function HandViewer({
           <div style={{ alignSelf: "start", width: "100%" }}>{auctionBox}</div>
 
           {seatPanel("W")}
-          <div />
+          {tricksBox || <div />}
           {seatPanel("E")}
 
           <div style={{ display: "flex", alignItems: "end" }}>{infoPanel(info)}</div>
