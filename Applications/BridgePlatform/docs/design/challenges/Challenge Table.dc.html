@@ -54,9 +54,25 @@ html,body{margin:0;padding:0;background:#0b100e;overscroll-behavior:none}
   Everything below is driven by the real engine (window.Bridge): a real pack, a
   real dealer-aligned auction, real legal-play gating. Cards are clickable; BEN
   answers. 7-bit ASCII end to end.
+
+  SIZE. The canvas is an iPhone 13 and nothing else: $preview is 390 x 844, the
+  canvas has no padding, the frame has no border and no max-width, so the tile
+  IS the screen. The stack is a real band budget -
+
+    strip 40 + top bar 43 + [dummy row] + centre + [bid tray] + hand + bottom bar 43
+
+  - authored band by band, summing to exactly 844, with the centre the only
+  flexible one (floored so the trick and the auction stay readable, capped so a
+  tall screen never leaves an acre of green). Desktop is still reachable from
+  the review panel: it renders its own 1000 x 820 frame scaled to fit the same
+  tile, with a caption that says the scale.
 -->
 
+<!-- The canvas IS the phone: $preview is 390x844, the canvas has no padding and
+     in phone mode the stage is the frame at 1:1. Desktop is a scaled stage
+     inside the same 390x844 tile (see canvasStyle / stageStyle). -->
 <div style="{{canvasStyle}}">
+<div style="{{stageStyle}}">
 <div style="{{frameStyle}}">
 
 <!-- ============================ 1. CHALLENGE STRIP ============================ -->
@@ -90,8 +106,8 @@ html,body{margin:0;padding:0;background:#0b100e;overscroll-behavior:none}
 
   <!-- dummy: a full face-up row, because South declares and therefore plays it -->
   <sc-if value="{{showDummy}}" hint-placeholder-val="{{false}}">
-  <div style="{{handRowStyle}}">
-    <dc-import name="SeatHand" seat="N" player="{{dummyName}}" tag="DUMMY" dealer="{{dummyDealer}}" strip="{{dummyStrip}}" plate-bg="{{dummyPlateBg}}" cards="{{dummyCards}}" card-w="{{dCardW}}" card-h="{{dCardH}}" rank-font="{{dRankFont}}" glyph-font="{{dGlyphFont}}" card-inset="2px" hint-size="360px,80px"></dc-import>
+  <div style="{{dummyRowStyle}}">
+    <dc-import name="SeatHand" seat="N" player="{{dummyName}}" tag="DUMMY" dealer="{{dummyDealer}}" strip="{{dummyStrip}}" plate-bg="{{dummyPlateBg}}" plate-w="{{dummyPlateW}}" cards="{{dummyCards}}" card-w="{{dCardW}}" card-h="{{dCardH}}" rank-font="{{dRankFont}}" glyph-font="{{dGlyphFont}}" card-inset="2px" hint-size="290px,73px"></dc-import>
   </div>
   </sc-if>
 
@@ -167,7 +183,7 @@ html,body{margin:0;padding:0;background:#0b100e;overscroll-behavior:none}
 
   <!-- your hand -->
   <div style="{{handRowStyle}}">
-    <dc-import name="SeatHand" seat="S" player="{{youName}}" tag="{{southTag}}" dealer="{{southDealer}}" strip="{{southStrip}}" plate-bg="{{southPlateBg}}" cards="{{southCards}}" card-w="{{cardW}}" card-h="{{cardH}}" rank-font="{{rankFont}}" glyph-font="{{glyphFont}}" card-inset="3px" hint-size="380px,96px"></dc-import>
+    <dc-import name="SeatHand" seat="S" player="{{youName}}" tag="{{southTag}}" dealer="{{southDealer}}" strip="{{southStrip}}" plate-bg="{{southPlateBg}}" plate-w="{{southPlateW}}" cards="{{southCards}}" card-w="{{cardW}}" card-h="{{cardH}}" rank-font="{{rankFont}}" glyph-font="{{glyphFont}}" card-inset="3px" hint-size="367px,86px"></dc-import>
   </div>
 
 </div>
@@ -259,33 +275,53 @@ html,body{margin:0;padding:0;background:#0b100e;overscroll-behavior:none}
 </sc-if>
 
 </div>
+</div>
+
+<!-- Desktop is a PREVIEW inside the phone tile, never a silent crop: the whole
+     1000x820 frame is scaled proportionally and the caption says by how much. -->
+<sc-if value="{{desktopMode}}" hint-placeholder-val="{{false}}">
+<div style="{{capStyle}}">{{capText}}</div>
+</sc-if>
 
 <!-- ===================== REVIEW CONTROL (harness chrome) ===================== -->
-<!-- NOT product UI. An in-canvas pill so a reviewer with no props panel can
-     reach every state. Fixed to the canvas corner so it never moves the table. -->
+<!-- NOT product UI. Two states, because at 390 there is no spare corner: a 30px
+     CHIP parked on bare felt (measured overlap with the strip, the Results
+     button, either toolbar and either hand is zero), and, only when asked for,
+     a PANEL over its own scrim with an explicit close. Nothing under review is
+     ever hidden by the thing reviewing it. -->
+<sc-if value="{{pillClosed}}" hint-placeholder-val="{{true}}">
+<button onClick="{{onPillOpen}}" title="Preview controls - viewport, results, overlay, phase" style="{{chipStyle}}">
+  <span style="{{chipDotStyle}}"></span>
+</button>
+</sc-if>
+
+<sc-if value="{{pillOpen}}" hint-placeholder-val="{{false}}">
+<div onClick="{{onPillClose}}" style="{{pillScrimStyle}}"></div>
 <div style="{{pillStyle}}">
   <div style="display:flex;align-items:center;gap:6px">
     <span style="flex:none;width:6px;height:6px;border-radius:3px;background:#f2b64d"></span>
     <span style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8f9a94">Preview</span>
-    <span style="flex:1"></span>
     <span style="font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#5c6863">review only</span>
+    <span style="flex:1"></span>
+    <button onClick="{{onPillClose}}" title="Close the preview controls" style="{{pillCloseStyle}}">&#x2715;</button>
   </div>
   <sc-for list="{{pillGroups}}" as="g" hint-placeholder-count="4">
-  <div style="display:flex;flex-direction:column;gap:3px">
-    <span style="font-size:8px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6b7873">{{g.label}}</span>
-    <div style="display:flex;gap:2px;padding:2px;border-radius:8px;background:#0d1310">
+  <div style="display:flex;flex-direction:column;gap:4px">
+    <span style="font-size:8.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6b7873">{{g.label}}</span>
+    <div style="display:flex;gap:3px;padding:3px;border-radius:9px;background:#0d1310">
     <sc-for list="{{g.opts}}" as="o" hint-placeholder-count="2">
       <button onClick="{{o.on}}" style="{{o.style}}">{{o.label}}</button>
     </sc-for>
     </div>
   </div>
   </sc-for>
-  <span style="font-size:8.5px;line-height:1.5;color:#5c6863">{{pillNote}}</span>
+  <span style="font-size:9px;line-height:1.5;color:#5c6863">{{pillNote}}</span>
 </div>
+</sc-if>
 
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;viewport&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewport&quot;,&quot;options&quot;:[&quot;phone&quot;,&quot;desktop&quot;],&quot;default&quot;:&quot;phone&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;phase&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Phase&quot;,&quot;options&quot;:[&quot;auction&quot;,&quot;play&quot;],&quot;default&quot;:&quot;play&quot;,&quot;section&quot;:&quot;View&quot;},&quot;canSeeResults&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Results unlocked&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;View&quot;},&quot;overlay&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Results overlay&quot;,&quot;options&quot;:[&quot;closed&quot;,&quot;open&quot;],&quot;default&quot;:&quot;closed&quot;,&quot;section&quot;:&quot;View&quot;},&quot;title&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Challenge title&quot;,&quot;default&quot;:&quot;Tuesday Night Teams \u2014 Set 12&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;boardNo&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Board&quot;,&quot;min&quot;:1,&quot;max&quot;:16,&quot;default&quot;:4,&quot;section&quot;:&quot;Challenge&quot;},&quot;boardsTotal&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Boards in set&quot;,&quot;min&quot;:1,&quot;max&quot;:16,&quot;default&quot;:8,&quot;section&quot;:&quot;Challenge&quot;},&quot;scoring&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Scoring&quot;,&quot;options&quot;:[&quot;imps&quot;,&quot;mp&quot;,&quot;total&quot;],&quot;default&quot;:&quot;imps&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;youName&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Your plate name&quot;,&quot;default&quot;:&quot;You&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;stripH&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Strip height (phone)&quot;,&quot;min&quot;:30,&quot;max&quot;:64,&quot;default&quot;:40,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;barThickness&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Toolbar thickness (0 = auto)&quot;,&quot;min&quot;:0,&quot;max&quot;:64,&quot;default&quot;:0,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;handCardW&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Card width (0 = fit 13)&quot;,&quot;min&quot;:0,&quot;max&quot;:80,&quot;default&quot;:0,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;skin&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Table skin&quot;,&quot;options&quot;:[&quot;bbo&quot;,&quot;midnight&quot;,&quot;parchment&quot;,&quot;noir&quot;,&quot;claret&quot;],&quot;default&quot;:&quot;bbo&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;accent&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Challenge accent&quot;,&quot;default&quot;:&quot;#0d707c&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;canvasBg&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Canvas backdrop&quot;,&quot;default&quot;:&quot;#0b100e&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844},&quot;viewport&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewport&quot;,&quot;options&quot;:[&quot;phone&quot;,&quot;desktop&quot;],&quot;default&quot;:&quot;phone&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;phase&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Phase&quot;,&quot;options&quot;:[&quot;auction&quot;,&quot;play&quot;],&quot;default&quot;:&quot;play&quot;,&quot;section&quot;:&quot;View&quot;},&quot;canSeeResults&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Results unlocked&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;View&quot;},&quot;overlay&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Results overlay&quot;,&quot;options&quot;:[&quot;closed&quot;,&quot;open&quot;],&quot;default&quot;:&quot;closed&quot;,&quot;section&quot;:&quot;View&quot;},&quot;title&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Challenge title&quot;,&quot;default&quot;:&quot;Tuesday Night Teams \u2014 Set 12&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;boardNo&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Board&quot;,&quot;min&quot;:1,&quot;max&quot;:16,&quot;default&quot;:4,&quot;section&quot;:&quot;Challenge&quot;},&quot;boardsTotal&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Boards in set&quot;,&quot;min&quot;:1,&quot;max&quot;:16,&quot;default&quot;:8,&quot;section&quot;:&quot;Challenge&quot;},&quot;scoring&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Scoring&quot;,&quot;options&quot;:[&quot;imps&quot;,&quot;mp&quot;,&quot;total&quot;],&quot;default&quot;:&quot;imps&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;youName&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Your plate name&quot;,&quot;default&quot;:&quot;You&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;stripH&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Strip height (phone)&quot;,&quot;min&quot;:30,&quot;max&quot;:64,&quot;default&quot;:40,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;barThickness&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Toolbar thickness (0 = auto)&quot;,&quot;min&quot;:0,&quot;max&quot;:64,&quot;default&quot;:0,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;handCardW&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Card width (0 = fit 13)&quot;,&quot;min&quot;:0,&quot;max&quot;:80,&quot;default&quot;:0,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;skin&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Table skin&quot;,&quot;options&quot;:[&quot;bbo&quot;,&quot;midnight&quot;,&quot;parchment&quot;,&quot;noir&quot;,&quot;claret&quot;],&quot;default&quot;:&quot;bbo&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;accent&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Challenge accent&quot;,&quot;default&quot;:&quot;#0d707c&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;canvasBg&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Canvas backdrop&quot;,&quot;default&quot;:&quot;#0b100e&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
 // ======================================================================
 // CHALLENGE TABLE - the play table wearing challenge chrome.
 //
@@ -420,6 +456,7 @@ class Component extends DCLogic {
     paused: false,      // BEN paused / stepping
     ready: false,       // helmet scripts landed
     toast: null,
+    panel: false,       // review control: chip (false) or full panel (true)
   };
 
   componentDidMount() {
@@ -562,13 +599,22 @@ class Component extends DCLogic {
     var T = window.Skins ? window.Skins.resolve(skinName, {}) : SKIN_FALLBACK;
 
     // ---------------- frame + band budget ----------------
-    // One phone viewport, 844 tall, and it must not scroll. Every band is
-    // authored, and the centre absorbs the remainder - the same contract
-    // MobileTable uses, minus the stage scale (nothing here is scaled, so
-    // the card size is what yields instead).
-    // The desktop frame is 1000, not "as wide as the canvas": the review
-    // pill is docked to the canvas corner, and a frame that runs under it
-    // loses the last info chip. The canvas reserves that gutter instead.
+    // ONE phone viewport: 390 x 844, an iPhone 13 to the pixel. $preview is
+    // that exact size, the canvas carries no padding and the phone frame no
+    // border, so the tile IS the phone - nothing floats inside a bigger tile,
+    // nothing is shrunk by a max-width, nothing falls off the bottom.
+    //
+    // The stack is the platform MobileTable contract minus the stage scale:
+    //
+    //   strip + top bar + [dummy row] + centre + [bid tray] + hand + bottom bar
+    //
+    // Every band is AUTHORED, the centre is the only flexible one, and they sum
+    // to exactly 844. Nothing here is scaled, so when the budget runs short the
+    // CARD SIZE is what yields (bandFit below walks it down one px at a time)
+    // rather than a band being pushed out under overflow:hidden.
+    //
+    // Desktop keeps its own 1000x820 frame; at review time it is scaled to fit
+    // inside the same 390x844 tile with a caption saying so (see stageStyle).
     var fw = phone ? 390 : 1000;
     var fh = phone ? 844 : 820;
     var stripH = clampInt(p.stripH, 30, 64, 40) + (phone ? 0 : 6);
@@ -581,22 +627,20 @@ class Component extends DCLogic {
     var bandGap = phone ? 8 : 10;
     var availW = fw - 2 * feltPadX;
 
-    // Cards are sized for a FULL hand and never resized as it is played -
-    // a hand that grows while you empty it is not a hand.
-    var capW = phone ? 46 : 54;
+    // A phone hand is an OVERLAPPED row, not thirteen cards side by side: laid
+    // out side by side at 390 a card prices out at 29px, which is neither
+    // readable nor hittable. SHOW is the visible slice of every card but the
+    // last, so the hand can be half again as wide as the felt and still fit.
+    // Cards are sized for a FULL hand and never resized as it is played - a
+    // hand that grows while you empty it is not a hand.
+    var SHOW = 0.62;
+    var PLATE_H = 22, HAND_GAP = 3, DUMMY_RATIO = 0.8;
+    var capW = phone ? 48 : 60;
     var cardW = p.handCardW
       ? clampInt(p.handCardW, 16, 80, 44)
-      : Math.max(16, Math.min(capW, Math.floor((availW + 12) / 13)));
-    var cardH = Math.round(cardW * 1.42);
-    var rankFont = Math.max(10, Math.round(cardW * 0.5));
-    var glyphFont = Math.max(9, Math.round(cardW * 0.44));
-    var dCardW = Math.max(14, Math.round(cardW * 0.86));
-    var dCardH = Math.round(dCardW * 1.42);
-    var PLATE_H = 22, HAND_GAP = 3;
-    var southBlock = cardH + HAND_GAP + PLATE_H;
-    var dummyBlock = dCardH + HAND_GAP + PLATE_H;
+      : Math.max(18, Math.min(capW, Math.floor(availW / (1 + 12 * SHOW))));
 
-    var trayBtnH = phone ? 38 : 44;
+    var trayBtnH = phone ? 46 : 48;
     var trayRowGap = 6;
     var trayH = 3 * trayBtnH + 2 * trayRowGap;
 
@@ -635,11 +679,63 @@ class Component extends DCLogic {
     var showDummy = !!(st && !isAuction && st.contract && st.contract.declarer === "S");
     v.showDummy = showDummy;
 
-    // centre = felt minus every authored band
-    var used = 2 * feltPadY + southBlock + bandGap
-      + (showDummy ? dummyBlock + bandGap : 0)
-      + (isAuction ? trayH + bandGap : 0);
-    var centreH = Math.max(120, feltH - used);
+    // ---------------- the band budget, resolved ----------------
+    // The felt's children, in order: [dummy row] centre [bid tray] hand. The
+    // centre takes what is left; the FLOOR is what keeps the trick and the
+    // auction readable, the CEILING is what stops a tall viewport from turning
+    // the centre into an acre of green with a small box marooned in the middle.
+    var kids = 2 + (showDummy ? 1 : 0) + (isAuction ? 1 : 0);
+    var gapTotal = bandGap * (kids - 1);
+    var CENTRE_MIN = phone ? 200 : 240;
+    var CENTRE_MAX = phone ? 640 : 720;
+    var bandFit = function (cw) {
+      var ch = Math.round(cw * 1.42);
+      var dw = Math.max(14, Math.round(cw * DUMMY_RATIO));
+      var dh = Math.round(dw * 1.42);
+      var south = ch + HAND_GAP + PLATE_H;
+      var dum = dh + HAND_GAP + PLATE_H;
+      var fixed = south + (showDummy ? dum : 0) + (isAuction ? trayH : 0);
+      return {
+        cw: cw, ch: ch, dw: dw, dh: dh, south: south, dummy: dum,
+        raw: feltH - 2 * feltPadY - gapTotal - fixed,
+      };
+    };
+    var fit = bandFit(cardW);
+    while (fit.raw < CENTRE_MIN && fit.cw > 18) fit = bandFit(fit.cw - 1);
+    cardW = fit.cw;
+    var cardH = fit.ch, dCardW = fit.dw, dCardH = fit.dh;
+    var southBlock = fit.south, dummyBlock = fit.dummy;
+    var centreH = Math.max(CENTRE_MIN, Math.min(CENTRE_MAX, fit.raw));
+    // Leftover (only ever when the ceiling binds) goes ABOVE the centre, never
+    // around it: the tray and the hand stay welded to the bottom toolbar, which
+    // is where a thumb expects to find them.
+    var feltPadTop = feltPadY + Math.max(0, fit.raw - centreH);
+    var feltPadBot = feltPadY;
+
+    // Card metrics that follow the resolved size. cardStep is what each card
+    // but the last actually shows, so the row is cardW + 12*cardStep wide and
+    // can never exceed the felt; the negative margin-left is handFaces' overlap.
+    var cardStep = Math.max(6, Math.min(cardW - 1, Math.floor((availW - cardW) / 12)));
+    var cardOv = cardStep - cardW;
+    var dCardStep = Math.max(6, Math.min(dCardW - 1, Math.round(dCardW * SHOW)));
+    var dCardOv = dCardStep - dCardW;
+    var rankFont = Math.max(10, Math.round(cardW * 0.5));
+    var glyphFont = Math.max(9, Math.round(cardW * 0.44));
+
+    // ---------------- centre geometry ----------------
+    // Both centre boxes are priced off the SAME band, so the auction and the
+    // trick occupy the same rectangle and the table does not jump when the
+    // auction ends. The trick is allowed to be taller than wide (a portrait
+    // table is), which is what stops the width cap from leaving dead felt.
+    var CENTRE_AIR = 10;
+    var boxW = Math.min(availW - 12, phone ? 360 : 520);
+    var boxH = Math.max(120, Math.min(centreH - 2 * CENTRE_AIR, Math.round(boxW * 1.34)));
+    // Played cards are LARGER than held cards, as they are at a real table: a
+    // hand is scanned, a trick is read. Sized off the box, floored off the hand.
+    var tw = Math.max(Math.round(cardW * 1.3), Math.round(Math.min(boxW, boxH) * 0.22));
+    var th = Math.round(tw * 1.42);
+    if (2 * th + 16 > boxH) { th = Math.max(26, Math.floor((boxH - 16) / 2)); tw = Math.round(th / 1.42); }
+    if (2 * tw + 16 > boxW) { tw = Math.max(20, Math.floor((boxW - 16) / 2)); th = Math.round(tw * 1.42); }
 
     // ---------------- 1. challenge strip ----------------
     v.title = title;
@@ -666,9 +762,10 @@ class Component extends DCLogic {
     v.barBg = T.barBg || SKIN_FALLBACK.barBg;
     v.barSlotStyle = "flex:none;width:100%;height:" + barH + "px";
     v.feltStyle = "flex:1;min-height:0;width:100%;display:flex;flex-direction:column;align-items:center;"
-      + "gap:" + bandGap + "px;padding:" + feltPadY + "px " + feltPadX + "px;overflow:hidden;"
-      + "background:" + (T.feltFlat || SKIN_FALLBACK.feltFlat);
-    v.handRowStyle = "flex:none;display:flex;justify-content:center;width:100%";
+      + "gap:" + bandGap + "px;padding:" + feltPadTop + "px " + feltPadX + "px " + feltPadBot + "px;"
+      + "overflow:hidden;background:" + (T.feltFlat || SKIN_FALLBACK.feltFlat);
+    v.handRowStyle = "flex:none;display:flex;justify-content:center;width:100%;height:" + southBlock + "px";
+    v.dummyRowStyle = "flex:none;display:flex;justify-content:center;width:100%;height:" + dummyBlock + "px";
     v.centreStyle = "flex:none;height:" + centreH + "px;width:100%;display:flex;align-items:center;justify-content:center";
 
     v.youName = youName;
@@ -698,19 +795,27 @@ class Component extends DCLogic {
     };
     v.southCards = [];
     v.dummyCards = [];
+    // The plate spans the hand exactly, so it has to be told the overlap the
+    // hand was actually built with (SeatHand's own default assumes -1px).
+    v.southPlateW = (cardW + 12 * cardStep) + "px";
+    v.dummyPlateW = (dCardW + 12 * dCardStep) + "px";
     if (B && st) {
       var cur = st.tricks[st.tricks.length - 1] || { plays: [] };
       var southLive = isPlay && !st.resolving && st.turn === "S" && !this.state.paused;
       var dummyLive = isPlay && !st.resolving && st.turn === "N" && showDummy && !this.state.paused;
       v.southCards = B.handFaces(st.hands.S, {
+        overlap: cardOv,
         onPlay: southLive ? playCard("S") : null,
         playable: southLive ? B.legalPlays(st.hands.S, cur.plays) : null,
       });
+      v.southPlateW = (cardW + Math.max(0, st.hands.S.length - 1) * cardStep) + "px";
       if (showDummy) {
         v.dummyCards = B.handFaces(st.hands.N, {
+          overlap: dCardOv,
           onPlay: dummyLive ? playCard("N") : null,
           playable: dummyLive ? B.legalPlays(st.hands.N, cur.plays) : null,
         });
+        v.dummyPlateW = (dCardW + Math.max(0, st.hands.N.length - 1) * dCardStep) + "px";
       }
     }
 
@@ -787,12 +892,19 @@ class Component extends DCLogic {
     }
 
     // ---- centre: the auction box ----
-    var aColW = phone ? 52 : 62;
-    var aCellH = phone ? 28 : 32;
-    var aFont = phone ? 14 : 16;
-    v.auctionGridStyle = "display:grid;grid-template-columns:repeat(4," + aColW + "px);gap:2px";
-    v.auctionBoxStyle = "display:flex;flex-direction:column;gap:2px;padding:6px;border-radius:4px;"
-      + "background:" + (T.auctionBg || "#acc5c5") + ";box-shadow:0 3px 10px rgba(0,0,0,.3)";
+    // Sized to FILL the centre band rather than sitting in it at a fixed 28px
+    // per row: the band is the same rectangle the trick gets, so the auction
+    // is as big as the felt honestly allows and the centre is never a void.
+    var aGap = 2, aPad = 6;
+    var aRowsModel = B && st ? B.auctionRows(st.auction, st.dealer) : [];
+    var aRowN = Math.max(2, aRowsModel.length);
+    var aColW = Math.max(40, Math.min(phone ? 80 : 74, Math.floor((boxW - 2 * aPad - 3 * aGap) / 4)));
+    var aCellH = Math.max(22, Math.min(phone ? 54 : 44,
+      Math.floor((boxH - 2 * aPad - aGap * aRowN) / (aRowN + 0.78))));
+    var aFont = Math.max(12, Math.round(aCellH * 0.44));
+    v.auctionGridStyle = "display:grid;grid-template-columns:repeat(4," + aColW + "px);gap:" + aGap + "px";
+    v.auctionBoxStyle = "display:flex;flex-direction:column;gap:" + aGap + "px;padding:" + aPad + "px;"
+      + "border-radius:4px;background:" + (T.auctionBg || "#acc5c5") + ";box-shadow:0 3px 10px rgba(0,0,0,.3)";
     v.auctHead = [];
     v.auctRows = [];
     if (B && st) {
@@ -803,7 +915,7 @@ class Component extends DCLogic {
             + "px;font-weight:700;font-family:Arial,Helvetica,sans-serif",
         });
       });
-      v.auctRows = B.auctionRows(st.auction, st.dealer).map(function (row) {
+      v.auctRows = aRowsModel.map(function (row) {
         return {
           cells: row.cells.map(function (cl) {
             return Object.assign({}, cl, {
@@ -820,22 +932,17 @@ class Component extends DCLogic {
     // Four fixed positions around a square. The played card sits at its
     // seat; the seat that owes a card shows a dashed slot, which is the
     // table's only "waiting" cue and the reason no spinner is needed.
-    var boxS = Math.max(140, Math.min(availW - 12, centreH - 16, phone ? 356 : 470));
-    // Played cards are LARGER than held cards, as they are at a real table:
-    // a hand is scanned, a trick is read. Sizing them off the hand keeps the
-    // two in proportion at every viewport.
-    var tw = Math.round(cardW * 1.55), th = Math.round(tw * 1.42);
-    v.trickBoxStyle = "position:relative;width:" + boxS + "px;height:" + boxS + "px";
+    v.trickBoxStyle = "position:relative;width:" + boxW + "px;height:" + boxH + "px";
     v.trickCards = [];
     if (B && st && !isAuction) {
       var trick = st.tricks[st.tricks.length - 1] || { plays: [] };
       var seats = ["N", "E", "S", "W"];
       v.trickCards = seats.map(function (seat) {
         var play = (trick.plays || []).filter(function (x) { return x.seat === seat; })[0];
-        var pos = seat === "N" ? "left:" + Math.round((boxS - tw) / 2) + "px;top:0"
-          : seat === "S" ? "left:" + Math.round((boxS - tw) / 2) + "px;top:" + (boxS - th) + "px"
-          : seat === "W" ? "left:0;top:" + Math.round((boxS - th) / 2) + "px"
-          : "left:" + (boxS - tw) + "px;top:" + Math.round((boxS - th) / 2) + "px";
+        var pos = seat === "N" ? "left:" + Math.round((boxW - tw) / 2) + "px;top:0"
+          : seat === "S" ? "left:" + Math.round((boxW - tw) / 2) + "px;top:" + (boxH - th) + "px"
+          : seat === "W" ? "left:0;top:" + Math.round((boxH - th) / 2) + "px"
+          : "left:" + (boxW - tw) + "px;top:" + Math.round((boxH - th) / 2) + "px";
         var waiting = !play && st.turn === seat && !st.resolving && st.phase === "play";
         return {
           hasCard: !!play, waiting: waiting,
@@ -1028,11 +1135,42 @@ class Component extends DCLogic {
     }
 
     // ---------------- frame + canvas ----------------
-    v.canvasStyle = "height:100%;min-height:100%;width:100%;display:flex;align-items:center;justify-content:center;"
-      + "padding:20px " + (phone ? 20 : 210) + "px 20px 20px;overflow:hidden;background:" + canvasBg;
-    v.frameStyle = "position:relative;flex:none;width:" + fw + "px;height:" + fh + "px;max-width:100%;"
-      + "display:flex;flex-direction:column;overflow:hidden;border-radius:" + (phone ? 22 : 14) + "px;"
-      + "border:1px solid #26332e;box-shadow:0 26px 70px rgba(0,0,0,.55);background:" + (T.stageBg || "#000");
+    // The canvas is the iPhone 13 tile itself: 390 x 844, no padding, no
+    // centring, no max-width. In phone mode the stage sits on it 1:1, so the
+    // frame is 390 x 844 to the pixel and the felt band is whatever the budget
+    // above left it - not "whatever fits after a 20px gutter and a scrollbar".
+    var SCREEN_W = 390, SCREEN_H = 844, CAP_H = 34;
+    v.canvasStyle = "position:relative;width:" + SCREEN_W + "px;height:" + SCREEN_H + "px;"
+      + "overflow:hidden;background:" + canvasBg;
+    v.desktopMode = !phone;
+    v.capText = "";
+    if (phone) {
+      v.stageStyle = "position:absolute;left:0;top:0;width:" + SCREEN_W + "px;height:" + SCREEN_H + "px";
+      // No border and no radius: at true device size the frame IS the screen,
+      // and a 1px border would spend a pixel of the 390 the hand needs.
+      v.frameStyle = "position:relative;width:" + fw + "px;height:" + fh + "px;display:flex;"
+        + "flex-direction:column;overflow:hidden;background:" + (T.stageBg || "#000");
+    } else {
+      // Desktop inside a phone tile: the WHOLE 1000x820 frame, scaled
+      // proportionally so nothing is cropped, and a caption that admits the
+      // scale. transform:scale leaves layout alone, so the frame still lays
+      // itself out at its real 1000x820 - what you see is the real thing small,
+      // not a different thing.
+      var kFit = Math.min((SCREEN_W - 16) / fw, (SCREEN_H - CAP_H - 16) / fh);
+      var sw = Math.round(fw * kFit), sh = Math.round(fh * kFit);
+      v.stageStyle = "position:absolute;left:" + Math.round((SCREEN_W - sw) / 2) + "px;"
+        + "top:" + Math.round(CAP_H + (SCREEN_H - CAP_H - sh) / 2) + "px;"
+        + "width:" + fw + "px;height:" + fh + "px;transform:scale(" + kFit.toFixed(4) + ");"
+        + "transform-origin:0 0";
+      v.frameStyle = "position:relative;width:" + fw + "px;height:" + fh + "px;display:flex;"
+        + "flex-direction:column;overflow:hidden;border-radius:14px;border:1px solid #26332e;"
+        + "box-shadow:0 26px 70px rgba(0,0,0,.55);background:" + (T.stageBg || "#000");
+      v.capText = "Desktop preview " + fw + " x " + fh + " at " + Math.round(kFit * 100) + "%";
+    }
+    v.capStyle = "position:absolute;left:0;right:0;top:0;z-index:6;height:" + CAP_H + "px;display:flex;"
+      + "align-items:center;justify-content:center;font-size:9.5px;font-weight:800;letter-spacing:.12em;"
+      + "text-transform:uppercase;color:#6b7873;"
+      + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
     // ---------------- toast ----------------
     v.toastShown = !!this.state.toast;
@@ -1044,30 +1182,56 @@ class Component extends DCLogic {
       + "font-size:12px;font-weight:600;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.4);cursor:pointer";
 
     // ---------------- review control (harness chrome) ----------------
+    // At 390 there is no spare corner: the old fixed panel sat over the strip
+    // and covered the Results button, which is the one control being reviewed.
+    // So it collapses. The CHIP is 30px and parks on bare felt in the table's
+    // top-left corner - the one rectangle no band ever paints, because both
+    // hands and both centre boxes are horizontally centred and leave a gutter.
+    // The PANEL only exists while asked for, over its own scrim, with a close.
+    var panelOpen = !!this.state.panel;
+    v.pillClosed = !panelOpen;
+    v.pillOpen = panelOpen;
+    v.onPillOpen = function () { self.setState({ panel: true }); };
+    v.onPillClose = function () { self.setState({ panel: false }); };
+    var CHIP = 30;
+    v.chipStyle = "position:absolute;left:" + (phone ? 5 : 8) + "px;top:"
+      + (phone ? stripH + barH + 6 : 6) + "px;z-index:60;width:" + CHIP + "px;height:" + CHIP + "px;"
+      + "padding:0;display:flex;align-items:center;justify-content:center;appearance:none;"
+      + "border:1px solid rgba(255,255,255,.24);border-radius:9px;background:rgba(9,17,14,.72);"
+      + "cursor:pointer;font-family:inherit";
+    v.chipDotStyle = "display:block;width:9px;height:9px;border-radius:5px;background:#f2b64d;"
+      + "box-shadow:0 0 0 3px rgba(242,182,77,.20)";
+    v.pillScrimStyle = "position:absolute;inset:0;z-index:70;background:rgba(6,14,11,.66)";
+
     var seg = function (opts, current, setKey) {
       return opts.map(function (o) {
         return {
           label: o.label,
           on: function () { self.setState({ [setKey]: o.val }); },
-          style: "appearance:none;font-family:inherit;cursor:pointer;border:0;flex:1;padding:5px 4px;"
-            + "border-radius:6px;font-size:10px;font-weight:700;line-height:1;white-space:nowrap;text-align:center;"
+          style: "appearance:none;font-family:inherit;cursor:pointer;border:0;flex:1;padding:7px 4px;"
+            + "border-radius:7px;font-size:11px;font-weight:700;line-height:1;white-space:nowrap;text-align:center;"
             + (o.val === current ? "background:#eef2f0;color:#12201b" : "background:transparent;color:#8b978f"),
         };
       });
     };
-    v.pillStyle = "position:fixed;top:12px;right:12px;z-index:2147483000;display:flex;flex-direction:column;"
-      + "gap:8px;width:176px;padding:10px 11px 11px;border-radius:12px;background:#171f1c;"
-      + "box-shadow:0 8px 26px rgba(0,0,0,.34);"
+    v.pillStyle = "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:71;"
+      + "display:flex;flex-direction:column;gap:10px;width:" + (SCREEN_W - 68) + "px;"
+      + "max-height:" + (SCREEN_H - 72) + "px;overflow-y:auto;padding:12px 13px 13px;border-radius:14px;"
+      + "background:#171f1c;border:1px solid #2b3a34;box-shadow:0 18px 50px rgba(0,0,0,.55);"
       + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    v.pillCloseStyle = "flex:none;width:24px;height:24px;padding:0;appearance:none;border:1px solid #2f3d38;"
+      + "border-radius:7px;background:#111917;color:#8f9a94;font-family:inherit;font-size:11px;"
+      + "line-height:1;cursor:pointer";
     v.pillGroups = [
       { label: "Viewport", opts: seg([{ val: "phone", label: "Phone" }, { val: "desktop", label: "Desktop" }], ovViewport, "ovViewport") },
       { label: "Results", opts: seg([{ val: true, label: "Allowed" }, { val: false, label: "Not allowed" }], ovResults, "ovResults") },
       { label: "Overlay", opts: seg([{ val: "closed", label: "Closed" }, { val: "open", label: "Open" }], ovOverlay, "ovOverlay") },
       { label: "Phase", opts: seg([{ val: "auction", label: "Auction" }, { val: "play", label: "Play" }], ovPhase, "ovPhase") },
     ];
-    v.pillNote = allowed
+    v.pillNote = (allowed
       ? "Play a card, open Results, close it - the board is where you left it."
-      : "Not unlocked: the strip has no Results button at all.";
+      : "Not unlocked: the strip has no Results button at all.")
+      + " Close this panel to hand the screen back; the amber chip on the felt brings it back.";
 
     // ---- deferred prop/state re-syncs (never setState during render) ----
     if (this._vpSync != null) { var a1 = this._vpSync; this._vpSync = null; setTimeout(function () { self.setState({ ovViewport: a1, lastViewportProp: a1 }); }, 0); }
