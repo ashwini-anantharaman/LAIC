@@ -33,7 +33,7 @@ input::placeholder{color:#9aa8a1}
       <span style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;flex:none;border-radius:8px;background:{{accent}};color:#fff;font-size:14px;font-weight:800">+</span>
       <div>
         <div style="font-size:15px;font-weight:800;letter-spacing:.01em;color:#17211d">Create challenge</div>
-        <div style="font-size:11px;color:#8b9a93">Same boards · same seat · BEN opponents</div>
+        <div style="font-size:11px;color:#8b9a93">Same boards &middot; same seat &middot; BEN opponents</div>
       </div>
     </div>
     <div style="display:flex;gap:3px;margin-top:12px;padding:3px;background:#eef2f0;border:1px solid #dde3df;border-radius:9px">
@@ -81,7 +81,7 @@ input::placeholder{color:#9aa8a1}
       <span style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;flex:none;border-radius:8px;background:{{accent}};color:#fff;font-size:14px;font-weight:800">+</span>
       <div style="flex:1;min-width:0">
         <div style="font-size:15px;font-weight:800;color:#17211d;line-height:1.1">Create challenge</div>
-        <div style="font-size:11px;color:#8b9a93">Same boards · your seat · BEN robots</div>
+        <div style="font-size:11px;color:#8b9a93">Same boards &middot; your seat &middot; BEN robots</div>
       </div>
       <div style="display:flex;gap:2px;padding:2px;background:#eef2f0;border:1px solid #dde3df;border-radius:8px">
         <sc-for list="{{viewChips}}" as="v" hint-placeholder-count="2">
@@ -102,7 +102,7 @@ input::placeholder{color:#9aa8a1}
   <!-- SCROLLING CONTENT -->
   <div style="{{contentStyle}}">
 
-    <!-- =============== 1 · BASICS =============== -->
+    <!-- =============== 1 &middot; BASICS =============== -->
     <sc-if value="{{showBasics}}" hint-placeholder-val="{{true}}">
     <div ref="{{refBasics}}" style="{{sectionStyle}}">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px">
@@ -129,7 +129,7 @@ input::placeholder{color:#9aa8a1}
       <label style="display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8b9a93;margin:16px 0 7px">Boards</label>
       <div style="display:flex;align-items:center;gap:12px">
         <div style="display:flex;align-items:center;border:1px solid #dde3df;border-radius:10px;overflow:hidden;background:#fff">
-          <button onClick="{{onBoardsDec}}" style="width:44px;height:44px;border:0;background:#f4f7f5;color:#425049;font-size:22px;font-weight:700;cursor:{{boardsDecCursor}};opacity:{{boardsDecOpacity}}">−</button>
+          <button onClick="{{onBoardsDec}}" style="width:44px;height:44px;border:0;background:#f4f7f5;color:#425049;font-size:22px;font-weight:700;cursor:{{boardsDecCursor}};opacity:{{boardsDecOpacity}}">&minus;</button>
           <span style="min-width:52px;text-align:center;font-size:20px;font-weight:800;color:#17211d">{{boardCount}}</span>
           <button onClick="{{onBoardsInc}}" style="width:44px;height:44px;border:0;background:#f4f7f5;color:#425049;font-size:22px;font-weight:700;cursor:{{boardsIncCursor}};opacity:{{boardsIncOpacity}}">+</button>
         </div>
@@ -139,19 +139,33 @@ input::placeholder{color:#9aa8a1}
           </sc-for>
         </div>
       </div>
-      <div style="margin-top:7px;font-size:11px;color:#8b9a93">1–16 boards. Vulnerability follows the standard board cycle; dealer and your seat are per-board on the next step.</div>
+      <div style="margin-top:7px;font-size:11px;color:#8b9a93">1&ndash;16 boards. Vulnerability follows the standard board cycle; dealer and your seat are per-board on the next step.</div>
 
-      <div style="margin-top:16px;padding:10px 12px;border-radius:9px;border:1px dashed #d7ddd9;background:#fafbfa;font-size:11.5px;line-height:1.55;color:#7a877f">Boards, seats and control overrides stay editable until the <b style="color:#5a6a62">first player starts a board</b> — then they lock. Invites can be added any time.</div>
+      <label style="display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8b9a93;margin:16px 0 7px">Standings visibility</label>
+      <div style="display:flex;gap:6px">
+        <sc-for list="{{standingsChips}}" as="v" hint-placeholder-count="2">
+        <button onClick="{{v.on}}" style="flex:1;min-width:0;padding:8px 10px 9px;border:1px solid {{v.border}};border-radius:10px;background:{{v.bg}};font-family:inherit;text-align:left;cursor:pointer">
+          <span style="display:flex;align-items:center;gap:6px">
+            <span style="width:8px;height:8px;flex:none;border-radius:4px;background:{{v.dot}}"></span>
+            <span style="font-size:13px;font-weight:{{v.weight}};line-height:1.2;color:{{v.color}}">{{v.label}}</span>
+          </span>
+          <span style="display:block;margin-top:3px;font-size:11px;line-height:1.35;color:{{v.subColor}}">{{v.sub}}</span>
+        </button>
+        </sc-for>
+      </div>
+      <div style="margin-top:8px;padding:9px 11px;border-radius:9px;background:#eef4f3;font-size:12px;line-height:1.5;color:#3f5a56">{{standingsNote}}</div>
+
+      <div style="margin-top:16px;padding:10px 12px;border-radius:9px;border:1px dashed #d7ddd9;background:#fafbfa;font-size:11.5px;line-height:1.55;color:#7a877f">Boards, seats and control overrides stay editable until the <b style="color:#5a6a62">first player starts a board</b> &mdash; then they lock. Invites can be added any time.</div>
 
       <sc-if value="{{isDesktop}}" hint-placeholder-val="{{false}}">
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:22px">
-        <button onClick="{{onNext}}" style="height:40px;padding:0 20px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">{{nextLabel}} →</button>
+        <button onClick="{{onNext}}" style="height:40px;padding:0 20px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">{{nextLabel}} &rarr;</button>
       </div>
       </sc-if>
     </div>
     </sc-if>
 
-    <!-- =============== 2 · BOARDS =============== -->
+    <!-- =============== 2 &middot; BOARDS =============== -->
     <sc-if value="{{showBoards}}" hint-placeholder-val="{{false}}">
     <div ref="{{refBoards}}" style="{{sectionStyle}}">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px">
@@ -164,8 +178,8 @@ input::placeholder{color:#9aa8a1}
 
       <sc-if value="{{editorBadgeActive}}" hint-placeholder-val="{{false}}">
       <div style="display:flex;align-items:flex-start;gap:9px;margin-bottom:13px;padding:10px 12px;border-radius:10px;background:#fff5e0;border:1px solid #f0d79a">
-        <span style="font-size:15px;line-height:1.2">◆</span>
-        <div style="font-size:12px;line-height:1.5;color:#8a5a12"><b>Editor badge will apply.</b> You opened a pack editor, so you have seen the hands — your leaderboard row will show <b>“set the boards.”</b> This can’t be undone.</div>
+        <span style="font-size:15px;line-height:1.2">&#x25C6;</span>
+        <div style="font-size:12px;line-height:1.5;color:#8a5a12"><b>Editor badge will apply.</b> You opened a pack editor, so you have seen the hands &mdash; your leaderboard row will show <b>&ldquo;set the boards.&rdquo;</b> This can&rsquo;t be undone.</div>
       </div>
       </sc-if>
 
@@ -177,7 +191,7 @@ input::placeholder{color:#9aa8a1}
             <span style="font-size:13px;font-weight:800;color:#17211d">Board {{b.no}}</span>
             <sc-if value="{{b.touched}}" hint-placeholder-val="{{false}}"><span style="font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:4px;padding:2px 5px">edited</span></sc-if>
             <span style="flex:1"></span>
-            <button onClick="{{b.onReroll}}" title="Re-roll this deal" style="display:flex;align-items:center;gap:4px;height:26px;padding:0 9px;border:1px solid #dde3df;border-radius:13px;background:#f7faf9;color:#3f5a56;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">↻ Re-roll</button>
+            <button onClick="{{b.onReroll}}" title="Re-roll this deal" style="display:flex;align-items:center;gap:4px;height:26px;padding:0 9px;border:1px solid #dde3df;border-radius:13px;background:#f7faf9;color:#3f5a56;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer">&#x21BB; Re-roll</button>
           </div>
 
           <div style="display:flex;flex-wrap:wrap;gap:5px;padding:8px 10px 4px">
@@ -196,7 +210,7 @@ input::placeholder{color:#9aa8a1}
           <!-- INLINE PACK EDITOR -->
           <sc-if value="{{b.editing}}" hint-placeholder-val="{{false}}">
           <div style="border-top:1px solid #eef1ef;background:#f8faf9;padding:11px 10px 12px">
-            <div style="font-size:11px;line-height:1.5;color:#8a5a12;background:#fff5e0;border:1px solid #f4e1b0;border-radius:8px;padding:7px 9px;margin-bottom:10px">Card-by-card editor — this is the <b>DealEditor</b> in spirit. Opening it set the <b>“set the boards”</b> badge on your row.</div>
+            <div style="font-size:11px;line-height:1.5;color:#8a5a12;background:#fff5e0;border:1px solid #f4e1b0;border-radius:8px;padding:7px 9px;margin-bottom:10px">Card-by-card editor &mdash; this is the <b>DealEditor</b> in spirit. Opening it set the <b>&ldquo;set the boards&rdquo;</b> badge on your row.</div>
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
               <sc-for list="{{b.seatPanels}}" as="sp" hint-placeholder-count="4">
@@ -255,21 +269,21 @@ input::placeholder{color:#9aa8a1}
 
       <sc-if value="{{isDesktop}}" hint-placeholder-val="{{false}}">
       <div style="display:flex;justify-content:space-between;gap:8px;margin-top:22px">
-        <button onClick="{{onPrev}}" style="height:40px;padding:0 18px;border:1px solid #dde3df;border-radius:9px;background:#fff;color:#3f5a56;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">← {{prevLabel}}</button>
-        <button onClick="{{onNext}}" style="height:40px;padding:0 20px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">{{nextLabel}} →</button>
+        <button onClick="{{onPrev}}" style="height:40px;padding:0 18px;border:1px solid #dde3df;border-radius:9px;background:#fff;color:#3f5a56;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">&larr; {{prevLabel}}</button>
+        <button onClick="{{onNext}}" style="height:40px;padding:0 20px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">{{nextLabel}} &rarr;</button>
       </div>
       </sc-if>
     </div>
     </sc-if>
 
-    <!-- =============== 3 · TABLE CONTROLS =============== -->
+    <!-- =============== 3 &middot; TABLE CONTROLS =============== -->
     <sc-if value="{{showControls}}" hint-placeholder-val="{{false}}">
     <div ref="{{refControls}}" style="{{sectionStyle}}">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px">
         <span style="font-size:11px;font-weight:800;letter-spacing:.08em;color:{{accent}}">03</span>
         <span style="font-size:18px;font-weight:800;color:#17211d">Table controls</span>
       </div>
-      <div style="font-size:12.5px;line-height:1.5;color:#66756f;margin-bottom:14px">Override the access catalogue for this challenge — in both directions. <b>Undo</b> and <b>show-all-hands</b> are off by default: this is scored play.</div>
+      <div style="font-size:12.5px;line-height:1.5;color:#66756f;margin-bottom:14px">Override the access catalogue for this challenge &mdash; in both directions. <b>Undo</b> and <b>show-all-hands</b> are off by default: this is scored play.</div>
 
       <div style="display:flex;flex-direction:column;gap:8px">
         <sc-for list="{{controlRows}}" as="c" hint-placeholder-count="7">
@@ -296,14 +310,14 @@ input::placeholder{color:#9aa8a1}
 
       <sc-if value="{{isDesktop}}" hint-placeholder-val="{{false}}">
       <div style="display:flex;justify-content:space-between;gap:8px;margin-top:22px">
-        <button onClick="{{onPrev}}" style="height:40px;padding:0 18px;border:1px solid #dde3df;border-radius:9px;background:#fff;color:#3f5a56;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">← {{prevLabel}}</button>
-        <button onClick="{{onNext}}" style="height:40px;padding:0 20px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">{{nextLabel}} →</button>
+        <button onClick="{{onPrev}}" style="height:40px;padding:0 18px;border:1px solid #dde3df;border-radius:9px;background:#fff;color:#3f5a56;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">&larr; {{prevLabel}}</button>
+        <button onClick="{{onNext}}" style="height:40px;padding:0 20px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">{{nextLabel}} &rarr;</button>
       </div>
       </sc-if>
     </div>
     </sc-if>
 
-    <!-- =============== 4 · INVITES =============== -->
+    <!-- =============== 4 &middot; INVITES =============== -->
     <sc-if value="{{showInvites}}" hint-placeholder-val="{{false}}">
     <div ref="{{refInvites}}" style="{{sectionStyle}}">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px">
@@ -313,7 +327,7 @@ input::placeholder{color:#9aa8a1}
       <div style="font-size:12.5px;line-height:1.5;color:#66756f;margin-bottom:13px">Anyone on the platform, across clubs. Invitees stay <b>pending</b> until they accept.</div>
 
       <div style="position:relative;margin-bottom:10px">
-        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;color:#9aa8a1">⌕</span>
+        <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;color:#9aa8a1">&#x2315;</span>
         <input value="{{query}}" onInput="{{onQuery}}" placeholder="Search players by name or @username" style="width:100%;height:42px;padding:0 12px 0 34px;border:1px solid #dde3df;border-radius:10px;background:#fff;color:#17211d;font-size:13.5px" />
       </div>
 
@@ -340,34 +354,44 @@ input::placeholder{color:#9aa8a1}
       </div>
       <div style="display:flex;flex-direction:column;gap:5px">
         <sc-for list="{{invitedRows}}" as="r" hint-placeholder-count="3">
-        <div style="display:flex;align-items:center;gap:9px;padding:8px 9px;border:1px solid {{r.line}};border-radius:9px;background:{{r.bg}}">
+        <div style="border:1px solid {{r.line}};border-radius:9px;background:{{r.bg}}">
+        <div style="display:flex;align-items:center;gap:9px;padding:8px 9px">
           <span style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;flex:none;border-radius:15px;background:{{r.avBg}};color:{{r.avColor}};font-size:12px;font-weight:800">{{r.initials}}</span>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:6px">
               <span style="font-size:13px;font-weight:700;color:#22302a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.name}}</span>
-              <sc-if value="{{r.hasBadge}}" hint-placeholder-val="{{false}}"><span style="flex:none;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:4px;padding:2px 5px">◆ set the boards</span></sc-if>
+              <sc-if value="{{r.hasBadge}}" hint-placeholder-val="{{false}}"><span style="flex:none;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#a9741a;background:#fdf1d8;border-radius:4px;padding:2px 5px">&#x25C6; set the boards</span></sc-if>
             </div>
             <div style="font-size:11px;color:#8b9a93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.handle}}</div>
           </div>
           <span style="flex:none;font-size:10px;font-weight:800;letter-spacing:.03em;color:{{r.chipColor}};background:{{r.chipBg}};border-radius:10px;padding:3px 9px">{{r.chipLabel}}</span>
           <sc-if value="{{r.hasRemove}}" hint-placeholder-val="{{true}}">
-          <button onClick="{{r.onRemove}}" title="Remove invite" style="width:26px;height:26px;flex:none;border:0;border-radius:13px;background:#f2f4f2;color:#b06a6a;font-size:13px;cursor:pointer">×</button>
+          <button onClick="{{r.onRemove}}" title="Remove invite" style="width:26px;height:26px;flex:none;border:0;border-radius:13px;background:#f2f4f2;color:#b06a6a;font-size:13px;cursor:pointer">&times;</button>
           </sc-if>
         </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:0 9px 8px 48px">
+            <label title="{{r.modTitle}}" style="display:flex;align-items:center;gap:6px;flex:none;font-size:11.5px;font-weight:700;color:{{r.modColor}};cursor:{{r.modCursor}}"><input type="checkbox" checked="{{r.moderator}}" disabled="{{r.modLocked}}" onChange="{{r.onModerator}}" style="width:14px;height:14px;margin:0;flex:none;accent-color:{{accent}};cursor:{{r.modCursor}}" />Moderator</label>
+            <span style="flex:1;min-width:0;font-size:11px;line-height:1.35;color:#9aa8a1">{{r.modNote}}</span>
+          </div>
+        </div>
         </sc-for>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:7px;margin-top:9px;padding:8px 10px;border-radius:9px;background:#eef4f3">
+        <b style="flex:none;font-size:11px;font-weight:800;line-height:1.5;color:#265f5b">{{moderatorCount}}</b>
+        <span style="flex:1;min-width:0;font-size:11px;line-height:1.5;color:#3f5a56">{{moderatorNote}}</span>
       </div>
       <div style="margin-top:11px;font-size:11px;line-height:1.5;color:#7a877f">You are auto-invited as the creator. Nobody is charged an attempt until they start a board.</div>
 
       <sc-if value="{{isDesktop}}" hint-placeholder-val="{{false}}">
       <div style="display:flex;justify-content:space-between;gap:8px;margin-top:22px">
-        <button onClick="{{onPrev}}" style="height:40px;padding:0 18px;border:1px solid #dde3df;border-radius:9px;background:#fff;color:#3f5a56;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">← {{prevLabel}}</button>
-        <button onClick="{{onNext}}" style="height:40px;padding:0 20px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">{{nextLabel}} →</button>
+        <button onClick="{{onPrev}}" style="height:40px;padding:0 18px;border:1px solid #dde3df;border-radius:9px;background:#fff;color:#3f5a56;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">&larr; {{prevLabel}}</button>
+        <button onClick="{{onNext}}" style="height:40px;padding:0 20px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">{{nextLabel}} &rarr;</button>
       </div>
       </sc-if>
     </div>
     </sc-if>
 
-    <!-- =============== 5 · REVIEW =============== -->
+    <!-- =============== 5 &middot; REVIEW =============== -->
     <sc-if value="{{showReview}}" hint-placeholder-val="{{false}}">
     <div ref="{{refReview}}" style="{{sectionStyle}}">
       <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px">
@@ -378,8 +402,8 @@ input::placeholder{color:#9aa8a1}
 
       <sc-if value="{{created}}" hint-placeholder-val="{{false}}">
       <div style="display:flex;align-items:flex-start;gap:9px;margin-bottom:13px;padding:11px 12px;border-radius:10px;background:#e7f5ec;border:1px solid #b8e0c6">
-        <span style="font-size:15px;color:#2f8f57">✓</span>
-        <div style="font-size:12.5px;line-height:1.5;color:#276b45"><b>Draft ready.</b> onCreate(draft) fired — the full payload is in the console. Boards lock the moment a player starts one.</div>
+        <span style="font-size:15px;color:#2f8f57">&#x2713;</span>
+        <div style="font-size:12.5px;line-height:1.5;color:#276b45"><b>Draft ready.</b> onCreate(draft) fired &mdash; the full payload is in the console. Boards lock the moment a player starts one.</div>
       </div>
       </sc-if>
 
@@ -396,14 +420,14 @@ input::placeholder{color:#9aa8a1}
         </div>
       </div>
 
-      <div style="margin-top:12px;padding:10px 12px;border-radius:9px;border:1px dashed #d7ddd9;background:#fafbfa;font-size:11.5px;line-height:1.55;color:#7a877f">One attempt, resume-only — first completion is scored forever. After finishing, a practice replay opens an unscored copy. BEN is the unranked benchmark line; it never enters the field math.</div>
+      <div style="margin-top:12px;padding:10px 12px;border-radius:9px;border:1px dashed #d7ddd9;background:#fafbfa;font-size:11.5px;line-height:1.55;color:#7a877f">One attempt, resume-only &mdash; first completion is scored forever. After finishing, a practice replay opens an unscored copy. BEN is the unranked benchmark line; it never enters the field math.</div>
 
       <button onClick="{{onCreate}}" style="width:100%;height:46px;margin-top:14px;border:0;border-radius:10px;background:{{createBg}};color:{{createColor}};font-family:inherit;font-size:15px;font-weight:800;cursor:{{createCursor}}">{{createLabel}}</button>
       <div style="margin-top:7px;font-size:12px;color:{{createNoteColor}};text-align:center">{{createNote}}</div>
 
       <sc-if value="{{isDesktop}}" hint-placeholder-val="{{false}}">
       <div style="display:flex;justify-content:flex-start;gap:8px;margin-top:20px">
-        <button onClick="{{onPrev}}" style="height:40px;padding:0 18px;border:1px solid #dde3df;border-radius:9px;background:#fff;color:#3f5a56;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">← {{prevLabel}}</button>
+        <button onClick="{{onPrev}}" style="height:40px;padding:0 18px;border:1px solid #dde3df;border-radius:9px;background:#fff;color:#3f5a56;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer">&larr; {{prevLabel}}</button>
       </div>
       </sc-if>
     </div>
@@ -427,9 +451,9 @@ input::placeholder{color:#9aa8a1}
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:440,&quot;height&quot;:900},&quot;viewport&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewport&quot;,&quot;options&quot;:[&quot;phone&quot;,&quot;desktop&quot;],&quot;default&quot;:&quot;phone&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;startStep&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Open step&quot;,&quot;options&quot;:[&quot;basics&quot;,&quot;boards&quot;,&quot;controls&quot;,&quot;invites&quot;,&quot;review&quot;],&quot;default&quot;:&quot;basics&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;title&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Title&quot;,&quot;default&quot;:&quot;Friday Night IMPs&quot;,&quot;section&quot;:&quot;Draft&quot;},&quot;description&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Description&quot;,&quot;default&quot;:&quot;Six boards, sharp bidding. BEN sits the other three seats.&quot;,&quot;section&quot;:&quot;Draft&quot;},&quot;scoring&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Scoring&quot;,&quot;options&quot;:[&quot;imps&quot;,&quot;mp&quot;,&quot;total&quot;],&quot;default&quot;:&quot;imps&quot;,&quot;section&quot;:&quot;Draft&quot;},&quot;boardCount&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Boards&quot;,&quot;min&quot;:1,&quot;max&quot;:16,&quot;default&quot;:6,&quot;section&quot;:&quot;Draft&quot;},&quot;seed&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Deal seed&quot;,&quot;min&quot;:1,&quot;max&quot;:9999,&quot;default&quot;:47,&quot;section&quot;:&quot;Draft&quot;},&quot;editorBadgePreset&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Editor badge preset&quot;,&quot;default&quot;:false,&quot;section&quot;:&quot;Demo&quot;},&quot;accent&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Accent&quot;,&quot;default&quot;:&quot;#0d707c&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;pageBg&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Backdrop&quot;,&quot;default&quot;:&quot;#dfe4e0&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:440,&quot;height&quot;:900},&quot;viewport&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewport&quot;,&quot;options&quot;:[&quot;phone&quot;,&quot;desktop&quot;],&quot;default&quot;:&quot;phone&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;startStep&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Open step&quot;,&quot;options&quot;:[&quot;basics&quot;,&quot;boards&quot;,&quot;controls&quot;,&quot;invites&quot;,&quot;review&quot;],&quot;default&quot;:&quot;basics&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;title&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Title&quot;,&quot;default&quot;:&quot;Friday Night IMPs&quot;,&quot;section&quot;:&quot;Draft&quot;},&quot;description&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Description&quot;,&quot;default&quot;:&quot;Six boards, sharp bidding. BEN sits the other three seats.&quot;,&quot;section&quot;:&quot;Draft&quot;},&quot;scoring&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Scoring&quot;,&quot;options&quot;:[&quot;imps&quot;,&quot;mp&quot;,&quot;total&quot;],&quot;default&quot;:&quot;imps&quot;,&quot;section&quot;:&quot;Draft&quot;},&quot;standingsVisibility&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Standings visibility&quot;,&quot;options&quot;:[&quot;afterFinish&quot;,&quot;always&quot;],&quot;default&quot;:&quot;afterFinish&quot;,&quot;section&quot;:&quot;Draft&quot;},&quot;boardCount&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Boards&quot;,&quot;min&quot;:1,&quot;max&quot;:16,&quot;default&quot;:6,&quot;section&quot;:&quot;Draft&quot;},&quot;seed&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Deal seed&quot;,&quot;min&quot;:1,&quot;max&quot;:9999,&quot;default&quot;:47,&quot;section&quot;:&quot;Draft&quot;},&quot;editorBadgePreset&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Editor badge preset&quot;,&quot;default&quot;:false,&quot;section&quot;:&quot;Demo&quot;},&quot;inviteAsModerator&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;New invites start as moderators&quot;,&quot;default&quot;:false,&quot;section&quot;:&quot;Demo&quot;},&quot;accent&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Accent&quot;,&quot;default&quot;:&quot;#0d707c&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;pageBg&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Backdrop&quot;,&quot;default&quot;:&quot;#dfe4e0&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
 // ======================================================================
-// Create Challenge — the build wizard, phone-first.
+// Create Challenge - the build wizard, phone-first.
 //
 // One live mock draft in this.state. Deals come from bridge.js primitives
 // (rng + fullDeck + SEATS), so a re-roll produces a real, legal 13-13-13-13
@@ -439,14 +463,14 @@ input::placeholder{color:#9aa8a1}
 //
 // viewport (phone|desktop) genuinely reflows: phone is one 390px scrolling
 // form with a jump-chip header and a sticky create bar; desktop is a step
-// rail beside a single side-navigable section, boards 3–4 up.
+// rail beside a single side-navigable section, boards 3-4 up.
 // ======================================================================
 
 const SEATS = ["N", "E", "S", "W"];
 const SEAT_NEXT = { N: "E", E: "S", S: "W", W: "N" };
 const SEAT_NAME = { N: "North", E: "East", S: "South", W: "West" };
 const SUITS = ["S", "H", "D", "C"];
-const GLYPH = { S: "♠", H: "♥", D: "♦", C: "♣" };
+const GLYPH = { S: "\u2660", H: "\u2665", D: "\u2666", C: "\u2663" };
 const RED = "#cc0000";
 const RANKS = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2];
 // One legible colour per compass seat, held constant across every board so the
@@ -467,24 +491,37 @@ const STEP_KEYS = STEPS.map((s) => s.key);
 
 const SCORING = [
   { key: "imps", label: "IMPs", full: "IMPs vs datum",
-    note: "Scored in IMPs against the field datum — the average of everyone who has finished. BEN is excluded from that average." },
+    note: "Scored in IMPs against the field datum \u2014 the average of everyone who has finished. BEN is excluded from that average." },
   { key: "mp", label: "Matchpoints", full: "Matchpoint %",
     note: "Matchpoint %: on every board your result is compared pair-against-pair, half a point for a tie." },
   { key: "total", label: "Total points", full: "Total points",
-    note: "Raw total points, summed straight across every board — simplest to read, harshest on a single bad board." },
+    note: "Raw total points, summed straight across every board \u2014 simplest to read, harshest on a single bad board." },
 ];
 const SCORING_BY = {}; for (const s of SCORING) SCORING_BY[s.key] = s;
+
+// Standings visibility is a challenge rule, not a table control: it decides when
+// a player may see the leaderboard. Default keeps today's spoiler-safe unlock.
+// Moderators are exempt either way - they see standings and board-by-board early.
+const STANDINGS = [
+  { key: "afterFinish", label: "After each player finishes", sub: "Spoiler-safe \u00B7 default",
+    note: "Nobody sees a score until they have played every board \u2014 you trade the pull of a live race for a clean, unspoiled sit-down. Moderators still see standings early.",
+    review: "After each player finishes \u2014 spoiler-safe unlock" },
+  { key: "always", label: "Always visible", sub: "Live race",
+    note: "Everyone watches the standings move from board one \u2014 motivating, but a leader's result can colour how the rest bid and play.",
+    review: "Always visible \u2014 live from board one" },
+];
+const STANDINGS_BY = {}; for (const v of STANDINGS) STANDINGS_BY[v.key] = v;
 
 // key, default state, and whether it carries the scored-play note.
 const CONTROLS = [
   { key: "hands", label: "Show all four hands", sub: "The four-hand diagram", def: "hide",
-    note: "Scored play — hands stay hidden. Turn on only to teach." },
+    note: "Scored play \u2014 hands stay hidden. Turn on only to teach." },
   { key: "undo", label: "Undo", sub: "Take back a bid or card", def: "hide",
-    note: "Scored play — no take-backs. Turn on only to teach." },
+    note: "Scored play \u2014 no take-backs. Turn on only to teach." },
   { key: "claim", label: "Claim", sub: "Concede the rest of the tricks", def: "default" },
   { key: "seats", label: "Seats", sub: "Who sits each seat", def: "default" },
   { key: "pausestep", label: "Pause / Step", sub: "Halt and single-step the robots", def: "default" },
-  { key: "menu", label: "☰ Menu", sub: "Table settings sheet", def: "default" },
+  { key: "menu", label: "\u2630 Menu", sub: "Table settings sheet", def: "default" },
   { key: "coach", label: "Coach", sub: "Commentary panel", def: "default" },
 ];
 const CTRL_STATES = [
@@ -495,16 +532,16 @@ const CTRL_STATES = [
 
 // Fictional, cross-club. Never real people.
 const PEOPLE = [
-  { id: "p1", name: "Mara Whitfield", handle: "@mara · Riverside BC" },
-  { id: "p2", name: "Devon Achebe", handle: "@dachebe · Northgate Cardplayers" },
-  { id: "p3", name: "Priya Nandakumar", handle: "@priyan · Meridian Online" },
-  { id: "p4", name: "Tomas Ruiz", handle: "@truiz · Northgate Cardplayers" },
-  { id: "p5", name: "Ingrid Sølvberg", handle: "@ingrids · Fjordline Club" },
-  { id: "p6", name: "Hassan El-Amin", handle: "@hassan · Meridian Online" },
-  { id: "p7", name: "Yuki Tanaka", handle: "@yukit · Harbor Bridge League" },
-  { id: "p8", name: "Grace O’Donnell", handle: "@graceod · Riverside BC" },
-  { id: "p9", name: "Sam Delacroix", handle: "@samd · Cross-town Aces" },
-  { id: "p10", name: "Lena Kowalski", handle: "@lenak · Fjordline Club" },
+  { id: "p1", name: "Mara Whitfield", handle: "@mara \u00B7 Riverside BC" },
+  { id: "p2", name: "Devon Achebe", handle: "@dachebe \u00B7 Northgate Cardplayers" },
+  { id: "p3", name: "Priya Nandakumar", handle: "@priyan \u00B7 Meridian Online" },
+  { id: "p4", name: "Tomas Ruiz", handle: "@truiz \u00B7 Northgate Cardplayers" },
+  { id: "p5", name: "Ingrid S\u00F8lvberg", handle: "@ingrids \u00B7 Fjordline Club" },
+  { id: "p6", name: "Hassan El-Amin", handle: "@hassan \u00B7 Meridian Online" },
+  { id: "p7", name: "Yuki Tanaka", handle: "@yukit \u00B7 Harbor Bridge League" },
+  { id: "p8", name: "Grace O\u2019Donnell", handle: "@graceod \u00B7 Riverside BC" },
+  { id: "p9", name: "Sam Delacroix", handle: "@samd \u00B7 Cross-town Aces" },
+  { id: "p10", name: "Lena Kowalski", handle: "@lenak \u00B7 Fjordline Club" },
 ];
 const PEOPLE_BY = {}; for (const p of PEOPLE) PEOPLE_BY[p.id] = p;
 const initials = (name) => name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
@@ -525,23 +562,26 @@ class Component extends DCLogic {
         title: p.title ?? "Friday Night IMPs",
         description: p.description ?? "Six boards, sharp bidding. BEN sits the other three seats.",
         scoring: SCORING_BY[p.scoring] ? p.scoring : "imps",
+        standings: STANDINGS_BY[p.standingsVisibility] ? p.standingsVisibility : "afterFinish",
         boardCount: this.clampCount(p.boardCount ?? 6),
         boards: this.buildBoards(this.clampCount(p.boardCount ?? 6)),
         controls: this.defaultControls(),
         query: "",
         invited: [],
+        moderators: [],
         created: false,
       });
       // Cache props we mirror into state, so a later prop edit in Claude Design
       // re-seeds without clobbering in-canvas edits every render.
       this._pc = { title: p.title, description: p.description, scoring: p.scoring,
+        standingsVisibility: p.standingsVisibility,
         boardCount: p.boardCount, seed: p.seed, startStep: p.startStep };
     };
     if (window.Bridge) go();
     else window.addEventListener("bridge-ready", go, { once: true });
   }
 
-  // A prop changed IN Claude Design ⇒ mirror it once. Guard on the cached prop
+  // A prop changed IN Claude Design => mirror it once. Guard on the cached prop
   // (not on state) so typing in the canvas is never overwritten.
   componentDidUpdate() {
     if (!this.state.ready) return;
@@ -550,6 +590,7 @@ class Component extends DCLogic {
     if (p.title !== c.title) patch.title = p.title ?? "";
     if (p.description !== c.description) patch.description = p.description ?? "";
     if (p.scoring !== c.scoring && SCORING_BY[p.scoring]) patch.scoring = p.scoring;
+    if (p.standingsVisibility !== c.standingsVisibility && STANDINGS_BY[p.standingsVisibility]) patch.standings = p.standingsVisibility;
     if (p.startStep !== c.startStep && STEP_KEYS.indexOf(p.startStep) >= 0) patch.step = p.startStep;
     if (p.boardCount !== c.boardCount || p.seed !== c.seed) {
       const n = this.clampCount(p.boardCount ?? this.state.boardCount);
@@ -557,7 +598,8 @@ class Component extends DCLogic {
       patch.boards = this.buildBoards(n);
     }
     if (Object.keys(patch).length) { this._pc = { title: p.title, description: p.description,
-      scoring: p.scoring, boardCount: p.boardCount, seed: p.seed, startStep: p.startStep };
+      scoring: p.scoring, standingsVisibility: p.standingsVisibility,
+      boardCount: p.boardCount, seed: p.seed, startStep: p.startStep };
       this.setState(patch); }
   }
 
@@ -565,7 +607,7 @@ class Component extends DCLogic {
   baseSeed() { return Math.max(1, Math.round(Number(this.props.seed ?? 47) || 47)); }
   defaultControls() { const o = {}; for (const c of CONTROLS) o[c.key] = c.def; return o; }
 
-  // A legal deal from any seed — mirrors bridge.js deal() but seedable so a
+  // A legal deal from any seed - mirrors bridge.js deal() but seedable so a
   // re-roll looks real (same shuffle, fresh seed).
   dealFrom(seed) {
     const B = window.Bridge;
@@ -628,8 +670,21 @@ class Component extends DCLogic {
     });
   }
   setControl(key, val) { this.setState((s) => ({ controls: Object.assign({}, s.controls, { [key]: val }) })); }
-  invite(id) { this.setState((s) => (s.invited.indexOf(id) >= 0 ? {} : { invited: s.invited.concat([id]) })); }
-  uninvite(id) { this.setState((s) => ({ invited: s.invited.filter((x) => x !== id) })); }
+  invite(id) {
+    const asMod = !!this.props.inviteAsModerator;
+    this.setState((s) => (s.invited.indexOf(id) >= 0 ? {} : {
+      invited: s.invited.concat([id]),
+      moderators: asMod && s.moderators.indexOf(id) < 0 ? s.moderators.concat([id]) : s.moderators }));
+  }
+  uninvite(id) { this.setState((s) => ({ invited: s.invited.filter((x) => x !== id),
+    moderators: s.moderators.filter((x) => x !== id) })); }
+  // Moderator is a per-invite flag, not a separate list. The creator is one
+  // implicitly and can never be un-made, so the creator row has no toggle.
+  toggleModerator(id) {
+    this.setState((s) => ({ moderators: s.moderators.indexOf(id) >= 0
+      ? s.moderators.filter((x) => x !== id) : s.moderators.concat([id]) }));
+  }
+  moderatorCount() { return 1 + ((this.state.moderators || []).length); }
   goStep(key, isPhone) {
     this.setState({ step: key });
     if (isPhone) { const el = this._sec && this._sec[key]; if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" }); }
@@ -641,13 +696,16 @@ class Component extends DCLogic {
     const pack = (hand) => B.handTextRows(hand).map((r) => r.glyph + r.text).join("  ");
     const draft = {
       title: s.title.trim(), description: s.description.trim(), scoring: s.scoring,
+      standingsVisibility: s.standings,
       boards: s.boards.map((b) => ({ no: b.no, dealer: b.dealer, vul: b.vul, humanSeat: b.humanSeat,
         edited: b.touched, pack: { N: pack(b.hands.N), E: pack(b.hands.E), S: pack(b.hands.S), W: pack(b.hands.W) } })),
       controlOverrides: (() => { const o = {}; for (const k of Object.keys(s.controls)) if (s.controls[k] !== "default") o[k] = s.controls[k]; return o; })(),
-      invites: s.invited.map((id) => PEOPLE_BY[id].handle.split(" ")[0]),
+      invites: s.invited.map((id) => ({ handle: PEOPLE_BY[id].handle.split(" ")[0],
+        moderator: s.moderators.indexOf(id) >= 0 })),
+      moderators: ["@you"].concat(s.moderators.map((id) => PEOPLE_BY[id].handle.split(" ")[0])),
       editorBadge: this.editorBadge(),
     };
-    try { console.log("onCreate(draft) — Create Challenge mock:", draft); } catch (e) {}
+    try { console.log("onCreate(draft) \u2014 Create Challenge mock:", draft); } catch (e) {}
     this.setState({ created: true, step: "review" });
   }
   editorBadge() { return !!this.props.editorBadgePreset || this.state.boards.some((b) => b.touched); }
@@ -656,7 +714,7 @@ class Component extends DCLogic {
   seatDiagramProps(hand, seat, dealer, isHuman) {
     const B = window.Bridge;
     return {
-      seat, name: SEAT_NAME[seat] + (isHuman ? " · you" : ""),
+      seat, name: SEAT_NAME[seat] + (isHuman ? " \u00B7 you" : ""),
       strip: isHuman ? "#12525e" : "#8b9a93",
       dealer: seat === dealer, plateBg: isHuman ? "#fecd07" : "#d3d3d3",
       tag: "", hidden: false, faces: true, backCount: hand.length, panelBg: "#fff",
@@ -702,6 +760,7 @@ class Component extends DCLogic {
         onNext: () => {}, onPrev: () => {}, nextLabel: "", prevLabel: "", editorBadgeActive: false,
         titleLine: "#dde3df", titleHint: "", titleHintColor: "#8b9a93", scoringNote: "",
         boardsDecCursor: "default", boardsIncCursor: "default", boardsDecOpacity: 1, boardsIncOpacity: 1,
+        standingsChips: [], standingsNote: "", moderatorCount: "", moderatorNote: "",
         resultsLabel: "", noResults: false, noResultsText: "", inviteSummary: "", controlsSummary: "",
         footerTitle: "", footerSummary: "", editorBadgeText: "", editorBadgeColor: "#000",
         editorBadgeBg: "#fff", refBasics: null, refBoards: null, refControls: null, refInvites: null, refReview: null });
@@ -739,10 +798,10 @@ class Component extends DCLogic {
     const stepDone = { basics: titleOk, boards: true, controls: true, invites: s.invited.length > 0, review: s.created };
     const stepStatus = {
       basics: titleOk ? s.title.trim() : "Add a title",
-      boards: s.boardCount + " boards · " + SCORING_BY[s.scoring].label,
+      boards: s.boardCount + " boards \u00B7 " + SCORING_BY[s.scoring].label,
       controls: this.controlsSummaryText(),
       invites: (1 + s.invited.length) + " on the table",
-      review: s.created ? "Draft created ✓" : (titleOk ? "Ready to create" : "Needs a title"),
+      review: s.created ? "Draft created \u2713" : (titleOk ? "Ready to create" : "Needs a title"),
     };
     shell.phoneStepChips = STEPS.map((st) => {
       const active = st.key === step;
@@ -770,7 +829,7 @@ class Component extends DCLogic {
 
     // ---- create button (shared) ----
     const createDisabled = !titleOk;
-    shell.createLabel = s.created ? "Created ✓" : "Create challenge";
+    shell.createLabel = s.created ? "Created \u2713" : "Create challenge";
     shell.createBg = createDisabled ? "#cdd5d0" : (s.created ? "#2f8f57" : accent);
     shell.createColor = createDisabled ? "#8b9a93" : "#fff";
     shell.createCursor = createDisabled ? "default" : "pointer";
@@ -783,7 +842,7 @@ class Component extends DCLogic {
     shell.onTitle = (e) => this.setState({ title: e.target.value });
     shell.onDesc = (e) => this.setState({ description: e.target.value });
     shell.titleLine = titleOk ? "#dde3df" : "#e6b3ad";
-    shell.titleHint = titleOk ? "Players see this at the top of the challenge." : "Required — the Create button stays disabled until this has a title.";
+    shell.titleHint = titleOk ? "Players see this at the top of the challenge." : "Required \u2014 the Create button stays disabled until this has a title.";
     shell.titleHintColor = titleOk ? "#8b9a93" : "#c0362f";
     shell.scoringChips = SCORING.map((sc) => this.chip(sc.label, () => this.setState({ scoring: sc.key }), sc.key === s.scoring, accent));
     shell.scoringNote = SCORING_BY[s.scoring].note;
@@ -798,6 +857,15 @@ class Component extends DCLogic {
       return { label: String(n), on: () => this.setBoards(n),
         bg: active ? accent : "#fff", color: active ? "#fff" : "#556a63", border: active ? accent : "#dde3df" };
     });
+    // Standings visibility: the same label + chip-pair + note-pill shape as Scoring.
+    shell.standingsChips = STANDINGS.map((v) => {
+      const active = v.key === s.standings;
+      return { label: v.label, sub: v.sub, on: () => this.setState({ standings: v.key }),
+        bg: active ? "#eef4f3" : "#fff", border: active ? accent : "#dde3df",
+        color: active ? "#173c38" : "#3a463f", subColor: active ? "#3f6f69" : "#9aa8a1",
+        weight: active ? 800 : 600, dot: active ? accent : "#d7ddd9" };
+    });
+    shell.standingsNote = STANDINGS_BY[s.standings].note;
 
     // ---- BOARDS ----
     shell.editorBadgeActive = badge;
@@ -811,8 +879,8 @@ class Component extends DCLogic {
         onReroll: () => this.reroll(i), onDealer: () => this.cycleDealer(i), onSeat: () => this.cycleSeat(i),
         seatBg: "#fff", seatLine: "#dde3df", seatColor: "#2a352f", seatDot: SEATCOLOR[b.humanSeat],
         seatProps: this.seatDiagramProps(b.hands[b.humanSeat], b.humanSeat, b.dealer, true),
-        hiddenNote: "You play " + SEAT_NAME[b.humanSeat] + " · the other three hands are hidden until you open the editor",
-        editLabel: b.editing ? "Close pack editor" : "Edit pack →",
+        hiddenNote: "You play " + SEAT_NAME[b.humanSeat] + " \u00B7 the other three hands are hidden until you open the editor",
+        editLabel: b.editing ? "Close pack editor" : "Edit pack \u2192",
         editBg: b.editing ? "#eef4f3" : "#fbfcfb", editColor: b.editing ? accent : "#3f5a56",
         onEdit: () => this.toggleEditor(i),
       };
@@ -840,13 +908,13 @@ class Component extends DCLogic {
             const own = owner[su + r];
             const isT = own === b.target;
             return { t: rankText(r), on: () => this.moveCard(i, su, r),
-              title: rankText(r) + GLYPH[su] + " → " + SEAT_NAME[b.target] + " (now " + (own ? SEAT_NAME[own] : "—") + ")",
+              title: rankText(r) + GLYPH[su] + " \u2192 " + SEAT_NAME[b.target] + " (now " + (own ? SEAT_NAME[own] : "\u2014") + ")",
               bg: own ? SEATCOLOR[own] : "#f1f4f2", color: own ? "#fff" : "#9aa8a1",
               line: isT ? "#173c38" : (own ? SEATCOLOR[own] : "#e4e9e5") };
           }),
         }));
         bm.legend = SEATS.map((st) => ({ color: SEATCOLOR[st], label: st }));
-        bm.countNote = balanced ? "13 · 13 · 13 · 13 ✓" : (counts.N + "-" + counts.E + "-" + counts.S + "-" + counts.W + " — keep moving to 13 each");
+        bm.countNote = balanced ? "13 \u00B7 13 \u00B7 13 \u00B7 13 \u2713" : (counts.N + "-" + counts.E + "-" + counts.S + "-" + counts.W + " \u2014 keep moving to 13 each");
         bm.countNoteColor = balanced ? "#2f8f57" : "#c98a12";
       }
       return bm;
@@ -886,35 +954,52 @@ class Component extends DCLogic {
         btnLine: inv ? "#dde3df" : accent, btnCursor: inv ? "default" : "pointer" };
     });
     shell.noResults = q && matches.length === 0;
-    shell.noResultsText = "No players match “" + s.query.trim() + ".”";
-    shell.inviteSummary = "1 creator · " + s.invited.length + " pending";
-    const creatorRow = { name: "You", handle: "@you · Riverside BC · creator", initials: "YOU",
+    shell.noResultsText = "No players match \u201C" + s.query.trim() + ".\u201D";
+    shell.inviteSummary = "1 creator \u00B7 " + s.invited.length + " pending";
+    const creatorRow = { name: "You", handle: "@you \u00B7 Riverside BC \u00B7 creator", initials: "YOU",
       avBg: accent, avColor: "#fff", line: "#cfe4e1", bg: "#f4faf9",
       chipLabel: "accepted", chipBg: "#e2f3e9", chipColor: "#2f8f57",
-      hasBadge: badge, hasRemove: false, onRemove: () => {} };
+      hasBadge: badge, hasRemove: false, onRemove: () => {},
+      // The creator is implicitly a moderator: ticked, locked, quietly explained.
+      moderator: true, modLocked: true, onModerator: () => {}, modCursor: "default",
+      modColor: "#3f6f69", modNote: "Creators are always moderators.",
+      modTitle: "The creator is always a moderator" };
     shell.invitedRows = [creatorRow].concat(s.invited.map((id) => {
       const p = PEOPLE_BY[id];
+      const isMod = s.moderators.indexOf(id) >= 0;
       return { name: p.name, handle: p.handle, initials: initials(p.name),
         avBg: "#eef2f0", avColor: "#66756f", line: "#e8ece9", bg: "#fff",
         chipLabel: "pending", chipBg: "#fdf1d8", chipColor: "#a9741a",
-        hasBadge: false, hasRemove: true, onRemove: () => this.uninvite(id) };
+        hasBadge: false, hasRemove: true, onRemove: () => this.uninvite(id),
+        moderator: isMod, modLocked: false, onModerator: () => this.toggleModerator(id),
+        modCursor: "pointer", modColor: isMod ? "#265f5b" : "#7a877f",
+        modNote: isMod ? "Sees standings and every board early." : "",
+        modTitle: "Let " + p.name.split(" ")[0] + " moderate this challenge" };
     }));
+    const modCount = this.moderatorCount();
+    shell.moderatorCount = modCount + (modCount === 1 ? " moderator" : " moderators");
+    shell.moderatorNote = "Moderators can see the standings and every board as it happens, whatever the standings setting says.";
 
     // ---- REVIEW ----
     const seatsUsed = Array.from(new Set(s.boards.map((b) => b.humanSeat)));
     const overrides = Object.keys(s.controls).filter((k) => s.controls[k] !== "default").length;
+    // Moderator names read better than ids; past two, count the rest.
+    const modAll = s.moderators.map((id) => PEOPLE_BY[id].name.split(" ")[0]);
+    const modNames = modAll.slice(0, 2).join(", ") + (modAll.length > 2 ? " +" + (modAll.length - 2) + " more" : "");
     shell.reviewLines = [
-      { k: "Title", v: titleOk ? s.title.trim() : "Untitled — add a title", color: titleOk ? "#17211d" : "#c0362f" },
+      { k: "Title", v: titleOk ? s.title.trim() : "Untitled \u2014 add a title", color: titleOk ? "#17211d" : "#c0362f" },
       { k: "Scoring", v: SCORING_BY[s.scoring].full, color: "#17211d" },
-      { k: "Boards", v: s.boardCount + " · " + s.boards.filter((b) => b.touched).length + " hand-set", color: "#17211d" },
+      { k: "Standings", v: STANDINGS_BY[s.standings].review, color: "#17211d" },
+      { k: "Boards", v: s.boardCount + " \u00B7 " + s.boards.filter((b) => b.touched).length + " hand-set", color: "#17211d" },
       { k: "Your seat", v: seatsUsed.length === 1 ? SEAT_NAME[seatsUsed[0]] + " on every board" : "Mixed (" + seatsUsed.join(", ") + ")", color: "#17211d" },
       { k: "Controls", v: this.controlsSummaryText(), color: "#17211d" },
-      { k: "Opponents", v: "3 BEN robots per seat · silent BEN baseline", color: "#17211d" },
+      { k: "Opponents", v: "3 BEN robots per seat \u00B7 silent BEN baseline", color: "#17211d" },
       { k: "Invites", v: "You + " + s.invited.length + " pending", color: "#17211d" },
+      { k: "Moderators", v: shell.moderatorCount + (modNames ? " \u00B7 you + " + modNames : " \u00B7 you only"), color: "#17211d" },
     ];
     shell.editorBadgeText = badge
-      ? "Applied — you opened a pack editor, so your row shows “set the boards.”"
-      : "Not set — you have not opened any pack editor.";
+      ? "Applied \u2014 you opened a pack editor, so your row shows \u201Cset the boards.\u201D"
+      : "Not set \u2014 you have not opened any pack editor.";
     shell.editorBadgeColor = badge ? "#8a5a12" : "#5a6a62";
     shell.editorBadgeBg = badge ? "#fdf6e6" : "#fff";
     shell.created = s.created;
@@ -927,7 +1012,7 @@ class Component extends DCLogic {
       { k: "Editor badge", v: badge ? "will apply" : "clear", color: badge ? "#a9741a" : "#5a6a62" },
     ];
     shell.footerTitle = titleOk ? s.title.trim() : "Untitled challenge";
-    shell.footerSummary = s.boardCount + " boards · " + SCORING_BY[s.scoring].label + " · " + (1 + s.invited.length) + " players";
+    shell.footerSummary = s.boardCount + " boards \u00B7 " + SCORING_BY[s.scoring].label + " \u00B7 " + (1 + s.invited.length) + " players";
 
     return shell;
   }
@@ -936,7 +1021,7 @@ class Component extends DCLogic {
     const c = this.state.controls || {};
     const lbl = (v) => (v === "hide" ? "hidden" : v === "show" ? "shown" : "platform");
     const overrides = Object.keys(c).filter((k) => c[k] !== "default").length;
-    return "Hands " + lbl(c.hands) + " · Undo " + lbl(c.undo) + " · " + overrides + " override" + (overrides === 1 ? "" : "s");
+    return "Hands " + lbl(c.hands) + " \u00B7 Undo " + lbl(c.undo) + " \u00B7 " + overrides + " override" + (overrides === 1 ? "" : "s");
   }
 }
 </script>
