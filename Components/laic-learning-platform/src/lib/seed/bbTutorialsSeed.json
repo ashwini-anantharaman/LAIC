@@ -1,0 +1,1743 @@
+[
+  {
+    "id": "tv2-msj0e47v",
+    "type": "tutorial-v2",
+    "title": "The first responses",
+    "ownerId": "demo-cd",
+    "ownerName": "Course Dev Demo",
+    "status": "draft",
+    "scope": "bridge",
+    "reuseCount": 0,
+    "description": "",
+    "estimatedTime": "10 min",
+    "blocks": [
+      {
+        "id": "p-a-msj0m1le-256",
+        "type": "rich-text",
+        "content": {
+          "text": "To open, you need at least 12 points. To respond, you need at least 6 points, otherwise you will pass.\n"
+        }
+      },
+      {
+        "id": "p-manual-msj0m4iw",
+        "type": "rich-text",
+        "content": {
+          "text": " When your partner opens a major (1 or 1), he is promising you at least 5 cards in the suit. You therefore only need 3 cards in the suit to know that it can be your trump suit.\nYou have to tell your partner that a fit has been found and your point range. Responses will be as follows:",
+          "heading": "Major suit raises"
+        }
+      },
+      {
+        "id": "p-manual-msj0n7wi",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msj0e47v-blocks-2-content-url-02d2cb2537d7.png",
+          "caption": "Heart fit (at least 3 cards) and 6-10 points (distribution + HCP)",
+          "alt": "Heart fit (at least 3 cards) and 6-10 points (distribution + HCP)"
+        }
+      },
+      {
+        "id": "p-manual-msj0nqqq",
+        "type": "image",
+        "content": {
+          "url": "",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-a-msj0m1le-257",
+        "type": "rich-text",
+        "content": {
+          "text": "Section",
+          "heading": "Responses without support"
+        }
+      },
+      {
+        "id": "p-a-msj0m1le-258",
+        "type": "rich-text",
+        "content": {
+          "text": "explanation"
+        }
+      },
+      {
+        "id": "p-a-msj0m1le-259",
+        "type": "rich-text",
+        "content": {
+          "text": "Section",
+          "heading": "Ruffing in the short hand"
+        }
+      },
+      {
+        "id": "p-a-msj0m1le-260",
+        "type": "rich-text",
+        "content": {
+          "text": "explanation"
+        }
+      }
+    ],
+    "createdAt": "2026-08-07",
+    "updatedAt": "2026-08-07",
+    "tags": [],
+    "sourceIds": [],
+    "collectionIds": [
+      "ocol-bb-tutorials"
+    ],
+    "tutorialV2Draft": {
+      "id": "tv2-msj0e47v",
+      "type": "tutorial-v2",
+      "title": "The first responses",
+      "metadata": {
+        "authoringPath": "write-yourself",
+        "pathMode": "manual"
+      },
+      "templateId": "v2-write-yourself",
+      "structure": {
+        "connection": "sequential",
+        "assessment": "end_only",
+        "depth": "Standard",
+        "endWith": "None",
+        "sectionsCount": 3,
+        "checksPerSection": 0,
+        "progression": "Linear build-up",
+        "pass": "70%",
+        "hintsOn": false,
+        "hintN": 0
+      },
+      "sections": [
+        {
+          "id": "sec-msj0m1le-nnzru",
+          "title": "Major suit raises",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msj0m1le-255",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msj0m1le-256",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msj0m1le-256",
+              "type": "rich-text",
+              "label": "explanation",
+              "heading": "",
+              "body": "To open, you need at least 12 points. To respond, you need at least 6 points, otherwise you will pass.\n",
+              "plain": "To open, you need at least 12 points. To respond, you need at least 6 points, otherwise you will pass.\n"
+            },
+            {
+              "id": "p-manual-msj0m4iw",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "Major suit raises",
+              "body": " When your partner opens a major (1 or 1), he is promising you at least 5 cards in the suit. You therefore only need 3 cards in the suit to know that it can be your trump suit.\nYou have to tell your partner that a fit has been found and your point range. Responses will be as follows:",
+              "plain": " When your partner opens a major (1 or 1), he is promising you at least 5 cards in the suit. You therefore only need 3 cards in the suit to know that it can be your trump suit.\nYou have to tell your partner that a fit has been found and your point range. Responses will be as follows:"
+            },
+            {
+              "id": "p-manual-msj0n7wi",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msj0e47v-blocks-2-content-url-02d2cb2537d7.png",
+              "caption": "Heart fit (at least 3 cards) and 6-10 points (distribution + HCP)",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msj0nqqq",
+              "type": "image",
+              "label": "Media · image",
+              "url": "",
+              "caption": "",
+              "mediaKind": "image"
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": false,
+          "required": true
+        },
+        {
+          "id": "sec-msj0m1le-jew55",
+          "title": "Responses without support",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msj0m1le-257",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msj0m1le-258",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msj0m1le-257",
+              "type": "rich-text",
+              "label": "Section",
+              "heading": "Responses without support",
+              "body": ""
+            },
+            {
+              "id": "p-a-msj0m1le-258",
+              "type": "rich-text",
+              "label": "explanation",
+              "heading": "",
+              "body": ""
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": false,
+          "required": true
+        },
+        {
+          "id": "sec-msj0m1le-0nvh4",
+          "title": "Ruffing in the short hand",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msj0m1le-259",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msj0m1le-260",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msj0m1le-259",
+              "type": "rich-text",
+              "label": "Section",
+              "heading": "Ruffing in the short hand",
+              "body": ""
+            },
+            {
+              "id": "p-a-msj0m1le-260",
+              "type": "rich-text",
+              "label": "explanation",
+              "heading": "",
+              "body": ""
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": false,
+          "required": true
+        },
+        {
+          "id": "sec-msj0m1le-grf9m",
+          "title": "Top of a sequence and broken sequence leads",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msj0m1le-261",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msj0m1le-262",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "empty",
+          "done": false,
+          "required": true
+        }
+      ],
+      "topLevelSlots": [],
+      "sourcePool": [],
+      "status": "draft",
+      "phase": "navigator",
+      "activeSectionId": "sec-msj0m1le-nnzru",
+      "activeSlotId": null,
+      "createdAt": 1786111031515,
+      "updatedAt": 1786114699195
+    }
+  },
+  {
+    "id": "tv2-msj04a0i",
+    "type": "tutorial-v2",
+    "title": "The first responses to the 1NT opening",
+    "ownerId": "demo-cd",
+    "ownerName": "Course Dev Demo",
+    "status": "in-review",
+    "scope": "bridge",
+    "reuseCount": 0,
+    "description": "",
+    "estimatedTime": "10 min",
+    "blocks": [
+      {
+        "id": "p-a-msj05810-69",
+        "type": "rich-text",
+        "content": {
+          "text": "When you have at least a hope of game in response to the 1NT opening, if you hold a 4-card major, two choices of games are possible:\n3NT or 4 Major, provided that your partner also holds 4 cards in the same major.\nTo find out your partner's major, you will use an artificial bid called Stayman 2 (It doesn't promise anything in the suit bid, i.e. Clubs). This 2 bid is a simple question: the opener is asked if he holds a 4-card major.\n\n ",
+          "heading": "Stayman over 1NT"
+        }
+      },
+      {
+        "id": "p-manual-msj069jv",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msj04a0i-blocks-1-content-url-16da93825cda.png",
+          "caption": "The auction will start as follows:",
+          "alt": "The auction will start as follows:"
+        }
+      },
+      {
+        "id": "p-manual-msj07d8l",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msj04a0i-blocks-2-content-url-97d1f83c028c.png",
+          "caption": "The opener will respond:",
+          "alt": "The opener will respond:"
+        }
+      },
+      {
+        "id": "p-manual-msj08urg",
+        "type": "rich-text",
+        "content": {
+          "text": "With both 4-card majors, two solutions are possible: you can respond 2NT to show 4 and 4 (this is the default solution on Funbridge) or you can start by bidding Hearts with 2, (this is the solution recommended in this introductory module)."
+        }
+      },
+      {
+        "id": "p-manual-msj09da4",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msj04a0i-blocks-4-content-url-493711909edd.png",
+          "caption": "Example auction:",
+          "alt": "Example auction:"
+        }
+      },
+      {
+        "id": "p-manual-msj0a7sq",
+        "type": "rich-text",
+        "content": {
+          "text": "With 4 cards in Hearts, responder will bid 4 with enough points for game (10+ points) or 3 if he wants to ask the opener if he is maximum in order to play in game (with 8-9 points).\n\nWith 4 cards in Spades, responder will bid 3NT with enough points for game (10+ points) or 2NT if he wants to ask the opener if he is maximum in order to play in game (with 8-9 points)."
+        }
+      },
+      {
+        "id": "p-a-msj05810-71",
+        "type": "rich-text",
+        "content": {
+          "text": "Ducking is a card-play technique whose most frequent aim is to \"cut opponents' communications\". Its mechanism is simple: it consists of deliberately not winning one or several tricks where you have the possibility of doing so (as in ducking a trick). The objective is to ensure that only one of the two opponents (called the \"dangerous opponent\") ends up with master cards in a suit and his partner doesn't have any left in that suit. You will have to avoid putting the \"dangerous opponent\" back on lead later but his partner will become harmless: a trick can be conceded to him. Sometimes this technique is used in trump contracts but most of the time, it is used in NT. It will prove particularly useful in the battle against the dangerous opponent.\n",
+          "heading": "Ducking"
+        }
+      },
+      {
+        "id": "p-manual-msj0b3ip",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msj04a0i-blocks-7-content-url-bfc675c07c2c.png",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-manual-msj0bkfm",
+        "type": "rich-text",
+        "content": {
+          "text": "If East and West each have 4 cards in the suit, it is not possible to cut opponents' communications (but in that case, you only lose 3 tricks in the suit). However, if they split 5/3, by winning the trick on the third round, you isolate the two master cards held by the opposing side (which should be on the left if that player led the suit).\n"
+        }
+      },
+      {
+        "id": "p-a-msj05810-73",
+        "type": "rich-text",
+        "content": {
+          "text": "When a fit (8 cards held between the two players) is found, it is preferable to play in a trump contract. An 8-card fit produces one-and-a-half more tricks on average than in NT with the same hands. The advantage of playing in a trump contract is that you can ruff.\nIn a trump contract, your hand will be reevaluated in two cases: if you have a lot of trumps (lots of possible ruffs) and if you have a short suit (quick ruffs possible).\n\n1 point will thus be added for the ninth trump held by the two partners.\nYou will also count:\n1 point for a doubleton (2 cards in a suit other than the trump suit),\n2 points for a singleton (only 1 card in a suit other than the trump suit),\n3 points for a void (no cards in a suit other than the trump suit).\n\nIn this example, North can add 2 distribution points (1 for the ninth trump and 1 for the doubleton club). South can add 2 distribution points for his singleton heart.",
+          "heading": "Distribution points"
+        }
+      },
+      {
+        "id": "p-manual-msj0c7cm",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msj04a0i-blocks-10-content-url-b247fc1d9005.png",
+          "caption": "",
+          "alt": ""
+        }
+      }
+    ],
+    "createdAt": "2026-08-07",
+    "updatedAt": "2026-08-07",
+    "tags": [],
+    "sourceIds": [],
+    "collectionIds": [
+      "ocol-bb-tutorials"
+    ],
+    "tutorialV2Draft": {
+      "id": "tv2-msj04a0i",
+      "type": "tutorial-v2",
+      "title": "The first responses to the 1NT opening",
+      "metadata": {
+        "authoringPath": "write-yourself",
+        "pathMode": "manual"
+      },
+      "templateId": "v2-write-yourself",
+      "structure": {
+        "connection": "sequential",
+        "assessment": "end_only",
+        "depth": "Standard",
+        "endWith": "None",
+        "sectionsCount": 3,
+        "checksPerSection": 0,
+        "progression": "Linear build-up",
+        "pass": "70%",
+        "hintsOn": false,
+        "hintN": 0
+      },
+      "sections": [
+        {
+          "id": "sec-msj05810-46zjn",
+          "title": "Stayman over 1NT",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msj05810-69",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msj05810-70",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msj05810-69",
+              "type": "rich-text",
+              "label": "Section",
+              "heading": "Stayman over 1NT",
+              "body": "When you have at least a hope of game in response to the 1NT opening, if you hold a 4-card major, two choices of games are possible:\n3NT or 4 Major, provided that your partner also holds 4 cards in the same major.\nTo find out your partner's major, you will use an artificial bid called Stayman 2 (It doesn't promise anything in the suit bid, i.e. Clubs). This 2 bid is a simple question: the opener is asked if he holds a 4-card major.\n\n ",
+              "plain": "When you have at least a hope of game in response to the 1NT opening, if you hold a 4-card major, two choices of games are possible:\n3NT or 4 Major, provided that your partner also holds 4 cards in the same major.\nTo find out your partner's major, you will use an artificial bid called Stayman 2 (It doesn't promise anything in the suit bid, i.e. Clubs). This 2 bid is a simple question: the opener is asked if he holds a 4-card major.\n\n "
+            },
+            {
+              "id": "p-manual-msj069jv",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msj04a0i-blocks-1-content-url-16da93825cda.png",
+              "caption": "The auction will start as follows:",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msj07d8l",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msj04a0i-blocks-2-content-url-97d1f83c028c.png",
+              "caption": "The opener will respond:",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msj08urg",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "",
+              "body": "With both 4-card majors, two solutions are possible: you can respond 2NT to show 4 and 4 (this is the default solution on Funbridge) or you can start by bidding Hearts with 2, (this is the solution recommended in this introductory module).",
+              "plain": "With both 4-card majors, two solutions are possible: you can respond 2NT to show 4 and 4 (this is the default solution on Funbridge) or you can start by bidding Hearts with 2, (this is the solution recommended in this introductory module)."
+            },
+            {
+              "id": "p-manual-msj09da4",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msj04a0i-blocks-4-content-url-493711909edd.png",
+              "caption": "Example auction:",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msj0a7sq",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "",
+              "body": "With 4 cards in Hearts, responder will bid 4 with enough points for game (10+ points) or 3 if he wants to ask the opener if he is maximum in order to play in game (with 8-9 points).\n\nWith 4 cards in Spades, responder will bid 3NT with enough points for game (10+ points) or 2NT if he wants to ask the opener if he is maximum in order to play in game (with 8-9 points).",
+              "plain": "With 4 cards in Hearts, responder will bid 4 with enough points for game (10+ points) or 3 if he wants to ask the opener if he is maximum in order to play in game (with 8-9 points).\n\nWith 4 cards in Spades, responder will bid 3NT with enough points for game (10+ points) or 2NT if he wants to ask the opener if he is maximum in order to play in game (with 8-9 points)."
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": true,
+          "required": true
+        },
+        {
+          "id": "sec-msj05810-su9x9",
+          "title": "Ducking",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msj05810-71",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msj05810-72",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msj05810-71",
+              "type": "rich-text",
+              "label": "Section",
+              "heading": "Ducking",
+              "body": "Ducking is a card-play technique whose most frequent aim is to \"cut opponents' communications\". Its mechanism is simple: it consists of deliberately not winning one or several tricks where you have the possibility of doing so (as in ducking a trick). The objective is to ensure that only one of the two opponents (called the \"dangerous opponent\") ends up with master cards in a suit and his partner doesn't have any left in that suit. You will have to avoid putting the \"dangerous opponent\" back on lead later but his partner will become harmless: a trick can be conceded to him. Sometimes this technique is used in trump contracts but most of the time, it is used in NT. It will prove particularly useful in the battle against the dangerous opponent.\n",
+              "plain": "Ducking is a card-play technique whose most frequent aim is to \"cut opponents' communications\". Its mechanism is simple: it consists of deliberately not winning one or several tricks where you have the possibility of doing so (as in ducking a trick). The objective is to ensure that only one of the two opponents (called the \"dangerous opponent\") ends up with master cards in a suit and his partner doesn't have any left in that suit. You will have to avoid putting the \"dangerous opponent\" back on lead later but his partner will become harmless: a trick can be conceded to him. Sometimes this technique is used in trump contracts but most of the time, it is used in NT. It will prove particularly useful in the battle against the dangerous opponent.\n"
+            },
+            {
+              "id": "p-manual-msj0b3ip",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msj04a0i-blocks-7-content-url-bfc675c07c2c.png",
+              "caption": "",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msj0bkfm",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "",
+              "body": "If East and West each have 4 cards in the suit, it is not possible to cut opponents' communications (but in that case, you only lose 3 tricks in the suit). However, if they split 5/3, by winning the trick on the third round, you isolate the two master cards held by the opposing side (which should be on the left if that player led the suit).\n",
+              "plain": "If East and West each have 4 cards in the suit, it is not possible to cut opponents' communications (but in that case, you only lose 3 tricks in the suit). However, if they split 5/3, by winning the trick on the third round, you isolate the two master cards held by the opposing side (which should be on the left if that player led the suit).\n"
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": true,
+          "required": true
+        },
+        {
+          "id": "sec-msj05810-a7fzl",
+          "title": "Distribution points",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msj05810-73",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msj05810-74",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msj05810-73",
+              "type": "rich-text",
+              "label": "Section",
+              "heading": "Distribution points",
+              "body": "When a fit (8 cards held between the two players) is found, it is preferable to play in a trump contract. An 8-card fit produces one-and-a-half more tricks on average than in NT with the same hands. The advantage of playing in a trump contract is that you can ruff.\nIn a trump contract, your hand will be reevaluated in two cases: if you have a lot of trumps (lots of possible ruffs) and if you have a short suit (quick ruffs possible).\n\n1 point will thus be added for the ninth trump held by the two partners.\nYou will also count:\n1 point for a doubleton (2 cards in a suit other than the trump suit),\n2 points for a singleton (only 1 card in a suit other than the trump suit),\n3 points for a void (no cards in a suit other than the trump suit).\n\nIn this example, North can add 2 distribution points (1 for the ninth trump and 1 for the doubleton club). South can add 2 distribution points for his singleton heart.",
+              "plain": "When a fit (8 cards held between the two players) is found, it is preferable to play in a trump contract. An 8-card fit produces one-and-a-half more tricks on average than in NT with the same hands. The advantage of playing in a trump contract is that you can ruff.\nIn a trump contract, your hand will be reevaluated in two cases: if you have a lot of trumps (lots of possible ruffs) and if you have a short suit (quick ruffs possible).\n\n1 point will thus be added for the ninth trump held by the two partners.\nYou will also count:\n1 point for a doubleton (2 cards in a suit other than the trump suit),\n2 points for a singleton (only 1 card in a suit other than the trump suit),\n3 points for a void (no cards in a suit other than the trump suit).\n\nIn this example, North can add 2 distribution points (1 for the ninth trump and 1 for the doubleton club). South can add 2 distribution points for his singleton heart."
+            },
+            {
+              "id": "p-manual-msj0c7cm",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msj04a0i-blocks-10-content-url-b247fc1d9005.png",
+              "caption": "",
+              "mediaKind": "image"
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": true,
+          "required": true
+        }
+      ],
+      "topLevelSlots": [],
+      "sourcePool": [],
+      "status": "submitted",
+      "phase": "review",
+      "activeSectionId": null,
+      "activeSlotId": null,
+      "createdAt": 1786110572466,
+      "updatedAt": 1786110976379,
+      "assembledParts": [
+        {
+          "id": "p-a-msj05810-69",
+          "type": "rich-text",
+          "label": "Section",
+          "heading": "Stayman over 1NT",
+          "body": "When you have at least a hope of game in response to the 1NT opening, if you hold a 4-card major, two choices of games are possible:\n3NT or 4 Major, provided that your partner also holds 4 cards in the same major.\nTo find out your partner's major, you will use an artificial bid called Stayman 2 (It doesn't promise anything in the suit bid, i.e. Clubs). This 2 bid is a simple question: the opener is asked if he holds a 4-card major.\n\n ",
+          "plain": "When you have at least a hope of game in response to the 1NT opening, if you hold a 4-card major, two choices of games are possible:\n3NT or 4 Major, provided that your partner also holds 4 cards in the same major.\nTo find out your partner's major, you will use an artificial bid called Stayman 2 (It doesn't promise anything in the suit bid, i.e. Clubs). This 2 bid is a simple question: the opener is asked if he holds a 4-card major.\n\n "
+        },
+        {
+          "id": "p-manual-msj069jv",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msj04a0i-blocks-1-content-url-16da93825cda.png",
+          "caption": "The auction will start as follows:",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msj07d8l",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msj04a0i-blocks-2-content-url-97d1f83c028c.png",
+          "caption": "The opener will respond:",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msj08urg",
+          "type": "rich-text",
+          "label": "Text",
+          "heading": "",
+          "body": "With both 4-card majors, two solutions are possible: you can respond 2NT to show 4 and 4 (this is the default solution on Funbridge) or you can start by bidding Hearts with 2, (this is the solution recommended in this introductory module).",
+          "plain": "With both 4-card majors, two solutions are possible: you can respond 2NT to show 4 and 4 (this is the default solution on Funbridge) or you can start by bidding Hearts with 2, (this is the solution recommended in this introductory module)."
+        },
+        {
+          "id": "p-manual-msj09da4",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msj04a0i-blocks-4-content-url-493711909edd.png",
+          "caption": "Example auction:",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msj0a7sq",
+          "type": "rich-text",
+          "label": "Text",
+          "heading": "",
+          "body": "With 4 cards in Hearts, responder will bid 4 with enough points for game (10+ points) or 3 if he wants to ask the opener if he is maximum in order to play in game (with 8-9 points).\n\nWith 4 cards in Spades, responder will bid 3NT with enough points for game (10+ points) or 2NT if he wants to ask the opener if he is maximum in order to play in game (with 8-9 points).",
+          "plain": "With 4 cards in Hearts, responder will bid 4 with enough points for game (10+ points) or 3 if he wants to ask the opener if he is maximum in order to play in game (with 8-9 points).\n\nWith 4 cards in Spades, responder will bid 3NT with enough points for game (10+ points) or 2NT if he wants to ask the opener if he is maximum in order to play in game (with 8-9 points)."
+        },
+        {
+          "id": "p-a-msj05810-71",
+          "type": "rich-text",
+          "label": "Section",
+          "heading": "Ducking",
+          "body": "Ducking is a card-play technique whose most frequent aim is to \"cut opponents' communications\". Its mechanism is simple: it consists of deliberately not winning one or several tricks where you have the possibility of doing so (as in ducking a trick). The objective is to ensure that only one of the two opponents (called the \"dangerous opponent\") ends up with master cards in a suit and his partner doesn't have any left in that suit. You will have to avoid putting the \"dangerous opponent\" back on lead later but his partner will become harmless: a trick can be conceded to him. Sometimes this technique is used in trump contracts but most of the time, it is used in NT. It will prove particularly useful in the battle against the dangerous opponent.\n",
+          "plain": "Ducking is a card-play technique whose most frequent aim is to \"cut opponents' communications\". Its mechanism is simple: it consists of deliberately not winning one or several tricks where you have the possibility of doing so (as in ducking a trick). The objective is to ensure that only one of the two opponents (called the \"dangerous opponent\") ends up with master cards in a suit and his partner doesn't have any left in that suit. You will have to avoid putting the \"dangerous opponent\" back on lead later but his partner will become harmless: a trick can be conceded to him. Sometimes this technique is used in trump contracts but most of the time, it is used in NT. It will prove particularly useful in the battle against the dangerous opponent.\n"
+        },
+        {
+          "id": "p-manual-msj0b3ip",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msj04a0i-blocks-7-content-url-bfc675c07c2c.png",
+          "caption": "",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msj0bkfm",
+          "type": "rich-text",
+          "label": "Text",
+          "heading": "",
+          "body": "If East and West each have 4 cards in the suit, it is not possible to cut opponents' communications (but in that case, you only lose 3 tricks in the suit). However, if they split 5/3, by winning the trick on the third round, you isolate the two master cards held by the opposing side (which should be on the left if that player led the suit).\n",
+          "plain": "If East and West each have 4 cards in the suit, it is not possible to cut opponents' communications (but in that case, you only lose 3 tricks in the suit). However, if they split 5/3, by winning the trick on the third round, you isolate the two master cards held by the opposing side (which should be on the left if that player led the suit).\n"
+        },
+        {
+          "id": "p-a-msj05810-73",
+          "type": "rich-text",
+          "label": "Section",
+          "heading": "Distribution points",
+          "body": "When a fit (8 cards held between the two players) is found, it is preferable to play in a trump contract. An 8-card fit produces one-and-a-half more tricks on average than in NT with the same hands. The advantage of playing in a trump contract is that you can ruff.\nIn a trump contract, your hand will be reevaluated in two cases: if you have a lot of trumps (lots of possible ruffs) and if you have a short suit (quick ruffs possible).\n\n1 point will thus be added for the ninth trump held by the two partners.\nYou will also count:\n1 point for a doubleton (2 cards in a suit other than the trump suit),\n2 points for a singleton (only 1 card in a suit other than the trump suit),\n3 points for a void (no cards in a suit other than the trump suit).\n\nIn this example, North can add 2 distribution points (1 for the ninth trump and 1 for the doubleton club). South can add 2 distribution points for his singleton heart.",
+          "plain": "When a fit (8 cards held between the two players) is found, it is preferable to play in a trump contract. An 8-card fit produces one-and-a-half more tricks on average than in NT with the same hands. The advantage of playing in a trump contract is that you can ruff.\nIn a trump contract, your hand will be reevaluated in two cases: if you have a lot of trumps (lots of possible ruffs) and if you have a short suit (quick ruffs possible).\n\n1 point will thus be added for the ninth trump held by the two partners.\nYou will also count:\n1 point for a doubleton (2 cards in a suit other than the trump suit),\n2 points for a singleton (only 1 card in a suit other than the trump suit),\n3 points for a void (no cards in a suit other than the trump suit).\n\nIn this example, North can add 2 distribution points (1 for the ninth trump and 1 for the doubleton club). South can add 2 distribution points for his singleton heart."
+        },
+        {
+          "id": "p-manual-msj0c7cm",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msj04a0i-blocks-10-content-url-b247fc1d9005.png",
+          "caption": "",
+          "mediaKind": "image"
+        }
+      ]
+    }
+  },
+  {
+    "id": "tv2-msigm7pu",
+    "type": "tutorial-v2",
+    "title": "The First Bids",
+    "ownerId": "demo-cd",
+    "ownerName": "Course Dev Demo",
+    "status": "in-review",
+    "scope": "bridge",
+    "reuseCount": 0,
+    "description": "",
+    "estimatedTime": "10 min",
+    "blocks": [
+      {
+        "id": "p-a-msignfp4-107",
+        "type": "rich-text",
+        "content": {
+          "text": "As mentioned in the first chapter, the game is made up of two phases. The first is the auction. To set the contract, you have to commit to making more than half of the tricks: at least 7 (out of 13).\n\nTo evaluate the strength of a hand, a new concept is introduced: high-card points (HCP).",
+          "heading": "The auction"
+        }
+      },
+      {
+        "id": "p-manual-msigokch",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-1-content-url-bd9c68a65a57.png",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-manual-msigp5ik",
+        "type": "rich-text",
+        "content": {
+          "text": "These values are virtual. They are only used for hand evaluation.\nThere are 40 HCP in total, i.e. 10 per player and 20 per side on average.\nStatistically, the side with the most HCP will take the highest number of tricks.\nHere is a table showing the number of points held by the stronger side and the number of tricks they will have to take:\n"
+        }
+      },
+      {
+        "id": "p-manual-msigppwa",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-3-content-url-e6ce3251c504.png",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-manual-msigqehx",
+        "type": "rich-text",
+        "content": {
+          "text": "The auction is a process which starts with the dealer in a clockwise direction, each player getting his turn to bid. To make a first bid, i.e. to name a contract, the dealer (a role which moves on to the next person for each new deal) must have 12 HCP.\nIf he has 11 HCP or fewer, he says \"pass\" and the next player bids. One possible opening bid is 1NT, which usually shows 15-17 HCP and a balanced hand (at least 2 cards in each suit)."
+        }
+      },
+      {
+        "id": "p-manual-msigqqov",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-5-content-url-5b3ddad1e52d.png",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-manual-msigrd2d",
+        "type": "rich-text",
+        "content": {
+          "text": "Don't try to find a link with the number of points statistically needed by a side to make a contract: there isn’t one!\nOtherwise, he will open his longest suit. (Please note that if you play a 5-card major system, you need 5 cards to open a major. Otherwise, you open your longer minor.)"
+        }
+      },
+      {
+        "id": "p-manual-msigrh1y",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-7-content-url-145110e7073f.png",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-a-msignfp4-109",
+        "type": "rich-text",
+        "content": {
+          "text": "Evaluating the strength of a hand is subjective.\nIts value depends on HCP and long suits.\nIn NT, having a long and solid suit is an advantage.\nYou count 1 point for the fifth card of a solid suit and 1 extra point per card beyond the fifth card.\nThese length points are added to the HCP.",
+          "heading": "Hand evaluation"
+        }
+      },
+      {
+        "id": "p-manual-msigsuqb",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-9-content-url-357b5513c443.png",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-a-msignfp4-111",
+        "type": "rich-text",
+        "content": {
+          "text": "To play in a trump contract, you have to find a fit. Having a fit means that the players of the pair hold 8 cards between them in a suit. This way, opponents only have 5 cards in it and the trump suit will be a significant advantage.\nAs soon as a fit is found, you can count points for potential ruffs.\nThese possible ruffs are the short suits and the trumps held in addition to the 8-card fit.\nThese distribution points are added to the HCP. You count:\n- 1 point for a doubleton (except if it includes the Queen or Jack)\nIf your partner has promised 5 cards in Hearts, you can add 1 point for the doubleton spade with the hand below:\n",
+          "heading": "Hand evaluation in trump contracts"
+        }
+      },
+      {
+        "id": "p-manual-msigxrxy",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-11-content-url-ab24554e8899.png",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-manual-msigy31f",
+        "type": "rich-text",
+        "content": {
+          "text": "- 2 points for a singleton (except for a stiff Queen or King)\nIf your partner has promised 5 cards in Hearts, you can add 2 points for the singleton spade with the hand below:"
+        }
+      },
+      {
+        "id": "p-manual-msigya5g",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-13-content-url-2573df505b46.png",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-manual-msigyj60",
+        "type": "rich-text",
+        "content": {
+          "text": "- 3 points for a void\nIf your partner has promised 5 cards in Hearts, you can add 3 points for the spade void with the hand below:"
+        }
+      },
+      {
+        "id": "p-manual-msigypgx",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-15-content-url-fc22a69d6460.png",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-manual-msigz0go",
+        "type": "rich-text",
+        "content": {
+          "text": "- 1 point for an extra trump (the 9th trump held by the side).\nIf your partner has promised 5 cards in Hearts, you can add 1 point for the ninth trump with the hand below (plus 1 point for each doubleton):"
+        }
+      },
+      {
+        "id": "p-manual-msigz9kx",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-17-content-url-ae16815fe2ba.png",
+          "caption": "",
+          "alt": ""
+        }
+      },
+      {
+        "id": "p-manual-msigzjhg",
+        "type": "rich-text",
+        "content": {
+          "text": "25 HCP or 26-27 points (distribution + HCP) are necessary to look for game (4H or 4S) in a major suit.\n\nPlease note that other criteria are taken into account in hand evaluation.\nHere are a few factors that will lead you to reevaluate your hand:\n- The location of honours in long suits.\n- The presence of aces.\n- Intermediate cards (10, 9 and 8)."
+        }
+      },
+      {
+        "id": "p-a-msignfp4-113",
+        "type": "rich-text",
+        "content": {
+          "text": "A type of play when you have the Ace and Queen and the King is missing.\nWhen you have decided to play a specific suit and the King is the only card missing in that suit, your ambition should be to take the trick that is not already certain.\nTo do so, you will have to try to guess where that honour is.\nIf you are right, you will take a trick with your Queen. If not, you will fail but you will have given yourself the best chance of succeeding.\n",
+          "heading": "Finesses"
+        }
+      },
+      {
+        "id": "p-manual-msih2v5o",
+        "type": "image",
+        "content": {
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-20-content-url-44b93878976c.png",
+          "caption": "",
+          "alt": ""
+        }
+      }
+    ],
+    "createdAt": "2026-08-07",
+    "updatedAt": "2026-08-07",
+    "tags": [],
+    "sourceIds": [],
+    "collectionIds": [
+      "ocol-bb-tutorials"
+    ],
+    "tutorialV2Draft": {
+      "id": "tv2-msigm7pu",
+      "type": "tutorial-v2",
+      "title": "The First Bids",
+      "metadata": {
+        "authoringPath": "write-yourself",
+        "pathMode": "manual"
+      },
+      "templateId": "v2-write-yourself",
+      "structure": {
+        "connection": "sequential",
+        "assessment": "end_only",
+        "depth": "Standard",
+        "endWith": "None",
+        "sectionsCount": 3,
+        "checksPerSection": 0,
+        "progression": "Linear build-up",
+        "pass": "70%",
+        "hintsOn": false,
+        "hintN": 0
+      },
+      "sections": [
+        {
+          "id": "sec-msignfp4-vd1c5",
+          "title": "The auction",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msignfp4-107",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msignfp4-108",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msignfp4-107",
+              "type": "rich-text",
+              "label": "Section",
+              "heading": "The auction",
+              "body": "As mentioned in the first chapter, the game is made up of two phases. The first is the auction. To set the contract, you have to commit to making more than half of the tricks: at least 7 (out of 13).\n\nTo evaluate the strength of a hand, a new concept is introduced: high-card points (HCP).",
+              "plain": "As mentioned in the first chapter, the game is made up of two phases. The first is the auction. To set the contract, you have to commit to making more than half of the tricks: at least 7 (out of 13).\n\nTo evaluate the strength of a hand, a new concept is introduced: high-card points (HCP)."
+            },
+            {
+              "id": "p-manual-msigokch",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msigm7pu-blocks-1-content-url-bd9c68a65a57.png",
+              "caption": "",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msigp5ik",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "",
+              "body": "These values are virtual. They are only used for hand evaluation.\nThere are 40 HCP in total, i.e. 10 per player and 20 per side on average.\nStatistically, the side with the most HCP will take the highest number of tricks.\nHere is a table showing the number of points held by the stronger side and the number of tricks they will have to take:\n",
+              "plain": "These values are virtual. They are only used for hand evaluation.\nThere are 40 HCP in total, i.e. 10 per player and 20 per side on average.\nStatistically, the side with the most HCP will take the highest number of tricks.\nHere is a table showing the number of points held by the stronger side and the number of tricks they will have to take:\n"
+            },
+            {
+              "id": "p-manual-msigppwa",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msigm7pu-blocks-3-content-url-e6ce3251c504.png",
+              "caption": "",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msigqehx",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "",
+              "body": "The auction is a process which starts with the dealer in a clockwise direction, each player getting his turn to bid. To make a first bid, i.e. to name a contract, the dealer (a role which moves on to the next person for each new deal) must have 12 HCP.\nIf he has 11 HCP or fewer, he says \"pass\" and the next player bids. One possible opening bid is 1NT, which usually shows 15-17 HCP and a balanced hand (at least 2 cards in each suit).",
+              "plain": "The auction is a process which starts with the dealer in a clockwise direction, each player getting his turn to bid. To make a first bid, i.e. to name a contract, the dealer (a role which moves on to the next person for each new deal) must have 12 HCP.\nIf he has 11 HCP or fewer, he says \"pass\" and the next player bids. One possible opening bid is 1NT, which usually shows 15-17 HCP and a balanced hand (at least 2 cards in each suit)."
+            },
+            {
+              "id": "p-manual-msigqqov",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msigm7pu-blocks-5-content-url-5b3ddad1e52d.png",
+              "caption": "",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msigrd2d",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "",
+              "body": "Don't try to find a link with the number of points statistically needed by a side to make a contract: there isn’t one!\nOtherwise, he will open his longest suit. (Please note that if you play a 5-card major system, you need 5 cards to open a major. Otherwise, you open your longer minor.)",
+              "plain": "Don't try to find a link with the number of points statistically needed by a side to make a contract: there isn’t one!\nOtherwise, he will open his longest suit. (Please note that if you play a 5-card major system, you need 5 cards to open a major. Otherwise, you open your longer minor.)"
+            },
+            {
+              "id": "p-manual-msigrh1y",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msigm7pu-blocks-7-content-url-145110e7073f.png",
+              "caption": "",
+              "mediaKind": "image"
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": true,
+          "required": true
+        },
+        {
+          "id": "sec-msignfp4-zy29a",
+          "title": "Hand evaluation",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msignfp4-109",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msignfp4-110",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msignfp4-109",
+              "type": "rich-text",
+              "label": "Section",
+              "heading": "Hand evaluation",
+              "body": "Evaluating the strength of a hand is subjective.\nIts value depends on HCP and long suits.\nIn NT, having a long and solid suit is an advantage.\nYou count 1 point for the fifth card of a solid suit and 1 extra point per card beyond the fifth card.\nThese length points are added to the HCP.",
+              "plain": "Evaluating the strength of a hand is subjective.\nIts value depends on HCP and long suits.\nIn NT, having a long and solid suit is an advantage.\nYou count 1 point for the fifth card of a solid suit and 1 extra point per card beyond the fifth card.\nThese length points are added to the HCP."
+            },
+            {
+              "id": "p-manual-msigsuqb",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msigm7pu-blocks-9-content-url-357b5513c443.png",
+              "caption": "",
+              "mediaKind": "image"
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": true,
+          "required": true
+        },
+        {
+          "id": "sec-msignfp4-haawk",
+          "title": "Hand evaluation in trump contracts",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msignfp4-111",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msignfp4-112",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msignfp4-111",
+              "type": "rich-text",
+              "label": "Section",
+              "heading": "Hand evaluation in trump contracts",
+              "body": "To play in a trump contract, you have to find a fit. Having a fit means that the players of the pair hold 8 cards between them in a suit. This way, opponents only have 5 cards in it and the trump suit will be a significant advantage.\nAs soon as a fit is found, you can count points for potential ruffs.\nThese possible ruffs are the short suits and the trumps held in addition to the 8-card fit.\nThese distribution points are added to the HCP. You count:\n- 1 point for a doubleton (except if it includes the Queen or Jack)\nIf your partner has promised 5 cards in Hearts, you can add 1 point for the doubleton spade with the hand below:\n",
+              "plain": "To play in a trump contract, you have to find a fit. Having a fit means that the players of the pair hold 8 cards between them in a suit. This way, opponents only have 5 cards in it and the trump suit will be a significant advantage.\nAs soon as a fit is found, you can count points for potential ruffs.\nThese possible ruffs are the short suits and the trumps held in addition to the 8-card fit.\nThese distribution points are added to the HCP. You count:\n- 1 point for a doubleton (except if it includes the Queen or Jack)\nIf your partner has promised 5 cards in Hearts, you can add 1 point for the doubleton spade with the hand below:\n"
+            },
+            {
+              "id": "p-manual-msigxrxy",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msigm7pu-blocks-11-content-url-ab24554e8899.png",
+              "caption": "",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msigy31f",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "",
+              "body": "- 2 points for a singleton (except for a stiff Queen or King)\nIf your partner has promised 5 cards in Hearts, you can add 2 points for the singleton spade with the hand below:",
+              "plain": "- 2 points for a singleton (except for a stiff Queen or King)\nIf your partner has promised 5 cards in Hearts, you can add 2 points for the singleton spade with the hand below:"
+            },
+            {
+              "id": "p-manual-msigya5g",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msigm7pu-blocks-13-content-url-2573df505b46.png",
+              "caption": "",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msigyj60",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "",
+              "body": "- 3 points for a void\nIf your partner has promised 5 cards in Hearts, you can add 3 points for the spade void with the hand below:",
+              "plain": "- 3 points for a void\nIf your partner has promised 5 cards in Hearts, you can add 3 points for the spade void with the hand below:"
+            },
+            {
+              "id": "p-manual-msigypgx",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msigm7pu-blocks-15-content-url-fc22a69d6460.png",
+              "caption": "",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msigz0go",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "",
+              "body": "- 1 point for an extra trump (the 9th trump held by the side).\nIf your partner has promised 5 cards in Hearts, you can add 1 point for the ninth trump with the hand below (plus 1 point for each doubleton):",
+              "plain": "- 1 point for an extra trump (the 9th trump held by the side).\nIf your partner has promised 5 cards in Hearts, you can add 1 point for the ninth trump with the hand below (plus 1 point for each doubleton):"
+            },
+            {
+              "id": "p-manual-msigz9kx",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msigm7pu-blocks-17-content-url-ae16815fe2ba.png",
+              "caption": "",
+              "mediaKind": "image"
+            },
+            {
+              "id": "p-manual-msigzjhg",
+              "type": "rich-text",
+              "label": "Text",
+              "heading": "",
+              "body": "25 HCP or 26-27 points (distribution + HCP) are necessary to look for game (4H or 4S) in a major suit.\n\nPlease note that other criteria are taken into account in hand evaluation.\nHere are a few factors that will lead you to reevaluate your hand:\n- The location of honours in long suits.\n- The presence of aces.\n- Intermediate cards (10, 9 and 8).",
+              "plain": "25 HCP or 26-27 points (distribution + HCP) are necessary to look for game (4H or 4S) in a major suit.\n\nPlease note that other criteria are taken into account in hand evaluation.\nHere are a few factors that will lead you to reevaluate your hand:\n- The location of honours in long suits.\n- The presence of aces.\n- Intermediate cards (10, 9 and 8)."
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": true,
+          "required": true
+        },
+        {
+          "id": "sec-msignfp4-fqyny",
+          "title": "Finesses",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msignfp4-113",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msignfp4-114",
+              "blockType": "explanation",
+              "required": true
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msignfp4-113",
+              "type": "rich-text",
+              "label": "Section",
+              "heading": "Finesses",
+              "body": "A type of play when you have the Ace and Queen and the King is missing.\nWhen you have decided to play a specific suit and the King is the only card missing in that suit, your ambition should be to take the trick that is not already certain.\nTo do so, you will have to try to guess where that honour is.\nIf you are right, you will take a trick with your Queen. If not, you will fail but you will have given yourself the best chance of succeeding.\n",
+              "plain": "A type of play when you have the Ace and Queen and the King is missing.\nWhen you have decided to play a specific suit and the King is the only card missing in that suit, your ambition should be to take the trick that is not already certain.\nTo do so, you will have to try to guess where that honour is.\nIf you are right, you will take a trick with your Queen. If not, you will fail but you will have given yourself the best chance of succeeding.\n"
+            },
+            {
+              "id": "p-manual-msih2v5o",
+              "type": "image",
+              "label": "Media · image",
+              "url": "/bb-tutorials/tv2-msigm7pu-blocks-20-content-url-44b93878976c.png",
+              "caption": "",
+              "mediaKind": "image"
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": true,
+          "required": true
+        }
+      ],
+      "topLevelSlots": [],
+      "sourcePool": [],
+      "status": "submitted",
+      "phase": "review",
+      "activeSectionId": null,
+      "activeSlotId": null,
+      "createdAt": 1786077816978,
+      "updatedAt": 1786081318563,
+      "assembledParts": [
+        {
+          "id": "p-a-msignfp4-107",
+          "type": "rich-text",
+          "label": "Section",
+          "heading": "The auction",
+          "body": "As mentioned in the first chapter, the game is made up of two phases. The first is the auction. To set the contract, you have to commit to making more than half of the tricks: at least 7 (out of 13).\n\nTo evaluate the strength of a hand, a new concept is introduced: high-card points (HCP).",
+          "plain": "As mentioned in the first chapter, the game is made up of two phases. The first is the auction. To set the contract, you have to commit to making more than half of the tricks: at least 7 (out of 13).\n\nTo evaluate the strength of a hand, a new concept is introduced: high-card points (HCP)."
+        },
+        {
+          "id": "p-manual-msigokch",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-1-content-url-bd9c68a65a57.png",
+          "caption": "",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msigp5ik",
+          "type": "rich-text",
+          "label": "Text",
+          "heading": "",
+          "body": "These values are virtual. They are only used for hand evaluation.\nThere are 40 HCP in total, i.e. 10 per player and 20 per side on average.\nStatistically, the side with the most HCP will take the highest number of tricks.\nHere is a table showing the number of points held by the stronger side and the number of tricks they will have to take:\n",
+          "plain": "These values are virtual. They are only used for hand evaluation.\nThere are 40 HCP in total, i.e. 10 per player and 20 per side on average.\nStatistically, the side with the most HCP will take the highest number of tricks.\nHere is a table showing the number of points held by the stronger side and the number of tricks they will have to take:\n"
+        },
+        {
+          "id": "p-manual-msigppwa",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-3-content-url-e6ce3251c504.png",
+          "caption": "",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msigqehx",
+          "type": "rich-text",
+          "label": "Text",
+          "heading": "",
+          "body": "The auction is a process which starts with the dealer in a clockwise direction, each player getting his turn to bid. To make a first bid, i.e. to name a contract, the dealer (a role which moves on to the next person for each new deal) must have 12 HCP.\nIf he has 11 HCP or fewer, he says \"pass\" and the next player bids. One possible opening bid is 1NT, which usually shows 15-17 HCP and a balanced hand (at least 2 cards in each suit).",
+          "plain": "The auction is a process which starts with the dealer in a clockwise direction, each player getting his turn to bid. To make a first bid, i.e. to name a contract, the dealer (a role which moves on to the next person for each new deal) must have 12 HCP.\nIf he has 11 HCP or fewer, he says \"pass\" and the next player bids. One possible opening bid is 1NT, which usually shows 15-17 HCP and a balanced hand (at least 2 cards in each suit)."
+        },
+        {
+          "id": "p-manual-msigqqov",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-5-content-url-5b3ddad1e52d.png",
+          "caption": "",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msigrd2d",
+          "type": "rich-text",
+          "label": "Text",
+          "heading": "",
+          "body": "Don't try to find a link with the number of points statistically needed by a side to make a contract: there isn’t one!\nOtherwise, he will open his longest suit. (Please note that if you play a 5-card major system, you need 5 cards to open a major. Otherwise, you open your longer minor.)",
+          "plain": "Don't try to find a link with the number of points statistically needed by a side to make a contract: there isn’t one!\nOtherwise, he will open his longest suit. (Please note that if you play a 5-card major system, you need 5 cards to open a major. Otherwise, you open your longer minor.)"
+        },
+        {
+          "id": "p-manual-msigrh1y",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-7-content-url-145110e7073f.png",
+          "caption": "",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-a-msignfp4-109",
+          "type": "rich-text",
+          "label": "Section",
+          "heading": "Hand evaluation",
+          "body": "Evaluating the strength of a hand is subjective.\nIts value depends on HCP and long suits.\nIn NT, having a long and solid suit is an advantage.\nYou count 1 point for the fifth card of a solid suit and 1 extra point per card beyond the fifth card.\nThese length points are added to the HCP.",
+          "plain": "Evaluating the strength of a hand is subjective.\nIts value depends on HCP and long suits.\nIn NT, having a long and solid suit is an advantage.\nYou count 1 point for the fifth card of a solid suit and 1 extra point per card beyond the fifth card.\nThese length points are added to the HCP."
+        },
+        {
+          "id": "p-manual-msigsuqb",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-9-content-url-357b5513c443.png",
+          "caption": "",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-a-msignfp4-111",
+          "type": "rich-text",
+          "label": "Section",
+          "heading": "Hand evaluation in trump contracts",
+          "body": "To play in a trump contract, you have to find a fit. Having a fit means that the players of the pair hold 8 cards between them in a suit. This way, opponents only have 5 cards in it and the trump suit will be a significant advantage.\nAs soon as a fit is found, you can count points for potential ruffs.\nThese possible ruffs are the short suits and the trumps held in addition to the 8-card fit.\nThese distribution points are added to the HCP. You count:\n- 1 point for a doubleton (except if it includes the Queen or Jack)\nIf your partner has promised 5 cards in Hearts, you can add 1 point for the doubleton spade with the hand below:\n",
+          "plain": "To play in a trump contract, you have to find a fit. Having a fit means that the players of the pair hold 8 cards between them in a suit. This way, opponents only have 5 cards in it and the trump suit will be a significant advantage.\nAs soon as a fit is found, you can count points for potential ruffs.\nThese possible ruffs are the short suits and the trumps held in addition to the 8-card fit.\nThese distribution points are added to the HCP. You count:\n- 1 point for a doubleton (except if it includes the Queen or Jack)\nIf your partner has promised 5 cards in Hearts, you can add 1 point for the doubleton spade with the hand below:\n"
+        },
+        {
+          "id": "p-manual-msigxrxy",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-11-content-url-ab24554e8899.png",
+          "caption": "",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msigy31f",
+          "type": "rich-text",
+          "label": "Text",
+          "heading": "",
+          "body": "- 2 points for a singleton (except for a stiff Queen or King)\nIf your partner has promised 5 cards in Hearts, you can add 2 points for the singleton spade with the hand below:",
+          "plain": "- 2 points for a singleton (except for a stiff Queen or King)\nIf your partner has promised 5 cards in Hearts, you can add 2 points for the singleton spade with the hand below:"
+        },
+        {
+          "id": "p-manual-msigya5g",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-13-content-url-2573df505b46.png",
+          "caption": "",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msigyj60",
+          "type": "rich-text",
+          "label": "Text",
+          "heading": "",
+          "body": "- 3 points for a void\nIf your partner has promised 5 cards in Hearts, you can add 3 points for the spade void with the hand below:",
+          "plain": "- 3 points for a void\nIf your partner has promised 5 cards in Hearts, you can add 3 points for the spade void with the hand below:"
+        },
+        {
+          "id": "p-manual-msigypgx",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-15-content-url-fc22a69d6460.png",
+          "caption": "",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msigz0go",
+          "type": "rich-text",
+          "label": "Text",
+          "heading": "",
+          "body": "- 1 point for an extra trump (the 9th trump held by the side).\nIf your partner has promised 5 cards in Hearts, you can add 1 point for the ninth trump with the hand below (plus 1 point for each doubleton):",
+          "plain": "- 1 point for an extra trump (the 9th trump held by the side).\nIf your partner has promised 5 cards in Hearts, you can add 1 point for the ninth trump with the hand below (plus 1 point for each doubleton):"
+        },
+        {
+          "id": "p-manual-msigz9kx",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-17-content-url-ae16815fe2ba.png",
+          "caption": "",
+          "mediaKind": "image"
+        },
+        {
+          "id": "p-manual-msigzjhg",
+          "type": "rich-text",
+          "label": "Text",
+          "heading": "",
+          "body": "25 HCP or 26-27 points (distribution + HCP) are necessary to look for game (4H or 4S) in a major suit.\n\nPlease note that other criteria are taken into account in hand evaluation.\nHere are a few factors that will lead you to reevaluate your hand:\n- The location of honours in long suits.\n- The presence of aces.\n- Intermediate cards (10, 9 and 8).",
+          "plain": "25 HCP or 26-27 points (distribution + HCP) are necessary to look for game (4H or 4S) in a major suit.\n\nPlease note that other criteria are taken into account in hand evaluation.\nHere are a few factors that will lead you to reevaluate your hand:\n- The location of honours in long suits.\n- The presence of aces.\n- Intermediate cards (10, 9 and 8)."
+        },
+        {
+          "id": "p-a-msignfp4-113",
+          "type": "rich-text",
+          "label": "Section",
+          "heading": "Finesses",
+          "body": "A type of play when you have the Ace and Queen and the King is missing.\nWhen you have decided to play a specific suit and the King is the only card missing in that suit, your ambition should be to take the trick that is not already certain.\nTo do so, you will have to try to guess where that honour is.\nIf you are right, you will take a trick with your Queen. If not, you will fail but you will have given yourself the best chance of succeeding.\n",
+          "plain": "A type of play when you have the Ace and Queen and the King is missing.\nWhen you have decided to play a specific suit and the King is the only card missing in that suit, your ambition should be to take the trick that is not already certain.\nTo do so, you will have to try to guess where that honour is.\nIf you are right, you will take a trick with your Queen. If not, you will fail but you will have given yourself the best chance of succeeding.\n"
+        },
+        {
+          "id": "p-manual-msih2v5o",
+          "type": "image",
+          "label": "Media · image",
+          "url": "/bb-tutorials/tv2-msigm7pu-blocks-20-content-url-44b93878976c.png",
+          "caption": "",
+          "mediaKind": "image"
+        }
+      ]
+    }
+  },
+  {
+    "id": "tv2-msidkvk1",
+    "type": "tutorial-v2",
+    "title": "The first bids",
+    "ownerId": "demo-cd",
+    "ownerName": "Course Dev Demo",
+    "status": "draft",
+    "scope": "bridge",
+    "reuseCount": 0,
+    "description": "",
+    "estimatedTime": "10 min",
+    "blocks": [
+      {
+        "id": "p-a-msih6ctc-483",
+        "type": "rich-text",
+        "content": {
+          "text": "hih",
+          "heading": "The auction"
+        }
+      },
+      {
+        "id": "p-a-msih6ctc-484",
+        "type": "rich-text",
+        "content": {
+          "text": "explanation"
+        }
+      },
+      {
+        "id": "p-a-msih6ctc-485",
+        "type": "rich-text",
+        "content": {
+          "text": "worked example"
+        }
+      },
+      {
+        "id": "p-e-msih6ctc-486",
+        "type": "quiz",
+        "content": {
+          "passRequired": true,
+          "passMark": 70,
+          "embeddedQuiz": true,
+          "sourceMode": "generate",
+          "authoringNote": "test only this section's concept",
+          "required": true,
+          "label": "Section quiz 1",
+          "questions": []
+        }
+      }
+    ],
+    "createdAt": "2026-08-07",
+    "updatedAt": "2026-08-07",
+    "tags": [],
+    "sourceIds": [],
+    "collectionIds": [
+      "ocol-bb-tutorials"
+    ],
+    "tutorialV2Draft": {
+      "id": "tv2-msidkvk1",
+      "type": "tutorial-v2",
+      "title": "The first bids",
+      "metadata": {
+        "pathMode": "manual",
+        "media": [],
+        "authoringPath": "template"
+      },
+      "templateId": "v2-concept-example-practice",
+      "structure": {
+        "connection": "sequential",
+        "assessment": "after_each_section",
+        "depth": "Standard",
+        "endWith": "Recap only",
+        "sectionsCount": 6,
+        "checksPerSection": 2,
+        "progression": "Linear build-up",
+        "pass": "70%",
+        "hintsOn": true,
+        "hintN": 4
+      },
+      "sections": [
+        {
+          "id": "sec-msie9a4l-ofxru",
+          "title": "The auction",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-483",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-484",
+              "blockType": "explanation",
+              "required": true,
+              "preferKinds": [
+                "Definition",
+                "Key point"
+              ]
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-485",
+              "blockType": "worked-example",
+              "required": true,
+              "preferKinds": [
+                "Example"
+              ]
+            },
+            {
+              "kind": "embedded",
+              "id": "e-msih6ctc-486",
+              "objectType": "quiz",
+              "sourceMode": "generate",
+              "required": true,
+              "authoringNote": "test only this section's concept"
+            }
+          ],
+          "parts": [
+            {
+              "id": "p-a-msih6ctc-483",
+              "type": "rich-text",
+              "label": "Section",
+              "heading": "The auction",
+              "body": "hih",
+              "plain": "hih"
+            },
+            {
+              "id": "p-a-msih6ctc-484",
+              "type": "rich-text",
+              "label": "explanation",
+              "heading": "",
+              "body": ""
+            },
+            {
+              "id": "p-a-msih6ctc-485",
+              "type": "rich-text",
+              "label": "worked example",
+              "body": ""
+            },
+            {
+              "id": "p-e-msih6ctc-486",
+              "type": "section-quiz",
+              "label": "Section quiz 1",
+              "sourceMode": "generate",
+              "authoringNote": "test only this section's concept",
+              "required": true,
+              "questions": []
+            }
+          ],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "written",
+          "done": true,
+          "required": true
+        },
+        {
+          "id": "sec-msie9a4m-zntdx",
+          "title": "Hand evaluation",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-487",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-488",
+              "blockType": "explanation",
+              "required": true,
+              "preferKinds": [
+                "Definition",
+                "Key point"
+              ]
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-489",
+              "blockType": "worked-example",
+              "required": true,
+              "preferKinds": [
+                "Example"
+              ]
+            },
+            {
+              "kind": "embedded",
+              "id": "e-msih6ctc-490",
+              "objectType": "quiz",
+              "sourceMode": "generate",
+              "required": true,
+              "authoringNote": "test only this section's concept"
+            }
+          ],
+          "parts": [],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "empty",
+          "done": false,
+          "required": true
+        },
+        {
+          "id": "sec-msie9a4m-8197t",
+          "title": "Hand evaluation in trump contracts",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-491",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-492",
+              "blockType": "explanation",
+              "required": true,
+              "preferKinds": [
+                "Definition",
+                "Key point"
+              ]
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-493",
+              "blockType": "worked-example",
+              "required": true,
+              "preferKinds": [
+                "Example"
+              ]
+            },
+            {
+              "kind": "embedded",
+              "id": "e-msih6ctc-494",
+              "objectType": "quiz",
+              "sourceMode": "generate",
+              "required": true,
+              "authoringNote": "test only this section's concept"
+            }
+          ],
+          "parts": [],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "empty",
+          "done": false,
+          "required": true
+        },
+        {
+          "id": "sec-msie9a4m-sdrou",
+          "title": "Finesses",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-495",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-496",
+              "blockType": "explanation",
+              "required": true,
+              "preferKinds": [
+                "Definition",
+                "Key point"
+              ]
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-497",
+              "blockType": "worked-example",
+              "required": true,
+              "preferKinds": [
+                "Example"
+              ]
+            },
+            {
+              "kind": "embedded",
+              "id": "e-msih6ctc-498",
+              "objectType": "quiz",
+              "sourceMode": "generate",
+              "required": true,
+              "authoringNote": "test only this section's concept"
+            }
+          ],
+          "parts": [],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "empty",
+          "done": false,
+          "required": true
+        },
+        {
+          "id": "sec-msie9a4m-qf6ml",
+          "title": "Section 5",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-499",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-500",
+              "blockType": "explanation",
+              "required": true,
+              "preferKinds": [
+                "Definition",
+                "Key point"
+              ]
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-501",
+              "blockType": "worked-example",
+              "required": true,
+              "preferKinds": [
+                "Example"
+              ]
+            },
+            {
+              "kind": "embedded",
+              "id": "e-msih6ctc-502",
+              "objectType": "quiz",
+              "sourceMode": "generate",
+              "required": true,
+              "authoringNote": "test only this section's concept"
+            }
+          ],
+          "parts": [],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "empty",
+          "done": false,
+          "required": true
+        },
+        {
+          "id": "sec-msie9a4m-0pgx3",
+          "title": "Section 6",
+          "intent": "",
+          "recipe": [
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-503",
+              "blockType": "section-heading",
+              "required": true
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-504",
+              "blockType": "explanation",
+              "required": true,
+              "preferKinds": [
+                "Definition",
+                "Key point"
+              ]
+            },
+            {
+              "kind": "atomic",
+              "id": "a-msih6ctc-505",
+              "blockType": "worked-example",
+              "required": true,
+              "preferKinds": [
+                "Example"
+              ]
+            },
+            {
+              "kind": "embedded",
+              "id": "e-msih6ctc-506",
+              "objectType": "quiz",
+              "sourceMode": "generate",
+              "required": true,
+              "authoringNote": "test only this section's concept"
+            }
+          ],
+          "parts": [],
+          "pickedSourceIds": [],
+          "highlights": [],
+          "authorMode": "empty",
+          "done": false,
+          "required": true
+        }
+      ],
+      "topLevelSlots": [],
+      "sourcePool": [],
+      "status": "draft",
+      "phase": "navigator",
+      "activeSectionId": null,
+      "activeSlotId": null,
+      "createdAt": 1786072715713,
+      "updatedAt": 1786080012284
+    }
+  }
+]

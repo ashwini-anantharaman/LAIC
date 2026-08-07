@@ -1174,12 +1174,19 @@ function AskAiCard({
 /**
  * Creator wrapper: edit cards (manual / AI / add / hints) + student preview study UI.
  */
-export function FlashcardEditor({ typeId, title, scope, fv, cards, initialId, initialStatus, pipelineDraft, onBack, onDone }: any) {
+export function FlashcardEditor({
+  typeId, title, scope, fv, cards, initialId, initialStatus, pipelineDraft, onBack, onDone,
+  backLabel = 'Back to pipeline',
+  doneLabel = '✓ Done — go to library',
+  saveDraftLabel = 'Save draft',
+  initialMode = 'edit',
+  applyOnSaveDraft = false,
+}: any) {
   const { addObject } = useApp();
   const [docTitle, setDocTitle] = useState<string>(title || 'Flashcard set');
   const [submitted, setSubmitted] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
-  const [mode, setMode] = useState<EditorMode>('edit');
+  const [mode, setMode] = useState<EditorMode>(initialMode === 'preview' ? 'preview' : 'edit');
   const [localCards, setLocalCards] = useState<StudyCard[]>(() =>
     (cards || []).map((c: StudyCard, i: number) => ({ ...c, id: c.id || `c-${i}` })),
   );
@@ -1249,7 +1256,14 @@ export function FlashcardEditor({ typeId, title, scope, fv, cards, initialId, in
     return id;
   };
 
-  const handleSaveDraft = () => { save('draft'); setSavedNote(true); setTimeout(() => onDone(), 650); };
+  const handleSaveDraft = () => {
+    save('draft');
+    setSavedNote(true);
+    setTimeout(() => {
+      if (applyOnSaveDraft) onBack?.(localCards);
+      onDone();
+    }, 650);
+  };
 
   if (submitted) return (
     <div className="flex flex-col items-center justify-center p-10 text-center min-h-[50vh]">
@@ -1261,38 +1275,48 @@ export function FlashcardEditor({ typeId, title, scope, fv, cards, initialId, in
         "{docTitle}" has been submitted. A reviewer will provide feedback before it can be published.
       </p>
       <button onClick={onDone} className="px-6 py-2.5 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}>
-        ✓ Done — go to library
+        {doneLabel}
       </button>
     </div>
   );
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
-          <ChevronLeft size={15} />Back to pipeline
-        </button>
-        <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)}
-          className="flex-1 bg-transparent outline-none" style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }} />
-        <div className="flex rounded-full border p-0.5" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
-          <button onClick={() => setMode('edit')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
-            style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}>
-            <Pencil size={12} />Edit
+      <div className="sticky top-0 z-20 flex flex-col gap-2 px-3 sm:px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <button onClick={() => { save('draft'); onBack?.(localCards); }} className="flex items-center gap-1 text-sm font-medium shrink-0" style={{ color: '#6B7280' }}>
+            <ChevronLeft size={15} />
+            <span className="hidden sm:inline">{backLabel}</span>
+            <span className="sm:hidden">Back</span>
           </button>
-          <button onClick={() => setMode('preview')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
-            style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}>
-            <Eye size={12} />Student preview
-          </button>
+          <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)}
+            className="flex-1 min-w-0 bg-transparent outline-none" style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }} />
         </div>
-        <span style={{ fontSize: 11.5, color: savedNote ? '#059669' : '#9AA3AF' }}>
-          {savedNote ? '✓ Saved' : `${localCards.length} cards`}
-        </span>
-        <button onClick={handleSaveDraft} className="flex items-center gap-1.5 px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
-          Save draft
-        </button>
-        <button onClick={() => { save('in-review'); setSubmitted(true); }} className="px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
-          Submit for review
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-full border p-0.5" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
+            <button onClick={() => setMode('edit')} className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}>
+              <Pencil size={12} />Edit
+            </button>
+            <button onClick={() => setMode('preview')} className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}>
+              <Eye size={12} />
+              <span className="hidden sm:inline">Student preview</span>
+              <span className="sm:hidden">Preview</span>
+            </button>
+          </div>
+          <span style={{ fontSize: 11.5, color: savedNote ? '#059669' : '#9AA3AF' }}>
+            {savedNote ? '✓ Saved' : `${localCards.length} cards`}
+          </span>
+          <div className="flex flex-1 flex-wrap gap-2 sm:justify-end">
+            <button onClick={handleSaveDraft} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
+              {saveDraftLabel}
+            </button>
+            <button onClick={() => { save('in-review'); setSubmitted(true); }} className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
+              Submit
+            </button>
+          </div>
+        </div>
       </div>
 
       {mode === 'preview' ? (
@@ -1300,7 +1324,7 @@ export function FlashcardEditor({ typeId, title, scope, fv, cards, initialId, in
           <FlashcardStudy cards={localCards} direction={direction} storageKey={savedId.current || initialId || undefined} />
         </div>
       ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-6 max-w-2xl mx-auto w-full">
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-4 sm:py-6 max-w-2xl mx-auto w-full">
           <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 12, lineHeight: 1.5 }}>
             Edit cards by hand, use <strong>Ask AI</strong>, add hints, or add more cards. Switch to Student preview to study them.
           </p>

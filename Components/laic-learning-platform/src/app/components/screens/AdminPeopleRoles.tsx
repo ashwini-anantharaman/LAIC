@@ -22,10 +22,11 @@ import {
   upsertCustomPolicyRole,
 } from '../../../lib/accessPolicy';
 import { getToken, listLearningRoster, assignLearningRole, inviteLearningPerson, testAsPerson, type RosterPerson } from '../../../lib/nexus';
+import { useConfirm } from '../ConfirmDialog';
 
 const ROLE_LABELS: Record<Role, string> = {
   'content-developer': 'Content Dev',
-  'object-reviewer': 'Obj Reviewer',
+  'object-reviewer': 'Content Reviewer',
   'course-reviewer': 'Course Reviewer',
   'administrator': 'Administrator',
   'coach': 'Coach',
@@ -66,7 +67,7 @@ function RoleEditorModal({
   const typeChips = objectResourceTypes.length
     ? objectResourceTypes.map((rt) => ({ id: rt.id, label: rt.label }))
     : [
-        'lesson', 'tutorial', 'quiz', 'flashcard-set', 'concept-card',
+        'lesson', 'tutorial', 'tutorial-v2', 'quiz', 'flashcard-set', 'concept-card',
         'summary', 'reflection', 'scenario', 'assignment', 'drill',
       ].map((id) => ({ id, label: id }));
 
@@ -154,7 +155,7 @@ function RoleEditorModal({
                     style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)' }}
                   >
                     <p style={{ fontSize: 12.5, fontWeight: 600, color: '#92400E', marginBottom: 7 }}>
-                      Which object types can this role create? — leave empty for all
+                      Which content types can this role create? — leave empty for all
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {typeChips.map((t) => {
@@ -240,6 +241,7 @@ export function AdminPeopleRoles() {
   const [view, setView] = useState<'people' | 'catalog'>('people');
   const [catalogue, setCatalogue] = useState<CapabilityCatalogueDocument>(() => loadCatalogue());
   const [policy, setPolicy] = useState<AccessPolicyDocument>(() => loadPolicy());
+  const confirm = useConfirm();
 
   // Live roster (Nexus mode). null → not loaded / demo mode (fall back to PEOPLE).
   const [roster, setRoster] = useState<RosterPerson[] | null>(null);
@@ -306,6 +308,13 @@ export function AdminPeopleRoles() {
   const openEdit = (c: PolicyRole) => setEditorState({ open: true, initial: roleToEditorInitial(c) });
 
   const deleteCustom = async (id: string) => {
+    const role = customPolicyRoles(policy).find((r) => r.id === id);
+    const ok = await confirm({
+      description: role
+        ? `Delete role “${role.name}”? People using it may lose access.`
+        : 'Delete this role? People using it may lose access.',
+    });
+    if (!ok) return;
     setPolicy(await deleteCustomPolicyRole(id));
     fireToast('Role deleted');
   };

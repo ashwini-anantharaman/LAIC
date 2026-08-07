@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, ChevronLeft, Eye, Loader2, Pencil, Sparkles } from 'lucide-react';
+import { Check, ChevronLeft, Eye, FileDown, Loader2, Pencil, Sparkles } from 'lucide-react';
 import { useApp } from '../../App';
 import type {
   AssignmentContent, CreatorPipelineDraft, DrillContent, DrillItem,
-  ReflectionContent, ReflectionPrompt, SummaryContent,
+  ReflectionContent, ReflectionPrompt, RubricCriterion, SummaryContent,
 } from '../../../lib/types';
 import { editStructuredObject, errorMessage, type StructuredObjectKind } from '../../../lib/api';
+import { printAssignmentAsPdf } from '../../../lib/assignmentRuntime';
 import { DrillView } from './drill/DrillView';
 
 export { DrillView };
@@ -19,34 +20,60 @@ const lbl: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, color: '#9AA
 
 function EditorShell({
   title, setTitle, mode, setMode, onBack, onSaveDraft, onSubmit, savedNote, label, children,
+  backLabel = 'Back to pipeline',
+  saveDraftLabel = 'Save draft',
 }: {
   title: string; setTitle: (t: string) => void; mode: Mode; setMode: (m: Mode) => void;
   onBack: () => void; onSaveDraft: () => void; onSubmit: () => void; savedNote: boolean; label: string;
   children: React.ReactNode;
+  backLabel?: string;
+  saveDraftLabel?: string;
 }) {
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
-          <ChevronLeft size={15} />Back to pipeline
-        </button>
-        <input value={title} onChange={(e) => setTitle(e.target.value)}
-          className="flex-1 bg-transparent outline-none" style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }} />
-        <div className="flex rounded-full border p-0.5" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
-          <button type="button" onClick={() => setMode('edit')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
-            style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}>
-            <Pencil size={12} />Edit
+      <div
+        className="sticky top-0 z-20 flex flex-col gap-2 px-3 sm:px-5 py-3 border-b border-white/40"
+        style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1 text-sm font-medium shrink-0"
+            style={{ color: '#6B7280' }}
+          >
+            <ChevronLeft size={15} />
+            <span className="hidden sm:inline">{backLabel}</span>
+            <span className="sm:hidden">Back</span>
           </button>
-          <button type="button" onClick={() => setMode('preview')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
-            style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}>
-            <Eye size={12} />Student preview
-          </button>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="flex-1 min-w-0 bg-transparent outline-none"
+            style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }}
+          />
         </div>
-        <span style={{ fontSize: 11.5, color: savedNote ? '#059669' : '#9AA3AF' }}>{savedNote ? '✓ Saved' : label}</span>
-        <button onClick={onSaveDraft} className="px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>Save draft</button>
-        <button onClick={onSubmit} className="px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>Submit for review</button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-full border p-0.5 shrink-0" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
+            <button type="button" onClick={() => setMode('edit')} className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}>
+              <Pencil size={12} />Edit
+            </button>
+            <button type="button" onClick={() => setMode('preview')} className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}>
+              <Eye size={12} />
+              <span className="hidden sm:inline">Student preview</span>
+              <span className="sm:hidden">Preview</span>
+            </button>
+          </div>
+          <span className="text-[11.5px]" style={{ color: savedNote ? '#059669' : '#9AA3AF' }}>{savedNote ? '✓ Saved' : label}</span>
+          <div className="flex flex-1 flex-wrap gap-2 sm:justify-end">
+            <button type="button" onClick={onSaveDraft} className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>{saveDraftLabel}</button>
+            <button type="button" onClick={onSubmit} className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>Submit</button>
+          </div>
+        </div>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-6 max-w-2xl mx-auto w-full">{children}</div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-4 sm:py-6 max-w-2xl mx-auto w-full">{children}</div>
     </div>
   );
 }
@@ -75,8 +102,8 @@ function AskAiBox({ kind, item, onApply }: { kind: StructuredObjectKind; item: a
         <input value={text} onChange={(e) => setText(e.target.value)} disabled={busy}
           onKeyDown={(e) => { if (e.key === 'Enter') run(text); }}
           placeholder="Tell the AI how to change this…"
-          className="flex-1 rounded-xl px-3 py-2" style={field} />
-        <button onClick={() => run(text)} disabled={busy || !text.trim()} className="px-3 py-2 rounded-xl text-white"
+          className="flex-1 min-w-0 rounded-xl px-3 py-2" style={field} />
+        <button onClick={() => run(text)} disabled={busy || !text.trim()} className="px-3 py-2 rounded-xl text-white shrink-0"
           style={{ background: '#0B0F1A', opacity: busy || !text.trim() ? 0.6 : 1 }}>
           {busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
         </button>
@@ -86,7 +113,7 @@ function AskAiBox({ kind, item, onApply }: { kind: StructuredObjectKind; item: a
   );
 }
 
-function Submitted({ title, onDone }: { title: string; onDone: () => void }) {
+function Submitted({ title, onDone, doneLabel = '✓ Done — go to library' }: { title: string; onDone: () => void; doneLabel?: string }) {
   return (
     <div className="flex flex-col items-center justify-center p-10 text-center min-h-[50vh]">
       <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4" style={{ background: '#FEF3C7' }}>
@@ -95,7 +122,7 @@ function Submitted({ title, onDone }: { title: string; onDone: () => void }) {
       <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>Submitted for review</h2>
       <p style={{ fontSize: 13.5, color: '#6B7280', maxWidth: 380, marginBottom: 14 }}>"{title}" has been submitted.</p>
       <button onClick={onDone} className="px-6 py-2.5 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}>
-        ✓ Done — go to library
+        {doneLabel}
       </button>
     </div>
   );
@@ -161,20 +188,60 @@ export function ReflectionView({ content }: { content: ReflectionContent }) {
   );
 }
 
-export function AssignmentView({ content }: { content: AssignmentContent }) {
+export function AssignmentView({
+  content,
+  title,
+  showPdfButton = true,
+}: {
+  content: AssignmentContent;
+  title?: string;
+  showPdfButton?: boolean;
+}) {
+  const bp = content.blueprint;
+  const deliverableInstructions = content.deliverableInstructions
+    || bp?.deliverable?.instructions
+    || null;
+  const rubric = content.rubric || bp?.rubric || [];
+
   return (
     <div className="space-y-4">
-      <div>
-        <p style={{ fontSize: 11, fontWeight: 600, color: '#EA580C', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Assignment</p>
-        <h2 style={{ fontSize: 18, fontWeight: 750, color: '#0B1220', marginTop: 4 }}>{content.objective}</h2>
-        <p style={{ fontSize: 12, color: '#9AA3AF', marginTop: 4 }}>
-          {[content.taskType, content.deliverable, content.expectedLength, content.requireCitations ? 'citations required' : ''].filter(Boolean).join(' · ')}
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#EA580C', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Assignment</p>
+          <h2 style={{ fontSize: 18, fontWeight: 750, color: '#0B1220', marginTop: 4 }}>{content.objective}</h2>
+          <p style={{ fontSize: 12, color: '#9AA3AF', marginTop: 4 }}>
+            {[
+              content.taskType,
+              content.deliverable,
+              content.expectedLength,
+              content.audience,
+              content.level,
+              content.requireCitations ? 'citations required' : '',
+            ].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        {showPdfButton && (
+          <button
+            type="button"
+            onClick={() => printAssignmentAsPdf(content, title || content.objective)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 border transition-colors hover:bg-white"
+            style={{ color: '#374151', background: 'rgba(255,255,255,0.9)', borderColor: 'rgba(0,0,0,0.1)' }}
+            title="Open a print dialog — choose Save as PDF"
+          >
+            <FileDown size={13} />Convert to PDF
+          </button>
+        )}
       </div>
       <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.92)', border: '1px solid rgba(0,0,0,0.08)' }}>
         <p style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6 }}>Task</p>
-        <p style={{ fontSize: 14, color: '#374151', lineHeight: 1.6 }}>{content.prompt}</p>
+        <p style={{ fontSize: 14, color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{content.prompt}</p>
       </div>
+      {deliverableInstructions && (
+        <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.92)', border: '1px solid rgba(0,0,0,0.08)' }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6 }}>What to submit</p>
+          <p style={{ fontSize: 14, color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{deliverableInstructions}</p>
+        </div>
+      )}
       {!!content.requirements?.length && (
         <div>
           <p style={{ fontSize: 12, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>Requirements</p>
@@ -183,14 +250,30 @@ export function AssignmentView({ content }: { content: AssignmentContent }) {
           </ul>
         </div>
       )}
-      {!!content.rubric?.length && (
+      {!!rubric.length && (
         <div>
           <p style={{ fontSize: 12, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>Rubric</p>
           <div className="space-y-2">
-            {content.rubric.map((r, i) => (
+            {rubric.map((r: RubricCriterion, i) => (
               <div key={i} className="rounded-xl px-3 py-2 border" style={{ borderColor: 'rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.85)' }}>
                 <p style={{ fontSize: 13, fontWeight: 650, color: '#0B1220' }}>{r.criterion}</p>
-                {r.description && <p style={{ fontSize: 12.5, color: '#6B7280' }}>{r.description}</p>}
+                {r.description && <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 2 }}>{r.description}</p>}
+                {!!r.levelDescriptors?.length && (
+                  <ul className="mt-2 space-y-1" style={{ paddingLeft: 16 }}>
+                    {r.levelDescriptors.map((l, j) => (
+                      <li key={j} style={{ fontSize: 12, color: '#374151', lineHeight: 1.45 }}>
+                        <span style={{ fontWeight: 650 }}>{l.label}:</span> {l.description}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {!r.levelDescriptors?.length && !!r.levels?.length && (
+                  <ul className="mt-2 space-y-1" style={{ paddingLeft: 16 }}>
+                    {r.levels.map((l, j) => (
+                      <li key={j} style={{ fontSize: 12, color: '#374151', lineHeight: 1.45 }}>{l}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             ))}
           </div>
@@ -205,7 +288,12 @@ export function AssignmentView({ content }: { content: AssignmentContent }) {
 type CommonProps = {
   typeId: string; title: string; scope?: string; fv: Record<string, any>;
   initialId?: string; initialStatus?: string; pipelineDraft?: CreatorPipelineDraft;
-  onBack: () => void; onDone: () => void;
+  onBack: (content?: any) => void; onDone: () => void;
+  backLabel?: string;
+  doneLabel?: string;
+  saveDraftLabel?: string;
+  initialMode?: Mode;
+  applyOnSaveDraft?: boolean;
 };
 
 function useObjectSave(typeId: string, initialId?: string, initialStatus?: string) {
@@ -239,9 +327,9 @@ function useObjectSave(typeId: string, initialId?: string, initialStatus?: strin
   return { save, objectStatus };
 }
 
-export function SummaryEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone }: CommonProps & { content: SummaryContent | null }) {
+export function SummaryEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone, backLabel, doneLabel, saveDraftLabel, initialMode = 'edit', applyOnSaveDraft = false }: CommonProps & { content: SummaryContent | null }) {
   const [docTitle, setDocTitle] = useState(title || 'Summary');
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [aiOpen, setAiOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -257,11 +345,19 @@ export function SummaryEditor({ typeId, title, scope, fv, content: initial, init
     status, scope, pipelineDraft, estimatedTime: '5 min',
   });
 
-  if (submitted) return <Submitted title={docTitle} onDone={onDone} />;
+  if (submitted) return <Submitted title={docTitle} onDone={onDone} doneLabel={doneLabel} />;
   return (
-    <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode} onBack={onBack}
-      savedNote={savedNote} label="Summary"
-      onSaveDraft={() => { persist('draft'); setSavedNote(true); setTimeout(onDone, 650); }}
+    <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode}
+      onBack={() => { persist('draft'); onBack(local); }}
+      savedNote={savedNote} label="Summary" backLabel={backLabel} saveDraftLabel={saveDraftLabel}
+      onSaveDraft={() => {
+        persist('draft');
+        setSavedNote(true);
+        setTimeout(() => {
+          if (applyOnSaveDraft) onBack(local);
+          onDone();
+        }, 650);
+      }}
       onSubmit={() => { persist('in-review'); setSubmitted(true); }}>
       {mode === 'preview' ? <SummaryView content={local} /> : (
         <>
@@ -288,9 +384,9 @@ export function SummaryEditor({ typeId, title, scope, fv, content: initial, init
   );
 }
 
-export function ReflectionEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone }: CommonProps & { content: ReflectionContent | null }) {
+export function ReflectionEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone, backLabel, doneLabel, saveDraftLabel, initialMode = 'edit', applyOnSaveDraft = false }: CommonProps & { content: ReflectionContent | null }) {
   const [docTitle, setDocTitle] = useState(title || 'Reflection');
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [aiOpen, setAiOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -311,11 +407,19 @@ export function ReflectionEditor({ typeId, title, scope, fv, content: initial, i
     tags: [fv.goal, fv.aud, fv.voi].filter(Boolean), status, scope, pipelineDraft, estimatedTime: '10 min',
   });
 
-  if (submitted) return <Submitted title={docTitle} onDone={onDone} />;
+  if (submitted) return <Submitted title={docTitle} onDone={onDone} doneLabel={doneLabel} />;
   return (
-    <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode} onBack={onBack}
-      savedNote={savedNote} label="Reflection"
-      onSaveDraft={() => { persist('draft'); setSavedNote(true); setTimeout(onDone, 650); }}
+    <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode}
+      onBack={() => { persist('draft'); onBack(local); }}
+      savedNote={savedNote} label="Reflection" backLabel={backLabel} saveDraftLabel={saveDraftLabel}
+      onSaveDraft={() => {
+        persist('draft');
+        setSavedNote(true);
+        setTimeout(() => {
+          if (applyOnSaveDraft) onBack(local);
+          onDone();
+        }, 650);
+      }}
       onSubmit={() => { persist('in-review'); setSubmitted(true); }}>
       {mode === 'preview' ? <ReflectionView content={local} /> : (
         <>
@@ -342,15 +446,16 @@ export function ReflectionEditor({ typeId, title, scope, fv, content: initial, i
   );
 }
 
-export function AssignmentEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone }: CommonProps & { content: AssignmentContent | null }) {
+export function AssignmentEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone, backLabel, doneLabel, saveDraftLabel, initialMode = 'edit', applyOnSaveDraft = false }: CommonProps & { content: AssignmentContent | null }) {
   const [docTitle, setDocTitle] = useState(title || 'Assignment');
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [aiOpen, setAiOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [local, setLocal] = useState<AssignmentContent>(() => initial || {
     objective: fv.obj || '', taskType: fv.tt || 'Short essay', deliverable: fv.del || 'Written text',
-    expectedLength: fv.el, requireCitations: fv.cite !== false, prompt: '', requirements: [], rubric: [],
+    expectedLength: fv.el, requireCitations: fv.cite !== false, prompt: '', deliverableInstructions: '',
+    requirements: [], rubric: [], audience: fv.aud, level: fv.lvl,
   });
   const { save } = useObjectSave(typeId, initialId, initialStatus);
   useEffect(() => { if (initial) setLocal(initial); }, [initial]);
@@ -361,16 +466,33 @@ export function AssignmentEditor({ typeId, title, scope, fv, content: initial, i
     tags: [fv.tt, fv.aud, fv.lvl].filter(Boolean), status, scope, pipelineDraft, estimatedTime: '25 min',
   });
 
-  if (submitted) return <Submitted title={docTitle} onDone={onDone} />;
+  if (submitted) return <Submitted title={docTitle} onDone={onDone} doneLabel={doneLabel} />;
   return (
-    <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode} onBack={onBack}
-      savedNote={savedNote} label="Assignment"
-      onSaveDraft={() => { persist('draft'); setSavedNote(true); setTimeout(onDone, 650); }}
+    <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode}
+      onBack={() => { persist('draft'); onBack(local); }}
+      savedNote={savedNote} label="Assignment" backLabel={backLabel} saveDraftLabel={saveDraftLabel}
+      onSaveDraft={() => {
+        persist('draft');
+        setSavedNote(true);
+        setTimeout(() => {
+          if (applyOnSaveDraft) onBack(local);
+          onDone();
+        }, 650);
+      }}
       onSubmit={() => { persist('in-review'); setSubmitted(true); }}>
-      {mode === 'preview' ? <AssignmentView content={local} /> : (
+      {mode === 'preview' ? <AssignmentView content={local} title={docTitle} /> : (
         <>
-          <div className="flex justify-end mb-3">
-            <button onClick={() => setAiOpen((v) => !v)} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ color: '#D97706', background: '#FEF3C7' }}>
+          <div className="flex justify-end mb-3 gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => printAssignmentAsPdf(local, docTitle)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border"
+              style={{ color: '#374151', background: 'rgba(255,255,255,0.9)', borderColor: 'rgba(0,0,0,0.1)' }}
+              title="Open a print dialog — choose Save as PDF"
+            >
+              <FileDown size={12} />Convert to PDF
+            </button>
+            <button type="button" onClick={() => setAiOpen((v) => !v)} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ color: '#D97706', background: '#FEF3C7' }}>
               <Sparkles size={12} />Ask AI
             </button>
           </div>
@@ -380,6 +502,15 @@ export function AssignmentEditor({ typeId, title, scope, fv, content: initial, i
               <textarea value={local.objective} onChange={(e) => setLocal({ ...local, objective: e.target.value })} rows={2} className="w-full rounded-xl px-3 py-2 resize-y" style={field} /></div>
             <div><label style={lbl}>Task prompt</label>
               <textarea value={local.prompt} onChange={(e) => setLocal({ ...local, prompt: e.target.value })} rows={4} className="w-full rounded-xl px-3 py-2 resize-y" style={field} /></div>
+            <div><label style={lbl}>What to submit (deliverable instructions)</label>
+              <textarea
+                value={local.deliverableInstructions || ''}
+                onChange={(e) => setLocal({ ...local, deliverableInstructions: e.target.value })}
+                rows={3}
+                placeholder="Exact form, length, and how to hand it in…"
+                className="w-full rounded-xl px-3 py-2 resize-y"
+                style={field}
+              /></div>
             <div><label style={lbl}>Requirements (one per line)</label>
               <textarea value={(local.requirements || []).join('\n')} onChange={(e) => setLocal({ ...local, requirements: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean) })}
                 rows={4} className="w-full rounded-xl px-3 py-2 resize-y" style={field} /></div>
@@ -402,9 +533,9 @@ export function AssignmentEditor({ typeId, title, scope, fv, content: initial, i
   );
 }
 
-export function DrillEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone }: CommonProps & { content: DrillContent | null }) {
+export function DrillEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone, backLabel, doneLabel, saveDraftLabel, initialMode = 'edit', applyOnSaveDraft = false }: CommonProps & { content: DrillContent | null }) {
   const [docTitle, setDocTitle] = useState(title || 'Drill');
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [aiOpen, setAiOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -425,11 +556,19 @@ export function DrillEditor({ typeId, title, scope, fv, content: initial, initia
     tags: [fv.fmt, fv.lvl, fv.diff].filter(Boolean), status, scope, pipelineDraft, estimatedTime: '8 min',
   });
 
-  if (submitted) return <Submitted title={docTitle} onDone={onDone} />;
+  if (submitted) return <Submitted title={docTitle} onDone={onDone} doneLabel={doneLabel} />;
   return (
-    <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode} onBack={onBack}
-      savedNote={savedNote} label="Drill"
-      onSaveDraft={() => { persist('draft'); setSavedNote(true); setTimeout(onDone, 650); }}
+    <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode}
+      onBack={() => { persist('draft'); onBack(local); }}
+      savedNote={savedNote} label="Drill" backLabel={backLabel} saveDraftLabel={saveDraftLabel}
+      onSaveDraft={() => {
+        persist('draft');
+        setSavedNote(true);
+        setTimeout(() => {
+          if (applyOnSaveDraft) onBack(local);
+          onDone();
+        }, 650);
+      }}
       onSubmit={() => { persist('in-review'); setSubmitted(true); }}>
       {mode === 'preview' ? <DrillView content={local} /> : (
         <>

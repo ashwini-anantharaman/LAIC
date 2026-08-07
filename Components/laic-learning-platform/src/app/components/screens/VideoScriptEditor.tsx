@@ -131,36 +131,46 @@ export function VideoScriptEditor({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
-          <ChevronLeft size={15} />Back to pipeline
-        </button>
-        <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)}
-          className="flex-1 bg-transparent outline-none" style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }} />
-        <div className="flex rounded-full border p-0.5" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
-          <button onClick={() => setMode('edit')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
-            style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}>
-            <Pencil size={12} />Edit
+      <div className="sticky top-0 z-20 flex flex-col gap-2 px-3 sm:px-5 py-3 border-b border-white/40" style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <button onClick={() => { save('draft'); onBack?.(content); }} className="flex items-center gap-1 text-sm font-medium shrink-0" style={{ color: '#6B7280' }}>
+            <ChevronLeft size={15} />
+            <span className="hidden sm:inline">Back to pipeline</span>
+            <span className="sm:hidden">Back</span>
           </button>
-          <button onClick={() => setMode('preview')} className="flex items-center gap-1 px-3 py-1.5 rounded-full"
-            style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}>
-            <Eye size={12} />Student preview
-          </button>
+          <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)}
+            className="flex-1 min-w-0 bg-transparent outline-none" style={{ fontSize: 15, fontWeight: 700, color: '#0B1220' }} />
         </div>
-        <span style={{ fontSize: 11.5, color: savedNote ? '#059669' : '#9AA3AF' }}>
-          {savedNote ? '✓ Saved' : `${content.checkpoints.length} checkpoints`}
-        </span>
-        <button onClick={() => { save('draft'); setSavedNote(true); setTimeout(() => onDone(), 650); }}
-          className="px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>
-          Save draft
-        </button>
-        <button onClick={() => { save('in-review'); setSubmitted(true); }}
-          className="px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
-          Submit for review
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-full border p-0.5" style={{ borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
+            <button onClick={() => setMode('edit')} className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'edit' ? '#0B0F1A' : 'transparent', color: mode === 'edit' ? '#fff' : '#6B7280' }}>
+              <Pencil size={12} />Edit
+            </button>
+            <button onClick={() => setMode('preview')} className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, background: mode === 'preview' ? '#0B0F1A' : 'transparent', color: mode === 'preview' ? '#fff' : '#6B7280' }}>
+              <Eye size={12} />
+              <span className="hidden sm:inline">Student preview</span>
+              <span className="sm:hidden">Preview</span>
+            </button>
+          </div>
+          <span style={{ fontSize: 11.5, color: savedNote ? '#059669' : '#9AA3AF' }}>
+            {savedNote ? '✓ Saved' : `${content.checkpoints.length} checkpoints`}
+          </span>
+          <div className="flex flex-1 flex-wrap gap-2 sm:justify-end">
+            <button onClick={() => { save('draft'); setSavedNote(true); setTimeout(() => onDone(), 650); }}
+              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>
+              Save draft
+            </button>
+            <button onClick={() => { save('in-review'); setSubmitted(true); }}
+              className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
+              Submit
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-6 w-full" style={{ maxWidth: mode === 'preview' ? 1100 : 720, margin: '0 auto' }}>
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-4 sm:py-6 w-full" style={{ maxWidth: mode === 'preview' ? 1100 : 720, margin: '0 auto' }}>
         {mode === 'preview' ? (
           <>
             <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 14 }}>

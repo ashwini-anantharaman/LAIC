@@ -1,18 +1,17 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  ArrowLeft, Check, ChevronRight, Plus, Trash2, Upload, FolderPlus,
-  GraduationCap, Wand2, ListTree, Route, Award, Layers, Pencil, Eye,
-  Settings, Send, BookOpen, ListChecks, RefreshCw, Sparkles, X,
+  ArrowLeft, Check, ChevronRight, Plus, Trash2, Upload,
+  GraduationCap, Wand2, Layers, Pencil, Eye,
+  Settings, Send, BookOpen, ListChecks, Sparkles, X,
   ToggleLeft, ToggleRight, ChevronDown, FileText, Compass,
-  Loader2, AlertTriangle, RotateCcw, Video, Presentation, Link2, Headphones,
+  Loader2, AlertTriangle, Youtube, ClipboardPaste, MessageSquare, Link2, RefreshCw,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../../App';
-import type { WizardSource, SourceCollection, IngestionStatus } from '../../../lib/types';
-import {
-  getSources, getSourceCollections, getSource,
-  uploadSource, createNamedSource, reingestSource, errorMessage,
-} from '../../../lib/api';
+import { ingestYoutube, ingestWeb, errorMessage } from '../../../lib/api';
+import { docFromText } from '../../../lib/pdf';
+import { PullFromLibraryButton, type PickedLibrarySource } from './CDSources';
+import { useConfirm } from '../ConfirmDialog';
 
 /* ─── constants ───────────────────────────────────────────────── */
 
@@ -88,255 +87,372 @@ function BChip({ type }: { type: string }) {
   return <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: c.bg, color: c.text }}>{type.replace(/-/g, ' ')}</span>;
 }
 
-/* ─── Step 1 — Source ─────────────────────────────────────────── */
+/* ─── Step 1 — Source (same modes as other content) ──── */
 
-const SOURCE_KIND_ICON: Record<WizardSource['kind'], any> = {
-  pdf: FileText,
-  docx: FileText,
-  text: FileText,
-  slides: Presentation,
-  'video-transcript': Video,
-  audio: Headphones,
-  link: Link2,
+type CourseSrcMode = 'pdf' | 'text' | 'web' | 'youtube' | 'prompt';
+
+const COURSE_SOURCE_MODES: { id: CourseSrcMode; label: string; icon: React.ReactNode }[] = [
+  { id: 'pdf', label: 'Upload PDF', icon: <Upload size={15} /> },
+  { id: 'text', label: 'Paste text', icon: <ClipboardPaste size={15} /> },
+  { id: 'web', label: 'Website link', icon: <Link2 size={15} /> },
+  { id: 'youtube', label: 'YouTube link', icon: <Youtube size={15} /> },
+  { id: 'prompt', label: 'No source — AI prompt', icon: <MessageSquare size={15} /> },
+];
+
+const COURSE_SOURCE_INTRO: Record<CourseSrcMode, string> = {
+  pdf: 'Attach the PDF this course is built from. We only store the file here — text is used in later structure steps.',
+  text: 'Paste the text this course is built from — notes, an article, a transcript.',
+  web: 'Paste a public website link. We fetch the page and extract readable text.',
+  youtube: 'Paste a YouTube link and we will pull its transcript. The video needs captions available.',
+  prompt: 'No source? Describe what the course should teach. Later steps build from your prompt.',
 };
 
-const INGEST_LABEL: Record<IngestionStatus, string> = {
-  queued: 'Queued',
-  processing: 'Processing…',
-  ready: 'Embedded',
-  failed: 'Ingestion failed',
-};
-
-function IngestionChip({ source, onRetry }: { source: WizardSource; onRetry: () => void }) {
-  const s = source.ingestionStatus;
-  if (s === 'ready') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-        style={{ background: '#D1FAE5', color: '#047857' }}>
-        <Check size={11} /> {INGEST_LABEL.ready}
-      </span>
-    );
-  }
-  if (s === 'failed') {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-          style={{ background: '#FEE2E2', color: '#B91C1C' }}>
-          <AlertTriangle size={11} /> {INGEST_LABEL.failed}
-        </span>
-        <button
-          onClick={(e) => { e.stopPropagation(); onRetry(); }}
-          title={source.ingestionError || 'Retry ingestion'}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border"
-          style={{ color: '#B45309', borderColor: '#FCD34D', background: '#FFFBEB' }}>
-          <RotateCcw size={10} /> Retry
-        </button>
-      </span>
-    );
-  }
-  // queued / processing
+function CourseSourceReady({
+  name,
+  sub,
+  onReplace,
+}: {
+  name: string;
+  sub: string;
+  onReplace: () => void;
+}) {
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-      style={{ background: '#FEF3C7', color: '#92400E' }}>
-      <Loader2 size={11} className="animate-spin" /> {INGEST_LABEL[s]}
-    </span>
+    <div className="rounded-2xl border p-4" style={{ background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.08)' }}>
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0" style={{ background: '#7C3AED' }}>
+          <FileText size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }} className="truncate">{name}</p>
+          <p style={{ fontSize: 12, color: '#6B7280', fontFamily: 'monospace' }}>{sub}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onReplace}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border shrink-0"
+          style={{ fontSize: 12, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}
+        >
+          <RefreshCw size={12} />Replace
+        </button>
+      </div>
+    </div>
   );
 }
 
-interface Step1Props {
-  sources: WizardSource[];
-  collections: SourceCollection[];
-  loading: boolean;
-  error: string | null;
-  onRetryLoad: () => void;
-  selected: string[];
-  onToggle: (id: string) => void;
-  onUpload: (files: FileList | null) => void;
-  onCreateNamed: (name: string) => void;
-  onRetryIngest: (id: string) => void;
-  busy: boolean;
-  addError: string | null;
-  gateReason: string | null;
-}
+function CourseSourceStep({
+  mode,
+  setMode,
+  pdfFile,
+  setPdfFile,
+  pasteText,
+  setPasteText,
+  textReady,
+  setTextReady,
+  webUrl,
+  setWebUrl,
+  ytUrl,
+  setYtUrl,
+  promptText,
+  setPromptText,
+  remoteTitle,
+  setRemoteTitle,
+  remoteReady,
+  setRemoteReady,
+  librarySource,
+  setLibrarySource,
+}: {
+  mode: CourseSrcMode;
+  setMode: (m: CourseSrcMode) => void;
+  pdfFile: File | null;
+  setPdfFile: (f: File | null) => void;
+  pasteText: string;
+  setPasteText: (t: string) => void;
+  textReady: boolean;
+  setTextReady: (v: boolean) => void;
+  webUrl: string;
+  setWebUrl: (t: string) => void;
+  ytUrl: string;
+  setYtUrl: (t: string) => void;
+  promptText: string;
+  setPromptText: (t: string) => void;
+  remoteTitle: string | null;
+  setRemoteTitle: (t: string | null) => void;
+  remoteReady: boolean;
+  setRemoteReady: (v: boolean) => void;
+  librarySource: PickedLibrarySource | null;
+  setLibrarySource: (s: PickedLibrarySource | null) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [webLoading, setWebLoading] = useState(false);
+  const [ytLoading, setYtLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-function Step1({
-  sources, collections, loading, error, onRetryLoad,
-  selected, onToggle, onUpload, onCreateNamed, onRetryIngest,
-  busy, addError, gateReason,
-}: Step1Props) {
-  const [name, setName] = useState('');
-  const [dragging, setDragging] = useState(false);
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const pick = (files: FileList | null) => {
+    const f = files?.[0];
+    if (f) {
+      setLibrarySource(null);
+      setPdfFile(f);
+      setFetchError(null);
+    }
+  };
 
-  const readyCount = sources.filter(s => selected.includes(s.id) && s.ingestionStatus === 'ready').length;
-  const collectionName = (id?: string) => collections.find(c => c.id === id)?.name;
+  const replaceAll = () => {
+    setLibrarySource(null);
+    setPdfFile(null);
+    setTextReady(false);
+    setRemoteReady(false);
+    setRemoteTitle(null);
+    setFetchError(null);
+  };
 
-  const submitName = () => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    onCreateNamed(trimmed);
-    setName('');
+  const loadText = () => {
+    if (!pasteText.trim()) return;
+    setLibrarySource(null);
+    setTextReady(true);
+    setFetchError(null);
+  };
+
+  const fetchWeb = async () => {
+    if (!webUrl.trim()) return;
+    setWebLoading(true);
+    setFetchError(null);
+    try {
+      const r = await ingestWeb(webUrl.trim());
+      docFromText(r.sentences?.join('\n') || '', r.title || webUrl);
+      setLibrarySource(null);
+      setRemoteTitle(r.title || webUrl);
+      setRemoteReady(true);
+    } catch (e) {
+      setFetchError(errorMessage(e, 'Could not fetch that page.'));
+    } finally {
+      setWebLoading(false);
+    }
+  };
+
+  const fetchYt = async () => {
+    if (!ytUrl.trim()) return;
+    setYtLoading(true);
+    setFetchError(null);
+    try {
+      const r = await ingestYoutube(ytUrl.trim());
+      setLibrarySource(null);
+      setRemoteTitle(r.title || 'YouTube transcript');
+      setRemoteReady(true);
+    } catch (e) {
+      setFetchError(errorMessage(e, 'Could not fetch that transcript.'));
+    } finally {
+      setYtLoading(false);
+    }
   };
 
   return (
-    <div className="p-5">
+    <div className="p-5 max-w-2xl">
       <p style={{ fontSize: 11.5, fontWeight: 700, color: '#6B7280', letterSpacing: '.06em', marginBottom: 2 }}>NEW COURSE · STEP 1</p>
-      <p style={{ fontSize: 18, fontWeight: 700, color: '#0B1220', marginBottom: 3 }}>Choose your source(s)</p>
-      <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 16, maxWidth: 620 }}>
-        Pick one or more from your Source Library, or upload new material. Sources are reusable across every course and tool — upload once, use many times.
-      </p>
+      <p style={{ fontSize: 18, fontWeight: 700, color: '#0B1220', marginBottom: 12 }}>Choose your source</p>
 
-      <div className="flex gap-5">
-        <div className="flex-1 min-w-0">
-          <p style={{ fontSize: 11.5, fontWeight: 700, color: '#6B7280', letterSpacing: '.06em', marginBottom: 10 }}>YOUR SOURCE LIBRARY</p>
-
-          {/* Loading */}
-          {loading && (
-            <div className="space-y-2">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="flex items-center gap-3 p-3.5 rounded-2xl border animate-pulse"
-                  style={{ background: 'rgba(255,255,255,0.6)', borderColor: 'rgba(0,0,0,0.06)' }}>
-                  <div className="w-5 h-5 rounded" style={{ background: '#E5E7EB' }} />
-                  <div className="w-9 h-9 rounded-xl" style={{ background: '#E5E7EB' }} />
-                  <div className="flex-1">
-                    <div className="h-3 rounded mb-2" style={{ background: '#E5E7EB', width: '40%' }} />
-                    <div className="h-2.5 rounded" style={{ background: '#EEF0F2', width: '60%' }} />
-                  </div>
-                </div>
-              ))}
-              <div className="flex items-center gap-2 pt-1" style={{ fontSize: 12.5, color: '#9AA3AF' }}>
-                <Loader2 size={13} className="animate-spin" /> Loading your sources…
-              </div>
-            </div>
-          )}
-
-          {/* Error */}
-          {!loading && error && (
-            <div className="rounded-2xl p-5 border text-center" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
-              <AlertTriangle size={20} style={{ color: '#DC2626', margin: '0 auto 8px' }} />
-              <p style={{ fontSize: 13.5, fontWeight: 600, color: '#B91C1C', marginBottom: 3 }}>Couldn't load your sources</p>
-              <p style={{ fontSize: 12.5, color: '#9B2C2C', marginBottom: 12 }}>{error}</p>
-              <button onClick={onRetryLoad}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white text-xs font-semibold"
-                style={{ background: '#0B0F1A' }}>
-                <RefreshCw size={12} /> Try again
-              </button>
-            </div>
-          )}
-
-          {/* Empty */}
-          {!loading && !error && sources.length === 0 && (
-            <div className="rounded-2xl p-6 border border-dashed text-center" style={{ background: 'rgba(255,255,255,0.55)', borderColor: 'rgba(0,0,0,0.12)' }}>
-              <FileText size={22} style={{ color: '#C4CBD4', margin: '0 auto 8px' }} />
-              <p style={{ fontSize: 13.5, fontWeight: 600, color: '#0B1220', marginBottom: 3 }}>No sources yet</p>
-              <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>Upload a PDF, DOCX, slides, or text on the right to get started.</p>
-            </div>
-          )}
-
-          {/* List */}
-          {!loading && !error && sources.length > 0 && (
-            <div className="space-y-2">
-              {sources.map(s => {
-                const on = selected.includes(s.id);
-                const KindIcon = SOURCE_KIND_ICON[s.kind] || FileText;
-                return (
-                  <div key={s.id} onClick={() => onToggle(s.id)}
-                    className="flex items-center gap-3 p-3.5 rounded-2xl border cursor-pointer transition-all"
-                    style={{ background: on ? 'rgba(124,58,237,0.06)' : 'rgba(255,255,255,0.75)', borderColor: on ? '#7C3AED' : 'rgba(0,0,0,0.08)' }}>
-                    <div className="w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all"
-                      style={{ borderColor: on ? '#7C3AED' : '#D1D5DB', background: on ? '#7C3AED' : 'transparent' }}>
-                      {on && <Check size={11} color="white" />}
-                    </div>
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#F3F4F6' }}>
-                      <KindIcon size={16} style={{ color: '#6B7280' }} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate flex-1 min-w-0" title={s.title} style={{ fontSize: 13.5, fontWeight: 600, color: '#0B1220' }}>{s.title}</p>
-                        <span className="px-2 py-0.5 rounded text-xs shrink-0" style={{ background: '#F3F4F6', color: '#6B7280' }}>{s.kind}</span>
-                      </div>
-                      <p className="truncate" style={{ fontSize: 11.5, color: '#9AA3AF', fontFamily: 'monospace' }}>
-                        {s.filename || s.title}{s.pages ? ` · ${s.pages}p` : ''}{s.duration ? ` · ${s.duration}` : ''} · {s.domain}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                        {collectionName(s.collectionId) && (
-                          <span className="px-1.5 py-0.5 rounded text-xs" style={{ background: '#EEF2FF', color: '#4338CA' }}>{collectionName(s.collectionId)}</span>
-                        )}
-                        <IngestionChip source={s} onRetry={() => onRetryIngest(s.id)} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Right column — add a source */}
-        <div className="w-64 shrink-0">
-          <div className="rounded-2xl p-4 border border-white/50 mb-4" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(8px)' }}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>Add a source</p>
-            <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Upload PDF / DOCX / slides / text. Saved to your library so you can reuse it — upload several at once.</p>
-
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              className="hidden"
-              accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.md"
-              onChange={(e) => { onUpload(e.target.files); if (fileRef.current) fileRef.current.value = ''; }}
-            />
-            <div
-              onClick={() => !busy && fileRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => { e.preventDefault(); setDragging(false); onUpload(e.dataTransfer.files); }}
-              className="border-2 border-dashed rounded-xl p-5 text-center mb-3 cursor-pointer transition-all"
-              style={{ borderColor: dragging ? '#7C3AED' : 'rgba(0,0,0,0.12)', background: dragging ? 'rgba(124,58,237,0.05)' : 'transparent', opacity: busy ? 0.6 : 1 }}>
-              {busy
-                ? <Loader2 size={18} className="animate-spin" style={{ color: '#7C3AED', margin: '0 auto 6px' }} />
-                : <Upload size={18} style={{ color: '#C4CBD4', margin: '0 auto 6px' }} />}
-              <p style={{ fontSize: 12, color: '#9AA3AF' }}>{busy ? 'Uploading…' : 'Drop files or click to upload'}</p>
-            </div>
-
-            <p style={{ fontSize: 12, color: '#9AA3AF', marginBottom: 6 }}>or name a source…</p>
-            <div className="flex gap-2">
-              <input value={name} onChange={e => setName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') submitName(); }}
-                placeholder="e.g. Bridge rulebook" disabled={busy}
-                className="flex-1 rounded-xl px-2 py-1.5"
-                style={{ fontSize: 12, border: '1px solid rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.8)', outline: 'none' }} />
-              <button onClick={submitName} disabled={busy || !name.trim()}
-                className="px-2.5 py-1.5 rounded-xl text-white transition-all"
-                style={{ background: busy || !name.trim() ? '#9AA3AF' : '#0B0F1A' }}>
-                <FolderPlus size={13} />
-              </button>
-            </div>
-
-            {addError && (
-              <p className="mt-2 flex items-start gap-1.5" style={{ fontSize: 11.5, color: '#B91C1C' }}>
-                <AlertTriangle size={12} className="shrink-0 mt-0.5" /> {addError}
-              </p>
-            )}
-          </div>
-
-          <p style={{ fontSize: 12.5, color: '#6B7280' }}>
-            <strong style={{ color: '#0B1220' }}>{selected.length}</strong> selected · pick several to combine them into one build.
-          </p>
-
-          {gateReason && (
-            <div className="mt-3 p-3 rounded-xl flex items-start gap-2" style={{ background: '#FEF3C7', border: '1px solid #FCD34D' }}>
-              <AlertTriangle size={13} style={{ color: '#B45309' }} className="shrink-0 mt-0.5" />
-              <p style={{ fontSize: 11.5, color: '#92400E' }}>{gateReason}</p>
-            </div>
-          )}
-          {readyCount > 0 && (
-            <p className="mt-2 flex items-center gap-1.5" style={{ fontSize: 11.5, color: '#047857' }}>
-              <Check size={12} /> {readyCount} embedded source{readyCount !== 1 ? 's' : ''} ready to build from.
-            </p>
-          )}
-        </div>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {COURSE_SOURCE_MODES.map((m) => {
+          const on = mode === m.id && !librarySource;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => {
+                setMode(m.id);
+                replaceAll();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all"
+              style={{
+                fontSize: 12.5,
+                fontWeight: on ? 650 : 500,
+                background: on ? '#7C3AED' : 'rgba(255,255,255,0.8)',
+                color: on ? '#fff' : '#374151',
+                borderColor: on ? '#7C3AED' : 'rgba(0,0,0,0.1)',
+              }}
+            >
+              {m.icon}{m.label}
+            </button>
+          );
+        })}
+        <PullFromLibraryButton
+          onPick={(src) => {
+            replaceAll();
+            setLibrarySource(src);
+          }}
+        />
       </div>
+
+      {librarySource ? (
+        <CourseSourceReady
+          name={librarySource.title}
+          sub={`From Source Library · ${librarySource.kind}`}
+          onReplace={replaceAll}
+        />
+      ) : (
+        <>
+      <div className="rounded-2xl p-4 mb-4" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.2)' }}>
+        <p style={{ fontSize: 13, color: '#4C1D95', lineHeight: 1.6 }}>{COURSE_SOURCE_INTRO[mode]}</p>
+      </div>
+
+      {mode === 'pdf' && (
+        <>
+          <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => pick(e.target.files)} />
+          {!pdfFile ? (
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files); }}
+              className="w-full flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-all"
+              style={{
+                padding: '40px 20px',
+                borderColor: dragOver ? '#7C3AED' : 'rgba(0,0,0,0.14)',
+                background: dragOver ? 'rgba(124,58,237,0.05)' : 'rgba(255,255,255,0.7)',
+                cursor: 'pointer',
+              }}
+            >
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white" style={{ background: '#7C3AED' }}><Upload size={22} /></div>
+              <p style={{ fontSize: 14, fontWeight: 650, color: '#0B1220' }}>Drop a PDF here or click to attach</p>
+              <p style={{ fontSize: 12, color: '#9AA3AF' }}>PDF only · stays on this device</p>
+            </button>
+          ) : (
+            <CourseSourceReady
+              name={pdfFile.name}
+              sub={`${(pdfFile.size / 1024).toFixed(0)} KB · ready`}
+              onReplace={replaceAll}
+            />
+          )}
+        </>
+      )}
+
+      {mode === 'text' && (
+        <>
+          {!textReady ? (
+            <>
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={9}
+                placeholder="Paste your source text here…"
+                className="w-full rounded-2xl px-3 py-2.5 resize-y"
+                style={{ fontSize: 13, lineHeight: 1.6, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }}
+              />
+              <div className="flex items-center justify-between mt-2">
+                <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+                  {pasteText.trim() ? `${pasteText.trim().split(/\s+/).length} words` : 'Notes, an article, a transcript…'}
+                </span>
+                <button
+                  type="button"
+                  onClick={loadText}
+                  disabled={!pasteText.trim()}
+                  className="px-4 py-2 rounded-full transition-all"
+                  style={{ fontSize: 12.5, fontWeight: 600, background: pasteText.trim() ? '#0B0F1A' : '#E5E7EB', color: pasteText.trim() ? '#fff' : '#9AA3AF' }}
+                >
+                  Use this text →
+                </button>
+              </div>
+            </>
+          ) : (
+            <CourseSourceReady
+              name="Pasted text"
+              sub={`${pasteText.trim().split(/\s+/).length} words · ready`}
+              onReplace={replaceAll}
+            />
+          )}
+        </>
+      )}
+
+      {mode === 'web' && (
+        <>
+          {!remoteReady ? (
+            <>
+              <div className="flex gap-2">
+                <input
+                  value={webUrl}
+                  onChange={(e) => setWebUrl(e.target.value)}
+                  placeholder="https://example.com/article…"
+                  className="flex-1 rounded-xl px-3 py-2.5"
+                  style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && webUrl.trim() && !webLoading) void fetchWeb(); }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void fetchWeb()}
+                  disabled={!webUrl.trim() || webLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white shrink-0"
+                  style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600, opacity: (!webUrl.trim() || webLoading) ? 0.7 : 1 }}
+                >
+                  {webLoading ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={14} />}
+                  {webLoading ? 'Fetching…' : 'Fetch page'}
+                </button>
+              </div>
+              <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>
+                Public pages only · paywalled sites may need Paste text instead.
+              </p>
+            </>
+          ) : (
+            <CourseSourceReady name={remoteTitle || webUrl} sub="Web page · ready" onReplace={replaceAll} />
+          )}
+        </>
+      )}
+
+      {mode === 'youtube' && (
+        <>
+          {!remoteReady ? (
+            <>
+              <div className="flex gap-2">
+                <input
+                  value={ytUrl}
+                  onChange={(e) => setYtUrl(e.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=…"
+                  className="flex-1 rounded-xl px-3 py-2.5"
+                  style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && ytUrl.trim() && !ytLoading) void fetchYt(); }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void fetchYt()}
+                  disabled={!ytUrl.trim() || ytLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white shrink-0"
+                  style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600, opacity: (!ytUrl.trim() || ytLoading) ? 0.7 : 1 }}
+                >
+                  {ytLoading ? <Loader2 size={13} className="animate-spin" /> : <Youtube size={14} />}
+                  {ytLoading ? 'Fetching…' : 'Fetch transcript'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <CourseSourceReady name={remoteTitle || 'YouTube transcript'} sub="Transcript · ready" onReplace={replaceAll} />
+          )}
+        </>
+      )}
+
+      {mode === 'prompt' && (
+        <>
+          <textarea
+            value={promptText}
+            onChange={(e) => setPromptText(e.target.value)}
+            rows={7}
+            placeholder="Describe what this course should teach, e.g. 'A beginner course on contract bridge bidding, covering opening bids, responses, and basic conventions.'"
+            className="w-full rounded-2xl px-3 py-2.5 resize-y"
+            style={{ fontSize: 13, lineHeight: 1.6, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)', outline: 'none' }}
+          />
+          <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6 }}>
+            With no source file, later steps build from this prompt.
+          </p>
+        </>
+      )}
+        </>
+      )}
+
+      {fetchError && (
+        <div className="flex items-start gap-2 mt-3 rounded-2xl p-3" style={{ background: '#FEE2E2', border: '1px solid #FCA5A5' }}>
+          <AlertTriangle size={15} style={{ color: '#B91C1C', marginTop: 1 }} />
+          <p style={{ fontSize: 12.5, color: '#991B1B' }}>{fetchError}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -477,7 +593,7 @@ function Step2({ cfg, setCfg }: { cfg: typeof DEFAULT_STRUCT; setCfg: (c: typeof
           </div>
           <div className="flex items-center justify-between">
             <div>
-              <p style={{ fontSize: 13, color: '#0B1220' }}>Draft learning objectives for each {cfg.groupName || 'module'}</p>
+              <p style={{ fontSize: 13, color: '#0B1220' }}>Draft objectives for each {cfg.groupName || 'module'}</p>
               <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>Adds a short "what you'll be able to do" at the start.</p>
             </div>
             <Tog on={cfg.draftObjectives} onToggle={() => set('draftObjectives', !cfg.draftObjectives)} />
@@ -549,13 +665,29 @@ function Step2({ cfg, setCfg }: { cfg: typeof DEFAULT_STRUCT; setCfg: (c: typeof
 
 function Step3({ modules, setModules, contentName, groupName, assessName }: { modules: Module[]; setModules: (m: Module[]) => void; contentName: string; groupName: string; assessName: string }) {
   const [regenMsg, setRegenMsg] = useState('');
+  const confirm = useConfirm();
 
   const regen = () => { setRegenMsg('Re-parsed — fresh outline generated'); setTimeout(() => setRegenMsg(''), 2000); };
 
   const renameModule = (id: string, title: string) => setModules(modules.map(m => m.id === id ? { ...m, title } : m));
-  const deleteModule = (id: string) => setModules(modules.filter(m => m.id !== id));
+  const deleteModule = async (id: string) => {
+    const mod = modules.find((m) => m.id === id);
+    if (!(await confirm({
+      description: mod
+        ? `Delete “${mod.title}” and its ${mod.lessons.length} item${mod.lessons.length === 1 ? '' : 's'}?`
+        : `Delete this ${groupName}?`,
+    }))) return;
+    setModules(modules.filter(m => m.id !== id));
+  };
   const addLesson = (modId: string) => setModules(modules.map(m => m.id === modId ? { ...m, lessons: [...m.lessons, { id: `l${Date.now()}`, kind: 'lesson', title: `New ${contentName}`, blocks: [] }] } : m));
-  const deleteLesson = (modId: string, lesId: string) => setModules(modules.map(m => m.id === modId ? { ...m, lessons: m.lessons.filter(l => l.id !== lesId) } : m));
+  const deleteLesson = async (modId: string, lesId: string) => {
+    const mod = modules.find((m) => m.id === modId);
+    const les = mod?.lessons.find((l) => l.id === lesId);
+    if (!(await confirm({
+      description: les ? `Delete “${les.title}”?` : 'Delete this item?',
+    }))) return;
+    setModules(modules.map(m => m.id === modId ? { ...m, lessons: m.lessons.filter(l => l.id !== lesId) } : m));
+  };
   const renameLesson = (modId: string, lesId: string, title: string) => setModules(modules.map(m => m.id === modId ? { ...m, lessons: m.lessons.map(l => l.id === lesId ? { ...l, title } : l) } : m));
   const addModule = () => setModules([...modules, { id: `m${Date.now()}`, title: `New ${groupName}`, lessons: [] }]);
 
@@ -741,6 +873,7 @@ function Step4({ modules, contentName, groupName, assessName }: { modules: Modul
 
 function BlockCard({ block, onUp, onDown, onDelete }: { block: Block; onUp: () => void; onDown: () => void; onDelete: () => void }) {
   const [mode, setMode] = useState<'read' | 'edit' | 'ai'>('read');
+  const confirm = useConfirm();
   return (
     <div className="mb-3 rounded-2xl border overflow-hidden" style={{ background: 'rgba(255,255,255,0.88)', borderColor: 'rgba(0,0,0,0.08)' }}>
       <div className="flex items-center gap-2 px-4 py-2.5 border-b" style={{ borderColor: 'rgba(0,0,0,0.06)', background: 'rgba(255,255,255,0.5)' }}>
@@ -751,7 +884,18 @@ function BlockCard({ block, onUp, onDown, onDelete }: { block: Block; onUp: () =
           <button onClick={() => setMode(mode === 'edit' ? 'read' : 'edit')} className="px-2 py-1 rounded text-xs" style={{ color: '#2563EB', background: mode === 'edit' ? '#EFF6FF' : 'transparent' }}>✎ Edit</button>
           <button onClick={onUp} className="px-1 text-sm" style={{ color: '#9AA3AF' }}>↑</button>
           <button onClick={onDown} className="px-1 text-sm" style={{ color: '#9AA3AF' }}>↓</button>
-          <button onClick={onDelete}><Trash2 size={12} style={{ color: '#EF4444' }} /></button>
+          <button
+            onClick={() => {
+              void (async () => {
+                const ok = await confirm({
+                  description: `Delete block “${block.label || block.type}”?`,
+                });
+                if (ok) onDelete();
+              })();
+            }}
+          >
+            <Trash2 size={12} style={{ color: '#EF4444' }} />
+          </button>
         </div>
       </div>
       <div className="p-4">
@@ -871,7 +1015,7 @@ function Step5({ modules, setModules }: { modules: Module[]; setModules: (m: Mod
                 <Sparkles size={13} />✦ Generate a block with AI
               </button>
               <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm" style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
-                ▤ Use object from library
+                ▤ Use content from library
               </button>
             </div>
           </div>
@@ -1038,7 +1182,7 @@ function Step8({ courseTitle, onSubmit, submitted }: { courseTitle: string; onSu
         <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: '#FEF3C7', color: '#92400E' }}>in review</span>
         <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: '#F3F4F6', color: '#374151' }}>Bridge</span>
       </div>
-      <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>Track it under <strong>Versions & Publishing</strong> or <strong>Review Queue</strong>. Use "Finish" below to return to Activity objects.</p>
+      <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>Track it under <strong>Versions & Publishing</strong> or <strong>Review Queue</strong>. Use "Finish" below to return to Content Library.</p>
     </div>
   );
 
@@ -1050,7 +1194,7 @@ function Step8({ courseTitle, onSubmit, submitted }: { courseTitle: string; onSu
           {[
             { id: 'Course', sub: 'Full structured course with modules, lessons, and checkpoints.' },
             { id: 'Learning package', sub: 'A small assignable bundle.' },
-            { id: 'Standalone objects', sub: 'Publish objects individually.' },
+            { id: 'Standalone content', sub: 'Publish content individually.' },
           ].map(r => (
             <label key={r.id} className="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all"
               style={{ background: pubType === r.id ? 'rgba(11,15,26,0.06)' : 'rgba(255,255,255,0.7)', borderColor: pubType === r.id ? '#0B0F1A' : 'rgba(0,0,0,0.08)' }}>
@@ -1087,108 +1231,39 @@ export function CourseWizard() {
   const [reached, setReached] = useState(1);
   const [submitted, setSubmitted] = useState(false);
 
-  const [selSources, setSelSources] = useState<string[]>([]);
   const [cfg, setCfg] = useState(DEFAULT_STRUCT);
   const [modules, setModules] = useState<Module[]>(SEED_MODULES);
 
-  /* ── Step 1: sources from the API ─────────────────────────────── */
-  const [sources, setSources] = useState<WizardSource[]>([]);
-  const [collections, setCollections] = useState<SourceCollection[]>([]);
-  const [sourcesLoading, setSourcesLoading] = useState(true);
-  const [sourcesError, setSourcesError] = useState<string | null>(null);
-  const [addBusy, setAddBusy] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
-  const primaryInit = useRef(false);
+  /* ── Step 1: same source modes as other content ──────── */
+  const [srcMode, setSrcMode] = useState<CourseSrcMode>('pdf');
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pasteText, setPasteText] = useState('');
+  const [textReady, setTextReady] = useState(false);
+  const [webUrl, setWebUrl] = useState('');
+  const [ytUrl, setYtUrl] = useState('');
+  const [promptText, setPromptText] = useState('');
+  const [remoteTitle, setRemoteTitle] = useState<string | null>(null);
+  const [remoteReady, setRemoteReady] = useState(false);
+  const [librarySource, setLibrarySource] = useState<PickedLibrarySource | null>(null);
 
-  const loadSources = useCallback(async (signal?: AbortSignal) => {
-    setSourcesLoading(true);
-    setSourcesError(null);
-    try {
-      const [srcs, cols] = await Promise.all([getSources(signal), getSourceCollections(signal)]);
-      if (signal?.aborted) return;
-      setSources(srcs);
-      setCollections(cols);
-      if (!primaryInit.current) {
-        primaryInit.current = true;
-        setSelSources(prev => (prev.length ? prev : srcs.filter(s => s.primary).map(s => s.id)));
-      }
-    } catch (e) {
-      if (signal?.aborted || (e instanceof DOMException && e.name === 'AbortError')) return;
-      setSourcesError(errorMessage(e, 'Failed to load sources.'));
-    } finally {
-      if (!signal?.aborted) setSourcesLoading(false);
-    }
-  }, []);
+  const sourceReady =
+    !!librarySource ||
+    (srcMode === 'pdf' && !!pdfFile) ||
+    (srcMode === 'text' && textReady) ||
+    ((srcMode === 'web' || srcMode === 'youtube') && remoteReady) ||
+    (srcMode === 'prompt' && promptText.trim().length > 0);
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    loadSources(ctrl.signal);
-    return () => ctrl.abort();
-  }, [loadSources]);
-
-  // Poll ingestion status while any source is still processing/queued.
-  useEffect(() => {
-    const pending = sources.filter(s => s.ingestionStatus === 'processing' || s.ingestionStatus === 'queued');
-    if (pending.length === 0) return;
-    let cancelled = false;
-    const interval = setInterval(async () => {
-      for (const p of pending) {
-        try {
-          const updated = await getSource(p.id);
-          if (cancelled) return;
-          setSources(prev => prev.map(x => (x.id === updated.id ? updated : x)));
-        } catch {
-          /* transient — try again next tick */
-        }
-      }
-    }, 2500);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [sources]);
-
-  const toggleSource = useCallback((id: string) => {
-    setSelSources(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
-  }, []);
-
-  const handleUpload = useCallback(async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setAddBusy(true);
-    setAddError(null);
-    try {
-      for (const file of Array.from(files)) {
-        const created = await uploadSource(file);
-        setSources(prev => [created, ...prev]);
-        setSelSources(prev => (prev.includes(created.id) ? prev : [...prev, created.id]));
-      }
-    } catch (e) {
-      setAddError(errorMessage(e, 'Upload failed.'));
-    } finally {
-      setAddBusy(false);
-    }
-  }, []);
-
-  const handleCreateNamed = useCallback(async (name: string) => {
-    setAddBusy(true);
-    setAddError(null);
-    try {
-      const created = await createNamedSource(name);
-      setSources(prev => [created, ...prev]);
-      setSelSources(prev => [...prev, created.id]);
-    } catch (e) {
-      setAddError(errorMessage(e, 'Could not add that source.'));
-    } finally {
-      setAddBusy(false);
-    }
-  }, []);
-
-  const handleRetryIngest = useCallback(async (id: string) => {
-    setAddError(null);
-    try {
-      const updated = await reingestSource(id);
-      setSources(prev => prev.map(x => (x.id === id ? updated : x)));
-    } catch (e) {
-      setAddError(errorMessage(e, 'Retry failed.'));
-    }
-  }, []);
+  const sourceLabel = librarySource
+    ? librarySource.title
+    : srcMode === 'pdf' && pdfFile
+    ? pdfFile.name
+    : srcMode === 'text' && textReady
+      ? 'Pasted text'
+      : (srcMode === 'web' || srcMode === 'youtube') && remoteReady
+        ? (remoteTitle || 'Source ready')
+        : srcMode === 'prompt' && promptText.trim()
+          ? 'AI prompt'
+          : null;
 
   const goTo = (n: number) => { if (n >= 1 && n <= 8 && n <= reached) setStep(n); };
 
@@ -1199,21 +1274,7 @@ export function CourseWizard() {
     if (next > reached) setReached(next);
   };
 
-  // Gate: generation depends on embeddings, so at least one *ready* selected source.
-  const readySelectedCount = sources.filter(
-    s => selSources.includes(s.id) && s.ingestionStatus === 'ready',
-  ).length;
-
-  let step1GateReason: string | null = null;
-  if (!sourcesLoading && !sourcesError && readySelectedCount === 0) {
-    if (selSources.length === 0) {
-      step1GateReason = 'Select at least one source to continue.';
-    } else {
-      step1GateReason = 'Your selected source is still being embedded. Generation needs at least one source that has finished processing (Embedded).';
-    }
-  }
-
-  const canNext = step === 1 ? readySelectedCount > 0 : step !== 8;
+  const canNext = step === 1 ? sourceReady : step !== 8;
   const nextLabel = STEP_CONFIG[step - 1].nextLabel;
 
   return (
@@ -1222,12 +1283,12 @@ export function CourseWizard() {
       <div className="sticky top-0 z-20 flex items-center justify-between px-5 py-3 border-b border-white/40"
         style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
         <button onClick={() => navigate('cd-library')} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
-          <ArrowLeft size={14} />Activity objects
+          <ArrowLeft size={14} />Content Library
         </button>
         <p style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>New course from a source</p>
         <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
-          style={{ background: '#F3F4F6', color: '#374151' }}>
-          ▤ {selSources.length} source{selSources.length !== 1 ? 's' : ''}
+          style={{ background: sourceReady ? '#D1FAE5' : '#F3F4F6', color: sourceReady ? '#047857' : '#374151' }}>
+          {sourceReady ? `✓ ${sourceLabel}` : 'No source yet'}
         </span>
       </div>
 
@@ -1258,20 +1319,27 @@ export function CourseWizard() {
         <AnimatePresence mode="wait">
           <motion.div key={step} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
             {step === 1 && (
-              <Step1
-                sources={sources}
-                collections={collections}
-                loading={sourcesLoading}
-                error={sourcesError}
-                onRetryLoad={() => loadSources()}
-                selected={selSources}
-                onToggle={toggleSource}
-                onUpload={handleUpload}
-                onCreateNamed={handleCreateNamed}
-                onRetryIngest={handleRetryIngest}
-                busy={addBusy}
-                addError={addError}
-                gateReason={step1GateReason}
+              <CourseSourceStep
+                mode={srcMode}
+                setMode={setSrcMode}
+                pdfFile={pdfFile}
+                setPdfFile={setPdfFile}
+                pasteText={pasteText}
+                setPasteText={setPasteText}
+                textReady={textReady}
+                setTextReady={setTextReady}
+                webUrl={webUrl}
+                setWebUrl={setWebUrl}
+                ytUrl={ytUrl}
+                setYtUrl={setYtUrl}
+                promptText={promptText}
+                setPromptText={setPromptText}
+                remoteTitle={remoteTitle}
+                setRemoteTitle={setRemoteTitle}
+                remoteReady={remoteReady}
+                setRemoteReady={setRemoteReady}
+                librarySource={librarySource}
+                setLibrarySource={setLibrarySource}
               />
             )}
             {step === 2 && <Step2 cfg={cfg} setCfg={setCfg} />}

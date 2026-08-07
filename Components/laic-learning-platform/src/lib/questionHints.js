@@ -136,6 +136,19 @@ export function parsePassMark(v, fallback = 70) {
   return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : fallback;
 }
 
+/**
+ * Whether MCQ scoring uses a pass threshold.
+ * Default on (legacy). passOn false / "No" → practice-only score, no pass/fail.
+ */
+export function resolvePassSettings(fv = {}) {
+  const passOn = fv.passOn !== false && fv.passOn !== 'No';
+  return {
+    passOn,
+    passRequired: passOn,
+    passMark: passOn ? parsePassMark(fv.pass, 70) : undefined,
+  };
+}
+
 /** Resolve hint settings from Define / fv. */
 export function resolveHintSettings(fv = {}) {
   const hintsOn = fv.hintsOn !== false && fv.hintsOn !== 'No';

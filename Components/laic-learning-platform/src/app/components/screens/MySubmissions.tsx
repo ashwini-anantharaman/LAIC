@@ -18,15 +18,15 @@ const FEEDBACK_INBOX = [
     targetTitle: 'HCP Basics — Lesson 1',
     targetType: 'Lesson',
     comments: [
-      { id: 'fb1', author: 'Lee Park', role: 'Object Reviewer', on: 'Block 3 — Key term', content: 'The definition is a bit circular. Try anchoring it to a concrete example of an opening hand.', date: '2h ago' },
-      { id: 'fb2', author: 'Lee Park', role: 'Object Reviewer', on: 'Block 5 — Question', content: 'Distractor B is too obviously wrong — replace it to make the question fair.', date: '2h ago' },
+      { id: 'fb1', author: 'Lee Park', role: 'Content Reviewer', on: 'Block 3 — Key term', content: 'The definition is a bit circular. Try anchoring it to a concrete example of an opening hand.', date: '2h ago' },
+      { id: 'fb2', author: 'Lee Park', role: 'Content Reviewer', on: 'Block 5 — Question', content: 'Distractor B is too obviously wrong — replace it to make the question fair.', date: '2h ago' },
     ],
   },
   {
     targetTitle: 'Trump vs No-Trump — Concept card',
     targetType: 'Concept card',
     comments: [
-      { id: 'fb3', author: 'Lee Park', role: 'Object Reviewer', on: 'Block 1 — Introduction', content: 'Good framing. Consider adding a one-sentence hook before the definition.', date: '1d ago' },
+      { id: 'fb3', author: 'Lee Park', role: 'Content Reviewer', on: 'Block 1 — Introduction', content: 'Good framing. Consider adding a one-sentence hook before the definition.', date: '1d ago' },
     ],
   },
 ];

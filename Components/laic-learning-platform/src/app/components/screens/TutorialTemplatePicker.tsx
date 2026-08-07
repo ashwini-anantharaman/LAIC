@@ -3,11 +3,14 @@ import { Plus, Pencil, Trash2, RotateCcw } from 'lucide-react';
 import type { TutorialTemplate } from '../../../lib/types';
 import {
   deleteCustomTutorialTemplate,
+  FREEFORM_TUTORIAL_TEMPLATE_ID,
   isBuiltinOverride,
   isBuiltinTemplateId,
+  isTutorialStructureLocked,
   listTutorialTemplates,
 } from '../../../lib/tutorialTemplates';
 import { TutorialTemplateEditor } from './TutorialTemplateEditor';
+import { useConfirm } from '../ConfirmDialog';
 
 interface Props {
   value?: string;
@@ -17,6 +20,7 @@ interface Props {
 export function TutorialTemplatePicker({ value, onChange }: Props) {
   const [templates, setTemplates] = useState(() => listTutorialTemplates());
   const [editing, setEditing] = useState<TutorialTemplate | null | 'new'>(null);
+  const confirm = useConfirm();
   const selected = value || templates[0]?.id;
 
   const refresh = () => setTemplates(listTutorialTemplates());
@@ -27,10 +31,21 @@ export function TutorialTemplatePicker({ value, onChange }: Props) {
     setEditing(null);
   };
 
-  const handleDeleteOrReset = (id: string) => {
+  const handleDeleteOrReset = async (id: string) => {
+    const t = templates.find((x) => x.id === id);
+    const overridden = isBuiltinOverride(id);
+    const ok = await confirm({
+      title: overridden ? 'Are you sure you want to reset?' : 'Are you sure you want to delete?',
+      description: overridden
+        ? `Reset “${t?.name || 'this template'}” to the recommended default?`
+        : `Delete template “${t?.name || 'this template'}”? This can’t be undone.`,
+      confirmLabel: overridden ? 'Reset' : 'Delete',
+      destructive: !overridden,
+    });
+    if (!ok) return;
     deleteCustomTutorialTemplate(id);
     refresh();
-    const next = listTutorialTemplates().find((t) => t.id === id)
+    const next = listTutorialTemplates().find((x) => x.id === id)
       || listTutorialTemplates()[0];
     if (next) onChange(next);
   };
@@ -56,7 +71,7 @@ export function TutorialTemplatePicker({ value, onChange }: Props) {
         )}
       </div>
       <p style={{ fontSize: 12, color: '#9AA3AF', marginBottom: 10 }}>
-        Shape of each section. Edit any built-in or create your own. Edits stay in this browser.
+        Shape of each section plus locked structure (sections, depth, checks). Length follows curated units + depth — no word target. Use Freeform when authors should choose structure themselves.
       </p>
 
       {editing !== null && (
@@ -73,6 +88,12 @@ export function TutorialTemplatePicker({ value, onChange }: Props) {
           const on = t.id === selected;
           const overridden = isBuiltinOverride(t.id);
           const pureCustom = !t.builtin && !isBuiltinTemplateId(t.id);
+          const locked = isTutorialStructureLocked(t);
+          const secs = t.knobDefaults.secs ?? 0;
+          const dpth = t.knobDefaults.dpth || 'Standard';
+          const structureBit = locked
+            ? `${secs} sections · ${dpth} depth · some knobs locked`
+            : 'Author chooses structure (locks opt-in)';
           return (
             <div
               key={t.id}
@@ -90,6 +111,28 @@ export function TutorialTemplatePicker({ value, onChange }: Props) {
               >
                 <div className="flex items-center gap-2 flex-wrap">
                   <p style={{ fontSize: 13, fontWeight: on ? 650 : 600, flex: 1 }}>{t.name}</p>
+                  {t.id === FREEFORM_TUTORIAL_TEMPLATE_ID && (
+                    <span
+                      className="px-2 py-0.5 rounded text-xs font-semibold"
+                      style={{
+                        background: on ? 'rgba(255,255,255,0.15)' : 'rgba(37,99,235,0.12)',
+                        color: on ? '#fff' : '#2563EB',
+                      }}
+                    >
+                      Freeform
+                    </span>
+                  )}
+                  {locked && t.id !== FREEFORM_TUTORIAL_TEMPLATE_ID && (
+                    <span
+                      className="px-2 py-0.5 rounded text-xs font-semibold"
+                      style={{
+                        background: on ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.06)',
+                        color: on ? '#fff' : '#6B7280',
+                      }}
+                    >
+                      Locked
+                    </span>
+                  )}
                   {pureCustom && (
                     <span
                       className="px-2 py-0.5 rounded text-xs font-semibold"
@@ -115,6 +158,9 @@ export function TutorialTemplatePicker({ value, onChange }: Props) {
                 </div>
                 <p style={{ fontSize: 12, marginTop: 3, opacity: on ? 0.85 : 1, color: on ? undefined : '#6B7280' }}>
                   {t.description || (pureCustom ? 'Your custom section recipe' : '')}
+                </p>
+                <p style={{ fontSize: 11.5, marginTop: 4, opacity: on ? 0.75 : 1, color: on ? undefined : '#9AA3AF' }}>
+                  {structureBit}
                 </p>
               </button>
               <div

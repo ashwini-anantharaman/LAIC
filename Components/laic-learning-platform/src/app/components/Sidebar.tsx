@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Home, PlusSquare, Database, BookOpen, SendHorizontal,
   GitBranch, BarChart2, ClipboardCheck, GraduationCap,
-  Users, BookMarked, Shield, UserCheck, ChevronRight, LogOut, LayoutTemplate, ListTree, MonitorPlay,
+  Users, BookMarked, Shield, UserCheck, LogOut, LayoutTemplate, ListTree, MonitorPlay, X,
 } from 'lucide-react';
 import { useApp } from '../App';
 import { USERS } from '../../lib/data';
@@ -16,49 +16,90 @@ interface NavItem {
   icon: React.ReactNode;
 }
 
+/** Soft pastel chip per nav id — lighter solid bg + softer matching icon ink. */
+const ICON_PASTEL: Record<string, { bg: string; fg: string }> = {
+  'cd-home': { bg: '#FFF1F2', fg: '#FB7185' },       // rose
+  'cd-create': { bg: '#FFF7ED', fg: '#FB923C' },     // peach
+  'cd-templates': { bg: '#FFFBEB', fg: '#FBBF24' },  // amber
+  'cd-sources': { bg: '#ECFDF5', fg: '#34D399' },    // mint
+  'cd-library': { bg: '#EFF6FF', fg: '#60A5FA' },    // sky
+  'cd-test-container': { bg: '#EEF2FF', fg: '#818CF8' }, // indigo
+  'cd-submissions': { bg: '#FAF5FF', fg: '#C084FC' }, // lilac
+  'cd-versions': { bg: '#FDF2F8', fg: '#F472B6' },   // pink
+  'cd-analytics': { bg: '#F0FDFA', fg: '#2DD4BF' },  // teal
+  'or-reviews': { bg: '#FFFBEB', fg: '#FBBF24' },
+  'cr-reviews': { bg: '#FFF7ED', fg: '#FB923C' },
+  'admin-overview': { bg: '#EEF2FF', fg: '#818CF8' },
+  'admin-people': { bg: '#EFF6FF', fg: '#60A5FA' },
+  'admin-courses': { bg: '#ECFDF5', fg: '#34D399' },
+  'admin-publishing': { bg: '#FDF2F8', fg: '#F472B6' },
+  'admin-access-catalogue': { bg: '#FAF5FF', fg: '#C084FC' },
+  'coach': { bg: '#F0FDFA', fg: '#2DD4BF' },
+  'student-dashboard': { bg: '#FFF1F2', fg: '#FB7185' },
+  'student-courses': { bg: '#EFF6FF', fg: '#60A5FA' },
+};
+
+const FALLBACK_PASTEL = { bg: '#F1F5F9', fg: '#64748B' };
+
+function pastelFor(id: string) {
+  return ICON_PASTEL[id] || FALLBACK_PASTEL;
+}
+
 /** Icon per nav-item id, so the areas-driven nav (Nexus mode) can render. */
 const ICON_BY_ID: Record<string, React.ReactNode> = {
-  'cd-home': <Home size={16} />, 'cd-create': <PlusSquare size={16} />, 'cd-templates': <LayoutTemplate size={16} />, 'cd-sources': <Database size={16} />,
-  'cd-library': <BookOpen size={16} />, 'cd-test-container': <MonitorPlay size={16} />, 'cd-submissions': <SendHorizontal size={16} />,
-  'cd-versions': <GitBranch size={16} />, 'cd-analytics': <BarChart2 size={16} />,
-  'or-reviews': <ClipboardCheck size={16} />, 'cr-reviews': <ClipboardCheck size={16} />,
-  'admin-overview': <Shield size={16} />, 'admin-people': <Users size={16} />,
-  'admin-courses': <BookMarked size={16} />, 'admin-publishing': <GitBranch size={16} />,
-  'admin-access-catalogue': <ListTree size={16} />,
-  'coach': <UserCheck size={16} />,
-  'student-dashboard': <Home size={16} />, 'student-courses': <GraduationCap size={16} />,
+  'cd-home': <Home size={15} strokeWidth={2.25} />,
+  'cd-create': <PlusSquare size={15} strokeWidth={2.25} />,
+  'cd-templates': <LayoutTemplate size={15} strokeWidth={2.25} />,
+  'cd-sources': <Database size={15} strokeWidth={2.25} />,
+  'cd-library': <BookOpen size={15} strokeWidth={2.25} />,
+  'cd-test-container': <MonitorPlay size={15} strokeWidth={2.25} />,
+  'cd-submissions': <SendHorizontal size={15} strokeWidth={2.25} />,
+  'cd-versions': <GitBranch size={15} strokeWidth={2.25} />,
+  'cd-analytics': <BarChart2 size={15} strokeWidth={2.25} />,
+  'or-reviews': <ClipboardCheck size={15} strokeWidth={2.25} />,
+  'cr-reviews': <ClipboardCheck size={15} strokeWidth={2.25} />,
+  'admin-overview': <Shield size={15} strokeWidth={2.25} />,
+  'admin-people': <Users size={15} strokeWidth={2.25} />,
+  'admin-courses': <BookMarked size={15} strokeWidth={2.25} />,
+  'admin-publishing': <GitBranch size={15} strokeWidth={2.25} />,
+  'admin-access-catalogue': <ListTree size={15} strokeWidth={2.25} />,
+  'coach': <UserCheck size={15} strokeWidth={2.25} />,
+  'student-dashboard': <Home size={15} strokeWidth={2.25} />,
+  'student-courses': <GraduationCap size={15} strokeWidth={2.25} />,
 };
 
 const NAV: Record<Role, NavItem[]> = {
   'content-developer': [
-    { id: 'cd-home', label: 'Home', icon: <Home size={16} /> },
-    { id: 'cd-create', label: 'Create', icon: <PlusSquare size={16} /> },
-    { id: 'cd-templates', label: 'Template Library', icon: <LayoutTemplate size={16} /> },
-    { id: 'cd-sources', label: 'Sources', icon: <Database size={16} /> },
-    { id: 'cd-library', label: 'Object Library', icon: <BookOpen size={16} /> },
-    { id: 'cd-test-container', label: 'Test container', icon: <MonitorPlay size={16} /> },
-    { id: 'cd-submissions', label: 'My Submissions', icon: <SendHorizontal size={16} /> },
-    { id: 'cd-versions', label: 'Versions & Publishing', icon: <GitBranch size={16} /> },
-    { id: 'cd-analytics', label: 'Author Analytics', icon: <BarChart2 size={16} /> },
+    { id: 'cd-home', label: 'Home', icon: ICON_BY_ID['cd-home'] },
+    { id: 'cd-create', label: 'Create', icon: ICON_BY_ID['cd-create'] },
+    { id: 'cd-templates', label: 'Template Library', icon: ICON_BY_ID['cd-templates'] },
+    { id: 'cd-sources', label: 'Sources', icon: ICON_BY_ID['cd-sources'] },
+    { id: 'cd-library', label: 'Content Library', icon: ICON_BY_ID['cd-library'] },
+    { id: 'cd-test-container', label: 'Test container', icon: ICON_BY_ID['cd-test-container'] },
+    { id: 'cd-submissions', label: 'My Submissions', icon: ICON_BY_ID['cd-submissions'] },
+    { id: 'cd-versions', label: 'Versions & Publishing', icon: ICON_BY_ID['cd-versions'] },
+    { id: 'cd-analytics', label: 'Author Analytics', icon: ICON_BY_ID['cd-analytics'] },
   ],
   'object-reviewer': [
-    { id: 'or-reviews', label: 'Object Reviews', icon: <ClipboardCheck size={16} /> },
+    { id: 'or-reviews', label: 'Content Reviews', icon: ICON_BY_ID['or-reviews'] },
   ],
   'course-reviewer': [
-    { id: 'cr-reviews', label: 'Course Reviews', icon: <ClipboardCheck size={16} /> },
+    { id: 'cr-reviews', label: 'Course Reviews', icon: ICON_BY_ID['cr-reviews'] },
   ],
   'administrator': [
-    { id: 'admin-overview', label: 'Program Overview', icon: <Shield size={16} /> },
-    { id: 'admin-people', label: 'People', icon: <Users size={16} /> },
-    { id: 'admin-courses', label: 'Courses & Assignments', icon: <BookMarked size={16} /> },
-    { id: 'admin-publishing', label: 'Publishing & Governance', icon: <GitBranch size={16} /> },
+    // The Access Catalogue row is gone on purpose (Quan): the catalog lives
+    // as a People sub-tab now. Icons keep the mobile shell's ICON_BY_ID form.
+    { id: 'admin-overview', label: 'Program Overview', icon: ICON_BY_ID['admin-overview'] },
+    { id: 'admin-people', label: 'People', icon: ICON_BY_ID['admin-people'] },
+    { id: 'admin-courses', label: 'Courses & Assignments', icon: ICON_BY_ID['admin-courses'] },
+    { id: 'admin-publishing', label: 'Publishing & Governance', icon: ICON_BY_ID['admin-publishing'] },
   ],
   'coach': [
-    { id: 'coach', label: 'Coach', icon: <UserCheck size={16} /> },
+    { id: 'coach', label: 'Coach', icon: ICON_BY_ID['coach'] },
   ],
   'student': [
-    { id: 'student-dashboard', label: 'Today', icon: <Home size={16} /> },
-    { id: 'student-courses', label: 'My Courses', icon: <GraduationCap size={16} /> },
+    { id: 'student-dashboard', label: 'Today', icon: ICON_BY_ID['student-dashboard'] },
+    { id: 'student-courses', label: 'My Courses', icon: ICON_BY_ID['student-courses'] },
   ],
 };
 
@@ -74,34 +115,29 @@ const PROGRAM_COLORS: Record<string, string> = {
   'mind-ai': 'bg-violet-100 text-violet-800',
 };
 
-export function Sidebar() {
-  const { role, program, currentScreen, navigate, logout, activeUserId, nexusMode, learningPerms, learningIsAdmin, learningCapabilities, nexusProgramName, nexusUserName, nexusUserRole } = useApp();
-  const initialsOf = (name: string) => name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
-  // Nexus mode: admins see everything. Members are gated by their effective
-  // capabilities (Access Catalogue); the legacy area-perms nav is the fallback
-  // for older roles that carry per-area view/edit instead of capabilities. Demo
-  // mode keeps the fixed per-persona nav.
+function useNavItems(): NavItem[] {
+  const { role, nexusMode, learningPerms, learningIsAdmin, learningCapabilities } = useApp();
   const nexusItems = learningIsAdmin
-    ? navItemsForPerms(learningPerms, true) // admin: full nav (unchanged)
+    ? navItemsForPerms(learningPerms, true)
     : (learningCapabilities?.length
-        ? navItemsForCapabilities(learningCapabilities) // member: capability-gated
-        : navItemsForPerms(learningPerms, false)); // legacy per-area role
-  const items: NavItem[] = nexusMode
+        ? navItemsForCapabilities(learningCapabilities)
+        : navItemsForPerms(learningPerms, false));
+  return nexusMode
     ? nexusItems.map((it) => ({ ...it, icon: ICON_BY_ID[it.id] ?? <Home size={16} /> }))
     : NAV[role] ?? [];
+}
+
+function NavBody({ onNavigate }: { onNavigate?: () => void }) {
+  const {
+    role, program, currentScreen, navigate, logout, activeUserId,
+    nexusMode, nexusProgramName, nexusUserName, nexusUserRole,
+  } = useApp();
+  const items = useNavItems();
   const user = USERS.find(u => u.id === activeUserId);
+  const initialsOf = (name: string) => name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
 
   return (
-    <aside
-      className="flex flex-col w-56 min-h-screen shrink-0"
-      style={{
-        background: 'rgba(255,255,255,0.55)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
-        borderRight: '1px solid rgba(255,255,255,0.6)',
-      }}
-    >
-      {/* Wordmark + program chip */}
+    <>
       <div className="px-5 pt-6 pb-4">
         <div className="flex items-center gap-2 mb-3">
           <div
@@ -114,8 +150,6 @@ export function Sidebar() {
             {nexusMode ? (nexusProgramName ?? 'Content Studio') : 'Life in AI Center'}
           </span>
         </div>
-        {/* Demo program chip only in standalone mode — a Nexus launch is scoped
-            to one program already (shown as the wordmark above). */}
         {!nexusMode ? (
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide ${PROGRAM_COLORS[program] || 'bg-slate-100 text-slate-700'}`}>
             {PROGRAM_LABELS[program] || program}
@@ -123,29 +157,42 @@ export function Sidebar() {
         ) : null}
       </div>
 
-      {/* Nav items */}
       <nav className="flex-1 px-3 py-2 space-y-0.5 overflow-y-auto">
         {items.map(item => {
           const active = currentScreen === item.id;
+          const pastel = pastelFor(item.id);
           return (
             <button
               key={item.id}
-              onClick={() => navigate(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all ${
+              type="button"
+              onClick={() => {
+                navigate(item.id);
+                onNavigate?.();
+              }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-all ${
                 active
                   ? 'bg-white shadow-[0_2px_8px_-2px_rgba(30,50,80,0.15)] text-[#0B1220]'
                   : 'text-[#6B7280] hover:bg-white/60 hover:text-[#0B1220]'
               }`}
               style={{ fontSize: 13.5, fontWeight: active ? 600 : 450 }}
             >
-              <span className={active ? 'text-[#0B1220]' : 'text-[#9AA3AF]'}>{item.icon}</span>
+              <span
+                className="flex items-center justify-center shrink-0 rounded-lg"
+                style={{
+                  width: 28,
+                  height: 28,
+                  background: pastel.bg,
+                  color: pastel.fg,
+                }}
+              >
+                {item.icon}
+              </span>
               {item.label}
             </button>
           );
         })}
       </nav>
 
-      {/* User chip + logout */}
       <div className="px-3 pb-5 pt-2 border-t border-white/40">
         <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/60">
           <div
@@ -159,6 +206,7 @@ export function Sidebar() {
             <p style={{ fontSize: 11, color: '#9AA3AF' }} className="truncate capitalize">{nexusMode ? (nexusUserRole ?? '') : role.replace(/-/g, ' ')}</p>
           </div>
           <button
+            type="button"
             onClick={logout}
             className="text-[#9AA3AF] hover:text-[#0B1220] transition-colors shrink-0"
             title="Log out"
@@ -167,6 +215,63 @@ export function Sidebar() {
           </button>
         </div>
       </div>
+    </>
+  );
+}
+
+const panelStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.96)',
+  backdropFilter: 'blur(24px)',
+  WebkitBackdropFilter: 'blur(24px)',
+};
+
+interface SidebarProps {
+  /** When set, render as a slide-over drawer instead of the desktop rail. */
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
+  const isDrawer = typeof mobileOpen === 'boolean';
+
+  if (isDrawer) {
+    if (!mobileOpen) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex md:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+        <button
+          type="button"
+          className="absolute inset-0 bg-black/35"
+          aria-label="Close menu"
+          onClick={onMobileClose}
+        />
+        <aside
+          className="relative flex flex-col w-[min(18rem,86vw)] h-full shadow-2xl"
+          style={{ ...panelStyle, borderRight: '1px solid rgba(0,0,0,0.06)' }}
+        >
+          <button
+            type="button"
+            onClick={onMobileClose}
+            className="absolute top-3 right-3 p-2 rounded-xl text-[#6B7280] hover:bg-black/5"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+          <NavBody onNavigate={onMobileClose} />
+        </aside>
+      </div>
+    );
+  }
+
+  return (
+    <aside
+      className="flex flex-col w-56 min-h-screen shrink-0"
+      style={{
+        ...panelStyle,
+        background: 'rgba(255,255,255,0.55)',
+        borderRight: '1px solid rgba(255,255,255,0.6)',
+      }}
+    >
+      <NavBody />
     </aside>
   );
 }
