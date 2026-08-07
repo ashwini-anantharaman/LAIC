@@ -242,6 +242,7 @@ export function TutorialV2SectionWorkspace({
         units,
         authorMode: bumpAuthorMode(section.authorMode, 'generated'),
         markupFlags,
+        done: collected.length > 0,
       });
       setTab('write');
     } catch (e) {

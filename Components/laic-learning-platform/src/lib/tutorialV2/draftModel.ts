@@ -29,8 +29,45 @@ import type {
 } from '../types';
 import { embedTypeLabel } from './recipeStructure';
 
+/** True when a part has real authored/generated content (not an empty scaffold). */
+export function partHasContent(p: TutorialV2Part | Record<string, unknown> | null | undefined): boolean {
+  if (!p || typeof p !== 'object') return false;
+  const any = p as Record<string, any>;
+  const t = String(any.type || '');
+  if (typeof any.body === 'string' && any.body.trim()) return true;
+  if (t === 'image' || any.mediaKind === 'image') return !!(any.url && String(any.url).trim());
+  if (t === 'video' || any.mediaKind === 'video') {
+    return !!(any.videoId && String(any.videoId).trim()) || !!(any.url && String(any.url).trim());
+  }
+  if (Array.isArray(any.questions) && any.questions.length) return true;
+  if (Array.isArray(any.cards) && any.cards.length) return true;
+  if (any.conceptCard || any.libraryObjectId || any.objectId || any.embedObjectId) return true;
+  if (typeof any.prompt === 'string' && any.prompt.trim()) return true;
+  if (typeof any.front === 'string' && any.front.trim()) return true;
+  return false;
+}
+
+export function sectionHasContent(sec: V2Section): boolean {
+  return (sec.parts || []).some((p) => partHasContent(p));
+}
+
+/** Section is ready for Review — explicit done checkbox or real content. */
+export function sectionSatisfied(sec: V2Section): boolean {
+  return !!sec.done || sectionHasContent(sec);
+}
+
+export function slotSatisfied(slot: {
+  done?: boolean;
+  parts?: TutorialV2Part[] | null;
+  part?: TutorialV2Part | null;
+}): boolean {
+  if (slot.done) return true;
+  if ((slot.parts || []).some((p) => partHasContent(p))) return true;
+  return partHasContent(slot.part || null);
+}
+
 export function deriveSectionStatus(sec: V2Section): SectionStatus {
-  if (sec.done) return 'done';
+  if (sectionSatisfied(sec)) return 'done';
   const hasAuthored =
     (sec.parts && sec.parts.length > 0)
     || (sec.pickedSourceIds && sec.pickedSourceIds.length > 0)
@@ -40,29 +77,29 @@ export function deriveSectionStatus(sec: V2Section): SectionStatus {
 }
 
 export function requiredSectionsRemaining(sections: V2Section[]): number {
-  return (sections || []).filter((s) => s.required && !s.done).length;
+  return (sections || []).filter((s) => s.required && !sectionSatisfied(s)).length;
 }
 
 export function allRequiredDone(
   sections: V2Section[],
-  topLevelSlots?: { required: boolean; done: boolean }[],
+  topLevelSlots?: { required: boolean; done: boolean; parts?: TutorialV2Part[] | null; part?: TutorialV2Part | null }[],
 ): boolean {
   const slots = topLevelSlots || [];
   const requiredSlots = slots.filter((s) => s.required);
-  const slotsOk = requiredSlots.every((s) => s.done);
+  const slotsOk = requiredSlots.every((s) => slotSatisfied(s));
   const required = (sections || []).filter((s) => s.required);
   if (!required.length && !(sections || []).length) {
-    return slotsOk && (slots.length === 0 || slots.every((s) => !s.required || s.done));
+    return slotsOk && (slots.length === 0 || slots.every((s) => !s.required || slotSatisfied(s)));
   }
   if (!required.length) {
-    return slotsOk && ((sections || []).every((s) => s.done) || (sections || []).length === 0);
+    return slotsOk && ((sections || []).every((s) => sectionSatisfied(s)) || (sections || []).length === 0);
   }
-  return slotsOk && required.every((s) => s.done);
+  return slotsOk && required.every((s) => sectionSatisfied(s));
 }
 
 export function doneCount(sections: V2Section[]): { done: number; total: number } {
   const list = sections || [];
-  return { done: list.filter((s) => s.done).length, total: list.length };
+  return { done: list.filter((s) => sectionSatisfied(s)).length, total: list.length };
 }
 
 export function structureFromTemplate(template: TutorialTemplate): TutorialV2Structure {

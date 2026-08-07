@@ -35,6 +35,8 @@ import {
   emptyTutorialV2Draft,
   partsToBlocks,
   pipelineDraftFromV2,
+  sectionHasContent,
+  slotSatisfied,
   structureFromTemplate,
   topLevelSlotAsSection,
   touchDraft,
@@ -639,20 +641,33 @@ export function ObjectCreatorTutorialV2() {
       return;
     }
     if (next === 'review') {
-      const parts = collectRecipeParts(draft);
+      // Mark contentful sections/slots done so Review stays reachable after reload.
+      const sections = (draft.sections || []).map((s) => (
+        (!s.done && sectionHasContent(s)) ? { ...s, done: true } : s
+      ));
+      const topLevelSlots = (draft.topLevelSlots || []).map((s) => (
+        (!s.done && slotSatisfied(s)) ? { ...s, done: true } : s
+      ));
+      const base = { ...draft, sections, topLevelSlots };
+      const parts = collectRecipeParts(base);
       const blocks = partsToBlocks(parts, {
         passOn: true,
         pass: draft.structure.pass || '70%',
       });
-      const nextDraft = touchDraft(draft, {
+      const nextDraft = touchDraft(base, {
         phase: 'review',
         assembledParts: parts,
         activeSectionId: null,
         activeSlotId: null,
       });
-      persist(nextDraft, blocks);
+      // Advance UI first — persist must not block entering Review.
       setDraft(nextDraft);
       setPhase('review');
+      try {
+        persist(nextDraft, blocks);
+      } catch (err: any) {
+        console.warn('[tutorial-v2] persist on review failed:', err?.message || err);
+      }
     }
   }, [draft, commit, persist]);
 

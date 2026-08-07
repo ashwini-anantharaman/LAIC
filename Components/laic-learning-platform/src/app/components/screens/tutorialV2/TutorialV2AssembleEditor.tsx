@@ -130,8 +130,9 @@ export function TutorialV2AssembleEditor({
             </button>
             <button
               type="button"
-              disabled={!canSubmit || !parts.length}
+              disabled={!parts.length}
               onClick={onSubmit}
+              title={!canSubmit ? 'Some required items are still incomplete — you can still submit a draft for review.' : undefined}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-white disabled:opacity-40"
               style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
             >

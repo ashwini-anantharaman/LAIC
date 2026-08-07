@@ -51,7 +51,7 @@ export function TutorialV2Navigator({
   const remaining = requiredSectionsRemaining(draft.sections);
   const slots = draft.topLevelSlots || [];
   const canReview = allRequiredDone(draft.sections, slots)
-    && (total > 0 || slots.some((s) => s.done) || slots.length > 0);
+    && (total > 0 || slots.some((s) => s.done || (s.parts || []).length > 0 || !!s.part));
   const hasLibrarySlots = slots.some((s) => s.kind === 'library');
   const hasGenerateSlots = slots.some((s) => s.kind === 'generate');
   const pendingGenerate = slots.filter((s) => s.kind === 'generate' && !s.done).length;
