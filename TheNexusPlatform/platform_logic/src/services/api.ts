@@ -732,6 +732,8 @@ export interface TeamPerson {
   membership_id: string | null;
   invitation_id: string | null;
   email: string | null;
+  /** Optional second sign-in identifier, set by an admin. */
+  username?: string | null;
   display_name: string | null;
   membership_role: string;
   status: "active" | "invited";
@@ -1354,6 +1356,8 @@ export interface ProgramMember {
   membership_id: string | null;
   invitation_id: string | null;
   email: string | null;
+  /** Optional second sign-in identifier, set by an admin. */
+  username?: string | null;
   display_name: string | null;
   membership_role: string;
   status: "active" | "invited";
@@ -1363,6 +1367,22 @@ export interface ProgramMember {
   bridge_role?: string | null;
   /** All platform-role assignments: { bridge?, learning?, … } (read-only here). */
   platform_roles?: Record<string, string> | null;
+}
+
+/**
+ * Set a member's sign-in credentials — admin action, org/program admins only.
+ *
+ * Pass `username: null` to clear it. The password is sent once and never
+ * returned; the response echoes the email and the resulting username.
+ */
+export async function setMemberCredentials(
+  membershipId: string,
+  body: { password?: string; username?: string | null },
+): Promise<{ email: string; username: string | null; changed: string[] }> {
+  return request(`/api/platform/members/${membershipId}/credentials`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
 }
 
 /** Remove a member (org- or program-scoped membership). */

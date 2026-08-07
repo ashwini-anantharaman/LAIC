@@ -8,6 +8,7 @@ import {
   exchangeLaunchToken,
   createAuthUser,
   getCurrentUser,
+  setAuthUserPassword,
   getOptionalUser,
   loadPlatformUser,
   mintSupabaseSession,
@@ -38,6 +39,7 @@ import {
 } from "../permissions";
 import {
   addMemberSchema,
+  adminSetPasswordSchema,
   createJoinCodeSchema,
   createOrgSchema,
   integrationInputSchema,
@@ -53,6 +55,7 @@ import {
   setEntitlementSchema,
   signupSchema,
   updateMemberSchema,
+  usernameSchema,
 } from "../schemas";
 import {
   BRIDGE_ROLE_MAP,
@@ -367,9 +370,25 @@ platformRouter.post("/auth/signup", async (c) => {
 
 platformRouter.post("/auth/login", async (c) => {
   const body = (await c.req.json()) as Row;
-  const email = body?.email;
   const password = body?.password;
-  if (!email || !password) throw new HttpError(400, "email and password required");
+  // The identifier field accepts an email OR a username: a username can never
+  // contain "@" (usernameSchema), so the two are unambiguous. `username` is
+  // also accepted explicitly for callers that keep them in separate fields.
+  const identifier: string | undefined =
+    (typeof body?.email === "string" && body.email.trim() ? body.email.trim() : undefined) ??
+    (typeof body?.username === "string" && body.username.trim() ? body.username.trim() : undefined);
+  if (!identifier || !password) throw new HttpError(400, "email and password required");
+
+  let email = identifier;
+  if (!identifier.includes("@")) {
+    // Resolve the username to the email its auth credential is keyed by. The
+    // failure is deliberately the same 401 as a bad password, so this cannot be
+    // used to enumerate which usernames exist.
+    const byUsername = dbEnabled() ? await db.getProfileByUsername(identifier) : null;
+    const resolved = byUsername?.email;
+    if (!resolved) throw new HttpError(401, "Invalid credentials");
+    email = resolved as string;
+  }
   const session = await signInUser(email, password);
   const user = await loadPlatformUser(session.id, session.email);
 
@@ -2150,6 +2169,8 @@ function _memberResponse(row: Row, profile: Row, stageName: string | null): Row 
     profile_id: row.profile_id,
     email: profile.email ?? "",
     display_name: profile.display_name || profile.name || null,
+    /** Optional second sign-in identifier, so the roster can show/edit it. */
+    username: profile.username ?? null,
     role: row.role,
     program_id: row.program_id ?? null,
     stage_node_id: row.stage_node_id ?? null,
@@ -2223,6 +2244,120 @@ platformRouter.patch("/members/:member_id", async (c) => {
   return c.json(_memberResponse(updated, profile, stageName));
 });
 
+// ── Credentials (admin-set username / password) ─────────────────────────────
+
+const credentialsSchema = z
+  .object({
+    password: adminSetPasswordSchema.optional(),
+    // null clears the username; undefined leaves it untouched.
+    username: usernameSchema.nullable().optional(),
+  })
+  .refine((v) => v.password !== undefined || v.username !== undefined, {
+    message: "Provide a password, a username, or both",
+  });
+
+/** How much authority a membership role carries, for the outranking rule below. */
+function _roleRank(role: string | null | undefined): number {
+  if (role === "owner") return 3;
+  if (role === "administrator") return 2;
+  return 1;
+}
+
+/**
+ * May `user` set another person's username/password?
+ *
+ * Credentials are the strongest thing an admin can touch — setting a password is
+ * equivalent to becoming that person — so this is deliberately stricter than the
+ * ordinary people guards:
+ *
+ *   • The Nexus operator is refused outright (Phase 1 people isolation, §3.5):
+ *     Nexus governs an org's boundary, never the people inside it.
+ *   • Only owners and administrators qualify. An instructor with "edit" can
+ *     manage content, not identities.
+ *   • ALTITUDE: an org-level admin can manage anyone in the org; a
+ *     program-scoped admin can manage only members of THAT program. This is what
+ *     lets Club 1's administrator manage Club 1 without reaching the whole org.
+ *   • OUTRANKING: you can never touch someone who outranks you. Without this an
+ *     administrator could set the owner's password and take over the org.
+ */
+function _assertCanManageCredentials(user: PlatformUser, target: Row): void {
+  if (user.role === "platform_admin") {
+    throw new HttpError(403, "Nexus operators cannot change an organization's credentials");
+  }
+  const orgId = target.org_id as string;
+  const programId = (target.program_id ?? null) as string | null;
+
+  const orgLevelAdmin = user.memberships.filter(
+    (m) => m.org_id === orgId && !m.program_id && (m.role === "owner" || m.role === "administrator"),
+  );
+  const programAdmin = programId
+    ? user.memberships.filter(
+        (m) => m.program_id === programId && (m.role === "owner" || m.role === "administrator"),
+      )
+    : [];
+
+  const actors = [...orgLevelAdmin, ...programAdmin];
+  if (actors.length === 0) {
+    throw new HttpError(403, "Administrator access is required to change credentials");
+  }
+  const actorRank = Math.max(...actors.map((m) => _roleRank(m.role)));
+  if (_roleRank(target.role) > actorRank) {
+    throw new HttpError(403, "You cannot change the credentials of someone who outranks you");
+  }
+}
+
+/**
+ * Set a member's username and/or password. Admin-initiated, never self-service —
+ * a person changing their OWN password goes through the auth provider's flow.
+ *
+ * The password is written straight to the auth backend and never stored,
+ * returned, or logged; the audit event records only WHICH fields changed.
+ */
+platformRouter.patch("/members/:member_id/credentials", async (c) => {
+  const user = await getCurrentUser(c);
+  const memberId = c.req.param("member_id");
+  const req = parseBody(credentialsSchema, await c.req.json());
+
+  const membership = await db.getMembership(memberId);
+  if (!membership) throw new HttpError(404, "Member not found");
+  _assertCanManageCredentials(user, membership);
+
+  const profile = await db.getProfile(membership.profile_id);
+  if (!profile) throw new HttpError(404, "Profile not found");
+  const email = (profile.email ?? null) as string | null;
+  if (!email) throw new HttpError(400, "This member has no email, so credentials cannot be set");
+
+  const changed: string[] = [];
+
+  if (req.username !== undefined) {
+    const next = req.username === null ? null : req.username.trim();
+    if (next && next.includes("@")) {
+      throw new HttpError(400, "A username cannot contain @");
+    }
+    await db.setProfileUsername(membership.profile_id, next);
+    changed.push(next === null ? "username_cleared" : "username");
+  }
+
+  if (req.password !== undefined) {
+    await setAuthUserPassword(email, req.password);
+    changed.push("password");
+  }
+
+  await db.recordAuditEvent("member.credentials_updated", {
+    orgId: membership.org_id,
+    actorUserId: user.id,
+    scopeType: membership.program_id ? "program" : "organization",
+    scopeId: membership.program_id ?? membership.org_id,
+    targetType: "profile",
+    targetId: membership.profile_id,
+    // Deliberately records only the FIELDS touched — never a credential value.
+    metadata: { changed },
+  });
+
+  const updated = (await db.getProfile(membership.profile_id)) ?? profile;
+  return c.json({ email, username: updated.username ?? null, changed });
+});
+
 // True administrators only (owner / administrator) — deliberately stricter
 // than isOfferingAdmin, which counts instructors for offering-management tasks.
 // Removing PEOPLE is an admin act; an instructor must never be able to do it,
@@ -2277,6 +2412,14 @@ async function _requireNexusArea(user: PlatformUser, area: NexusArea, level: "vi
   throw new HttpError(403, "Nexus operator access required");
 }
 
+/**
+ * The org's Super Admin — its owner. Deliberately org-LEVEL only (`!m.program_id`):
+ * ownership is a property of the organization, never of one program inside it.
+ */
+function _isOrgOwner(user: PlatformUser, orgId: string): boolean {
+  return user.memberships.some((m) => m.org_id === orgId && m.role === "owner" && !m.program_id);
+}
+
 function _canManageMembers(user: PlatformUser, orgId: string, programId: string | null): boolean {
   return user.memberships.some(
     (m) =>
@@ -2296,18 +2439,18 @@ platformRouter.delete("/members/:member_id", async (c) => {
   const row = await db.getMembership(memberId);
   if (!row) throw new HttpError(404, "Member not found");
   if (row.role === "owner") throw new HttpError(400, "The organization owner cannot be removed");
-  if (row.program_id) {
+  if (row.role === "administrator") {
+    // Super Admin only: only the org owner may remove an administrator — a
+    // regular admin cannot remove a peer, at EITHER altitude. Previously this
+    // rule guarded org-level admins only, so inside a program (e.g. the Club 1
+    // partner view) one administrator could remove another via
+    // _canManageMembers, which counts a program-scoped administrator.
+    if (!_isOrgOwner(user, row.org_id)) {
+      throw new HttpError(403, "Only the Super Admin can remove an administrator");
+    }
+  } else if (row.program_id) {
     if (!_canManageMembers(user, row.org_id, row.program_id)) {
       throw new HttpError(403, "Program admin access required");
-    }
-  } else if (row.role === "administrator") {
-    // Super Admin only: only the org owner may remove another administrator —
-    // a regular admin (or a custom Team·edit role) cannot remove admins.
-    const isOwner = user.memberships.some(
-      (m) => m.org_id === row.org_id && m.role === "owner" && !m.program_id,
-    );
-    if (!isOwner) {
-      throw new HttpError(403, "Only the organization owner (Super Admin) can remove an administrator");
     }
   } else {
     await _requireOrgArea(user, row.org_id, "team", "edit");

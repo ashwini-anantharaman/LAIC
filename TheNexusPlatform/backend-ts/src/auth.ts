@@ -232,6 +232,33 @@ export async function createAuthUser(email: string, password: string): Promise<R
 }
 
 /**
+ * Set someone's password on their behalf — an ADMIN action, never self-service.
+ * The caller is responsible for proving the actor may administer this person
+ * (see the credentials route's guards); this function only does the write.
+ *
+ * Covers all three auth backends: Supabase in production, the Postgres-backed
+ * demo store, and the JSON local store.
+ */
+export async function setAuthUserPassword(email: string, password: string): Promise<Row> {
+  if (await demoMode()) {
+    return dbEnabled()
+      ? demoAuth.setDemoAuthPassword(email, password)
+      : local.localAuthSetPassword(email, password);
+  }
+  const client = requireAdminClient();
+  // Supabase's admin API keys off the auth user id, so resolve the email first.
+  const { data: list, error: listErr } = await client.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (listErr) throw new HttpError(502, `Could not look up the account: ${listErr.message}`);
+  const target = (list?.users ?? []).find(
+    (u) => (u.email ?? "").toLowerCase() === email.toLowerCase(),
+  );
+  if (!target) throw new HttpError(404, "No account for that email");
+  const { error } = await client.auth.admin.updateUserById(target.id, { password });
+  if (error) throw new HttpError(400, `Could not set the password: ${error.message}`);
+  return { id: target.id, email: target.email ?? email };
+}
+
+/**
  * Bearer-token auth for /api/hook/* — a per-app API key, verified against
  * registered_apps.api_key_hash. Separate from getCurrentUser by design.
  * Per-app rate limiting is applied at the hook route layer (see routes/hook.ts

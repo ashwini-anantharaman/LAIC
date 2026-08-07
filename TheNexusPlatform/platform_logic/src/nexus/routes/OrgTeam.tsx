@@ -9,6 +9,8 @@ import { useNavigate, useParams } from "react-router";
 import { Copy, Eye, Layers, LayoutGrid, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { CredentialsButton } from "@/nexus/people/CredentialsButton";
+
 import { Button } from "@/app/components/ui/button";
 import {
   Dialog,
@@ -116,6 +118,14 @@ export function OrgTeam() {
     if (!p) return null;
     return (
       <>
+        {p.membership_id && p.email ? (
+          <CredentialsButton
+            membershipId={p.membership_id}
+            personLabel={p.display_name ?? p.email}
+            currentUsername={p.username ?? null}
+            onSaved={load}
+          />
+        ) : null}
         {DEV_ENABLED && p.email ? (
           <Button size="sm" variant="ghost" onClick={() => testAs(p)} title="Sign in as this person (dev)">
             <Eye className="size-3.5" /> Test as

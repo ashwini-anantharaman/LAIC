@@ -1115,10 +1115,21 @@ async function _enrollActiveMember(
   }
   const profileId = await db.ensureOrgProfile(authId, orgId, { email, role: "teacher", displayName: opts.displayName ?? null });
   const members = await db.listMembers(orgId).catch(() => [] as Row[]);
-  const already = members.some(
+  const existingMembership = members.find(
     (m) => m.profile_id === profileId && ((m.program_id as string | null) ?? null) === programId,
   );
-  if (!already) await db.addMembership(orgId, profileId, opts.membershipRole, null, "edit", programId);
+  if (!existingMembership) {
+    await db.addMembership(orgId, profileId, opts.membershipRole, null, "edit", programId);
+  } else if (existingMembership.role !== opts.membershipRole) {
+    // PROMOTE (or demote) an existing member rather than silently doing nothing.
+    // Previously this branch was `if (!already) add…`, so appointing an
+    // administrator who was already a plain member was a no-op: the console
+    // reported success while memberships.role stayed "member". That is why a
+    // custom program role named "admin" looked like the only way to do it —
+    // custom roles never touch memberships.role, so nothing downstream (this
+    // app's coach/learner split included) could see it.
+    await db.updateMemberRole(existingMembership.id as string, opts.membershipRole);
+  }
   if (opts.roleId) {
     await graph.setProgramRoleAssignment(orgId, programId, email, opts.roleId).catch((e) => console.error("enroll role:", e));
   }
@@ -1132,9 +1143,17 @@ offeringsRouter.post("/programs/:program_id/administrators", async (c) => {
   const req = parseBody(assignAdminSchema, await c.req.json());
   const program = await db.getProgram(programId);
   if (!program) throw new HttpError(404, "Program not found");
-  // Org-altitude action: requires org-level access (owner/administrator),
-  // NOT program-scoped access — this is how the org assigns a program's admin.
-  _requireOfferingPeopleAdmin(user, program.org_id, null);
+  // Super Admin only. isOfferingAdmin() treats any administrator whose
+  // stage_node_id is null as org-level, so a PROGRAM-scoped administrator
+  // (e.g. a Club 1 admin) passed it and could appoint peers. Adding an
+  // administrator is the org owner's act alone — the mirror of the
+  // owner-only rule on administrator REMOVAL.
+  if (user.role === "platform_admin") {
+    throw new HttpError(403, "Nexus operators cannot access an organization's members");
+  }
+  if (!user.memberships.some((m) => m.org_id === program.org_id && m.role === "owner" && !m.program_id)) {
+    throw new HttpError(403, "Only the Super Admin can add an administrator");
+  }
   const result = await _enrollActiveMember(program.org_id, programId, {
     email: req.email, displayName: req.display_name ?? null, membershipRole: "administrator",
   });

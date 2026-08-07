@@ -2,11 +2,14 @@
 //
 // Two independent signals, in priority order:
 //
-//  1. THEIR NEXUS MEMBERSHIP ROLE (/auth/me → memberships[].role). This is what
+//  1. THEIR NEXUS MEMBERSHIP ROLE for the program this app is about
+//     (/auth/me → memberships[].role, picked by primaryMembership). This is what
 //     links the app to the console: whoever an admin adds to a program in Nexus
 //     lands in the right view here automatically, with no list to maintain. An
 //     "owner" or "administrator" (a super admin is the org owner) gets the coach
-//     view; "member" and "student" get the learner view.
+//     view; "member" and "student" get the learner view. A membership elsewhere
+//     is irrelevant — being an admin of another program must not grant coach
+//     access to this club.
 //
 //  2. The Bridge platform grant (/bridge/context), which is program-scoped to
 //     the Bridge Program. People in a PARTNER program such as Club 1 have no
@@ -29,8 +32,21 @@ export type { BridgeContext } from "./nexus";
 /** Membership roles that administer a program, and so get the coach view. */
 const ADMIN_ROLES = new Set(["owner", "administrator", "instructor", "teacher", "coach"]);
 
-/** Profile-level roles that administer, for accounts holding no membership. */
-const ADMIN_PROFILE_ROLES = new Set(["org_admin", "platform_admin", "teacher"]);
+/**
+ * Profile-level roles that administer, used ONLY when someone holds no
+ * membership at all.
+ *
+ * "teacher" is deliberately NOT here. The platform writes profiles.role =
+ * "teacher" for everyone invited into a program — see the enroll path in
+ * routes/offerings.ts, which passes role: "teacher" unconditionally — so it says
+ * nothing about whether the person administers anything. Trusting it put every
+ * Club 1 member into the coach view.
+ *
+ * profiles.role is also constrained to just ('student','teacher') by migration
+ * 0001, so it is far too coarse to carry an authorization decision. The
+ * membership role is the real signal.
+ */
+const ADMIN_PROFILE_ROLES = new Set(["org_admin", "platform_admin"]);
 
 /** Everything we know about the caller's standing, resolved once per session. */
 export type RoleContext = {
@@ -95,23 +111,21 @@ export async function getRoleContext(token: string): Promise<RoleContext> {
   return promise;
 }
 
-/** True when any membership — or the profile role — administers. */
+/** True when the person's OWN program membership administers it. */
 export function isCoach(context: RoleContext | BridgeContext | null): boolean {
   if (!context) return false;
 
   // Tolerate a bare BridgeContext so any older call site keeps working.
   if (!("memberships" in context)) return _bridgeGrantsCoach(context);
 
-  if (context.memberships.some((m) => ADMIN_ROLES.has(m.role.toLowerCase()))) {
-    return true;
-  }
-  // Only trusted when there is no membership to judge by: a profile role of
-  // "teacher" can outlive a demotion to member inside a specific program.
-  if (
-    context.memberships.length === 0 &&
-    context.profileRole &&
-    ADMIN_PROFILE_ROLES.has(context.profileRole.toLowerCase())
-  ) {
+  // Judge by the membership this app is ABOUT — the person's club/program — not
+  // by any membership anywhere. Someone can be a learner in Club 1 and an
+  // administrator of an unrelated program; that must not make them a coach here.
+  const primary = primaryMembership(context);
+  if (primary) return ADMIN_ROLES.has(primary.role.toLowerCase());
+  // No membership to judge by — fall back to the profile role, then to a Bridge
+  // platform grant.
+  if (context.profileRole && ADMIN_PROFILE_ROLES.has(context.profileRole.toLowerCase())) {
     return true;
   }
   return _bridgeGrantsCoach(context.bridge);

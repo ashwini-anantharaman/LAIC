@@ -33,6 +33,7 @@ const outFile = join(root, "constants", "brand-vectors.ts");
 const NAMES = {
   "hills.svg": "HILLS_SVG",
   "icon-challenge-card.svg": "ICON_CHALLENGE_CARD",
+  "icon-bird-flight.svg": "ICON_BIRD_FLIGHT",
   "icon-home.svg": "ICON_HOME",
   "icon-learn.svg": "ICON_LEARN",
   "icon-play.svg": "ICON_PLAY",
