@@ -193,3 +193,78 @@ slot in later. **No websockets/presence in v1.**
 6. Leaderboard/scorecard + editor badge + practice replay.
 7. e2e: create→invite→play→finish→compare happy path; unlock rules; attempt
    integrity; control-override matrix.
+
+---
+
+# ADDENDUM A — decisions from the design round (2026-08-06/07)
+
+These supersede §2/§6 where they conflict. The canvases in
+`docs/design/challenges/` are the visual reference and were validated at a real
+390x844 viewport; mobile is the primary target.
+
+## A1. Entry behaviour — there is no challenge "landing page"
+- Tapping a challenge **starts or resumes play immediately** on the next
+  unplayed board. No cover card, no board browser first.
+- Once the viewer has **finished all boards**, tapping the challenge opens the
+  **results** view instead.
+- **Accept / decline** for a pending invite lives on the **challenges list
+  card**, not on a challenge page. Nothing opens until accepted.
+- Consequence: the old `pre-start` phase and its Start/Accept/Decline screen are
+  deleted from the design and must not be built.
+
+## A2. Moderators
+- `moderator` is a **per-invite boolean**, set with a checkbox on each invite row
+  at create time (and editable later by the creator). The **creator is always a
+  moderator** (checkbox rendered checked + disabled).
+- Moderators see **standings, board-by-board and comparisons at any time**,
+  regardless of §A3.
+- A moderator **may also compete**. If they do, their leaderboard row carries a
+  small **MOD** mark (distinct from the teal editor diamond `<>`), so early
+  sight is never invisible to the field.
+
+## A3. Standings visibility is a challenge setting
+- New setting `standingsVisibility`: `after-finish` (default — today's
+  spoiler-safe rule) | `always`.
+- **One access rule, applied in one place:**
+  `resultsUnlocked = viewerHasFinished || viewerIsModerator || standingsVisibility === "always"`.
+- The **field is completed humans only**. A viewer with early sight who has not
+  finished is legitimately absent from the standings; the summary line reads
+  e.g. "5 finished - 2 still playing (including you) - 2 invited", and they have
+  no rank until they finish.
+
+## A4. In-challenge table chrome
+- Playing a challenge board uses the **existing table** with a thin **challenge
+  strip above the top toolbar**: challenge title, `Board k of N`, and a
+  right-aligned **Results** button. The strip's bottom border doubles as a
+  progress rule.
+- The Results button is **hidden entirely** (not greyed) when
+  `resultsUnlocked` is false.
+- Results open as an **overlay over the felt — never a navigation**, because a
+  board in progress is a one-attempt session that must survive. Closing returns
+  to the exact board state.
+- Architecture: the strip is challenge chrome layered **above an unforked
+  PlayTable**; the overlay is a portal. Do not fork the table.
+- Control overrides (spec §2) apply here: controls the creator hid are
+  **absent**, not disabled.
+
+## A5. Results view
+- Tabs `Boards | Results`; Results is default and primary. The Results tab label
+  carries the viewer's rank chip once they have finished (e.g. `Results - #2`).
+- **Leaderboard**: rank - name - total only. No avatars. Editor `<>` and `MOD`
+  marks as small suffixes. Ties share a rank. **BEN is a hairline benchmark
+  footer row, unranked**.
+- **Board-by-board grid** (boards x players, BEN as a column) sits behind one
+  `Board-by-board` disclosure. In each board row the **leader = the best score
+  on that board** is highlighted (ties all highlight); the highlight is computed
+  on the displayed figure so what is tinted matches what is read.
+- **Compare by picking two cells**: a left-aligned **Compare** button above the
+  grid enters selection mode; the first click picks a (board, player) cell, the
+  second must be **in the same board row** (other rows dim and go inert, with a
+  one-line hint); the pair opens the comparison. Because BEN is a column,
+  comparing against BEN needs no separate control. Cancel and de-select must
+  both be obvious.
+
+## A6. Scope note
+Everything above is v1. Live human-vs-human tables remain out of scope, but the
+per-board participant model (`{seat, kind: "user"|"ben", userId?}`) must not
+assume three BEN opponents.
