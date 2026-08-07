@@ -34,6 +34,12 @@ const NAMES = {
   "hills.svg": "HILLS_SVG",
   "icon-challenge-card.svg": "ICON_CHALLENGE_CARD",
   "icon-bird-flight.svg": "ICON_BIRD_FLIGHT",
+  "icon-learners.svg": "ICON_LEARNERS",
+  "icon-card-plus.svg": "ICON_CARD_PLUS",
+  "icon-card-play.svg": "ICON_CARD_PLAY",
+  "icon-card-history.svg": "ICON_CARD_HISTORY",
+  "icon-card-envelope.svg": "ICON_CARD_ENVELOPE",
+  "icon-assignments.svg": "ICON_ASSIGNMENTS",
   "icon-home.svg": "ICON_HOME",
   "icon-learn.svg": "ICON_LEARN",
   "icon-play.svg": "ICON_PLAY",
@@ -45,6 +51,7 @@ const NAMES = {
   "icon-gear.svg": "ICON_GEAR",
   "icon-menu.svg": "ICON_MENU",
   "icon-birdglyph.svg": "ICON_BIRD_GLYPH",
+  "icon-pin.svg": "ICON_PIN",
 };
 
 const TRUNK_FILL = "#421313";

@@ -158,7 +158,6 @@ const styles = StyleSheet.create({
     fontSize: Type.screenTitle,
     color: Brand.ink,
     paddingHorizontal: Spacing.screen,
-    paddingTop: 4,
   },
   sectionHeading: {
     fontFamily: Fonts.heading,

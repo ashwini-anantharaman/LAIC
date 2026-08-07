@@ -1,32 +1,24 @@
-// My Club (Figma 579:2364; challenges 580:2753; coach view 582:2938 / 583:3339).
+// Club — the club's front door (Figma 630:4732; members 630:4982).
 //
-// Coaches see one extra affordance: a + beside "Challenges" that opens the
-// configure panel IN PLACE of the carousel (the design draws it covering exactly
-// that band). Learners never see it — the role comes from the same
-// getBridgeContextCached/isCoach check the Home, Play and Coach tabs use.
+// The club name and blurb stay put; a home glyph and a small "Members" pill on
+// the same line switch between the two views. Green means you are on it, dark
+// grey means you are not — the pill fills green and gains a card behind it when
+// active, and is a plain outline when not.
 //
-// The Nexus API has no clubs, challenges or leaderboards yet, so every name and
-// score in CHALLENGES below is placeholder data. Nothing on screen says so (by
-// request) — the layout and interaction are real, the content is not.
+//   Home     the latest challenge, then Practice Deal / Challenges / Feedback / Chat
+//   Members  the club roster, filtered by All Users / Learners / Coaches
 //
-// Structure, per the design:
-//   • Club name + blurb
-//   • Challenges — a horizontal carousel (Figma 580:2753). The tile is centred
-//     and captioned beneath as "Challenge 1 • 8 Boards"; the pitch (237.53) is
-//     well under the screen width (390), so a good slice of the next tile shows,
-//     which is how the design signals that it swipes.
-//   • Challenge Leaderboard — EACH challenge has its own board, so swiping the
-//     carousel swaps the standings below it.
-//
-// The leaderboard scrolls inside its own clipped region rather than extending the
-// page, so rows are cut off at the top and bottom edges exactly as drawn and can
-// never spill over the tab bar or the carousel.
+// The roster is REAL: /api/programs/:id/members is readable by any member of the
+// program, so a learner can see who else is in their club. The program is the
+// caller's own (a partner club like Club 1), not the app-wide PROGRAM_ID — that
+// constant points at the LAIC Bridge Program, which a Club 1 member is not in.
+// Every row carries the person's standing on the right, so "All Users" needs no
+// extra grouping to stay readable. Challenges are still placeholder content (the
+// API has no clubs yet).
 
-import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -37,441 +29,449 @@ import {
 import { SvgXml } from "react-native-svg";
 
 import { BrandChrome } from "../../components/brand-chrome";
-import { ChallengeFormPanel } from "../../components/challenge-form-panel";
+import {
+  ChallengeCaption,
+  ChallengeTile,
+  SEED_CHALLENGES,
+} from "../../components/challenge-tile";
+import { PERSON_ROW, PersonRow } from "../../components/person-row";
 import { tintSvg } from "../../components/svg-tint";
-import { ICON_AVATAR, ICON_CHALLENGE_CARD } from "../../constants/brand-vectors";
-import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
+import { ICON_HOME } from "../../constants/brand-vectors";
+import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
-import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
+import { getRoleContext, primaryMembership } from "../../lib/bridge-role";
+import {
+  fetchBridgeSummary,
+  fetchProgramMembers,
+  type ProgramMemberRow,
+} from "../../lib/nexus";
 
-/** Design-space geometry, scaled to the real screen width like the home tree. */
 const DESIGN_WIDTH = 390;
-const TILE = 185.47;
-const TILE_INNER = 158.42;
-const TILE_INSET = 13.52;
-const TILE_RADIUS = 10.6;
-const TILE_BORDER = 1.93;
-/** Distance from one challenge to the next; the gap lets the next tile peek. */
-const ITEM_PITCH = 237.53;
-/** Left offset of the first tile — (390 − 185.47) / 2, i.e. centred. */
-const FIRST_TILE_LEFT = 100;
-/** The two card glyphs, positioned inside the green face. */
-const GLYPH = { w: 49, h: 62.67 };
-const GLYPH_A = { left: 29.5, top: 25.8 };
-const GLYPH_B = { left: 87.1, top: 79.5 };
-/** Caption sits under the tile: "Challenge 1 • 8 Boards". */
-const CAPTION_GAP = 10;
-const CAPTION_DOT = 6;
 
-const ROW_HEIGHT = 48;
-const ROW_GAP = 16;
-const ROW_OFFSET = 5;
+/** Header: title, blurb, and the two view switches on the title's line. */
+const HEAD = {
+  left: 25,
+  blurbGap: 13,
+  homeIcon: { w: 18.125, h: 20, right: 390 - 267 - 18.125, top: 8 },
+};
+/**
+ * Both switch pills share one size (58.5 x 27.4, radius 6.44). Active = a green
+ * face with a darker card 3 down-and-right; inactive = a 1pt ink outline.
+ */
+const PILL = { width: 58.504, height: 27.374, radius: 6.441, font: 10.261, offset: 3 };
+/** The three roster filters, centred as a row 71.5 apart. */
+const FILTER = { top: 32, pitch: 71, font: 10.261 };
+/** Home view, measured from the blurb. */
+const HOME = { headingTop: 40, tile: 155.469, tileGap: 12, buttonsTop: 43 };
+/** The 2x2 grid: 172 x 48 faces with a darker one behind at (+3, +5). */
+const BTN = {
+  width: 172,
+  height: 48,
+  radius: 12,
+  offset: { x: 3, y: 5 },
+  left: 16,
+  columnPitch: 184,
+  rowPitch: 70,
+};
 
-/** The avatar ships dark for the cream app bar; on a green row it must be light. */
-const AVATAR_CREAM = tintSvg(ICON_AVATAR, Brand.cream);
+type View2 = "home" | "members";
+type Filter = "all" | "learners" | "coaches";
 
-type Standing = { name: string; mp: number; pct: number };
-type Challenge = { name: string; boards: number; scoring: string; standings: Standing[] };
-
-/** Placeholder seed content — see the note at the top of this file. */
-const SEED_CHALLENGES: Challenge[] = [
-  {
-    name: "Challenge 1",
-    boards: 8,
-    scoring: "MP score",
-    standings: [
-      { name: "Keith", mp: 41, pct: 74 },
-      { name: "Ralph", mp: 37, pct: 66 },
-      { name: "Quan", mp: 31, pct: 56 },
-      { name: "Ashwini", mp: 28, pct: 51 },
-      { name: "Miland", mp: 24, pct: 44 },
-      { name: "David", mp: 19, pct: 35 },
-    ],
-  },
-  {
-    name: "Challenge 2",
-    boards: 12,
-    scoring: "IMP score",
-    standings: [
-      { name: "Ralph", mp: 52, pct: 81 },
-      { name: "David", mp: 47, pct: 73 },
-      { name: "Keith", mp: 39, pct: 61 },
-      { name: "Miland", mp: 33, pct: 52 },
-      { name: "Quan", mp: 26, pct: 41 },
-    ],
-  },
-  {
-    name: "Challenge 3",
-    boards: 6,
-    scoring: "MP score",
-    standings: [
-      { name: "Ashwini", mp: 36, pct: 69 },
-      { name: "Quan", mp: 30, pct: 58 },
-      { name: "Keith", mp: 22, pct: 42 },
-    ],
-  },
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "All Users" },
+  { key: "learners", label: "Learners" },
+  { key: "coaches", label: "Coaches" },
 ];
 
-/** The maroon tile with its green face and two card glyphs. */
-function ChallengeTile({ scale: s }: { scale: number }) {
+/** Membership roles that make someone staff of the club rather than a learner. */
+const STAFF_ROLES = new Set(["owner", "administrator", "instructor", "teacher", "coach"]);
+
+const HOME_GREEN = tintSvg(ICON_HOME, Brand.green);
+const HOME_GREY = tintSvg(ICON_HOME, Brand.iconDark);
+
+function personName(row: ProgramMemberRow): string {
+  return row.display_name?.trim() || row.username?.trim() || row.email?.trim() || "Member";
+}
+
+function isStaff(row: ProgramMemberRow): boolean {
+  return STAFF_ROLES.has(row.membership_role.toLowerCase());
+}
+
+/** One switch or filter pill — green when you are on it, outlined when not. */
+function Pill({
+  label,
+  active,
+  onPress,
+  scale: s,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  scale: number;
+}) {
+  const w = PILL.width * s;
+  const h = PILL.height * s;
+  const r = PILL.radius * s;
+
   return (
-    <View
-      style={[styles.tile, { width: TILE * s, height: TILE * s, borderRadius: TILE_RADIUS * s }]}
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+      style={({ pressed }) => [
+        { width: w + PILL.offset * s, height: h + PILL.offset * s },
+        pressed && styles.pressed,
+      ]}
     >
+      {active ? (
+        <View
+          style={{
+            position: "absolute",
+            left: PILL.offset * s,
+            top: PILL.offset * s,
+            width: w,
+            height: h,
+            borderRadius: r,
+            backgroundColor: Brand.rowShadow,
+          }}
+        />
+      ) : null}
       <View
         style={[
-          styles.tileFace,
+          styles.pillFace,
           {
-            left: TILE_INSET * s,
-            top: TILE_INSET * s,
-            width: TILE_INNER * s,
-            height: TILE_INNER * s,
-            borderWidth: TILE_BORDER * s,
+            width: w,
+            height: h,
+            borderRadius: r,
+            backgroundColor: active ? Brand.green : "transparent",
+            borderWidth: active ? 0 : Math.max(1, 0.921 * s),
           },
         ]}
       >
-        {/* Two stacked-card glyphs, offset diagonally as drawn. */}
-        <View style={{ position: "absolute", left: GLYPH_A.left * s, top: GLYPH_A.top * s }}>
-          <SvgXml xml={ICON_CHALLENGE_CARD} width={GLYPH.w * s} height={GLYPH.h * s} />
-        </View>
-        <View style={{ position: "absolute", left: GLYPH_B.left * s, top: GLYPH_B.top * s }}>
-          <SvgXml xml={ICON_CHALLENGE_CARD} width={GLYPH.w * s} height={GLYPH.h * s} />
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/** "Challenge 1 • 8 Boards", centred under its tile. */
-function ChallengeCaption({
-  challenge,
-  scale: s,
-}: {
-  challenge: Challenge;
-  scale: number;
-}) {
-  return (
-    <View style={[styles.caption, { width: TILE * s, gap: CAPTION_GAP * s, paddingTop: 8 * s }]}>
-      <Text style={[styles.detail, { fontSize: Type.clubDetail * s }]} numberOfLines={1}>
-        {challenge.name}
-      </Text>
-      <View
-        style={{
-          width: CAPTION_DOT * s,
-          height: CAPTION_DOT * s,
-          borderRadius: (CAPTION_DOT / 2) * s,
-          backgroundColor: Brand.ink,
-        }}
-      />
-      <Text style={[styles.detail, { fontSize: Type.clubDetail * s }]} numberOfLines={1}>
-        {challenge.boards} Boards
-      </Text>
-    </View>
-  );
-}
-
-/** One standing: a green row on a darker green one, offset to look stacked. */
-function LeaderboardRow({
-  rank,
-  standing,
-  scale: s,
-}: {
-  rank: number;
-  standing: Standing;
-  scale: number;
-}) {
-  return (
-    <View style={{ height: (ROW_HEIGHT + ROW_OFFSET) * s, marginBottom: ROW_GAP * s }}>
-      <View
-        style={[
-          styles.rowShadow,
-          { left: ROW_OFFSET * s, top: ROW_OFFSET * s, height: ROW_HEIGHT * s, borderRadius: 12 * s },
-        ]}
-      />
-      <View style={[styles.row, { height: ROW_HEIGHT * s, borderRadius: 12 * s }]}>
-        <Text style={[styles.rank, { fontSize: 14.4 * s }]}>{rank}</Text>
-        <SvgXml xml={AVATAR_CREAM} width={29 * s} height={28.12 * s} />
-        <Text style={[styles.name, { fontSize: 14.4 * s }]} numberOfLines={1}>
-          {standing.name}
+        <Text
+          style={[
+            styles.pillLabel,
+            { fontSize: PILL.font * s, color: active ? Brand.white : Brand.ink },
+          ]}
+          numberOfLines={1}
+        >
+          {label}
         </Text>
-        <Text style={[styles.score, { fontSize: 14.4 * s }]}>{standing.mp} MP</Text>
-        <Text style={[styles.pct, { fontSize: 14.4 * s }]}>{standing.pct}%</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
 export default function ClubScreen() {
-  const { width } = useWindowDimensions();
   const { token } = useAuth();
+  const { width } = useWindowDimensions();
   const s = width / DESIGN_WIDTH;
-  const [active, setActive] = useState(0);
-  const lastActive = useRef(0);
-  // Coaches can add challenges, so the list is state rather than a constant.
-  const [challenges, setChallenges] = useState<Challenge[]>(SEED_CHALLENGES);
-  const carousel = useRef<ScrollView>(null);
 
-  // Only a coach can configure challenges — same role check the other tabs use.
-  const [coach, setCoach] = useState(false);
+  const [view, setView] = useState<View2>("home");
+  const [filter, setFilter] = useState<Filter>("all");
+
+  // The club is the caller's own program — a partner club wins over the default.
+  const [club, setClub] = useState<{ id: string; name: string; org: string } | null>(null);
+  const [roster, setRoster] = useState<ProgramMemberRow[] | null>(null);
+  const [rosterError, setRosterError] = useState<string | null>(null);
+  const [dealEntryId, setDealEntryId] = useState<string | null>(null);
+
   useEffect(() => {
-    let cancelled = false;
     if (!token) return;
-    getBridgeContextCached(token).then((ctx) => {
-      if (!cancelled) setCoach(isCoach(ctx));
+    let cancelled = false;
+    getRoleContext(token).then((ctx) => {
+      const primary = primaryMembership(ctx);
+      if (cancelled || !primary?.program_id) return;
+      setClub({
+        id: primary.program_id,
+        name: primary.program_name ?? primary.org_name,
+        org: primary.org_name,
+      });
     });
     return () => {
       cancelled = true;
     };
   }, [token]);
 
-  // The configure panel opens in place of the carousel.
-  const [configuring, setConfiguring] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [draftBoards, setDraftBoards] = useState(8);
+  useEffect(() => {
+    if (!token || !club) return;
+    let cancelled = false;
+    setRosterError(null);
+    fetchProgramMembers(token, club.id)
+      .then((rows) => !cancelled && setRoster(rows))
+      .catch(() => !cancelled && setRosterError("Couldn't load the club roster."));
+    return () => {
+      cancelled = true;
+    };
+  }, [token, club]);
 
-  const openConfigure = () => {
-    // A create form, so it starts on the next challenge number.
-    setDraftName(`Challenge ${challenges.length + 1}`);
-    setDraftBoards(8);
-    setConfiguring(true);
-  };
-
-  const saveChallenge = () => {
-    const name = draftName.trim();
-    if (!name) return;
-    // A brand-new challenge has no results yet — an empty board is the truth.
-    const next: Challenge = { name, boards: draftBoards, scoring: "MP score", standings: [] };
-    const index = challenges.length;
-    setChallenges((prev) => [...prev, next]);
-    setActive(index);
-    lastActive.current = index;
-    setConfiguring(false);
-  };
-
-  const pitch = ITEM_PITCH * s;
-  // Tile plus the caption line beneath it, so the pinned ScrollView is exactly
-  // as tall as its content.
-  const carouselHeight = (TILE + 8 + Type.clubDetail * 1.35) * s;
-
-  // Which challenge is under the finger decides which board is shown.
-  const onScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const i = Math.round(e.nativeEvent.contentOffset.x / pitch);
-      const clamped = Math.max(0, Math.min(challenges.length - 1, i));
-      if (clamped !== lastActive.current) {
-        lastActive.current = clamped;
-        setActive(clamped);
-      }
-    },
-    [pitch, challenges.length],
+  // The Practice Deal is one board a day; re-check on each visit.
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) return;
+      let cancelled = false;
+      fetchBridgeSummary(token)
+        .then((sum) => !cancelled && setDealEntryId(sum.deal_of_the_day?.entry_id ?? null))
+        .catch(() => !cancelled && setDealEntryId(null));
+      return () => {
+        cancelled = true;
+      };
+    }, [token]),
   );
 
-  const challenge = challenges[active] ?? challenges[0]!;
+  const people = useMemo(() => {
+    const rows = roster ?? [];
+    if (filter === "learners") return rows.filter((r) => !isStaff(r));
+    if (filter === "coaches") return rows.filter(isStaff);
+    return rows;
+  }, [roster, filter]);
+
+  const latest = SEED_CHALLENGES[SEED_CHALLENGES.length - 1]!;
+
+  const buttons = [
+    {
+      key: "deal",
+      label: "Practice Deal",
+      onPress: () =>
+        dealEntryId &&
+        router.push({ pathname: "/play-board/[entryId]", params: { entryId: dealEntryId } }),
+      disabled: !dealEntryId,
+    },
+    {
+      key: "challenges",
+      label: "Challenges",
+      onPress: () => router.push("/club-challenges"),
+      disabled: false,
+    },
+    // Feedback is drawn but not built yet — dimmed so the grid still matches.
+    { key: "feedback", label: "Feedback", onPress: () => {}, disabled: true },
+    { key: "chat", label: "Chat", onPress: () => router.push("/club-chat"), disabled: false },
+  ];
+
+  const onHome = view === "home";
 
   return (
     <BrandChrome>
       <View style={styles.page}>
-        <Text style={styles.club}>Club 1</Text>
-        <Text style={styles.blurb}>A test club Under LAIC</Text>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.title, { marginLeft: HEAD.left * s }]}>
+              {club?.name ?? "My Club"}
+            </Text>
+            <Text style={[styles.blurb, { marginLeft: HEAD.left * s, marginTop: HEAD.blurbGap * s }]}>
+              {club && club.org !== club.name ? `Under ${club.org}` : " "}
+            </Text>
+          </View>
 
-        {/* Coaches get a + here; it turns into a collapse chevron while open. */}
-        <View style={[styles.headingRow, { paddingTop: 14 * s, paddingBottom: 12 * s }]}>
-          <Text style={styles.heading}>Challenges</Text>
-          {coach ? (
-            <Pressable
-              onPress={() => (configuring ? setConfiguring(false) : openConfigure())}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: configuring }}
-              accessibilityLabel={configuring ? "Close challenge settings" : "Add a challenge"}
-              style={({ pressed }) => pressed && styles.pressedIcon}
-            >
-              <Ionicons
-                name={configuring ? "chevron-down-circle" : "add-circle"}
-                size={21 * s}
-                color={Brand.ink}
-              />
-            </Pressable>
-          ) : null}
+          <Pressable
+            onPress={() => setView("home")}
+            hitSlop={14}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: onHome }}
+            accessibilityLabel="Club home"
+            style={({ pressed }) => [
+              { marginTop: HEAD.homeIcon.top * s, marginRight: 14 * s },
+              pressed && styles.pressed,
+            ]}
+          >
+            <SvgXml
+              xml={onHome ? HOME_GREEN : HOME_GREY}
+              width={HEAD.homeIcon.w * s}
+              height={HEAD.homeIcon.h * s}
+            />
+          </Pressable>
+
+          <View style={{ marginTop: (HEAD.homeIcon.top - 3) * s, marginRight: 24 * s }}>
+            <Pill
+              label="Members"
+              active={!onHome}
+              onPress={() => setView("members")}
+              scale={s}
+            />
+          </View>
         </View>
 
-        {configuring ? (
-          <ChallengeFormPanel
-            name={draftName}
-            boards={draftBoards}
-            onChangeName={setDraftName}
-            onChangeBoards={setDraftBoards}
-            onClose={() => setConfiguring(false)}
-            onSave={saveChallenge}
-            scale={s}
-          />
+        {onHome ? (
+          <View style={styles.body}>
+            <Text style={[styles.heading, { marginTop: HOME.headingTop * s }]}>
+              Latest Challenge
+            </Text>
+
+            <View style={{ marginTop: HOME.tileGap * s, alignSelf: "center" }}>
+              <ChallengeTile
+                size={HOME.tile * s}
+                onPress={() => router.push("/club-challenges")}
+              />
+              <ChallengeCaption
+                challenge={latest}
+                width={HOME.tile * s}
+                fontSize={13.633 * s}
+                dot={5.029 * s}
+                gap={8 * s}
+                paddingTop={2 * s}
+              />
+            </View>
+
+            <View
+              style={[
+                styles.grid,
+                {
+                  marginTop: HOME.buttonsTop * s,
+                  height: (BTN.rowPitch + BTN.height + BTN.offset.y) * s,
+                },
+              ]}
+            >
+              {buttons.map((b, i) => (
+                <Pressable
+                  key={b.key}
+                  onPress={b.onPress}
+                  disabled={b.disabled}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: b.disabled }}
+                  style={({ pressed }) => [
+                    {
+                      position: "absolute",
+                      left: BTN.left * s + (i % 2) * BTN.columnPitch * s,
+                      top: Math.floor(i / 2) * BTN.rowPitch * s,
+                      width: (BTN.width + BTN.offset.x) * s,
+                      height: (BTN.height + BTN.offset.y) * s,
+                      opacity: b.disabled ? 0.45 : 1,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.btnShadow,
+                      {
+                        left: BTN.offset.x * s,
+                        top: BTN.offset.y * s,
+                        width: BTN.width * s,
+                        height: BTN.height * s,
+                        borderRadius: BTN.radius * s,
+                      },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.btnFace,
+                      { width: BTN.width * s, height: BTN.height * s, borderRadius: BTN.radius * s },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.btnLabel, { fontSize: Type.sectionHeading * s }]}
+                      numberOfLines={1}
+                    >
+                      {b.label}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          </View>
         ) : (
-          <ScrollView
-            ref={carousel}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            // Remounted after the panel closes, so jump straight to the active
-            // challenge instead of snapping back to the first.
-            onLayout={() => carousel.current?.scrollTo({ x: active * pitch, animated: false })}
-            // A horizontal ScrollView in a column parent stretches to fill the
-            // available height unless pinned, which left a large dead gap and
-            // pushed the leaderboard far down the screen. Pin it to its content.
-            style={{ height: carouselHeight, flexGrow: 0 }}
-            contentContainerStyle={{
-              // Centres the first tile, and lets the last one reach centre too.
-              paddingLeft: FIRST_TILE_LEFT * s,
-              paddingRight: Math.max(0, width - (FIRST_TILE_LEFT + TILE) * s),
-            }}
-            snapToInterval={pitch}
-            snapToAlignment="start"
-            decelerationRate="fast"
-            onScroll={onScroll}
-            scrollEventThrottle={16}
-          >
-            {challenges.map((c) => (
-              <View key={c.name} style={{ width: pitch }}>
-                <ChallengeTile scale={s} />
-                <ChallengeCaption challenge={c} scale={s} />
-              </View>
-            ))}
-          </ScrollView>
-        )}
-
-        {/* Design: 27pt from the carousel's bottom edge to this heading, then
-            25pt to the first row. */}
-        <Text
-          style={[
-            styles.heading,
-            { paddingHorizontal: Spacing.screen, paddingTop: 20 * s, paddingBottom: 12 * s },
-          ]}
-        >
-          Challenge Leaderboard
-        </Text>
-
-        {/* Clipped so rows are cut at both edges and scroll only within here. */}
-        <View style={styles.boardClip}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingTop: 8 * s, paddingBottom: 8 * s }}
-          >
-            {challenge.standings.length === 0 ? (
-              <Text style={styles.boardEmpty}>
-                No results yet — standings appear once this challenge is played.
-              </Text>
-            ) : (
-              challenge.standings.map((standing, i) => (
-                <LeaderboardRow
-                  key={`${challenge.name}-${standing.name}-${i}`}
-                  rank={i + 1}
-                  standing={standing}
+          <View style={styles.body}>
+            <View style={[styles.filterRow, { marginTop: FILTER.top * s, gap: (FILTER.pitch - PILL.width) * s }]}>
+              {FILTERS.map((f) => (
+                <Pill
+                  key={f.key}
+                  label={f.label}
+                  active={filter === f.key}
+                  onPress={() => setFilter(f.key)}
                   scale={s}
                 />
-              ))
-            )}
-          </ScrollView>
-        </View>
+              ))}
+            </View>
+
+            <Roster
+              people={people}
+              loading={roster == null && rosterError == null}
+              error={rosterError}
+              scale={s}
+            />
+          </View>
+        )}
       </View>
     </BrandChrome>
   );
 }
 
+/** The roster list — every row states the person's standing on the right. */
+function Roster({
+  people,
+  loading,
+  error,
+  scale: s,
+}: {
+  people: ProgramMemberRow[];
+  loading: boolean;
+  error: string | null;
+  scale: number;
+}) {
+  if (error) return <Text style={styles.stateText}>{error}</Text>;
+  if (loading) return <Text style={styles.stateText}>Loading the club roster…</Text>;
+  if (people.length === 0) return <Text style={styles.stateText}>Nobody here yet.</Text>;
+
+  return (
+    <ScrollView
+      style={styles.roster}
+      contentContainerStyle={{ paddingLeft: 22 * s, paddingRight: 20 * s, paddingTop: 18 * s }}
+      showsVerticalScrollIndicator={false}
+    >
+      {people.map((p, i) => (
+        <PersonRow
+          key={p.membership_id ?? p.invitation_id ?? `${p.email}-${i}`}
+          name={personName(p)}
+          standing={isStaff(p) ? "Coach" : "Learner"}
+          scale={s}
+        />
+      ))}
+      <View style={{ height: PERSON_ROW.pitch * s }} />
+    </ScrollView>
+  );
+}
+
 const styles = StyleSheet.create({
-  page: { flex: 1 },
-  tile: { backgroundColor: Brand.maroon },
-  /** The green face is a square inside the maroon tile — no radius, as drawn. */
-  tileFace: {
+  page: { flex: 1, paddingBottom: TAB_BAR_CLEARANCE },
+  headerRow: { flexDirection: "row", alignItems: "flex-start" },
+  title: { fontFamily: Fonts.display, fontSize: Type.screenTitle, color: Brand.ink },
+  blurb: { fontFamily: Fonts.body, fontSize: Type.clubDetail, color: Brand.ink },
+  pillFace: {
     position: "absolute",
-    backgroundColor: Brand.green,
-    borderColor: Brand.cream,
-  },
-  club: {
-    fontFamily: Fonts.display,
-    fontSize: Type.screenTitle,
-    color: Brand.ink,
-    paddingHorizontal: Spacing.screen,
-    paddingTop: 5,
-  },
-  blurb: {
-    fontFamily: Fonts.body,
-    fontSize: Type.clubDetail,
-    color: Brand.ink,
-    paddingHorizontal: Spacing.screen,
-    paddingTop: 6,
-  },
-  headingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: Spacing.screen,
-  },
-  /** Padding comes from headingRow (or the inline style on the standalone one). */
-  heading: {
-    fontFamily: Fonts.heading,
-    fontSize: Type.sectionHeading,
-    color: Brand.ink,
-  },
-  pressedIcon: { opacity: 0.55 },
-  detail: {
-    fontFamily: Fonts.body,
-    color: Brand.ink,
-  },
-  caption: {
-    flexDirection: "row",
+    left: 0,
+    top: 0,
     alignItems: "center",
     justifyContent: "center",
+    borderColor: Brand.ink,
   },
-  boardClip: {
-    flex: 1,
-    overflow: "hidden",
-    paddingHorizontal: 19,
-    marginBottom: TAB_BAR_CLEARANCE,
+  pillLabel: { fontFamily: Fonts.displayMedium },
+  body: { flex: 1 },
+  filterRow: { flexDirection: "row", justifyContent: "center" },
+  heading: {
+    fontFamily: Fonts.displayMedium,
+    fontSize: Type.sectionHeading,
+    color: Brand.ink,
+    textAlign: "center",
   },
-  boardEmpty: {
+  grid: { position: "relative" },
+  btnShadow: { position: "absolute", backgroundColor: Brand.rowShadow },
+  btnFace: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Brand.green,
+  },
+  btnLabel: { fontFamily: Fonts.displayMedium, color: Brand.white },
+  roster: { flex: 1 },
+  stateText: {
     fontFamily: Fonts.body,
     fontSize: 14,
     color: "rgba(31,31,31,0.55)",
     textAlign: "center",
-    lineHeight: 21,
-    paddingTop: 24,
-    paddingHorizontal: 12,
+    paddingTop: 40,
+    paddingHorizontal: 24,
   },
-  rowShadow: {
-    position: "absolute",
-    right: 0,
-    left: 0,
-    backgroundColor: Brand.rowShadow,
-  },
-  row: {
-    position: "absolute",
-    left: 0,
-    right: ROW_OFFSET,
-    top: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Brand.green,
-    paddingHorizontal: 14,
-    gap: 12,
-  },
-  rank: {
-    fontFamily: Fonts.display,
-    color: Brand.white,
-    width: 14,
-    textAlign: "center",
-  },
-  name: {
-    flex: 1,
-    fontFamily: Fonts.display,
-    color: Brand.white,
-  },
-  score: {
-    fontFamily: Fonts.display,
-    color: Brand.white,
-    textAlign: "right",
-  },
-  pct: {
-    fontFamily: Fonts.display,
-    color: Brand.white,
-    width: 42,
-    textAlign: "right",
-  },
+  pressed: { opacity: 0.75 },
 });

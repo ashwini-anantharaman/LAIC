@@ -9,6 +9,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ReactNode, useEffect } from "react";
 import { Dimensions, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Easing,
@@ -43,6 +44,7 @@ export function BrandSheet({
 }) {
   // How far the panel is pushed down from its resting place. SCREEN_H = fully
   // offscreen, 0 = open.
+  const insets = useSafeAreaInsets();
   const offset = useSharedValue(SCREEN_H);
   const backdrop = useSharedValue(0);
 
@@ -57,6 +59,8 @@ export function BrandSheet({
   }, [visible, offset, backdrop]);
 
   const pan = Gesture.Pan()
+    // A tap on ✕ must not be read as a drag.
+    .activeOffsetY([-8, 8])
     .onChange((e) => {
       // Downward only — dragging up must not tear the panel off its anchor.
       offset.value = Math.max(0, offset.value + e.changeY);
@@ -90,23 +94,33 @@ export function BrandSheet({
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
       </Animated.View>
 
-      <GestureDetector gesture={pan}>
-        <Animated.View style={[styles.panel, { top }, panelStyle]}>
+      <Animated.View style={[styles.panel, { top }, panelStyle]}>
+        {/* Drag-to-dismiss lives on the HEADER alone. While it wrapped the whole
+            panel it swallowed every vertical drag, so scrollable content could
+            not scroll: each attempt dragged the sheet, which then sprang back —
+            making anything below the fold (Sign out) unreachable. */}
+        <GestureDetector gesture={pan}>
           <View style={styles.header}>
-            <Text style={styles.title}>{title}</Text>
-            <Pressable
-              onPress={onClose}
-              hitSlop={14}
-              accessibilityRole="button"
-              accessibilityLabel={`Close ${title}`}
-              style={({ pressed }) => pressed && styles.pressed}
-            >
-              <Ionicons name="close" size={26} color={SHEET_TEXT} />
-            </Pressable>
+            <View style={styles.grabber} />
+            <View style={styles.headerRow}>
+              <Text style={styles.title}>{title}</Text>
+              <Pressable
+                onPress={onClose}
+                hitSlop={14}
+                accessibilityRole="button"
+                accessibilityLabel={`Close ${title}`}
+                style={({ pressed }) => pressed && styles.pressed}
+              >
+                <Ionicons name="close" size={26} color={SHEET_TEXT} />
+              </Pressable>
+            </View>
           </View>
-          {children}
-        </Animated.View>
-      </GestureDetector>
+        </GestureDetector>
+
+        {/* flex:1 bounds the content so a ScrollView inside actually scrolls
+            instead of overflowing the panel. */}
+        <View style={[styles.content, { paddingBottom: insets.bottom }]}>{children}</View>
+      </Animated.View>
     </View>
   );
 }
@@ -127,13 +141,25 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   header: {
+    paddingHorizontal: 31,
+    paddingTop: 10,
+    paddingBottom: 18,
+  },
+  headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 31,
-    paddingTop: 22,
-    paddingBottom: 18,
   },
+  /** Signals that the header is the drag handle. */
+  grabber: {
+    alignSelf: "center",
+    width: 44,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,244,215,0.35)",
+    marginBottom: 12,
+  },
+  content: { flex: 1 },
   title: {
     fontFamily: "Neco-Bold",
     fontSize: 25.9,

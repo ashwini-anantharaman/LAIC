@@ -1,8 +1,12 @@
 // Menu — the sheet behind the ☰ in the top app bar.
 //
-// It rises from the bottom exactly like Profile and Settings, so all three pieces
-// of header chrome behave the same way. It replaces the old full-screen /menu
-// route.
+// COACH-ONLY. A learner has nothing here — their destinations are all on the tree
+// and the tab bar — so the ☰ is hidden for them entirely (see BrandChrome) rather
+// than opening an empty sheet.
+//
+// Holding the coach's own surfaces here is what lets the tree and the tab bar stay
+// IDENTICAL for both roles: Learners, Assignments and Reviews get their own
+// buttons (they used to be buried inside a "Today" feed), alongside Library.
 //
 // Rows are green-on-maroon like the Profile sheet's fields rather than the
 // cream-background OptionCards used on ordinary screens — those would fight the
@@ -11,37 +15,20 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import type { Href } from "expo-router";
-import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { Brand, Fonts, Radius, Type } from "../constants/theme";
+import { Brand, Fonts, Radius, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
-import { getBridgeContextCached, isCoach } from "../lib/bridge-role";
 
-// Library is coach-only for now: learners reach boards through Play and
-// My Games, so the shelf browser would only be an empty detour for them.
-const ITEMS: { label: string; hint: string; href: Href; coachOnly?: boolean }[] = [
-  { label: "Today", hint: "What's waiting for you right now", href: "/today" },
-  { label: "Library", hint: "Boards, deals, tables and collections", href: "/library", coachOnly: true },
-  { label: "My Games", hint: "Boards you've played — send one for feedback", href: "/plays" },
-  { label: "Account details", hint: "Role, program and organisation", href: "/profile" },
+const ITEMS: { label: string; hint: string; href: Href }[] = [
+  { label: "Learners", hint: "Your roster, history and feedback threads", href: "/learners" },
+  { label: "Assignments", hint: "Boards you've delegated, and who has finished", href: "/assignments" },
+  { label: "Reviews", hint: "Plays your learners sent for feedback", href: "/reviews" },
+  { label: "Library", hint: "Boards, deals, tables and collections", href: "/library" },
 ];
 
 export function MenuSheetBody({ onClose }: { onClose: () => void }) {
-  const { user, token } = useAuth();
-  // Learner until proven coach — same safe default as the tabs.
-  const [coach, setCoach] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!token) return;
-    getBridgeContextCached(token).then((ctx) => {
-      if (!cancelled) setCoach(isCoach(ctx));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  const { user } = useAuth();
 
   const go = (href: Href) => {
     // Dismiss first so the sheet isn't left open behind the pushed screen.
@@ -50,12 +37,12 @@ export function MenuSheetBody({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-      <Text style={styles.who}>{user?.display_name ?? "Your account"}</Text>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+      <Text style={styles.who}>Coaching</Text>
       <Text style={styles.email}>{user?.email ?? ""}</Text>
 
       <View style={styles.rows}>
-        {ITEMS.filter((item) => coach || !item.coachOnly).map((item) => (
+        {ITEMS.map((item) => (
           <Pressable
             key={item.label}
             onPress={() => go(item.href)}
@@ -71,13 +58,14 @@ export function MenuSheetBody({ onClose }: { onClose: () => void }) {
           </Pressable>
         ))}
       </View>
-      {/* Sign out lives in the Profile sheet, not here. */}
+      {/* Account details and Sign out live in the Profile sheet. */}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  body: { paddingHorizontal: 22, paddingBottom: 48 },
+  scroll: { flex: 1 },
+  body: { paddingHorizontal: 22, paddingBottom: TAB_BAR_CLEARANCE + 32 },
   who: {
     fontFamily: Fonts.heading,
     fontSize: Type.sectionHeading,

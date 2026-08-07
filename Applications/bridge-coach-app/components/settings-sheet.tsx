@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { Brand, Fonts, Type } from "../constants/theme";
+import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 
 const BIDDING_SYSTEMS = ["Simple SAYC", "Custom SAYC", "Custom 2/1"] as const;
 type BiddingSystem = (typeof BIDDING_SYSTEMS)[number];
@@ -24,7 +24,7 @@ export function SettingsSheetBody() {
   const [acesLeft, setAcesLeft] = useState(true);
 
   return (
-    <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
       <SectionLabel>Bidding System</SectionLabel>
       <View style={styles.card}>
         {BIDDING_SYSTEMS.map((option) => {
@@ -92,7 +92,8 @@ export function SettingsSheetBody() {
 }
 
 const styles = StyleSheet.create({
-  body: { paddingHorizontal: 31, paddingBottom: 56 },
+  scroll: { flex: 1 },
+  body: { paddingHorizontal: 31, paddingBottom: TAB_BAR_CLEARANCE + 36 },
   sectionLabel: {
     fontFamily: Fonts.display,
     fontSize: Type.sectionLabel,

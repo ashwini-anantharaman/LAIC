@@ -1,37 +1,52 @@
-// Play — a native launcher, not a library. The day's board on top, then the
-// three ways into a table: pick up an unfinished board, deal a fresh one, or
-// play what your coach assigned. Everything it launches is the bridge
-// platform (the table itself stays an embed); this screen is only the door.
+// Play — four big playing cards, two by two (Figma 627:4285).
+//
+// Everything it launches is the bridge platform (the table itself stays an
+// embed); this screen is only the door. The behaviour behind each card is the
+// same as before the redesign:
+//
+//   New Play      deals a fresh board against the house
+//   Resume Board  one unfinished board opens straight at the table; several open
+//                 the picker. With none, the card is dimmed and inert.
+//   My Plays      boards you've played (was "My Games", off the old Menu)
+//   From Coach    boards your coach assigned (was "Coach's Assignments")
+//
+// The Deal of the Day hero the previous layout led with is gone — the design
+// replaced it with this grid. Its route (/play-board/[entryId]) still exists and
+// is still reached from a Learn card's embedded board.
+//
+// "From Coach" shows for everyone now. It used to be hidden from coaches on the
+// grounds that assignments are something a coach gives; but a coach can also be
+// assigned boards, and a four-card grid with a hole in it reads as broken.
 
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useState } from "react";
+import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
-import { OptionCard, Screen } from "../../components/ui";
-import { Colors, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../../constants/theme";
+import { ACTION_CARD, ActionCard } from "../../components/action-card";
+import { BrandChrome } from "../../components/brand-chrome";
+import {
+  ICON_CARD_ENVELOPE,
+  ICON_CARD_HISTORY,
+  ICON_CARD_PLAY,
+  ICON_CARD_PLUS,
+} from "../../constants/brand-vectors";
+import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
-import { getBridgeContextCached, isCoach } from "../../lib/bridge-role";
 import { prefetchLaunch } from "../../lib/launch-cache";
 import { fetchBridgeSummary, type BridgeSummary } from "../../lib/nexus";
 
+const DESIGN_WIDTH = 390;
+/** The grid's left edge, and its top measured from under the screen title. */
+const GRID_LEFT = 24;
+const GRID_TOP_GAP = 42;
+
 export default function PlayScreen() {
   const { token } = useAuth();
+  const { width } = useWindowDimensions();
   const [summary, setSummary] = useState<BridgeSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Assignments are something a coach GIVES, not receives — a coach's Play
-  // tab is just the day's board, resume and new. Theirs live in the Coach tab.
-  const [coach, setCoach] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!token) return;
-    getBridgeContextCached(token).then((ctx) => {
-      if (!cancelled) setCoach(isCoach(ctx));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  const s = width / DESIGN_WIDTH;
 
   // Refresh on every visit: what's resumable changes as boards are played.
   useFocusEffect(
@@ -41,7 +56,7 @@ export default function PlayScreen() {
       let cancelled = false;
       setError(null);
       fetchBridgeSummary(token)
-        .then((s) => !cancelled && setSummary(s))
+        .then((sum) => !cancelled && setSummary(sum))
         .catch(() => !cancelled && setError("Couldn't load your boards."));
       return () => {
         cancelled = true;
@@ -49,128 +64,109 @@ export default function PlayScreen() {
     }, [token]),
   );
 
-  const deal = summary?.deal_of_the_day ?? null;
   const inProgress = summary?.in_progress ?? [];
 
-  const openBoard = (sessionId: string) =>
-    router.push({ pathname: "/table/[sessionId]", params: { sessionId } });
-
   function resume() {
-    if (inProgress.length === 1) openBoard(inProgress[0]!.session_id);
-    else router.push("/resume");
+    if (inProgress.length === 0) return;
+    if (inProgress.length === 1) {
+      router.push({
+        pathname: "/table/[sessionId]",
+        params: { sessionId: inProgress[0]!.session_id },
+      });
+    } else {
+      router.push("/resume");
+    }
   }
 
-  const dealMeta = deal
-    ? [deal.dealer && `dealer ${deal.dealer}`, deal.vul && `vul ${deal.vul}`, deal.contract_label]
-        .filter(Boolean)
-        .join(" · ")
-    : "";
+  const colPitch = (ACTION_CARD.width + ACTION_CARD.columnGap) * s;
+  const rowPitch = (ACTION_CARD.height + ACTION_CARD.rowGap) * s;
+
+  const cards = [
+    {
+      key: "new",
+      label: "New Play",
+      icon: ICON_CARD_PLUS,
+      suit: Brand.maroon,
+      onPress: () => router.push("/new-board"),
+      disabled: false,
+    },
+    {
+      key: "resume",
+      label: "Resume Board",
+      icon: ICON_CARD_PLAY,
+      suit: Brand.green,
+      onPress: resume,
+      // Nothing to resume — dim it rather than opening an empty picker. Only
+      // once the summary has loaded, so it doesn't flicker on arrival.
+      disabled: summary != null && inProgress.length === 0,
+    },
+    {
+      key: "plays",
+      label: "My Plays",
+      icon: ICON_CARD_HISTORY,
+      suit: Brand.green,
+      onPress: () => router.push("/plays"),
+      disabled: false,
+    },
+    {
+      key: "assigned",
+      label: "From Coach",
+      icon: ICON_CARD_ENVELOPE,
+      suit: Brand.maroon,
+      onPress: () => router.push("/assigned"),
+      disabled: false,
+    },
+  ];
 
   return (
-    <Screen style={styles.screen}>
-      <View style={styles.headerBlock}>
-        <Text style={styles.eyebrow}>Play</Text>
-        <Text style={styles.title}>Deal of the Day</Text>
-      </View>
+    <BrandChrome>
+      <View style={styles.page}>
+        <Text style={styles.title}>Play</Text>
 
-      {/* The day's board — one for everyone in the program, until midnight. */}
-      {!summary && !error && (
-        <View style={styles.dealLoading}>
-          <ActivityIndicator color={Colors.text} />
+        <View style={[styles.grid, { height: rowPitch * 2, marginTop: GRID_TOP_GAP * s }]}>
+          {cards.map((c, i) => (
+            <View
+              key={c.key}
+              style={{
+                position: "absolute",
+                left: GRID_LEFT * s + (i % 2) * colPitch,
+                top: Math.floor(i / 2) * rowPitch,
+                opacity: c.disabled ? 0.45 : 1,
+              }}
+              pointerEvents={c.disabled ? "none" : "auto"}
+            >
+              <ActionCard
+                label={c.label}
+                icon={c.icon}
+                suit={c.suit}
+                onPress={c.onPress}
+                scale={s}
+              />
+            </View>
+          ))}
         </View>
-      )}
-      {error && <Text style={styles.stateText}>{error}</Text>}
-      {summary && !deal && (
-        <View style={styles.dealEmpty}>
-          <Text style={styles.stateText}>
-            No board today — an admin can curate a “Deal of the Day” collection in the
-            library.
-          </Text>
-        </View>
-      )}
-      {deal && (
-        <Pressable
-          style={styles.dealCard}
-          onPress={() =>
-            router.push({ pathname: "/play-board/[entryId]", params: { entryId: deal.entry_id } })
-          }
-        >
-          <Text style={styles.dealName}>{deal.name ?? "Today's board"}</Text>
-          {!!dealMeta && <Text style={styles.dealMeta}>{dealMeta}</Text>}
-          <Text style={styles.dealCta}>Play today's board →</Text>
-        </Pressable>
-      )}
 
-      <View style={styles.options}>
-        <OptionCard
-          title="Resume"
-          subtitle={
-            inProgress.length === 0
-              ? "No unfinished boards"
-              : inProgress.length === 1
-                ? `Continue “${inProgress[0]!.board_name}”`
-                : `${inProgress.length} unfinished boards`
-          }
-          onPress={inProgress.length === 0 ? () => {} : resume}
-        />
-        <OptionCard
-          title="New"
-          subtitle="Deal a fresh board against the house"
-          onPress={() => router.push("/new-board")}
-        />
-        {!coach && (
-          <OptionCard
-            title="Coach's Assignments"
-            subtitle={
-              summary && summary.assignments_open > 0
-                ? `${summary.assignments_open} waiting for you`
-                : "Boards your coach sent you"
-            }
-            onPress={() => router.push("/assigned")}
-          />
-        )}
+        {error ? <Text style={styles.stateText}>{error}</Text> : null}
       </View>
-    </Screen>
+    </BrandChrome>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { paddingHorizontal: Spacing.screen },
-  headerBlock: { paddingTop: 32, gap: 4 },
-  eyebrow: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    color: Colors.textMuted,
-    fontFamily: Fonts.heading,
+  page: { flex: 1, paddingBottom: TAB_BAR_CLEARANCE },
+  title: {
+    fontFamily: Fonts.display,
+    fontSize: Type.screenTitle,
+    color: Brand.ink,
+    paddingHorizontal: Spacing.screen,
   },
-  title: { fontSize: 26, color: Colors.text, fontFamily: Fonts.display, },
-  dealLoading: { paddingVertical: 34, alignItems: "center" },
-  dealEmpty: {
-    marginTop: 16,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: "#d3ccbb",
-    borderRadius: 14,
-    padding: 16,
-  },
-  dealCard: {
-    marginTop: 16,
-    backgroundColor: "#1f5e56",
-    borderRadius: 16,
-    padding: 18,
-    gap: 4,
-  },
-  dealName: { fontSize: 18, color: "#fff", fontFamily: Fonts.display, },
-  dealMeta: { fontSize: 12.5, color: "rgba(255,255,255,.75)", fontFamily: Fonts.body, },
-  dealCta: { marginTop: 8, fontSize: 13, color: "#ffe6a7", fontFamily: Fonts.heading, },
-  options: { flex: 1, paddingTop: 24, gap: 12, paddingBottom: TAB_BAR_CLEARANCE },
+  grid: { position: "relative" },
   stateText: {
-    fontSize: 14,
-    color: Colors.textMuted,
-    textAlign: "center",
-    lineHeight: 21,
     fontFamily: Fonts.body,
+    fontSize: 14,
+    color: "rgba(31,31,31,0.55)",
+    textAlign: "center",
+    paddingHorizontal: Spacing.screen,
+    paddingTop: 16,
   },
 });

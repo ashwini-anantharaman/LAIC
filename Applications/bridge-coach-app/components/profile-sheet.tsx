@@ -7,14 +7,20 @@
 // opacity. Wire `onEditField` once a PATCH endpoint exists.
 
 import { Image } from "expo-image";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SvgXml } from "react-native-svg";
 
 import { BrandIcons } from "../constants/brand-assets";
 import { ICON_AVATAR } from "../constants/brand-vectors";
-import { Brand, Radius, Type } from "../constants/theme";
-import { Fonts } from "../constants/theme";
+import { Brand, Fonts, Radius, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 import { tintSvg } from "./svg-tint";
+import {
+  RoleContext,
+  getRoleContext,
+  isCoach,
+  primaryMembership,
+} from "../lib/bridge-role";
 import { useAuth } from "../lib/auth-context";
 
 /** The avatar ships dark for the cream app bar; on the maroon sheet it must be white. */
@@ -32,10 +38,13 @@ function Field({
   label,
   value,
   placeholder,
+  /** Read-only facts (role, program, org) carry no pencil — they aren't yours to change. */
+  editable = true,
 }: {
   label?: string;
   value: string;
   placeholder?: string;
+  editable?: boolean;
 }) {
   const empty = value.trim().length === 0;
   return (
@@ -45,24 +54,44 @@ function Field({
         <Text style={[styles.fieldValue, empty && styles.fieldValueEmpty]} numberOfLines={1}>
           {empty ? (placeholder ?? "Not set") : value}
         </Text>
-        <Image
-          source={BrandIcons.editPencil}
-          style={styles.pencil}
-          contentFit="contain"
-          // Inert until there is somewhere to save an edit.
-          accessibilityElementsHidden
-        />
+        {editable ? (
+          <Image
+            source={BrandIcons.editPencil}
+            style={styles.pencil}
+            contentFit="contain"
+            // Inert until there is somewhere to save an edit.
+            accessibilityElementsHidden
+          />
+        ) : null}
       </View>
     </View>
   );
 }
 
 export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
-  const { user, signOut } = useAuth();
+  const { user, token, signOut } = useAuth();
   const [first, last] = splitName(user?.display_name);
+  const [context, setContext] = useState<RoleContext | null>(null);
+
+  // Role / program / organisation — moved here from the Menu's "Account
+  // details" route, which this sheet now fully replaces.
+  useEffect(() => {
+    let cancelled = false;
+    if (!token) return;
+    getRoleContext(token).then((ctx) => {
+      if (!cancelled) setContext(ctx);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const membership = context ? primaryMembership(context) : null;
+  const amCoach = context ? isCoach(context) : false;
 
   return (
     <ScrollView
+      style={styles.scroll}
       contentContainerStyle={styles.body}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
@@ -81,6 +110,24 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
       {/* The design's fourth field is a phone number, which the API does not
           expose — shown for layout parity, marked as unset. */}
       <Field value="" placeholder="Phone number not set" />
+
+      <View style={styles.divider} />
+
+      <Field
+        label="Role"
+        value={membership?.role ?? (amCoach ? "Coach" : "Learner")}
+        editable={false}
+      />
+      <Field
+        label="Program"
+        value={membership?.program_name ?? context?.bridge?.program_name ?? "Bridge Program"}
+        editable={false}
+      />
+      <Field
+        label="Organization"
+        value={membership?.org_name ?? "Life in AI Center"}
+        editable={false}
+      />
 
       <Pressable
         onPress={() => {
@@ -101,7 +148,15 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  body: { paddingHorizontal: 15, paddingBottom: 48 },
+  scroll: { flex: 1 },
+  /**
+   * The sheet opens over the tab bar, and the bar draws ON TOP of it — the bar
+   * belongs to the navigator, the sheet to the screen inside it. So Sign out
+   * needs the bar's whole height of scrollable space beneath it; with only 32 it
+   * sat under the glass, visible for as long as an overscroll bounce was held
+   * and gone the moment you let go.
+   */
+  body: { paddingHorizontal: 15, paddingBottom: TAB_BAR_CLEARANCE + 32 },
   avatarWrap: { alignSelf: "center", marginTop: 8, marginBottom: 30 },
   avatar: { width: 92, height: 92 },
   photoBadge: {
@@ -143,6 +198,13 @@ const styles = StyleSheet.create({
   },
   fieldValueEmpty: { color: "rgba(255,255,255,0.5)" },
   pencil: { width: 14, height: 14, opacity: 0.45 },
+  /** Separates what you can edit from what the organisation decides. */
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255,244,215,0.22)",
+    marginTop: 4,
+    marginBottom: 22,
+  },
   signOut: {
     alignSelf: "center",
     marginTop: 18,

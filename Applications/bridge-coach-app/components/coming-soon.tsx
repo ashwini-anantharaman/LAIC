@@ -1,20 +1,23 @@
-// A destination the design reserves but the product doesn't implement yet.
+// A destination the design reserves but hasn't specified yet.
 // Deliberately plain and honest — no fake data, no dead controls.
+//
+// Its only use is a TAB (Analysis), so it takes no back arrow — a tab has nothing
+// to go back to. It wears BrandChrome's empty bar, which keeps its layout on the
+// same vertical rhythm as every other screen.
 
 import { StyleSheet, Text, View } from "react-native";
 
-import { Screen, ScreenHeader } from "./ui";
-import { Brand, Colors, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../constants/theme";
+import { BrandChrome } from "./brand-chrome";
+import { Brand, Colors, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 
 export function ComingSoon({ title, blurb }: { title: string; blurb: string }) {
   return (
-    <Screen>
-      <ScreenHeader title={title} backTo="/home" />
+    <BrandChrome>
       <View style={styles.body}>
         <Text style={styles.heading}>{title}</Text>
         <Text style={styles.blurb}>{blurb}</Text>
       </View>
-    </Screen>
+    </BrandChrome>
   );
 }
 
@@ -29,7 +32,7 @@ const styles = StyleSheet.create({
   },
   heading: {
     fontFamily: Fonts.display,
-    fontSize: 26,
+    fontSize: Type.screenTitle,
     color: Brand.ink,
   },
   blurb: {

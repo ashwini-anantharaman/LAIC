@@ -23,7 +23,12 @@ const LOCAL = {
 };
 
 const TUNNEL = {
-  api: "https://newspaper-folding-buying-papers.trycloudflare.com",
+  // The API is NOT tunnelled any more. Quick tunnels are session-scoped, and
+  // when this one died the phone lost sign-in entirely (every request failed
+  // with "Cannot reach the server"). The phone now talks to the DEPLOYED Nexus
+  // API, which is also where the real Club 1 accounts and their passwords live —
+  // a local backend has neither.
+  api: "https://nexus-api-rust-six.vercel.app",
   learning: "https://instantly-killing-webshots-subtle.trycloudflare.com",
   // Override the backend's launch_url (its BRIDGE_PLATFORM_URL env points at
   // localhost) with the bridge tunnel so the phone can reach it.

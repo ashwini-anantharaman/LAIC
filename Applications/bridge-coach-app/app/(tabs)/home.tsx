@@ -7,8 +7,9 @@
 // screen edge, and any extra height on a taller phone opens up at the top,
 // where only the cream app bar sits.
 //
-// The role-aware "today" feed that used to live here is not gone — it moved to
-// /today, reachable from the menu.
+// The tree is IDENTICAL for both roles. Everything coach-specific lives behind
+// the ☰ (coach-only) instead of changing the tree or the tab bar, so there is one
+// home screen to design and one navigation model to reason about.
 
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -22,6 +23,7 @@ import { useBrandSheets } from "../../components/use-brand-sheets";
 import { WindTree } from "../../components/wind-tree";
 import { BrandArt } from "../../constants/brand-assets";
 import { HILLS_SVG } from "../../constants/brand-vectors";
+import { useIsCoach } from "../../lib/use-is-coach";
 import { Brand, Fonts, Type } from "../../constants/theme";
 
 const DESIGN = { width: 390, height: 852 };
@@ -50,6 +52,9 @@ export default function HomeScreen() {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { open, sheets } = useBrandSheets(insets.top + APP_BAR_HEIGHT);
+  // The Menu holds coach-only surfaces, so a learner never sees the ☰. The tree
+  // itself is identical for both roles.
+  const coach = useIsCoach();
 
   const s = width / DESIGN.width;
   const artHeight = DESIGN.height * s;
@@ -122,6 +127,7 @@ export default function HomeScreen() {
       {/* ── Chrome ──────────────────────────────────────────────────────── */}
       <View style={[styles.chrome, { paddingTop: insets.top }]} pointerEvents="box-none">
         <BrandAppBar
+          showMenu={coach}
           onMenu={() => open("menu")}
           onSettings={() => open("settings")}
           onProfile={() => open("profile")}

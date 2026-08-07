@@ -122,6 +122,17 @@ export const orgMemberships = pgTable("org_memberships", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Club chat: one thread per program (0039). Authors are profile ids. */
+export const clubChatMessages = pgTable("club_chat_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  programId: uuid("program_id").notNull(),
+  authorProfileId: uuid("author_profile_id").notNull(),
+  body: text("body").notNull(),
+  pinnedAt: timestamp("pinned_at", { withTimezone: true }),
+  pinnedBy: uuid("pinned_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const studentRegistrations = pgTable("student_registrations", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: uuid("org_id").notNull(),

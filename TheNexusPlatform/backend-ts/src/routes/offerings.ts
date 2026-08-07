@@ -4,7 +4,7 @@
  * app-key auth used by external apps to push signups.
  */
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 
 import { createAuthUser, getCurrentUser, type PlatformUser } from "../auth";
@@ -13,6 +13,7 @@ import { HttpError } from "../httpError";
 import * as db from "../platformDb";
 import { dbEnabled } from "../db/client";
 import * as graph from "../db/orgGraphRepo";
+import * as clubChat from "../db/clubChatRepo";
 import { validGrantsAcross, getCatalogue, type CatalogueRef } from "../accessCatalogue/store";
 import { grantableCapabilities } from "../accessCatalogue/resolver";
 import { requireCapability } from "../accessCatalogue/enforce";
@@ -1173,6 +1174,58 @@ offeringsRouter.get("/programs/:program_id/members", async (c) => {
   if (!program) throw new HttpError(404, "Program not found");
   _requireOrgPeopleMember(user, program.org_id);
   return c.json(await graph.listProgramMembers(program.org_id, programId));
+});
+
+// ── Club chat (the Bridge app's Club → Chat surface, migration 0039) ────────
+//
+// One thread per program. Readable and writable by any member of the program's
+// org — the same audience that can see the roster — because a club's chat is
+// for its members, staff and learners alike. Nexus operators are refused, as
+// everywhere else under People: an operator has no place in a club's
+// conversation.
+//
+// Pinning is deliberately open to every member rather than coaches only: the
+// design surfaces it as a long-press on any message, with one shared pin list
+// per club.
+
+const chatPostSchema = z.object({ body: z.string().trim().min(1).max(2000) });
+const chatPinSchema = z.object({ pinned: z.boolean() });
+
+/** Resolve the program, check the caller belongs, and return their profile id. */
+async function _clubChatActor(c: Context) {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id") ?? "";
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOrgPeopleMember(user, program.org_id as string);
+  const profileId = await clubChat.resolveActorProfileId(program.org_id as string, user.id);
+  if (!profileId) throw new HttpError(403, "You are not a member of this organization");
+  return { user, programId, orgId: program.org_id as string, profileId };
+}
+
+offeringsRouter.get("/programs/:program_id/chat", async (c) => {
+  const { orgId, programId, profileId } = await _clubChatActor(c);
+  return c.json(await clubChat.listClubChatMessages(orgId, programId, profileId));
+});
+
+offeringsRouter.post("/programs/:program_id/chat", async (c) => {
+  const { programId, profileId } = await _clubChatActor(c);
+  const req = parseBody(chatPostSchema, await c.req.json());
+  return c.json(await clubChat.createClubChatMessage(programId, profileId, req.body), 201);
+});
+
+offeringsRouter.patch("/programs/:program_id/chat/:message_id/pin", async (c) => {
+  const { programId, profileId } = await _clubChatActor(c);
+  const req = parseBody(chatPinSchema, await c.req.json());
+  const updated = await clubChat.setClubChatMessagePinned(
+    programId,
+    c.req.param("message_id") ?? "",
+    req.pinned,
+    profileId,
+  );
+  if (!updated) throw new HttpError(404, "Message not found");
+  return c.json(updated);
 });
 
 offeringsRouter.get("/programs/:program_id/members/summary", async (c) => {

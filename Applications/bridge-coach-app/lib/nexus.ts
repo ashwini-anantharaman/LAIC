@@ -180,6 +180,85 @@ export function login(input: { email: string; password: string }): Promise<Sessi
   });
 }
 
+/** One member of a program, from /api/programs/:id/members. */
+export type ProgramMemberRow = {
+  membership_id: string | null;
+  invitation_id: string | null;
+  email: string | null;
+  username?: string | null;
+  display_name: string | null;
+  /** "owner" | "administrator" | "instructor" | "member" | … */
+  membership_role: string;
+  status: string;
+  role_name?: string | null;
+};
+
+/**
+ * Everyone in a program — the club roster.
+ *
+ * Readable by any member of the program (not just staff), which is what lets a
+ * learner see who else is in their club. Takes the program id explicitly because
+ * a partner club's id comes from the caller's own membership, not from the
+ * app-wide PROGRAM_ID constant.
+ */
+export function fetchProgramMembers(
+  token: string,
+  programId: string,
+): Promise<ProgramMemberRow[]> {
+  return request<ProgramMemberRow[]>(`/api/programs/${programId}/members`, { token });
+}
+
+/**
+ * One message in a club's chat thread (backend migration 0039).
+ *
+ * `author_name` and `author_standing` are joined server-side from the author's
+ * profile and their membership in THIS club, so they follow a rename or a
+ * promotion rather than freezing whatever was true when the message was sent.
+ */
+export type ClubChatMessage = {
+  id: string;
+  author_profile_id: string;
+  author_name: string | null;
+  /** "Coach" | "Learner" — the label shown beside the name. */
+  author_standing: string;
+  body: string;
+  pinned: boolean;
+  created_at: string;
+  /** Did the caller write it? Decided server-side: the client holds an auth id,
+   *  not the profile id messages are authored by. */
+  mine: boolean;
+};
+
+/** The club's thread, oldest first. Readable by any member of the club. */
+export function fetchClubChat(token: string, programId: string): Promise<ClubChatMessage[]> {
+  return request<ClubChatMessage[]>(`/api/programs/${programId}/chat`, { token });
+}
+
+export function postClubChatMessage(
+  token: string,
+  programId: string,
+  body: string,
+): Promise<{ id: string }> {
+  return request<{ id: string }>(`/api/programs/${programId}/chat`, {
+    method: "POST",
+    token,
+    body: { body },
+  });
+}
+
+/** Pin or unpin a message. One shared pin list per club, so this is not per-user. */
+export function setClubChatMessagePinned(
+  token: string,
+  programId: string,
+  messageId: string,
+  pinned: boolean,
+): Promise<{ id: string; pinned: boolean }> {
+  return request<{ id: string; pinned: boolean }>(
+    `/api/programs/${programId}/chat/${messageId}/pin`,
+    { method: "PATCH", token, body: { pinned } },
+  );
+}
+
 /** The signed-in user's identity. */
 export function fetchMe(token: string): Promise<NexusUser> {
   return request<NexusUser>("/api/platform/auth/me", { token });
