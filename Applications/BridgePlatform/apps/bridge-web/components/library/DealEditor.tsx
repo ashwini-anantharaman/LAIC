@@ -36,6 +36,13 @@ const SEAT_CHIP: Record<Seat, string> = {
 type Owner = Seat | "";
 const cid = (suit: Suit, rank: Rank) => `${suit}${rank}`;
 
+// The BirdBridge skin (skin="app"): the editor inside the coach app wears the
+// app's own type and buttons. Everything is opt-in — desktop callers pass no
+// skin and render exactly as before.
+const APP_FONT = "var(--font-gs), var(--font-karla), sans-serif";
+const APP_GREEN = "#105431";
+const APP_GREEN_EDGE = "#052a20";
+
 export function DealEditor({
   initialName = "",
   initialDealer = "N",
@@ -46,6 +53,7 @@ export function DealEditor({
   hideBoardFacts,
   submitLabel = "Save board",
   footer,
+  skin,
 }: Readonly<{
   initialName?: string;
   initialDealer?: Seat;
@@ -60,7 +68,10 @@ export function DealEditor({
   submitLabel?: string;
   /** Extra form controls rendered just above the submit button. */
   footer?: ReactNode;
+  /** "app" = BirdBridge look (coach-app embeds); omit for the desktop look. */
+  skin?: "app";
 }>) {
+  const app = skin === "app";
   const lockedMap = useMemo(() => {
     const m = new Map<string, Seat>();
     for (const l of locked ?? []) m.set(cid(l.card.suit, l.card.rank), l.seat);
@@ -152,10 +163,12 @@ export function DealEditor({
       key={seat}
       type="button"
       onClick={() => setActive(seat)}
-      className={`rounded-md border px-2 py-1.5 text-left ${
+      className={`${app ? "rounded-xl" : "rounded-md"} border px-2 py-1.5 text-left ${
         active === seat
           ? SEAT_TINT[seat]
-          : "border-neutral-200 bg-white hover:border-neutral-400"
+          : app
+            ? "border-[#e0d7c2] bg-white"
+            : "border-neutral-200 bg-white hover:border-neutral-400"
       }`}
       title={`Click cards below to give them to ${SEAT_NAME[seat]}`}
     >
@@ -194,9 +207,11 @@ export function DealEditor({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" style={app ? { fontFamily: APP_FONT } : undefined}>
       {/* Prefill from LIN/PBN */}
-      <details className="rounded-lg border border-neutral-200">
+      <details
+        className={app ? "rounded-xl border border-[#e0d7c2] bg-white" : "rounded-lg border border-neutral-200"}
+      >
         <summary className="cursor-pointer px-4 py-2.5 text-sm text-neutral-600 hover:text-neutral-900">
           Prefill from a BBO LIN string or PBN…
         </summary>
@@ -206,14 +221,22 @@ export function DealEditor({
             onChange={(e) => setPaste(e.target.value)}
             rows={3}
             placeholder="pn|South,West,North,East|md|1S...|  —  or PBN with [Deal “N:...”]"
-            className="w-full rounded border border-neutral-300 p-2 font-mono text-xs"
+            className={
+              app
+                ? "w-full rounded-[10px] border border-[#d3ccbb] bg-white p-2 font-mono text-xs"
+                : "w-full rounded border border-neutral-300 p-2 font-mono text-xs"
+            }
           />
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={loadPaste}
               disabled={!paste.trim()}
-              className="rounded border border-neutral-300 px-3 py-1 text-sm hover:border-emerald-400 disabled:opacity-40"
+              className={
+                app
+                  ? "rounded-full border border-[#105431] bg-white px-4 py-1 text-[13px] font-semibold text-[#105431] disabled:opacity-40"
+                  : "rounded border border-neutral-300 px-3 py-1 text-sm hover:border-emerald-400 disabled:opacity-40"
+              }
             >
               Load
             </button>
@@ -231,7 +254,11 @@ export function DealEditor({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Weak 2 defense, board 4"
-            className="w-full rounded border border-neutral-300 px-2 py-1.5"
+            className={
+              app
+                ? "w-full rounded-[10px] border border-[#d3ccbb] bg-white px-3 py-2"
+                : "w-full rounded border border-neutral-300 px-2 py-1.5"
+            }
           />
         </label>
         {!hideBoardFacts && (
@@ -242,7 +269,11 @@ export function DealEditor({
                 name="dealer"
                 value={dealer}
                 onChange={(e) => setDealer(e.target.value as Seat)}
-                className="w-full rounded border border-neutral-300 px-2 py-1.5"
+                className={
+              app
+                ? "w-full rounded-[10px] border border-[#d3ccbb] bg-white px-3 py-2"
+                : "w-full rounded border border-neutral-300 px-2 py-1.5"
+            }
               >
                 {SEATS.map((s) => (
                   <option key={s} value={s}>
@@ -257,7 +288,11 @@ export function DealEditor({
                 name="vul"
                 value={vul}
                 onChange={(e) => setVul(e.target.value as Vul)}
-                className="w-full rounded border border-neutral-300 px-2 py-1.5"
+                className={
+              app
+                ? "w-full rounded-[10px] border border-[#d3ccbb] bg-white px-3 py-2"
+                : "w-full rounded border border-neutral-300 px-2 py-1.5"
+            }
               >
                 <option value="none">none</option>
                 <option value="ns">NS</option>
@@ -274,7 +309,11 @@ export function DealEditor({
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
-            className="w-full rounded border border-neutral-300 px-2 py-1.5"
+            className={
+              app
+                ? "w-full rounded-[10px] border border-[#d3ccbb] bg-white px-3 py-2"
+                : "w-full rounded border border-neutral-300 px-2 py-1.5"
+            }
           />
         </label>
       </div>
@@ -315,12 +354,14 @@ export function DealEditor({
                         ? `held by ${SEAT_NAME[active]} — click to return to the pool`
                         : `give to ${SEAT_NAME[active]}`
                   }
-                  className={`relative h-8 min-w-0 flex-1 rounded border text-[11px] font-semibold transition-colors sm:min-w-6 sm:text-[12px] ${
+                  className={`relative h-8 min-w-0 flex-1 ${app ? "rounded-lg" : "rounded"} border text-[11px] font-semibold transition-colors sm:min-w-6 sm:text-[12px] ${
                     lockSeat
                       ? "border-neutral-200 bg-neutral-100 text-neutral-300 line-through"
                       : own
                         ? SEAT_TINT[own]
-                        : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400"
+                        : app
+                          ? "border-[#e0d7c2] bg-white text-[#1f1f1f]"
+                          : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400"
                   }`}
                 >
                   {rankLabel(rank)}
@@ -348,7 +389,11 @@ export function DealEditor({
           <button
             type="button"
             onClick={takeRest}
-            className="rounded border border-neutral-300 px-2 py-0.5 text-xs hover:border-emerald-400"
+            className={
+              app
+                ? "rounded-full border border-[#105431] bg-white px-3 py-1 text-xs font-semibold text-[#105431]"
+                : "rounded border border-neutral-300 px-2 py-0.5 text-xs hover:border-emerald-400"
+            }
           >
             give the rest to {SEAT_NAME[active]}
           </button>
@@ -365,7 +410,12 @@ export function DealEditor({
       <button
         type="submit"
         disabled={!complete}
-        className="rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-40"
+        className={
+          app
+            ? "rounded-full px-5 py-2.5 text-[13.5px] font-semibold text-white disabled:opacity-40"
+            : "rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-40"
+        }
+        style={app ? { background: APP_GREEN, boxShadow: `0 2px 0 ${APP_GREEN_EDGE}` } : undefined}
         title={complete ? undefined : "All 52 cards must be placed, 13 per hand"}
       >
         {submitLabel}
