@@ -8,7 +8,7 @@ import type { Role } from '../../lib/types';
 
 const ROLE_DISPLAY: Record<Role, string> = {
   'content-developer': 'Content Developer',
-  'object-reviewer': 'Object Reviewer',
+  'object-reviewer': 'Content Reviewer',
   'course-reviewer': 'Course Reviewer',
   'administrator': 'Administrator',
   'coach': 'Coach',
@@ -106,7 +106,7 @@ export function LoginPortal() {
         </div>
         <p style={{ fontSize: 11.5, color: '#9AA3AF', marginBottom: 10, lineHeight: 1.45 }}>
           Course-dev demo: <span style={{ color: '#6B7280', fontWeight: 600 }}>1@gmail.com</span> / <span style={{ color: '#6B7280', fontWeight: 600 }}>123456</span>
-          {' '}· your objects are saved to this account
+          {' '}· your content is saved to this account
         </p>
         {error && (
           <p style={{ fontSize: 12, color: '#B91C1C', marginBottom: 10, lineHeight: 1.4 }}>{error}</p>

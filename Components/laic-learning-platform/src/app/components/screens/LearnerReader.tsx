@@ -9,8 +9,9 @@ import type {
   AssignmentContent, DrillContent, LearningObject,
 } from '../../../lib/types';
 import { resolveLearningObject } from '../../../lib/objectUrls';
+import { getVersion, objectFromVersion } from '../../../lib/objectVersionsStore';
 import { renumberBlockQuestionLabels } from '../../../lib/tutorialOrder.js';
-import { hintsForQuestion, parsePassMark, resolveHintSettings } from '../../../lib/questionHints.js';
+import { hintsForQuestion, parsePassMark, resolveHintSettings, resolvePassSettings } from '../../../lib/questionHints.js';
 import { enrichQuizQuestionsWithSources } from '../../../lib/mcqSources.js';
 import {
   paginateTutorialBlocks,
@@ -584,6 +585,7 @@ export function QuizBlock({
 }) {
   const questions = content.questions || [];
   const adaptive = !!content.adaptive;
+  const passRequired = content.passRequired !== false;
   const passMark = typeof content.passMark === 'number' ? content.passMark : 70;
   const showMode = content.showExplanations || 'After attempt';
   const hintsEnabled = hintsEnabledProp !== false;
@@ -819,15 +821,27 @@ export function QuizBlock({
 
   const scoreBanner = !deferPassScore && submitted && (
     <div className="rounded-[22px] p-5 text-center" style={{
-      background: passed ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.06)',
-      border: `1.5px solid ${passed ? 'rgba(5,150,105,0.25)' : 'rgba(239,68,68,0.2)'}`,
+      background: !passRequired
+        ? 'rgba(5,150,105,0.06)'
+        : passed ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.06)',
+      border: `1.5px solid ${
+        !passRequired
+          ? 'rgba(5,150,105,0.2)'
+          : passed ? 'rgba(5,150,105,0.25)' : 'rgba(239,68,68,0.2)'
+      }`,
     }}>
       <p style={{ fontSize: 18, fontWeight: 750, color: '#0B1220', marginBottom: 4 }}>
         {pct}% · {correctCount}/{attempted || questions.length} correct
       </p>
-      <p style={{ fontSize: 13.5, fontWeight: 600, color: passed ? '#059669' : '#DC2626' }}>
-        {passed ? `Passed (mark ${passMark}%)` : `Not yet — need ${passMark}% to pass`}
-      </p>
+      {passRequired ? (
+        <p style={{ fontSize: 13.5, fontWeight: 600, color: passed ? '#059669' : '#DC2626' }}>
+          {passed ? `Passed (mark ${passMark}%)` : `Not yet — need ${passMark}% to pass`}
+        </p>
+      ) : (
+        <p style={{ fontSize: 13.5, fontWeight: 600, color: '#059669' }}>
+          Practice complete — no pass mark
+        </p>
+      )}
     </div>
   );
 
@@ -852,7 +866,8 @@ export function QuizBlock({
     return (
       <div className="space-y-5">
         <p style={{ fontSize: 12.5, color: '#6B7280' }}>
-          {content.purpose ? `${content.purpose} · ` : ''}Adaptive · Pass mark {passMark}%
+          {content.purpose ? `${content.purpose} · ` : ''}Adaptive
+          {passRequired ? ` · Pass mark ${passMark}%` : ' · No pass mark'}
           {!submitted && q ? ` · Question ${path.length} of ${questions.length}` : ''}
         </p>
         {!submitted && q && (
@@ -884,7 +899,8 @@ export function QuizBlock({
     <div className="space-y-5">
       {!deferPassScore && (
         <p style={{ fontSize: 12.5, color: '#6B7280' }}>
-          {content.purpose ? `${content.purpose} · ` : ''}Pass mark {passMark}%
+          {content.purpose ? `${content.purpose} · ` : ''}
+          {passRequired ? `Pass mark ${passMark}%` : 'No pass mark — practice only'}
           {!submitted && maxHints > 0 ? ` · Wrong answers unlock up to ${maxHints} hint${maxHints === 1 ? '' : 's'}` : ''}
           {!submitted && maxHints <= 0 ? ' · Check each answer' : ''}
         </p>
@@ -1153,12 +1169,14 @@ function CumulativePassBanner({
   correct,
   resolved,
   passMark,
+  passRequired = true,
   showFinal,
 }: {
   total: number;
   correct: number;
   resolved: number;
   passMark: number;
+  passRequired?: boolean;
   showFinal: boolean;
 }) {
   if (total <= 0) return null;
@@ -1181,7 +1199,9 @@ function CumulativePassBanner({
           Checks {resolved}/{total} complete · {correct} correct
         </p>
         <p style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
-          Need {needCorrect}/{total} correct ({passMark}%) across all MCQs to pass
+          {passRequired
+            ? `Need ${needCorrect}/${total} correct (${passMark}%) across all MCQs to pass`
+            : 'Practice checks — no pass mark'}
         </p>
       </div>
     );
@@ -1189,17 +1209,29 @@ function CumulativePassBanner({
 
   return (
     <div className="rounded-[22px] p-5 text-center" style={{
-      background: passed ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.06)',
-      border: `1.5px solid ${passed ? 'rgba(5,150,105,0.25)' : 'rgba(239,68,68,0.2)'}`,
+      background: !passRequired
+        ? 'rgba(5,150,105,0.06)'
+        : passed ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.06)',
+      border: `1.5px solid ${
+        !passRequired
+          ? 'rgba(5,150,105,0.2)'
+          : passed ? 'rgba(5,150,105,0.25)' : 'rgba(239,68,68,0.2)'
+      }`,
     }}>
       <p style={{ fontSize: 18, fontWeight: 750, color: '#0B1220', marginBottom: 4 }}>
         {pct}% · {correct}/{total} correct
       </p>
-      <p style={{ fontSize: 13.5, fontWeight: 600, color: passed ? '#059669' : '#DC2626' }}>
-        {passed
-          ? `Passed — ${passMark}% across all checks`
-          : `Not yet — need ${passMark}% (${needCorrect}/${total} correct) across all checks`}
-      </p>
+      {passRequired ? (
+        <p style={{ fontSize: 13.5, fontWeight: 600, color: passed ? '#059669' : '#DC2626' }}>
+          {passed
+            ? `Passed — ${passMark}% across all checks`
+            : `Not yet — need ${passMark}% (${needCorrect}/${total} correct) across all checks`}
+        </p>
+      ) : (
+        <p style={{ fontSize: 13.5, fontWeight: 600, color: '#059669' }}>
+          Practice complete — no pass mark
+        </p>
+      )}
     </div>
   );
 }
@@ -1210,6 +1242,7 @@ function AssessedBlocks({
   objectId,
   cumulative = false,
   passMark = 70,
+  passRequired = true,
   maxHints = 4,
   hintsEnabled = true,
   animate = false,
@@ -1220,6 +1253,7 @@ function AssessedBlocks({
   objectId: string;
   cumulative?: boolean;
   passMark?: number;
+  passRequired?: boolean;
   maxHints?: number;
   hintsEnabled?: boolean;
   animate?: boolean;
@@ -1419,6 +1453,7 @@ function AssessedBlocks({
             correct={correct}
             resolved={resolved}
             passMark={passMark}
+            passRequired={passRequired}
             showFinal={showFinal}
           />
         </div>
@@ -1432,6 +1467,7 @@ export function LearningBlocksPreview({
   blocks,
   objectId = 'preview',
   cumulativePassMark,
+  passRequired = true,
   maxHints = 4,
   hintsEnabled = true,
   glossary,
@@ -1440,8 +1476,10 @@ export function LearningBlocksPreview({
 }: {
   blocks: Block[];
   objectId?: string;
-  /** When set, score all MCQs in these blocks against this pass mark together. */
+  /** When set, score all MCQs in these blocks together (pass mark used only if passRequired). */
   cumulativePassMark?: number;
+  /** When false, show cumulative score without pass/fail. */
+  passRequired?: boolean;
   maxHints?: number;
   hintsEnabled?: boolean;
   /** When provided, shows a right-side glossary drawer over the preview. */
@@ -1458,7 +1496,8 @@ export function LearningBlocksPreview({
     return <p style={{ fontSize: 13.5, color: '#9AA3AF' }}>Nothing to preview yet — add or generate parts first.</p>;
   }
   const numbered = renumberBlockQuestionLabels(expandTutorialBlocks(blocks)) as Block[];
-  const cumulative = typeof cumulativePassMark === 'number' && countQuizQuestionsInBlocks(numbered) > 0;
+  const cumulative = (typeof cumulativePassMark === 'number' || passRequired === false)
+    && countQuizQuestionsInBlocks(numbered) > 0;
   const entries = glossary || [];
 
   const onSelect = (entry: GlossaryEntry) => {
@@ -1474,6 +1513,7 @@ export function LearningBlocksPreview({
           objectId={objectId}
           cumulative={cumulative}
           passMark={cumulativePassMark ?? 70}
+          passRequired={passRequired}
           maxHints={maxHints}
           hintsEnabled={hintsEnabled}
           sourceUnits={sourceUnits}
@@ -1503,10 +1543,13 @@ export function LearnerReader({
   const app = useApp();
   const closeReader = app.closeReader || (() => {});
   const createdObjects = app.createdObjects || [];
-  const obj = objectProp
+  const baseObj = objectProp
     || createdObjects.find(o => o.id === objectId)
     || OBJECTS.find(o => o.id === objectId)
     || resolveLearningObject(objectId);
+  const readerVersionId = app.readerVersionId || null;
+  const versionMeta = readerVersionId ? getVersion(app.activeUserId, readerVersionId) : null;
+  const obj = (baseObj && versionMeta) ? objectFromVersion(baseObj, versionMeta) : baseObj;
   const [showAsk, setShowAsk] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
@@ -1516,13 +1559,15 @@ export function LearnerReader({
   const draft = (obj as any).pipelineDraft;
   const fv = draft?.fv || {};
   const hintOpts = resolveHintSettings(fv);
-  const passMark = parsePassMark(
-    fv.pass
-      ?? (obj.blocks.find((b) => b.type === 'quiz')?.content as QuizContent | undefined)?.passMark,
-    70,
-  );
+  const quizBlockPass = (obj.blocks.find((b) => b.type === 'quiz')?.content as QuizContent | undefined);
+  const passOpts = resolvePassSettings({
+    passOn: fv.passOn ?? quizBlockPass?.passRequired,
+    pass: fv.pass ?? quizBlockPass?.passMark,
+  });
+  const passMark = passOpts.passMark ?? 70;
+  const passRequired = passOpts.passRequired;
   const numbered = renumberBlockQuestionLabels(expandTutorialBlocks(obj.blocks)) as Block[];
-  const useCumulative = obj.type === 'tutorial' && countQuizQuestionsInBlocks(numbered) > 0;
+  const useCumulative = (obj.type === 'tutorial' || obj.type === 'tutorial-v2') && countQuizQuestionsInBlocks(numbered) > 0;
   const glossaryEntries = buildGlossary({
     knowledgeBase: draft?.knowledgeBase,
     blocks: numbered,
@@ -1587,7 +1632,9 @@ export function LearnerReader({
         <div className="flex-1 min-w-0">
           <p style={{ fontSize: 14, fontWeight: 600, color: '#0B1220' }} className="truncate">{obj.title}</p>
           <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>
-            {embedded ? 'Activity object · embed' : `${obj.estimatedTime} · ${obj.type}`}
+            {embedded
+              ? 'Content · embed'
+              : `${obj.estimatedTime} · ${obj.type}${versionMeta ? ` · viewing v${versionMeta.versionNumber}${versionMeta.locked ? ' (locked)' : ''}` : ''}`}
           </p>
         </div>
         {glossaryEntries.length > 0 && (
@@ -1624,7 +1671,7 @@ export function LearnerReader({
           <div className="flex items-center gap-2 mb-1">
             <BookOpen size={13} style={{ color: '#9AA3AF' }} />
             <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 500 }}>
-              {obj.type === 'tutorial' ? 'Tutorial'
+              {obj.type === 'tutorial' || obj.type === 'tutorial-v2' ? 'Tutorial'
                 : obj.type === 'flashcard-set' ? 'Flashcard set'
                   : obj.type === 'quiz' ? 'Quiz'
                     : obj.type === 'concept-card' ? 'Concept card'
@@ -1652,11 +1699,12 @@ export function LearnerReader({
             objectId={obj.id}
             cumulative={useCumulative}
             passMark={passMark}
+            passRequired={passRequired}
             maxHints={hintOpts.count}
             hintsEnabled={hintOpts.enabled}
             animate
             sourceUnits={draft?.knowledgeBase?.units}
-            paginate={obj.type === 'tutorial'}
+            paginate={!embedded && (obj.type === 'tutorial' || obj.type === 'tutorial-v2')}
           />
         ) : (
           <div className="flex flex-col items-center py-12 text-center">

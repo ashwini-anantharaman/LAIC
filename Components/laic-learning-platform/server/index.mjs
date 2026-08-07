@@ -154,8 +154,11 @@ function extractJson(str) {
     if (objs.length) return objs;
   }
 
-  // Truncated single object — rarely useful, but try closing braces.
+  // Complete object with trailing prose, or truncated object.
   if (s[0] === '{') {
+    const objs = extractCompleteObjects(s);
+    if (objs.length === 1) return objs[0];
+    if (objs.length > 1) return objs[0];
     const closed = closeTruncatedJson(s);
     try {
       return JSON.parse(closed);
@@ -250,19 +253,47 @@ function parseVideoId(url) {
   return raw ? raw[0] : null;
 }
 
-/** Split text into sentences; fall back to word-chunks for caption text. */
-function toSentences(text) {
-  const norm = text.replace(/\s+/g, ' ').trim();
-  if (!norm) return [];
-  const raw = (norm.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [norm])
+/** Alphanumeric floor — keep short titles/headings, drop page-number junk. */
+const MIN_UNIT_ALNUM = 2;
+
+function splitPunctuatedBlock(block) {
+  const normalized = String(block || '').replace(/[ \t]+/g, ' ').trim();
+  if (!normalized) return [];
+  return (normalized.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [normalized])
     .map((s) => s.trim())
-    .filter((s) => s.replace(/[^A-Za-z0-9]/g, '').length >= 12);
-  if (raw.length >= 3) return raw;
+    .filter((s) => s.replace(/[^A-Za-z0-9]/g, '').length >= MIN_UNIT_ALNUM);
+}
+
+/**
+ * Split text into markup units (sentences + titles/headings).
+ * Newlines are unit boundaries so short headings stay selectable in Markup.
+ */
+function toSentences(text) {
+  const raw = String(text || '').replace(/\r\n/g, '\n').trim();
+  if (!raw) return [];
+  const blocks = raw.split(/\n+/).map((b) => b.trim()).filter(Boolean);
+  const out = [];
+  if (blocks.length <= 1) {
+    out.push(...splitPunctuatedBlock(raw.replace(/\s+/g, ' ')));
+  } else {
+    for (const block of blocks) {
+      const alnum = block.replace(/[^A-Za-z0-9]/g, '').length;
+      if (alnum < MIN_UNIT_ALNUM) continue;
+      // Short / title-like lines without terminal punctuation → keep whole.
+      if (alnum <= 80 && !/[.!?]/.test(block)) {
+        out.push(block.replace(/\s+/g, ' ').trim());
+        continue;
+      }
+      out.push(...splitPunctuatedBlock(block));
+    }
+  }
+  if (out.length >= 2) return out;
   // Poorly-punctuated (auto captions): chunk into ~22-word pseudo-sentences.
+  const norm = raw.replace(/\s+/g, ' ').trim();
   const words = norm.split(' ');
   const chunks = [];
   for (let i = 0; i < words.length; i += 22) chunks.push(words.slice(i, i + 22).join(' '));
-  return chunks.filter((c) => c.replace(/[^A-Za-z0-9]/g, '').length >= 12);
+  return chunks.filter((c) => c.replace(/[^A-Za-z0-9]/g, '').length >= MIN_UNIT_ALNUM);
 }
 
 function execFileP(cmd, args, opts) {
@@ -362,11 +393,13 @@ async function fetchYoutubeTranscript(url) {
   }
 }
 
-function buildVideoScriptPrompt({ title, config, extracts, prompt, transcriptSegments, videoTitle }) {
+function buildVideoScriptPrompt(body) {
+  const { title, config, extracts, prompt, transcriptSegments, videoTitle } = body || {};
   const c = config || {};
   const num = (v, d) => (typeof v === 'number' ? v : Number(v) || d);
   const ncp = Math.max(1, Math.min(12, num(c.ncp, 4)));
   const extractLines = extractLinesFrom(extracts);
+  const directiveBlock = formatAuthorDirectivesBlock(collectAuthorDirectives(body));
   const segs = Array.isArray(transcriptSegments) ? transcriptSegments : [];
   const durationHint = segs.length
     ? Math.max(...segs.map((s) => Number(s.end || s.start) || 0))
@@ -402,6 +435,7 @@ function buildVideoScriptPrompt({ title, config, extracts, prompt, transcriptSeg
     `Level: ${c.lvl || 'Basic'}`,
     `Number of checkpoints: ${ncp}`,
     prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    directiveBlock,
     '',
     '--- Timed transcript ---',
     timedLines || '(no timed captions — invent plausible evenly-spaced times and ground questions in extracts/prompt)',
@@ -510,15 +544,13 @@ function decodeHtmlEntities(s) {
     });
 }
 
-/** Lightweight HTML → plain text (no extra deps). Prefer article/main when present. */
-function htmlToPlainText(html) {
+/** Prefer article/main/body content; strip chrome. */
+function extractMainHtmlChunk(html) {
   let h = String(html || '');
-  // Drop non-content blocks early
   h = h
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
-    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ');
 
   let chunk = h;
@@ -531,9 +563,87 @@ function htmlToPlainText(html) {
     if (body?.[1]) chunk = body[1];
   }
 
+  return chunk
+    // Unwrap <header> so article titles/h1 stay markable; drop other chrome.
+    .replace(/<\/?header\b[^>]*>/gi, ' ')
+    .replace(/<(nav|footer|aside|form|iframe|svg)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<(nav|footer|aside|form|iframe|svg)\b[^>]*\/>/gi, ' ');
+}
+
+/**
+ * Sanitize article HTML for safe Markup display — keep structure/formatting
+ * (headings, lists, emphasis, links, tables) and drop scripts/events/styles.
+ */
+function sanitizeArticleHtml(html) {
+  let chunk = extractMainHtmlChunk(html);
+  // Drop residual dangerous / non-content tags (keep their text where sensible)
   chunk = chunk
-    .replace(/<(nav|footer|aside|header|form|iframe)[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<\/(p|div|h[1-6]|li|tr|br|blockquote|section)>/gi, '\n')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<button[\s\S]*?<\/button>/gi, ' ')
+    .replace(/<\/?(?:object|embed|applet|link|meta|base|input|textarea|select|option)[^>]*>/gi, ' ');
+
+  // Normalize voids
+  chunk = chunk.replace(/<br\s*\/?>/gi, '<br/>').replace(/<hr\s*\/?>/gi, '<hr/>');
+
+  // Only allow a formatting allowlist; unwrap everything else (keep children).
+  const allowed = new Set([
+    'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'ul', 'ol', 'li', 'strong', 'b', 'em', 'i', 'u', 's', 'mark',
+    'blockquote', 'pre', 'code', 'a', 'span', 'div', 'section',
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+    'figure', 'figcaption', 'img', 'sub', 'sup', 'dl', 'dt', 'dd',
+  ]);
+
+  chunk = chunk.replace(/<\/?([a-zA-Z0-9]+)(\s[^>]*)?>/g, (full, rawName, attrs = '') => {
+    const name = String(rawName || '').toLowerCase();
+    const closing = full.startsWith('</');
+    if (!allowed.has(name)) return closing ? '' : '';
+    if (closing) return `</${name}>`;
+
+    if (name === 'br' || name === 'hr') return `<${name}/>`;
+
+    const attr = (key) => {
+      const m = attrs.match(new RegExp(`\\b${key}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i'));
+      return m ? (m[2] ?? m[3] ?? m[4] ?? '') : '';
+    };
+
+    if (name === 'a') {
+      const safe = String(attr('href') || '').trim();
+      if (/^https?:\/\//i.test(safe) || safe.startsWith('/') || safe.startsWith('#') || safe.startsWith('mailto:')) {
+        return `<a href="${safe.replace(/"/g, '&quot;')}" rel="noopener noreferrer" target="_blank">`;
+      }
+      return '<a>';
+    }
+
+    if (name === 'img') {
+      const srcVal = String(attr('src') || '').trim();
+      const altVal = String(attr('alt') || '').trim();
+      if (!/^https?:\/\//i.test(srcVal) && !srcVal.startsWith('data:image/')) return '';
+      return `<img src="${srcVal.replace(/"/g, '&quot;')}" alt="${altVal.replace(/"/g, '&quot;')}" loading="lazy"/>`;
+    }
+
+    // Strip all attributes / event handlers on other tags
+    return `<${name}>`;
+  });
+
+  // Collapse empty wrappers noise lightly
+  chunk = chunk
+    .replace(/(<p>\s*<\/p>)+/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  // Cap size for Markup
+  if (chunk.length > 200_000) chunk = chunk.slice(0, 200_000);
+  return chunk;
+}
+
+/** Lightweight HTML → plain text (no extra deps). Prefer article/main when present. */
+function htmlToPlainText(html) {
+  let chunk = extractMainHtmlChunk(html);
+
+  chunk = chunk
+    .replace(/<\/(p|div|h[1-6]|li|tr|br|blockquote|section|td|th)>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, ' ');
 
@@ -613,6 +723,7 @@ async function fetchWebsitePage(rawUrl) {
   if (!html) throw new LlmError(502, 'empty_page', 'No page content was returned.');
 
   const title = extractHtmlTitle(html, finalUrl.hostname);
+  const articleHtml = sanitizeArticleHtml(html);
   const text = htmlToPlainText(html);
   if (!text || text.replace(/\s+/g, ' ').trim().length < 80) {
     throw new LlmError(422, 'no_text', 'Could not extract enough readable text from that page (it may be paywalled or heavily scripted). Try Paste text instead.');
@@ -624,7 +735,45 @@ async function fetchWebsitePage(rawUrl) {
   if (!sentences.length) {
     throw new LlmError(422, 'no_sentences', 'Extracted text but could not split it into sentences. Try Paste text.');
   }
-  return { title, sentences, url: finalUrl.toString() };
+  return {
+    title,
+    sentences,
+    url: finalUrl.toString(),
+    /** Sanitized article HTML for Markup — preserves website structure/formatting. */
+    html: articleHtml || undefined,
+  };
+}
+
+/* ─── Tutorial: expand AI prompt into markable source text ────────── */
+
+async function expandPromptToSource(prompt, opts = {}) {
+  const brief = String(prompt || '').trim();
+  if (!brief) throw new LlmError(400, 'no_prompt', 'Describe what the object should teach.');
+  const system = [
+    'You write a clear teaching SOURCE document for a course author to mark up.',
+    'Expand the author brief into factual, well-structured educational prose — like a short textbook excerpt or lesson notes.',
+    'Use short paragraphs and complete sentences suitable for sentence-level markup.',
+    'Cover definitions, key rules, examples, common pitfalls, and practical takeaways grounded in the brief.',
+    'Do NOT write a tutorial script, quiz, or UI copy. Do NOT wrap the answer in markdown fences.',
+    'Respond ONLY with JSON: {"title":string,"text":string}',
+    'text should be 600–1400 words of plain prose with blank lines between paragraphs.',
+  ].join('\n');
+  const user = [
+    opts.title ? `Working title: ${opts.title}` : '',
+    opts.objective ? `Learning outcome: ${opts.objective}` : '',
+    '',
+    'Author brief:',
+    brief,
+    '',
+    'Return the JSON object now.',
+  ].filter(Boolean).join('\n');
+  const raw = await callAnthropic({ system, user, maxTokens: 4096 });
+  const parsed = extractJson(raw);
+  const obj = Array.isArray(parsed) ? parsed[0] : parsed;
+  const text = String(obj?.text || obj?.content || obj?.source || '').trim();
+  if (text.length < 120) throw new LlmError(502, 'llm_parse', 'The model did not return enough source text. Try a fuller brief.');
+  const title = String(obj?.title || opts.title || 'AI-generated source').trim() || 'AI-generated source';
+  return { title, text };
 }
 
 /* ─── Tutorial: suggest highlights ────────────────────────────────── */
@@ -643,13 +792,22 @@ async function suggestHighlights(sentences, instruction) {
 
 /* ─── Tutorial: document-level markup flags (review list, not per-sentence) ── */
 
-const FLAG_KINDS = new Set(['core', 'confusion', 'diagram', 'out_of_scope']);
+const LEGACY_FLAG_KINDS = new Set(['core', 'confusion', 'diagram', 'out_of_scope']);
 const FLAG_KIND_TO_TAG = {
   core: 'Use',
   confusion: 'Note',
   diagram: 'Support',
   out_of_scope: 'Ignore',
 };
+const ALLOWED_TAGS = new Set(['Use', 'Support', 'Ignore', 'Note']);
+
+function slugifyKind(raw) {
+  return String(raw || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+}
 
 function buildFlagCorpus(items, offset = 0) {
   return items.map((it, j) => {
@@ -659,7 +817,7 @@ function buildFlagCorpus(items, offset = 0) {
   }).join('\n');
 }
 
-function normalizeMarkupFlags(parsed, items) {
+function normalizeMarkupFlags(parsed, items, { requireFocusGroups = false } = {}) {
   const arr = Array.isArray(parsed)
     ? parsed
     : (parsed && Array.isArray(parsed.flags) ? parsed.flags : []);
@@ -668,9 +826,18 @@ function normalizeMarkupFlags(parsed, items) {
   const seen = new Set();
   for (const raw of arr) {
     if (!raw || typeof raw !== 'object') continue;
-    let kind = String(raw.kind || '').toLowerCase().replace(/-/g, '_');
+    let kind = slugifyKind(raw.kind || raw.group || raw.groupId);
     if (kind === 'out-of-scope' || kind === 'outofscope') kind = 'out_of_scope';
-    if (!FLAG_KINDS.has(kind)) continue;
+    if (!kind) continue;
+    if (!requireFocusGroups && !LEGACY_FLAG_KINDS.has(kind) && !String(raw.groupLabel || '').trim()) {
+      // Legacy scans only accept fixed kinds unless a group label is present.
+      continue;
+    }
+    const groupLabelRaw = String(raw.groupLabel || raw.group_label || raw.label || '').trim();
+    if (requireFocusGroups && LEGACY_FLAG_KINDS.has(kind) && !groupLabelRaw) {
+      // Focus scans must invent focus-specific groups, not the generic four.
+      continue;
+    }
     let startIdx = Number(raw.startIdx ?? raw.start ?? raw.from);
     let endIdx = Number(raw.endIdx ?? raw.end ?? raw.to ?? startIdx);
     if (!Number.isInteger(startIdx) || startIdx < 0 || startIdx >= n) continue;
@@ -687,12 +854,21 @@ function normalizeMarkupFlags(parsed, items) {
       .filter(Boolean)
       .join(' ');
     if (!excerpt) continue;
-    const title = String(raw.title || raw.label || '').trim()
+    const groupLabel = groupLabelRaw
+      || (LEGACY_FLAG_KINDS.has(kind)
+        ? ({ core: 'Core concept', confusion: 'Common confusion', diagram: 'Diagram / visual', out_of_scope: 'Out of scope' }[kind])
+        : kind.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+    const title = String(raw.title || '').trim()
       || excerpt.slice(0, 72) + (excerpt.length > 72 ? '…' : '');
-    const suggestedTag = FLAG_KIND_TO_TAG[kind] || 'Use';
+    let suggestedTag = String(raw.suggestedTag || raw.tag || FLAG_KIND_TO_TAG[kind] || 'Use');
+    if (!ALLOWED_TAGS.has(suggestedTag)) suggestedTag = 'Use';
+    const sectionId = typeof raw.sectionId === 'string' && raw.sectionId.trim()
+      ? raw.sectionId.trim()
+      : undefined;
     out.push({
       id: `flag-${Date.now().toString(36)}-${out.length}`,
       kind,
+      groupLabel,
       title,
       rationale: String(raw.rationale || raw.why || '').trim() || undefined,
       startIdx,
@@ -701,12 +877,35 @@ function normalizeMarkupFlags(parsed, items) {
       excerpt: excerpt.slice(0, 600),
       suggestedTag,
       status: 'pending',
+      sectionId,
     });
   }
   return out;
 }
 
-function quotaSelectFlags(flags) {
+function quotaSelectFlags(flags, { focusMode = false } = {}) {
+  if (focusMode) {
+    const byKind = new Map();
+    for (const f of flags) {
+      if (!byKind.has(f.kind)) byKind.set(f.kind, []);
+      byKind.get(f.kind).push(f);
+    }
+    const selected = [];
+    const perGroup = Math.max(3, Math.ceil(24 / Math.max(1, byKind.size)));
+    for (const list of byKind.values()) {
+      selected.push(...list.slice(0, perGroup));
+    }
+    if (selected.length < 12) {
+      const used = new Set(selected.map((f) => f.id));
+      const rest = flags.filter((f) => !used.has(f.id)).sort((a, b) => a.startIdx - b.startIdx);
+      for (const f of rest) {
+        if (selected.length >= 28) break;
+        selected.push(f);
+      }
+    }
+    selected.sort((a, b) => a.startIdx - b.startIdx);
+    return selected.slice(0, 30);
+  }
   const quotas = { core: 12, confusion: 4, diagram: 6, out_of_scope: 3 };
   const buckets = { core: [], confusion: [], diagram: [], out_of_scope: [] };
   for (const f of flags) {
@@ -730,34 +929,45 @@ function quotaSelectFlags(flags) {
 }
 
 function summarizeFlags(flags) {
-  const counts = { core: 0, confusion: 0, diagram: 0, out_of_scope: 0 };
-  for (const f of flags) if (counts[f.kind] != null) counts[f.kind] += 1;
-  const parts = [];
-  if (counts.core) parts.push(`${counts.core} passage${counts.core === 1 ? '' : 's'} carry core concepts`);
-  if (counts.confusion) parts.push(`${counts.confusion} look like places students commonly confuse things`);
-  if (counts.diagram) parts.push(`${counts.diagram} mention diagrams or visuals worth pulling in`);
-  if (counts.out_of_scope) parts.push(`${counts.out_of_scope} section${counts.out_of_scope === 1 ? '' : 's'} seem out of scope`);
-  if (!parts.length) return 'No review items found — try a clearer learning focus, or mark up manually.';
-  return parts.join('. ') + '.';
+  const counts = new Map();
+  for (const f of flags) {
+    const label = f.groupLabel || f.kind;
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  if (!counts.size) return 'No review items found — try a clearer scan focus, or mark up manually.';
+  const parts = [...counts.entries()].map(([label, n]) => `${n} × ${label}`);
+  return `Grouped by your scan focus: ${parts.join(' · ')}.`;
 }
 
-async function suggestMarkupFlagsPass(corpus, { instruction, objective, title, scopeNote }) {
-  const system = [
-    'You help a course author mark up a source for a tutorial.',
-    'Read the numbered sentences once and return a SMALL set of decision items — not one flag per sentence.',
-    'Each item is a short passage span (startIdx–endIdx inclusive) with a kind:',
-    '  core — load-bearing concepts / definitions / rules the tutorial must teach',
-    '  confusion — places learners commonly mix up or misread',
-    '  diagram — text that points to a figure, table, diagram, or visual worth importing',
-    '  out_of_scope — material that seems peripheral given the learning outcome',
-    'Respond ONLY with a JSON array of objects:',
-    '{"kind":"core"|"confusion"|"diagram"|"out_of_scope","title":string,"rationale":string,"startIdx":number,"endIdx":number}',
-    'Aim for roughly 15–28 items total across kinds for a full document (fewer for a short excerpt). Prefer multi-sentence spans when a idea spans adjacent lines. Do not flag filler.',
-  ].join('\n');
+async function suggestMarkupFlagsPass(corpus, { instruction, objective, title, scopeNote, focusMode }) {
+  const focus = String(instruction || '').trim();
+  const system = focusMode
+    ? [
+      'You help a course author mark up a source for a tutorial.',
+      'The author gave a SCAN FOCUS. Invent 3–6 DISTINCT groups specific to that focus — not generic buckets like "core concept", "common confusion", "diagram/visual", or "out of scope".',
+      'Group labels must reflect the focus (e.g. focus "opening bids" → groups like "1NT range", "suit-length requirements", "responses to 1♥").',
+      'Each item is a short passage span (startIdx–endIdx inclusive) belonging to one of those groups.',
+      'Highlight passages that matter for the focus; skip filler.',
+      'Respond ONLY with a JSON array of objects:',
+      '{"kind":"snake_case_slug","groupLabel":"Human Label","title":string,"rationale":string,"startIdx":number,"endIdx":number,"suggestedTag":"Use"|"Support"|"Ignore"|"Note"}',
+      'Aim for 12–28 items total across your focus groups (fewer for a short excerpt). Prefer multi-sentence spans when an idea spans adjacent lines.',
+    ].join('\n')
+    : [
+      'You help a course author mark up a source for a tutorial.',
+      'Read the numbered sentences once and return a SMALL set of decision items — not one flag per sentence.',
+      'Each item is a short passage span (startIdx–endIdx inclusive) with a kind:',
+      '  core — load-bearing concepts / definitions / rules the tutorial must teach',
+      '  confusion — places learners commonly mix up or misread',
+      '  diagram — text that points to a figure, table, diagram, or visual worth importing',
+      '  out_of_scope — material that seems peripheral given the learning outcome',
+      'Respond ONLY with a JSON array of objects:',
+      '{"kind":"core"|"confusion"|"diagram"|"out_of_scope","groupLabel":string,"title":string,"rationale":string,"startIdx":number,"endIdx":number,"suggestedTag":"Use"|"Support"|"Ignore"|"Note"}',
+      'Aim for roughly 15–28 items total across kinds for a full document (fewer for a short excerpt). Prefer multi-sentence spans when a idea spans adjacent lines. Do not flag filler.',
+    ].join('\n');
   const user = [
     title ? `Document: ${title}` : '',
-    objective ? `Learning outcome / focus: ${objective}` : '',
-    instruction ? `Author note: ${instruction}` : '',
+    objective ? `Learning outcome: ${objective}` : '',
+    focus ? `SCAN FOCUS (required — invent groups from this): ${focus}` : '',
     scopeNote || '',
     '',
     'Sentences (format [index|page] text):',
@@ -771,25 +981,111 @@ async function suggestMarkupFlagsPass(corpus, { instruction, objective, title, s
 
 /**
  * One-pass (or batched) document scan → compact review list for the author.
+ * When instruction (scan focus) is set, groups are invented from that focus.
  * @param {{ text: string, page?: number }[]} items
  */
 async function suggestMarkupFlags(items, opts = {}) {
   const list = Array.isArray(items) ? items.filter((it) => it && String(it.text || '').trim()) : [];
   if (!list.length) throw new LlmError(400, 'no_sentences', 'No sentences to analyze.');
 
+  const sections = Array.isArray(opts.sections)
+    ? opts.sections.filter((s) => s && String(s.id || '').trim() && String(s.title || '').trim())
+    : [];
+
+  // Define-first: propose highlights grouped by human-defined sections.
+  if (sections.length) {
+    const sectionLines = sections.map((s, i) => (
+      `(${i + 1}) id=${s.id} title="${String(s.title).replace(/"/g, "'")}" intent="${String(s.intent || '').replace(/"/g, "'")}"`
+    )).join('\n');
+    const system = [
+      'You help a course author mark up a source for a tutorial.',
+      'The author already DEFINED the tutorial sections. Propose source passages that SUPPORT each defined section.',
+      'Do NOT invent new sections or decide the outline — only find evidence for the given sections.',
+      'Each item must include sectionId matching one of the provided section ids.',
+      'Respond ONLY with a JSON array of objects:',
+      '{"sectionId":string,"kind":"snake_case_slug","groupLabel":string,"title":string,"rationale":string,"startIdx":number,"endIdx":number,"suggestedTag":"Use"|"Support"|"Ignore"|"Note"}',
+      'groupLabel MUST be the section title. Aim for 2–6 items per section when evidence exists; skip a section if nothing supports it.',
+      'Prefer multi-sentence spans when an idea spans adjacent lines. Do not flag filler.',
+    ].join('\n');
+
+    let collected = [];
+    const n = list.length;
+    const runPass = async (slice, offset, scopeNote) => {
+      const user = [
+        opts.title ? `Document: ${opts.title}` : '',
+        opts.objective ? `Learning objective: ${opts.objective}` : '',
+        'DEFINED SECTIONS (propose passages for these only):',
+        sectionLines,
+        scopeNote || '',
+        '',
+        'Sentences (format [index|page] text):',
+        buildFlagCorpus(slice, offset),
+        '',
+        'Return the JSON array now. Every item needs a valid sectionId from the list above.',
+      ].filter(Boolean).join('\n');
+      const raw = await callAnthropic({ system, user, maxTokens: 4096 });
+      return extractJson(raw);
+    };
+
+    if (n <= 160) {
+      const parsed = await runPass(list, 0, 'This is the full document excerpt available for markup.');
+      collected = normalizeMarkupFlags(parsed, list, { requireFocusGroups: true });
+      // Stamp sectionId from model or match groupLabel → section
+      collected = collected.map((f) => stampSectionIdOnFlag(f, sections, parsed));
+    } else {
+      const batches = [];
+      let start = 0;
+      while (start < n) {
+        const startPage = list[start].page || 1;
+        let end = start + 1;
+        while (end < n && (end - start) < 55 && (list[end].page || 1) <= startPage + 4) end += 1;
+        if (end === start) end = Math.min(n, start + 45);
+        batches.push([start, end]);
+        start = end;
+      }
+      const maxBatches = 6;
+      const step = batches.length > maxBatches ? Math.ceil(batches.length / maxBatches) : 1;
+      for (let i = 0; i < batches.length; i += step) {
+        const [a, b] = batches[i];
+        const slice = list.slice(a, b);
+        const parsed = await runPass(slice, a, `Chunk sentences ${a}–${b - 1} of ${n}. Only flag items in this chunk.`);
+        const norm = normalizeMarkupFlags(parsed, list, { requireFocusGroups: true }).map((f) => stampSectionIdOnFlag(f, sections, parsed));
+        collected.push(...norm);
+      }
+    }
+
+    // Ensure every flag has a sectionId; drop those that cannot be mapped.
+    collected = collected.map((f) => {
+      if (f.sectionId && sections.some((s) => s.id === f.sectionId)) return f;
+      const byTitle = sections.find((s) => s.title.toLowerCase() === String(f.groupLabel || '').toLowerCase());
+      if (byTitle) return { ...f, sectionId: byTitle.id, groupLabel: byTitle.title };
+      return null;
+    }).filter(Boolean);
+
+    const flags = quotaSelectFlags(collected, { focusMode: true });
+    const stamped = flags.map((f, i) => ({ ...f, id: `flag-${Date.now().toString(36)}-${i}` }));
+    const summary = summarizeSectionFlags(stamped, sections);
+    return { flags: stamped, summary };
+  }
+
+  const focus = String(opts.instruction || '').trim();
+  if (!focus) {
+    throw new LlmError(400, 'no_scan_focus', 'Enter a scan focus so the document can be grouped for review.');
+  }
+  const focusMode = true;
   const n = list.length;
   let collected = [];
 
   if (n <= 160) {
     const parsed = await suggestMarkupFlagsPass(buildFlagCorpus(list), {
-      instruction: opts.instruction,
+      instruction: focus,
       objective: opts.objective,
       title: opts.title,
       scopeNote: 'This is the full document excerpt available for markup.',
+      focusMode,
     });
-    collected = normalizeMarkupFlags(parsed, list);
+    collected = normalizeMarkupFlags(parsed, list, { requireFocusGroups: true });
   } else {
-    // Longer docs: scan in page-ish batches, then quota-select a short review list
     const batches = [];
     let start = 0;
     while (start < n) {
@@ -806,7 +1102,6 @@ async function suggestMarkupFlags(items, opts = {}) {
       batches.push([start, end]);
       start = end;
     }
-    // Cap API fan-out
     const maxBatches = 6;
     const step = batches.length > maxBatches ? Math.ceil(batches.length / maxBatches) : 1;
     const chosen = [];
@@ -815,19 +1110,47 @@ async function suggestMarkupFlags(items, opts = {}) {
     for (const [a, b] of chosen) {
       const slice = list.slice(a, b);
       const parsed = await suggestMarkupFlagsPass(buildFlagCorpus(slice, a), {
-        instruction: opts.instruction,
+        instruction: focus,
         objective: opts.objective,
         title: opts.title,
-        scopeNote: `This is a chunk of the document (sentences ${a}–${b - 1} of ${n}). Flag only items in this chunk.`,
+        scopeNote: `This is a chunk of the document (sentences ${a}–${b - 1} of ${n}). Flag only items in this chunk. Reuse the same focus-derived group kinds across chunks.`,
+        focusMode,
       });
-      collected.push(...normalizeMarkupFlags(parsed, list));
+      collected.push(...normalizeMarkupFlags(parsed, list, { requireFocusGroups: true }));
     }
   }
 
-  const flags = quotaSelectFlags(collected);
-  // Re-id after select for stability
+  const flags = quotaSelectFlags(collected, { focusMode: true });
   const stamped = flags.map((f, i) => ({ ...f, id: `flag-${Date.now().toString(36)}-${i}` }));
   return { flags: stamped, summary: summarizeFlags(stamped) };
+}
+
+function stampSectionIdOnFlag(flag, sections, parsedRaw) {
+  if (flag.sectionId && sections.some((s) => s.id === flag.sectionId)) {
+    const s = sections.find((x) => x.id === flag.sectionId);
+    return { ...flag, groupLabel: s.title };
+  }
+  // Try match from raw parsed items by title/excerpt
+  if (Array.isArray(parsedRaw)) {
+    const hit = parsedRaw.find((p) => p && String(p.title || '') === String(flag.title || '') && p.sectionId);
+    if (hit && sections.some((s) => s.id === hit.sectionId)) {
+      const s = sections.find((x) => x.id === hit.sectionId);
+      return { ...flag, sectionId: hit.sectionId, groupLabel: s.title };
+    }
+  }
+  const byLabel = sections.find((s) => s.title.toLowerCase() === String(flag.groupLabel || '').toLowerCase());
+  if (byLabel) return { ...flag, sectionId: byLabel.id, groupLabel: byLabel.title };
+  return flag;
+}
+
+function summarizeSectionFlags(flags, sections) {
+  if (!flags.length) return 'No passages found for your defined sections — try marking manually, or refine section intents.';
+  const counts = new Map(sections.map((s) => [s.id, 0]));
+  for (const f of flags) {
+    if (f.sectionId && counts.has(f.sectionId)) counts.set(f.sectionId, counts.get(f.sectionId) + 1);
+  }
+  const parts = sections.map((s) => `${counts.get(s.id) || 0} × ${s.title}`);
+  return `Proposed against your Plan sections: ${parts.join(' · ')}.`;
 }
 
 /* ─── Tutorial: structured extract (classify / dedupe / cluster) ─── */
@@ -870,6 +1193,9 @@ function dedupePassages(passages) {
     if (hit) {
       if (text.length > hit.text.length) hit.text = text;
       hit.sourceHighlightIds = [...(hit.sourceHighlightIds || []), ...(p.sourceHighlightIds || [])];
+      // Keep every distinct author note when passages merge.
+      const notes = [hit.authorNote, p.authorNote].map((n) => String(n || '').trim()).filter(Boolean);
+      if (notes.length) hit.authorNote = [...new Set(notes)].join(' | ');
       continue;
     }
     out.push({ ...p, text });
@@ -893,14 +1219,23 @@ function clusterNameFromText(text) {
   return words.length > 28 ? `${words.slice(0, 28)}…` : (words || 'Topic');
 }
 
-function buildClusteredKnowledgeBase({ highlights, extracts, shapeIntent, objective, topic }) {
+const UNASSIGNED_SECTION_ID = '__unassigned__';
+
+/** Define-first extract: fixed clusters = defined sections + Unassigned (no emergent names). */
+function buildClusteredKnowledgeBaseFromDefinition({ highlights, extracts, tutorialDefinition }) {
+  const sections = Array.isArray(tutorialDefinition?.sections)
+    ? tutorialDefinition.sections.filter((s) => s && String(s.id || '').trim() && String(s.title || '').trim())
+    : [];
   const raw = [];
   if (Array.isArray(highlights) && highlights.length) {
     for (const h of highlights) {
-      if (h.tag !== 'Use' && h.tag !== 'Support') continue;
-      const text = h.comment ? `${h.text} — ${h.comment}` : h.text;
+      if (h.tag !== 'Use' && h.tag !== 'Support' && h.tag !== 'Note') continue;
+      if (h.tag === 'Note' && !String(h.comment || '').trim()) continue;
+      const { text, authorNote } = splitPassageAndNote(h.text, h.comment);
+      if (!text) continue;
       raw.push({
         text,
+        authorNote,
         from: (() => {
           const label = h.sourceLabel || h.from || null;
           const pageBit = h.page != null ? `p.${h.page}` : null;
@@ -910,14 +1245,117 @@ function buildClusteredKnowledgeBase({ highlights, extracts, shapeIntent, object
           return undefined;
         })(),
         fromHl: true,
+        kind: h.tag === 'Support' ? 'Fact' : h.tag === 'Note' ? 'Key point' : undefined,
+        sourceHighlightIds: [h.idx].filter((n) => n != null),
+        sourceLabel: h.sourceLabel || undefined,
+        sectionId: h.sectionId || undefined,
+      });
+    }
+  } else if (Array.isArray(extracts)) {
+    for (const e of extracts) {
+      const { text, authorNote } = splitPassageAndNote(e.text, e.authorNote || e.comment);
+      raw.push({
+        text,
+        authorNote,
+        from: e.from,
+        fromHl: !!e.fromHl,
+        kind: e.kind,
+        sourceHighlightIds: e.sourceHighlightIds,
+        sectionId: e.sectionId || undefined,
+      });
+    }
+  }
+
+  const rawHighlightCount = raw.length;
+  const merged = dedupePassages(raw);
+  const sectionIds = new Set(sections.map((s) => s.id));
+  const units = merged.map((p, i) => {
+    const sid = p.sectionId && sectionIds.has(p.sectionId) ? p.sectionId : UNASSIGNED_SECTION_ID;
+    return {
+      id: p.id || `u${i + 1}`,
+      kind: UNIT_KINDS.includes(p.kind) ? p.kind : classifyUnitKind(p.text),
+      text: p.text,
+      authorNote: p.authorNote || undefined,
+      from: p.from,
+      fromHl: !!p.fromHl,
+      sourceHighlightIds: p.sourceHighlightIds || [],
+      sourceLabel: p.sourceLabel || undefined,
+      sectionId: sid,
+      clusterId: sid,
+    };
+  });
+
+  const clusters = sections.map((s) => ({
+    id: s.id,
+    name: String(s.title).trim(),
+    unitIds: units.filter((u) => u.sectionId === s.id).map((u) => u.id),
+    sectionId: s.id,
+  }));
+  clusters.push({
+    id: UNASSIGNED_SECTION_ID,
+    name: 'Unassigned',
+    unitIds: units.filter((u) => u.sectionId === UNASSIGNED_SECTION_ID).map((u) => u.id),
+    sectionId: UNASSIGNED_SECTION_ID,
+  });
+
+  return {
+    units,
+    clusters,
+    rawHighlightCount,
+    mergedUnitCount: units.length,
+    gaps: [],
+  };
+}
+
+function splitPassageAndNote(text, comment) {
+  const note = String(comment || '').trim();
+  let passage = String(text || '').trim();
+  // Legacy pulls baked "passage — note" into text; undo when comment is absent.
+  if (!note && /\s—\s/.test(passage)) {
+    const parts = passage.split(/\s—\s/);
+    if (parts.length >= 2) {
+      const maybeNote = parts[parts.length - 1].trim();
+      const maybePassage = parts.slice(0, -1).join(' — ').trim();
+      if (maybePassage && maybeNote && maybeNote.length < 400) {
+        return { text: maybePassage, authorNote: maybeNote };
+      }
+    }
+  }
+  return { text: passage, authorNote: note || undefined };
+}
+
+function buildClusteredKnowledgeBase({ highlights, extracts, shapeIntent, objective, topic }) {
+  const raw = [];
+  if (Array.isArray(highlights) && highlights.length) {
+    for (const h of highlights) {
+      // Use/Support are teaching backbone; Note with a comment is an author directive on a passage.
+      if (h.tag !== 'Use' && h.tag !== 'Support' && h.tag !== 'Note') continue;
+      if (h.tag === 'Note' && !String(h.comment || '').trim()) continue;
+      const { text, authorNote } = splitPassageAndNote(h.text, h.comment);
+      if (!text) continue;
+      raw.push({
+        text,
+        authorNote,
+        from: (() => {
+          const label = h.sourceLabel || h.from || null;
+          const pageBit = h.page != null ? `p.${h.page}` : null;
+          if (label && pageBit) return `${label} · ${pageBit}`;
+          if (label) return String(label);
+          if (pageBit) return pageBit;
+          return undefined;
+        })(),
+        fromHl: true,
+        kind: h.tag === 'Support' ? 'Fact' : h.tag === 'Note' ? 'Key point' : undefined,
         sourceHighlightIds: [h.idx].filter((n) => n != null),
         sourceLabel: h.sourceLabel || undefined,
       });
     }
   } else if (Array.isArray(extracts)) {
     for (const e of extracts) {
+      const { text, authorNote } = splitPassageAndNote(e.text, e.authorNote || e.comment);
       raw.push({
-        text: e.text,
+        text,
+        authorNote,
         from: e.from,
         fromHl: !!e.fromHl,
         kind: e.kind,
@@ -953,6 +1391,7 @@ function buildClusteredKnowledgeBase({ highlights, extracts, shapeIntent, object
     id: p.id || `u${i + 1}`,
     kind: UNIT_KINDS.includes(p.kind) ? p.kind : classifyUnitKind(p.text),
     text: p.text,
+    authorNote: p.authorNote || undefined,
     from: p.from,
     fromHl: !!p.fromHl,
     sourceHighlightIds: p.sourceHighlightIds || [],
@@ -1085,8 +1524,11 @@ async function refineClustersWithLlm(kb, { objective, topic, shapeIntent }) {
 /* ─── Tutorial: generate ──────────────────────────────────────────── */
 
 function buildGeneratePrompt(body) {
-  const { title, config, extracts, prompt, media, template, knowledgeBase, sectionPlans } = body || {};
-  const c = config || {};
+  const { title, config, extracts, prompt, media, template, knowledgeBase, sectionPlans, tutorialDefinition } = body || {};
+  const authorDirectives = collectAuthorDirectives(body);
+  const directiveBlock = formatAuthorDirectivesBlock(authorDirectives);
+  // Define-first / boss rule: AI extras are unreachable for tutorials (belt + suspenders).
+  const c = { ...(config || {}), aiExtra: false };
   const num = (v, d) => (typeof v === 'number' ? v : d);
   const secs = num(c.secs, 3);
   const chks = num(c.chks, 1);
@@ -1095,29 +1537,19 @@ function buildGeneratePrompt(body) {
   const end = c.end || 'Recap only';
   const authorPrompt = prompt || (config && config.prompt) || '';
   const mediaList = Array.isArray(media) ? media.filter((m) => m && m.ref) : [];
-  const wordTarget = resolveTutorialWordTarget(c);
-  const wordsPerSection = Math.max(80, Math.round(wordTarget / Math.max(1, secs)));
-  const explicitWords = Number(c.words) > 0;
-  const lengthRule = explicitWords
-    ? [
-      `HARD LENGTH REQUIREMENT: The author set an explicit target of ${wordTarget} teaching words.`,
-      `MINIMUM: Produce at least ${Math.round(wordTarget * 0.9)} words of rich-text "body" text across the tutorial (quiz options, hints, and explanations do NOT count toward this).`,
-      `Budget about ~${wordsPerSection} teaching words per section (plus a short intro/recap).`,
-      'Meet the minimum by elaborating grounded content: stepwise walkthroughs, worked examples, common mistakes, "why it matters", and clear restatements of the source units — never invent facts that contradict the units.',
-      wordTarget >= 1500
-        ? 'Long-form: each major rich-text body must be multiple paragraphs (not 2–5 short sentences). Prefer several teaching parts per section if needed to hit the budget.'
-        : 'Use full short paragraphs, not one-liners.',
-    ].filter(Boolean).join(' ')
-    : [
-      `LENGTH TARGET: Aim for about ${wordTarget} words of teaching prose across the whole tutorial (rich-text bodies; exclude quiz option lists).`,
-      `That is roughly ~${wordsPerSection} words of teaching per section (plus intro/recap).`,
-      `No explicit word count was set — use depth "${c.dpth || 'Standard'}" to size bodies toward ~${wordTarget} total words.`,
-      wordTarget >= 1200
-        ? 'Long form: rich-text bodies may be multiple short paragraphs (not just 2–5 sentences). Prefer clear section structure.'
-        : wordTarget <= 500
-          ? 'Short form: keep rich-text bodies tight (2–5 short sentences each).'
-          : 'Standard form: rich-text bodies of a short paragraph or two each is fine.',
-    ].join(' ');
+  // Word-count targets retired: length is a consequence of curated units + depth.
+  c.words = 0;
+  const depth = c.dpth || 'Standard';
+  const lengthRule = [
+    'LENGTH: There is NO word-count target. Do not pad to hit a number and do not truncate real source material to stay short.',
+    `Size each section from its assigned source units at depth "${depth}":`,
+    /overview/i.test(depth)
+      ? 'Overview — concise: cover the units tightly in short paragraphs; no filler.'
+      : /in-?depth/i.test(depth)
+        ? 'In-depth — thorough stepwise teaching of the units (multiple paragraphs when the units warrant it); still no invented filler.'
+        : 'Standard — full short paragraphs that teach each unit clearly.',
+    'Empty sections → short rich-text noting missing markup only.',
+  ].join(' ');
 
   // Template + cluster path (preferred)
   if (template && Array.isArray(sectionPlans) && sectionPlans.length && knowledgeBase?.units?.length) {
@@ -1129,26 +1561,86 @@ function buildGeneratePrompt(body) {
         .map((r, i) => `${i + 1}. ${r.type}${r.preferKinds ? ` (prefer: ${r.preferKinds.join(', ')})` : ''}`)
         .join('; ');
 
-    const formatCompositeRecipe = (items) =>
+    const formatCondition = (cond) => {
+      if (!cond || cond.kind === 'always') return '';
+      if (cond.kind === 'if_source_kinds') {
+        return ` condition=if_source_kinds:[${(cond.kinds || []).join('|')}]`;
+      }
+      if (cond.kind === 'if_source_hint') {
+        return ` condition=if_source_hint:"${String(cond.hint || '').replace(/"/g, "'")}"`;
+      }
+      return '';
+    };
+
+    const formatGenerateMeta = (meta) => {
+      if (!meta || typeof meta !== 'object') return '';
+      const bits = [
+        meta.title ? `title="${String(meta.title).replace(/"/g, "'")}"` : '',
+        meta.objective ? `objective="${String(meta.objective).replace(/"/g, "'")}"` : '',
+            meta.questionCount != null ? `questionCount=${meta.questionCount}` : '',
+            meta.passOn === false ? 'passOn=false' : '',
+            meta.passOn !== false && meta.passMark ? `passMark=${meta.passMark}` : '',
+        Array.isArray(meta.qtypes) && meta.qtypes.length ? `qtypes=[${meta.qtypes.join('|')}]` : '',
+        Array.isArray(meta.cog) && meta.cog.length ? `cog=[${meta.cog.join('|')}]` : '',
+        meta.diff ? `diff=${meta.diff}` : '',
+        meta.wrong ? `wrong="${String(meta.wrong).replace(/"/g, "'")}"` : '',
+        meta.adaptive ? `adaptive=${meta.adaptive}` : '',
+        meta.show ? `show=${meta.show}` : '',
+        meta.perq != null ? `perq=${meta.perq}` : '',
+        meta.cardCount != null ? `cardCount=${meta.cardCount}` : '',
+        Array.isArray(meta.cc) && meta.cc.length ? `cc=[${meta.cc.join('|')}]` : '',
+        Array.isArray(meta.pull) && meta.pull.length ? `pull=[${meta.pull.join('|')}]` : '',
+        meta.dir ? `dir=${meta.dir}` : '',
+        meta.hooks != null ? `hooks=${meta.hooks}` : '',
+        meta.conceptFocus ? `conceptFocus="${String(meta.conceptFocus).replace(/"/g, "'")}"` : '',
+        meta.voi ? `voi="${String(meta.voi).replace(/"/g, "'")}"` : '',
+        meta.len ? `len=${meta.len}` : '',
+        meta.tt ? `tt=${meta.tt}` : '',
+        meta.del ? `del=${meta.del}` : '',
+        meta.el ? `el=${meta.el}` : '',
+        meta.cite != null ? `cite=${meta.cite}` : '',
+        meta.instructions ? `instructions="${String(meta.instructions).replace(/"/g, "'")}"` : '',
+      ].filter(Boolean);
+      return bits.length ? ` generateMeta={${bits.join(' ')}}` : '';
+    };
+
+    const formatCompositeRecipe = (items, sectionId) =>
       (items || []).map((item, i) => {
+        const cond = formatCondition(item.condition);
         if (item.kind === 'atomic') {
           const prefer = item.preferKinds?.length ? ` (prefer: ${item.preferKinds.join(', ')})` : '';
           const req = item.required === false ? ' [optional]' : '';
-          return `${i + 1}. atomic:${item.blockType}${prefer}${req}`;
-        }
-        if (item.objectType === 'quiz') {
           const note = item.authoringNote
             ? ` authoringNote="${String(item.authoringNote).replace(/"/g, "'")}"`
             : '';
-          const req = item.required ? ' required=true' : ' required=false';
+          return `${i + 1}. atomic:${item.blockType}${prefer}${req}${note}${cond}`;
+        }
+        const req = item.required ? ' required=true' : ' required=false';
+        const note = item.authoringNote
+          ? ` authoringNote="${String(item.authoringNote).replace(/"/g, "'")}"`
+          : '';
+        const metaSuffix = formatGenerateMeta(item.generateMeta);
+        if (item.sourceMode === 'pick_from_library') {
+          const pin = item.libraryTitle || item.versionPin?.objectId
+            ? ` libraryObject="${String(item.libraryTitle || item.versionPin.objectId).replace(/"/g, "'")}"`
+            : '';
           return (
-            `${i + 1}. EMBEDDED_QUIZ objectType=quiz sourceMode=${item.sourceMode || 'generate'}${req}${note}`
-            + ' → emit ONE {"type":"section-quiz",...} for THIS section only'
+            `${i + 1}. EMBEDDED_${String(item.objectType || 'object').toUpperCase()} sourceMode=pick_from_library${req}${pin}${note}${cond}`
+            + ' → do NOT emit a part; the platform inserts the pinned library object'
           );
         }
+        if (item.objectType === 'quiz') {
+          return (
+            `${i + 1}. EMBEDDED_QUIZ objectType=quiz sourceMode=${item.sourceMode || 'generate'}${req}${note}${metaSuffix}${cond}`
+            + ' → emit ONE {"type":"section-quiz",...} for THIS section only (honor generateMeta: qtypes, cog, diff, wrong, etc.)'
+          );
+        }
+        // Non-quiz generate: reserve a slot the client fills via the object-type generator.
+        const slotKey = `${sectionId || 'sec'}:${item.id || i}`;
+        const otype = String(item.objectType || 'object');
         return (
-          `${i + 1}. EMBEDDED_${String(item.objectType || 'object').toUpperCase()} `
-          + `[DEFERRED — not yet wired for generation; do NOT emit a part for this slot]`
+          `${i + 1}. EMBEDDED_${otype.toUpperCase()} sourceMode=${item.sourceMode || 'generate'}${req}${note}${metaSuffix}${cond}`
+          + ` → emit ONE rich-text with heading exactly "⟦EMBED_SLOT:${slotKey}⟧" and body "${otype} (generated separately)"; do NOT invent a full nested object`
         );
       }).join('; ');
 
@@ -1157,48 +1649,40 @@ function buildGeneratePrompt(body) {
       const units = (cluster?.unitIds || [])
         .map((id) => unitsById.get(id))
         .filter(Boolean)
-        .map((u, i) => `    (${i + 1}) [${u.kind}] ${u.text}${u.from ? ` — ${u.from}` : ''}`)
+        .map((u, i) => `    ${formatUnitLine(u, i)}`)
         .join('\n');
       const useComposite = Array.isArray(sp.sectionRecipe) && sp.sectionRecipe.length > 0;
+      const sectionIdForSlots = sp.clusterId || `sec-${sp.index}`;
       const recipe = useComposite
-        ? formatCompositeRecipe(sp.sectionRecipe)
+        ? formatCompositeRecipe(sp.sectionRecipe, sectionIdForSlots)
         : formatFlatRecipe(sp.recipe || template.sectionBlockRecipe || []);
-      const mediaPl = (sp.mediaPlacements || [])
-        .map((m) => `slot ${m.slotId} → ref ${m.mediaRef}`)
-        .join(', ') || '(none)';
+      const sectionDepth = sp.depth || c.dpth || 'Standard';
       return [
         `### Section ${sp.index + 1}: ${sp.title}`,
+        sp.intent ? `Section intent (human-defined — honor this): ${sp.intent}` : '',
+        sp.archetypeId ? `Section type (archetype): ${sp.archetypeId}` : '',
+        `Section depth: ${sectionDepth} — size this section from its units at this depth`,
         sp.subheads?.length ? `Subheads: ${sp.subheads.join(' · ')}` : '',
         `Recipe: ${recipe}`,
-        `Media slots: ${mediaPl}`,
         'SOURCE UNITS FOR THIS SECTION ONLY (do not use other sections\' units):',
-        units || '    (empty cluster — say so in a short note; do NOT invent facts)',
+        units || '    (empty — emit a short rich-text noting missing markup for this section; do NOT invent facts)',
       ].filter(Boolean).join('\n');
     }).join('\n\n');
 
-    const allowExtra = c.aiExtra === true;
+    // aiExtra is force-false above — "AI EXTRAS ALLOWED" prompt branch is unreachable for tutorials.
     const groundingStrict = [
       'CRITICAL: Each section must be built ONLY from that section\'s listed source units. Do not use general encyclopedia knowledge.',
-      explicitWords
-        ? 'If a cluster is thin but a HARD word target was set: expand with stepwise teaching, examples, and restatements drawn from those units until the section word budget is met — do not invent contradicting facts.'
-        : 'If a cluster is thin, write a short grounded note — do not invent facts outside those units.',
-    ].join(' ');
-    const groundingExtra = [
-      'PRIMARY SOURCE: Prefer each section\'s listed source units as the backbone of the teaching.',
-      'AI EXTRAS ALLOWED: You MAY add bridging explanations, prerequisites, worked examples, and clarifying background learners need — even if not explicitly in the units.',
-      explicitWords
-        ? 'Because an explicit word target was set, use AI extras freely to reach the MINIMUM teaching-word count while staying on-topic and consistent with the units.'
-        : 'Keep extras clearly helpful and on-topic; do not contradict the source units; do not turn the tutorial into a generic encyclopedia article.',
-      'When you add material not in the units, keep it clearly pedagogical — do not claim it is a source excerpt.',
+      'If a section\'s units are thin, write a short grounded note — do not invent facts outside those units and do not pad with filler.',
     ].join(' ');
 
     const compositeQuizRules = anyComposite ? [
-      'EMBEDDED QUIZ (composite templates): When a recipe line is EMBEDDED_QUIZ, emit exactly ONE part of type "section-quiz" after that section\'s teaching — a nested quiz *object* for the section, NOT a loose "question" part.',
+      'EMBEDDED QUIZ (composite templates): When a recipe line is EMBEDDED_QUIZ with sourceMode=generate (or prompt_on_author), emit exactly ONE part of type "section-quiz" after that section\'s teaching — a nested quiz *object* for the section, NOT a loose "question" part.',
+      'If sourceMode=pick_from_library: do NOT emit a section-quiz or any part for that slot — the platform inserts the pinned library object.',
       'section-quiz shape: {"type":"section-quiz","label":string,"sourceMode":"generate","authoringNote":string,"required":true,"questions":[{"question":string,"options":[four strings],"correct":0-3,"exp":string,"hints":[four strings],"sources":[{"quote":string,"cite":string}]}]}',
-      'Honor sourceMode, authoringNote, and required from the recipe line. Ground every question in THAT section\'s units only (e.g. authoringNote "test only this section\'s concept").',
-      'Emit about ' + Math.max(chks, 1) + ' question(s) inside the section-quiz questions array (from the checks-per-section knob).',
+      'Honor sourceMode, authoringNote, generateMeta, and required from the recipe line. Ground every question in THAT section\'s units only.',
+      'When generateMeta.questionCount is set, emit that many questions; otherwise about ' + Math.max(chks, 1) + ' from the checks-per-section knob.',
       'Do NOT emit separate top-level "question" parts for an EMBEDDED_QUIZ slot. Atomic try-it (if any) may still use a single "question" part.',
-      'Lines marked [DEFERRED] must produce no part.',
+      'Other embedded object types with sourceMode=generate: emit ONLY the reserved rich-text slot with heading ⟦EMBED_SLOT:…⟧ as specified in the recipe line — the platform generates the nested object separately. Do not invent a full nested object.',
     ].join('\n') : '';
 
     const legacyCheckRules = !anyComposite ? [
@@ -1217,8 +1701,10 @@ function buildGeneratePrompt(body) {
     }).filter(Boolean))];
 
     const system = [
-      'You generate a tutorial as STRUCTURED JSON from a FIXED pedagogical template and CLUSTERED source units.',
-      allowExtra ? groundingExtra : groundingStrict,
+      'You generate a tutorial as STRUCTURED JSON from a FIXED pedagogical template and HUMAN-DEFINED sections with clustered source units.',
+      'HARD CONSTRAINTS: Do NOT invent sections, do NOT reorder or add sections, do NOT introduce facts not present in that section\'s assigned units, do NOT decide scope — the human already did.',
+      'AI EXTRAS ARE OFF: never add bridging/background beyond the listed source units.',
+      groundingStrict,
       sourceNames.length > 1
         ? `MULTI-SOURCE: This tutorial draws on ${sourceNames.length} sources (${sourceNames.join('; ')}). You MUST include teaching from EVERY listed source that appears in the section plans — do not ignore a source because the title or objective names only one topic. If topics differ, teach them as distinct sections (or clearly labeled parts) rather than discarding one.`
         : '',
@@ -1234,7 +1720,8 @@ function buildGeneratePrompt(body) {
       compositeQuizRules,
       'HINTS: Follow the author\'s hint settings below. If hints are ON, every question (inline or inside section-quiz) must include exactly that many progressive strings in "hints". Hint 1 lightly points; later hints get more specific; at least one must tell the learner which section/passage to re-read (use that section\'s title). Never reveal the correct option letter/text. If hints are OFF, set "hints" to [].',
       'SOURCES: Every question should include 1–3 "sources" entries — short verbatim quotes from the content units that justify the correct answer, each with cite like "Bridge.pdf · p.4" or the unit\'s from label. Prefer units from THIS section.',
-      'Place media parts only where section media slots specify.',
+      'Do not invent media parts unless an available media ref is listed below and pedagogically needed.',
+      authorDirectives.length ? authorDirectiveRules() : '',
     ].filter(Boolean).join('\n');
 
     const assess = template.assessmentPlacement || 'after_each_section';
@@ -1250,13 +1737,14 @@ function buildGeneratePrompt(body) {
       `Learning objective: ${c.obj || '(none)'}`,
       `Overall topic: ${c.topic || title || '(none)'}`,
       `Audience: ${c.aud || 'High school'} · Level: ${c.lvl || 'Basic'} · Depth: ${c.dpth || 'Standard'}`,
-      `Target length: ~${wordTarget} words of teaching text (author words knob: ${Number(c.words) > 0 ? c.words : 'auto'})`,
+      `Length: no word target — size from assigned units + depth "${depth}"`,
       `Checks per section knob: ${chks} (honor template assessment placement; if after_each_section / checkpoints, emit ~${Math.max(chks, 1)} check(s) per section from THAT section's units)`,
       `Pass mark (all checks combined): ${c.pass || '70%'}`,
       `Progressive hints: ${hintOpts.enabled ? `ON — exactly ${hintOpts.count} per question` : 'OFF — set hints to []'}`,
-      `AI extras beyond source: ${allowExtra ? 'ON — may add helpful bridging/background not in the units' : 'OFF — stay strictly within marked-up units'}`,
+      `AI extras beyond source: OFF — stay strictly within marked-up units`,
       `End with: ${end}`,
       authorPrompt ? `Author note:\n${authorPrompt}` : '',
+      directiveBlock,
       '',
       'SECTION PLANS (one cluster each):',
       clusterLines,
@@ -1278,13 +1766,13 @@ function buildGeneratePrompt(body) {
       'Return the JSON array now.',
     ].filter(Boolean).join('\n');
 
-    return { system, user, secs: sectionPlans.length, wordTarget, explicitWords };
+    return { system, user, secs: sectionPlans.length };
   }
 
   // Legacy flat-extract fallback
   const hasExtracts = Array.isArray(extracts) && extracts.length > 0;
   const extractLines = hasExtracts
-    ? extracts.map((e, i) => `(${i + 1}) [${e.kind || 'Key point'}] ${e.text}${e.from ? ` — ${e.from}` : ''}`).join('\n')
+    ? extractLinesFrom(extracts)
     : '(no content units — refuse to invent; ask author to mark up source)';
 
   const allowExtraLegacy = c.aiExtra === true;
@@ -1297,6 +1785,7 @@ function buildGeneratePrompt(body) {
   const system = [
     'You are an instructional designer generating a tutorial as STRUCTURED JSON.',
     groundingRule,
+    authorDirectives.length ? authorDirectiveRules() : '',
     'Output ONLY a JSON array of "part" objects. No prose, no markdown fences.',
     lengthRule,
     'Allowed part shapes:',
@@ -1317,11 +1806,12 @@ function buildGeneratePrompt(body) {
     `Level: ${c.lvl || 'Basic'}`,
     `Progression: ${c.prog || 'Linear build-up'}`,
     `Depth per section: ${c.dpth || 'Standard'}`,
-    `Target length: ~${wordTarget} words of teaching text (author words knob: ${Number(c.words) > 0 ? c.words : 'auto'})`,
+    `Length: no word target — size from assigned units + depth "${depth}"`,
     `Pass mark (all checks combined): ${c.pass || '70%'}`,
     `Progressive hints: ${hintOptsLegacy.enabled ? `ON — exactly ${hintOptsLegacy.count} per question` : 'OFF — set hints to []'}`,
     `AI extras beyond source: ${allowExtraLegacy ? 'ON' : 'OFF'}`,
     authorPrompt ? `\nAuthor's prompt / description:\n${authorPrompt}` : '',
+    directiveBlock,
     '',
     'Content units to build from:',
     extractLines,
@@ -1340,7 +1830,7 @@ function buildGeneratePrompt(body) {
     'Return the JSON array now.',
   ].filter(Boolean).join('\n');
 
-  return { system, user, secs, wordTarget, explicitWords };
+  return { system, user, secs };
 }
 
 /** Rough output token budget from a teaching-word target (JSON overhead included). */
@@ -1369,6 +1859,10 @@ function countTeachingWordsInParts(parts) {
  * so a single max_tokens ceiling cannot silently truncate a 5–10k word draft.
  */
 function buildTutorialChunkJobs(body) {
+  // Retired: word-target chunking caused pad/truncate behavior.
+  // Length now follows curated units + depth in a single generate pass.
+  return null;
+  /* unreachable word-target chunk path
   const { title, config, template, knowledgeBase, sectionPlans, prompt, media } = body || {};
   const c = config || {};
   const wordTarget = resolveTutorialWordTarget(c);
@@ -1394,14 +1888,18 @@ function buildTutorialChunkJobs(body) {
 
   const formatCompositeRecipe = (items) =>
     (items || []).map((item, i) => {
+      const note = item.authoringNote
+        ? ` authoringNote="${String(item.authoringNote).replace(/"/g, "'")}"`
+        : '';
       if (item.kind === 'atomic') {
         const prefer = item.preferKinds?.length ? ` (prefer: ${item.preferKinds.join(', ')})` : '';
-        return `${i + 1}. atomic:${item.blockType}${prefer}`;
+        const req = item.required === false ? ' [optional]' : '';
+        return `${i + 1}. atomic:${item.blockType}${prefer}${req}${note}`;
       }
       if (item.objectType === 'quiz') {
-        return `${i + 1}. EMBEDDED_QUIZ → emit ONE section-quiz for THIS section only`;
+        return `${i + 1}. EMBEDDED_QUIZ${note} → emit ONE section-quiz for THIS section only (honor generateMeta)`;
       }
-      return `${i + 1}. EMBEDDED_${String(item.objectType || 'object').toUpperCase()} [skip if deferred]`;
+      return `${i + 1}. EMBEDDED_${String(item.objectType || 'object').toUpperCase()}${note} [skip if deferred]`;
     }).join('; ');
 
   const formatFlatRecipe = (rows) =>
@@ -1449,6 +1947,7 @@ function buildTutorialChunkJobs(body) {
     const recipe = useComposite
       ? formatCompositeRecipe(sp.sectionRecipe)
       : formatFlatRecipe(sp.recipe || template.sectionBlockRecipe || []);
+    const sectionDepth = sp.depth || c.dpth || 'Standard';
     const minWords = Math.round(perSection * 0.9);
 
     jobs.push({
@@ -1461,6 +1960,8 @@ function buildTutorialChunkJobs(body) {
         `Tutorial title: ${title || '(untitled)'}`,
         `Overall objective: ${c.obj || '(none)'}`,
         `CHUNK: Section ${idx + 1} of ${n} only — "${sp.title}".`,
+        sp.intent ? `Section intent: ${sp.intent}` : '',
+        `Section depth: ${sectionDepth}`,
         sp.subheads?.length ? `Subheads: ${sp.subheads.join(' · ')}` : '',
         `Recipe: ${recipe}`,
         `HARD MINIMUM: at least ${minWords} words of rich-text body text in THIS chunk (target ~${perSection}).`,
@@ -1496,6 +1997,7 @@ function buildTutorialChunkJobs(body) {
   }
 
   return { jobs, wordTarget };
+  */
 }
 
 /**
@@ -1705,9 +2207,84 @@ function textCardStyles(config) {
   return cardStyles(config).filter((s) => !/image\s*[→\-]\s*label/i.test(s));
 }
 
+function formatUnitLine(unit, i) {
+  const kind = unit?.kind || 'Key point';
+  const from = unit?.from ? ` — ${unit.from}` : '';
+  const { text, authorNote } = splitPassageAndNote(unit?.text, unit?.authorNote || unit?.comment);
+  const note = authorNote
+    ? `\n    ★ AUTHOR DIRECTIVE (mandatory — follow WORD FOR WORD for this exact passage): ${authorNote}`
+    : '';
+  return `(${i + 1}) [${kind}] ${text}${from}${note}`;
+}
+
 function extractLinesFrom(extracts) {
   if (!Array.isArray(extracts) || extracts.length === 0) return '(no marked-up PDF/source units provided)';
-  return extracts.map((e, i) => `(${i + 1}) [${e.kind || 'Key point'}] ${e.text}${e.from ? ` — ${e.from}` : ''}`).join('\n');
+  return extracts.map((e, i) => formatUnitLine(e, i)).join('\n');
+}
+
+/** Collect markup notes so generation can obey them even if extracts omitted authorNote. */
+function collectAuthorDirectives(body = {}) {
+  const out = [];
+  const push = (passage, note, tag, from) => {
+    const authorNote = String(note || '').trim();
+    const text = String(passage || '').trim();
+    if (!authorNote || !text) return;
+    out.push({ text, authorNote, tag: tag || 'Use', from });
+  };
+  if (Array.isArray(body.highlights)) {
+    for (const h of body.highlights) {
+      if (h?.tag === 'Ignore') continue;
+      push(h.text, h.comment || h.authorNote, h.tag, h.from || h.sourceLabel);
+    }
+  }
+  if (Array.isArray(body.extracts)) {
+    for (const e of body.extracts) {
+      const split = splitPassageAndNote(e.text, e.authorNote || e.comment);
+      push(split.text, split.authorNote, e.kind, e.from);
+    }
+  }
+  if (body.knowledgeBase?.units) {
+    for (const u of body.knowledgeBase.units) {
+      push(u.text, u.authorNote || u.comment, u.kind, u.from);
+    }
+  }
+  if (Array.isArray(body.authorDirectives)) {
+    for (const d of body.authorDirectives) push(d.text, d.authorNote || d.comment || d.note, d.tag, d.from);
+  }
+  // Hoot co-author chat instructions collected across the authoring pipeline.
+  if (Array.isArray(body.authorInstructions)) {
+    for (const t of body.authorInstructions) {
+      const text = String(t || '').trim();
+      if (text) push('(whole object)', text, 'hoot', 'Hoot co-author');
+    }
+  }
+  // Dedupe by passage+note
+  const seen = new Set();
+  return out.filter((d) => {
+    const key = `${normalizeTextKey(d.text)}::${normalizeTextKey(d.authorNote)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function authorDirectiveRules() {
+  return [
+    'AUTHOR DIRECTIVES (critical): When a content unit or list item carries an AUTHOR DIRECTIVE, you MUST follow that directive WORD FOR WORD for how you use THAT passage.',
+    'Do not paraphrase away the directive. Do not ignore it. Apply it only to the paired passage (and teaching built from it), not to unrelated units.',
+    'If a directive says what to do with the sentences (e.g. "use as worked example", "emphasize common mistake", "quote verbatim"), obey it exactly in the generated object.',
+  ].join(' ');
+}
+
+function formatAuthorDirectivesBlock(directives) {
+  if (!Array.isArray(directives) || !directives.length) return '';
+  return [
+    '--- AUTHOR DIRECTIVES (follow WORD FOR WORD for the paired passage) ---',
+    ...directives.map((d, i) => (
+      `(D${i + 1}) PASSAGE: ${d.text}\n     DIRECTIVE: ${d.authorNote}${d.from ? `\n     Source: ${d.from}` : ''}`
+    )),
+    '--- end author directives ---',
+  ].join('\n');
 }
 
 /**
@@ -1715,7 +2292,8 @@ function extractLinesFrom(extracts) {
  * Image → label is handled separately via vision on uploaded images.
  * Returns null when there are no text styles to generate.
  */
-function buildFlashcardPrompt({ title, config, extracts, prompt }) {
+function buildFlashcardPrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
   const c = config || {};
   const num = (v, d) => (typeof v === 'number' ? v : Number(v) || d);
   const styles = textCardStyles(c);
@@ -1727,6 +2305,8 @@ function buildFlashcardPrompt({ title, config, extracts, prompt }) {
   const hasExtracts = Array.isArray(extracts) && extracts.length > 0;
   const authorPrompt = prompt || '';
   const extractLines = extractLinesFrom(extracts);
+  const authorDirectives = collectAuthorDirectives(body);
+  const directiveBlock = formatAuthorDirectivesBlock(authorDirectives);
 
   const grounding = hasExtracts
     ? [
@@ -1741,6 +2321,7 @@ function buildFlashcardPrompt({ title, config, extracts, prompt }) {
   const system = [
     'You generate a study FLASHCARD SET as STRUCTURED JSON.',
     grounding,
+    authorDirectives.length ? authorDirectiveRules() : '',
     'Output ONLY a JSON array of card objects. No prose, no markdown fences.',
     hooks
       ? 'Card shape: {"front":string,"back":string,"hook":string}  // hook = a short mnemonic / memory aid'
@@ -1748,7 +2329,7 @@ function buildFlashcardPrompt({ title, config, extracts, prompt }) {
     'Front is the prompt (term/question/concept); back is the concise answer. Keep each side tight and self-contained.',
     `Use these Card content style(s): ${fmtList(styles, 'Key terms → definitions')}.`,
     'Do NOT create Image → label cards and do NOT include imageRef — images are handled separately.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   const user = [
     `Flashcard set title: ${title || '(untitled)'}`,
@@ -1761,12 +2342,13 @@ function buildFlashcardPrompt({ title, config, extracts, prompt }) {
     `Review direction: ${c.dir || 'Front→back'}`,
     hooks ? 'Include a short memory hook on every card (still grounded in the source).' : 'Do NOT include memory hooks.',
     authorPrompt ? `\nAuthor's prompt / description:\n${authorPrompt}` : '',
+    directiveBlock,
     '',
     '--- Content units from the PDF / source (primary material) ---',
     extractLines,
     '',
     `Produce EXACTLY ${nc} distinct, non-duplicate flashcards. Return the JSON array now.`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   return { system, user, nc };
 }
@@ -1883,7 +2465,8 @@ function isAdaptiveQuiz(config) {
   return /^yes$/i.test(String(v || '').trim());
 }
 
-function buildQuizPrompt({ title, config, extracts, prompt }) {
+function buildQuizPrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
   const c = config || {};
   const num = (v, d) => (typeof v === 'number' ? v : Number(v) || d);
   const nq = Math.max(3, Math.min(20, num(c.nq, 8)));
@@ -1892,6 +2475,8 @@ function buildQuizPrompt({ title, config, extracts, prompt }) {
   const hasExtracts = Array.isArray(extracts) && extracts.length > 0;
   const authorPrompt = prompt || '';
   const extractLines = extractLinesFrom(extracts);
+  const authorDirectives = collectAuthorDirectives(body);
+  const directiveBlock = formatAuthorDirectivesBlock(authorDirectives);
 
   const grounding = hasExtracts
     ? [
@@ -1914,6 +2499,7 @@ function buildQuizPrompt({ title, config, extracts, prompt }) {
   const system = [
     'You generate an assessment QUIZ as STRUCTURED JSON.',
     grounding,
+    authorDirectives.length ? authorDirectiveRules() : '',
     'Output ONLY a JSON array of question objects. No prose, no markdown fences.',
     'Question shape:',
     '{"question":string,"type":"multiple-choice"|"true-false"|"multi-select"|"short-answer"|"scenario","options":string[]|null,"correct":number|null,"correctIndices":number[]|null,"sampleAnswer":string|null,"explanation":string|null,"hints":[four progressive hint strings],"cognitiveLevel":string,"difficulty":"easy"|"medium"|"hard"}',
@@ -1929,7 +2515,7 @@ function buildQuizPrompt({ title, config, extracts, prompt }) {
     '- Every question MUST include exactly 4 progressive "hints". Hint 1 is gentle; later hints are more specific. Include at least one hint that tells the learner which part of the source/passage to re-read. Never reveal the correct option text or index.',
     adaptiveRules,
     'Mix question types, cognitive levels, and difficulty according to Define. Wrong-answer style must match the Define setting.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   const user = [
     `Quiz title: ${title || '(untitled)'}`,
@@ -1943,16 +2529,19 @@ function buildQuizPrompt({ title, config, extracts, prompt }) {
     `Difficulty mix: ${c.diff || 'Balanced'}`,
     `Wrong answers: ${c.wrong || 'Plausible common errors'}`,
     `Adaptive questions: ${adaptive ? 'YES — tag easy/medium/hard evenly for adaptive delivery' : 'NO — fixed question set'}`,
-    `Scoring — pass mark: ${c.pass || '70%'} (metadata only; do not put this in question text)`,
+    c.passOn === false
+      ? 'Scoring — no pass mark (practice only; do not invent a pass threshold in question text)'
+      : `Scoring — pass mark: ${c.pass || '70%'} (metadata only; do not put this in question text)`,
     `Show explanations (learner UX): ${c.show || 'After attempt'} (metadata only)`,
     `Write per-question explanations: ${writeExplanations ? 'ON — include explanation on every question' : 'OFF — leave explanation empty'}`,
     authorPrompt ? `\nAuthor's prompt / description:\n${authorPrompt}` : '',
+    directiveBlock,
     '',
     '--- Content units from the PDF / source ---',
     extractLines,
     '',
     `Produce EXACTLY ${nq} distinct, non-duplicate questions. Return the JSON array now.`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   return { system, user, nq, adaptive };
 }
@@ -2068,27 +2657,33 @@ function resolveConceptViews(incl) {
 function buildCorpusUnits({ extracts, sourceUnits, markupOnly = false }) {
   const out = [];
   const seen = new Set();
-  const push = (text, from, kind) => {
-    const t = String(text || '').trim();
+  const push = (text, from, kind, authorNote) => {
+    const split = splitPassageAndNote(text, authorNote);
+    const t = split.text;
     if (!t || t.length < 8) return;
     const key = t.toLowerCase().replace(/\s+/g, ' ');
-    if (seen.has(key)) return;
+    if (seen.has(key)) {
+      const hit = out.find((o) => o.text.toLowerCase().replace(/\s+/g, ' ') === key);
+      if (hit && split.authorNote && !hit.authorNote) hit.authorNote = split.authorNote;
+      return;
+    }
     seen.add(key);
     out.push({
       id: `u${out.length + 1}`,
       text: t,
+      authorNote: split.authorNote,
       from: from ? String(from) : '',
       kind: kind || 'Source',
     });
   };
   if (Array.isArray(extracts)) {
-    for (const e of extracts) push(e?.text, e?.from, e?.kind || 'Extract');
+    for (const e of extracts) push(e?.text, e?.from, e?.kind || 'Extract', e?.authorNote || e?.comment);
   }
   // Concept cards: when markup/extracts exist, do NOT fall back to the whole PDF.
   if (!markupOnly && Array.isArray(sourceUnits)) {
     for (const u of sourceUnits) {
       const from = u?.from || (u?.page != null ? `p.${u.page}` : '');
-      push(u?.text, from, u?.kind || 'Source');
+      push(u?.text, from, u?.kind || 'Source', u?.authorNote || u?.comment);
     }
   }
   return out;
@@ -2287,7 +2882,10 @@ async function suggestConceptIntents({ extracts, markupUnits, sourceUnits, title
 function formatRetrievedChunks(hits) {
   return hits.map((u, i) => {
     const cite = u.from ? ` [${u.from}]` : '';
-    return `(${i + 1}) id=${u.id}${cite}\n${u.text}`;
+    const note = u.authorNote
+      ? `\n★ AUTHOR DIRECTIVE (follow WORD FOR WORD for this passage): ${u.authorNote}`
+      : '';
+    return `(${i + 1}) id=${u.id}${cite}\n${u.text}${note}`;
   }).join('\n\n');
 }
 
@@ -2467,6 +3065,7 @@ function buildConceptCardPrompt({ title, config, retrieved, views, prompt }) {
     'CRITICAL GROUNDING RULE: Every field MUST be defined by what the retrieved source chunks say about the concept.',
     'If the source is about the card game Bridge, every field is about the card game — full stop. Never invent a different sense.',
     'Do NOT use outside knowledge that contradicts or replaces the source.',
+    authorDirectiveRules(),
     'Output ONLY a single JSON object. No prose, no markdown fences.',
     'Include "term" plus ONLY the fields for the requested categories below.',
     'Also include "extraSections": array (may be empty) for any custom categories.',
@@ -2509,7 +3108,7 @@ function buildConceptCardPrompt({ title, config, retrieved, views, prompt }) {
 function groundingFromExtracts(extracts, promptOnlyNote) {
   const has = Array.isArray(extracts) && extracts.length > 0;
   return has
-    ? 'GROUNDING: Build ONLY from the marked-up source units and Define settings. Do not invent unsupported material.'
+    ? `GROUNDING: Build ONLY from the marked-up source units and Define settings. Do not invent unsupported material. ${authorDirectiveRules()}`
     : `GROUNDING: ${promptOnlyNote}`;
 }
 
@@ -2533,7 +3132,8 @@ function normalizeSummary(raw, prev = {}, config = {}) {
   };
 }
 
-function buildSummaryPrompt({ title, config, extracts, prompt }) {
+function buildSummaryPrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
   const c = config || {};
   const nkp = Math.max(3, Math.min(10, Number(c.nkp) || 5));
   const shape = c.shape || 'Key points';
@@ -2553,6 +3153,7 @@ function buildSummaryPrompt({ title, config, extracts, prompt }) {
     `Length: ${c.len || 'Medium'}`,
     `Number of key points: ${nkp}`,
     prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    formatAuthorDirectivesBlock(collectAuthorDirectives(body)),
     '',
     '--- Source units ---',
     extractLinesFrom(extracts),
@@ -2598,7 +3199,8 @@ function normalizeReflection(raw, prev = {}, config = {}) {
   };
 }
 
-function buildReflectionPrompt({ title, config, extracts, prompt }) {
+function buildReflectionPrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
   const c = config || {};
   const np = Math.max(1, Math.min(5, Number(c.np) || 2));
   const starters = c.starters === true;
@@ -2623,6 +3225,7 @@ function buildReflectionPrompt({ title, config, extracts, prompt }) {
     `Number of prompts: ${np}`,
     `Include sentence starters: ${starters ? 'yes' : 'no'}`,
     prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    formatAuthorDirectivesBlock(collectAuthorDirectives(body)),
     '',
     '--- Source units (reflection should connect to this material) ---',
     extractLinesFrom(extracts),
@@ -2666,7 +3269,8 @@ function normalizeAssignment(raw, prev = {}, config = {}) {
   };
 }
 
-function buildAssignmentPrompt({ title, config, extracts, prompt }) {
+function buildAssignmentPrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
   const c = config || {};
   const nReq = Math.max(2, Math.min(6, Number(c.req) || 3));
   const nRub = Math.max(2, Math.min(6, Number(c.rubric) || 3));
@@ -2690,6 +3294,7 @@ function buildAssignmentPrompt({ title, config, extracts, prompt }) {
     `Requirements count: ${nReq}`,
     `Rubric criteria count: ${nRub}`,
     prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    formatAuthorDirectivesBlock(collectAuthorDirectives(body)),
     '',
     '--- Source units ---',
     extractLinesFrom(extracts),
@@ -2756,7 +3361,8 @@ function normalizeDrill(raw, prev = {}, config = {}) {
   };
 }
 
-function buildDrillPrompt({ title, config, extracts, prompt }) {
+function buildDrillPrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
   const c = config || {};
   const ni = Math.max(5, Math.min(30, Number(c.ni) || 15));
   const fmt = c.fmt || 'Recall';
@@ -2785,6 +3391,7 @@ function buildDrillPrompt({ title, config, extracts, prompt }) {
     `Repeat until mastery: ${c.rep ? 'yes' : 'no'}`,
     `Number of items: ${ni}`,
     prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    formatAuthorDirectivesBlock(collectAuthorDirectives(body)),
     '',
     '--- Source units ---',
     extractLinesFrom(extracts),
@@ -3002,6 +3609,21 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  /* ---- Tutorial: expand AI prompt into markable source text ---- */
+  if (method === 'POST' && path === '/api/tutorials/expand-prompt') {
+    const body = await readJson(req);
+    try {
+      const result = await expandPromptToSource(body.prompt, {
+        title: body.title,
+        objective: body.objective,
+      });
+      return send(res, 200, result);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
   /* ---- Tutorial: suggest highlights (real LLM) ---- */
   if (method === 'POST' && path === '/api/tutorials/suggest-highlights') {
     const body = await readJson(req);
@@ -3034,6 +3656,7 @@ const server = createServer(async (req, res) => {
         instruction: body.instruction,
         objective: body.objective,
         title: body.title,
+        sections: body.sections,
       });
       return send(res, 200, result);
     } catch (e) {
@@ -3310,10 +3933,12 @@ const server = createServer(async (req, res) => {
         sseSend(res, { type: 'question', question });
         await sleep(60);
       }
+      const passOn = body?.config?.passOn !== false && body?.config?.passOn !== 'No';
       sseSend(res, {
         type: 'done',
         count: questions.length,
-        passMark: parsePassMark(body?.config?.pass),
+        passRequired: passOn,
+        passMark: passOn ? parsePassMark(body?.config?.pass) : undefined,
         showExplanations: String(body?.config?.show || 'After attempt'),
         adaptive: !!adaptive,
       });
@@ -3390,19 +4015,31 @@ const server = createServer(async (req, res) => {
   if (method === 'POST' && path === '/api/tutorials/extract-knowledge') {
     const body = await readJson(req);
     try {
-      let kb = buildClusteredKnowledgeBase({
-        highlights: body?.highlights,
-        extracts: body?.extracts,
-        shapeIntent: body?.shapeIntent,
-        objective: body?.objective,
-        topic: body?.topic,
-      });
-      if (body?.refineWithLlm !== false && kb.units.length) {
-        kb = await refineClustersWithLlm(kb, {
+      const def = body?.tutorialDefinition;
+      const hasDefSections = Array.isArray(def?.sections) && def.sections.some((s) => s && String(s.title || '').trim());
+      let kb;
+      if (hasDefSections) {
+        // Tutorial define-first: fixed clusters = Plan sections (+ Unassigned). Never invent cluster names.
+        kb = buildClusteredKnowledgeBaseFromDefinition({
+          highlights: body?.highlights,
+          extracts: body?.extracts,
+          tutorialDefinition: def,
+        });
+      } else {
+        kb = buildClusteredKnowledgeBase({
+          highlights: body?.highlights,
+          extracts: body?.extracts,
+          shapeIntent: body?.shapeIntent,
           objective: body?.objective,
           topic: body?.topic,
-          shapeIntent: body?.shapeIntent,
         });
+        if (body?.refineWithLlm !== false && kb.units.length) {
+          kb = await refineClustersWithLlm(kb, {
+            objective: body?.objective,
+            topic: body?.topic,
+            shapeIntent: body?.shapeIntent,
+          });
+        }
       }
       if (!kb.units.length) {
         return send(res, 422, {
@@ -3420,6 +4057,10 @@ const server = createServer(async (req, res) => {
   /* ---- Tutorial: generate (real LLM, streamed as SSE) ---- */
   if (method === 'POST' && path === '/api/tutorials/generate') {
     const body = await readJson(req);
+    // Server-side belt: tutorials never allow AI extras (ignore stale clients / old drafts).
+    if (body && typeof body === 'object') {
+      body.config = { ...(body.config || {}), aiExtra: false, words: 0 };
+    }
     sseStart(res);
     try {
       const hasPlans = Array.isArray(body?.sectionPlans) && body.sectionPlans.length > 0;
@@ -3451,16 +4092,18 @@ const server = createServer(async (req, res) => {
           parts.push(...chunkParts);
         }
       } else {
-        const { system, user, secs, wordTarget } = buildGeneratePrompt(body);
+        const { system, user, secs } = buildGeneratePrompt(body);
         const sectionCount = secs || (typeof body?.config?.secs === 'number' ? body.config.secs : 3);
-        const words = typeof wordTarget === 'number' ? wordTarget : resolveTutorialWordTarget(body?.config || {});
+        const depthLabel = String(body?.config?.dpth || 'Standard');
         let maxTokens = sectionCount >= 12 ? 32768 : sectionCount >= 6 ? 16384 : sectionCount >= 4 ? 12288 : 8192;
-        maxTokens = Math.max(maxTokens, tokensForWordBudget(words, maxTokens));
+        // Soft ceiling from depth × sections only (never a model-facing word target).
+        maxTokens = Math.max(
+          maxTokens,
+          tokensForWordBudget(resolveTutorialWordTarget({ secs: sectionCount, dpth: depthLabel }), maxTokens),
+        );
         sseSend(res, {
           type: 'progress',
-          message: words >= 1200
-            ? `Drafting ~${words} words from your template and clusters…`
-            : 'Drafting the tutorial from your template and clusters…',
+          message: `Drafting from your sections at ${depthLabel} depth…`,
         });
         const raw = await callAnthropic({ system, user, maxTokens });
         const parsed = extractJson(raw);
@@ -3477,20 +4120,9 @@ const server = createServer(async (req, res) => {
       parts = renumberQuestionLabels(parts);
       if (parts.length === 0) throw new LlmError(502, 'llm_no_parts', 'The model did not return any usable parts. Try again.');
 
-      const taught = countTeachingWordsInParts(parts);
-      const target = resolveTutorialWordTarget(body?.config || {});
-      if (Number(body?.config?.words) > 0 && taught < target * 0.7) {
-        sseSend(res, {
-          type: 'progress',
-          message: `Draft is ~${taught} teaching words (target ${target}). Expanding under-length sections…`,
-        });
-        parts = await expandUnderLengthTutorial(parts, body, target);
-        parts = renumberQuestionLabels(parts);
-      }
-
       sseSend(res, {
         type: 'progress',
-        message: `Assembling ${parts.length} parts (~${countTeachingWordsInParts(parts)} teaching words)…`,
+        message: `Assembling ${parts.length} parts…`,
       });
       for (const part of parts) {
         sseSend(res, { type: 'part', part });
@@ -3509,8 +4141,11 @@ const server = createServer(async (req, res) => {
     const message = String(body?.message || '').trim();
     const context = body?.context;
     const selection = body?.selection || context?.selection || { kind: 'none' };
-    const history = Array.isArray(body?.history) ? body.history.slice(-10) : [];
+    const history = Array.isArray(body?.history) ? body.history.slice(-40) : [];
     const quickAction = body?.quickAction || null;
+    const attachedImages = Array.isArray(body?.attachedImages)
+      ? body.attachedImages.filter((img) => img && img.id && img.url).slice(0, 6)
+      : [];
 
     sseStart(res);
     try {
@@ -3519,7 +4154,10 @@ const server = createServer(async (req, res) => {
         throw new LlmError(400, 'no_context', 'No object context — open a learning object in the editor.');
       }
 
-      sseSend(res, { type: 'status', message: 'Reading this object’s context…' });
+      sseSend(res, {
+        type: 'status',
+        message: attachedImages.length ? 'Looking at your attached images…' : 'Reading this object’s context…',
+      });
 
       const blocks = Array.isArray(context.blocks) ? context.blocks : [];
       const blockLines = blocks.map((b, i) => {
@@ -3543,16 +4181,30 @@ const server = createServer(async (req, res) => {
             ? `Selected blocks: ${(selection.blockIds || []).join(', ')}`
             : 'Selection: whole object (none specific)';
 
+      const attachedLines = attachedImages.map((img, i) =>
+        `- [${i}] id=${img.id} name=${img.name || 'image'} caption=${img.caption || '(none)'} → use url "__ATTACHED_IMAGE_${i}__" or imageRef "${img.id}"`,
+      ).join('\n');
+
       const meta = context.metadata || {};
       const system = [
-        'You are the LAIC course-developer Object Assistant — a co-author for ONE open learning object.',
+        'You are Hoot, the LAIC course-developer Object Assistant — a co-author for ONE open learning object.',
         'CRITICAL RULES:',
-        '- Use ONLY the provided object context (blocks, metadata, extracts/clusters). Never invent source citations.',
+        '- Use ONLY the provided object context (blocks, metadata, extracts/clusters) and any author-attached images. Never invent source citations.',
         '- Never claim you already edited the object. Edits must be proposals the developer accepts.',
         '- If the request is outside this object, refuse and explain.',
         '- If ambiguous, ask ONE concise clarifying question (mode=clarify) and omit proposal.',
         '- Cite block ids like [blk-…] when referencing content.',
         '- Prefer scoping edits to the current selection.',
+        '- MEMORY: The conversation history is the author’s instruction record across the whole pipeline (Sources → Markup → Extract → Define → Editor). Treat EVERY prior user message as a standing instruction unless they clearly supersede it. Summarize and honor earlier preferences when proposing edits or answering.',
+        '- When blocks are empty (still in the create pipeline), help with sourcing, markup focus, extract shaping, and Define settings; record instructions that generation must follow later. You cannot insert image blocks until the draft has blocks — say so clearly.',
+        '',
+        'ATTACHED IMAGES:',
+        '- When the author attaches images and asks to place them (e.g. "add these images where you recommend"), you MUST propose mode=proposal with one add_block per image.',
+        '- Look at each attached image (vision) and choose the best atIndex in the current BLOCKS list (0 = before first block, N = after last).',
+        '- Prefer placing after the teaching block the image illustrates; avoid clustering all images at the end unless that is clearly best.',
+        '- For each image: action = { "type":"add_block", "atIndex":number, "blockType":"image", "label":"Image", "content": { "url":"__ATTACHED_IMAGE_N__", "caption": string, "imageRef": "<id>" }, "reason": string }',
+        '- NEVER invent image URLs. Only use __ATTACHED_IMAGE_N__ placeholders or the provided imageRef ids.',
+        '- Write a short learner-facing caption grounded in what you see + nearby blocks.',
         '',
         'Return ONLY JSON (no markdown fences):',
         '{',
@@ -3578,6 +4230,7 @@ const server = createServer(async (req, res) => {
         'For tutorial rich-text patches use fields: body, heading, label, subheads.',
         'For questions: prompt, options (4 strings), correct (0-3), exp, label.',
         'For add_block question content: {question,options,correct,explanation}. For rich-text: {text,heading}.',
+        'For add_block image content: {url:"__ATTACHED_IMAGE_N__",caption,imageRef}.',
       ].join('\n');
 
       const historyLines = history
@@ -3585,7 +4238,7 @@ const server = createServer(async (req, res) => {
         .map((h) => `${h.role}: ${h.content}`)
         .join('\n');
 
-      const user = [
+      const userText = [
         `Object: ${context.title || '(untitled)'} (${context.objectType}) id=${context.objectId} status=${context.status || 'draft'}`,
         `Objective: ${meta.objective || '(none)'}`,
         `Audience: ${meta.audience || '—'} · Level: ${meta.level || '—'} · Voice: ${meta.voice || '—'} · Topic: ${meta.topic || '—'}`,
@@ -3597,17 +4250,34 @@ const server = createServer(async (req, res) => {
         clusters ? `Clusters:\n${clusters}` : '',
         units ? `Source units:\n${units}` : '(no extract units)',
         '',
-        'BLOCKS:',
-        blockLines || '(no blocks)',
+        'BLOCKS (index = atIndex target; length = insert at end):',
+        blockLines || '(no blocks — cannot place images until a draft exists)',
+        `Block count: ${blocks.length}`,
         '',
-        historyLines ? `Recent conversation:\n${historyLines}\n` : '',
+        attachedLines ? `Author-attached images this turn:\n${attachedLines}` : 'Author-attached images this turn: (none)',
+        '',
+        historyLines ? `Prior conversation (binding author instructions throughout the pipeline):\n${historyLines}\n` : '',
         `Developer message: ${message}`,
         '',
+        attachedImages.length
+          ? 'If the developer asked to place images, return mode=proposal with one image add_block per attached image.'
+          : '',
         'Respond with the JSON object now.',
       ].filter(Boolean).join('\n');
 
+      const userContent = [];
+      for (const img of attachedImages) {
+        const source = toAnthropicImageSource(img.url);
+        if (source) userContent.push({ type: 'image', source });
+      }
+      userContent.push({ type: 'text', text: userText });
+
       sseSend(res, { type: 'status', message: 'Thinking…' });
-      const raw = await callAnthropic({ system, user, maxTokens: 4096 });
+      const raw = await callAnthropic({
+        system,
+        user: userContent.length > 1 ? userContent : userText,
+        maxTokens: 4096,
+      });
       let parsed;
       try {
         parsed = extractJson(raw);
@@ -3648,26 +4318,88 @@ const server = createServer(async (req, res) => {
         proposalIds: [],
       };
 
+      const byId = new Map(attachedImages.map((img) => [String(img.id), img]));
+      const resolveImageContent = (content) => {
+        const c = content && typeof content === 'object' ? { ...content } : {};
+        const ref = String(c.imageRef || c.ref || c.attachedId || '').trim();
+        if (ref && byId.has(ref)) {
+          const img = byId.get(ref);
+          return {
+            url: img.url,
+            caption: String(c.caption || img.caption || img.name || '').trim(),
+          };
+        }
+        const url = String(c.url || '');
+        const m = url.match(/__ATTACHED_IMAGE_(\d+)__/i)
+          || url.match(/^ATTACHED:(\d+)$/i)
+          || url.match(/^ATTACHED:(.+)$/i);
+        if (m) {
+          const key = m[1];
+          const img = /^\d+$/.test(key) ? attachedImages[Number(key)] : byId.get(key);
+          if (img) {
+            return {
+              url: img.url,
+              caption: String(c.caption || img.caption || img.name || '').trim(),
+            };
+          }
+        }
+        if (!url && attachedImages.length === 1) {
+          return {
+            url: attachedImages[0].url,
+            caption: String(c.caption || attachedImages[0].caption || attachedImages[0].name || '').trim(),
+          };
+        }
+        // Keep https/data urls the model copied from context blocks; drop inventing.
+        if (/^(https?:|data:image\/)/i.test(url)) {
+          return { url, caption: String(c.caption || '').trim() };
+        }
+        return c;
+      };
+      const remapAction = (action) => {
+        if (!action || typeof action !== 'object') return action;
+        if (action.type === 'batch' && Array.isArray(action.actions)) {
+          return { ...action, actions: action.actions.map(remapAction) };
+        }
+        if (action.type === 'add_block' && /image/i.test(String(action.blockType || ''))) {
+          return { ...action, content: resolveImageContent(action.content) };
+        }
+        return action;
+      };
+
       let proposal = null;
       if (mode === 'proposal' && parsed?.proposal && Array.isArray(parsed.proposal.diffs) && parsed.proposal.diffs.length) {
         const propId = `prop-${Date.now()}`;
         const diffs = parsed.proposal.diffs
           .filter((d) => d && d.action && d.action.type)
-          .map((d, i) => ({
-            id: `diff-${Date.now()}-${i}`,
-            kind: ['text', 'structural', 'metadata', 'batch_item'].includes(d.kind) ? d.kind : 'text',
-            summary: String(d.summary || 'Proposed change'),
-            beforeText: d.beforeText != null ? String(d.beforeText) : undefined,
-            afterText: d.afterText != null ? String(d.afterText) : undefined,
-            blockId: d.blockId != null ? String(d.blockId) : (d.action?.blockId || undefined),
-            action: d.action,
-          }));
+          .map((d, i) => {
+            const action = remapAction(d.action);
+            const isImage = action?.type === 'add_block' && /image/i.test(String(action.blockType || ''));
+            const caption = isImage ? String(action.content?.caption || '') : '';
+            return {
+              id: `diff-${Date.now()}-${i}`,
+              kind: ['text', 'structural', 'metadata', 'batch_item'].includes(d.kind) ? d.kind : (isImage ? 'structural' : 'text'),
+              summary: String(d.summary || (isImage ? `Add image${caption ? `: ${caption}` : ''}` : 'Proposed change')),
+              beforeText: isImage ? '(none)' : (d.beforeText != null ? String(d.beforeText) : undefined),
+              afterText: isImage
+                ? (caption ? `Image: ${caption}` : 'Image block')
+                : (d.afterText != null ? String(d.afterText) : undefined),
+              blockId: d.blockId != null ? String(d.blockId) : (action?.blockId || undefined),
+              action,
+            };
+          })
+          // Drop image placements that still have no usable url after remap.
+          .filter((d) => {
+            if (d.action?.type === 'add_block' && /image/i.test(String(d.action.blockType || ''))) {
+              return !!(d.action.content && d.action.content.url);
+            }
+            return true;
+          });
         if (diffs.length) {
           proposal = {
             id: propId,
             messageId: msgId,
             status: 'pending',
-            title: String(parsed.proposal.title || 'Proposed edits'),
+            title: String(parsed.proposal.title || (attachedImages.length ? 'Place images' : 'Proposed edits')),
             diffs,
             createdAt: Date.now(),
           };
@@ -3791,7 +4523,7 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`\nLAIC dev backend → http://localhost:${PORT}`);
   console.log(`LLM: ${ANTHROPIC_API_KEY ? `enabled (model ${LLM_MODEL})` : 'DISABLED — set ANTHROPIC_API_KEY in .env'}`);
-  console.log('Tutorial: POST /api/tutorials/ingest-web · POST /api/tutorials/ingest-youtube · POST /api/tutorials/suggest-highlights · POST /api/tutorials/suggest-markup-flags · POST /api/tutorials/extract-knowledge · POST /api/tutorials/generate (SSE)');
+  console.log('Tutorial: POST /api/tutorials/ingest-web · POST /api/tutorials/ingest-youtube · POST /api/tutorials/expand-prompt · POST /api/tutorials/suggest-highlights · POST /api/tutorials/suggest-markup-flags · POST /api/tutorials/extract-knowledge · POST /api/tutorials/generate (SSE)');
   console.log('Ask AI: POST /api/ask');
   console.log('Assistant: POST /api/assistant/turn (SSE)');
   console.log('Sources stub: GET/POST /api/sources · GET /api/collections\n');

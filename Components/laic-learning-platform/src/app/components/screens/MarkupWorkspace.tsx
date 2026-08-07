@@ -7,8 +7,9 @@ import {
   AlertTriangle, Check, ChevronLeft, ChevronRight, ClipboardPaste, FileText,
   Link2, Loader2, Search, Sparkles, Upload, X, Youtube, StickyNote,
 } from 'lucide-react';
-import type { MarkupFlag, MarkupFlagKind } from '../../../lib/types';
-import { highlightsFromFlag, flagKindCounts } from './MarkupFlagReview';
+import type { DefinedSection, MarkupFlag } from '../../../lib/types';
+import { annotateWebArticleHtml } from '../../../lib/webArticleHtml';
+import { highlightsFromFlag, distinctFlagGroups, flagGroupMeta } from './MarkupFlagReview';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
 export type MarkupSourceKind = 'pdf' | 'text' | 'web' | 'youtube' | 'library';
@@ -21,6 +22,9 @@ export interface MarkupSource {
   sentences: { text: string; page: number }[];
   /** Global index of the first sentence in the concatenated stream. */
   offset: number;
+  /** Sanitized website HTML — when set, Markup renders site formatting. */
+  html?: string;
+  sourceUrl?: string;
 }
 
 const TAG: Record<string, { bg: string; text: string; border: string }> = {
@@ -28,13 +32,6 @@ const TAG: Record<string, { bg: string; text: string; border: string }> = {
   Support: { bg: '#E0F2FE', text: '#0C4A6E', border: '#0EA5E9' },
   Ignore: { bg: '#FEE2E2', text: '#991B1B', border: '#EF4444' },
   Note: { bg: '#F3E8FF', text: '#6B21A8', border: '#A855F7' },
-};
-
-const KIND_CHIP: Record<MarkupFlagKind, { label: string; color: string; bg: string }> = {
-  core: { label: 'core concept', color: '#1D4ED8', bg: 'rgba(37,99,235,0.10)' },
-  confusion: { label: 'common confusion', color: '#C2410C', bg: 'rgba(234,88,12,0.12)' },
-  diagram: { label: 'diagram / visual', color: '#6D28D9', bg: 'rgba(124,58,237,0.10)' },
-  out_of_scope: { label: 'out of scope', color: '#4B5563', bg: 'rgba(107,114,128,0.12)' },
 };
 
 function sourceIcon(kind: MarkupSourceKind) {
@@ -79,6 +76,8 @@ export interface MarkupWorkspaceProps {
   scanningFlags?: boolean;
   flagError?: string | null;
   pageCount?: number;
+  /** Define-first: human Plan sections drive scan + highlight assignment. */
+  definedSections?: DefinedSection[];
 }
 
 export function MarkupWorkspace({
@@ -106,6 +105,7 @@ export function MarkupWorkspace({
   scanningFlags,
   flagError,
   pageCount,
+  definedSections = [],
 }: MarkupWorkspaceProps) {
   const paras = docParas;
   const effectiveSources = useMemo((): MarkupSource[] => {
@@ -123,6 +123,16 @@ export function MarkupWorkspace({
   const [activeSourceId, setActiveSourceId] = useState<string>('');
   const [page, setPage] = useState(1);
   const [scanFocus, setScanFocus] = useState('');
+  /** Mutually exclusive bulk tools: select-all vs document scan. */
+  const [bulkMode, setBulkMode] = useState<'none' | 'selectAll' | 'scan'>('none');
+  const [pendingIdxs, setPendingIdxs] = useState<number[]>([]);
+  const [pendingQuote, setPendingQuote] = useState('');
+  const [actionOpen, setActionOpen] = useState(false);
+  const [pickTag, setPickTag] = useState<string>('Use');
+  const [pickNote, setPickNote] = useState('');
+  const [pickSectionId, setPickSectionId] = useState<string>('');
+  /** Floating popup anchor (viewport coords), Google Docs–style. */
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
   const [showHint, setShowHint] = useState(true);
   const [railTab, setRailTab] = useState<'scan' | 'highlights'>('scan');
   const [hlFilterTag, setHlFilterTag] = useState<string>('all');
@@ -130,7 +140,12 @@ export function MarkupWorkspace({
   const [noteOpenIdx, setNoteOpenIdx] = useState<number | null>(null);
   const [focusGlobalIdx, setFocusGlobalIdx] = useState<number | null>(null);
   const [railOpen, setRailOpen] = useState(true);
-  const sentenceRefs = useRef<Map<number, HTMLParagraphElement | null>>(new Map());
+  const sentenceRefs = useRef<Map<number, HTMLElement | null>>(new Map());
+  const readerRef = useRef<HTMLDivElement | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
+  /** Skip one mouseup-dismiss after opening the popup from a mark click. */
+  const skipDismissRef = useRef(false);
+  const pendingSet = useMemo(() => new Set(pendingIdxs), [pendingIdxs]);
 
   const activeSource = useMemo(
     () => effectiveSources.find((s) => s.id === activeSourceId) || effectiveSources[0] || null,
@@ -169,6 +184,30 @@ export function MarkupWorkspace({
     const fallbackPage = mapped[0].page;
     return mapped.filter((s) => s.page === fallbackPage);
   }, [activeSource, page]);
+
+  /** Website sources: render sanitized HTML with site-like formatting + sentence spans. */
+  const webArticleHtml = useMemo(() => {
+    if (!activeSource?.html) return null;
+    const tagByIdx = new Map<number, string>();
+    for (const h of highlights || []) {
+      if (typeof h?.idx === 'number' && h.tag) tagByIdx.set(h.idx, h.tag);
+    }
+    const sentences = activeSource.sentences.map((s, localIdx) => ({
+      text: s.text,
+      globalIdx: activeSource.offset + localIdx,
+    }));
+    return annotateWebArticleHtml(activeSource.html, sentences, tagByIdx);
+  }, [activeSource, highlights]);
+
+  useEffect(() => {
+    if (!webArticleHtml || !readerRef.current) return;
+    sentenceRefs.current.clear();
+    readerRef.current.querySelectorAll('[data-global-idx]').forEach((node) => {
+      const el = node as HTMLElement;
+      const idx = Number(el.dataset.globalIdx);
+      if (Number.isInteger(idx)) sentenceRefs.current.set(idx, el);
+    });
+  }, [webArticleHtml, activeSourceId, page]);
 
   const flaggedIdx = useMemo(() => {
     const set = new Set<number>();
@@ -216,66 +255,233 @@ export function MarkupWorkspace({
     return count ? { count, pages: hitPages.size } : null;
   }, [query, activeSource]);
 
-  if (parsing) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center text-center p-8">
-        <Loader2 size={28} className="animate-spin mb-3" style={{ color: '#7C3AED' }} />
-        <p style={{ fontSize: 15, fontWeight: 650, color: '#0B1220' }}>Extracting text for Mark up…</p>
-        <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 6 }}>{parseProgress || 'Reading your PDF in the browser'}</p>
-      </div>
-    );
-  }
-  if (parseError) {
-    return (
-      <div className="p-5 max-w-2xl">
-        <div className="flex items-start gap-2 rounded-2xl p-3" style={{ background: '#FEE2E2', border: '1px solid #FCA5A5' }}>
-          <AlertTriangle size={15} style={{ color: '#B91C1C', marginTop: 1 }} />
-          <p style={{ fontSize: 12.5, color: '#991B1B' }}>{parseError}</p>
-        </div>
-        <p style={{ fontSize: 13, color: '#6B7280', marginTop: 12 }}>Go back to Sources and attach a different PDF, or use Paste text.</p>
-      </div>
-    );
-  }
+  // NOTE: openActionFor / selection capture / useEffects must stay above any early
+  // return — otherwise Mark up crashes with "Rendered more/fewer hooks" when PDF
+  // parsing finishes (parsing → ready flips the hook count).
 
-  const toggle = (globalIdx: number) => {
-    const exists = highlights.find((h: any) => h.idx === globalIdx);
-    if (exists) setHighlights((p) => p.filter((h: any) => h.idx !== globalIdx));
+  const openActionFor = (
+    idxs: number[],
+    opts?: { preferTag?: string; quote?: string; anchor?: { top: number; left: number } | null },
+  ) => {
+    const unique = [...new Set(idxs)].sort((a, b) => a - b);
+    if (!unique.length) return;
+    setPendingIdxs(unique);
+    setPendingQuote((opts?.quote || '').trim());
+    const existing = highlights.find((h: any) => unique.includes(h.idx));
+    setPickTag(opts?.preferTag || existing?.tag || activeTag || 'Use');
+    setPickNote(existing?.comment || '');
+    const existingSec = existing?.sectionId || '';
+    const defaultSec = existingSec
+      || (definedSections.some((s) => s.id === pickSectionId) ? pickSectionId : '')
+      || definedSections[0]?.id
+      || '';
+    setPickSectionId(defaultSec);
+    if (opts?.anchor) setPopupPos(opts.anchor);
     else {
-      const src = effectiveSources.find((s) => globalIdx >= s.offset && globalIdx < s.offset + s.sentences.length);
-      setHighlights((p) => [
-        ...p,
-        {
+      const el = sentenceRefs.current.get(unique[0]);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setPopupPos({
+          top: Math.min(window.innerHeight - 16, r.bottom + 8),
+          left: Math.min(window.innerWidth - 320, Math.max(12, r.left)),
+        });
+      } else {
+        setPopupPos({ top: 120, left: Math.max(12, window.innerWidth / 2 - 160) });
+      }
+    }
+    skipDismissRef.current = true;
+    setActionOpen(true);
+  };
+
+  const cancelAction = () => {
+    setActionOpen(false);
+    setPendingIdxs([]);
+    setPendingQuote('');
+    setPickNote('');
+    setPopupPos(null);
+    if (bulkMode === 'selectAll') setBulkMode('none');
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+  };
+
+  const applyAction = () => {
+    if (!pendingIdxs.length) return;
+    const tag = pickTag || 'Use';
+    const comment = pickNote.trim();
+    const quote = pendingQuote.trim();
+    setHighlights((prev) => {
+      const keep = prev.filter((h: any) => !pendingIdxs.includes(h.idx));
+      const additions = pendingIdxs.map((globalIdx, i) => {
+        const src = effectiveSources.find((s) => globalIdx >= s.offset && globalIdx < s.offset + s.sentences.length);
+        const sentence = paras[globalIdx] || '';
+        // Prefer the exact selected quote on the first sentence; keep sentence text for the rest.
+        let text = sentence;
+        if (quote) {
+          if (pendingIdxs.length === 1) text = quote;
+          else if (i === 0) text = quote;
+          else if (quote.includes(sentence)) text = sentence;
+        }
+        return {
           idx: globalIdx,
-          tag: activeTag,
-          text: paras[globalIdx],
+          tag,
+          text,
           page: pages?.[globalIdx] ?? 1,
-          comment: '',
+          comment,
           sourceId: src?.id,
           sourceLabel: src?.label,
-        },
-      ]);
-    }
+          sectionId: pickSectionId || undefined,
+        };
+      });
+      return [...keep, ...additions];
+    });
+    setActiveTag(tag);
+    setActionOpen(false);
+    setPendingIdxs([]);
+    setPendingQuote('');
+    setPickNote('');
+    setPopupPos(null);
+    if (bulkMode === 'selectAll') setBulkMode('none');
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
   };
+
+  /** Resolve a native text selection inside the reader → sentence idxs + quote + popup anchor. */
+  const captureReaderSelection = () => {
+    const root = readerRef.current;
+    if (!root) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    if (!root.contains(range.commonAncestorContainer)) return;
+    const quote = sel.toString().replace(/\s+/g, ' ').trim();
+    if (!quote) return;
+
+    const idxs: number[] = [];
+    root.querySelectorAll('[data-global-idx]').forEach((node) => {
+      const el = node as HTMLElement;
+      const idx = Number(el.dataset.globalIdx);
+      if (!Number.isInteger(idx)) return;
+      try {
+        if (range.intersectsNode(el)) idxs.push(idx);
+      } catch {
+        /* ignore */
+      }
+    });
+
+    // Fallback: titles/headings may not have spans yet — match selected text to units.
+    if (!idxs.length) {
+      const q = quote.toLowerCase();
+      const matched: number[] = [];
+      for (const src of effectiveSources) {
+        src.sentences.forEach((s, localIdx) => {
+          const t = String(s.text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+          if (!t) return;
+          if (t === q || t.includes(q) || q.includes(t)) {
+            matched.push(src.offset + localIdx);
+          }
+        });
+      }
+      // Prefer exact / shortest containing unit (title over a long paragraph that embeds it).
+      matched.sort((a, b) => {
+        const ta = String(paras[a] || '').length;
+        const tb = String(paras[b] || '').length;
+        return ta - tb;
+      });
+      if (matched.length) idxs.push(matched[0]);
+    }
+    if (!idxs.length) return;
+
+    if (bulkMode === 'scan') setBulkMode('none');
+    const rect = range.getBoundingClientRect();
+    const popupW = 320;
+    const left = Math.min(window.innerWidth - popupW - 12, Math.max(12, rect.left + rect.width / 2 - popupW / 2));
+    const top = rect.bottom + 10 > window.innerHeight - 220
+      ? Math.max(12, rect.top - 10) // place above if near bottom; refined after measure
+      : rect.bottom + 10;
+    openActionFor(idxs, {
+      quote,
+      preferTag: activeTag || 'Use',
+      anchor: { top, left },
+    });
+  };
+
+  useEffect(() => {
+    const onMouseUp = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (popupRef.current && t && popupRef.current.contains(t)) return;
+      // Defer so the browser finishes updating the selection.
+      window.setTimeout(() => {
+        if (skipDismissRef.current) {
+          skipDismissRef.current = false;
+          return;
+        }
+        const sel = window.getSelection();
+        const hasRange = !!(sel && !sel.isCollapsed && sel.toString().trim());
+        if (!hasRange) {
+          // Click away (no drag-select) dismisses the floating popup.
+          if (actionOpen && !(popupRef.current && t && popupRef.current.contains(t))) {
+            // Keep select-all mode popup until Cancel; only dismiss free selections.
+            if (bulkMode !== 'selectAll') {
+              setActionOpen(false);
+              setPendingIdxs([]);
+              setPendingQuote('');
+              setPopupPos(null);
+            }
+          }
+          return;
+        }
+        captureReaderSelection();
+      }, 0);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') window.setTimeout(() => captureReaderSelection(), 0);
+    };
+    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('keyup', onKeyUp);
+    return () => {
+      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('keyup', onKeyUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveSources, paras, pages, highlights, activeTag, bulkMode, actionOpen]);
+
+  // Keep floating popup on-screen after open.
+  useEffect(() => {
+    if (!actionOpen || !popupRef.current || !popupPos) return;
+    const el = popupRef.current;
+    const r = el.getBoundingClientRect();
+    let top = popupPos.top;
+    let left = popupPos.left;
+    if (r.bottom > window.innerHeight - 8) top = Math.max(12, popupPos.top - r.height - 20);
+    if (r.right > window.innerWidth - 8) left = Math.max(12, window.innerWidth - r.width - 12);
+    if (top !== popupPos.top || left !== popupPos.left) setPopupPos({ top, left });
+  }, [actionOpen, popupPos, pendingIdxs.length]);
 
   const selectAllActive = () => {
     if (!activeSource) return;
-    const additions = activeSource.sentences
-      .map((s, localIdx) => ({
-        idx: activeSource.offset + localIdx,
-        text: s.text,
-        page: s.page || 1,
-      }))
-      .filter((p) => !highlights.find((h: any) => h.idx === p.idx))
-      .map((p) => ({
-        idx: p.idx,
-        tag: activeTag,
-        text: p.text,
-        page: p.page,
-        comment: '',
-        sourceId: activeSource.id,
-        sourceLabel: activeSource.label,
-      }));
-    if (additions.length) setHighlights((p) => [...p, ...additions]);
+    if (bulkMode === 'selectAll') {
+      cancelAction();
+      setBulkMode('none');
+      return;
+    }
+    // Mutually exclusive with scan
+    setBulkMode('selectAll');
+    const idxs = activeSource.sentences.map((_, localIdx) => activeSource.offset + localIdx);
+    openActionFor(idxs, { preferTag: activeTag || 'Use' });
+  };
+
+  const runScan = () => {
+    if (!onScanFlags || scanningFlags) return;
+    const focus = scanFocus.trim();
+    // Free-text focus is required when there are no Plan sections; otherwise optional.
+    if (!definedSections.length && !focus) return;
+    setBulkMode('scan');
+    setActionOpen(false);
+    setPendingIdxs([]);
+    setPendingQuote('');
+    setPopupPos(null);
+    setRailTab('scan');
+    onScanFlags(focus);
   };
 
   const clearAll = () => setHighlights([]);
@@ -283,23 +489,15 @@ export function MarkupWorkspace({
   const highlightAllMatches = () => {
     const q = (query || '').trim().toLowerCase();
     if (!q || !activeSource) return;
-    const matches = activeSource.sentences
+    if (bulkMode === 'scan') setBulkMode('none');
+    const idxs = activeSource.sentences
       .map((s, localIdx) => ({
         idx: activeSource.offset + localIdx,
         text: s.text,
-        page: s.page || 1,
       }))
-      .filter((p) => p.text.toLowerCase().includes(q) && !highlights.find((h: any) => h.idx === p.idx))
-      .map((p) => ({
-        idx: p.idx,
-        tag: activeTag,
-        text: p.text,
-        page: p.page,
-        comment: '',
-        sourceId: activeSource.id,
-        sourceLabel: activeSource.label,
-      }));
-    if (matches.length) setHighlights((p) => [...p, ...matches]);
+      .filter((p) => p.text.toLowerCase().includes(q))
+      .map((p) => p.idx);
+    if (idxs.length) openActionFor(idxs, { preferTag: activeTag || 'Use' });
   };
 
   const jumpToFindMatch = () => {
@@ -356,8 +554,54 @@ export function MarkupWorkspace({
 
   const cardShadow = '0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.18)';
 
+  if (parsing) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-center p-8">
+        <Loader2 size={28} className="animate-spin mb-3" style={{ color: '#7C3AED' }} />
+        <p style={{ fontSize: 15, fontWeight: 650, color: '#0B1220' }}>Extracting text for Mark up…</p>
+        <p style={{ fontSize: 12.5, color: '#9AA3AF', marginTop: 6 }}>{parseProgress || 'Reading your PDF in the browser'}</p>
+      </div>
+    );
+  }
+  if (parseError) {
+    return (
+      <div className="p-5 max-w-2xl">
+        <div className="flex items-start gap-2 rounded-2xl p-3" style={{ background: '#FEE2E2', border: '1px solid #FCA5A5' }}>
+          <AlertTriangle size={15} style={{ color: '#B91C1C', marginTop: 1 }} />
+          <p style={{ fontSize: 12.5, color: '#991B1B' }}>{parseError}</p>
+        </div>
+        <p style={{ fontSize: 13, color: '#6B7280', marginTop: 12 }}>Go back to Sources and attach a different PDF, or use Paste text.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2.5 px-4 py-3 w-full pb-8" style={{ background: '#EEF0F3' }}>
+      <style>{`
+        .web-article-body h1 { font-size: 1.75rem; font-weight: 700; line-height: 1.25; margin: 0 0 0.75rem; color: #0B1220; }
+        .web-article-body h2 { font-size: 1.4rem; font-weight: 700; line-height: 1.3; margin: 1.4rem 0 0.55rem; color: #0B1220; }
+        .web-article-body h3 { font-size: 1.2rem; font-weight: 650; line-height: 1.35; margin: 1.2rem 0 0.45rem; color: #111827; }
+        .web-article-body h4, .web-article-body h5, .web-article-body h6 { font-size: 1.05rem; font-weight: 650; margin: 1rem 0 0.4rem; color: #111827; }
+        .web-article-body p { margin: 0 0 0.85rem; }
+        .web-article-body ul, .web-article-body ol { margin: 0 0 0.9rem; padding-left: 1.4rem; }
+        .web-article-body li { margin: 0.25rem 0; }
+        .web-article-body blockquote { margin: 0.9rem 0; padding: 0.4rem 0 0.4rem 1rem; border-left: 3px solid #D1D5DB; color: #374151; font-style: italic; }
+        .web-article-body pre { margin: 0.9rem 0; padding: 0.75rem 1rem; background: #F3F4F6; border-radius: 8px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+        .web-article-body code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; background: rgba(0,0,0,0.04); padding: 0.1em 0.3em; border-radius: 4px; }
+        .web-article-body pre code { background: transparent; padding: 0; }
+        .web-article-body a { color: #2563EB; text-decoration: underline; text-underline-offset: 2px; }
+        .web-article-body img { max-width: 100%; height: auto; border-radius: 8px; margin: 0.75rem 0; }
+        .web-article-body table { width: 100%; border-collapse: collapse; margin: 0.9rem 0; font-size: 0.92em; }
+        .web-article-body th, .web-article-body td { border: 1px solid #E5E7EB; padding: 0.4rem 0.55rem; text-align: left; vertical-align: top; }
+        .web-article-body th { background: #F9FAFB; font-weight: 650; }
+        .web-article-body figure { margin: 1rem 0; }
+        .web-article-body figcaption { font-size: 0.85em; color: #6B7280; margin-top: 0.35rem; }
+        .web-article-body .mk-sent { border-radius: 2px; }
+        .web-article-body .mk-tag-use { background: #FEF3C7; box-shadow: inset 0 -2px 0 #F59E0B; }
+        .web-article-body .mk-tag-support { background: #E0F2FE; box-shadow: inset 0 -2px 0 #0EA5E9; }
+        .web-article-body .mk-tag-ignore { background: #FEE2E2; box-shadow: inset 0 -2px 0 #EF4444; text-decoration: line-through; }
+        .web-article-body .mk-tag-note { background: #F3E8FF; box-shadow: inset 0 -2px 0 #A855F7; }
+      `}</style>
       {/* Hint banner */}
       {showHint && (
         <div
@@ -365,7 +609,7 @@ export function MarkupWorkspace({
           style={{ background: '#FEF3C7', border: '1px solid #FDE68A' }}
         >
           <p style={{ fontSize: 12.5, color: '#92400E', lineHeight: 1.45, flex: 1 }}>
-            Mark sentences per source (tabs below). Run a document scan when you want AI review items — it never runs by itself.
+            Select text like in a document — press, drag, then release. A small popup appears so you can choose Use / Support / Ignore / Note or add your own note. Select all and Scan document are mutually exclusive. Scan needs a focus.
           </p>
           <button type="button" onClick={() => setShowHint(false)} aria-label="Dismiss hint" className="mt-0.5 shrink-0">
             <X size={14} style={{ color: '#92400E' }} />
@@ -378,36 +622,19 @@ export function MarkupWorkspace({
         className="sticky top-0 z-20 flex flex-wrap items-center gap-x-2 gap-y-2 px-3.5 py-2.5 rounded-xl border"
         style={{ background: '#FFFFFF', borderColor: 'rgba(0,0,0,0.06)', boxShadow: cardShadow }}
       >
-        <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Highlight as:</span>
-        {Object.keys(TAG).map((tag) => {
-          const c = TAG[tag];
-          const on = activeTag === tag;
-          return (
-            <button
-              key={tag}
-              type="button"
-              onClick={() => setActiveTag(tag)}
-              className="px-2.5 py-1 rounded-full transition-all"
-              style={{
-                fontSize: 12,
-                fontWeight: on ? 650 : 550,
-                background: c.bg,
-                color: c.text,
-                border: `1.5px solid ${on ? c.border : `${c.border}55`}`,
-                textDecoration: tag === 'Ignore' ? 'line-through' : 'none',
-              }}
-            >
-              {tag}
-            </button>
-          );
-        })}
-
         <button
           type="button"
           onClick={selectAllActive}
-          disabled={!activeSource?.sentences.length}
-          className="flex items-center gap-1 px-2 py-1 rounded-md disabled:opacity-40"
-          style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}
+          disabled={!activeSource?.sentences.length || bulkMode === 'scan' || !!scanningFlags}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-full disabled:opacity-40"
+          style={{
+            fontSize: 12,
+            fontWeight: 650,
+            color: bulkMode === 'selectAll' ? '#fff' : '#374151',
+            background: bulkMode === 'selectAll' ? '#0B0F1A' : '#F3F4F6',
+            border: bulkMode === 'selectAll' ? '1.5px solid #0B0F1A' : '1.5px solid transparent',
+          }}
+          title={bulkMode === 'scan' ? 'Turn off Scan document to use Select all' : 'Select every sentence on this source'}
         >
           <Check size={12} /> Select all
         </button>
@@ -459,33 +686,47 @@ export function MarkupWorkspace({
                 <Search size={13} className="absolute left-2.5 pointer-events-none" style={{ color: '#9AA3AF' }} />
                 <input
                   value={scanFocus}
-                  onChange={(e) => setScanFocus(e.target.value)}
-                  placeholder="Optional scan focus…"
-                  className="rounded-lg pl-8 pr-3 py-1.5"
+                  onChange={(e) => {
+                    setScanFocus(e.target.value);
+                    if (bulkMode === 'selectAll') setBulkMode('none');
+                  }}
+                  disabled={bulkMode === 'selectAll'}
+                  placeholder={definedSections.length ? 'Scan focus (optional)…' : 'Scan focus (required)…'}
+                  className="rounded-lg pl-8 pr-3 py-1.5 disabled:opacity-45"
                   style={{
                     fontSize: 12.5,
-                    width: 170,
+                    width: 200,
                     border: '1px solid rgba(0,0,0,0.1)',
                     background: '#fff',
                     outline: 'none',
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !flagBusy) {
-                      setRailTab('scan');
-                      onScanFlags(scanFocus);
-                    }
+                    if (e.key === 'Enter') runScan();
                   }}
                 />
               </div>
+              {definedSections.length > 0 && (
+                <span style={{ fontSize: 11.5, color: '#6B7280' }}>
+                  + {definedSections.length} section{definedSections.length === 1 ? '' : 's'}
+                </span>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  setRailTab('scan');
-                  onScanFlags(scanFocus);
+                onClick={runScan}
+                disabled={flagBusy || bulkMode === 'selectAll' || (!definedSections.length && !scanFocus.trim())}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-white disabled:opacity-45"
+                style={{
+                  background: bulkMode === 'scan' ? '#2563EB' : '#0B0F1A',
+                  fontSize: 12.5,
+                  fontWeight: 650,
                 }}
-                disabled={flagBusy}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-white"
-                style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 650, opacity: flagBusy ? 0.7 : 1 }}
+                title={
+                  bulkMode === 'selectAll'
+                    ? 'Turn off Select all to scan'
+                    : !definedSections.length && !scanFocus.trim()
+                      ? 'Enter a scan focus first'
+                      : 'Scan and group passages by your focus'
+                }
               >
                 {flagBusy ? <Loader2 size={13} className="animate-spin" /> : <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>}
                 {flagBusy ? 'Scanning…' : 'Scan document'}
@@ -621,58 +862,138 @@ export function MarkupWorkspace({
             </div>
           )}
 
-          <div className="px-5 py-4">
+          <div
+            ref={readerRef}
+            className="px-5 py-4"
+            data-web-article={webArticleHtml ? '1' : undefined}
+            style={{
+              fontSize: 15,
+              lineHeight: 1.85,
+              fontFamily: webArticleHtml ? 'Georgia, "Times New Roman", Times, serif' : 'Georgia, "Times New Roman", serif',
+              color: '#1F2937',
+              userSelect: 'text',
+              cursor: 'text',
+              WebkitUserSelect: 'text',
+            }}
+          >
             {!activeSource && (
-              <p style={{ fontSize: 13, color: '#9AA3AF' }}>No document text to mark up.</p>
+              <p style={{ fontSize: 13, color: '#9AA3AF', fontFamily: 'inherit' }}>No document text to mark up.</p>
             )}
-            {activeSource && pageSentences.length === 0 && (
-              <p style={{ fontSize: 13, color: '#9AA3AF' }}>No sentences on this page.</p>
+            {activeSource && !webArticleHtml && pageSentences.length === 0 && (
+              <p style={{ fontSize: 13, color: '#9AA3AF', fontFamily: 'inherit' }}>No sentences on this page.</p>
             )}
-            {pageSentences.map((s) => {
+            {webArticleHtml && (
+              <div className="web-article">
+                {activeSource?.sourceUrl && (
+                  <p style={{ fontSize: 11.5, color: '#6B7280', marginBottom: 14, fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
+                    Formatted from{' '}
+                    <a href={activeSource.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB' }}>
+                      {activeSource.sourceUrl.replace(/^https?:\/\//, '').slice(0, 64)}
+                      {activeSource.sourceUrl.length > 64 ? '…' : ''}
+                    </a>
+                  </p>
+                )}
+                <div
+                  className="web-article-body"
+                  dangerouslySetInnerHTML={{ __html: webArticleHtml }}
+                />
+              </div>
+            )}
+            {!webArticleHtml && pageSentences.map((s, i) => {
               const hl = highlights.find((h: any) => h.idx === s.globalIdx);
               const isAi = aiSuggestions.includes(s.globalIdx);
               const isFlagged = flaggedIdx.has(s.globalIdx);
               const isMatch = q.length > 0 && s.text.toLowerCase().includes(q);
               const isFocus = focusGlobalIdx === s.globalIdx;
-              const c = hl ? TAG[hl.tag] : null;
-              return (
-                <div
-                  key={s.globalIdx}
-                  ref={(el) => { sentenceRefs.current.set(s.globalIdx, el as any); }}
-                  onClick={() => toggle(s.globalIdx)}
-                  className="mb-2.5 rounded-lg px-3 py-2.5 cursor-pointer transition-all flex items-start gap-2.5"
-                  style={{
-                    background: hl ? c!.bg : isFocus ? 'rgba(14,165,233,0.08)' : isAi ? 'rgba(254,243,199,0.45)' : isFlagged ? 'rgba(37,99,235,0.06)' : isMatch ? 'rgba(14,165,233,0.10)' : 'transparent',
-                    outline: isFocus ? '1.5px solid rgba(14,165,233,0.55)' : hl ? `1px solid ${c!.border}66` : '1px solid transparent',
-                    textDecoration: hl?.tag === 'Ignore' ? 'line-through' : 'none',
-                  }}
-                >
-                  <p
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      fontSize: 14.5,
-                      lineHeight: 1.7,
-                      fontFamily: 'Georgia, "Times New Roman", serif',
-                      color: '#1F2937',
-                      margin: 0,
-                    }}
-                  >
-                    {s.text}
-                  </p>
-                  {hl && (
-                    <span
-                      className="shrink-0 px-2 py-0.5 rounded-md text-[11px] font-bold self-center"
-                      style={{
-                        background: c!.bg,
-                        color: c!.text,
-                        border: `1px solid ${c!.border}`,
+              const isPending = pendingSet.has(s.globalIdx);
+              const c = hl ? TAG[hl.tag] || TAG.Use : null;
+              const markQuote = hl && (hl.text || '').trim() && s.text.includes(String(hl.text).trim()) && String(hl.text).trim().length < s.text.length
+                ? String(hl.text).trim()
+                : null;
+              const markStyle = c ? {
+                background: c.bg,
+                color: c.text,
+                borderBottom: `2px solid ${c.border}`,
+                borderRadius: 3,
+                padding: '0 2px',
+                boxDecorationBreak: 'clone' as const,
+                WebkitBoxDecorationBreak: 'clone' as const,
+                textDecoration: hl?.tag === 'Ignore' ? 'line-through' : 'none',
+              } : undefined;
+              const softBg = !hl
+                ? (isPending
+                  ? 'rgba(11,15,26,0.08)'
+                  : isFocus
+                    ? 'rgba(14,165,233,0.10)'
+                    : isAi
+                      ? 'rgba(254,243,199,0.45)'
+                      : isFlagged
+                        ? 'rgba(37,99,235,0.06)'
+                        : isMatch
+                          ? 'rgba(14,165,233,0.10)'
+                          : 'transparent')
+                : 'transparent';
+              const body = (() => {
+                if (hl && markQuote && markStyle) {
+                  const at = s.text.indexOf(markQuote);
+                  return (
+                    <>
+                      {s.text.slice(0, at)}
+                      <mark
+                        data-hl-tag={hl.tag}
+                        style={markStyle}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                          openActionFor([s.globalIdx], {
+                            preferTag: hl.tag,
+                            quote: markQuote,
+                            anchor: { top: r.bottom + 8, left: Math.max(12, r.left) },
+                          });
+                        }}
+                      >
+                        {markQuote}
+                      </mark>
+                      {s.text.slice(at + markQuote.length)}
+                    </>
+                  );
+                }
+                if (hl && markStyle) {
+                  return (
+                    <mark
+                      data-hl-tag={hl.tag}
+                      style={markStyle}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        openActionFor([s.globalIdx], {
+                          preferTag: hl.tag,
+                          quote: s.text,
+                          anchor: { top: r.bottom + 8, left: Math.max(12, r.left) },
+                        });
                       }}
                     >
-                      {hl.tag}
-                    </span>
-                  )}
-                </div>
+                      {s.text}
+                    </mark>
+                  );
+                }
+                return s.text;
+              })();
+              return (
+                <span key={s.globalIdx}>
+                  <span
+                    data-global-idx={s.globalIdx}
+                    ref={(el) => { sentenceRefs.current.set(s.globalIdx, el); }}
+                    style={{
+                      background: softBg,
+                      outline: isFocus ? '1.5px solid rgba(14,165,233,0.45)' : undefined,
+                      borderRadius: 3,
+                    }}
+                  >
+                    {body}
+                  </span>
+                  {i < pageSentences.length - 1 ? ' ' : ''}
+                </span>
               );
             })}
           </div>
@@ -719,12 +1040,59 @@ export function MarkupWorkspace({
             {railTab === 'scan' ? (
               <div className="flex flex-col">
                 {!markupFlags.length ? (
-                  <div className="p-6 text-center">
-                    <Sparkles size={18} style={{ color: '#D1D5DB', margin: '0 auto 10px' }} />
-                    <p style={{ fontSize: 13, fontWeight: 650, color: '#0B1220' }}>Run a scan or highlight manually</p>
-                    <p style={{ fontSize: 12, color: '#9AA3AF', marginTop: 6, lineHeight: 1.45 }}>
-                      Use <strong style={{ color: '#6B7280' }}>+ Scan document</strong> in the toolbar when you’re ready. Nothing auto-runs.
+                  <div className="p-5">
+                    <div className="text-center mb-4">
+                      <Sparkles size={18} style={{ color: '#D1D5DB', margin: '0 auto 10px' }} />
+                      <p style={{ fontSize: 13, fontWeight: 650, color: '#0B1220' }}>Set a scan focus, then scan</p>
+                      <p style={{ fontSize: 12, color: '#9AA3AF', marginTop: 6, lineHeight: 1.45 }}>
+                        Type what you want grouped (e.g. “opening bids”). Groups come from your focus — nothing auto-runs.
+                      </p>
+                    </div>
+                    <label style={{ fontSize: 11.5, fontWeight: 650, color: '#6B7280', display: 'block', marginBottom: 6 }}>
+                      Scan focus{definedSections.length ? ' (optional)' : ' (required)'}
+                    </label>
+                    <textarea
+                      value={scanFocus}
+                      onChange={(e) => {
+                        setScanFocus(e.target.value);
+                        if (bulkMode === 'selectAll') setBulkMode('none');
+                      }}
+                      disabled={bulkMode === 'selectAll' || !onScanFlags}
+                      rows={3}
+                      placeholder='e.g. opening bids, trump suit, scoring…'
+                      className="w-full rounded-xl px-3 py-2.5 resize-y disabled:opacity-45"
+                      style={{
+                        fontSize: 13,
+                        border: '1px solid rgba(0,0,0,0.12)',
+                        background: '#fff',
+                        outline: 'none',
+                        lineHeight: 1.45,
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          runScan();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={runScan}
+                      disabled={!onScanFlags || flagBusy || bulkMode === 'selectAll' || (!definedSections.length && !scanFocus.trim())}
+                      className="mt-3 w-full flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-full text-white disabled:opacity-45"
+                      style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 650 }}
+                    >
+                      {flagBusy ? <Loader2 size={13} className="animate-spin" /> : <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>}
+                      {flagBusy ? 'Scanning…' : 'Scan document'}
+                    </button>
+                    <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 8, textAlign: 'center' }}>
+                      Press Enter to scan · Shift+Enter for a new line
                     </p>
+                    {!onScanFlags && (
+                      <p style={{ fontSize: 12, color: '#B45309', marginTop: 8, textAlign: 'center' }}>
+                        Scan isn’t available for this source yet.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <CompactScanList
@@ -814,7 +1182,22 @@ export function MarkupWorkspace({
                   )}
                 </div>
                 <div className="px-2 py-2 space-y-1">
-                  {filteredHighlights.length === 0 && (
+                  {definedSections.length > 0 && (
+                <div className="mb-2 space-y-1">
+                  {definedSections.map((s) => {
+                    const n = highlights.filter((h: any) => h.sectionId === s.id && h.tag !== 'Ignore').length;
+                    return (
+                      <div key={s.id} className="flex items-center justify-between rounded-lg px-2 py-1" style={{ background: n ? 'rgba(5,150,105,0.06)' : 'rgba(245,158,11,0.08)' }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 600, color: '#0B1220' }} className="truncate">{s.title}</span>
+                        <span style={{ fontSize: 11, fontWeight: 650, color: n ? '#059669' : '#B45309' }}>
+                          {n} mark{n === 1 ? '' : 's'}{n === 0 ? ' — none yet' : ''}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {filteredHighlights.length === 0 && (
                     <p style={{ fontSize: 12, color: '#9AA3AF', padding: 12, textAlign: 'center' }}>
                       No highlights yet. Click a sentence in the reader, or run a scan.
                     </p>
@@ -891,6 +1274,98 @@ export function MarkupWorkspace({
           </div>
         </div>
       </div>
+
+      {/* Google Docs–style floating action popup after text selection */}
+      {actionOpen && pendingIdxs.length > 0 && popupPos && (
+        <div
+          ref={popupRef}
+          className="fixed z-50 w-[320px] rounded-xl border px-3 py-2.5 shadow-lg"
+          style={{
+            top: popupPos.top,
+            left: popupPos.left,
+            background: '#FFFFFF',
+            borderColor: 'rgba(0,0,0,0.10)',
+            boxShadow: '0 10px 30px -8px rgba(15,23,42,0.28), 0 2px 8px rgba(15,23,42,0.08)',
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <p style={{ fontSize: 12, fontWeight: 650, color: '#0B1220', lineHeight: 1.35 }}>
+              {pendingQuote
+                ? `Selected “${pendingQuote.length > 72 ? `${pendingQuote.slice(0, 70)}…` : pendingQuote}”`
+                : `Selected ${pendingIdxs.length} sentence${pendingIdxs.length === 1 ? '' : 's'}`}
+            </p>
+            <button type="button" onClick={cancelAction} aria-label="Close" className="shrink-0 p-0.5">
+              <X size={13} style={{ color: '#9AA3AF' }} />
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-1 mb-2">
+            {Object.keys(TAG).map((tag) => {
+              const c = TAG[tag];
+              const on = pickTag === tag;
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => setPickTag(tag)}
+                  className="px-2 py-0.5 rounded-full transition-all"
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: on ? 650 : 550,
+                    background: c.bg,
+                    color: c.text,
+                    border: `1.5px solid ${on ? c.border : `${c.border}55`}`,
+                    textDecoration: tag === 'Ignore' ? 'line-through' : 'none',
+                  }}
+                >
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
+          {definedSections.length > 0 && (
+            <div className="mb-2">
+              <p style={{ fontSize: 11, fontWeight: 650, color: '#6B7280', marginBottom: 4 }}>Assign to section</p>
+              <select
+                value={pickSectionId}
+                onChange={(e) => setPickSectionId(e.target.value)}
+                className="w-full rounded-lg px-2 py-1.5"
+                style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.1)', outline: 'none', background: '#fff' }}
+              >
+                {definedSections.map((s) => (
+                  <option key={s.id} value={s.id}>{s.title || 'Untitled section'}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <textarea
+            value={pickNote}
+            onChange={(e) => setPickNote(e.target.value)}
+            rows={2}
+            autoFocus
+            placeholder="Add a note or instruction…"
+            className="w-full rounded-lg px-2 py-1.5 resize-y mb-2"
+            style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.1)', outline: 'none', lineHeight: 1.4 }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) applyAction();
+              if (e.key === 'Escape') cancelAction();
+            }}
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={applyAction}
+              className="px-2.5 py-1 rounded-full text-white text-[11.5px] font-semibold"
+              style={{ background: '#0B0F1A' }}
+            >
+              Apply
+            </button>
+            <button type="button" onClick={cancelAction} style={{ fontSize: 11.5, color: '#6B7280' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -922,30 +1397,31 @@ function CompactScanList({
   onClear: () => void;
 }) {
   const [adjustId, setAdjustId] = useState<string | null>(null);
-  const [kindFilter, setKindFilter] = useState<MarkupFlagKind | 'all'>('all');
+  const [kindFilter, setKindFilter] = useState<string>('all');
   const pending = flags.filter((f) => f.status === 'pending' || f.status === 'adjusted');
-  const counts = flagKindCounts(flags);
+  const groups = distinctFlagGroups(flags);
   const visible = kindFilter === 'all' ? flags : flags.filter((f) => f.kind === kindFilter);
 
   return (
     <div className="flex flex-col">
       <div className="px-3 py-2.5 space-y-2" style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
         <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(KIND_CHIP) as MarkupFlagKind[]).map((k) => {
-            const on = kindFilter === k;
+          {groups.map((g) => {
+            const chip = flagGroupMeta(g.kind, g.label);
+            const on = kindFilter === g.kind;
             return (
               <button
-                key={k}
+                key={g.kind}
                 type="button"
-                onClick={() => setKindFilter(on ? 'all' : k)}
+                onClick={() => setKindFilter(on ? 'all' : g.kind)}
                 className="px-2 py-0.5 rounded-full text-[11px] font-semibold transition-all"
                 style={{
-                  background: KIND_CHIP[k].bg,
-                  color: KIND_CHIP[k].color,
-                  outline: on ? `1.5px solid ${KIND_CHIP[k].color}` : 'none',
+                  background: chip.bg,
+                  color: chip.color,
+                  outline: on ? `1.5px solid ${chip.color}` : 'none',
                 }}
               >
-                {counts[k]} {KIND_CHIP[k].label}
+                {g.count} {chip.label}
               </button>
             );
           })}
@@ -966,7 +1442,7 @@ function CompactScanList({
       </div>
       <div>
         {visible.map((f) => {
-          const chip = KIND_CHIP[f.kind];
+          const chip = flagGroupMeta(f.kind, f.groupLabel);
           const done = f.status === 'accepted' || f.status === 'rejected';
           const srcLabel = shortLabel(sourceLabelForGlobalIdx(sources, f.startIdx));
           const preview = (f.adjustedText || f.excerpt || f.title || '').replace(/\s+/g, ' ');

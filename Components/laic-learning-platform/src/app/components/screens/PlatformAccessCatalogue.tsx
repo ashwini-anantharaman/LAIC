@@ -26,6 +26,7 @@ import {
 } from '../../../lib/accessControlCatalogue';
 import { saveCatalogueAndSyncRoles } from '../../../lib/accessPolicy';
 import { useApp } from '../../App';
+import { useConfirm } from '../ConfirmDialog';
 
 type TabId = 'groups' | 'capabilities' | 'surfaces' | 'resources' | 'samples' | 'json' | 'schema';
 
@@ -436,6 +437,7 @@ export function PlatformAccessCatalogue() {
   const [capModal, setCapModal] = useState<{ open: boolean; initial: Capability | null }>({ open: false, initial: null });
   const [surfaceModal, setSurfaceModal] = useState<{ open: boolean; initial: UiSurface | null }>({ open: false, initial: null });
   const [roleModal, setRoleModal] = useState<SampleRoleTemplate | null>(null);
+  const confirm = useConfirm();
 
   // The catalogue is CENTRALIZED in Nexus; a learning admin may edit it, everyone
   // else sees it read-only. In standalone demo (no Nexus session) editing is open.
@@ -516,7 +518,7 @@ export function PlatformAccessCatalogue() {
     fireToast(exists ? 'Group updated' : 'Group added');
   };
 
-  const removeGroup = (id: string) => {
+  const removeGroup = async (id: string) => {
     if (catalogue.groups.length <= 1) {
       fireToast('Keep at least one group');
       return;
@@ -537,10 +539,10 @@ export function PlatformAccessCatalogue() {
         ...catalogue.uiSurfaces.filter((s) => s.group === id).map((s) => s.id),
       ]),
     ];
-    const confirmMsg = moveCapIds.length || moveSurfaceIds.length
+    const description = moveCapIds.length || moveSurfaceIds.length
       ? `Delete group “${victim.label}”? Its ${moveCapIds.length} capabilities and ${moveSurfaceIds.length} UI surfaces will move to “${fallback.label}”.`
       : `Delete empty group “${victim.label}”?`;
-    if (!window.confirm(confirmMsg)) return;
+    if (!(await confirm({ description }))) return;
 
     patch({
       ...catalogue,
@@ -586,7 +588,11 @@ export function PlatformAccessCatalogue() {
     fireToast(exists ? 'Capability updated' : 'Capability added');
   };
 
-  const removeCapability = (id: string) => {
+  const removeCapability = async (id: string) => {
+    const cap = catalogue.capabilities.find((c) => c.id === id);
+    if (!(await confirm({
+      description: cap ? `Delete capability “${cap.label}”?` : 'Delete this capability?',
+    }))) return;
     patch({
       ...catalogue,
       capabilities: catalogue.capabilities.filter((c) => c.id !== id),
@@ -623,7 +629,11 @@ export function PlatformAccessCatalogue() {
     fireToast(exists ? 'Surface updated' : 'Surface added');
   };
 
-  const removeSurface = (id: string) => {
+  const removeSurface = async (id: string) => {
+    const surface = catalogue.uiSurfaces.find((s) => s.id === id);
+    if (!(await confirm({
+      description: surface ? `Delete surface “${surface.label}”?` : 'Delete this surface?',
+    }))) return;
     patch({
       ...catalogue,
       uiSurfaces: catalogue.uiSurfaces.filter((s) => s.id !== id),

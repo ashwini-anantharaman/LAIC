@@ -5,10 +5,10 @@ import { motion } from 'motion/react';
 import { OBJECTS } from '../../../lib/data';
 
 const STAT_CARDS = [
-  { label: 'Avg completion',       value: '74%',  sub: 'across 8 published objects', icon: '📊' },
+  { label: 'Avg completion',       value: '74%',  sub: 'across 8 published content', icon: '📊' },
   { label: 'Avg quiz score',        value: '81%',  sub: 'last 30 days',               icon: '✅' },
   { label: 'AI drafts accepted',    value: '68%',  sub: 'of generated content kept',  icon: '✦' },
-  { label: 'Published objects',     value: '4',    sub: 'in Bridge program',           icon: '🌐' },
+  { label: 'Published content',     value: '4',    sub: 'in Bridge program',           icon: '🌐' },
 ];
 
 const PER_OBJECT_DATA = [
@@ -39,7 +39,7 @@ export function AuthorAnalytics() {
       {/* Completion bar chart */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
         className="p-5 rounded-[24px]" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
-        <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 14 }}>Completion % by object</p>
+        <p style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 14 }}>Completion % by content</p>
         <ResponsiveContainer width="100%" height={140}>
           <BarChart data={COMPLETION_BAR} layout="vertical">
             <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11, fill: '#9AA3AF' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
@@ -50,16 +50,16 @@ export function AuthorAnalytics() {
         </ResponsiveContainer>
       </motion.div>
 
-      {/* Per-object table */}
+      {/* Per-content table */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
         className="rounded-[24px] overflow-hidden" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
         <div className="px-5 py-3.5 border-b" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Per-object breakdown — last 30 days</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Per-content breakdown — last 30 days</p>
         </div>
         <table className="w-full">
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-              {['Object', 'Views', 'Completion %', 'Signals'].map(h => (
+              {['Content', 'Views', 'Completion %', 'Signals'].map(h => (
                 <th key={h} className="px-5 py-3 text-left" style={{ fontSize: 11.5, fontWeight: 600, color: '#9AA3AF' }}>{h}</th>
               ))}
             </tr>

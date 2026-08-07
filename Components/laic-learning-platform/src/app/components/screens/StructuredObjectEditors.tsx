@@ -20,10 +20,14 @@ const lbl: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, color: '#9AA
 
 function EditorShell({
   title, setTitle, mode, setMode, onBack, onSaveDraft, onSubmit, savedNote, label, children,
+  backLabel = 'Back to pipeline',
+  saveDraftLabel = 'Save draft',
 }: {
   title: string; setTitle: (t: string) => void; mode: Mode; setMode: (m: Mode) => void;
   onBack: () => void; onSaveDraft: () => void; onSubmit: () => void; savedNote: boolean; label: string;
   children: React.ReactNode;
+  backLabel?: string;
+  saveDraftLabel?: string;
 }) {
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -39,7 +43,7 @@ function EditorShell({
             style={{ color: '#6B7280' }}
           >
             <ChevronLeft size={15} />
-            <span className="hidden sm:inline">Back to pipeline</span>
+            <span className="hidden sm:inline">{backLabel}</span>
             <span className="sm:hidden">Back</span>
           </button>
           <input
@@ -64,7 +68,7 @@ function EditorShell({
           </div>
           <span className="text-[11.5px]" style={{ color: savedNote ? '#059669' : '#9AA3AF' }}>{savedNote ? '✓ Saved' : label}</span>
           <div className="flex flex-1 flex-wrap gap-2 sm:justify-end">
-            <button type="button" onClick={onSaveDraft} className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>Save draft</button>
+            <button type="button" onClick={onSaveDraft} className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>{saveDraftLabel}</button>
             <button type="button" onClick={onSubmit} className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>Submit</button>
           </div>
         </div>
@@ -109,7 +113,7 @@ function AskAiBox({ kind, item, onApply }: { kind: StructuredObjectKind; item: a
   );
 }
 
-function Submitted({ title, onDone }: { title: string; onDone: () => void }) {
+function Submitted({ title, onDone, doneLabel = '✓ Done — go to library' }: { title: string; onDone: () => void; doneLabel?: string }) {
   return (
     <div className="flex flex-col items-center justify-center p-10 text-center min-h-[50vh]">
       <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4" style={{ background: '#FEF3C7' }}>
@@ -118,7 +122,7 @@ function Submitted({ title, onDone }: { title: string; onDone: () => void }) {
       <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0B1220', marginBottom: 6 }}>Submitted for review</h2>
       <p style={{ fontSize: 13.5, color: '#6B7280', maxWidth: 380, marginBottom: 14 }}>"{title}" has been submitted.</p>
       <button onClick={onDone} className="px-6 py-2.5 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}>
-        ✓ Done — go to library
+        {doneLabel}
       </button>
     </div>
   );
@@ -285,6 +289,11 @@ type CommonProps = {
   typeId: string; title: string; scope?: string; fv: Record<string, any>;
   initialId?: string; initialStatus?: string; pipelineDraft?: CreatorPipelineDraft;
   onBack: (content?: any) => void; onDone: () => void;
+  backLabel?: string;
+  doneLabel?: string;
+  saveDraftLabel?: string;
+  initialMode?: Mode;
+  applyOnSaveDraft?: boolean;
 };
 
 function useObjectSave(typeId: string, initialId?: string, initialStatus?: string) {
@@ -318,9 +327,9 @@ function useObjectSave(typeId: string, initialId?: string, initialStatus?: strin
   return { save, objectStatus };
 }
 
-export function SummaryEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone }: CommonProps & { content: SummaryContent | null }) {
+export function SummaryEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone, backLabel, doneLabel, saveDraftLabel, initialMode = 'edit', applyOnSaveDraft = false }: CommonProps & { content: SummaryContent | null }) {
   const [docTitle, setDocTitle] = useState(title || 'Summary');
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [aiOpen, setAiOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -336,12 +345,19 @@ export function SummaryEditor({ typeId, title, scope, fv, content: initial, init
     status, scope, pipelineDraft, estimatedTime: '5 min',
   });
 
-  if (submitted) return <Submitted title={docTitle} onDone={onDone} />;
+  if (submitted) return <Submitted title={docTitle} onDone={onDone} doneLabel={doneLabel} />;
   return (
     <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode}
       onBack={() => { persist('draft'); onBack(local); }}
-      savedNote={savedNote} label="Summary"
-      onSaveDraft={() => { persist('draft'); setSavedNote(true); setTimeout(onDone, 650); }}
+      savedNote={savedNote} label="Summary" backLabel={backLabel} saveDraftLabel={saveDraftLabel}
+      onSaveDraft={() => {
+        persist('draft');
+        setSavedNote(true);
+        setTimeout(() => {
+          if (applyOnSaveDraft) onBack(local);
+          onDone();
+        }, 650);
+      }}
       onSubmit={() => { persist('in-review'); setSubmitted(true); }}>
       {mode === 'preview' ? <SummaryView content={local} /> : (
         <>
@@ -368,9 +384,9 @@ export function SummaryEditor({ typeId, title, scope, fv, content: initial, init
   );
 }
 
-export function ReflectionEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone }: CommonProps & { content: ReflectionContent | null }) {
+export function ReflectionEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone, backLabel, doneLabel, saveDraftLabel, initialMode = 'edit', applyOnSaveDraft = false }: CommonProps & { content: ReflectionContent | null }) {
   const [docTitle, setDocTitle] = useState(title || 'Reflection');
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [aiOpen, setAiOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -391,12 +407,19 @@ export function ReflectionEditor({ typeId, title, scope, fv, content: initial, i
     tags: [fv.goal, fv.aud, fv.voi].filter(Boolean), status, scope, pipelineDraft, estimatedTime: '10 min',
   });
 
-  if (submitted) return <Submitted title={docTitle} onDone={onDone} />;
+  if (submitted) return <Submitted title={docTitle} onDone={onDone} doneLabel={doneLabel} />;
   return (
     <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode}
       onBack={() => { persist('draft'); onBack(local); }}
-      savedNote={savedNote} label="Reflection"
-      onSaveDraft={() => { persist('draft'); setSavedNote(true); setTimeout(onDone, 650); }}
+      savedNote={savedNote} label="Reflection" backLabel={backLabel} saveDraftLabel={saveDraftLabel}
+      onSaveDraft={() => {
+        persist('draft');
+        setSavedNote(true);
+        setTimeout(() => {
+          if (applyOnSaveDraft) onBack(local);
+          onDone();
+        }, 650);
+      }}
       onSubmit={() => { persist('in-review'); setSubmitted(true); }}>
       {mode === 'preview' ? <ReflectionView content={local} /> : (
         <>
@@ -423,9 +446,9 @@ export function ReflectionEditor({ typeId, title, scope, fv, content: initial, i
   );
 }
 
-export function AssignmentEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone }: CommonProps & { content: AssignmentContent | null }) {
+export function AssignmentEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone, backLabel, doneLabel, saveDraftLabel, initialMode = 'edit', applyOnSaveDraft = false }: CommonProps & { content: AssignmentContent | null }) {
   const [docTitle, setDocTitle] = useState(title || 'Assignment');
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [aiOpen, setAiOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -443,12 +466,19 @@ export function AssignmentEditor({ typeId, title, scope, fv, content: initial, i
     tags: [fv.tt, fv.aud, fv.lvl].filter(Boolean), status, scope, pipelineDraft, estimatedTime: '25 min',
   });
 
-  if (submitted) return <Submitted title={docTitle} onDone={onDone} />;
+  if (submitted) return <Submitted title={docTitle} onDone={onDone} doneLabel={doneLabel} />;
   return (
     <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode}
       onBack={() => { persist('draft'); onBack(local); }}
-      savedNote={savedNote} label="Assignment"
-      onSaveDraft={() => { persist('draft'); setSavedNote(true); setTimeout(onDone, 650); }}
+      savedNote={savedNote} label="Assignment" backLabel={backLabel} saveDraftLabel={saveDraftLabel}
+      onSaveDraft={() => {
+        persist('draft');
+        setSavedNote(true);
+        setTimeout(() => {
+          if (applyOnSaveDraft) onBack(local);
+          onDone();
+        }, 650);
+      }}
       onSubmit={() => { persist('in-review'); setSubmitted(true); }}>
       {mode === 'preview' ? <AssignmentView content={local} title={docTitle} /> : (
         <>
@@ -503,9 +533,9 @@ export function AssignmentEditor({ typeId, title, scope, fv, content: initial, i
   );
 }
 
-export function DrillEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone }: CommonProps & { content: DrillContent | null }) {
+export function DrillEditor({ typeId, title, scope, fv, content: initial, initialId, initialStatus, pipelineDraft, onBack, onDone, backLabel, doneLabel, saveDraftLabel, initialMode = 'edit', applyOnSaveDraft = false }: CommonProps & { content: DrillContent | null }) {
   const [docTitle, setDocTitle] = useState(title || 'Drill');
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [aiOpen, setAiOpen] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -526,12 +556,19 @@ export function DrillEditor({ typeId, title, scope, fv, content: initial, initia
     tags: [fv.fmt, fv.lvl, fv.diff].filter(Boolean), status, scope, pipelineDraft, estimatedTime: '8 min',
   });
 
-  if (submitted) return <Submitted title={docTitle} onDone={onDone} />;
+  if (submitted) return <Submitted title={docTitle} onDone={onDone} doneLabel={doneLabel} />;
   return (
     <EditorShell title={docTitle} setTitle={setDocTitle} mode={mode} setMode={setMode}
       onBack={() => { persist('draft'); onBack(local); }}
-      savedNote={savedNote} label="Drill"
-      onSaveDraft={() => { persist('draft'); setSavedNote(true); setTimeout(onDone, 650); }}
+      savedNote={savedNote} label="Drill" backLabel={backLabel} saveDraftLabel={saveDraftLabel}
+      onSaveDraft={() => {
+        persist('draft');
+        setSavedNote(true);
+        setTimeout(() => {
+          if (applyOnSaveDraft) onBack(local);
+          onDone();
+        }, 650);
+      }}
       onSubmit={() => { persist('in-review'); setSubmitted(true); }}>
       {mode === 'preview' ? <DrillView content={local} /> : (
         <>

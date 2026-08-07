@@ -301,7 +301,7 @@ export const REVIEWS: ReviewItem[] = [
     objectType: 'scenario', submittedBy: 'Sam Rivera', submittedAt: '2026-07-10',
     status: 'in-review',
     comments: [
-      { id: 'cmt-1', authorId: 'lee', authorName: 'Lee Park', authorRole: 'Object Reviewer', blockId: undefined, content: 'Great scenario. Could you add a "stop and plan" prompt before the bridge play widget?', resolved: false, createdAt: '2026-07-11' },
+      { id: 'cmt-1', authorId: 'lee', authorName: 'Lee Park', authorRole: 'Content Reviewer', blockId: undefined, content: 'Great scenario. Could you add a "stop and plan" prompt before the bridge play widget?', resolved: false, createdAt: '2026-07-11' },
     ],
   },
   {

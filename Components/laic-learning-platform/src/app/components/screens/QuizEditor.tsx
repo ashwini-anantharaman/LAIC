@@ -192,6 +192,11 @@ function ManualQuestionEdit({ q, onChange }: { q: QDraft; onChange: (patch: Part
 export function QuizEditor({
   typeId, title, scope, fv, questions, passMark, showExplanations, adaptive,
   initialId, initialStatus, pipelineDraft, onBack, onDone,
+  backLabel = 'Back to pipeline',
+  doneLabel = '✓ Done — go to library',
+  saveDraftLabel = 'Save draft',
+  initialMode = 'edit',
+  applyOnSaveDraft = false,
 }: {
   typeId: string;
   title: string;
@@ -204,19 +209,25 @@ export function QuizEditor({
   initialId?: string;
   initialStatus?: string;
   pipelineDraft?: CreatorPipelineDraft;
-  onBack: () => void;
+  onBack: (questions?: GeneratedQuizQuestion[]) => void;
   onDone: () => void;
+  backLabel?: string;
+  doneLabel?: string;
+  saveDraftLabel?: string;
+  initialMode?: Mode;
+  applyOnSaveDraft?: boolean;
 }) {
   const { addObject } = useApp();
   const [docTitle, setDocTitle] = useState(title || 'Quiz');
   const [submitted, setSubmitted] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
-  const [mode, setMode] = useState<Mode>('edit');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [localQs, setLocalQs] = useState<QDraft[]>(() => (questions || []).map((q, i) => toQuestionContent(q, i)));
   const [editId, setEditId] = useState<string | null>(null);
   const [aiId, setAiId] = useState<string | null>(null);
   const [objectStatus, setObjectStatus] = useState(initialStatus || 'draft');
   const [meta] = useState({
+    passRequired: fv?.passOn !== false,
     passMark: typeof passMark === 'number' ? passMark : parseInt(String(fv?.pass || '70').replace('%', ''), 10) || 70,
     showExplanations: showExplanations || fv?.show || 'After attempt',
     purpose: fv?.purpose || 'Formative check',
@@ -253,7 +264,7 @@ export function QuizEditor({
     fv?.purpose || 'Formative check',
     fv?.lvl || 'Basic',
     ...(Array.isArray(fv?.qtypes) ? fv.qtypes : [fv?.qtypes].filter(Boolean)),
-    fv?.pass || '70%',
+    meta.passRequired ? (fv?.pass || '70%') : 'No pass mark',
     meta.adaptive ? 'Adaptive' : 'Fixed',
   ].filter(Boolean);
 
@@ -264,7 +275,8 @@ export function QuizEditor({
       hints: ensureFourHints(rest.hints, { explanation: rest.explanation, singleHint: rest.hint }),
       explanation: rest.explanation || '',
     })),
-    passMark: meta.passMark,
+    passRequired: meta.passRequired,
+    ...(meta.passRequired ? { passMark: meta.passMark } : {}),
     showExplanations: meta.showExplanations,
     purpose: meta.purpose,
     adaptive: meta.adaptive,
@@ -304,7 +316,7 @@ export function QuizEditor({
           "{docTitle}" has been submitted. A reviewer will provide feedback before it can be published.
         </p>
         <button onClick={onDone} className="px-6 py-2.5 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}>
-          ✓ Done — go to library
+          {doneLabel}
         </button>
       </div>
     );
@@ -319,7 +331,7 @@ export function QuizEditor({
             onBack?.(localQs.map(({ _id, ...rest }) => rest));
           }} className="flex items-center gap-1 text-sm font-medium shrink-0" style={{ color: '#6B7280' }}>
             <ChevronLeft size={15} />
-            <span className="hidden sm:inline">Back to pipeline</span>
+            <span className="hidden sm:inline">{backLabel}</span>
             <span className="sm:hidden">Back</span>
           </button>
           <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)}
@@ -342,9 +354,16 @@ export function QuizEditor({
             {savedNote ? '✓ Saved' : `${localQs.length} questions`}
           </span>
           <div className="flex flex-1 flex-wrap gap-2 sm:justify-end">
-            <button onClick={() => { save('draft'); setSavedNote(true); setTimeout(() => onDone(), 650); }}
+            <button onClick={() => {
+              save('draft');
+              setSavedNote(true);
+              setTimeout(() => {
+                if (applyOnSaveDraft) onBack?.(localQs.map(({ _id, ...rest }) => rest));
+                onDone();
+              }, 650);
+            }}
               className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>
-              Save draft
+              {saveDraftLabel}
             </button>
             <button onClick={() => { save('in-review'); setSubmitted(true); }}
               className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
@@ -358,7 +377,7 @@ export function QuizEditor({
         {mode === 'preview' ? (
           <>
             <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 14 }}>
-              Student preview · Pass {meta.passMark}% · {meta.showExplanations}
+              Student preview · {meta.passRequired ? `Pass ${meta.passMark}%` : 'No pass mark'} · {meta.showExplanations}
               {meta.adaptive ? ' · Adaptive' : ''}
             </p>
             <QuizBlock content={quizContent} />

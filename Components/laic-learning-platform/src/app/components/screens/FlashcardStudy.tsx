@@ -1174,12 +1174,19 @@ function AskAiCard({
 /**
  * Creator wrapper: edit cards (manual / AI / add / hints) + student preview study UI.
  */
-export function FlashcardEditor({ typeId, title, scope, fv, cards, initialId, initialStatus, pipelineDraft, onBack, onDone }: any) {
+export function FlashcardEditor({
+  typeId, title, scope, fv, cards, initialId, initialStatus, pipelineDraft, onBack, onDone,
+  backLabel = 'Back to pipeline',
+  doneLabel = '✓ Done — go to library',
+  saveDraftLabel = 'Save draft',
+  initialMode = 'edit',
+  applyOnSaveDraft = false,
+}: any) {
   const { addObject } = useApp();
   const [docTitle, setDocTitle] = useState<string>(title || 'Flashcard set');
   const [submitted, setSubmitted] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
-  const [mode, setMode] = useState<EditorMode>('edit');
+  const [mode, setMode] = useState<EditorMode>(initialMode === 'preview' ? 'preview' : 'edit');
   const [localCards, setLocalCards] = useState<StudyCard[]>(() =>
     (cards || []).map((c: StudyCard, i: number) => ({ ...c, id: c.id || `c-${i}` })),
   );
@@ -1249,7 +1256,14 @@ export function FlashcardEditor({ typeId, title, scope, fv, cards, initialId, in
     return id;
   };
 
-  const handleSaveDraft = () => { save('draft'); setSavedNote(true); setTimeout(() => onDone(), 650); };
+  const handleSaveDraft = () => {
+    save('draft');
+    setSavedNote(true);
+    setTimeout(() => {
+      if (applyOnSaveDraft) onBack?.(localCards);
+      onDone();
+    }, 650);
+  };
 
   if (submitted) return (
     <div className="flex flex-col items-center justify-center p-10 text-center min-h-[50vh]">
@@ -1261,7 +1275,7 @@ export function FlashcardEditor({ typeId, title, scope, fv, cards, initialId, in
         "{docTitle}" has been submitted. A reviewer will provide feedback before it can be published.
       </p>
       <button onClick={onDone} className="px-6 py-2.5 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}>
-        ✓ Done — go to library
+        {doneLabel}
       </button>
     </div>
   );
@@ -1272,7 +1286,7 @@ export function FlashcardEditor({ typeId, title, scope, fv, cards, initialId, in
         <div className="flex items-center gap-2 min-w-0">
           <button onClick={() => { save('draft'); onBack?.(localCards); }} className="flex items-center gap-1 text-sm font-medium shrink-0" style={{ color: '#6B7280' }}>
             <ChevronLeft size={15} />
-            <span className="hidden sm:inline">Back to pipeline</span>
+            <span className="hidden sm:inline">{backLabel}</span>
             <span className="sm:hidden">Back</span>
           </button>
           <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)}
@@ -1296,7 +1310,7 @@ export function FlashcardEditor({ typeId, title, scope, fv, cards, initialId, in
           </span>
           <div className="flex flex-1 flex-wrap gap-2 sm:justify-end">
             <button onClick={handleSaveDraft} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
-              Save draft
+              {saveDraftLabel}
             </button>
             <button onClick={() => { save('in-review'); setSubmitted(true); }} className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>
               Submit

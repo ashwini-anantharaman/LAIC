@@ -1,34 +1,79 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Check, X, Pencil, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
-import type { MarkupFlag, MarkupFlagKind } from '../../../lib/types';
+import type { MarkupFlag } from '../../../lib/types';
 
-const KIND_META: Record<MarkupFlagKind, { label: string; color: string; bg: string; border: string }> = {
+const LEGACY_KIND_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
   core: { label: 'Core concept', color: '#065F46', bg: 'rgba(5,150,105,0.08)', border: 'rgba(5,150,105,0.28)' },
   confusion: { label: 'Common confusion', color: '#92400E', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.35)' },
   diagram: { label: 'Diagram / visual', color: '#1E40AF', bg: 'rgba(37,99,235,0.08)', border: 'rgba(37,99,235,0.28)' },
   out_of_scope: { label: 'Out of scope', color: '#6B7280', bg: 'rgba(107,114,128,0.08)', border: 'rgba(107,114,128,0.25)' },
 };
 
-const TAGS = ['Use', 'Support', 'Ignore', 'Note'] as const;
+const GROUP_PALETTE = [
+  { color: '#1D4ED8', bg: 'rgba(37,99,235,0.10)', border: 'rgba(37,99,235,0.28)' },
+  { color: '#C2410C', bg: 'rgba(234,88,12,0.12)', border: 'rgba(234,88,12,0.30)' },
+  { color: '#6D28D9', bg: 'rgba(124,58,237,0.10)', border: 'rgba(124,58,237,0.28)' },
+  { color: '#047857', bg: 'rgba(5,150,105,0.10)', border: 'rgba(5,150,105,0.28)' },
+  { color: '#BE185D', bg: 'rgba(219,39,119,0.10)', border: 'rgba(219,39,119,0.28)' },
+  { color: '#0E7490', bg: 'rgba(14,116,144,0.10)', border: 'rgba(14,116,144,0.28)' },
+  { color: '#B45309', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.32)' },
+  { color: '#4B5563', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.28)' },
+];
 
-export function flagKindCounts(flags: MarkupFlag[]) {
-  const c = { core: 0, confusion: 0, diagram: 0, out_of_scope: 0 };
-  for (const f of flags) if (c[f.kind] != null) c[f.kind] += 1;
+function hashKind(kind: string): number {
+  let h = 0;
+  for (let i = 0; i < kind.length; i += 1) h = (h * 31 + kind.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+export function flagGroupMeta(kind: string, groupLabel?: string): { label: string; color: string; bg: string; border: string } {
+  if (LEGACY_KIND_META[kind] && !groupLabel) return LEGACY_KIND_META[kind];
+  if (LEGACY_KIND_META[kind] && groupLabel === LEGACY_KIND_META[kind].label) return LEGACY_KIND_META[kind];
+  const pal = GROUP_PALETTE[hashKind(kind) % GROUP_PALETTE.length];
+  const label = (groupLabel || '').trim()
+    || LEGACY_KIND_META[kind]?.label
+    || kind.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return { label, ...pal };
+}
+
+export function flagKindCounts(flags: MarkupFlag[]): Record<string, number> {
+  const c: Record<string, number> = {};
+  for (const f of flags) {
+    const key = f.kind || 'other';
+    c[key] = (c[key] || 0) + 1;
+  }
   return c;
 }
+
+export function distinctFlagGroups(flags: MarkupFlag[]): { kind: string; label: string; count: number }[] {
+  const order: string[] = [];
+  const map = new Map<string, { label: string; count: number }>();
+  for (const f of flags) {
+    const kind = f.kind || 'other';
+    if (!map.has(kind)) {
+      order.push(kind);
+      map.set(kind, { label: flagGroupMeta(kind, f.groupLabel).label, count: 0 });
+    }
+    map.get(kind)!.count += 1;
+  }
+  return order.map((kind) => ({ kind, label: map.get(kind)!.label, count: map.get(kind)!.count }));
+}
+
+const TAGS = ['Use', 'Support', 'Ignore', 'Note'] as const;
 
 /** Convert an accepted flag into one or more sentence highlights. */
 export function highlightsFromFlag(
   flag: MarkupFlag,
   paras: string[],
   pages?: number[],
-): { idx: number; tag: string; text: string; page: number; comment: string }[] {
+): { idx: number; tag: string; text: string; page: number; comment: string; sectionId?: string }[] {
   const tag = flag.suggestedTag || 'Use';
+  const group = flagGroupMeta(flag.kind, flag.groupLabel).label;
   const comment = flag.rationale
-    ? `${KIND_META[flag.kind]?.label || flag.kind}: ${flag.rationale}`
-    : (KIND_META[flag.kind]?.label || '');
+    ? `${group}: ${flag.rationale}`
+    : group;
   const textOverride = (flag.adjustedText || '').trim();
-  const out: { idx: number; tag: string; text: string; page: number; comment: string }[] = [];
+  const out: { idx: number; tag: string; text: string; page: number; comment: string; sectionId?: string }[] = [];
   for (let i = flag.startIdx; i <= flag.endIdx; i += 1) {
     if (i < 0 || i >= paras.length) continue;
     out.push({
@@ -37,6 +82,7 @@ export function highlightsFromFlag(
       text: i === flag.startIdx && textOverride ? textOverride : paras[i],
       page: pages?.[i] ?? flag.page ?? 1,
       comment: i === flag.startIdx ? comment : '',
+      sectionId: flag.sectionId,
     });
   }
   return out;
@@ -65,7 +111,7 @@ export function MarkupFlagReview({
   const [collapsed, setCollapsed] = useState(false);
   const pending = flags.filter((f) => f.status === 'pending' || f.status === 'adjusted');
   const decided = flags.filter((f) => f.status === 'accepted' || f.status === 'rejected');
-  const counts = flagKindCounts(flags);
+  const groups = useMemo(() => distinctFlagGroups(flags), [flags]);
 
   if (!flags.length) return null;
 
@@ -83,7 +129,7 @@ export function MarkupFlagReview({
             {pending.length ? ` · ${pending.length} to decide` : ''}
           </p>
           <p style={{ fontSize: 12.5, color: '#6B7280', lineHeight: 1.5, marginTop: 3 }}>
-            {summary || `${counts.core} core · ${counts.confusion} confusion · ${counts.diagram} diagrams · ${counts.out_of_scope} out of scope`}
+            {summary || groups.map((g) => `${g.count} ${g.label}`).join(' · ') || 'Review scan groups'}
           </p>
         </div>
         <button type="button" onClick={() => setCollapsed((v) => !v)} className="p-1.5 rounded-lg hover:bg-black/5">
@@ -94,11 +140,14 @@ export function MarkupFlagReview({
       {!collapsed && (
         <>
           <div className="px-4 py-2 flex flex-wrap gap-2 items-center" style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-            {(Object.keys(KIND_META) as MarkupFlagKind[]).map((k) => (
-              <span key={k} className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: KIND_META[k].bg, color: KIND_META[k].color }}>
-                {counts[k]} {KIND_META[k].label.toLowerCase()}
-              </span>
-            ))}
+            {groups.map((g) => {
+              const meta = flagGroupMeta(g.kind, g.label);
+              return (
+                <span key={g.kind} className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: meta.bg, color: meta.color }}>
+                  {g.count} {meta.label}
+                </span>
+              );
+            })}
             <div className="flex-1" />
             {pending.length > 0 && (
               <>
@@ -117,7 +166,7 @@ export function MarkupFlagReview({
 
           <div className="max-h-[420px] overflow-y-auto p-3 space-y-2.5">
             {flags.map((f) => {
-              const meta = KIND_META[f.kind];
+              const meta = flagGroupMeta(f.kind, f.groupLabel);
               const editing = editingId === f.id;
               const done = f.status === 'accepted' || f.status === 'rejected';
               return (

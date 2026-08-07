@@ -10,7 +10,7 @@
  *
  * A node WITHOUT an `edit` block is inherently view-only (its edit toggle is
  * disabled). Nesting via `children` gives the tree + cascade. `edit.objectScope`
- * reserves the (deferred) per-object-type restriction from the sent spec.
+ * reserves the (deferred) per-content-type restriction from the sent spec.
  *
  * Owned by the platform: adding a screen = adding a surface/node here. Nexus
  * needs no change to render roles against it.
@@ -41,22 +41,22 @@ export interface AccessManifest {
 export const LEARNING_MANIFEST: AccessManifest = {
   platform: 'learning',
   objectTypes: [
-    'lesson', 'tutorial', 'quiz', 'flashcard_set', 'concept_card', 'summary',
+    'lesson', 'tutorial', 'tutorial_v2', 'quiz', 'flashcard_set', 'concept_card', 'summary',
     'reflection', 'scenario', 'assignment', 'drill', 'video_script',
   ],
   capabilities: [
-    { id: 'create_objects', label: 'Create learning objects', group: 'Authoring & sources' },
-    { id: 'edit_objects', label: 'Edit & regenerate objects', group: 'Authoring & sources' },
-    { id: 'delete_objects', label: 'Delete objects', group: 'Authoring & sources' },
+    { id: 'create_objects', label: 'Create content', group: 'Authoring & sources' },
+    { id: 'edit_objects', label: 'Edit & regenerate content', group: 'Authoring & sources' },
+    { id: 'delete_objects', label: 'Delete content', group: 'Authoring & sources' },
     { id: 'markup_extract', label: 'Mark up sources & extract content', group: 'Authoring & sources' },
     { id: 'manage_sources', label: 'Create & manage source pools', group: 'Authoring & sources' },
     { id: 'use_tools', label: 'Use tools & utilities', group: 'Authoring & sources' },
     { id: 'create_courses', label: 'Create & build courses', group: 'Courses' },
     { id: 'edit_courses', label: 'Edit courses', group: 'Courses' },
-    { id: 'reuse_library', label: 'Reuse library objects in courses', group: 'Courses' },
+    { id: 'reuse_library', label: 'Reuse library content in courses', group: 'Courses' },
     { id: 'submit_review', label: 'Submit work for review', group: 'Courses' },
     { id: 'comment', label: 'Comment on blocks (leave feedback)', group: 'Review & feedback' },
-    { id: 'review_objects', label: 'Approve / request changes — objects', group: 'Review & feedback' },
+    { id: 'review_objects', label: 'Approve / request changes — content', group: 'Review & feedback' },
     { id: 'review_courses', label: 'Approve / request changes — courses', group: 'Review & feedback' },
     { id: 'resolve_comments', label: 'Resolve feedback threads', group: 'Review & feedback' },
     { id: 'publish', label: 'Publish & set audience', group: 'Publishing & governance' },
@@ -66,7 +66,7 @@ export const LEARNING_MANIFEST: AccessManifest = {
     { id: 'assign_courses', label: 'Assign courses to learners', group: 'Teaching' },
     { id: 'cohort_settings', label: 'Set cohort interaction settings', group: 'Teaching' },
     { id: 'preview_learner', label: 'Use the learner experience', group: 'Teaching' },
-    { id: 'repo_read', label: 'Browse the object repository', group: 'Repository & administration' },
+    { id: 'repo_read', label: 'Browse the content repository', group: 'Repository & administration' },
     { id: 'repo_write', label: 'Organize repository folders', group: 'Repository & administration' },
     { id: 'manage_people', label: 'Manage people & roles', group: 'Repository & administration' },
   ],
@@ -79,13 +79,13 @@ export const LEARNING_MANIFEST: AccessManifest = {
       // view-only: a dashboard has no edit mode.
     },
     {
-      id: 'authoring', label: 'Authoring', hint: 'Create objects, sources, and the library',
+      id: 'authoring', label: 'Authoring', hint: 'Create content, sources, and the library',
       surfaces: [
         { id: 'cd-home', label: 'Home' },
         { id: 'cd-create', label: 'Create', requiresEdit: true },
         { id: 'cd-templates', label: 'Template Library', requiresEdit: true },
         { id: 'cd-sources', label: 'Sources', requiresEdit: true },
-        { id: 'cd-library', label: 'Object Library' },
+        { id: 'cd-library', label: 'Content Library' },
         { id: 'cd-submissions', label: 'My Submissions' },
       ],
       view: { capabilities: ['repo_read'] },
@@ -101,12 +101,12 @@ export const LEARNING_MANIFEST: AccessManifest = {
       ],
     },
     {
-      id: 'reviews', label: 'Reviews', hint: 'Review objects and courses',
+      id: 'reviews', label: 'Reviews', hint: 'Review content and courses',
       surfaces: [],
       view: { capabilities: ['repo_read', 'comment'] },
       edit: { capabilities: ['review_objects', 'review_courses', 'resolve_comments', 'comment'] },
       children: [
-        { id: 'reviews.objects', label: 'Object Reviews', surfaces: [{ id: 'or-reviews', label: 'Object Reviews' }],
+        { id: 'reviews.objects', label: 'Content Reviews', surfaces: [{ id: 'or-reviews', label: 'Content Reviews' }],
           view: { capabilities: ['repo_read'] }, edit: { capabilities: ['review_objects', 'comment', 'resolve_comments'] } },
         { id: 'reviews.courses', label: 'Course Reviews', surfaces: [{ id: 'cr-reviews', label: 'Course Reviews' }],
           view: { capabilities: ['repo_read'] }, edit: { capabilities: ['review_courses', 'comment', 'resolve_comments'] } },

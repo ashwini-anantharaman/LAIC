@@ -18,6 +18,7 @@ export interface ObjectTemplate {
 export const TEMPLATE_TYPE_LABELS: Record<TemplateObjectType, string> = {
   lesson: 'Lesson',
   tutorial: 'Tutorial',
+  'tutorial-v2': 'Tutorial V2',
   quiz: 'Quiz',
   'flashcard-set': 'Flashcard set',
   'concept-card': 'Concept card',
@@ -31,6 +32,7 @@ export const TEMPLATE_TYPE_LABELS: Record<TemplateObjectType, string> = {
 
 export const TEMPLATE_OBJECT_TYPES: TemplateObjectType[] = [
   'tutorial',
+  'tutorial-v2',
   'quiz',
   'flashcard-set',
   'concept-card',
@@ -54,7 +56,7 @@ export const BUILTIN_OBJECT_TEMPLATES: ObjectTemplate[] = [
     builtin: true,
     recommended: true,
     knobDefaults: {
-      purpose: 'Formative check', nq: 8, pass: '70%', diff: 'Balanced',
+      purpose: 'Formative check', nq: 8, passOn: true, pass: '70%', diff: 'Balanced',
       qtypes: ['Multiple choice', 'True/false'], cog: ['Recall', 'Understand'],
       show: 'After attempt', perq: true, adaptive: 'No',
     },
@@ -67,7 +69,7 @@ export const BUILTIN_OBJECT_TEMPLATES: ObjectTemplate[] = [
     builtin: true,
     recommended: true,
     knobDefaults: {
-      purpose: 'Readiness gate', nq: 12, pass: '80%', diff: 'Mostly hard',
+      purpose: 'Readiness gate', nq: 12, passOn: true, pass: '80%', diff: 'Mostly hard',
       qtypes: ['Multiple choice', 'Scenario'], cog: ['Understand', 'Apply'],
       show: 'After completion', perq: true, adaptive: 'No',
     },
@@ -80,7 +82,7 @@ export const BUILTIN_OBJECT_TEMPLATES: ObjectTemplate[] = [
     builtin: true,
     recommended: false,
     knobDefaults: {
-      purpose: 'Diagnostic', nq: 5, pass: '60%', diff: 'Mostly easy',
+      purpose: 'Diagnostic', nq: 5, passOn: true, pass: '60%', diff: 'Mostly easy',
       qtypes: ['Multiple choice', 'True/false'], cog: ['Recall'],
       show: 'Immediately', perq: true, adaptive: 'Yes',
     },
@@ -339,7 +341,7 @@ function normalizeCustom(raw: unknown): ObjectTemplate | null {
   const t = raw as Partial<ObjectTemplate>;
   if (typeof t.id !== 'string' || typeof t.name !== 'string') return null;
   if (!t.objectType || !TEMPLATE_OBJECT_TYPES.includes(t.objectType as TemplateObjectType)) return null;
-  if (t.objectType === 'tutorial') return null; // tutorials use tutorialTemplates.ts
+  if (t.objectType === 'tutorial' || t.objectType === 'tutorial-v2') return null; // tutorials use dedicated template modules
   return {
     id: t.id,
     objectType: t.objectType as TemplateObjectType,
@@ -402,7 +404,7 @@ export function getObjectTemplate(id?: string | null, objectType?: TemplateObjec
 export function saveCustomObjectTemplate(
   input: Omit<ObjectTemplate, 'id' | 'builtin' | 'recommended'> & { id?: string },
 ): ObjectTemplate {
-  if (input.objectType === 'tutorial') {
+  if (input.objectType === 'tutorial' || input.objectType === 'tutorial-v2') {
     throw new Error('Use tutorial template APIs for tutorials.');
   }
   const customs = loadCustomObjectTemplates();
@@ -440,12 +442,13 @@ export function blankObjectTemplateDraft(objectType: TemplateObjectType): Omit<O
 
 /** Editable Define knobs shown in the simple template editor (per type). */
 export const TEMPLATE_EDITOR_FIELDS: Record<
-  Exclude<TemplateObjectType, 'tutorial'>,
+  Exclude<TemplateObjectType, 'tutorial' | 'tutorial-v2'>,
   { id: string; label: string; type: 'text' | 'num' | 'bool' | 'sel'; options?: string[] }[]
 > = {
   quiz: [
     { id: 'purpose', label: 'Purpose', type: 'sel', options: ['Formative check', 'Readiness gate', 'Diagnostic'] },
     { id: 'nq', label: 'Number of questions', type: 'num' },
+    { id: 'passOn', label: 'Require a pass mark', type: 'bool' },
     { id: 'pass', label: 'Pass mark', type: 'sel', options: ['50%', '60%', '70%', '80%', '90%'] },
     { id: 'diff', label: 'Difficulty mix', type: 'sel', options: ['Mostly easy', 'Balanced', 'Mostly hard', 'Ramped easy→hard'] },
     { id: 'adaptive', label: 'Adaptive', type: 'sel', options: ['Yes', 'No'] },

@@ -37,7 +37,7 @@ const ROLE_COLORS = {
 };
 
 const ROLE_DESCS = {
-  Primary: 'Drives the object',
+  Primary: 'Drives the content',
   Supporting: 'Backs it up',
   Reference: 'Might use',
 };
@@ -98,8 +98,8 @@ function ViewModal({ source, onClose }: { source: CollectionSource; onClose: () 
           <div className="rounded-2xl p-4" style={{ background: '#F9FAFB', border: '1px solid rgba(0,0,0,0.06)' }}>
             <p style={{ fontSize: 13, color: '#6B7280', lineHeight: 1.6 }}>
               {isMedia
-                ? 'Media source — the transcript is indexed for search and citation. Scrub to a timestamp to pull a quote into an object.'
-                : 'Text is parsed into pages and headings. Select any passage to cite it verbatim in a learning object, with a page reference kept automatically.'}
+                ? 'Media source — the transcript is indexed for search and citation. Scrub to a timestamp to pull a quote into content.'
+                : 'Text is parsed into pages and headings. Select any passage to cite it verbatim in a content, with a page reference kept automatically.'}
             </p>
           </div>
           <div>
@@ -294,7 +294,7 @@ function NewCollectionModal({ onClose, onCreate }: { onClose: () => void; onCrea
       >
         <div className="p-5 border-b" style={{ borderColor: 'rgba(0,0,0,0.07)' }}>
           <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0B1220' }}>New collection</h3>
-          <p style={{ fontSize: 13, color: '#9AA3AF', marginTop: 2 }}>Group sources you’ll reuse across objects and courses.</p>
+          <p style={{ fontSize: 13, color: '#9AA3AF', marginTop: 2 }}>Group sources you’ll reuse across content and courses.</p>
         </div>
         <div className="p-5">
           <input

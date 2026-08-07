@@ -104,13 +104,12 @@ export function paginateTutorialBlocks(blocks, opts = {}) {
 export const TUTORIAL_WORDS_PER_PAGE = 520;
 
 /**
- * Resolve author target word count from Define knobs.
- * @param {{ words?: number, dpth?: string, secs?: number }} fv
+ * @deprecated Word targets retired. Kept only as a soft token-budget hint from
+ * depth × sections (never a HARD length requirement for the model).
+ * @param {{ dpth?: string, secs?: number, words?: number }} fv
  */
 export function resolveTutorialWordTarget(fv = {}) {
-  const raw = Number(fv.words);
-  if (Number.isFinite(raw) && raw > 0) return Math.round(raw);
-
+  // Explicit words knobs are ignored — length follows curated units + depth.
   const secs = Math.max(1, Number(fv.secs) || 3);
   const dpth = String(fv.dpth || 'Standard');
   const per =

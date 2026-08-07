@@ -11,6 +11,7 @@ import { useApp } from '../../App';
 import { ingestYoutube, ingestWeb, errorMessage } from '../../../lib/api';
 import { docFromText } from '../../../lib/pdf';
 import { PullFromLibraryButton, type PickedLibrarySource } from './CDSources';
+import { useConfirm } from '../ConfirmDialog';
 
 /* ─── constants ───────────────────────────────────────────────── */
 
@@ -86,7 +87,7 @@ function BChip({ type }: { type: string }) {
   return <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: c.bg, color: c.text }}>{type.replace(/-/g, ' ')}</span>;
 }
 
-/* ─── Step 1 — Source (same modes as other learning objects) ──── */
+/* ─── Step 1 — Source (same modes as other content) ──── */
 
 type CourseSrcMode = 'pdf' | 'text' | 'web' | 'youtube' | 'prompt';
 
@@ -592,7 +593,7 @@ function Step2({ cfg, setCfg }: { cfg: typeof DEFAULT_STRUCT; setCfg: (c: typeof
           </div>
           <div className="flex items-center justify-between">
             <div>
-              <p style={{ fontSize: 13, color: '#0B1220' }}>Draft learning objectives for each {cfg.groupName || 'module'}</p>
+              <p style={{ fontSize: 13, color: '#0B1220' }}>Draft objectives for each {cfg.groupName || 'module'}</p>
               <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>Adds a short "what you'll be able to do" at the start.</p>
             </div>
             <Tog on={cfg.draftObjectives} onToggle={() => set('draftObjectives', !cfg.draftObjectives)} />
@@ -664,13 +665,29 @@ function Step2({ cfg, setCfg }: { cfg: typeof DEFAULT_STRUCT; setCfg: (c: typeof
 
 function Step3({ modules, setModules, contentName, groupName, assessName }: { modules: Module[]; setModules: (m: Module[]) => void; contentName: string; groupName: string; assessName: string }) {
   const [regenMsg, setRegenMsg] = useState('');
+  const confirm = useConfirm();
 
   const regen = () => { setRegenMsg('Re-parsed — fresh outline generated'); setTimeout(() => setRegenMsg(''), 2000); };
 
   const renameModule = (id: string, title: string) => setModules(modules.map(m => m.id === id ? { ...m, title } : m));
-  const deleteModule = (id: string) => setModules(modules.filter(m => m.id !== id));
+  const deleteModule = async (id: string) => {
+    const mod = modules.find((m) => m.id === id);
+    if (!(await confirm({
+      description: mod
+        ? `Delete “${mod.title}” and its ${mod.lessons.length} item${mod.lessons.length === 1 ? '' : 's'}?`
+        : `Delete this ${groupName}?`,
+    }))) return;
+    setModules(modules.filter(m => m.id !== id));
+  };
   const addLesson = (modId: string) => setModules(modules.map(m => m.id === modId ? { ...m, lessons: [...m.lessons, { id: `l${Date.now()}`, kind: 'lesson', title: `New ${contentName}`, blocks: [] }] } : m));
-  const deleteLesson = (modId: string, lesId: string) => setModules(modules.map(m => m.id === modId ? { ...m, lessons: m.lessons.filter(l => l.id !== lesId) } : m));
+  const deleteLesson = async (modId: string, lesId: string) => {
+    const mod = modules.find((m) => m.id === modId);
+    const les = mod?.lessons.find((l) => l.id === lesId);
+    if (!(await confirm({
+      description: les ? `Delete “${les.title}”?` : 'Delete this item?',
+    }))) return;
+    setModules(modules.map(m => m.id === modId ? { ...m, lessons: m.lessons.filter(l => l.id !== lesId) } : m));
+  };
   const renameLesson = (modId: string, lesId: string, title: string) => setModules(modules.map(m => m.id === modId ? { ...m, lessons: m.lessons.map(l => l.id === lesId ? { ...l, title } : l) } : m));
   const addModule = () => setModules([...modules, { id: `m${Date.now()}`, title: `New ${groupName}`, lessons: [] }]);
 
@@ -856,6 +873,7 @@ function Step4({ modules, contentName, groupName, assessName }: { modules: Modul
 
 function BlockCard({ block, onUp, onDown, onDelete }: { block: Block; onUp: () => void; onDown: () => void; onDelete: () => void }) {
   const [mode, setMode] = useState<'read' | 'edit' | 'ai'>('read');
+  const confirm = useConfirm();
   return (
     <div className="mb-3 rounded-2xl border overflow-hidden" style={{ background: 'rgba(255,255,255,0.88)', borderColor: 'rgba(0,0,0,0.08)' }}>
       <div className="flex items-center gap-2 px-4 py-2.5 border-b" style={{ borderColor: 'rgba(0,0,0,0.06)', background: 'rgba(255,255,255,0.5)' }}>
@@ -866,7 +884,18 @@ function BlockCard({ block, onUp, onDown, onDelete }: { block: Block; onUp: () =
           <button onClick={() => setMode(mode === 'edit' ? 'read' : 'edit')} className="px-2 py-1 rounded text-xs" style={{ color: '#2563EB', background: mode === 'edit' ? '#EFF6FF' : 'transparent' }}>✎ Edit</button>
           <button onClick={onUp} className="px-1 text-sm" style={{ color: '#9AA3AF' }}>↑</button>
           <button onClick={onDown} className="px-1 text-sm" style={{ color: '#9AA3AF' }}>↓</button>
-          <button onClick={onDelete}><Trash2 size={12} style={{ color: '#EF4444' }} /></button>
+          <button
+            onClick={() => {
+              void (async () => {
+                const ok = await confirm({
+                  description: `Delete block “${block.label || block.type}”?`,
+                });
+                if (ok) onDelete();
+              })();
+            }}
+          >
+            <Trash2 size={12} style={{ color: '#EF4444' }} />
+          </button>
         </div>
       </div>
       <div className="p-4">
@@ -986,7 +1015,7 @@ function Step5({ modules, setModules }: { modules: Module[]; setModules: (m: Mod
                 <Sparkles size={13} />✦ Generate a block with AI
               </button>
               <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm" style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.8)' }}>
-                ▤ Use object from library
+                ▤ Use content from library
               </button>
             </div>
           </div>
@@ -1153,7 +1182,7 @@ function Step8({ courseTitle, onSubmit, submitted }: { courseTitle: string; onSu
         <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: '#FEF3C7', color: '#92400E' }}>in review</span>
         <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: '#F3F4F6', color: '#374151' }}>Bridge</span>
       </div>
-      <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>Track it under <strong>Versions & Publishing</strong> or <strong>Review Queue</strong>. Use "Finish" below to return to Activity objects.</p>
+      <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>Track it under <strong>Versions & Publishing</strong> or <strong>Review Queue</strong>. Use "Finish" below to return to Content Library.</p>
     </div>
   );
 
@@ -1165,7 +1194,7 @@ function Step8({ courseTitle, onSubmit, submitted }: { courseTitle: string; onSu
           {[
             { id: 'Course', sub: 'Full structured course with modules, lessons, and checkpoints.' },
             { id: 'Learning package', sub: 'A small assignable bundle.' },
-            { id: 'Standalone objects', sub: 'Publish objects individually.' },
+            { id: 'Standalone content', sub: 'Publish content individually.' },
           ].map(r => (
             <label key={r.id} className="flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all"
               style={{ background: pubType === r.id ? 'rgba(11,15,26,0.06)' : 'rgba(255,255,255,0.7)', borderColor: pubType === r.id ? '#0B0F1A' : 'rgba(0,0,0,0.08)' }}>
@@ -1205,7 +1234,7 @@ export function CourseWizard() {
   const [cfg, setCfg] = useState(DEFAULT_STRUCT);
   const [modules, setModules] = useState<Module[]>(SEED_MODULES);
 
-  /* ── Step 1: same source modes as other learning objects ──────── */
+  /* ── Step 1: same source modes as other content ──────── */
   const [srcMode, setSrcMode] = useState<CourseSrcMode>('pdf');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pasteText, setPasteText] = useState('');
@@ -1254,7 +1283,7 @@ export function CourseWizard() {
       <div className="sticky top-0 z-20 flex items-center justify-between px-5 py-3 border-b border-white/40"
         style={{ background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)' }}>
         <button onClick={() => navigate('cd-library')} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: '#6B7280' }}>
-          <ArrowLeft size={14} />Activity objects
+          <ArrowLeft size={14} />Content Library
         </button>
         <p style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>New course from a source</p>
         <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"

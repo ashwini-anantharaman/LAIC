@@ -12,6 +12,7 @@ export type ObjectType =
   | 'course'
   | 'lesson'
   | 'tutorial'
+  | 'tutorial-v2'
   | 'quiz'
   | 'flashcard-set'
   | 'concept-card'
@@ -144,6 +145,12 @@ export interface MediaSlotConfig {
   hint?: string;
 }
 
+/** When a recipe block should appear — defaults to always. */
+export type BlockCondition =
+  | { kind: 'always' }
+  | { kind: 'if_source_kinds'; kinds: ContentUnitKind[] }
+  | { kind: 'if_source_hint'; hint: string };
+
 export interface AtomicBlockItem {
   kind: 'atomic';
   id: string;
@@ -151,6 +158,46 @@ export interface AtomicBlockItem {
   required?: boolean;
   preferKinds?: ContentUnitKind[];
   media?: MediaSlotConfig;
+  /** One-line steer for generation (like embedded authoringNote). */
+  authoringNote?: string;
+  /** Optional — skip when source doesn't justify the block. */
+  condition?: BlockCondition;
+}
+
+/** Metadata for sourceMode=generate — steers AI (or blank scaffold) for any embed type. */
+export interface EmbeddedGenerateMeta {
+  title?: string;
+  objective?: string;
+  /** Quiz — count + scoring */
+  questionCount?: number;
+  /** When false, embedded quiz has no pass threshold (practice only). */
+  passOn?: boolean;
+  passMark?: string;
+  /** Quiz — full define-style controls (inherit standalone quiz knobs). */
+  qtypes?: string[];
+  cog?: string[];
+  diff?: string;
+  wrong?: string;
+  adaptive?: string;
+  show?: string;
+  perq?: boolean;
+  /** Flashcard set */
+  cardCount?: string | number;
+  cc?: string[];
+  pull?: string[];
+  dir?: string;
+  hooks?: boolean;
+  /** Concept card */
+  conceptFocus?: string;
+  voi?: string;
+  len?: string;
+  /** Assignment */
+  tt?: string;
+  del?: string;
+  el?: string;
+  cite?: boolean;
+  /** Freeform instructions beyond authoringNote */
+  instructions?: string;
 }
 
 export interface EmbeddedObjectItem {
@@ -162,14 +209,44 @@ export interface EmbeddedObjectItem {
   authoringNote?: string;
   versionPin?: VersionPin;
   libraryTitle?: string;
+  /** Used when sourceMode is generate — define the new object up front. */
+  generateMeta?: EmbeddedGenerateMeta;
+  condition?: BlockCondition;
 }
 
 export type RecipeItem = AtomicBlockItem | EmbeddedObjectItem;
 export type SectionRecipe = RecipeItem[];
 
+/**
+ * Named section shape. Plan assigns an archetypeId per section;
+ * undefined archetype → use template.recipe (the default).
+ */
+export interface SectionArchetype {
+  id: string;
+  name: string;
+  description?: string;
+  recipe: SectionRecipe;
+}
+
+/** Per-knob locks — opt-in. Unset/false = course developer may change. */
+export interface TutorialKnobLocks {
+  secs?: boolean;
+  prog?: boolean;
+  dpth?: boolean;
+  end?: boolean;
+  chks?: boolean;
+  /** pass / hintsOn / hintN */
+  scoring?: boolean;
+}
+
+export type TutorialDepth = 'Overview' | 'Standard' | 'In-depth';
+
 export interface TutorialKnobDefaults {
   secs?: number;
-  /** Target teaching length in words (0 = auto from depth × sections). No upper cap. */
+  /**
+   * @deprecated Retired — tutorial length follows curated units + depth (`dpth`).
+   * Ignored at generate time; kept optional for old drafts/templates.
+   */
   words?: number;
   prog?: string;
   dpth?: string;
@@ -177,7 +254,9 @@ export interface TutorialKnobDefaults {
   chks?: number;
   excpts?: number;
   wex?: boolean;
-  /** Pass mark across all tutorial checks combined, e.g. "70%". */
+  /** When false, MCQ checks show score only (no pass/fail). Default true. */
+  passOn?: boolean;
+  /** Pass mark across all tutorial checks combined, e.g. "70%". Ignored when passOn is false. */
   pass?: string;
   /** Whether progressive hints are offered after wrong answers. */
   hintsOn?: boolean;
@@ -195,8 +274,13 @@ export interface TutorialTemplate {
   name: string;
   description: string;
   builtin: boolean;
-  /** Composite-aware ordered recipe (source of truth for the template editor). */
+  /** Default per-section recipe (used when a Plan section has no archetypeId). */
   recipe: SectionRecipe;
+  /**
+   * Named section types the Plan step can assign. Opt-in overrides of `recipe`.
+   * Empty/undefined → every section uses the default recipe.
+   */
+  archetypes?: SectionArchetype[];
   /**
    * Flat projection for legacy generation / scaffold consumers.
    * Derived from `recipe` on save; do not treat as independently authored.
@@ -209,17 +293,71 @@ export interface TutorialTemplate {
    */
   usesCompositeRecipe?: boolean;
   /**
-   * When true (default), course developers cannot change structure knobs
-   * (sections, words, progression, checks, scoring, …) — values come from `knobDefaults`.
-   * When false, authors may edit those fields (the built-in Freeform template).
+   * @deprecated Prefer granular `knobLocks`. When true and knobLocks unset,
+   * all structure knobs are treated as locked (legacy builtin behavior).
    */
   structureLocked?: boolean;
+  /** Opt-in per-knob locks. Defaults unlocked so developers keep control. */
+  knobLocks?: TutorialKnobLocks;
   sectionConnection: SectionConnectionRule;
   assessmentPlacement: AssessmentPlacement;
   /** Derived from atomic media items in `recipe` on save. */
   mediaSlots: MediaSlot[];
   knobDefaults: TutorialKnobDefaults;
 }
+
+/**
+ * Human-authored tutorial outline captured in Plan (define-first).
+ * Drives Mark up scan targets, Extract clusters, and generation sections.
+ */
+export interface DefinedSection {
+  id: string;
+  title: string;
+  /** One-line: what this section teaches. */
+  intent: string;
+  /**
+   * Section archetype from the template (`undefined` / `''` = default recipe).
+   * Kept for older drafts; Plan no longer assigns section types.
+   */
+  archetypeId?: string;
+  /** @deprecated Plan no longer sets per-section depth; global template dpth applies. */
+  depth?: TutorialDepth;
+  /**
+   * Which template recipe embed item ids are tagged to this section.
+   * `undefined` = legacy (all recipe embeds). `[]` = none. Explicit list = only those.
+   */
+  attachedEmbedIds?: string[];
+}
+
+/**
+ * Per-instance override for a template embed slot in THIS tutorial.
+ * Keyed on TutorialDefinition.embedPlans by `${sectionId}:${recipeItemId}`.
+ */
+export interface EmbedPlanOverride {
+  /** Author tweak of what this embed should achieve (seeds generator intent). */
+  objective?: string;
+  /** Extra instructions beyond template authoringNote / generateMeta.instructions. */
+  instructions?: string;
+  /**
+   * For sourceMode=prompt_on_author: author chooses at Plan time.
+   * Undefined = still unresolved.
+   */
+  resolvedMode?: 'generate' | 'pick_from_library';
+  /** When resolvedMode is pick_from_library. */
+  versionPin?: VersionPin;
+  libraryTitle?: string;
+}
+
+export interface TutorialDefinition {
+  objective: string;
+  /** Ordered section outline (not the template per-section block recipe). */
+  sections: DefinedSection[];
+  /** Per-embed authoring overrides for this tutorial. Optional — old drafts omit. */
+  embedPlans?: Record<string, EmbedPlanOverride>;
+}
+
+/** Holding cluster for units with no sectionId — never AI-homed, never dropped. */
+export const UNASSIGNED_SECTION_ID = '__unassigned__';
 
 export interface ContentUnit {
   id: string;
@@ -228,10 +366,17 @@ export interface ContentUnit {
   from?: string;
   fromHl?: boolean;
   clusterId?: string;
+  /** Ties unit to a DefinedSection (define-first). */
+  sectionId?: string;
   structured?: { columns: string[]; rows: string[][] };
   sourceHighlightIds?: number[];
   /** Originating source label when known (PDF name, website, etc.). */
   sourceLabel?: string;
+  /**
+   * Author note from Markup on this passage. Generation must follow it
+   * word-for-word for how this passage is used in the object.
+   */
+  authorNote?: string;
 }
 
 export interface ConceptCluster {
@@ -239,6 +384,8 @@ export interface ConceptCluster {
   name: string;
   unitIds: string[];
   covers?: string[];
+  /** When set, cluster is the fixed bucket for that DefinedSection (or Unassigned). */
+  sectionId?: string;
 }
 
 export interface CoverageGap {
@@ -259,11 +406,17 @@ export interface ClusteredKnowledgeBase {
 export interface TutorialSectionPlan {
   index: number;
   title: string;
+  /** Human one-line intent from Plan (define-first). */
+  intent?: string;
   subheads?: string[];
   clusterId: string;
+  /** Resolved archetype for this section (`undefined` = default recipe). */
+  archetypeId?: string;
+  /** Per-section depth (`undefined` = template / config global dpth). */
+  depth?: TutorialDepth | string;
   /**
    * Preferred when the template was authored as composite (`usesCompositeRecipe`).
-   * Section-local view of `template.recipe` (same ordered items for every section in v1).
+   * Resolved from archetype override or template.recipe, then filtered by block conditions.
    */
   sectionRecipe?: SectionRecipe;
   /**
@@ -378,7 +531,12 @@ export interface QuestionContent {
 }
 export interface QuizContent {
   questions: QuestionContent[];
-  /** Pass threshold 0–100 from Define. */
+  /**
+   * When false, show score only — no pass/fail threshold.
+   * Default true when omitted (legacy quizzes).
+   */
+  passRequired?: boolean;
+  /** Pass threshold 0–100 from Define. Ignored when passRequired is false. */
   passMark?: number;
   /** When to reveal explanations: Immediately | After attempt | After completion | Never */
   showExplanations?: string;
@@ -681,6 +839,8 @@ export interface LibraryEmbedContent {
   authoringNote?: string;
   required?: boolean;
   label?: string;
+  /** True when snapshot came from a per-type generator (not a library pin). */
+  generated?: boolean;
 }
 
 export type BlockContent =
@@ -725,13 +885,18 @@ export interface Block {
   content: BlockContent;
 }
 
-/** Document-level markup review item (not per-sentence popups). */
-export type MarkupFlagKind = 'core' | 'confusion' | 'diagram' | 'out_of_scope';
+/**
+ * Document-level markup review group.
+ * Prefer author scan-focus groups (freeform slug); legacy fixed kinds still accepted.
+ */
+export type MarkupFlagKind = string;
 export type MarkupFlagStatus = 'pending' | 'accepted' | 'rejected' | 'adjusted';
 
 export interface MarkupFlag {
   id: string;
   kind: MarkupFlagKind;
+  /** Human label for the group (scan-focus derived). Falls back to kind. */
+  groupLabel?: string;
   /** Short label for the review list. */
   title: string;
   rationale?: string;
@@ -744,6 +909,8 @@ export interface MarkupFlag {
   status: MarkupFlagStatus;
   /** Author override when adjusting before accept. */
   adjustedText?: string;
+  /** Defined section this proposal supports (define-first scan). */
+  sectionId?: string;
 }
 
 /**
@@ -757,7 +924,13 @@ export interface CreatorPipelineDraft {
   ytUrl?: string;
   /** Website URL used when srcMode is 'web'. */
   webUrl?: string;
-  doc?: { fileName: string; pageCount: number; sentences: { text: string; page: number }[] } | null;
+  doc?: {
+    fileName: string;
+    pageCount: number;
+    sentences: { text: string; page: number }[];
+    html?: string;
+    sourceUrl?: string;
+  } | null;
   highlights?: any[];
   /** AI document-level markup flags for Accept / Reject / Adjust review. */
   markupFlags?: MarkupFlag[];
@@ -765,6 +938,8 @@ export interface CreatorPipelineDraft {
   knowledgeBase?: ClusteredKnowledgeBase;
   templateId?: string;
   shapeIntent?: string;
+  /** Define-first spine for tutorials (objective + named sections). */
+  tutorialDefinition?: TutorialDefinition;
   fv?: Record<string, any>;
   scope?: string;
   media?: any[];
@@ -773,6 +948,8 @@ export interface CreatorPipelineDraft {
   urlRefs?: string[];
   reached?: number;
   step?: number;
+  /** Hoot co-author chat — survives Sources → Markup → Extract → Define → Editor. */
+  assistantMessages?: AssistantMessage[];
 }
 
 export interface LearningObject {
@@ -791,8 +968,20 @@ export interface LearningObject {
   updatedAt: string;
   tags: string[];
   sourceIds: string[];
+  /**
+   * Object Library collections this object belongs to (user-named folders).
+   * An object may appear in more than one collection.
+   */
+  collectionIds?: string[];
+  /** @deprecated Prefer collectionIds — kept for older saved libraries. */
+  collectionId?: string;
   /** Optional wizard state for reopening the full create/edit pipeline. */
   pipelineDraft?: CreatorPipelineDraft;
+  /**
+   * Tutorial V2 Approach-2 skeleton + per-section authoring state.
+   * Only used when type === 'tutorial-v2'; ignored by V1 tutorial path.
+   */
+  tutorialV2Draft?: import('./tutorialV2/types').TutorialV2Draft;
 }
 
 export interface CourseLesson {
@@ -867,6 +1056,20 @@ export interface Person {
   assignedCourses: string[];
 }
 
+/** Frozen content for a learning-object version (library history). */
+export interface ObjectVersionSnapshot {
+  title: string;
+  description: string;
+  estimatedTime: string;
+  status: ObjectStatus;
+  type: ObjectType;
+  blocks: Block[];
+  tags: string[];
+  sourceIds: string[];
+  pipelineDraft?: CreatorPipelineDraft;
+  tutorialV2Draft?: import('./tutorialV2/types').TutorialV2Draft;
+}
+
 export interface Version {
   id: string;
   objectId: string;
@@ -877,6 +1080,10 @@ export interface Version {
   createdBy: string;
   isLive: boolean;
   notes: string;
+  /** Frozen — regular saves do not overwrite this version. */
+  locked?: boolean;
+  /** Content at the time this version was saved. */
+  snapshot?: ObjectVersionSnapshot;
 }
 
 export interface LearnerProgress {
@@ -1013,6 +1220,15 @@ export interface AssistantCitation {
   label?: string;
 }
 
+/** Image attached in Hoot for placement / vision-grounded co-authoring. */
+export interface AssistantAttachedImage {
+  id: string;
+  /** data: or https URL — used as the image block url on Accept. */
+  url: string;
+  name?: string;
+  caption?: string;
+}
+
 export interface AssistantMessage {
   id: string;
   role: AssistantMessageRole;
@@ -1022,6 +1238,8 @@ export interface AssistantMessage {
   proposalIds?: string[];
   streaming?: boolean;
   error?: string;
+  /** User-attached images on this turn (shown in chat; sent to the assistant). */
+  attachments?: AssistantAttachedImage[];
 }
 
 export type EditAction =
@@ -1132,6 +1350,8 @@ export interface AssistantTurnRequest {
   message: string;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
   quickAction?: AssistantQuickActionId;
+  /** Images the author attached in Hoot this turn — place via add_block image. */
+  attachedImages?: AssistantAttachedImage[];
 }
 
 export interface EditorHistoryEntry {

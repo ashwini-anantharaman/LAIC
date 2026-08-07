@@ -264,7 +264,7 @@ export function reingestSource(id: string, signal?: AbortSignal): Promise<Wizard
 export interface TutorialConfig {
   obj?: string; topic?: string; aud?: string; lvl?: string;
   secs?: number; prog?: string; dpth?: string; end?: string;
-  /** Target teaching length in words (0 / omit = derive from depth × sections). No upper cap. */
+  /** @deprecated Retired — ignored; length follows curated units + depth. */
   words?: number;
   chks?: number; excpts?: number; wex?: boolean;
   templateId?: string;
@@ -282,7 +282,19 @@ export interface TutorialExtract {
   kind?: string;
   text: string;
   from?: string;
+  /** Markup note — generation must follow word-for-word for this passage. */
+  authorNote?: string;
+  comment?: string;
 }
+
+export type MarkupHighlightDirective = {
+  text: string;
+  tag?: string;
+  comment?: string;
+  page?: number;
+  idx?: number;
+  sourceLabel?: string;
+};
 
 /** Any editor-renderable part produced by generation. */
 export interface GeneratedPart {
@@ -322,6 +334,29 @@ export type TutorialGenEvent =
   | { type: 'error'; code?: string; message: string };
 
 /**
+ * POST /api/tutorials/expand-prompt — turn a "no source" AI brief into
+ * markable source prose shown in the Markup step.
+ */
+export function expandTutorialPrompt(
+  prompt: string,
+  opts?: { title?: string; objective?: string },
+  signal?: AbortSignal,
+): Promise<{ title: string; text: string }> {
+  return apiFetch<{ title: string; text: string }>('/api/tutorials/expand-prompt', {
+    method: 'POST',
+    body: {
+      prompt,
+      title: opts?.title,
+      objective: opts?.objective,
+    },
+    signal,
+  }).then((r) => ({
+    title: r.title || 'AI-generated source',
+    text: r.text || '',
+  }));
+}
+
+/**
  * POST /api/tutorials/suggest-highlights — the model picks which sentence
  * indices are most worth USING for the tutorial. Returns the indices.
  */
@@ -339,11 +374,17 @@ export function suggestTutorialHighlights(
 
 /**
  * POST /api/tutorials/suggest-markup-flags — one document scan → compact
- * review list (core / confusion / diagram / out-of-scope) for Accept/Reject/Adjust.
+ * review list grouped by the author's scan focus for Accept/Reject/Adjust.
  */
 export function suggestTutorialMarkupFlags(
   sentences: { text: string; page?: number }[],
-  opts?: { instruction?: string; objective?: string; title?: string },
+  opts?: {
+    instruction?: string;
+    objective?: string;
+    title?: string;
+    /** Define-first: scan proposes highlights grouped by these sections. */
+    sections?: { id: string; title: string; intent?: string }[];
+  },
   signal?: AbortSignal,
 ): Promise<{ flags: MarkupFlag[]; summary: string }> {
   return apiFetch<{ flags: MarkupFlag[]; summary: string }>('/api/tutorials/suggest-markup-flags', {
@@ -353,6 +394,7 @@ export function suggestTutorialMarkupFlags(
       instruction: opts?.instruction,
       objective: opts?.objective,
       title: opts?.title,
+      sections: opts?.sections,
     },
     signal,
   }).then((r) => ({ flags: r.flags ?? [], summary: r.summary || '' }));
@@ -378,12 +420,12 @@ export function ingestYoutube(
   });
 }
 
-/** POST /api/tutorials/ingest-web — server fetches a public web page as sentences. */
+/** POST /api/tutorials/ingest-web — server fetches a public web page as sentences + HTML. */
 export function ingestWeb(
   url: string,
   signal?: AbortSignal,
-): Promise<{ title: string; sentences: string[]; url?: string }> {
-  return apiFetch<{ title: string; sentences: string[]; url?: string }>('/api/tutorials/ingest-web', {
+): Promise<{ title: string; sentences: string[]; url?: string; html?: string }> {
+  return apiFetch<{ title: string; sentences: string[]; url?: string; html?: string }>('/api/tutorials/ingest-web', {
     method: 'POST',
     body: { url },
     signal,
@@ -436,12 +478,23 @@ export function editFlashcard(
  * markup into a knowledge base for template-shaped generation.
  */
 export async function buildTutorialKnowledgeBase(payload: {
-  highlights?: { text: string; tag: string; from?: string; page?: number; idx?: number; comment?: string; sourceLabel?: string }[];
+  highlights?: {
+    text: string;
+    tag: string;
+    from?: string;
+    page?: number;
+    idx?: number;
+    comment?: string;
+    sourceLabel?: string;
+    sectionId?: string;
+  }[];
   extracts?: TutorialExtract[];
   shapeIntent?: string;
   objective?: string;
   topic?: string;
   refineWithLlm?: boolean;
+  /** When set, clusters are fixed to these sections (define-first) — no emergent names. */
+  tutorialDefinition?: { objective?: string; sections: { id: string; title: string; intent?: string }[] };
 }): Promise<{ knowledgeBase: ClusteredKnowledgeBase }> {
   return apiFetch('/api/tutorials/extract-knowledge', {
     method: 'POST',
@@ -459,6 +512,8 @@ export function generateTutorial(
     title: string;
     config: TutorialConfig;
     extracts?: TutorialExtract[];
+    /** Markup highlights with optional author notes — followed word-for-word in generation. */
+    highlights?: MarkupHighlightDirective[];
     prompt?: string;
     /** Author-supplied media for the model to place inline (ref + caption only). */
     media?: { ref: string; kind: 'image' | 'video'; caption?: string }[];
@@ -466,6 +521,10 @@ export function generateTutorial(
     knowledgeBase?: ClusteredKnowledgeBase | null;
     sectionPlans?: TutorialSectionPlan[];
     shapeIntent?: string;
+    /** Define-first spine — preferred over emergent clusters when present. */
+    tutorialDefinition?: { objective: string; sections: { id: string; title: string; intent?: string }[] };
+    /** Hoot co-author user turns — binding across the create pipeline. */
+    authorInstructions?: string[];
   },
   signal?: AbortSignal,
 ): AsyncGenerator<TutorialGenEvent, void, unknown> {
@@ -495,6 +554,7 @@ export interface ConceptCardSourceUnit {
   from?: string;
   page?: number;
   kind?: string;
+  authorNote?: string;
 }
 
 export interface GeneratedConceptCard {
@@ -558,6 +618,7 @@ export function generateConceptCard(
     title: string;
     config: ConceptCardConfig;
     extracts: TutorialExtract[];
+    highlights?: MarkupHighlightDirective[];
     /** Use/Support highlights when extracts are empty. */
     markupUnits?: ConceptCardSourceUnit[];
     /** Full source — only used if nothing was marked up. */
@@ -565,6 +626,7 @@ export function generateConceptCard(
     prompt?: string;
     knowledgeBase?: ClusteredKnowledgeBase | null;
     shapeIntent?: string;
+    authorInstructions?: string[];
   },
   signal?: AbortSignal,
 ): AsyncGenerator<ConceptCardGenEvent, void, unknown> {
@@ -612,9 +674,11 @@ export function generateStructuredObject<T = Record<string, unknown>>(
     title: string;
     config: Record<string, unknown>;
     extracts: TutorialExtract[];
+    highlights?: MarkupHighlightDirective[];
     prompt?: string;
     knowledgeBase?: ClusteredKnowledgeBase | null;
     shapeIntent?: string;
+    authorInstructions?: string[];
   },
   signal?: AbortSignal,
 ): AsyncGenerator<StructuredGenEvent<T>, void, unknown> {
@@ -687,9 +751,11 @@ export function generateQuiz(
     title: string;
     config: QuizConfig;
     extracts: TutorialExtract[];
+    highlights?: MarkupHighlightDirective[];
     prompt?: string;
     knowledgeBase?: ClusteredKnowledgeBase | null;
     shapeIntent?: string;
+    authorInstructions?: string[];
   },
   signal?: AbortSignal,
 ): AsyncGenerator<QuizGenEvent, void, unknown> {
@@ -737,10 +803,12 @@ export function generateFlashcards(
     title: string;
     config: FlashcardConfig;
     extracts: TutorialExtract[];
+    highlights?: MarkupHighlightDirective[];
     prompt?: string;
     images?: { id: string; caption?: string; url: string }[];
     knowledgeBase?: ClusteredKnowledgeBase | null;
     shapeIntent?: string;
+    authorInstructions?: string[];
   },
   signal?: AbortSignal,
 ): AsyncGenerator<FlashcardGenEvent, void, unknown> {
@@ -765,6 +833,7 @@ export function generateVideoScript(
     title: string;
     config: Record<string, unknown>;
     extracts: TutorialExtract[];
+    highlights?: MarkupHighlightDirective[];
     prompt?: string;
     videoUrl?: string;
     videoId?: string;
@@ -772,6 +841,7 @@ export function generateVideoScript(
     transcriptSegments?: YtTranscriptSegment[];
     knowledgeBase?: ClusteredKnowledgeBase | null;
     shapeIntent?: string;
+    authorInstructions?: string[];
   },
   signal?: AbortSignal,
 ): AsyncGenerator<VideoScriptGenEvent, void, unknown> {

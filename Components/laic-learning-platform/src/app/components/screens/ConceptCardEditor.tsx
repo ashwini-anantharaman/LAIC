@@ -92,6 +92,11 @@ function Area({
 
 export function ConceptCardEditor({
   typeId, title, scope, fv, card, initialId, initialStatus, pipelineDraft, onBack, onDone,
+  backLabel = 'Back to pipeline',
+  doneLabel = '✓ Done — go to library',
+  saveDraftLabel = 'Save draft',
+  initialMode = 'preview',
+  applyOnSaveDraft = false,
 }: {
   typeId: string;
   title: string;
@@ -101,14 +106,19 @@ export function ConceptCardEditor({
   initialId?: string;
   initialStatus?: string;
   pipelineDraft?: CreatorPipelineDraft;
-  onBack: () => void;
+  onBack: (content?: ConceptCardContent) => void;
   onDone: () => void;
+  backLabel?: string;
+  doneLabel?: string;
+  saveDraftLabel?: string;
+  initialMode?: Mode;
+  applyOnSaveDraft?: boolean;
 }) {
   const { addObject } = useApp();
   const [docTitle, setDocTitle] = useState(title || 'Concept card');
   const [submitted, setSubmitted] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
-  const [mode, setMode] = useState<Mode>('preview');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [aiOpen, setAiOpen] = useState(false);
   const [local, setLocal] = useState<ConceptCardContent>(() => toContent(card));
   const [objectStatus, setObjectStatus] = useState(initialStatus || 'draft');
@@ -165,7 +175,7 @@ export function ConceptCardEditor({
           "{docTitle}" has been submitted. A reviewer will provide feedback before it can be published.
         </p>
         <button onClick={onDone} className="px-6 py-2.5 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 13, fontWeight: 600 }}>
-          ✓ Done — go to library
+          {doneLabel}
         </button>
       </div>
     );
@@ -177,7 +187,7 @@ export function ConceptCardEditor({
         <div className="flex items-center gap-2 min-w-0">
           <button onClick={() => { save('draft'); onBack?.(content); }} className="flex items-center gap-1 text-sm font-medium shrink-0" style={{ color: '#6B7280' }}>
             <ChevronLeft size={15} />
-            <span className="hidden sm:inline">Back to pipeline</span>
+            <span className="hidden sm:inline">{backLabel}</span>
             <span className="sm:hidden">Back</span>
           </button>
           <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)}
@@ -200,9 +210,16 @@ export function ConceptCardEditor({
             {savedNote ? '✓ Saved' : 'Concept card'}
           </span>
           <div className="flex flex-1 flex-wrap gap-2 sm:justify-end">
-            <button onClick={() => { save('draft'); setSavedNote(true); setTimeout(() => onDone(), 650); }}
+            <button onClick={() => {
+              save('draft');
+              setSavedNote(true);
+              setTimeout(() => {
+                if (applyOnSaveDraft) onBack?.(content);
+                onDone();
+              }, 650);
+            }}
               className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full border" style={{ fontSize: 12.5, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>
-              Save draft
+              {saveDraftLabel}
             </button>
             <button onClick={() => { save('in-review'); setSubmitted(true); }}
               className="flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-full text-white" style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}>

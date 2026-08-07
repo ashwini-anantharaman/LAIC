@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Loader2, AlertTriangle, GitMerge, Split } from 'lucide-react';
 import { buildTutorialKnowledgeBase, errorMessage } from '../../../lib/api';
-import type { ClusteredKnowledgeBase, ConceptCluster, ContentUnit, ContentUnitKind } from '../../../lib/types';
+import type {
+  ClusteredKnowledgeBase,
+  ConceptCluster,
+  ContentUnit,
+  ContentUnitKind,
+  TutorialDefinition,
+} from '../../../lib/types';
+import { UNASSIGNED_SECTION_ID } from '../../../lib/types';
 
 const KINDS: ContentUnitKind[] = ['Definition', 'Key point', 'Example', 'Quote', 'Fact', 'Procedure'];
 
@@ -18,15 +25,24 @@ interface Props {
   syncExtracts: (units: ContentUnit[]) => void;
   /** e.g. "tutorial", "quiz" — steers Extract copy. */
   typeNoun?: string;
-  /** How clusters map into this object (one short sentence). */
+  /** How clusters map into this content (one short sentence). */
   clusterOutcome?: string;
   /** Per-source docs so Pull can seed unmarked sources. */
   markupSources?: { id: string; label: string; offset: number; sentences: { text: string; page: number }[] }[];
+  /**
+   * Define-first tutorials: fixed clusters = these sections + Unassigned.
+   * When set, Pull sorts by sectionId (no emergent names / Shape with AI).
+   */
+  tutorialDefinition?: TutorialDefinition | null;
 }
 
 function unitsOf(kb: ClusteredKnowledgeBase, cluster: ConceptCluster): ContentUnit[] {
   const byId = new Map(kb.units.map((u) => [u.id, u]));
   return cluster.unitIds.map((id) => byId.get(id)).filter(Boolean) as ContentUnit[];
+}
+
+function isUnassigned(c: ConceptCluster): boolean {
+  return c.id === UNASSIGNED_SECTION_ID || c.sectionId === UNASSIGNED_SECTION_ID;
 }
 
 export function TutorialExtractPanel({
@@ -39,20 +55,40 @@ export function TutorialExtractPanel({
   objective,
   topic,
   syncExtracts,
-  typeNoun = 'object',
+  typeNoun = 'content',
   clusterOutcome,
   markupSources = [],
+  tutorialDefinition = null,
 }: Props) {
-  const pullable = (markHighlights || []).filter((h: any) => h.tag === 'Use' || h.tag === 'Support');
+  const defineFirst = !!(
+    tutorialDefinition
+    && Array.isArray(tutorialDefinition.sections)
+    && tutorialDefinition.sections.some((s) => String(s.title || '').trim())
+  );
+  const pullable = (markHighlights || []).filter((h: any) =>
+    h.tag === 'Use' || h.tag === 'Support' || (h.tag === 'Note' && String(h.comment || '').trim()),
+  );
   const hlCount = pullable.length;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [seedNote, setSeedNote] = useState<string | null>(null);
   const [activeClusterId, setActiveClusterId] = useState<string>('');
   const outcome = clusterOutcome
-    || (typeNoun === 'tutorial'
-      ? 'Each cluster becomes one tutorial section.'
-      : `Each cluster groups related material for this ${typeNoun}.`);
+    || (defineFirst
+      ? 'Clusters are your Plan sections. Move Unassigned units into a section before generating.'
+      : typeNoun === 'tutorial'
+        ? 'Each cluster becomes one tutorial section.'
+        : `Each cluster groups related material for this ${typeNoun}.`);
+
+  const unassignedCount = knowledgeBase?.clusters.find(isUnassigned)?.unitIds.length || 0;
+  const emptySectionCount = defineFirst && knowledgeBase
+    ? (tutorialDefinition!.sections || [])
+      .filter((s) => String(s.title || '').trim())
+      .filter((s) => {
+        const cl = knowledgeBase.clusters.find((c) => c.id === s.id || c.sectionId === s.id);
+        return !cl || cl.unitIds.length === 0;
+      }).length
+    : 0;
 
   useEffect(() => {
     const ids = knowledgeBase?.clusters.map((c) => c.id) || [];
@@ -60,7 +96,12 @@ export function TutorialExtractPanel({
       setActiveClusterId('');
       return;
     }
-    if (!ids.includes(activeClusterId)) setActiveClusterId(ids[0]);
+    if (!ids.includes(activeClusterId)) {
+      // Prefer Unassigned when it has stranded units so the nudge is actionable.
+      const un = knowledgeBase?.clusters.find(isUnassigned);
+      if (un && un.unitIds.length > 0) setActiveClusterId(un.id);
+      else setActiveClusterId(ids[0]);
+    }
   }, [knowledgeBase, activeClusterId]);
 
   const applyKb = (kb: ClusteredKnowledgeBase) => {
@@ -101,6 +142,8 @@ export function TutorialExtractPanel({
           sourceId: s.id,
           sourceLabel: s.label,
           comment: '',
+          // Seeds have no Plan assignment → Unassigned (human Moves them).
+          sectionId: undefined,
         });
       }
     }
@@ -130,14 +173,27 @@ export function TutorialExtractPanel({
           sourceLabel: h.sourceLabel
             || markupSources.find((s) => s.id === resolveSourceId(h))?.label
             || undefined,
+          sectionId: h.sectionId || undefined,
         })),
-        shapeIntent: intent || undefined,
-        objective,
-        topic,
-        refineWithLlm: opts?.refineWithLlm !== false,
+        shapeIntent: defineFirst ? undefined : (intent || undefined),
+        objective: defineFirst ? (tutorialDefinition?.objective || objective) : objective,
+        topic: defineFirst ? undefined : topic,
+        refineWithLlm: defineFirst ? false : opts?.refineWithLlm !== false,
+        tutorialDefinition: defineFirst
+          ? {
+              objective: tutorialDefinition!.objective,
+              sections: tutorialDefinition!.sections.map((s) => ({
+                id: s.id,
+                title: s.title,
+                intent: s.intent,
+              })),
+            }
+          : undefined,
       });
       applyKb(kb);
-      if (kb.clusters[0]) setActiveClusterId(kb.clusters[0].id);
+      const un = kb.clusters.find(isUnassigned);
+      if (un && un.unitIds.length > 0) setActiveClusterId(un.id);
+      else if (kb.clusters[0]) setActiveClusterId(kb.clusters[0].id);
     } catch (e) {
       setErr(errorMessage(e, 'Could not build the knowledge base.'));
     } finally {
@@ -154,14 +210,18 @@ export function TutorialExtractPanel({
   const removeUnit = (id: string) => {
     if (!knowledgeBase) return;
     const units = knowledgeBase.units.filter((u) => u.id !== id);
-    const clusters = knowledgeBase.clusters
-      .map((c) => ({ ...c, unitIds: c.unitIds.filter((uid) => uid !== id) }))
-      .filter((c) => c.unitIds.length > 0);
+    let clusters = knowledgeBase.clusters.map((c) => ({
+      ...c,
+      unitIds: c.unitIds.filter((uid) => uid !== id),
+    }));
+    if (!defineFirst) {
+      clusters = clusters.filter((c) => c.unitIds.length > 0);
+    }
     applyKb({ ...knowledgeBase, units, clusters, mergedUnitCount: units.length });
   };
 
   const renameCluster = (id: string, name: string) => {
-    if (!knowledgeBase) return;
+    if (!knowledgeBase || defineFirst) return;
     applyKb({
       ...knowledgeBase,
       clusters: knowledgeBase.clusters.map((c) => (c.id === id ? { ...c, name } : c)),
@@ -170,22 +230,31 @@ export function TutorialExtractPanel({
 
   const moveUnit = (unitId: string, toClusterId: string) => {
     if (!knowledgeBase) return;
-    const clusters = knowledgeBase.clusters.map((c) => ({
+    let clusters = knowledgeBase.clusters.map((c) => ({
       ...c,
       unitIds: c.unitIds.filter((id) => id !== unitId),
     })).map((c) => (
       c.id === toClusterId && !c.unitIds.includes(unitId)
         ? { ...c, unitIds: [...c.unitIds, unitId] }
         : c
-    )).filter((c) => c.unitIds.length > 0);
+    ));
+    if (!defineFirst) {
+      clusters = clusters.filter((c) => c.unitIds.length > 0);
+    }
     const units = knowledgeBase.units.map((u) => (
-      u.id === unitId ? { ...u, clusterId: toClusterId } : u
+      u.id === unitId
+        ? {
+            ...u,
+            clusterId: toClusterId,
+            sectionId: toClusterId === UNASSIGNED_SECTION_ID ? UNASSIGNED_SECTION_ID : toClusterId,
+          }
+        : u
     ));
     applyKb({ ...knowledgeBase, clusters, units });
   };
 
   const mergeClusterInto = (fromId: string, intoId: string) => {
-    if (!knowledgeBase || fromId === intoId) return;
+    if (!knowledgeBase || fromId === intoId || defineFirst) return;
     const from = knowledgeBase.clusters.find((c) => c.id === fromId);
     const into = knowledgeBase.clusters.find((c) => c.id === intoId);
     if (!from || !into) return;
@@ -201,7 +270,7 @@ export function TutorialExtractPanel({
   };
 
   const splitCluster = (clusterId: string) => {
-    if (!knowledgeBase) return;
+    if (!knowledgeBase || defineFirst) return;
     const cluster = knowledgeBase.clusters.find((c) => c.id === clusterId);
     if (!cluster || cluster.unitIds.length < 2) return;
     const mid = Math.ceil(cluster.unitIds.length / 2);
@@ -225,12 +294,20 @@ export function TutorialExtractPanel({
     const id = `u-${Date.now()}`;
     const clusterId = activeClusterId || knowledgeBase?.clusters[0]?.id || `cl-${Date.now()}`;
     const unit: ContentUnit = {
-      id, kind: 'Key point', text: '', from: '', fromHl: false, clusterId,
+      id,
+      kind: 'Key point',
+      text: '',
+      from: '',
+      fromHl: false,
+      clusterId,
+      sectionId: defineFirst
+        ? (clusterId === UNASSIGNED_SECTION_ID ? UNASSIGNED_SECTION_ID : clusterId)
+        : undefined,
     };
     if (!knowledgeBase) {
       applyKb({
         units: [unit],
-        clusters: [{ id: clusterId, name: 'Topic 1', unitIds: [id] }],
+        clusters: [{ id: clusterId, name: defineFirst ? 'Unassigned' : 'Topic 1', unitIds: [id], sectionId: defineFirst ? UNASSIGNED_SECTION_ID : undefined }],
         rawHighlightCount: 0,
         mergedUnitCount: 1,
       });
@@ -253,12 +330,15 @@ export function TutorialExtractPanel({
   };
 
   const mergeNote = knowledgeBase
-    ? `${knowledgeBase.rawHighlightCount} hl → ${knowledgeBase.mergedUnitCount} units · ${knowledgeBase.clusters.length} clusters`
+    ? `${knowledgeBase.rawHighlightCount} hl → ${knowledgeBase.mergedUnitCount} units · ${knowledgeBase.clusters.length} cluster${knowledgeBase.clusters.length === 1 ? '' : 's'}`
     : null;
 
   const activeCluster = knowledgeBase?.clusters.find((c) => c.id === activeClusterId) || knowledgeBase?.clusters[0] || null;
   const activeUnits = knowledgeBase && activeCluster ? unitsOf(knowledgeBase, activeCluster) : [];
   const otherClusters = knowledgeBase?.clusters.filter((c) => c.id !== activeCluster?.id) || [];
+  const moveTargets = defineFirst
+    ? otherClusters.filter((c) => !isUnassigned(c) || activeCluster && isUnassigned(activeCluster))
+    : otherClusters;
 
   return (
     <div className="px-4 py-3 w-full pb-8" style={{ background: '#EEF0F3' }}>
@@ -287,7 +367,7 @@ export function TutorialExtractPanel({
           </button>
           <button
             type="button"
-            onClick={() => runBuild({ refineWithLlm: true })}
+            onClick={() => runBuild({ refineWithLlm: !defineFirst })}
             disabled={hlCount === 0 || busy}
             className="px-3.5 py-1.5 rounded-full transition-all shrink-0"
             style={{
@@ -296,31 +376,77 @@ export function TutorialExtractPanel({
               fontSize: 12.5, fontWeight: 650,
             }}
           >
-            {busy ? <span className="flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" />Building…</span> : '→ Pull & cluster'}
+            {busy
+              ? <span className="flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" />Building…</span>
+              : (defineFirst ? '→ Sort into sections' : '→ Pull & cluster')}
           </button>
         </div>
-        <div className="flex gap-2 mt-2.5">
-          <input
-            value={shapeIntent}
-            onChange={(e) => setShapeIntent(e.target.value)}
-            placeholder="Shape with AI — e.g. one definition + one example per topic"
-            className="flex-1 rounded-xl px-3 py-1.5"
-            style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.1)', background: '#FAFBFC', outline: 'none' }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && hlCount > 0 && !busy) runBuild({ refineWithLlm: true, intent: shapeIntent });
-            }}
-          />
+        {!defineFirst && (
+          <div className="flex gap-2 mt-2.5">
+            <input
+              value={shapeIntent}
+              onChange={(e) => setShapeIntent(e.target.value)}
+              placeholder="Shape with AI — e.g. one definition + one example per topic"
+              className="flex-1 rounded-xl px-3 py-1.5"
+              style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.1)', background: '#FAFBFC', outline: 'none' }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && hlCount > 0 && !busy) runBuild({ refineWithLlm: true, intent: shapeIntent });
+              }}
+            />
+            <button
+              type="button"
+              disabled={hlCount === 0 || busy}
+              onClick={() => runBuild({ refineWithLlm: true, intent: shapeIntent })}
+              className="px-3.5 py-1.5 rounded-xl text-white disabled:opacity-50"
+              style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}
+            >
+              Extract
+            </button>
+          </div>
+        )}
+        {defineFirst && (
+          <p style={{ fontSize: 12, color: '#6B7280', marginTop: 10 }}>
+            Pull sorts highlights into your Plan sections by assignment. Units without a section land in Unassigned — Move them before generating.
+          </p>
+        )}
+      </div>
+
+      {defineFirst && unassignedCount > 0 && (
+        <div
+          className="flex items-start gap-2 mb-3 rounded-2xl p-3"
+          style={{ background: '#FEF3C7', border: '1px solid #FCD34D' }}
+        >
+          <AlertTriangle size={14} style={{ color: '#B45309', marginTop: 2 }} />
+          <div className="min-w-0 flex-1">
+            <p style={{ fontSize: 12.5, fontWeight: 650, color: '#92400E' }}>
+              {unassignedCount} unit{unassignedCount === 1 ? '' : 's'} need a section
+            </p>
+            <p style={{ fontSize: 12, color: '#A16207', marginTop: 2 }}>
+              Open <strong>Unassigned</strong> and Move each unit into a Plan section — they will not be AI-homed.
+            </p>
+          </div>
           <button
             type="button"
-            disabled={hlCount === 0 || busy}
-            onClick={() => runBuild({ refineWithLlm: true, intent: shapeIntent })}
-            className="px-3.5 py-1.5 rounded-xl text-white disabled:opacity-50"
-            style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}
+            onClick={() => setActiveClusterId(UNASSIGNED_SECTION_ID)}
+            className="shrink-0 px-2.5 py-1 rounded-full"
+            style={{ fontSize: 11.5, fontWeight: 650, background: '#F59E0B', color: '#fff' }}
           >
-            Extract
+            Unassigned · {unassignedCount}
           </button>
         </div>
-      </div>
+      )}
+
+      {defineFirst && emptySectionCount > 0 && knowledgeBase && (
+        <div
+          className="flex items-start gap-2 mb-3 rounded-2xl p-3"
+          style={{ background: '#EEF2FF', border: '1px solid #C7D2FE' }}
+        >
+          <AlertTriangle size={14} style={{ color: '#4338CA', marginTop: 2 }} />
+          <p style={{ fontSize: 12.5, color: '#3730A3' }}>
+            {emptySectionCount} section{emptySectionCount === 1 ? '' : 's'} have no source units yet — generation will note missing markup instead of inventing content.
+          </p>
+        </div>
+      )}
 
       {err && (
         <div className="flex items-start gap-2 mb-3 rounded-2xl p-3" style={{ background: '#FEE2E2', border: '1px solid #FCA5A5' }}>
@@ -361,7 +487,11 @@ export function TutorialExtractPanel({
           style={{ background: '#fff', borderColor: 'rgba(0,0,0,0.06)' }}
         >
           <p style={{ fontSize: 13, color: '#9AA3AF' }}>
-            No content units yet. <strong style={{ color: '#6B7280' }}>Pull & cluster</strong> from your highlights, shape with AI, or add one by hand.
+            No content units yet.{' '}
+            <strong style={{ color: '#6B7280' }}>
+              {defineFirst ? 'Sort into sections' : 'Pull & cluster'}
+            </strong>
+            {' '}from your highlights{defineFirst ? '' : ', shape with AI,'} or add one by hand.
           </p>
         </div>
       ) : (
@@ -384,13 +514,14 @@ export function TutorialExtractPanel({
           >
             <div className="px-3 py-2.5" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', letterSpacing: '.06em' }}>
-                CLUSTERS ({knowledgeBase.clusters.length})
+                {defineFirst ? 'SECTIONS' : 'CLUSTERS'} ({knowledgeBase.clusters.length})
               </p>
             </div>
             <div className="max-h-[420px] overflow-y-auto py-1">
               {knowledgeBase.clusters.map((cluster) => {
                 const on = cluster.id === activeCluster?.id;
                 const count = cluster.unitIds.length;
+                const un = isUnassigned(cluster);
                 return (
                   <button
                     key={cluster.id}
@@ -398,18 +529,38 @@ export function TutorialExtractPanel({
                     onClick={() => setActiveClusterId(cluster.id)}
                     className="w-full text-left px-3 py-2.5 transition-colors"
                     style={{
-                      background: on ? 'rgba(11,15,26,0.05)' : 'transparent',
-                      borderLeft: on ? '2px solid #0B0F1A' : '2px solid transparent',
+                      background: on
+                        ? (un ? 'rgba(245,158,11,0.12)' : 'rgba(11,15,26,0.05)')
+                        : 'transparent',
+                      borderLeft: on
+                        ? `2px solid ${un ? '#F59E0B' : '#0B0F1A'}`
+                        : '2px solid transparent',
                     }}
                   >
-                    <p
-                      className="truncate"
-                      style={{ fontSize: 13, fontWeight: on ? 650 : 500, color: on ? '#0B1220' : '#374151' }}
-                    >
-                      {cluster.name || 'Untitled'}
-                    </p>
-                    <p style={{ fontSize: 11, color: '#9AA3AF', marginTop: 2 }}>
-                      {count} unit{count !== 1 ? 's' : ''}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p
+                        className="truncate flex-1"
+                        style={{
+                          fontSize: 13,
+                          fontWeight: on ? 650 : 500,
+                          color: un ? '#B45309' : (on ? '#0B1220' : '#374151'),
+                        }}
+                      >
+                        {cluster.name || 'Untitled'}
+                      </p>
+                      {un && count > 0 && (
+                        <span
+                          className="shrink-0 px-1.5 py-0.5 rounded-full"
+                          style={{ fontSize: 10, fontWeight: 700, background: '#F59E0B', color: '#fff' }}
+                        >
+                          {count}
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 11, color: un && count > 0 ? '#B45309' : '#9AA3AF', marginTop: 2 }}>
+                      {un && count > 0
+                        ? `${count} need a section`
+                        : `${count} unit${count !== 1 ? 's' : ''}${defineFirst && count === 0 && !un ? ' — empty' : ''}`}
                     </p>
                   </button>
                 );
@@ -417,7 +568,7 @@ export function TutorialExtractPanel({
             </div>
             <p className="px-3 py-2 flex items-center gap-1.5" style={{ fontSize: 11, color: '#9AA3AF', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
               <GitMerge size={11} />
-              Template sections draw from these
+              {defineFirst ? 'Fixed to your Plan outline' : 'Template sections draw from these'}
             </p>
           </div>
 
@@ -430,18 +581,28 @@ export function TutorialExtractPanel({
               <>
                 <div
                   className="flex items-center gap-2 px-3 py-2.5 flex-wrap"
-                  style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', background: '#FAFBFC' }}
+                  style={{
+                    borderBottom: '1px solid rgba(0,0,0,0.06)',
+                    background: isUnassigned(activeCluster) ? 'rgba(254,243,199,0.55)' : '#FAFBFC',
+                  }}
                 >
-                  <input
-                    value={activeCluster.name}
-                    onChange={(e) => renameCluster(activeCluster.id, e.target.value)}
-                    className="rounded-lg px-2.5 py-1 font-semibold flex-1 min-w-[120px]"
-                    style={{ fontSize: 13.5, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', outline: 'none', color: '#0B1220' }}
-                  />
+                  {defineFirst ? (
+                    <p className="flex-1 min-w-[120px]" style={{ fontSize: 13.5, fontWeight: 650, color: isUnassigned(activeCluster) ? '#92400E' : '#0B1220' }}>
+                      {activeCluster.name}
+                      {isUnassigned(activeCluster) ? ' (holding)' : ''}
+                    </p>
+                  ) : (
+                    <input
+                      value={activeCluster.name}
+                      onChange={(e) => renameCluster(activeCluster.id, e.target.value)}
+                      className="rounded-lg px-2.5 py-1 font-semibold flex-1 min-w-[120px]"
+                      style={{ fontSize: 13.5, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', outline: 'none', color: '#0B1220' }}
+                    />
+                  )}
                   <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>
                     {activeUnits.length} unit{activeUnits.length !== 1 ? 's' : ''}
                   </span>
-                  {otherClusters.length > 0 && (
+                  {!defineFirst && otherClusters.length > 0 && (
                     <select
                       defaultValue=""
                       onChange={(e) => {
@@ -455,22 +616,28 @@ export function TutorialExtractPanel({
                       {otherClusters.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                     </select>
                   )}
-                  <button
-                    type="button"
-                    title="Split cluster"
-                    disabled={activeUnits.length < 2}
-                    onClick={() => splitCluster(activeCluster.id)}
-                    className="p-1.5 rounded-lg disabled:opacity-40"
-                    style={{ border: '1px solid rgba(0,0,0,0.1)' }}
-                  >
-                    <Split size={13} style={{ color: '#6B7280' }} />
-                  </button>
+                  {!defineFirst && (
+                    <button
+                      type="button"
+                      title="Split cluster"
+                      disabled={activeUnits.length < 2}
+                      onClick={() => splitCluster(activeCluster.id)}
+                      className="p-1.5 rounded-lg disabled:opacity-40"
+                      style={{ border: '1px solid rgba(0,0,0,0.1)' }}
+                    >
+                      <Split size={13} style={{ color: '#6B7280' }} />
+                    </button>
+                  )}
                 </div>
 
                 <div className="divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
                   {activeUnits.length === 0 && (
                     <p className="px-4 py-8 text-center" style={{ fontSize: 13, color: '#9AA3AF' }}>
-                      No units in this cluster.
+                      {isUnassigned(activeCluster)
+                        ? 'No unassigned units — every highlight has a section.'
+                        : defineFirst
+                          ? 'No units in this section yet. Mark passages for it in Mark up, or Move units here.'
+                          : 'No units in this cluster.'}
                     </p>
                   )}
                   {activeUnits.map((u, i) => (
@@ -497,7 +664,7 @@ export function TutorialExtractPanel({
                           className="rounded-md px-1.5 py-0.5 flex-1 min-w-[100px]"
                           style={{ fontSize: 11.5, border: '1px solid rgba(0,0,0,0.08)', background: '#FAFBFC', outline: 'none' }}
                         />
-                        {otherClusters.length > 0 && (
+                        {moveTargets.length > 0 && (
                           <select
                             defaultValue=""
                             onChange={(e) => {
@@ -508,7 +675,7 @@ export function TutorialExtractPanel({
                             style={{ fontSize: 11, border: '1px solid rgba(0,0,0,0.1)', background: '#fff' }}
                           >
                             <option value="">Move…</option>
-                            {otherClusters.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                            {moveTargets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                           </select>
                         )}
                         <button type="button" onClick={() => removeUnit(u.id)} className="p-1 ml-auto">
@@ -519,9 +686,24 @@ export function TutorialExtractPanel({
                         value={u.text}
                         onChange={(e) => updateUnit(u.id, { text: e.target.value })}
                         rows={2}
-                        placeholder="Passage or note…"
+                        placeholder="Passage…"
                         className="w-full rounded-lg px-2 py-1.5 resize-y"
                         style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', background: '#fff', outline: 'none', lineHeight: 1.45 }}
+                      />
+                      <textarea
+                        value={u.authorNote || ''}
+                        onChange={(e) => updateUnit(u.id, { authorNote: e.target.value })}
+                        rows={2}
+                        placeholder="Author directive for generation (followed word-for-word)…"
+                        className="w-full rounded-lg px-2 py-1.5 resize-y mt-1.5"
+                        style={{
+                          fontSize: 12,
+                          border: u.authorNote ? '1px solid rgba(124,58,237,0.35)' : '1px solid rgba(0,0,0,0.08)',
+                          background: u.authorNote ? 'rgba(243,232,255,0.45)' : '#FAFBFC',
+                          outline: 'none',
+                          lineHeight: 1.4,
+                          color: '#4C1D95',
+                        }}
                       />
                     </div>
                   ))}

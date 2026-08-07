@@ -45,6 +45,10 @@ function toRow(obj: LearningObject) {
     blocks: obj.blocks,
     tags: obj.tags,
     source_ids: obj.sourceIds,
+    collection_ids: obj.collectionIds?.length
+      ? obj.collectionIds
+      : (obj.collectionId ? [obj.collectionId] : []),
+    collection_id: obj.collectionIds?.[0] ?? obj.collectionId ?? null,
     pipeline_draft: obj.pipelineDraft ?? null,
     created_at: obj.createdAt,
     updated_at: obj.updatedAt,
@@ -68,6 +72,10 @@ function fromRow(row: any): LearningObject {
     updatedAt: (row.updated_at ?? '').slice(0, 10),
     tags: row.tags ?? [],
     sourceIds: row.source_ids ?? [],
+    collectionIds: Array.isArray(row.collection_ids) && row.collection_ids.length
+      ? row.collection_ids
+      : (row.collection_id ? [row.collection_id] : undefined),
+    collectionId: row.collection_id ?? undefined,
     pipelineDraft: row.pipeline_draft ?? undefined,
   };
 }

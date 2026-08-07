@@ -419,7 +419,7 @@ export function VideoScriptPlayer({
             }
             const d = e.target.getDuration?.();
             if (d) setDuration(d);
-            // Stay paused until the learner hits play — opening the object must not start audio.
+            // Stay paused until the learner hits play — opening the content must not start audio.
             try { e.target.pauseVideo?.(); } catch { /* noop */ }
             setPlaying(false);
             setReady(true);

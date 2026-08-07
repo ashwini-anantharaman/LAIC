@@ -32,6 +32,7 @@ import { MySubmissions } from './screens/MySubmissions';
 import { VersionsPublishing } from './screens/VersionsPublishing';
 import { AuthorAnalytics } from './screens/AuthorAnalytics';
 import { ObjectCreator } from './screens/ObjectCreator';
+import { ObjectCreatorTutorialV2 } from './screens/tutorialV2/ObjectCreatorTutorialV2';
 import { CourseWizard } from './screens/CourseWizard';
 import { ObjectReviews } from './screens/ObjectReviews';
 import { CourseReviews } from './screens/CourseReviews';
@@ -44,7 +45,7 @@ import { TestContainer } from './screens/TestContainer';
 import { CoachScreen } from './screens/CoachScreen';
 
 function ScreenRouter() {
-  const { currentScreen, readerObjectId } = useApp();
+  const { currentScreen, readerObjectId, creatorObjectType } = useApp();
 
   if (readerObjectId) return <LearnerReader objectId={readerObjectId} />;
 
@@ -61,7 +62,10 @@ function ScreenRouter() {
     case 'cd-submissions': return <MySubmissions />;
     case 'cd-versions': return <VersionsPublishing />;
     case 'cd-analytics': return <AuthorAnalytics />;
-    case 'cd-creator':  return <ObjectCreator />;
+    case 'cd-creator':
+      return creatorObjectType === 'tutorial-v2'
+        ? <ObjectCreatorTutorialV2 />
+        : <ObjectCreator />;
     case 'cd-wizard':   return <CourseWizard />;
     case 'or-reviews':  return <ObjectReviews />;
     case 'cr-reviews':  return <CourseReviews />;
@@ -87,11 +91,19 @@ export function Layout() {
   const [navOpen, setNavOpen] = useState(false);
 
   // Re-read after boot in case launch params land after first paint.
+  // Standalone demo/localhost never stays in the Nexus mobile shell.
   useEffect(() => {
+    if (!nexusMode) {
+      try { localStorage.removeItem('laic_nexus_mobile'); } catch { /* ignore */ }
+      setMobileLaunch(false);
+      return;
+    }
     setMobileLaunch(isNexusMobileShell());
   }, [nexusMode]);
 
-  const mobile = mobileLaunch || narrow;
+  // Standalone localhost/demo: always use the full desktop shell + persistent sidebar.
+  // Mobile drawer only when launched from the Nexus mobile org app.
+  const mobile = nexusMode ? (mobileLaunch || narrow) : false;
 
   useEffect(() => {
     if (!mobile) setNavOpen(false);

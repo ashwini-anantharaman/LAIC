@@ -10,6 +10,7 @@ import {
   listTutorialTemplates,
 } from '../../../lib/tutorialTemplates';
 import { TutorialTemplateEditor } from './TutorialTemplateEditor';
+import { useConfirm } from '../ConfirmDialog';
 
 interface Props {
   value?: string;
@@ -19,6 +20,7 @@ interface Props {
 export function TutorialTemplatePicker({ value, onChange }: Props) {
   const [templates, setTemplates] = useState(() => listTutorialTemplates());
   const [editing, setEditing] = useState<TutorialTemplate | null | 'new'>(null);
+  const confirm = useConfirm();
   const selected = value || templates[0]?.id;
 
   const refresh = () => setTemplates(listTutorialTemplates());
@@ -29,10 +31,21 @@ export function TutorialTemplatePicker({ value, onChange }: Props) {
     setEditing(null);
   };
 
-  const handleDeleteOrReset = (id: string) => {
+  const handleDeleteOrReset = async (id: string) => {
+    const t = templates.find((x) => x.id === id);
+    const overridden = isBuiltinOverride(id);
+    const ok = await confirm({
+      title: overridden ? 'Are you sure you want to reset?' : 'Are you sure you want to delete?',
+      description: overridden
+        ? `Reset “${t?.name || 'this template'}” to the recommended default?`
+        : `Delete template “${t?.name || 'this template'}”? This can’t be undone.`,
+      confirmLabel: overridden ? 'Reset' : 'Delete',
+      destructive: !overridden,
+    });
+    if (!ok) return;
     deleteCustomTutorialTemplate(id);
     refresh();
-    const next = listTutorialTemplates().find((t) => t.id === id)
+    const next = listTutorialTemplates().find((x) => x.id === id)
       || listTutorialTemplates()[0];
     if (next) onChange(next);
   };
@@ -58,7 +71,7 @@ export function TutorialTemplatePicker({ value, onChange }: Props) {
         )}
       </div>
       <p style={{ fontSize: 12, color: '#9AA3AF', marginBottom: 10 }}>
-        Shape of each section plus locked structure (sections, words, checks). Use Freeform when authors should choose those themselves.
+        Shape of each section plus locked structure (sections, depth, checks). Length follows curated units + depth — no word target. Use Freeform when authors should choose structure themselves.
       </p>
 
       {editing !== null && (
@@ -77,10 +90,10 @@ export function TutorialTemplatePicker({ value, onChange }: Props) {
           const pureCustom = !t.builtin && !isBuiltinTemplateId(t.id);
           const locked = isTutorialStructureLocked(t);
           const secs = t.knobDefaults.secs ?? 0;
-          const words = t.knobDefaults.words ?? 0;
+          const dpth = t.knobDefaults.dpth || 'Standard';
           const structureBit = locked
-            ? `${secs} sections · ${words > 0 ? `~${words} words` : 'auto length'}`
-            : 'Author chooses structure';
+            ? `${secs} sections · ${dpth} depth · some knobs locked`
+            : 'Author chooses structure (locks opt-in)';
           return (
             <div
               key={t.id}

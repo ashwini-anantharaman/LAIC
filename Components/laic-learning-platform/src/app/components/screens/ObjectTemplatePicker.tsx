@@ -8,7 +8,7 @@ import {
 import { ObjectTemplateEditor } from './ObjectTemplateEditor';
 
 interface Props {
-  objectType: Exclude<TemplateObjectType, 'tutorial'>;
+  objectType: Exclude<TemplateObjectType, 'tutorial' | 'tutorial-v2'>;
   value?: string;
   onChange: (template: ObjectTemplate) => void;
 }
@@ -41,7 +41,7 @@ export function ObjectTemplatePicker({ objectType, value, onChange }: Props) {
         )}
       </div>
       <p style={{ fontSize: 12, color: '#9AA3AF', marginBottom: 10 }}>
-        Recommended Define defaults for this object. Manage all templates in Template Library.
+        Recommended Define defaults for this content. Manage all templates in Template Library.
       </p>
 
       {editing !== null && (

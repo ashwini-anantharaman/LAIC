@@ -7,7 +7,7 @@ import { backToNexus, hasReturnUrl } from '../../lib/nexus';
 
 const ROLE_LABELS: Record<Role, string> = {
   'content-developer': 'Content Dev',
-  'object-reviewer': 'Obj Reviewer',
+  'object-reviewer': 'Content Reviewer',
   'course-reviewer': 'Course Reviewer',
   'administrator': 'Administrator',
   'coach': 'Coach',
@@ -27,15 +27,15 @@ const PROGRAMS: { id: Program; label: string }[] = [
 
 const SCREEN_TITLES: Record<string, { title: string; sub: string }> = {
   'cd-home': { title: 'Home', sub: 'Content Developer workspace' },
-  'cd-create': { title: 'Create', sub: 'New learning object' },
+  'cd-create': { title: 'Create', sub: 'New content' },
   'cd-templates': { title: 'Template Library', sub: 'Recommended & custom templates' },
   'cd-sources': { title: 'Sources', sub: 'Source library' },
-  'cd-library': { title: 'Object Library', sub: 'Bridge program' },
+  'cd-library': { title: 'Content Library', sub: 'Bridge program' },
   'cd-test-container': { title: 'Test container', sub: 'Embed host preview' },
   'cd-submissions': { title: 'My Submissions', sub: 'Review history' },
   'cd-versions': { title: 'Versions & Publishing', sub: 'Version timeline' },
   'cd-analytics': { title: 'Author Analytics', sub: 'Usage & performance' },
-  'or-reviews': { title: 'Object Reviews', sub: 'Review queue' },
+  'or-reviews': { title: 'Content Reviews', sub: 'Review queue' },
   'cr-reviews': { title: 'Course Reviews', sub: 'Review queue' },
   'admin-overview': { title: 'Program Overview', sub: 'Bridge configuration' },
   'admin-people': { title: 'People', sub: 'Invite and manage people' },

@@ -16,50 +16,89 @@ interface NavItem {
   icon: React.ReactNode;
 }
 
+/** Soft pastel chip per nav id — lighter solid bg + softer matching icon ink. */
+const ICON_PASTEL: Record<string, { bg: string; fg: string }> = {
+  'cd-home': { bg: '#FFF1F2', fg: '#FB7185' },       // rose
+  'cd-create': { bg: '#FFF7ED', fg: '#FB923C' },     // peach
+  'cd-templates': { bg: '#FFFBEB', fg: '#FBBF24' },  // amber
+  'cd-sources': { bg: '#ECFDF5', fg: '#34D399' },    // mint
+  'cd-library': { bg: '#EFF6FF', fg: '#60A5FA' },    // sky
+  'cd-test-container': { bg: '#EEF2FF', fg: '#818CF8' }, // indigo
+  'cd-submissions': { bg: '#FAF5FF', fg: '#C084FC' }, // lilac
+  'cd-versions': { bg: '#FDF2F8', fg: '#F472B6' },   // pink
+  'cd-analytics': { bg: '#F0FDFA', fg: '#2DD4BF' },  // teal
+  'or-reviews': { bg: '#FFFBEB', fg: '#FBBF24' },
+  'cr-reviews': { bg: '#FFF7ED', fg: '#FB923C' },
+  'admin-overview': { bg: '#EEF2FF', fg: '#818CF8' },
+  'admin-people': { bg: '#EFF6FF', fg: '#60A5FA' },
+  'admin-courses': { bg: '#ECFDF5', fg: '#34D399' },
+  'admin-publishing': { bg: '#FDF2F8', fg: '#F472B6' },
+  'admin-access-catalogue': { bg: '#FAF5FF', fg: '#C084FC' },
+  'coach': { bg: '#F0FDFA', fg: '#2DD4BF' },
+  'student-dashboard': { bg: '#FFF1F2', fg: '#FB7185' },
+  'student-courses': { bg: '#EFF6FF', fg: '#60A5FA' },
+};
+
+const FALLBACK_PASTEL = { bg: '#F1F5F9', fg: '#64748B' };
+
+function pastelFor(id: string) {
+  return ICON_PASTEL[id] || FALLBACK_PASTEL;
+}
+
 /** Icon per nav-item id, so the areas-driven nav (Nexus mode) can render. */
 const ICON_BY_ID: Record<string, React.ReactNode> = {
-  'cd-home': <Home size={16} />, 'cd-create': <PlusSquare size={16} />, 'cd-templates': <LayoutTemplate size={16} />, 'cd-sources': <Database size={16} />,
-  'cd-library': <BookOpen size={16} />, 'cd-test-container': <MonitorPlay size={16} />, 'cd-submissions': <SendHorizontal size={16} />,
-  'cd-versions': <GitBranch size={16} />, 'cd-analytics': <BarChart2 size={16} />,
-  'or-reviews': <ClipboardCheck size={16} />, 'cr-reviews': <ClipboardCheck size={16} />,
-  'admin-overview': <Shield size={16} />, 'admin-people': <Users size={16} />,
-  'admin-courses': <BookMarked size={16} />, 'admin-publishing': <GitBranch size={16} />,
-  'admin-access-catalogue': <ListTree size={16} />,
-  'coach': <UserCheck size={16} />,
-  'student-dashboard': <Home size={16} />, 'student-courses': <GraduationCap size={16} />,
+  'cd-home': <Home size={15} strokeWidth={2.25} />,
+  'cd-create': <PlusSquare size={15} strokeWidth={2.25} />,
+  'cd-templates': <LayoutTemplate size={15} strokeWidth={2.25} />,
+  'cd-sources': <Database size={15} strokeWidth={2.25} />,
+  'cd-library': <BookOpen size={15} strokeWidth={2.25} />,
+  'cd-test-container': <MonitorPlay size={15} strokeWidth={2.25} />,
+  'cd-submissions': <SendHorizontal size={15} strokeWidth={2.25} />,
+  'cd-versions': <GitBranch size={15} strokeWidth={2.25} />,
+  'cd-analytics': <BarChart2 size={15} strokeWidth={2.25} />,
+  'or-reviews': <ClipboardCheck size={15} strokeWidth={2.25} />,
+  'cr-reviews': <ClipboardCheck size={15} strokeWidth={2.25} />,
+  'admin-overview': <Shield size={15} strokeWidth={2.25} />,
+  'admin-people': <Users size={15} strokeWidth={2.25} />,
+  'admin-courses': <BookMarked size={15} strokeWidth={2.25} />,
+  'admin-publishing': <GitBranch size={15} strokeWidth={2.25} />,
+  'admin-access-catalogue': <ListTree size={15} strokeWidth={2.25} />,
+  'coach': <UserCheck size={15} strokeWidth={2.25} />,
+  'student-dashboard': <Home size={15} strokeWidth={2.25} />,
+  'student-courses': <GraduationCap size={15} strokeWidth={2.25} />,
 };
 
 const NAV: Record<Role, NavItem[]> = {
   'content-developer': [
-    { id: 'cd-home', label: 'Home', icon: <Home size={16} /> },
-    { id: 'cd-create', label: 'Create', icon: <PlusSquare size={16} /> },
-    { id: 'cd-templates', label: 'Template Library', icon: <LayoutTemplate size={16} /> },
-    { id: 'cd-sources', label: 'Sources', icon: <Database size={16} /> },
-    { id: 'cd-library', label: 'Object Library', icon: <BookOpen size={16} /> },
-    { id: 'cd-test-container', label: 'Test container', icon: <MonitorPlay size={16} /> },
-    { id: 'cd-submissions', label: 'My Submissions', icon: <SendHorizontal size={16} /> },
-    { id: 'cd-versions', label: 'Versions & Publishing', icon: <GitBranch size={16} /> },
-    { id: 'cd-analytics', label: 'Author Analytics', icon: <BarChart2 size={16} /> },
+    { id: 'cd-home', label: 'Home', icon: ICON_BY_ID['cd-home'] },
+    { id: 'cd-create', label: 'Create', icon: ICON_BY_ID['cd-create'] },
+    { id: 'cd-templates', label: 'Template Library', icon: ICON_BY_ID['cd-templates'] },
+    { id: 'cd-sources', label: 'Sources', icon: ICON_BY_ID['cd-sources'] },
+    { id: 'cd-library', label: 'Content Library', icon: ICON_BY_ID['cd-library'] },
+    { id: 'cd-test-container', label: 'Test container', icon: ICON_BY_ID['cd-test-container'] },
+    { id: 'cd-submissions', label: 'My Submissions', icon: ICON_BY_ID['cd-submissions'] },
+    { id: 'cd-versions', label: 'Versions & Publishing', icon: ICON_BY_ID['cd-versions'] },
+    { id: 'cd-analytics', label: 'Author Analytics', icon: ICON_BY_ID['cd-analytics'] },
   ],
   'object-reviewer': [
-    { id: 'or-reviews', label: 'Object Reviews', icon: <ClipboardCheck size={16} /> },
+    { id: 'or-reviews', label: 'Content Reviews', icon: ICON_BY_ID['or-reviews'] },
   ],
   'course-reviewer': [
-    { id: 'cr-reviews', label: 'Course Reviews', icon: <ClipboardCheck size={16} /> },
+    { id: 'cr-reviews', label: 'Course Reviews', icon: ICON_BY_ID['cr-reviews'] },
   ],
   'administrator': [
-    { id: 'admin-overview', label: 'Program Overview', icon: <Shield size={16} /> },
-    { id: 'admin-people', label: 'People', icon: <Users size={16} /> },
-    { id: 'admin-courses', label: 'Courses & Assignments', icon: <BookMarked size={16} /> },
-    { id: 'admin-publishing', label: 'Publishing & Governance', icon: <GitBranch size={16} /> },
-    { id: 'admin-access-catalogue', label: 'Access Catalogue', icon: <ListTree size={16} /> },
+    { id: 'admin-overview', label: 'Program Overview', icon: ICON_BY_ID['admin-overview'] },
+    { id: 'admin-people', label: 'People', icon: ICON_BY_ID['admin-people'] },
+    { id: 'admin-courses', label: 'Courses & Assignments', icon: ICON_BY_ID['admin-courses'] },
+    { id: 'admin-publishing', label: 'Publishing & Governance', icon: ICON_BY_ID['admin-publishing'] },
+    { id: 'admin-access-catalogue', label: 'Access Catalogue', icon: ICON_BY_ID['admin-access-catalogue'] },
   ],
   'coach': [
-    { id: 'coach', label: 'Coach', icon: <UserCheck size={16} /> },
+    { id: 'coach', label: 'Coach', icon: ICON_BY_ID['coach'] },
   ],
   'student': [
-    { id: 'student-dashboard', label: 'Today', icon: <Home size={16} /> },
-    { id: 'student-courses', label: 'My Courses', icon: <GraduationCap size={16} /> },
+    { id: 'student-dashboard', label: 'Today', icon: ICON_BY_ID['student-dashboard'] },
+    { id: 'student-courses', label: 'My Courses', icon: ICON_BY_ID['student-courses'] },
   ],
 };
 
@@ -120,6 +159,7 @@ function NavBody({ onNavigate }: { onNavigate?: () => void }) {
       <nav className="flex-1 px-3 py-2 space-y-0.5 overflow-y-auto">
         {items.map(item => {
           const active = currentScreen === item.id;
+          const pastel = pastelFor(item.id);
           return (
             <button
               key={item.id}
@@ -135,7 +175,17 @@ function NavBody({ onNavigate }: { onNavigate?: () => void }) {
               }`}
               style={{ fontSize: 13.5, fontWeight: active ? 600 : 450 }}
             >
-              <span className={active ? 'text-[#0B1220]' : 'text-[#9AA3AF]'}>{item.icon}</span>
+              <span
+                className="flex items-center justify-center shrink-0 rounded-lg"
+                style={{
+                  width: 28,
+                  height: 28,
+                  background: pastel.bg,
+                  color: pastel.fg,
+                }}
+              >
+                {item.icon}
+              </span>
               {item.label}
             </button>
           );
@@ -213,7 +263,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
   return (
     <aside
-      className="hidden md:flex flex-col w-56 min-h-screen shrink-0"
+      className="flex flex-col w-56 min-h-screen shrink-0"
       style={{
         ...panelStyle,
         background: 'rgba(255,255,255,0.55)',
