@@ -1,5 +1,5 @@
 /**
- * Empty host-style container: paste an activity object URL and load it in an iframe.
+ * Empty host-style container: paste a content URL and load it in an iframe.
  */
 import React, { useState } from 'react';
 import { ExternalLink, MonitorPlay } from 'lucide-react';
@@ -14,7 +14,7 @@ export function TestContainer() {
     setError(null);
     const raw = url.trim();
     if (!raw) {
-      setError('Paste an activity object URL first.');
+      setError('Paste a content URL first.');
       setLoadedUrl(null);
       return;
     }
@@ -52,7 +52,7 @@ export function TestContainer() {
           <div>
             <h1 style={{ fontSize: 16, fontWeight: 750, color: '#0B1220' }}>Test container</h1>
             <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4, maxWidth: 560 }}>
-              Empty sample host. Paste an activity object URL (from Activity objects → Copy link) to open just that object in a frame — as an external web server would.
+              Empty sample host. Paste a content URL (from Content Library → Copy link) to open that content in a frame — tutorials show all pages in one scroll.
             </p>
           </div>
         </div>
@@ -107,7 +107,7 @@ export function TestContainer() {
       >
         {loadedUrl ? (
           <iframe
-            title="Activity object container"
+            title="Content container"
             src={loadedUrl}
             className="w-full flex-1 min-h-[420px] border-0"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
@@ -116,7 +116,7 @@ export function TestContainer() {
           <div className="flex-1 flex flex-col items-center justify-center px-6 text-center py-16">
             <p style={{ fontSize: 14, fontWeight: 600, color: '#9AA3AF' }}>Container is empty</p>
             <p style={{ fontSize: 12.5, color: '#C4CBD4', marginTop: 6, maxWidth: 320 }}>
-              Load an object URL to preview the embed here.
+              Load content URL to preview the embed here.
             </p>
           </div>
         )}

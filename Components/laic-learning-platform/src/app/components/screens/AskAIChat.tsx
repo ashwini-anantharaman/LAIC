@@ -6,7 +6,7 @@ import type { Block, LearningObject } from '../../../lib/types';
 
 type ChatMsg = { id: string; role: 'user' | 'assistant'; content: string; at: number };
 
-/** Flatten a learning object's blocks into plain text for Ask AI grounding. */
+/** Flatten a content's blocks into plain text for Ask AI grounding. */
 export function objectToContext(obj: LearningObject): string {
   const lines: string[] = [
     `Title: ${obj.title}`,
@@ -184,7 +184,7 @@ function HootAvatar({ size, thinking, ring }: { size: number; thinking?: boolean
 }
 
 /**
- * Floating Ask AI chat popup — answers are grounded only in this object's content.
+ * Floating Ask AI chat popup — answers are grounded only in this content's content.
  * LAIC UI (frosted whites, #0B0F1A / #059669 accents) + Hoot (owl) avatar.
  */
 export function AskAIChat({
@@ -202,7 +202,7 @@ export function AskAIChat({
     {
       id: 'welcome',
       role: 'assistant',
-      content: `Hi — I'm Hoot. Ask me anything about "${obj.title}". I'll only use what's in this learning object.`,
+      content: `Hi — I'm Hoot. Ask me anything about "${obj.title}". I'll only use what's in this content.`,
       at: Date.now(),
     },
   ]);

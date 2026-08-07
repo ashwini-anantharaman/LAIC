@@ -111,7 +111,7 @@ export function ObjectReviews() {
       {/* Queue */}
       <div className={`space-y-3 ${selected ? 'w-64 shrink-0' : 'flex-1'}`}>
         <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 12 }}>
-          {queue.length} object{queue.length !== 1 ? 's' : ''} in queue
+          {queue.length} item{queue.length !== 1 ? 's' : ''} in queue
         </p>
         {queue.map((review, i) => (
           <motion.button
@@ -145,7 +145,7 @@ export function ObjectReviews() {
           <div className="flex flex-col items-center py-12 text-center">
             <Check size={28} className="text-[#C4CBD4] mb-3" />
             <p style={{ fontSize: 14, fontWeight: 600, color: '#0B1220', marginBottom: 3 }}>All caught up</p>
-            <p style={{ fontSize: 13, color: '#9AA3AF' }}>No objects waiting for review.</p>
+            <p style={{ fontSize: 13, color: '#9AA3AF' }}>No content waiting for review.</p>
           </div>
         )}
       </div>

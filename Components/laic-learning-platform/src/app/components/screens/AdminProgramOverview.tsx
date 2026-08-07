@@ -48,7 +48,7 @@ export function AdminProgramOverview() {
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}
         className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Objects',  value: objects.length,  icon: '📖', sub: `${statusCounts['published'] || 0} published` },
+          { label: 'Content',  value: objects.length,  icon: '📖', sub: `${statusCounts['published'] || 0} published` },
           { label: 'Courses',  value: courses.length,  icon: '🎓', sub: `${courses.filter(c => c.status === 'published').length} live` },
           { label: 'People',   value: people.length,   icon: '👥', sub: 'across all roles' },
           { label: 'Teams',    value: teams.length || 3, icon: '🏷️', sub: 'in this program' },
@@ -65,12 +65,12 @@ export function AdminProgramOverview() {
         ))}
       </motion.div>
 
-      {/* Object pipeline */}
+      {/* Content pipeline */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
         className="p-5 rounded-[24px]" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
         <div className="flex items-center gap-2 mb-4">
           <GitBranch size={14} style={{ color: '#6B7280' }} />
-          <p style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Object pipeline</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Content pipeline</p>
         </div>
         <div className="space-y-3">
           {Object.entries(STATUS_COLORS).map(([status, cfg]) => {

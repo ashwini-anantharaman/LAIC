@@ -8,6 +8,9 @@
     "scheme": "bridgecoachapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
     "ios": {
       "supportsTablet": true
     },
@@ -44,6 +47,16 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "01c9a70b-2d9b-42f2-b849-312018d7508e"
+      }
+    },
+    "owner": "life_in_ai_center",
+    "updates": {
+      "url": "https://u.expo.dev/01c9a70b-2d9b-42f2-b849-312018d7508e"
     }
   }
 }

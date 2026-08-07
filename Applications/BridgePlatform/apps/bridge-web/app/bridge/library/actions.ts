@@ -38,9 +38,13 @@ export async function createDealAction(formData: FormData): Promise<void> {
   await requireFeature(context, "library.create");
   const kind = String(formData.get("kind")) === "deal" ? "deal" : "board";
   const mobile = formData.get("mobile") === "1";
+  // The coach app's "Create Assignment" flow: authoring is step one of two,
+  // so the save lands on the assign picker for the new entry instead of the
+  // library shelf. Mobile-only — desktop has its own assignment surfaces.
+  const flowAssign = mobile && formData.get("flow") === "assign";
   const failNew: (message: string) => never = (message) =>
     redirect(
-      `${mobile ? "/m/library/new" : "/bridge/library/new"}?kind=${kind}&error=${encodeURIComponent(message)}`,
+      `${mobile ? "/m/library/new" : "/bridge/library/new"}?kind=${kind}${flowAssign ? "&flow=assign" : ""}&error=${encodeURIComponent(message)}`,
     );
 
   const hands = {} as Record<Seat, Card[]>;
@@ -87,7 +91,13 @@ export async function createDealAction(formData: FormData): Promise<void> {
   await audit(context, "profile.create", "kb_library", entry.entryId, { authored: true });
   revalidatePath("/bridge/library");
   revalidatePath("/m/library");
-  redirect(mobile ? `/m/library?kind=${kind}` : `/bridge/library/${entry.entryId}`);
+  redirect(
+    flowAssign
+      ? `/m/assign?entry=${entry.entryId}`
+      : mobile
+        ? `/m/library?kind=${kind}`
+        : `/bridge/library/${entry.entryId}`,
+  );
 }
 
 /** The board editor's save-changes: re-validated hands/facts onto an

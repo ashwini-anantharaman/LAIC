@@ -11,7 +11,7 @@
 // PNGs were @1x, e.g. the hamburger was 18x12 actual pixels drawn at 18x12pt.
 
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SvgXml } from "react-native-svg";
 
 import {
@@ -39,7 +39,12 @@ function BarIcon({
 }) {
   return (
     <Pressable
-      onPress={onPress}
+      // Web: fire on pointer DOWN, like the tab bar — a touch tap wobbles a
+      // few pixels and anything watching for drags can steal it before
+      // release, which read as "tap twice to open the menu". The sheets these
+      // open guard against the same tap's click falling through onto their
+      // backdrop (see BrandSheet). Native keeps onPress.
+      {...(Platform.OS === "web" ? { onPressIn: onPress } : { onPress })}
       hitSlop={16}
       accessibilityRole="button"
       accessibilityLabel={label}

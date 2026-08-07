@@ -82,6 +82,20 @@ function stripFilters(svg) {
   return { svg, filtersRemoved: n };
 }
 
+/**
+ * Namespace every id in an export. SVG ids are document-global on the web
+ * renderer, and Figma stamps the SAME ids into every export from one frame —
+ * tree.svg and hills.svg both shipped `clip0_410_1880`. Whichever mounts
+ * first wins every url(#…) lookup on the page, so the tree trunk was being
+ * clipped by the HILLS' clip rect (which ends at y≈223 in tree space): the
+ * whole lower tree vanished. A per-export prefix makes collisions impossible.
+ */
+function namespaceIds(svg, prefix) {
+  return svg
+    .replace(/\bid="([^"]+)"/g, (_, id) => `id="${prefix}_${id}"`)
+    .replace(/url\(#([^)]+)\)/g, (_, id) => `url(#${prefix}_${id})`);
+}
+
 /** Strip only full-bleed background rects, never icon geometry. */
 function stripBackgrounds(svg, file) {
   const hadClip = svg.includes("<clipPath");
@@ -145,8 +159,9 @@ function splitTree() {
   }
 
   // The trunk keeps the clip wrapper — its roots run outside the frame.
-  const trunkSvg = flatten(
-    `${openTag}<g clip-path="url(#${clipId})">${trunk.join("")}</g>${defs}</svg>`,
+  const trunkSvg = namespaceIds(
+    flatten(`${openTag}<g clip-path="url(#${clipId})">${trunk.join("")}</g>${defs}</svg>`),
+    "tree",
   );
 
   // Each leaf becomes its own sprite, cropped to its own box, so it can be
@@ -226,7 +241,7 @@ for (const [file, name] of Object.entries(NAMES)) {
   }
   let { svg, removed } = stripBackgrounds(readFileSync(join(svgDir, file), "utf8"), file);
   const filtered = stripFilters(svg);
-  svg = filtered.svg;
+  svg = namespaceIds(filtered.svg, name.toLowerCase());
   if (/fill="#F5F5F5"/.test(svg)) throw new Error(`${file}: grey backdrop survived`);
   if (/filter=/.test(svg)) throw new Error(`${file}: a filter reference survived`);
   const flat = flatten(svg);

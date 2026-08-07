@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -16,9 +16,16 @@ import {
 import { Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { NexusError } from "../lib/nexus";
+import { startPrewarmAll } from "../lib/prewarm";
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
+
+  // The learner is about to type a password — dead time. Warm every backend
+  // NOW; signIn holds the door until the sweep settles.
+  useEffect(() => {
+    startPrewarmAll();
+  }, []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

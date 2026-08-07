@@ -9,7 +9,7 @@ import {
 } from '../../../lib/objectTemplates';
 
 interface Props {
-  objectType: Exclude<TemplateObjectType, 'tutorial'>;
+  objectType: Exclude<TemplateObjectType, 'tutorial' | 'tutorial-v2'>;
   initial?: ObjectTemplate | null;
   onSave: (template: ObjectTemplate) => void;
   onCancel: () => void;
@@ -93,14 +93,16 @@ export function ObjectTemplateEditor({ objectType, initial, onSave, onCancel }: 
         <div className="mb-3">
           <p style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Define defaults</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {fields.map((f) => (
+            {fields.map((f) => {
+              if (f.id === 'pass' && knobs.passOn === false) return null;
+              return (
               <label key={f.id} className="block">
                 <span style={{ fontSize: 11.5, color: '#6B7280' }}>{f.label}</span>
                 {f.type === 'bool' ? (
                   <div className="mt-1">
                     <input
                       type="checkbox"
-                      checked={!!knobs[f.id]}
+                      checked={f.id === 'passOn' ? knobs[f.id] !== false : !!knobs[f.id]}
                       onChange={(e) => setKnob(f.id, e.target.checked)}
                     />
                   </div>
@@ -130,7 +132,8 @@ export function ObjectTemplateEditor({ objectType, initial, onSave, onCancel }: 
                   />
                 )}
               </label>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

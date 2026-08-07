@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import type { Role, Program, LearningObject, ObjectType } from '../lib/types';
+import type { Role, Program, LearningObject, ObjectType, Version } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
 import { supabaseEnabled, listObjects, fetchObject, saveObject } from '../lib/supabase';
 import {
@@ -13,8 +13,34 @@ import {
   remoteObjectsForDemoCd,
   DEMO_CD_USER_ID,
 } from '../lib/demoAuth';
+import {
+  type ObjectCollection,
+  getObjectCollections,
+  createObjectCollection as storeCreateObjectCollection,
+  renameObjectCollection as storeRenameObjectCollection,
+  deleteObjectCollection as storeDeleteObjectCollection,
+  getActiveObjectCollectionId,
+  setActiveObjectCollectionId as storeSetActiveObjectCollectionId,
+  ensureDefaultObjectCollection,
+  subscribeObjectCollections,
+  objectCollectionIds,
+  BB_TUTORIALS_COLLECTION_ID,
+  BB_TUTORIALS_LEGACY_COLLECTION_ID,
+} from '../lib/objectCollectionsStore';
+import { mergeBbTutorialsIntoLibrary } from '../lib/bbTutorialsSeed';
+import {
+  syncWorkingVersion,
+  saveAsNewVersion as storeSaveAsNewVersion,
+  setVersionLocked as storeSetVersionLocked,
+  deleteVersion as storeDeleteVersion,
+  deleteVersionsForObject as storeDeleteVersionsForObject,
+  listVersionsForObject,
+  listAllVersions,
+  subscribeObjectVersions,
+} from '../lib/objectVersionsStore';
 import { LoginPortal } from './components/LoginPortal';
 import { Layout } from './components/Layout';
+import { ConfirmProvider } from './components/ConfirmDialog';
 import { ObjectEmbedPage } from './components/screens/ObjectEmbedPage';
 import { parseObjectEmbedId } from '../lib/objectUrls';
 import {
@@ -52,9 +78,33 @@ export interface AppState {
   nexusUserName: string | null;
   nexusUserRole: string | null;
   readerObjectId: string | null;
+  /** When set with readerObjectId, LearnerReader shows that version’s snapshot. */
+  readerVersionId: string | null;
   creatorObjectType: string;
   createdObjects: LearningObject[];
-  /** When set, ObjectCreator opens this library object for editing. */
+  /** Bumps when local version history changes (for library UI refresh). */
+  objectVersionsTick: number;
+  listObjectVersions: (objectId: string) => Version[];
+  listAllObjectVersions: () => Version[];
+  saveObjectAsNewVersion: (objectId: string, notes?: string) => Version | null;
+  lockObjectVersion: (versionId: string, locked: boolean) => Version | null;
+  deleteObjectVersion: (versionId: string) => { ok: boolean; error?: string };
+  openReaderVersion: (objectId: string, versionId: string) => void;
+  /** Named Object Library collections (user-defined folders). */
+  objectCollections: ObjectCollection[];
+  /** Library rail: which collection is open for browsing. */
+  activeObjectCollectionId: string | null;
+  setActiveObjectCollectionId: (id: string) => void;
+  /** Collections chosen on Create for the next new object (multi-select). */
+  createCollectionIds: string[];
+  setCreateCollectionIds: (ids: string[]) => void;
+  createObjectCollection: (name: string, parentId?: string | null) => ObjectCollection;
+  renameObjectCollection: (id: string, name: string) => void;
+  deleteObjectCollection: (id: string) => void;
+  setObjectCollectionIds: (objectId: string, collectionIds: string[]) => void;
+  /** Permanently remove user-created content from the library. */
+  deleteCreatedObject: (objectId: string) => { ok: boolean; error?: string };
+  /** When set, ObjectCreator opens this library content for editing. */
   editingObjectId: string | null;
   /** Template id chosen in Template Library before opening the creator. */
   pendingTemplateId: string | null;
@@ -104,6 +154,8 @@ function StudioApp() {
   const [program, setProgramState] = useState<Program>('bridge');
   const [currentScreen, setCurrentScreen] = useState('student-dashboard');
   const [readerObjectId, setReaderObjectId] = useState<string | null>(null);
+  const [readerVersionId, setReaderVersionId] = useState<string | null>(null);
+  const [objectVersionsTick, setObjectVersionsTick] = useState(0);
   const [creatorObjectType, setCreatorObjectTypeState] = useState<string>('lesson');
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
@@ -129,13 +181,59 @@ function StudioApp() {
   activeUserIdRef.current = activeUserId;
   createdObjectsRef.current = createdObjects;
 
+  const [objectCollections, setObjectCollections] = useState<ObjectCollection[]>([]);
+  const [activeObjectCollectionId, setActiveObjectCollectionIdState] = useState<string | null>(null);
+  const [createCollectionIds, setCreateCollectionIdsState] = useState<string[]>([]);
+  const createCollectionIdsRef = useRef<string[]>([]);
+  createCollectionIdsRef.current = createCollectionIds;
+
+  const refreshObjectCollections = useCallback((userId: string) => {
+    const list = ensureDefaultObjectCollection(userId);
+    setObjectCollections(list);
+    const active = getActiveObjectCollectionId(userId) || list[0]?.id || null;
+    setActiveObjectCollectionIdState(active);
+    setCreateCollectionIdsState((prev) => {
+      const valid = prev.filter((id) => list.some((c) => c.id === id));
+      if (valid.length) return valid;
+      return active ? [active] : (list[0] ? [list[0].id] : []);
+    });
+  }, []);
+
+  /** Stamp objects missing collections into the user's default collection; normalize legacy ids. */
+  const withCollectionIds = useCallback((userId: string, objs: LearningObject[]): LearningObject[] => {
+    const cols = ensureDefaultObjectCollection(userId);
+    const colSet = new Set(cols.map((c) => c.id));
+    const fallback = getActiveObjectCollectionId(userId) || cols[0]?.id;
+    if (!fallback) return objs;
+    let changed = false;
+    const next = objs.map((o) => {
+      const ids = objectCollectionIds(o)
+        .map((id) => (id === BB_TUTORIALS_LEGACY_COLLECTION_ID ? BB_TUTORIALS_COLLECTION_ID : id))
+        .filter((id) => colSet.has(id));
+      const normalized = ids.length ? ids : [fallback];
+      const same =
+        o.collectionIds?.length === normalized.length
+        && normalized.every((id, i) => o.collectionIds?.[i] === id)
+        && !o.collectionId;
+      if (same) return o;
+      changed = true;
+      return { ...o, collectionIds: normalized, collectionId: undefined };
+    });
+    return changed ? next : objs;
+  }, []);
+
   const hydrateForUser = useCallback(async (userId: string) => {
     const gen = ++hydrateGenRef.current;
     setLibraryReady(false);
+    refreshObjectCollections(userId);
 
-    const local = isDemoCdUser(userId) ? loadDemoCdLibrary() : loadUserObjects(userId);
+    const localRaw = isDemoCdUser(userId) ? loadDemoCdLibrary() : loadUserObjects(userId);
+    const local = mergeBbTutorialsIntoLibrary(userId, withCollectionIds(userId, localRaw));
     if (gen !== hydrateGenRef.current) return;
     setCreatedObjects(local);
+    if (local !== localRaw) {
+      saveUserObjects(userId, local);
+    }
     // Local load is enough to start persisting again (don't wait on network).
     setLibraryReady(true);
 
@@ -150,13 +248,27 @@ function StudioApp() {
             ownerName: o.ownerName || 'Course Dev Demo',
           }))
         : remote;
-      const merged = mergeObjects(local, claimedRemote);
+      const merged = mergeBbTutorialsIntoLibrary(
+        userId,
+        withCollectionIds(userId, mergeObjects(local, claimedRemote)),
+      );
       setCreatedObjects(merged);
       if (merged.length > 0) saveUserObjects(userId, merged);
     } catch (err: any) {
       console.warn('[supabase] could not load objects:', err?.message || err);
     }
-  }, []);
+  }, [refreshObjectCollections, withCollectionIds]);
+
+  // Keep collection list in sync when Create / Library mutate the store.
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    return subscribeObjectCollections(() => refreshObjectCollections(activeUserIdRef.current));
+  }, [isLoggedIn, refreshObjectCollections]);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    return subscribeObjectVersions(() => setObjectVersionsTick((n) => n + 1));
+  }, [isLoggedIn]);
 
   // Persist only after hydrate — writing [] on login was wiping the demo library.
   useEffect(() => {
@@ -329,11 +441,18 @@ function StudioApp() {
   }, []);
 
   const openReader = useCallback((objectId: string) => {
+    setReaderVersionId(null);
+    setReaderObjectId(objectId);
+  }, []);
+
+  const openReaderVersion = useCallback((objectId: string, versionId: string) => {
+    setReaderVersionId(versionId);
     setReaderObjectId(objectId);
   }, []);
 
   const closeReader = useCallback(() => {
     setReaderObjectId(null);
+    setReaderVersionId(null);
   }, []);
 
   const setCreatorObjectType = useCallback((type: string) => {
@@ -345,8 +464,17 @@ function StudioApp() {
     const user = USERS.find(u => u.id === ownerId);
     const now = new Date().toISOString().slice(0, 10);
     const id = partial.id || `obj-new-${Date.now()}`;
+    const cols = ensureDefaultObjectCollection(ownerId);
+    const fallback = getActiveObjectCollectionId(ownerId) || cols[0]?.id;
     setCreatedObjects(prev => {
       const existing = prev.find(o => o.id === id);
+      const fromPartial = objectCollectionIds(partial);
+      const fromExisting = existing ? objectCollectionIds(existing) : [];
+      const fromCreate = createCollectionIdsRef.current.filter((cid) => cols.some((c) => c.id === cid));
+      const collectionIds =
+        fromPartial.length
+          ? fromPartial
+          : (fromExisting.length ? fromExisting : (fromCreate.length ? fromCreate : (fallback ? [fallback] : [])));
       const obj: LearningObject = {
         id,
         type: partial.type,
@@ -363,12 +491,22 @@ function StudioApp() {
         updatedAt: now,
         tags: partial.tags || [],
         sourceIds: partial.sourceIds ?? existing?.sourceIds ?? [],
+        collectionIds,
+        collectionId: undefined,
         pipelineDraft: partial.pipelineDraft !== undefined ? partial.pipelineDraft : existing?.pipelineDraft,
+        tutorialV2Draft: (partial as any).tutorialV2Draft !== undefined
+          ? (partial as any).tutorialV2Draft
+          : (existing as any)?.tutorialV2Draft,
       };
       const nextList = [obj, ...prev.filter(o => o.id !== id)];
       const result = saveUserObjects(ownerId, nextList);
       if (!result.ok) {
         console.warn('[addObject] local persist failed:', result.error);
+      }
+      try {
+        syncWorkingVersion(ownerId, obj, obj.ownerName || user?.name || 'You');
+      } catch (err: any) {
+        console.warn('[versions] sync failed:', err?.message || err);
       }
       if (supabaseEnabled()) {
         saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
@@ -380,12 +518,133 @@ function StudioApp() {
     return id;
   }, []);
 
+  const listObjectVersions = useCallback((objectId: string) => {
+    return listVersionsForObject(activeUserIdRef.current, objectId);
+  }, [objectVersionsTick]);
+
+  const listAllObjectVersions = useCallback(() => {
+    return listAllVersions(activeUserIdRef.current);
+  }, [objectVersionsTick]);
+
+  const saveObjectAsNewVersion = useCallback((objectId: string, notes?: string) => {
+    const ownerId = activeUserIdRef.current;
+    const obj = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!obj) return null;
+    const user = USERS.find((u) => u.id === ownerId);
+    return storeSaveAsNewVersion(ownerId, obj, obj.ownerName || user?.name || 'You', notes);
+  }, []);
+
+  const lockObjectVersion = useCallback((versionId: string, locked: boolean) => {
+    return storeSetVersionLocked(activeUserIdRef.current, versionId, locked);
+  }, []);
+
+  const deleteObjectVersion = useCallback((versionId: string) => {
+    return storeDeleteVersion(activeUserIdRef.current, versionId);
+  }, []);
+
+  const setActiveObjectCollectionId = useCallback((id: string) => {
+    storeSetActiveObjectCollectionId(activeUserIdRef.current, id);
+    setActiveObjectCollectionIdState(id);
+  }, []);
+
+  const setCreateCollectionIds = useCallback((ids: string[]) => {
+    const unique = [...new Set(ids.filter(Boolean))];
+    setCreateCollectionIdsState(unique);
+    if (unique[0]) {
+      storeSetActiveObjectCollectionId(activeUserIdRef.current, unique[0]);
+      setActiveObjectCollectionIdState(unique[0]);
+    }
+  }, []);
+
+  const createObjectCollection = useCallback((name: string, parentId?: string | null) => {
+    const created = storeCreateObjectCollection(activeUserIdRef.current, name, parentId);
+    refreshObjectCollections(activeUserIdRef.current);
+    return created;
+  }, [refreshObjectCollections]);
+
+  const renameObjectCollection = useCallback((id: string, name: string) => {
+    storeRenameObjectCollection(activeUserIdRef.current, id, name);
+    refreshObjectCollections(activeUserIdRef.current);
+  }, [refreshObjectCollections]);
+
+  const deleteObjectCollection = useCallback((id: string) => {
+    const uid = activeUserIdRef.current;
+    const remaining = getObjectCollections(uid).filter((c) => c.id !== id);
+    const fallback = remaining[0]?.id;
+    storeDeleteObjectCollection(uid, id);
+    // Drop deleted id from membership; ensure every object stays in at least one collection.
+    if (fallback) {
+      setCreatedObjects((prev) => {
+        const next = prev.map((o) => {
+          const ids = objectCollectionIds(o).filter((cid) => cid !== id);
+          return {
+            ...o,
+            collectionIds: ids.length ? ids : [fallback],
+            collectionId: undefined,
+          };
+        });
+        saveUserObjects(uid, next);
+        return next;
+      });
+    }
+    refreshObjectCollections(uid);
+  }, [refreshObjectCollections]);
+
+  const setObjectCollectionIds = useCallback((objectId: string, collectionIds: string[]) => {
+    const uid = activeUserIdRef.current;
+    const ids = [...new Set(collectionIds.filter(Boolean))];
+    if (!ids.length) return;
+    setCreatedObjects((prev) => {
+      const next = prev.map((o) => (
+        o.id === objectId
+          ? { ...o, collectionIds: ids, collectionId: undefined, updatedAt: new Date().toISOString().slice(0, 10) }
+          : o
+      ));
+      saveUserObjects(uid, next);
+      const updated = next.find((o) => o.id === objectId);
+      if (updated && supabaseEnabled()) {
+        saveObject(updated).catch((err) => console.warn('[nexus] could not update collections:', err?.message || err));
+      }
+      return next;
+    });
+  }, []);
+
+  const deleteCreatedObject = useCallback((objectId: string) => {
+    const uid = activeUserIdRef.current;
+    const exists = createdObjectsRef.current.some((o) => o.id === objectId);
+    if (!exists) {
+      return { ok: false, error: 'Only content you created can be deleted from the library.' };
+    }
+    setCreatedObjects((prev) => {
+      const next = prev.filter((o) => o.id !== objectId);
+      saveUserObjects(uid, next);
+      return next;
+    });
+    try {
+      storeDeleteVersionsForObject(uid, objectId);
+    } catch (err: any) {
+      console.warn('[versions] delete-for-object failed:', err?.message || err);
+    }
+    setEditingObjectId((cur) => (cur === objectId ? null : cur));
+    setReaderObjectId((cur) => {
+      if (cur === objectId) {
+        setReaderVersionId(null);
+        return null;
+      }
+      return cur;
+    });
+    setLibraryReady(true);
+    return { ok: true };
+  }, []);
+
   const openEditor = useCallback((objectId: string) => {
     const fromCreated = createdObjects.find(o => o.id === objectId);
     const obj = fromCreated || OBJECTS.find(o => o.id === objectId);
     if (obj) setCreatorObjectTypeState(obj.type);
     setEditingObjectId(objectId);
     setReaderObjectId(null);
+    setReaderVersionId(null);
     setCurrentScreen('cd-creator');
   }, [createdObjects]);
 
@@ -416,7 +675,14 @@ function StudioApp() {
     learningCapabilities,
     previewName, startRolePreview, stopRolePreview,
     nexusProgramName, nexusUserName, nexusUserRole,
-    readerObjectId, creatorObjectType, createdObjects, editingObjectId, pendingTemplateId,
+    readerObjectId, readerVersionId, creatorObjectType, createdObjects,
+    objectVersionsTick, listObjectVersions, listAllObjectVersions,
+    saveObjectAsNewVersion, lockObjectVersion, deleteObjectVersion, openReaderVersion,
+    objectCollections, activeObjectCollectionId,
+    setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,
+    createObjectCollection, renameObjectCollection,
+    deleteObjectCollection, setObjectCollectionIds, deleteCreatedObject,
+    editingObjectId, pendingTemplateId,
     navigate, login, logout,
     setRole, setProgram, openReader, closeReader, setCreatorObjectType, setPendingTemplateId, addObject,
     openEditor, clearEditingObject,
@@ -424,32 +690,34 @@ function StudioApp() {
 
   return (
     <AppContext.Provider value={ctx}>
-      <div
-        className="min-h-screen w-full"
-        style={{ background: 'linear-gradient(170deg, #A9BBCB 0%, #D4DDE6 40%, #F2F5F8 100%)' }}
-      >
-        {booting ? (
-          <div className="grid min-h-screen place-items-center text-slate-600">
-            <div className="text-sm">Loading…</div>
-          </div>
-        ) : !isLoggedIn ? (
-          <LoginPortal />
-        ) : (
-          <Layout />
-        )}
-        {previewName ? (
-          <div className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 flex items-center gap-3 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
-            <span>Viewing as <b>{previewName}</b></span>
-            <button
-              type="button"
-              onClick={stopRolePreview}
-              className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium hover:bg-white/25"
-            >
-              Exit test view
-            </button>
-          </div>
-        ) : null}
-      </div>
+      <ConfirmProvider>
+        <div
+          className="min-h-screen w-full"
+          style={{ background: 'linear-gradient(170deg, #A9BBCB 0%, #D4DDE6 40%, #F2F5F8 100%)' }}
+        >
+          {booting ? (
+            <div className="grid min-h-screen place-items-center text-slate-600">
+              <div className="text-sm">Loading…</div>
+            </div>
+          ) : !isLoggedIn ? (
+            <LoginPortal />
+          ) : (
+            <Layout />
+          )}
+          {previewName ? (
+            <div className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 flex items-center gap-3 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
+              <span>Viewing as <b>{previewName}</b></span>
+              <button
+                type="button"
+                onClick={stopRolePreview}
+                className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium hover:bg-white/25"
+              >
+                Exit test view
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </ConfirmProvider>
     </AppContext.Provider>
   );
 }

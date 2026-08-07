@@ -12,7 +12,7 @@ export const DEMO_ACCOUNTS = [
     userId: 'lee',
     email: 'lee@laic.org',
     password: '123456',
-    label: 'Object Reviewer',
+    label: 'Content Reviewer',
   },
   {
     userId: 'maria',

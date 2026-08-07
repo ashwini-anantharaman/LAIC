@@ -69,7 +69,18 @@ export default async function BridgeShellLayout({
           showSwitchUser={nexusMode() === "stub" && !demo}
         />
       )}
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-8">{children}</main>
+      {/* Embedded, every pixel belongs to the content — the phone table's
+          fit is priced against this height, so shell padding literally
+          shrinks the cards. */}
+      <main
+        className={
+          embedded
+            ? "min-h-0 min-w-0 flex-1 overflow-y-auto"
+            : "min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-8"
+        }
+      >
+        {children}
+      </main>
     </div>
   );
 }

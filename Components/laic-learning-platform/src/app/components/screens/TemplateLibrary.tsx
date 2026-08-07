@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, RotateCcw, Sparkles, LayoutTemplate, ArrowLeft, ChevronDown } from 'lucide-react';
+import { Plus, Pencil, Trash2, RotateCcw, Sparkles, LayoutTemplate, ArrowLeft, ChevronDown, Star, Copy } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useApp } from '../../App';
 import type { TutorialTemplate } from '../../../lib/types';
@@ -14,20 +14,59 @@ import {
 } from '../../../lib/objectTemplates';
 import {
   deleteCustomTutorialTemplate,
+  duplicateTutorialTemplate,
   isBuiltinOverride,
   isBuiltinTemplateId,
   listTutorialTemplates,
 } from '../../../lib/tutorialTemplates';
+import {
+  deleteCustomTutorialTemplate as deleteCustomTutorialV2Template,
+  duplicateTutorialTemplate as duplicateTutorialV2Template,
+  isBuiltinOverride as isBuiltinV2Override,
+  isBuiltinTemplateId as isBuiltinV2TemplateId,
+  listTutorialTemplates as listTutorialV2Templates,
+} from '../../../lib/tutorialV2/tutorialTemplates';
+import {
+  getDefaultTemplateId,
+  isDefaultTemplate,
+  setDefaultTemplateId,
+} from '../../../lib/templateDefaults';
+import { setTutorialV2LaunchTemplate } from '../../../lib/tutorialV2/launchTemplate';
+import { pastelChipFromHex, pastelFromHex } from '../../../lib/pastel';
 import { TutorialTemplateEditor } from './TutorialTemplateEditor';
+import { TutorialTemplateEditorV2 } from './tutorialV2/TutorialTemplateEditorV2';
 import { ObjectTemplateEditor } from './ObjectTemplateEditor';
+import { useConfirm } from '../ConfirmDialog';
+
+/** Same color bases as Create tiles — pastel fill for template cards. */
+const TYPE_COLOR: Record<TemplateObjectType, string> = {
+  tutorial: '#7C3AED',
+  'tutorial-v2': '#6D28D9',
+  lesson: '#1D4ED8',
+  quiz: '#059669',
+  'flashcard-set': '#D97706',
+  'concept-card': '#0284C7',
+  summary: '#6B7280',
+  reflection: '#9333EA',
+  scenario: '#0EA5E9',
+  assignment: '#EA580C',
+  drill: '#DC2626',
+  'video-script': '#EC4899',
+};
 
 type ListItem =
   | { kind: 'tutorial'; t: TutorialTemplate }
+  | { kind: 'tutorial-v2'; t: TutorialTemplate }
   | { kind: 'object'; t: ObjectTemplate };
 
+function isTutorialKind(kind: ListItem['kind']): kind is 'tutorial' | 'tutorial-v2' {
+  return kind === 'tutorial' || kind === 'tutorial-v2';
+}
+
 export function TemplateLibrary() {
-  const { navigate, setCreatorObjectType, setPendingTemplateId } = useApp();
-  const [typeFilter, setTypeFilter] = useState<TemplateObjectType>('tutorial');
+  const { navigate, setCreatorObjectType, setPendingTemplateId, clearEditingObject } = useApp();
+  const confirm = useConfirm();
+  const [typeFilter, setTypeFilter] = useState<TemplateObjectType>('tutorial-v2');
   const [tick, setTick] = useState(0);
   const [editingTutorial, setEditingTutorial] = useState<TutorialTemplate | null | 'new'>(null);
   const [editingObject, setEditingObject] = useState<ObjectTemplate | null | 'new'>(null);
@@ -40,27 +79,56 @@ export function TemplateLibrary() {
     if (typeFilter === 'tutorial') {
       return listTutorialTemplates().map((t) => ({ kind: 'tutorial' as const, t }));
     }
+    if (typeFilter === 'tutorial-v2') {
+      return listTutorialV2Templates().map((t) => ({ kind: 'tutorial-v2' as const, t }));
+    }
     return listObjectTemplates(typeFilter).map((t) => ({ kind: 'object' as const, t }));
   }, [typeFilter, tick]);
 
-  const recommended = items.filter((it) => {
-    if (it.kind === 'tutorial') return it.t.builtin || isBuiltinTemplateId(it.t.id);
-    return it.t.recommended || it.t.builtin || isBuiltinObjectTemplateId(it.t.id);
-  });
-  const customOnly = items.filter((it) => {
-    if (it.kind === 'tutorial') return !it.t.builtin && !isBuiltinTemplateId(it.t.id);
-    return !it.t.builtin && !isBuiltinObjectTemplateId(it.t.id);
-  });
+  // Recommended shelf left empty for now — every template (including former
+  // builtins / recommended defaults) lives under Custom until we curate again.
+  const recommended: ListItem[] = [];
+  const customOnly = items;
 
-  const useTemplate = (objectType: TemplateObjectType, templateId: string) => {
+  const useTemplate = (item: ListItem) => {
+    const objectType: TemplateObjectType = item.kind === 'object'
+      ? typeFilter
+      : item.kind;
+    const templateId = item.t.id;
+    if (objectType === 'tutorial-v2') {
+      setTutorialV2LaunchTemplate(templateId);
+    }
+    clearEditingObject?.();
     setPendingTemplateId(templateId);
     setCreatorObjectType(objectType);
     navigate('cd-creator');
   };
 
-  const handleDelete = (item: ListItem) => {
+  const makeDefault = (objectType: TemplateObjectType, templateId: string) => {
+    setDefaultTemplateId(objectType, templateId);
+    refresh();
+  };
+
+  const handleDelete = async (item: ListItem) => {
+    const name = item.t.name;
+    const overridden = item.kind === 'tutorial'
+      ? isBuiltinOverride(item.t.id)
+      : item.kind === 'tutorial-v2'
+        ? isBuiltinV2Override(item.t.id)
+        : isObjectTemplateOverride(item.t.id);
+    const ok = await confirm({
+      title: overridden ? 'Are you sure you want to reset?' : 'Are you sure you want to delete?',
+      description: overridden
+        ? `Reset “${name}” to the recommended default?`
+        : `Delete template “${name}”? This can’t be undone.`,
+      confirmLabel: overridden ? 'Reset' : 'Delete',
+      destructive: !overridden,
+    });
+    if (!ok) return;
     if (item.kind === 'tutorial') {
       deleteCustomTutorialTemplate(item.t.id);
+    } else if (item.kind === 'tutorial-v2') {
+      deleteCustomTutorialV2Template(item.t.id);
     } else {
       deleteCustomObjectTemplate(item.t.id);
     }
@@ -68,12 +136,21 @@ export function TemplateLibrary() {
   };
 
   const openItem = (item: ListItem) => {
-    if (item.kind === 'tutorial') setEditingTutorial(item.t);
+    if (isTutorialKind(item.kind)) setEditingTutorial(item.t);
     else setEditingObject(item.t);
   };
 
+  const handleDuplicateTutorial = (id: string) => {
+    const copy = typeFilter === 'tutorial-v2'
+      ? duplicateTutorialV2Template(id)
+      : duplicateTutorialTemplate(id);
+    if (!copy) return;
+    refresh();
+    setEditingTutorial(copy);
+  };
+
   const startCreate = () => {
-    if (typeFilter === 'tutorial') setEditingTutorial('new');
+    if (typeFilter === 'tutorial' || typeFilter === 'tutorial-v2') setEditingTutorial('new');
     else setEditingObject('new');
   };
 
@@ -102,7 +179,7 @@ export function TemplateLibrary() {
           style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}
         >
           <ArrowLeft size={15} />
-          Back to library
+          Back to Content Library
         </button>
 
         <motion.div
@@ -126,7 +203,15 @@ export function TemplateLibrary() {
             onCancel={closeFocus}
           />
         )}
-        {typeFilter !== 'tutorial' && editingObject !== null && (
+        {typeFilter === 'tutorial-v2' && editingTutorial !== null && (
+          <TutorialTemplateEditorV2
+            key={editingTutorial === 'new' ? 'new-v2' : editingTutorial.id}
+            initial={editingTutorial === 'new' ? null : editingTutorial}
+            onSave={() => { refresh(); closeFocus(); }}
+            onCancel={closeFocus}
+          />
+        )}
+        {typeFilter !== 'tutorial' && typeFilter !== 'tutorial-v2' && editingObject !== null && (
           <ObjectTemplateEditor
             key={editingObject === 'new' ? 'new' : editingObject.id}
             objectType={typeFilter}
@@ -143,14 +228,21 @@ export function TemplateLibrary() {
     const id = item.t.id;
     const name = item.t.name;
     const description = item.t.description;
-    const isTutorial = item.kind === 'tutorial';
-    const overridden = isTutorial ? isBuiltinOverride(id) : isObjectTemplateOverride(id);
-    const pureCustom = isTutorial
+    const isTutorial = isTutorialKind(item.kind);
+    const overridden = item.kind === 'tutorial'
+      ? isBuiltinOverride(id)
+      : item.kind === 'tutorial-v2'
+        ? isBuiltinV2Override(id)
+        : isObjectTemplateOverride(id);
+    // Listed under Custom for now; keep delete rules so seed builtins can't be removed.
+    const pureCustom = item.kind === 'tutorial'
       ? !item.t.builtin && !isBuiltinTemplateId(id)
-      : !item.t.builtin && !isBuiltinObjectTemplateId(id);
-    const recommendedBadge = isTutorial
-      ? item.t.builtin || isBuiltinTemplateId(id)
-      : !!(item.t.recommended || item.t.builtin);
+      : item.kind === 'tutorial-v2'
+        ? !item.t.builtin && !isBuiltinV2TemplateId(id)
+        : !item.t.builtin && !isBuiltinObjectTemplateId(id);
+    const recommendedBadge = false;
+    const isDefault = isDefaultTemplate(typeFilter, id);
+    const base = TYPE_COLOR[typeFilter] || '#7C3AED';
 
     return (
       <motion.div
@@ -171,32 +263,40 @@ export function TemplateLibrary() {
         style={{
           background: 'white',
           boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)',
-          border: '1px solid rgba(255,255,255,0.8)',
+          border: isDefault
+            ? `1.5px solid ${pastelFromHex(base, 0.55)}`
+            : '1px solid rgba(0,0,0,0.06)',
         }}
       >
         <div className="flex items-start gap-2 mb-2">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-            style={{ background: 'rgba(0,0,0,0.04)' }}>
-            <LayoutTemplate size={16} style={{ color: '#0B1220' }} />
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: pastelChipFromHex(base), color: base }}
+          >
+            <LayoutTemplate size={16} />
           </div>
           <div className="flex-1 min-w-0">
             <p style={{ fontSize: 14, fontWeight: 650, color: '#0B1220' }}>{name}</p>
             <div className="flex flex-wrap gap-1.5 mt-1">
+              {isDefault && (
+                <span className="px-2 py-0.5 rounded text-[10.5px] font-semibold inline-flex items-center gap-1"
+                  style={{ background: pastelFromHex('#7C3AED'), color: '#6D28D9' }}>
+                  <Star size={10} fill="currentColor" />Default
+                </span>
+              )}
               {recommendedBadge && (
                 <span className="px-2 py-0.5 rounded text-[10.5px] font-semibold"
-                  style={{ background: 'rgba(5,150,105,0.12)', color: '#059669' }}>
+                  style={{ background: pastelFromHex('#059669'), color: '#059669' }}>
                   Recommended
                 </span>
               )}
-              {pureCustom && (
-                <span className="px-2 py-0.5 rounded text-[10.5px] font-semibold"
-                  style={{ background: 'rgba(29,78,216,0.1)', color: '#1D4ED8' }}>
-                  Custom
-                </span>
-              )}
+              <span className="px-2 py-0.5 rounded text-[10.5px] font-semibold"
+                style={{ background: pastelFromHex('#1D4ED8'), color: '#1D4ED8' }}>
+                Custom
+              </span>
               {overridden && (
                 <span className="px-2 py-0.5 rounded text-[10.5px] font-semibold"
-                  style={{ background: 'rgba(217,119,6,0.12)', color: '#B45309' }}>
+                  style={{ background: pastelFromHex('#D97706'), color: '#B45309' }}>
                   Edited
                 </span>
               )}
@@ -204,17 +304,27 @@ export function TemplateLibrary() {
           </div>
         </div>
         <p style={{ fontSize: 12.5, color: '#6B7280', lineHeight: 1.5, flex: 1, marginBottom: 14 }}>
-          {description || (pureCustom ? 'Your custom template' : 'Pedagogical template for this object type.')}
+          {description || (pureCustom ? 'Your custom template' : 'Pedagogical template for this content type.')}
         </p>
         <div className="flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
-            onClick={() => useTemplate(typeFilter, id)}
+            onClick={() => useTemplate(item)}
             className="flex items-center gap-1 px-3 py-1.5 rounded-full text-white"
             style={{ fontSize: 12, fontWeight: 600, background: '#0B0F1A' }}
           >
             <Sparkles size={12} />Use template
           </button>
+          {!isDefault && (
+            <button
+              type="button"
+              onClick={() => makeDefault(typeFilter, id)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full border"
+              style={{ fontSize: 12, fontWeight: 600, color: '#6D28D9', borderColor: 'rgba(124,58,237,0.35)', background: 'rgba(124,58,237,0.06)' }}
+            >
+              <Star size={12} />Set as default
+            </button>
+          )}
           <button
             type="button"
             onClick={() => openItem(item)}
@@ -223,6 +333,16 @@ export function TemplateLibrary() {
           >
             <Pencil size={12} />Edit
           </button>
+          {isTutorial && (
+            <button
+              type="button"
+              onClick={() => handleDuplicateTutorial(id)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-full border"
+              style={{ fontSize: 12, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}
+            >
+              <Copy size={12} />Start from this
+            </button>
+          )}
           {(pureCustom || overridden) && (
             <button
               type="button"
@@ -247,8 +367,20 @@ export function TemplateLibrary() {
           <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.3px', marginBottom: 4 }}>
             Template Library
           </h2>
-          <p style={{ fontSize: 13.5, color: '#6B7280', maxWidth: 480, lineHeight: 1.5 }}>
-            Pick an object type, then use or edit a template. Opening a template focuses the editor.
+          <p style={{ fontSize: 13.5, color: '#6B7280', maxWidth: 560, lineHeight: 1.5 }}>
+            Create a template from scratch, or start from an existing one (Start from this → edit blocks → save).
+            Embedded library slots only store metadata — the course developer picks the real content later.
+            {(() => {
+              const defId = getDefaultTemplateId(typeFilter);
+              const defName = typeFilter === 'tutorial'
+                ? listTutorialTemplates().find((t) => t.id === defId)?.name
+                : typeFilter === 'tutorial-v2'
+                  ? listTutorialV2Templates().find((t) => t.id === defId)?.name
+                  : listObjectTemplates(typeFilter).find((t) => t.id === defId)?.name;
+              return defName
+                ? ` Current default: ${defName}.`
+                : '';
+            })()}
           </p>
         </div>
         <button
@@ -261,10 +393,10 @@ export function TemplateLibrary() {
         </button>
       </div>
 
-      {/* Object type dropdown */}
+      {/* Content type dropdown */}
       <div className="mb-6 max-w-sm">
         <label style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: 6 }}>
-          Learning object
+          Content
         </label>
         <div className="relative">
           <select

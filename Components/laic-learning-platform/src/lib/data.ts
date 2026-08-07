@@ -15,16 +15,8 @@ export const USERS: User[] = [
   { id: 'chen', name: 'Chen Wei', initials: 'CW', email: 'chen@laic.org', role: 'content-developer', program: 'bridge' },
 ];
 
-export const SOURCES: Source[] = [
-  {
-    id: 'src-1', title: 'How to Play Bridge', kind: 'pdf', pages: 6,
-    domain: 'ACBL Bridge Guide', primary: true, addedBy: 'Chen Wei', addedAt: '2026-06-10',
-  },
-  {
-    id: 'src-2', title: 'Bridge Basics — Video Transcript', kind: 'video-transcript', duration: '5 min',
-    domain: 'Bridge Education Network', primary: false, addedBy: 'Sam Rivera', addedAt: '2026-06-12',
-  },
-];
+/** Demo source rows removed — authors add real sources via the Sources library. */
+export const SOURCES: Source[] = [];
 
 export const OBJECTS: LearningObject[] = [
   {
@@ -309,7 +301,7 @@ export const REVIEWS: ReviewItem[] = [
     objectType: 'scenario', submittedBy: 'Sam Rivera', submittedAt: '2026-07-10',
     status: 'in-review',
     comments: [
-      { id: 'cmt-1', authorId: 'lee', authorName: 'Lee Park', authorRole: 'Object Reviewer', blockId: undefined, content: 'Great scenario. Could you add a "stop and plan" prompt before the bridge play widget?', resolved: false, createdAt: '2026-07-11' },
+      { id: 'cmt-1', authorId: 'lee', authorName: 'Lee Park', authorRole: 'Content Reviewer', blockId: undefined, content: 'Great scenario. Could you add a "stop and plan" prompt before the bridge play widget?', resolved: false, createdAt: '2026-07-11' },
     ],
   },
   {

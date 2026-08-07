@@ -2,12 +2,17 @@ import { roleLabel, STUB_USERS } from "@bridge/nexus-client";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { setDevUser } from "@/app/actions";
-import { getBridgeContext, isFellowDemo, isMobileSite, nexusMode } from "@/lib/nexus";
+import { EmbedLocationReporter } from "@/components/mobile/EmbedLocationReporter";
+import { getBridgeContext, isEmbeddedLaunch, isFellowDemo, isMobileSite, nexusMode } from "@/lib/nexus";
 import { NEXUS_RETURN_COOKIE, safeReturnUrl } from "@/lib/nexusToken";
 
 export default async function WelcomePage() {
   // The mobile host has its own auto-signed-in phone UI — never show the login.
   if (await isMobileSite()) redirect("/m/play");
+  // An EMBEDDED session that died lands here — report the location so the
+  // host app's /welcome watchdog notices and re-launches, instead of the
+  // learner staring at a sign-in page inside an iframe that can't sign in.
+  const embedded = await isEmbeddedLaunch();
   const context = await getBridgeContext();
   // On the fellows-testing host everyone is auto-signed-in as "Fellow"; there
   // is no login, and Home is hidden — land straight on Play.
@@ -20,6 +25,7 @@ export default async function WelcomePage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-8 p-8">
+      {embedded && <EmbedLocationReporter />}
       <header className="space-y-3 text-center">
         <p className="text-sm tracking-[0.45em] text-emerald-700">
           ♠ <span className="text-red-700">♥</span> ♣{" "}

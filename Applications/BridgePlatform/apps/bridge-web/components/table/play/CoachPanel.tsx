@@ -79,6 +79,14 @@ const CARD_EDGE = "0 2px 0 rgba(42,5,6,.75)";
  */
 const SHOW_PROMPT_BUTTONS = false as boolean;
 
+/**
+ * The "Ask" pill on the learner's own rows in the PLAY screen, switched off
+ * (owner decision 2026-08-06) — the rows read as a clean ledger for now. Same
+ * discipline as the flag above: everything behind it stays wired, and the
+ * pills come back by flipping this.
+ */
+const SHOW_PLAY_ASK = false as boolean;
+
 const BADGE: Record<CoachNoteSource, { bg: string; label: string }> = {
   coach: { bg: FELT_MID, label: "Coach" },
   ben: { bg: "#384bb3", label: "BEN" },
@@ -761,7 +769,7 @@ export function CoachSheet({
                                 event={ev}
                                 open={openEvent === ev.id}
                                 onToggle={() => setOpenEvent(openEvent === ev.id ? null : ev.id)}
-                                {...(data.ask && ev.who === "You"
+                                {...(SHOW_PLAY_ASK && data.ask && ev.who === "You"
                                   ? {
                                       // Only the learner's OWN plays take an
                                       // Ask (owner decision 2026-08-05); the
@@ -919,8 +927,13 @@ function RedSuits({ children }: Readonly<{ children: string }>) {
  * the card is played, the chat. Exported standalone because it is also the
  * DEFAULT SCREEN of the new table's coach band (owner direction 2026-08-05):
  * the band shows this, and the full original sheet is one expand away.
+ *
+ * CONDENSED in the band (owner direction 2026-08-06): the collapsed dock
+ * carries only the position, the advice and the chat — the think-it-through
+ * scaffold ("What you can work out" / "Your realistic choices") is reading
+ * material, and reading material belongs to the expanded sheet.
  */
-export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
+export function CoachNow({ data, condensed = false }: Readonly<{ data: CoachPanelData; condensed?: boolean }>) {
   // A new trick is a new conversation. The chat and the advice answer hold
   // their exchanges in component state, so they are keyed by where the board
   // is (the current history section): the next trick remounts them empty
@@ -956,8 +969,8 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
         </div>
       )}
 
-      {/* the reasoning scaffold, shown without being asked */}
-      {data.aid && <ThinkCard aid={data.aid} />}
+      {/* the reasoning scaffold, shown without being asked — sheet only */}
+      {!condensed && data.aid && <ThinkCard aid={data.aid} />}
 
       {/* the advice, before the card is played */}
       {data.ask && data.ask.phase === "play" && data.ask.active && (
@@ -1028,7 +1041,7 @@ export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
         </button>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 12px 14px" }}>
-        <CoachNow data={data} />
+        <CoachNow data={data} condensed />
       </div>
       {open && (
         <div style={{ position: "fixed", inset: 0, zIndex: 900 }}>

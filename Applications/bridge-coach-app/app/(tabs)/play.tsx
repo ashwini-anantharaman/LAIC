@@ -33,7 +33,9 @@ import {
 import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { prefetchLaunch } from "../../lib/launch-cache";
-import { fetchBridgeSummary, type BridgeSummary } from "../../lib/nexus";
+import { type BridgeSummary } from "../../lib/nexus";
+import { prewarmBridgePages } from "../../lib/prewarm";
+import { peekSummary, refreshSummary } from "../../lib/summary-cache";
 
 const DESIGN_WIDTH = 390;
 /** The grid's left edge, and its top measured from under the screen title. */
@@ -43,7 +45,10 @@ const GRID_TOP_GAP = 42;
 export default function PlayScreen() {
   const { token } = useAuth();
   const { width } = useWindowDimensions();
-  const [summary, setSummary] = useState<BridgeSummary | null>(null);
+  // Last known summary renders immediately; the focus effect refreshes it.
+  const [summary, setSummary] = useState<BridgeSummary | null>(() =>
+    token ? peekSummary(token) : null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   const s = width / DESIGN_WIDTH;
@@ -53,11 +58,16 @@ export default function PlayScreen() {
     useCallback(() => {
       if (!token) return;
       prefetchLaunch(token, "bridge"); // keep a launch warm — one tap away
+      // Warm the screens this grid's cards open, so tapping one lands on a
+      // warm function instead of a cold start.
+      prewarmBridgePages(["/m/assigned", "/m/plays", "/welcome"]);
       let cancelled = false;
       setError(null);
-      fetchBridgeSummary(token)
+      refreshSummary(token)
         .then((sum) => !cancelled && setSummary(sum))
-        .catch(() => !cancelled && setError("Couldn't load your boards."));
+        // A failed refresh with stale data on screen stays silent — the stale
+        // summary beats an error banner.
+        .catch(() => !cancelled && !peekSummary(token) && setError("Couldn't load your boards."));
       return () => {
         cancelled = true;
       };

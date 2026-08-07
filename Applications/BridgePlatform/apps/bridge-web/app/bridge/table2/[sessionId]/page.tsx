@@ -12,6 +12,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { undoAction } from "@/app/bridge/table/actions";
 import { HandViewer } from "@bridge/table-ui";
+import { EmbedTableState } from "@/components/mobile/EmbedTableState";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
@@ -21,7 +22,7 @@ import { getAppearance } from "@/lib/appearance";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
 import { libraryKindLabel } from "@/lib/libraryLabels";
-import { getBridgeContext } from "@/lib/nexus";
+import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { lookingAt } from "@/lib/coach/looking";
 import { thinkAid } from "@/lib/coach/think";
@@ -47,11 +48,14 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   await requireFeature(context, "page.play");
+  // Inside the coach app's WebView the host owns the frame and the table
+  // renders its phone tier; on the desktop platform it keeps the wide view.
+  const embedded = await isEmbeddedLaunch();
   const [
     canSeatsPanel,
     canBenSeat,
@@ -87,9 +91,7 @@ export default async function PlayTablePage({
     fanRadius: appearance.fanRadius,
   };
   const { sessionId } = await params;
-  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
-  // Denied the hands-record view: the ?view=hands param is treated as absent.
-  const handsView = viewParam === "hands" && canHandsView;
+  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error, from } = await searchParams;
 
   let view;
   try {
@@ -98,6 +100,12 @@ export default async function PlayTablePage({
     notFound();
   }
   const { record, state, actingSeat, actingIsHuman } = view;
+  const complete = state.phase === "complete";
+  // Denied the hands-record view: the ?view=hands param is treated as absent —
+  // UNLESS the board is complete. The gate exists so a live viewer can't peek,
+  // and a finished board has nothing left to hide (canSee below already opens
+  // every hand). My Games' "View board" links straight here.
+  const handsView = viewParam === "hands" && (canHandsView || complete);
 
   const mySeat =
     (Object.entries(record.seats) as [Seat, (typeof record.seats)[Seat]][]).find(
@@ -347,7 +355,6 @@ export default async function PlayTablePage({
   // The hand-record view (HandViewer design): all four panels big, the full
   // auction, and honest info panels. Mid-play it shows the REMAINING cards
   // (and respects visibility); a completed board shows the original deal.
-  const complete = state.phase === "complete";
   const viewerHands = complete
     ? { N: originalHand(state, "N"), E: originalHand(state, "E"), S: originalHand(state, "S"), W: originalHand(state, "W") }
     : state.hands;
@@ -365,6 +372,7 @@ export default async function PlayTablePage({
       names={{ N: seatName("N"), E: seatName("E"), S: seatName("S"), W: seatName("W") }}
       visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
       auction={state.auction}
+      tricks={state.tricks}
       highlightSeat={complete ? (state.contract?.declarer ?? null) : state.turn}
       info={[
         { label: `NS · ${seatName("N")} & ${seatName("S")}`, value: `${state.trickCount.NS} tricks` },
@@ -374,21 +382,44 @@ export default async function PlayTablePage({
         { label: contractText, value: score ? `${resultLabel(score)} · ${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : "" },
       ]}
       nav={
-        <div style={{ display: "flex", flexDirection: "column", gap: 20, alignItems: "flex-start" }}>
-          <Link
-            href={settingsHref({ view: undefined })}
-            style={{ width: 261, height: 64, background: "#acc5c5", border: "3px solid #f2f4f4", borderRadius: 10, color: "#000", fontSize: 30, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
-          >
-            ⟵ table
-          </Link>
-          {canStepControls && controlsAt(1.9)}
-        </div>
+        // The nav is the page's to size: the embedded app gets the viewer's
+        // phone tier, so it gets phone-sized controls; the desktop platform
+        // keeps the design's big ones.
+        //
+        // FROM MY GAMES there is no "⟵ table" (owner decision 2026-08-07):
+        // that journey is "read the record of a finished game", the app's own
+        // header arrow is the way back, and a live-table door would only
+        // invite wandering into a board that's already over.
+        embedded && from === "games" && complete ? undefined : embedded ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+            <Link
+              href={settingsHref({ view: undefined })}
+              style={{ height: 34, padding: "0 16px", background: "#acc5c5", border: "2px solid #f2f4f4", borderRadius: 8, color: "#000", fontSize: 14, fontWeight: 700, display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+            >
+              ⟵ table
+            </Link>
+            {canStepControls && controlsAt(1)}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20, alignItems: "flex-start" }}>
+            <Link
+              href={settingsHref({ view: undefined })}
+              style={{ width: 261, height: 64, background: "#acc5c5", border: "3px solid #f2f4f4", borderRadius: 10, color: "#000", fontSize: 30, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
+            >
+              ⟵ table
+            </Link>
+            {canStepControls && controlsAt(1.9)}
+          </div>
+        )
       }
     />
   );
 
   return (
     <div className="mx-auto w-full">
+      {/* The host app's back arrow asks this page's state before deciding
+          whether leaving needs a save-or-discard prompt. */}
+      <EmbedTableState sessionId={sessionId} phase={state.phase} />
       {error && (
         <p className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}
@@ -408,8 +439,19 @@ export default async function PlayTablePage({
       {/* Every control lives INSIDE the canvas — rail chips on the table, the
           nav cell on the hand viewer. Nothing floats above the design. */}
       <div
-        className="overflow-hidden rounded-lg"
-        style={{ height: "calc(100vh - 5.5rem)" }}
+        // Embedded: the WebView is the whole screen — full-bleed, and TALL
+        // ENOUGH that the phone fit reaches full width. The fit prices the
+        // table against box height and letterboxes when height binds (a
+        // phone browser never has ~2.1× its width to give), so the canvas
+        // asks for that much and the page scrolls the remainder — the table
+        // region itself already tolerates overflow. Capped for tablets,
+        // where 100dvh alone is plenty.
+        className={embedded ? "overflow-hidden" : "overflow-hidden rounded-lg"}
+        style={{
+          height: embedded
+            ? "max(100dvh, min(210vw, 1010px))"
+            : "calc(100vh - 5.5rem)",
+        }}
       >
         {/* THE ROBOTS PLAY FOR EVERYONE. AutoAdvance is both the transport
             chips AND the engine that steps AI seats; the chips are gated by
@@ -431,12 +473,19 @@ export default async function PlayTablePage({
         {handsView ? (
           handViewer
         ) : (
-          // MOBILE VIEW ONLY (owner decision 2026-08-06): the play table always
-          // renders the phone tier, whatever the window. The tier decision in
-          // table-ui is geometric — phone = narrow aspect AND width < 640 — so
-          // capping the container at a phone width IS the switch: widening the
-          // browser letterboxes the table instead of swapping to the wide tier.
-          <div style={{ maxWidth: 480, height: "100%", margin: "0 auto" }}>
+          // PHONE TIER ONLY WHEN EMBEDDED (owner decisions 2026-08-06, both
+          // ways): inside the coach app the table always renders the phone
+          // tier, whatever the window — the tier decision in table-ui is
+          // geometric (phone = narrow aspect AND width < 640), so capping the
+          // container at a phone width IS the switch. On the desktop platform
+          // the cap comes off and the table carries its full desktop view.
+          <div
+            style={
+              embedded
+                ? { maxWidth: 480, height: "100%", margin: "0 auto" }
+                : { height: "100%" }
+            }
+          >
             <LivePlayTable
               sessionId={sessionId}
             state={{ ...state, dealer: record.board.dealer, vul: state.vul }}

@@ -79,3 +79,36 @@ export async function sendPlayToCoachAction(formData: FormData): Promise<void> {
   });
   redirect("/m/plays?sent=1");
 }
+
+/**
+ * Replay a finished board: a FRESH fork — same deal, same pinned compile,
+ * same lineup, zero events — landing straight at the new table. The original
+ * session (and any review of it) stays untouched; that's what fork is for.
+ */
+export async function replayBoardAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  const sessionId = String(formData.get("sessionId"));
+
+  const service = sessionService();
+  let record;
+  try {
+    record = await service.requireSession(sessionId);
+  } catch {
+    redirect(`/m/plays?error=${encodeURIComponent("That board doesn't exist any more.")}`);
+  }
+  if (record.createdBy !== context.nexusUserId) {
+    throw new Error("Only your own boards can be replayed");
+  }
+
+  let next;
+  try {
+    next = await service.fork(sessionId, record.seats, context.nexusUserId, { fresh: true });
+  } catch {
+    redirect(`/m/plays?error=${encodeURIComponent("Couldn't set up the replay — try again.")}`);
+  }
+  await audit(context, "session.fork", "session", next.sessionId, {
+    replayOf: sessionId,
+    fresh: true,
+  });
+  redirect(`/m/table/${next.sessionId}?from=games`);
+}

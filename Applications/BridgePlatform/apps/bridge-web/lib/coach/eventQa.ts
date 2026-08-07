@@ -201,7 +201,11 @@ export async function answerEventQuestion(
       },
       { timeout: opts.timeoutMs ?? 15_000 },
     );
-  } catch {
+  } catch (err) {
+    // The status code is the whole diagnosis — 401 is a dead key, 404 a model
+    // this key can't reach, undefined a network drop or a killed function.
+    const e = err as { status?: number; message?: string };
+    console.error(`[coach] anthropic call failed (status ${e?.status ?? "none"}): ${e?.message ?? err}`);
     return { reason: "unreachable" };
   }
 

@@ -60,7 +60,7 @@ export function AdminCoursesAssignments() {
           </div>
           <div className="flex items-center gap-2 mt-3 pt-3 border-t flex-wrap" style={{ borderColor: 'rgba(217,119,6,0.2)' }}>
             <span className="px-2.5 py-1 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#9AA3AF' }}>Developer: unassigned</span>
-            <span className="px-2.5 py-1 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#9AA3AF' }}>Object reviewer: unassigned</span>
+            <span className="px-2.5 py-1 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#9AA3AF' }}>Content reviewer: unassigned</span>
             <span className="px-2.5 py-1 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#9AA3AF' }}>Course reviewer: unassigned</span>
             <button onClick={() => fireToast('Assignment updated')}
               className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold"
@@ -100,7 +100,7 @@ export function AdminCoursesAssignments() {
                 Developer: <strong>{staff.developer}</strong>
               </span>
               <span className="px-2.5 py-1 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#374151' }}>
-                Object reviewer: <strong>{staff.objReviewer}</strong>
+                Content reviewer: <strong>{staff.objReviewer}</strong>
               </span>
               <span className="px-2.5 py-1 rounded-full text-xs" style={{ background: 'rgba(0,0,0,0.05)', color: '#374151' }}>
                 Course reviewer: <strong>{staff.courseReviewer}</strong>

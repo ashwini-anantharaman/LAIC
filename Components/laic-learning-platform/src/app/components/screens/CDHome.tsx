@@ -2,11 +2,12 @@ import React from 'react';
 import { BookOpen, Database, GitBranch, ClipboardCheck, PlusSquare, ArrowRight, GraduationCap, LayoutTemplate } from 'lucide-react';
 import { motion } from 'motion/react';
 import { OBJECTS } from '../../../lib/data';
+import { pastelChipFromHex, pastelFromHex } from '../../../lib/pastel';
 import { useApp } from '../../App';
 import { StatusPill } from './StatusPill';
 
 const OBJECT_TYPE_ICONS: Record<string, string> = {
-  lesson: '📖', tutorial: '🎓', quiz: '✅', 'flashcard-set': '🃏',
+  lesson: '📖', tutorial: '🎓', 'tutorial-v2': '🎓', quiz: '✅', 'flashcard-set': '🃏',
   'concept-card': '💡', summary: '📋', reflection: '🪞', scenario: '🎭',
   assignment: '📝', drill: '🔁',
 };
@@ -21,11 +22,11 @@ export function CDHome() {
   const published = myObjects.filter(o => o.status === 'published').length;
 
   const actionCards = [
-    { id: 'cd-create',      icon: <PlusSquare size={20} />,     label: 'Create a learning object', desc: 'Start the Sources → Define → Build pipeline', color: '#0B0F1A' },
-    { id: 'cd-templates',   icon: <LayoutTemplate size={20} />, label: 'Template Library',         desc: 'Recommended & custom templates for every object', color: '#0EA5E9' },
-    { id: 'cd-wizard',      icon: <GraduationCap size={20} />,  label: 'Build a course',            desc: 'Assemble objects into a structured course', color: '#1D4ED8' },
-    { id: 'cd-sources',     icon: <Database size={20} />,       label: 'Bring in sources',          desc: 'Manage collections and per-object pools', color: '#7C3AED' },
-    { id: 'cd-library',     icon: <BookOpen size={20} />,       label: 'Activity objects',          desc: `${myObjects.length} objects in this program`, color: '#059669' },
+    { id: 'cd-create',      icon: <PlusSquare size={20} />,     label: 'Create content', desc: 'Start the Sources → Define → Build pipeline', color: '#0B0F1A' },
+    { id: 'cd-templates',   icon: <LayoutTemplate size={20} />, label: 'Template Library',         desc: 'Recommended & custom templates for every content type', color: '#0EA5E9' },
+    { id: 'cd-wizard',      icon: <GraduationCap size={20} />,  label: 'Build a course',            desc: 'Assemble content into a structured course', color: '#1D4ED8' },
+    { id: 'cd-sources',     icon: <Database size={20} />,       label: 'Bring in sources',          desc: 'Manage collections and per-content pools', color: '#7C3AED' },
+    { id: 'cd-library',     icon: <BookOpen size={20} />,       label: 'Content Library',          desc: `${myObjects.length} items in this program`, color: '#059669' },
     { id: 'cd-submissions', icon: <ClipboardCheck size={20} />, label: 'My Submissions',            desc: `${inReview} in review`, color: '#D97706' },
     { id: 'cd-versions',    icon: <GitBranch size={20} />,      label: 'Versions & Publishing',     desc: 'Version history and publish status', color: '#6B7280' },
   ];
@@ -46,7 +47,7 @@ export function CDHome() {
         </div>
         <div className="flex gap-4 shrink-0">
           {[
-            { label: 'Objects', value: myObjects.length },
+            { label: 'Content', value: myObjects.length },
             { label: 'In review', value: inReview },
             { label: 'Published', value: published },
           ].map(s => (
@@ -70,9 +71,16 @@ export function CDHome() {
             whileHover={{ y: -2 }}
             onClick={() => navigate(card.id)}
             className="text-left p-4 rounded-[22px] group transition-all"
-            style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}
+            style={{
+              background: pastelFromHex(card.color),
+              boxShadow: '0 4px 16px -6px rgba(30,50,80,0.08)',
+              border: `1px solid ${pastelFromHex(card.color, 0.72)}`,
+            }}
           >
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center mb-3 text-white" style={{ background: card.color }}>
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center mb-3"
+              style={{ background: pastelChipFromHex(card.color), color: card.color }}
+            >
               {card.icon}
             </div>
             <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }}>{card.label}</p>
@@ -82,13 +90,13 @@ export function CDHome() {
         ))}
       </div>
 
-      {/* Recent objects */}
+      {/* Recent content */}
       {recentObjects.length > 0 && (
         <>
           <div className="flex items-center justify-between mb-3">
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>Recent objects</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>Recent content</p>
             <button onClick={() => navigate('cd-library')} className="flex items-center gap-1 transition-colors hover:text-[#0B1220]" style={{ fontSize: 12, color: '#9AA3AF' }}>
-              Activity objects → <ArrowRight size={11} />
+              Content Library → <ArrowRight size={11} />
             </button>
           </div>
           <div className="rounded-[22px] overflow-hidden" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>

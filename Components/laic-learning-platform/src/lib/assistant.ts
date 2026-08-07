@@ -1,6 +1,7 @@
 import type {
   AssistantContext,
   AssistantContextBlock,
+  AssistantMessage,
   AssistantQuickActionId,
   CreatorPipelineDraft,
   EditAction,
@@ -8,6 +9,21 @@ import type {
   ObjectStatus,
   ObjectType,
 } from './types';
+
+/** User turns from Hoot — used as binding instructions for generation across the pipeline. */
+export function authorInstructionsFromMessages(messages: AssistantMessage[] | undefined | null): string[] {
+  if (!Array.isArray(messages) || !messages.length) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const m of messages) {
+    if (m.role !== 'user') continue;
+    const t = String(m.content || '').trim();
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
+}
 
 /** Working part shape used by tutorial ObjEditor. */
 export type TutorialEditorPart = {
@@ -112,7 +128,9 @@ export function buildAssistantContext(snap: AssistantHostSnapshot): AssistantCon
         end: fv.end,
         chks: fv.chks,
         prog: fv.prog,
-        aiExtra: fv.aiExtra === true,
+        // Tutorials: AI extras are force-Off (define-first); ignore legacy fv.aiExtra.
+        aiExtra: snap.objectType === 'tutorial' || snap.objectType === 'tutorial-v2' ? false : fv.aiExtra === true,
+        // words retired — length follows units + depth
       },
     },
     provenance: {
@@ -135,14 +153,14 @@ export function buildAssistantContext(snap: AssistantHostSnapshot): AssistantCon
 }
 
 export const QUICK_ACTION_PROMPTS: Record<AssistantQuickActionId, string> = {
-  improve_block: 'Improve the selected block: clearer, better structured, still grounded in this object’s sources.',
+  improve_block: 'Improve the selected block: clearer, better structured, still grounded in this content’s sources.',
   make_simpler: 'Rewrite the selected block in simpler language for the configured audience and level.',
   shorten: 'Shorten the selected block without losing the key teaching point.',
   add_example: 'Add a concrete example to the selected block (or propose a new example block right after it), grounded in the sources.',
   write_check: 'Propose a knowledge-check question that tests what the selected block just taught, placed immediately after it.',
-  fix_grounding: 'Audit grounding for the selection (or whole object if none). Flag unsupported claims and propose ground-fix edits.',
-  coverage_check: 'Check coverage against the learning objective, audience, and level. Report gaps, drift, and duplicates. Propose fixes only if clearly needed.',
-  summarize: 'Summarize the selected block, or the whole object if nothing is selected. Cite block ids.',
+  fix_grounding: 'Audit grounding for the selection (or whole content if none). Flag unsupported claims and propose ground-fix edits.',
+  coverage_check: 'Check coverage against the objective, audience, and level. Report gaps, drift, and duplicates. Propose fixes only if clearly needed.',
+  summarize: 'Summarize the selected block, or the whole content if nothing is selected. Cite block ids.',
 };
 
 export function resolveQuickActionMessage(
@@ -157,7 +175,7 @@ export function resolveQuickActionMessage(
   if (selection.kind === 'multi_block') {
     return `${base}\n\n(Selected blocks: ${selection.blockIds.join(', ')})`;
   }
-  return `${base}\n\n(No block selected — treat as whole-object scope; ask to clarify if an edit would be ambiguous.)`;
+  return `${base}\n\n(No block selected — treat as whole-content scope; ask to clarify if an edit would be ambiguous.)`;
 }
 
 function cloneParts(parts: TutorialEditorPart[]): TutorialEditorPart[] {
@@ -271,6 +289,21 @@ function editorRangeField(field?: string): string {
   return f;
 }
 
+/** Flatten batches; apply add_block from high→low atIndex so placements stay stable. */
+function stabilizeEditActions(actions: EditAction[]): EditAction[] {
+  const flat: EditAction[] = [];
+  const walk = (list: EditAction[]) => {
+    for (const a of list) {
+      if (a.type === 'batch') walk(a.actions);
+      else flat.push(a);
+    }
+  };
+  walk(actions);
+  const adds = flat.filter((a): a is Extract<EditAction, { type: 'add_block' }> => a.type === 'add_block');
+  const rest = flat.filter((a) => a.type !== 'add_block');
+  return [...rest, ...adds.sort((a, b) => (b.atIndex ?? 0) - (a.atIndex ?? 0))];
+}
+
 /** Apply one or more edit actions to tutorial editor parts. Pure. */
 export function applyEditActionsToParts(
   parts: TutorialEditorPart[],
@@ -287,7 +320,7 @@ export function applyEditActionsToParts(
   const applyOne = (action: EditAction) => {
     switch (action.type) {
       case 'batch':
-        for (const a of action.actions) applyOne(a);
+        for (const a of stabilizeEditActions(action.actions)) applyOne(a);
         break;
       case 'update_block': {
         const patch = normalizeEditorPatch(action.patch || {});
@@ -394,7 +427,7 @@ export function applyEditActionsToParts(
     }
   };
 
-  for (const a of actions) applyOne(a);
+  for (const a of stabilizeEditActions(actions)) applyOne(a);
   return { parts: next, meta: nextMeta, affectedIds };
 }
 

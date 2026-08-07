@@ -111,6 +111,8 @@ export interface SessionStore {
   putSession(record: SessionRecord): Promise<void>;
   getSession(sessionId: string): Promise<SessionRecord | null>;
   listSessions(filter?: ScopeFilter): Promise<SessionRecord[]>;
+  /** Remove one session — a player discarding an unfinished board. */
+  deleteSession(sessionId: string): Promise<void>;
   /** Remove every session of a KB (part of KB deletion — their pinned compiles go with the KB). */
   deleteSessionsForKb(kbId: string): Promise<void>;
 }
@@ -131,6 +133,10 @@ export class InMemorySessionStore implements SessionStore {
     return this.data.sessions
       .filter((s) => matchesScope(s, filter))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async deleteSession(sessionId: string) {
+    this.data.sessions = this.data.sessions.filter((s) => s.sessionId !== sessionId);
+    this.persist();
   }
   async deleteSessionsForKb(kbId: string) {
     this.data.sessions = this.data.sessions.filter((s) => s.kbId !== kbId);
@@ -357,6 +363,12 @@ export class SessionService {
   /** Part of KB deletion — the pinned compiles vanish with the KB. */
   async deleteForKb(kbId: string): Promise<void> {
     await this.store.deleteSessionsForKb(kbId);
+  }
+
+  /** A player discarding one unfinished board. Ownership and phase checks
+   *  belong to the caller — this is the mechanism, not the policy. */
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.store.deleteSession(sessionId);
   }
 
   async requireSession(sessionId: string): Promise<SessionRecord> {

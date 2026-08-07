@@ -71,9 +71,11 @@ export async function GET(request: Request): Promise<NextResponse> {
   // over https) is what makes the app's iframe able to stay signed in.
   //
   // Only the embedded launch relaxes it. A normal, top-level launch keeps Lax,
-  // which is the stronger default and all it needs. Note that browsers which
-  // block third-party cookies outright (Safari, Firefox) will still drop it —
-  // the durable fix is serving app and platform from one registrable domain.
+  // which is the stronger default and all it needs. Browsers that block plain
+  // third-party cookies outright (Safari, Firefox, Chrome-with-3PCD) accept a
+  // PARTITIONED one (CHIPS): the cookie lives in a jar keyed to the host app's
+  // site, which is exactly the isolation an embed wants anyway. Serving app
+  // and platform from one registrable domain remains the fully-durable fix.
   const embedded = url.searchParams.get("embedded") === "1";
   const secure = process.env.NODE_ENV === "production";
   const cookieOpts = {
@@ -81,6 +83,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     sameSite: embedded && secure ? ("none" as const) : ("lax" as const),
     path: "/",
     secure,
+    ...(embedded && secure ? { partitioned: true } : {}),
   };
   response.cookies.set(NEXUS_TOKEN_COOKIE, accessToken, cookieOpts);
   // The console's return address, when Nexus sent one — powers "Back to Nexus".

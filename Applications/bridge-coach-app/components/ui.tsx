@@ -48,6 +48,7 @@ export function ScreenHeader({
   title,
   showBack = true,
   backTo = "/home",
+  onBack,
 }: {
   title: string;
   showBack?: boolean;
@@ -58,12 +59,19 @@ export function ScreenHeader({
    * 2026-08-01: the arrow at a table "frozen").
    */
   backTo?: Href;
+  /**
+   * Intercept the arrow: receives the default navigation and decides if and
+   * when to run it. What a table embed uses to ask "save or discard?" before
+   * letting an unfinished board be left.
+   */
+  onBack?: (goBack: () => void) => void;
 }) {
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace(backTo));
   return (
     <View style={styles.header}>
       {showBack ? (
         <Pressable
-          onPress={() => (router.canGoBack() ? router.back() : router.replace(backTo))}
+          onPress={() => (onBack ? onBack(goBack) : goBack())}
           hitSlop={12}
           style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
           accessibilityRole="button"
@@ -111,12 +119,16 @@ export function OptionCard({
   selected,
   /** Position in a list — alternates the suit colour like a dealt row. */
   index = 0,
+  badge,
 }: {
   title: string;
   subtitle?: string;
   onPress: () => void;
   selected?: boolean;
   index?: number;
+  /** A count in a cream circle where the chevron would sit — how many things
+   *  wait behind this card (unfinished boards, open assignments). */
+  badge?: number;
 }) {
   const suit = index % 2 === 0 ? Brand.maroon : Brand.green;
   return (
@@ -133,7 +145,13 @@ export function OptionCard({
         <Text style={styles.cardTitle}>{title}</Text>
         {subtitle ? <Text style={styles.cardSubtitle}>{subtitle}</Text> : null}
       </View>
-      <Text style={styles.cardChevron}>›</Text>
+      {badge !== undefined ? (
+        <View style={styles.cardBadge}>
+          <Text style={styles.cardBadgeText}>{badge}</Text>
+        </View>
+      ) : (
+        <Text style={styles.cardChevron}>›</Text>
+      )}
     </Pressable>
   );
 }
@@ -246,6 +264,21 @@ const styles = StyleSheet.create({
     fontSize: 22,
     color: Brand.cream,
     marginLeft: 8,
+  },
+  cardBadge: {
+    minWidth: 30,
+    height: 30,
+    borderRadius: 15,
+    paddingHorizontal: 8,
+    backgroundColor: Brand.cream,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+  cardBadgeText: {
+    fontFamily: Fonts.bodySemibold,
+    fontSize: 14,
+    color: Brand.ink,
   },
 
   // ── Fields ──────────────────────────────────────────────────────────────

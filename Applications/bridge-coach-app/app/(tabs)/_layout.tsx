@@ -24,8 +24,10 @@ import {
 } from "@react-navigation/material-top-tabs";
 import type { ParamListBase, TabNavigationState } from "@react-navigation/native";
 import { withLayoutContext } from "expo-router";
+import { Platform } from "react-native";
 
 import { BrandTabBar } from "../../components/brand-tab-bar";
+import { BridgeSessionWarmer } from "../../components/bridge-session-warmer";
 import { Brand } from "../../constants/theme";
 
 const { Navigator } = createMaterialTopTabNavigator();
@@ -40,11 +42,24 @@ const SwipeTabs = withLayoutContext<
 
 export default function TabsLayout() {
   return (
-    <SwipeTabs
+    <>
+      {/* Runs the bridge launch handshake invisibly the moment the tabs
+          exist, so the first embed anyone opens (Create Assignment, a table)
+          loads directly instead of paying the handshake at the tap. */}
+      <BridgeSessionWarmer />
+      <SwipeTabs
       tabBarPosition="bottom"
       tabBar={(props) => <BrandTabBar {...props} />}
       screenOptions={{
-        swipeEnabled: true,
+        // Swiping between tabs is a NATIVE gesture. In a mobile browser it
+        // fights Safari's own edge-swipes — and worse, the pager's gesture
+        // detector watches every touch for movement, so a normal (slightly
+        // wobbly) tap on the tab bar reads as a maybe-swipe and the press
+        // cancels: the infamous "have to tap twice". Web taps, native swipes.
+        swipeEnabled: Platform.OS !== "web",
+        // The SLIDE stays everywhere (owner request): tapping a tab still
+        // glides the pages across — only the drag GESTURE is web-disabled.
+        animationEnabled: true,
         // Keep the neighbours mounted so a swipe reveals a real page rather than
         // a blank placeholder, without paying to mount all six up front (Home
         // carries the tree's vector artwork).
@@ -59,6 +74,7 @@ export default function TabsLayout() {
       <SwipeTabs.Screen name="coach" options={{ title: "Coach" }} />
       <SwipeTabs.Screen name="club" options={{ title: "Club" }} />
       <SwipeTabs.Screen name="analysis" options={{ title: "Analysis" }} />
-    </SwipeTabs>
+      </SwipeTabs>
+    </>
   );
 }

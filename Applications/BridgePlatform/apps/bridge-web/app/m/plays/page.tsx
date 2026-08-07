@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import type { PlaySubmission } from "@bridge/sessions";
 import { getBridgeContext, getMyCoach, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { sessionService, submissionStore } from "@/lib/sessions";
-import { sendPlayToCoachAction } from "./actions";
+import { replayBoardAction, sendPlayToCoachAction } from "./actions";
 
 // BirdBridge typefaces (loaded in the /m layout): Neco for display, General
 // Sans for body — with the older mobile faces as fallbacks.
@@ -135,7 +135,10 @@ export default async function MobilePlaysPage({
               </p>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <Link
-                  href={`/m/table/${s.sessionId}?from=games`}
+                  // The full record, not the live table: a finished board opens
+                  // on the hand-record view — all four hands, the auction, the
+                  // play — with "⟵ table" one tap away.
+                  href={`/m/table/${s.sessionId}?from=games&view=hands`}
                   style={{
                     font: `600 12.5px ${G}`,
                     padding: "7px 14px",
@@ -149,6 +152,25 @@ export default async function MobilePlaysPage({
                 >
                   View board
                 </Link>
+                {/* Same deal, fresh table — a fork, so this finished record
+                    (and any review of it) is never touched. */}
+                <form action={replayBoardAction} style={{ display: "inline" }}>
+                  <input type="hidden" name="sessionId" value={s.sessionId} />
+                  <button
+                    type="submit"
+                    style={{
+                      font: `600 12.5px ${G}`,
+                      padding: "7px 14px",
+                      borderRadius: 999,
+                      cursor: "pointer",
+                      border: "2px solid rgba(255,244,215,0.8)",
+                      background: "transparent",
+                      color: CREAM,
+                    }}
+                  >
+                    Replay
+                  </button>
+                </form>
                 {coach && !withCurrentCoach ? (
                   <form action={sendPlayToCoachAction} style={{ display: "inline" }}>
                     <input type="hidden" name="sessionId" value={s.sessionId} />

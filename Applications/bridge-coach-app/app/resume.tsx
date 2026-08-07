@@ -8,19 +8,23 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { OptionCard, Screen, ScreenHeader } from "../components/ui";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
-import { fetchBridgeSummary, type InProgressBoard } from "../lib/nexus";
+import { type InProgressBoard } from "../lib/nexus";
+import { peekSummary, refreshSummary } from "../lib/summary-cache";
 
 export default function ResumeScreen() {
   const { token } = useAuth();
-  const [boards, setBoards] = useState<InProgressBoard[] | null>(null);
+  // Last known list renders immediately; the focus effect refreshes it.
+  const [boards, setBoards] = useState<InProgressBoard[] | null>(() =>
+    token ? (peekSummary(token)?.in_progress ?? null) : null,
+  );
 
   useFocusEffect(
     useCallback(() => {
       if (!token) return;
       let cancelled = false;
-      fetchBridgeSummary(token)
+      refreshSummary(token)
         .then((s) => !cancelled && setBoards(s.in_progress))
-        .catch(() => !cancelled && setBoards([]));
+        .catch(() => !cancelled && setBoards((b) => b ?? []));
       return () => {
         cancelled = true;
       };
