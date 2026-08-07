@@ -371,6 +371,8 @@ export async function listProgramMembers(orgId: string, programId: string): Prom
         membership_id: m.id,
         invitation_id: null as string | null,
         email: p?.email ?? null,
+        /** Optional sign-in username, so the roster can show and edit it. */
+        username: p?.username ?? null,
         display_name: p?.displayName ?? p?.name ?? null,
         membership_role: m.role,
         status: "active",

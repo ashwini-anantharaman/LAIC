@@ -139,6 +139,16 @@ export function localAuthSignIn(email: string, password: string): Row {
   throw new HttpError(401, "Invalid credentials");
 }
 
+/** Overwrite a demo auth user's password, found by email. Admin-initiated. */
+export function localAuthSetPassword(email: string, password: string): Row {
+  const users = _read("auth_users");
+  const user = users.find((u) => (u.email ?? "").toLowerCase() === email.toLowerCase());
+  if (!user) throw new HttpError(404, "No account for that email");
+  user.password_hash = _hashPw(password);
+  _write("auth_users", users);
+  return { id: user.id, email: user.email };
+}
+
 export function localAuthGetUser(token: string): Row | null {
   for (const u of _read("auth_users")) {
     if (u.id === token) return { id: u.id, email: u.email };

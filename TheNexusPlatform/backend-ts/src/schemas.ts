@@ -225,6 +225,25 @@ export const offeringStatus = z.enum([
 export const approvalMode = z.enum(["auto_approve", "manual_approve"]);
 export const platformModule = z.enum(["nexus_only", "learning", "coaching", "bridge", "mixed"]);
 export const allowedIdentifiers = z.enum(["email", "phone", "both"]);
+
+/**
+ * A username usable as a sign-in identifier. Deliberately narrow: 3–32 chars of
+ * letters, digits, dot, underscore or hyphen. No "@" — that keeps username and
+ * email unambiguous when one field accepts either. Mirrored by the
+ * profiles_username_shape constraint in migration 0038.
+ */
+export const usernameSchema = z
+  .string()
+  .trim()
+  .min(3, "Username must be at least 3 characters")
+  .max(32, "Username must be at most 32 characters")
+  .regex(/^[A-Za-z0-9._-]+$/, "Use only letters, numbers, dot, underscore or hyphen");
+
+/** Minimum we are willing to set as a password on someone's behalf. */
+export const adminSetPasswordSchema = z
+  .string()
+  .min(3, "Password must be at least 3 characters")
+  .max(128, "Password must be at most 128 characters");
 export const appStatus = z.enum(["active", "paused", "revoked"]);
 export const registrationSource = z.enum([
   "app_hook", "admin_add", "coach_add", "invite_link", "bulk_import",

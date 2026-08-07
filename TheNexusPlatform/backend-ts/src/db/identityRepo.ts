@@ -10,8 +10,9 @@
  * Returns snake_case Row shapes so they are drop-in for the existing platformDb
  * callers and routes.
  */
-import { eq, inArray, or } from "drizzle-orm";
+import { eq, inArray, or, sql } from "drizzle-orm";
 
+import { HttpError } from "../httpError";
 import type { Membership } from "../permissions";
 import type { AuditEventOptions } from "../platformLocalStore";
 import { asPrivileged } from "./context";
@@ -27,6 +28,7 @@ function profileRow(p: typeof profiles.$inferSelect): Row {
   return {
     id: p.id,
     email: p.email,
+    username: p.username,
     role: p.role,
     display_name: p.displayName,
     name: p.name,
@@ -65,6 +67,55 @@ export async function getProfileByEmail(email: string): Promise<Row | null> {
   return asPrivileged(async (tx) => {
     const r = await tx.select().from(profiles).where(eq(profiles.email, email)).limit(1);
     return r.length ? profileRow(r[0]) : null;
+  });
+}
+
+/**
+ * Resolve a username to its account. Case-insensitive, and unique platform-wide
+ * (see 0038) because sign-in has no org context to disambiguate with.
+ *
+ * A person may hold SEVERAL profile rows (one per org), so several rows can
+ * share an email; the username is set on whichever row the admin edited, and the
+ * email it carries is what the caller signs in with.
+ */
+export async function getProfileByUsername(username: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select()
+      .from(profiles)
+      .where(sql`lower(${profiles.username}) = lower(${username})`)
+      .limit(1);
+    return r.length ? profileRow(r[0]) : null;
+  });
+}
+
+/**
+ * Set or clear a profile's username. Pass null to clear.
+ *
+ * Uniqueness is enforced by the partial unique index, so a race between two
+ * admins surfaces as a 23505 rather than two identical usernames.
+ */
+export async function setProfileUsername(
+  profileId: string,
+  username: string | null,
+): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    try {
+      const r = await tx
+        .update(profiles)
+        .set({ username, updatedAt: new Date() })
+        .where(eq(profiles.id, profileId))
+        .returning();
+      if (!r.length) throw new HttpError(404, "Profile not found");
+      return profileRow(r[0]);
+    } catch (exc) {
+      if (exc instanceof HttpError) throw exc;
+      const msg = String((exc as Error)?.message ?? exc);
+      if (msg.includes("23505") || msg.toLowerCase().includes("duplicate")) {
+        throw new HttpError(409, "That username is already taken");
+      }
+      throw exc;
+    }
   });
 }
 

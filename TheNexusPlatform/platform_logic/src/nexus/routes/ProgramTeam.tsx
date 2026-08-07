@@ -9,6 +9,8 @@ import { useNavigate, useParams } from "react-router";
 import { ChevronRight, Copy, Eye, Layers, LayoutGrid, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { CredentialsButton } from "@/nexus/people/CredentialsButton";
+
 import { Button } from "@/app/components/ui/button";
 import {
   Dialog,
@@ -93,7 +95,12 @@ const heldPlatform = (m: { platform_roles?: Record<string, string> | null; bridg
 export function ProgramTeam() {
   const { orgId = "", programId = "" } = useParams();
   const navigate = useNavigate();
-  const { startImpersonation, refresh } = useSession();
+  const { startImpersonation, refresh, user } = useSession();
+  // Super Admin = the org owner. Only they may add or remove administrators, so
+  // the controls that would 403 are hidden rather than shown and then refused.
+  const isOwner = (user?.memberships ?? []).some(
+    (m) => m.org_id === orgId && m.role === "owner" && !m.program_id,
+  );
 
   const [program, setProgram] = useState<Program | null>(null);
   const [roles, setRoles] = useState<ProgramRole[] | null>(null);
@@ -321,8 +328,16 @@ export function ProgramTeam() {
         <TableCell>
           {isAdmin ? (
             <div>
-              <Pill tone="accent">Super Admin</Pill>
-              <div className="text-[11px] text-muted-foreground mt-0.5">Program-level access</div>
+              {/* An administrator is NOT the Super Admin: same static pill, but
+                  its own badge and its own limit. Only the owner (Super Admin)
+                  may add or remove administrators — enforced server-side in
+                  POST/DELETE, mirrored in the controls below. */}
+              <Pill tone="accent">{m.membership_role === "owner" ? "Super Admin" : "Admin"}</Pill>
+              <div className="text-[11px] text-muted-foreground mt-0.5">
+                {m.membership_role === "owner"
+                  ? "Full access · only they can add or remove admins"
+                  : "Manages this program · cannot add or remove admins"}
+              </div>
             </div>
           ) : heldPlatform(m) ? (
             (() => {
@@ -385,12 +400,22 @@ export function ProgramTeam() {
         </TableCell>
         <TableCell className="text-right">
           <div className="inline-flex items-center gap-1">
+            {m.membership_id && m.email ? (
+              <CredentialsButton
+                membershipId={m.membership_id}
+                personLabel={m.display_name ?? m.email}
+                currentUsername={m.username ?? null}
+                onSaved={load}
+              />
+            ) : null}
             {DEV_ENABLED && m.email ? (
               <Button size="sm" variant="ghost" onClick={() => testAsPerson(m)} title="Sign in as this person (dev)">
                 <Eye className="size-3.5" /> Test as
               </Button>
             ) : null}
-            {m.membership_id || m.invitation_id ? (
+            {(m.membership_id || m.invitation_id) &&
+            m.membership_role !== "owner" &&
+            (!isAdmin || isOwner) ? (
               <ConfirmButton
                 title={
                   m.status === "invited"

@@ -1011,6 +1011,11 @@ export async function updateMemberAccess(memberId: string, access: string): Prom
   );
 }
 
+export async function updateMemberRole(memberId: string, role: string): Promise<Row> {
+  if (usePg()) return tpg.updateMemberRole(memberId, role);
+  throw new HttpError(400, "Changing a membership role requires the database backend");
+}
+
 /** Remove a membership. PG mode only in practice (Slice-11-era feature). */
 export async function deleteMembership(memberId: string): Promise<boolean> {
   if (usePg()) return tpg.deleteMembership(memberId);
@@ -1039,6 +1044,17 @@ export async function getProfileByEmail(email: string): Promise<Row | null> {
   const client = requireClient();
   const rows = await _select(client.from("profiles").select("*").eq("email", email).limit(1));
   return rows.length > 0 ? rows[0] : null;
+}
+
+/** Username identity is DB-backed only — the local JSON store has no column. */
+export async function getProfileByUsername(username: string): Promise<Row | null> {
+  if (!usePg()) return null;
+  return pg.getProfileByUsername(username);
+}
+
+export async function setProfileUsername(profileId: string, username: string | null): Promise<Row> {
+  if (!usePg()) throw new HttpError(400, "Usernames require the database backend");
+  return pg.setProfileUsername(profileId, username);
 }
 
 export async function getMembership(memberId: string): Promise<Row | null> {

@@ -17,6 +17,8 @@ export const profiles = pgTable("profiles", {
   authUserId: uuid("auth_user_id"),
   organizationId: uuid("organization_id"),
   email: text("email"),
+  /** Optional second sign-in identifier; unique case-insensitively (0038). */
+  username: text("username"),
   role: text("role").notNull().default("student"),
   name: text("name"),
   grade: text("grade"),
