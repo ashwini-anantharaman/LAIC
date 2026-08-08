@@ -49,6 +49,9 @@ export type { CoachPanelProps, CoachLine, CoachAction } from "./CoachPanel";
 export { ChallengeStrip, CHALLENGE_STRIP_HEIGHT } from "./ChallengeStrip";
 export type { ChallengeStripProps } from "./ChallengeStrip";
 
+export { ChallengeDoneBar, CHALLENGE_DONE_BAR_HEIGHT } from "./ChallengeDoneBar";
+export type { ChallengeDoneBarProps } from "./ChallengeDoneBar";
+
 export { ChallengeResultsOverlay } from "./ChallengeResultsOverlay";
 export type { ChallengeResultsOverlayProps, ChallengeBoardCell } from "./ChallengeResultsOverlay";
 
@@ -88,5 +91,6 @@ export {
   compareRowInert,
   comparePicked,
   COMPARE_IDLE,
+  onwardFromBoard,
 } from "./challengeLogic";
-export type { Rankable, ComparePick, CompareState, CompareAction } from "./challengeLogic";
+export type { Rankable, ComparePick, CompareState, CompareAction, OnwardStep } from "./challengeLogic";

@@ -7,6 +7,7 @@ import {
   compareRowInert,
   displayedValue,
   leaderFlags,
+  onwardFromBoard,
   rankRows,
   type CompareState,
 } from "./challengeLogic";
@@ -244,5 +245,34 @@ describe("compareReduce", () => {
     const one = pick(started, 4, "You");
     expect(started.picks).toEqual([]);
     expect(one.picks).toEqual([{ boardNo: 4, key: "You" }]);
+  });
+});
+
+describe("onwardFromBoard", () => {
+  const args = { challengeId: "chl_x", boardsTotal: 4 };
+
+  it("sends you to the next board while any are left", () => {
+    const step = onwardFromBoard({ ...args, boardsLeft: 3 });
+    expect(step.label).toBe("Next board");
+    expect(step.href).toBe("/bridge/challenges/chl_x/play");
+    expect(step.note).toBe("3 boards left");
+  });
+
+  it("counts the last board in the singular", () => {
+    expect(onwardFromBoard({ ...args, boardsLeft: 1 }).note).toBe("1 board left");
+  });
+
+  it("sends a finished viewer to the results, not back through the entry", () => {
+    const step = onwardFromBoard({ ...args, boardsLeft: 0 });
+    expect(step.label).toBe("See your results");
+    expect(step.href).toBe("/bridge/challenges/chl_x/results");
+    expect(step.note).toBe("All 4 boards played");
+  });
+
+  it("never emits a negative count, and escapes the id", () => {
+    expect(onwardFromBoard({ ...args, boardsLeft: -2 }).href).toContain("/results");
+    expect(onwardFromBoard({ challengeId: "a/b", boardsTotal: 1, boardsLeft: 1 }).href).toBe(
+      "/bridge/challenges/a%2Fb/play",
+    );
   });
 });

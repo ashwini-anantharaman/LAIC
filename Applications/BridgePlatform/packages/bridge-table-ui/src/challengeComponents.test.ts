@@ -12,6 +12,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { BoardSquares } from "./BoardSquares";
+import { ChallengeDoneBar } from "./ChallengeDoneBar";
 import { ChallengeResultsOverlay } from "./ChallengeResultsOverlay";
 import { ChallengeStrip } from "./ChallengeStrip";
 import { Leaderboard } from "./Leaderboard";
@@ -225,5 +226,29 @@ describe("ChallengeResultsOverlay", () => {
     expect(phone).toContain('aria-label="Close results"');
     expect(wide).not.toContain('aria-label="Close results"');
     expect(wide).toContain("width:540px");
+  });
+});
+
+describe("ChallengeDoneBar", () => {
+  const onward = { label: "Next board", href: "/bridge/challenges/chl_x/play", note: "3 boards left" };
+
+  it("offers the way onward as a real LINK, not a button", () => {
+    const html = renderToStaticMarkup(
+      createElement(ChallengeDoneBar, { onward, resultLine: "4S by South, made 4", resultScore: "+620" }),
+    );
+    expect(html).toContain('href="/bridge/challenges/chl_x/play"');
+    expect(html).toContain("Next board");
+    expect(html).toContain("3 boards left");
+    expect(html).toContain("+620");
+  });
+
+  it("still names itself when the board carries no score line", () => {
+    const html = renderToStaticMarkup(createElement(ChallengeDoneBar, { onward }));
+    expect(html).toContain("Board complete");
+  });
+
+  it("keeps a 44px target - this is the one control that must be hit", () => {
+    const html = renderToStaticMarkup(createElement(ChallengeDoneBar, { onward }));
+    expect(html).toMatch(/height:44px/);
   });
 });
