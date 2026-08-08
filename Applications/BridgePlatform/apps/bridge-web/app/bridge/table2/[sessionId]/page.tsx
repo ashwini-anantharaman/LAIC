@@ -584,6 +584,12 @@ export default async function PlayTablePage({
             standings={challenge.standings}
             boards={challenge.boards}
             subtitle={challenge.subtitle}
+            done={challenge.done}
+            onward={challenge.onward}
+            resultLine={score ? resultLabel(score) : ""}
+            resultScore={
+              score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""
+            }
           >
             {table}
           </ChallengeTableChrome>

@@ -15,6 +15,10 @@
 //   · the in-table challenge chrome — the strip, `Board k of N`, the Results
 //     button's visibility rule, the standings overlay over the felt (A4;
 //     packages/bridge-table-ui/src/challengeComponents.test.ts);
+//   · the done bar — the way onward from a finished board (Next board / See
+//     your results), which needs a board played to its last trick
+//     (challengeLogic.test.ts covers the choice, challengeComponents.test.ts
+//     the bar);
 //   · "BEN is thinking… / retry" — only reachable when a BEN call fails;
 //   · comparisons and baselines — full-BEN, your-contract, from-this-point;
 //   · the scored leaderboard and board-by-board grid with real figures

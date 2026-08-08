@@ -39,6 +39,7 @@ export const GLYPH_EDITOR = "\u25C6"; // filled diamond - "set the boards"
 export const GLYPH_COMPARE = "\u21C4"; // two arrows - compare
 export const GLYPH_ENDASH = "\u2013"; // BEN's unranked rank cell
 export const GLYPH_EMDASH = "\u2014";
+export const GLYPH_ARROW = "\u2192"; // onward - the next board
 export const MIDDOT = "\u00B7";
 
 /** How a figure reads: better than the field, worse, or flat. */

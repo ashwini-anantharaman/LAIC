@@ -26,7 +26,9 @@ import type {
   ChallengeBoardCell,
   ChallengeStripProps,
   LeaderboardProps,
+  OnwardStep,
 } from "@bridge/table-ui";
+import { onwardFromBoard } from "@bridge/table-ui";
 import { freezeChallengePlay } from "@/app/bridge/challenges/[id]/play/entry";
 import { buildResultsView } from "@/app/bridge/challenges/[id]/results/resultsView";
 import { canUse } from "@/lib/access";
@@ -55,6 +57,10 @@ export interface ChallengeTableContext {
   boards: ChallengeBoardCell[];
   /** The quiet line under the overlay heading. */
   subtitle: string;
+  /** This board has finished and been frozen — the done bar is due. */
+  done: boolean;
+  /** Where the done bar sends you: the next board, or the results. */
+  onward: OnwardStep;
 }
 
 /** The access catalogue's answer for every control the table gates on. */
@@ -115,6 +121,15 @@ export async function challengeTableContext(
   const challenge = access.challenge;
   if (!challenge || !board) return null;
 
+  // The freeze above has already landed, so `finishedBoards` counts this one:
+  // what is LEFT is the whole decision the done bar needs.
+  const done = play.status === "completed";
+  const onward = onwardFromBoard({
+    challengeId,
+    boardsLeft: Math.max(0, access.totalBoards - access.finishedBoards),
+    boardsTotal: access.totalBoards,
+  });
+
   const strip: Omit<ChallengeStripProps, "onResults"> = {
     title: challenge.title,
     boardNo,
@@ -135,6 +150,8 @@ export async function challengeTableContext(
       subtitle: challenge.title,
       standings: { rows: [], scoringLabel: "" },
       boards: [],
+      done,
+      onward,
     };
   }
 
@@ -184,5 +201,7 @@ export async function challengeTableContext(
       tone: square.tone,
       current: square.boardNo === boardNo,
     })),
+    done,
+    onward,
   };
 }
