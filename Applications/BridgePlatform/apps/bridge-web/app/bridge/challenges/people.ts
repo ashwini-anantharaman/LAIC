@@ -8,7 +8,7 @@
 // caller can actually see; the search box and the invite records are already
 // id-based, so widening the directory later is a change to THIS file only.
 
-import { STUB_USERS } from "@bridge/nexus-client";
+import { STUB_USERS, stubDisplayName } from "@bridge/nexus-client";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
 import { cache } from "react";
 import { getMyLearners, getProgramCoaches, nexusMode } from "@/lib/nexus";
@@ -61,7 +61,9 @@ export const listChallengePeople = cache(
 export function selfPerson(context: NexusBridgeContext): ChallengePerson {
   return {
     userId: context.nexusUserId,
-    name: context.displayName ?? context.nexusUserId,
+    // Same fallback chain as the app shell: stub mode has no displayName on the
+    // context, so the dev roster supplies it rather than showing a raw user id.
+    name: context.displayName ?? stubDisplayName(context.nexusUserId) ?? context.nexusUserId,
     handle: "creator",
   };
 }

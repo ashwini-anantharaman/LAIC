@@ -130,6 +130,10 @@ export function CreateChallenge({
     );
   }, [people, invitedIds, trimmedQuery]);
 
+  /** Quick create shows people as tap-to-toggle chips; past a handful the
+   *  Invites step's search is the honest tool, so the card links there. */
+  const quickPeople = useMemo(() => people.slice(0, 8), [people]);
+
   const setBoardCount = (next: number) => {
     const n = Math.max(MIN_BOARDS, Math.min(MAX_BOARDS, Math.round(next)));
     setBoards((prev) =>
@@ -149,6 +153,12 @@ export function CreateChallenge({
         return { ...b, seed, hands: seededDeal(seed), edited: false };
       }),
     );
+  const toggleInvite = (userId: string) =>
+    setInvited((prev) =>
+      prev.some((r) => r.userId === userId)
+        ? prev.filter((r) => r.userId !== userId)
+        : [...prev, { userId, moderator: false }],
+    );
   const openedEditor = (index: number) => {
     setEditorBadge(true);
     setBoards((prev) => prev.map((b, i) => (i === index ? { ...b, touched: true } : b)));
@@ -163,14 +173,20 @@ export function CreateChallenge({
     )} · ${overrides} override${overrides === 1 ? "" : "s"}`;
   }, [controls]);
 
-  const titleOk = title.trim().length > 0;
   const moderatorCount = 1 + invited.filter((i) => i.moderator).length;
   const seatsUsed = [...new Set(boards.map((b) => b.humanSeat))];
   const scoringInfo = SCORING_OPTIONS.find((s) => s.key === scoring)!;
   const standingsInfo = STANDINGS_OPTIONS.find((s) => s.key === standings)!;
 
+  // Nothing but boards and invites is actually required: an unnamed challenge
+  // takes a name that describes it, so Quick create can be two taps and the
+  // wizard never blocks on a text field (owner, 2026-08-08).
+  const autoTitle = `${boards.length}-board ${scoringInfo.label}`;
+  const named = title.trim().length > 0;
+  const effectiveTitle = named ? title.trim() : autoTitle;
+
   const draft = (): ChallengeDraft => ({
-    title: title.trim(),
+    title: effectiveTitle,
     description: description.trim(),
     scoring,
     standingsVisibility: standings,
@@ -200,6 +216,7 @@ export function CreateChallenge({
         await createChallengeAction(payload);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not create the challenge");
+        goStep("review");
       }
     });
   };
@@ -242,6 +259,86 @@ export function CreateChallenge({
           </div>
         </div>
 
+        {/* ── Quick create ──
+            Two decisions — how many boards, who's in — and everything else
+            takes the default the wizard below would have given it. The same
+            state backs both, so anything picked here is still picked if you
+            scroll on into the full setup. */}
+        <section className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3.5">
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-[15px] font-extrabold text-emerald-900">Quick create</h2>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => goStep("basics")}
+              className="text-[11.5px] font-semibold text-emerald-800 underline-offset-2 hover:underline"
+            >
+              Full setup ↓
+            </button>
+          </div>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-emerald-900/80">
+            Pick the boards and who is in. Everything else takes its default.
+          </p>
+
+          <Label className="mt-3.5 text-emerald-900/70">Boards</Label>
+          <BoardCountPicker count={boards.length} onCount={setBoardCount} />
+
+          <Label className="mt-3.5 text-emerald-900/70">Who is in</Label>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="rounded-full border border-emerald-700 bg-emerald-700 px-3 py-1.5 text-[12px] font-bold text-white">
+              {self.name} · you
+            </span>
+            {quickPeople.map((person) => {
+              const on = invitedIds.has(person.userId);
+              return (
+                <button
+                  key={person.userId}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleInvite(person.userId)}
+                  className={`rounded-full border px-3 py-1.5 text-[12px] ${
+                    on
+                      ? "border-emerald-700 bg-emerald-700 font-bold text-white"
+                      : "border-emerald-300 bg-white font-semibold text-emerald-900"
+                  }`}
+                >
+                  {on ? "✓ " : "+ "}
+                  {person.name}
+                </button>
+              );
+            })}
+            {people.length === 0 && (
+              <span className="text-[12px] text-emerald-900/70">
+                Nobody else is visible to you yet — create it solo and invite
+                later.
+              </span>
+            )}
+          </div>
+          {people.length > quickPeople.length && (
+            <button
+              type="button"
+              onClick={() => goStep("invites")}
+              className="mt-2 text-[11.5px] font-semibold text-emerald-800 underline-offset-2 hover:underline"
+            >
+              Search the other {people.length - quickPeople.length} players ↓
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={create}
+            disabled={pending}
+            className="mt-3.5 h-[46px] w-full rounded-lg bg-emerald-700 text-[15px] font-extrabold text-white disabled:bg-neutral-300 disabled:text-neutral-500"
+          >
+            {createLabel}
+          </button>
+          <p className="mt-1.5 text-center text-[11.5px] leading-snug text-emerald-900/70">
+            {boards.length} boards · {1 + invited.length} player
+            {invited.length === 0 ? "" : "s"} · {scoringInfo.label} · random deals
+            {named ? "" : ` · named “${autoTitle}”`}
+          </p>
+        </section>
+
         {/* ── 01 · Basics ── */}
         <Section refFn={sectionRef("basics")} num="01" title="Basics">
           <p className="mb-4 text-[12.5px] leading-relaxed text-neutral-600">
@@ -250,19 +347,16 @@ export function CreateChallenge({
 
           <Label>Title</Label>
           <input
+            aria-label="Title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Friday Night IMPs"
-            className={`h-[42px] w-full rounded-lg border px-3 text-[15px] font-semibold text-neutral-900 ${
-              titleOk ? "border-neutral-300" : "border-red-300"
-            }`}
+            placeholder={autoTitle}
+            className="h-[42px] w-full rounded-lg border border-neutral-300 px-3 text-[15px] font-semibold text-neutral-900"
           />
-          <p
-            className={`mt-1.5 text-[11px] ${titleOk ? "text-neutral-500" : "text-invalid"}`}
-          >
-            {titleOk
+          <p className="mt-1.5 text-[11px] text-neutral-500">
+            {named
               ? "Players see this at the top of the challenge."
-              : "Required — the Create button stays disabled until this has a title."}
+              : `Optional — left blank it is called “${autoTitle}.”`}
           </p>
 
           <Label className="mt-4">Description</Label>
@@ -293,47 +387,7 @@ export function CreateChallenge({
           <Note>{scoringInfo.note}</Note>
 
           <Label className="mt-4">Boards</Label>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center overflow-hidden rounded-lg border border-neutral-300 bg-white">
-              <button
-                type="button"
-                onClick={() => setBoardCount(boards.length - 1)}
-                disabled={boards.length <= MIN_BOARDS}
-                aria-label="One board fewer"
-                className="h-11 w-11 bg-neutral-50 text-xl font-bold text-neutral-700 disabled:opacity-40"
-              >
-                −
-              </button>
-              <span className="min-w-[52px] text-center text-xl font-extrabold text-neutral-900">
-                {boards.length}
-              </span>
-              <button
-                type="button"
-                onClick={() => setBoardCount(boards.length + 1)}
-                disabled={boards.length >= MAX_BOARDS}
-                aria-label="One board more"
-                className="h-11 w-11 bg-neutral-50 text-xl font-bold text-neutral-700 disabled:opacity-40"
-              >
-                +
-              </button>
-            </div>
-            <div className="flex gap-1.5">
-              {BOARD_PRESETS.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setBoardCount(n)}
-                  className={`h-9 w-9 rounded-lg border text-[13px] font-bold ${
-                    boards.length === n
-                      ? "border-emerald-700 bg-emerald-700 text-white"
-                      : "border-neutral-300 bg-white text-neutral-600"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
+          <BoardCountPicker count={boards.length} onCount={setBoardCount} />
           <p className="mt-2 text-[11px] text-neutral-500">
             {MIN_BOARDS}–{MAX_BOARDS} boards. Vulnerability follows the standard
             board cycle; dealer and your seat are per-board on the next step.
@@ -600,7 +654,10 @@ export function CreateChallenge({
             </p>
           )}
           <dl className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-            <ReviewLine k="Title" v={titleOk ? title.trim() : "Untitled — add a title"} bad={!titleOk} />
+            <ReviewLine
+              k="Title"
+              v={named ? effectiveTitle : `${effectiveTitle} — auto-named`}
+            />
             <ReviewLine k="Scoring" v={scoringInfo.full} />
             <ReviewLine k="Standings" v={standingsInfo.review} />
             <ReviewLine
@@ -643,15 +700,13 @@ export function CreateChallenge({
           <button
             type="button"
             onClick={create}
-            disabled={!titleOk || pending}
+            disabled={pending}
             className="mt-3.5 h-[46px] w-full rounded-lg bg-emerald-700 text-[15px] font-extrabold text-white disabled:bg-neutral-300 disabled:text-neutral-500"
           >
             {createLabel}
           </button>
           <p className="mt-1.5 text-center text-[12px] text-neutral-500">
-            {titleOk
-              ? "Locks when the first player starts a board"
-              : "Add a title to enable"}
+            Locks when the first player starts a board
           </p>
         </Section>
 
@@ -659,7 +714,7 @@ export function CreateChallenge({
         <div className="sticky bottom-0 -mx-3 flex items-center gap-2.5 border-t border-neutral-200 bg-[var(--paper)] px-3 py-2 md:-mx-8 md:px-8 lg:hidden">
           <div className="min-w-0 flex-1">
             <div className="truncate text-[12px] font-bold text-neutral-800">
-              {titleOk ? title.trim() : "Untitled challenge"}
+              {effectiveTitle}
             </div>
             <div className="truncate text-[11px] text-neutral-500">
               {boards.length} boards · {scoringInfo.label} · {1 + invited.length} players
@@ -668,7 +723,7 @@ export function CreateChallenge({
           <button
             type="button"
             onClick={create}
-            disabled={!titleOk || pending}
+            disabled={pending}
             className="h-11 shrink-0 rounded-lg bg-emerald-700 px-5 text-sm font-extrabold text-white disabled:bg-neutral-300 disabled:text-neutral-500"
           >
             {createLabel}
@@ -693,13 +748,13 @@ export function CreateChallenge({
           <button
             type="button"
             onClick={create}
-            disabled={!titleOk || pending}
+            disabled={pending}
             className="mt-3 h-10 w-full rounded-lg bg-emerald-700 text-sm font-extrabold text-white disabled:bg-neutral-300 disabled:text-neutral-500"
           >
             {createLabel}
           </button>
           <p className="mt-1.5 text-center text-[11px] text-neutral-500">
-            {titleOk ? "Locks on first play" : "Add a title to enable"}
+            Locks on first play
           </p>
         </div>
       </aside>
@@ -741,6 +796,57 @@ function Section({
       </div>
       {children}
     </section>
+  );
+}
+
+/** The board count, as a stepper plus the common sizes. Quick create and the
+ *  Basics step drive the same state through it. */
+function BoardCountPicker({
+  count,
+  onCount,
+}: Readonly<{ count: number; onCount: (next: number) => void }>) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="flex items-center overflow-hidden rounded-lg border border-neutral-300 bg-white">
+        <button
+          type="button"
+          onClick={() => onCount(count - 1)}
+          disabled={count <= MIN_BOARDS}
+          aria-label="One board fewer"
+          className="h-11 w-11 bg-neutral-50 text-xl font-bold text-neutral-700 disabled:opacity-40"
+        >
+          −
+        </button>
+        <span className="min-w-[52px] text-center text-xl font-extrabold text-neutral-900">
+          {count}
+        </span>
+        <button
+          type="button"
+          onClick={() => onCount(count + 1)}
+          disabled={count >= MAX_BOARDS}
+          aria-label="One board more"
+          className="h-11 w-11 bg-neutral-50 text-xl font-bold text-neutral-700 disabled:opacity-40"
+        >
+          +
+        </button>
+      </div>
+      <div className="flex gap-1.5">
+        {BOARD_PRESETS.map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onCount(n)}
+            className={`h-9 w-9 rounded-lg border text-[13px] font-bold ${
+              count === n
+                ? "border-emerald-700 bg-emerald-700 text-white"
+                : "border-neutral-300 bg-white text-neutral-600"
+            }`}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

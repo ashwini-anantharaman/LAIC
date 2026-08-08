@@ -94,12 +94,14 @@ async function createChallenge(
   }>,
 ): Promise<string> {
   await page.goto("/bridge/challenges/new");
-  await page.getByPlaceholder("e.g. Friday Night IMPs").fill(opts.title);
+  await page.getByLabel("Title").fill(opts.title);
 
   if (opts.scoring)
     await page.getByRole("button", { name: opts.scoring, exact: true }).click();
 
-  const fewer = page.getByRole("button", { name: "One board fewer" });
+  // Quick create and 01 · Basics drive the same board count — either stepper
+  // does; first() is Quick create's.
+  const fewer = page.getByRole("button", { name: "One board fewer" }).first();
   for (let n = 6; n > opts.boards; n--) await fewer.click();
 
   if (opts.standingsAlways)
@@ -116,8 +118,9 @@ async function createChallenge(
     }
   }
 
-  // The review step's button (the sticky phone bar and the wide draft rail
-  // carry the same action — first() is the one inside 05 · Review).
+  // Every Create button on the page submits the same draft — Quick create's,
+  // 05 · Review's, the sticky phone bar's, the wide draft rail's. first() is
+  // Quick create's.
   await page.getByRole("button", { name: "Create challenge" }).first().click();
   await page.waitForURL(/\/bridge\/challenges\?created=/);
   return idOfCard(page, opts.title);
