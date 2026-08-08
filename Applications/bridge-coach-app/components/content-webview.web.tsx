@@ -36,6 +36,17 @@ import { createElement, useCallback, useEffect, useRef } from "react";
 
 // ── The pool (module-level, one per page load) ──────────────────────────────
 
+/**
+ * GATED OFF (2026-08-07): the pool's body-level host paints over the
+ * full-screen table's floating back chip — the push animation's transform
+ * traps the chip inside the screen's stacking layer, so its zIndex can't
+ * reach above a body-level sibling. Turning the pool on again needs the
+ * floating chrome rendered into the pool's own layer (a portal the embed
+ * hands us), coordinated with the embed's owner. Until then: the classic
+ * inline iframe, one boot per screen.
+ */
+const POOL_ENABLED = false;
+
 const MAX_ALIVE = 3;
 /** Pages whose hidden JS keeps them current — always safe to reuse. */
 const LIVE_PREFIXES = ["/bridge/table2", "/m/table"];
@@ -157,14 +168,53 @@ const contentWindowOf = (key: string): Window | null =>
 
 // ── The component: a placeholder the pooled iframe shadows ─────────────────
 
-export function ContentWebView({
+export function ContentWebView(props: {
+  url: string;
+  onUrlChange?: (url: string) => void;
+  /** Structured messages posted BY the embedded page (postMessage). */
+  onHostMessage?: (data: unknown) => void;
+}) {
+  return POOL_ENABLED ? PooledView(props) : InlineView(props);
+}
+
+/** The pre-pool behavior: a plain iframe inside the screen's own tree — it
+ *  paints under the screen's floating chrome by DOM order, and dies with the
+ *  screen (one boot per open). */
+function InlineView({
   url,
   onUrlChange,
   onHostMessage,
 }: {
   url: string;
   onUrlChange?: (url: string) => void;
-  /** Structured messages posted BY the embedded page (postMessage). */
+  onHostMessage?: (data: unknown) => void;
+}) {
+  useEffect(() => {
+    const listener = (e: MessageEvent) => {
+      const data = e.data as { type?: string; href?: string } | null;
+      if (data?.type === "bridge:location" && typeof data.href === "string") {
+        onUrlChange?.(data.href);
+      } else if (data?.type) {
+        onHostMessage?.(data);
+      }
+    };
+    window.addEventListener("message", listener);
+    return () => window.removeEventListener("message", listener);
+  }, [onUrlChange, onHostMessage]);
+
+  return createElement("iframe", {
+    src: url,
+    style: { flex: 1, width: "100%", height: "100%", border: 0 },
+  });
+}
+
+function PooledView({
+  url,
+  onUrlChange,
+  onHostMessage,
+}: {
+  url: string;
+  onUrlChange?: (url: string) => void;
   onHostMessage?: (data: unknown) => void;
 }) {
   const boxRef = useRef<HTMLDivElement | null>(null);
