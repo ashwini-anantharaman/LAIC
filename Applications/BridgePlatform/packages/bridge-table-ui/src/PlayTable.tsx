@@ -251,6 +251,14 @@ export interface PlayTableProps {
    * tiers keep their bars regardless; this is a phone-tier concern only.
    */
   hideTopBar?: boolean;
+  /**
+   * Paint NOTHING until the box is measured. The box starts as a desktop-
+   * sized guess, so server HTML on a phone is the wide dark-staged table for
+   * the whole hydration window; embeds prefer a quiet neutral fill that cuts
+   * straight to the right tier. Desktop pages omit this and keep their
+   * correct-first-paint SSR.
+   */
+  bootNeutral?: boolean;
   // ── phone-tier coach panel (Mobile Table.dc.html / CoachPanel.dc.html) ──────
   /** Reserve a coach panel below the table region on the phone tier. Default on. */
   showCoach?: boolean;
@@ -291,6 +299,7 @@ export function PlayTable({
   settings,
   viewHref,
   hideTopBar = false,
+  bootNeutral = false,
   appearance,
   showCoach = true,
   coachShare = 30,
@@ -313,10 +322,21 @@ export function PlayTable({
   // element, which is what makes a second instance possible at all.
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [box, setBox] = useState({ w: BASE_WIDE.w, h: BASE_WIDE.h });
+  // With bootNeutral, nothing is drawn until this flips: the box starts as a
+  // GUESS (desktop-sized), and on a phone the server-rendered guess is the
+  // wide dark-staged table — visible for the whole hydration window before
+  // the real measurement swaps tiers ("the table with the black sides",
+  // owner report 2026-08-07). useLayoutEffect measures before first
+  // post-hydration paint, so the neutral fill goes straight to the RIGHT
+  // table with zero wrong frames.
+  const [measured, setMeasured] = useState(false);
   useLayoutEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const read = () => setBox({ w: el.clientWidth || BASE_WIDE.w, h: el.clientHeight || BASE_WIDE.h });
+    const read = () => {
+      setBox({ w: el.clientWidth || BASE_WIDE.w, h: el.clientHeight || BASE_WIDE.h });
+      setMeasured(true);
+    };
     read();
     const ro = new ResizeObserver(read);
     ro.observe(el);
@@ -1115,6 +1135,16 @@ export function PlayTable({
   );
 
   // ---- stage --------------------------------------------------------------
+  // Every hook above has run; painting is all that's skipped. The ref must
+  // still attach — it IS the measurement that ends this state.
+  if (bootNeutral && !measured) {
+    return (
+      <div
+        ref={wrapRef}
+        style={{ width: "100%", height: "100%", background: "#fff4d7" }}
+      />
+    );
+  }
   if (phone) {
     // FIXED TABLE, FLEXIBLE COACH (owner direction 2026-08-09). The table
     // region is exactly the stage's rendered height — the table never

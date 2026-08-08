@@ -469,6 +469,9 @@ export default async function PlayTablePage({
         legalPlays={state.phase === "play" && myTurn ? legalPlays(state, state.turn) : []}
         myTurn={myTurn}
         boardLabel={boardNumber}
+        // Embedded: no flash of the desktop-guessed table during hydration —
+        // a cream beat, then the phone tier directly.
+        bootNeutral={embedded}
         auctionDisplay={bboAuction === "seats" ? "seats" : "box"}
         confirmBids={confirmBids}
         resultLine={score ? resultLabel(score) : ""}
@@ -514,18 +517,16 @@ export default async function PlayTablePage({
       {/* Every control lives INSIDE the canvas — rail chips on the table, the
           nav cell on the hand viewer. Nothing floats above the design. */}
       <div
-        // Embedded: the WebView is the whole screen — full-bleed, and TALL
-        // ENOUGH that the phone fit reaches full width. The fit prices the
-        // table against box height and letterboxes when height binds (a
-        // phone browser never has ~2.1× its width to give), so the canvas
-        // asks for that much and the page scrolls the remainder — the table
-        // region itself already tolerates overflow. Capped for tablets,
-        // where 100dvh alone is plenty.
+        // Embedded: the WebView is the whole screen — full-bleed and EXACTLY
+        // the viewport (owner direction 2026-08-08: the play screen never
+        // scrolls as a page; only the coach section scrolls). The fixed-table
+        // fit makes this safe: the stage prices itself off WIDTH, the coach
+        // band takes the leftover height and scrolls inside itself, and on a
+        // genuinely short window availPx shrinks the whole stage rather than
+        // pushing anything below the fold.
         className={embedded ? "overflow-hidden" : "overflow-hidden rounded-lg"}
         style={{
-          height: embedded
-            ? "max(100dvh, min(210vw, 1010px))"
-            : "calc(100vh - 5.5rem)",
+          height: embedded ? "100dvh" : "calc(100vh - 5.5rem)",
         }}
       >
         {/* THE ROBOTS PLAY FOR EVERYONE. AutoAdvance is both the transport
