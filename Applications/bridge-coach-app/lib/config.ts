@@ -23,17 +23,19 @@ const LOCAL = {
 };
 
 const TUNNEL = {
-  // The API is NOT tunnelled any more. Quick tunnels are session-scoped, and
-  // when this one died the phone lost sign-in entirely (every request failed
-  // with "Cannot reach the server"). The phone now talks to the DEPLOYED Nexus
-  // API, which is also where the real Club 1 accounts and their passwords live —
-  // a local backend has neither.
+  // NOTHING is tunnelled any more. Quick tunnels are session-scoped; each one
+  // that died took a slice of the phone with it — first sign-in ("Cannot
+  // reach the server"), then every board (WebView NSURLErrorDomain -1003,
+  // "hostname could not be found", reported 2026-08-09). Phone dev now runs
+  // the APP from local Metro and talks to the DEPLOYED stack, which is
+  // stable, always-on, and where the real accounts live. To test local
+  // backend/platform changes on a phone, start a tunnel and point these at
+  // it for the session — otherwise deploy and test the deployed thing.
   api: "https://nexus-api-rust-six.vercel.app",
-  learning: "https://instantly-killing-webshots-subtle.trycloudflare.com",
-  // Override the backend's launch_url (its BRIDGE_PLATFORM_URL env points at
-  // localhost) with the bridge tunnel so the phone can reach it.
+  learning: "https://nexus-learning-five.vercel.app",
+  // The Quan-branch bridge deploy — the same origin the published app uses.
   bridgeLaunch:
-    "https://identical-conceptual-wav-growth.trycloudflare.com/nexus/launch" as
+    "https://bridge-platform-git-quan-the-nexus-dev-team.vercel.app/nexus/launch" as
       | string
       | null,
 };

@@ -75,9 +75,17 @@ const trayHeight = (k: number) => 3 * Math.max(52, Math.ceil(TOUCH / (k || 1))) 
 /** The centre is the flexible band: it absorbs the leftover so the table fills
     exactly its share. The floor is what a four-row auction needs INSIDE the
     inset — below it the grid scrolls internally rather than being cut. */
-const CENTRE_MIN = 250;
-const CENTRE_MAX = 900;
 const PAD_CENTRE = 150;
+/**
+ * FIXED-TABLE mode (owner direction 2026-08-09: "the table's size is fixed;
+ * the rest of the space goes to the coach panel"). The centre band no longer
+ * stretches to absorb the screen — it is a designed constant, sized to hold
+ * the 1.6× trick cross (419) with air; a long auction scrolls inside its box.
+ * Whatever height the fixed table doesn't use, the coach panel below takes.
+ */
+const CENTRE_FIXED = 430;
+/** Pad cells in fixed-table mode: a comfortable constant, not leftovers. */
+const PAD_CELL_FIXED = 44;
 /** Sub-pixel rounding across four bands lands a few px either way; the centre
     absorbs it, so this reserve guarantees the budget never UNDER-reserves (an
     over-reserve is invisible, an under-reserve clips the action bar off the
@@ -355,11 +363,12 @@ export function PlayTable({
   const dealerCol = ORDER.indexOf(state.dealer);
 
   // ── phone-tier band budget (Mobile Table.dc.html) ──────────────────────────
-  // The coach panel takes its share of the phone screen; the table region gets
-  // the rest, and the whole stack is priced against THAT height. A HIDDEN coach
-  // still reserves its share: redistributing it lets the flexible felt band
-  // balloon (a towering auction box), and the owner wants the table to keep its
-  // proportions with plain white space where the panel will return.
+  // FIXED-TABLE model (owner direction 2026-08-09): the table renders at its
+  // designed height (CENTRE_FIXED — it does NOT stretch with the screen) and
+  // the coach panel takes every remaining pixel. coachShare no longer sets
+  // the coach's height; it survives as the coach's MINIMUM — the table is
+  // CAPPED at (100 − coachShare)% of the box, so a short window shrinks the
+  // stage rather than squeezing the coach out.
   const coachOn = showCoach !== false;
   const coachSharePct = Math.max(0, Math.min(55, coachShare ?? 30));
   const tableSharePct = 100 - coachSharePct;
@@ -403,23 +412,18 @@ export function PlayTable({
   };
   const fit = (k: number, usePad: boolean) => {
     const bar = barFor(k);
-    const avail = availPx / (k || 1);
     const base =
       bar * ((hideTopBar ? 0 : 1) + (phoneBottomOn ? 1 : 0)) + GAPS + slackFor(k) +
       (dummyIsStrip ? DUMMY_LINE : 0) +
       (dummyIsRow ? HAND_H.row : 0) +
       (!usePad && inAuction ? trayHeight(k) : 0) +
       HAND_H[fanLayout ? "fan" : "row"];
-    let cell = 0;
-    let centre: number;
-    if (usePad) {
-      // While the pad is up it IS the interaction, so it takes the space and the
-      // auction box keeps only a strip; the cell is sized from the leftover.
-      cell = Math.max(30, Math.min(62, Math.floor((avail - base - PAD_CENTRE) / 8.3)));
-      centre = Math.max(PAD_CENTRE, Math.round(avail - base - padHeight(cell)));
-    } else {
-      centre = Math.max(CENTRE_MIN, Math.min(CENTRE_MAX, Math.round(avail - base)));
-    }
+    // FIXED TABLE: the centre is a constant, never the screen's leftover —
+    // the table stops growing with the phone, and the coach panel below is
+    // what absorbs the difference. availPx still CAPS the table (a short
+    // window shrinks the whole stage rather than starving the coach).
+    const cell = usePad ? PAD_CELL_FIXED : 0;
+    const centre = usePad ? PAD_CENTRE : CENTRE_FIXED;
     const content = base + (usePad ? padHeight(cell) : 0) + centre;
     return { bar, cell, centre, content, usePad, scale: Math.min(1, widthScale, availPx / content) };
   };
@@ -1112,27 +1116,27 @@ export function PlayTable({
 
   // ---- stage --------------------------------------------------------------
   if (phone) {
-    // The phone splits into two regions (Mobile Table.dc.html): the table takes
-    // tableShare of the screen, the coach panel the rest. wrapRef measures the
-    // whole box; the table budget is that box's height × tableShare — a pure
-    // function of a prop, so no second observer can feed the scale back.
+    // FIXED TABLE, FLEXIBLE COACH (owner direction 2026-08-09). The table
+    // region is exactly the stage's rendered height — the table never
+    // stretches with the phone — and the coach panel below takes every
+    // remaining pixel. tableShare survives only as the CAP inside availPx:
+    // on a short window the whole stage shrinks rather than starving the
+    // coach band out of existence.
     return (
       <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", flexDirection: "column", fontFamily: tok.font, WebkitFontSmoothing: "antialiased" }}>
-        <div style={{ flex: tableSharePct, minHeight: 0, display: "flex", flexDirection: "column", background: "#fff" }}>
+        <div style={{ flex: "none", height: Math.ceil(phoneFit.content * phoneFit.scale), display: "flex", flexDirection: "column", background: "#fff" }}>
           {/* CSS-driven table region box; the stage scrolls inside it if the
               scaled content ever exceeds the region (align to the top). */}
           <div style={{ flex: 1, minHeight: 0, width: "100%", background: "#fff", display: "flex", justifyContent: "center", alignItems: "flex-start", overflowX: "hidden", overflowY: "auto" }}>
             {mobileStack}
           </div>
         </div>
-        {coachSharePct > 0 && (
-          <div style={{ flex: coachSharePct, minHeight: 0, display: "flex", background: "#fff", borderTop: "1px solid #d8ded9" }}>
-            {/* Hidden coach keeps its reserved band as plain white space. */}
-            {coachOn && (
-              <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} content={coachContent} />
-            )}
-          </div>
-        )}
+        <div style={{ flex: 1, minHeight: 0, display: "flex", background: "#fff", borderTop: "1px solid #d8ded9" }}>
+          {/* Hidden coach keeps the remainder as plain white space. */}
+          {coachOn && (
+            <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} content={coachContent} />
+          )}
+        </div>
         {seatsPopup}
         {menuOpen && !onMenu && (
           <SettingsMenu accent={tok.accent} items={menuItems} onClose={() => setMenuOpen(false)} />
