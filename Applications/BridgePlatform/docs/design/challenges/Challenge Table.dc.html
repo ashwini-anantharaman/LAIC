@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./skins.js"></script>
+<script src="./bridge.js"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;padding:0;background:#0b100e;overscroll-behavior:none}
+*{box-sizing:border-box}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#cbd5cf;border-radius:4px}
+::-webkit-scrollbar-track{background:transparent}
+</style>
+</helmet>
+
+<!--
+  CHALLENGE TABLE (spec section 6, "Playing a board").
+
+  Owner's brief: "when selecting a challenge, the challenge should automatically
+  start and go to the next board... Inside the challenge, it will be the normal
+  table view that is always there, but on top of the top toolbar, there should be
+  a button in the top right that says results."
+
+  So this surface is NOT a new table. It is the table you already have, wearing
+  one thin band of challenge chrome. The markup is deliberately in three
+  separable pieces, in this order:
+
+    1. CHALLENGE STRIP   - challenge chrome. In the real app this is a sibling
+                           rendered ABOVE <PlayTable>, not a new PlayTable prop
+                           and not a fork: title, "Board n of N", Results.
+    2. THE TABLE         - the existing PlayTable, composed here from the real
+                           leaves: <EdgeToolbar> top (info) and bottom (actions)
+                           and <SeatHand> for South and for the dummy, on the
+                           felt token of the active Skin. Nothing in this block
+                           knows a challenge exists.
+    3. RESULTS OVERLAY   - challenge chrome again. In the real app a PORTAL over
+                           the table, NOT a route. Tapping Results must never
+                           navigate: the board underneath is a live attempt
+                           (one attempt, resume-only per spec) and it has to
+                           survive being looked away from. Prove it in this
+                           canvas: play a card, open Results, close it - the card
+                           is still gone and it is still your turn.
+
+  The felt stays visible under a scrim while the sheet is up, which is the whole
+  visual argument that nothing was destroyed.
+
+  Everything below is driven by the real engine (window.Bridge): a real pack, a
+  real dealer-aligned auction, real legal-play gating. Cards are clickable; BEN
+  answers. 7-bit ASCII end to end.
+
+  SIZE. The canvas is an iPhone 13 and nothing else: $preview is 390 x 844, the
+  canvas has no padding, the frame has no border and no max-width, so the tile
+  IS the screen. The stack is a real band budget -
+
+    strip 40 + top bar 43 + [dummy row] + centre + [bid tray] + hand + bottom bar 43
+
+  - authored band by band, summing to exactly 844, with the centre the only
+  flexible one (floored so the trick and the auction stay readable, capped so a
+  tall screen never leaves an acre of green). Desktop is still reachable from
+  the review panel: it renders its own 1000 x 820 frame scaled to fit the same
+  tile, with a caption that says the scale.
+-->
+
+<!-- The canvas IS the phone: $preview is 390x844, the canvas has no padding and
+     in phone mode the stage is the frame at 1:1. Desktop is a scaled stage
+     inside the same 390x844 tile (see canvasStyle / stageStyle). -->
+<div style="{{canvasStyle}}">
+<div style="{{stageStyle}}">
+<div style="{{frameStyle}}">
+
+<!-- ============================ 1. CHALLENGE STRIP ============================ -->
+<!-- Quiet on purpose. Three things only: what challenge this is, where you are
+     in it, and the one way back to the standings. No back arrow, no menu, no
+     avatars - the table below already owns every table control. -->
+<div style="{{stripStyle}}">
+  <span style="{{stripTitleStyle}}">{{title}}</span>
+  <span style="{{stripProgStyle}}">{{progressText}}</span>
+  <span style="flex:1;min-width:8px"></span>
+  <!-- canSeeResults = the whole-challenge unlock rule (spec section 2). When it
+       is false the button is ABSENT, not disabled: a greyed control advertises a
+       thing you cannot have, and the strip has nothing to say in its place. -->
+  <sc-if value="{{showResults}}" hint-placeholder-val="{{true}}">
+  <button onClick="{{onOpenResults}}" title="Standings for this challenge" style="{{resultsBtnStyle}}">Results</button>
+  </sc-if>
+  <!-- the progress indicator's second half: a 2px rule that IS the strip's
+       bottom border, filled to the boards you have behind you -->
+  <span style="{{stripRuleStyle}}"><span style="{{stripFillStyle}}"></span></span>
+</div>
+
+<!-- ============================== 2. THE TABLE =============================== -->
+<!-- Unforked. Same leaves, same tokens, same behaviour as /bridge/table2. -->
+<sc-if value="{{tableReady}}" hint-placeholder-val="{{true}}">
+
+<div style="{{barSlotStyle}}">
+  <dc-import name="EdgeToolbar" side="top" items="{{topItems}}" thickness="{{barT}}" condensed="{{true}}" bg="{{barBg}}" hint-size="1100px,44px"></dc-import>
+</div>
+
+<div style="{{feltStyle}}">
+
+  <!-- dummy: a full face-up row, because South declares and therefore plays it -->
+  <sc-if value="{{showDummy}}" hint-placeholder-val="{{false}}">
+  <div style="{{dummyRowStyle}}">
+    <dc-import name="SeatHand" seat="N" player="{{dummyName}}" tag="DUMMY" dealer="{{dummyDealer}}" strip="{{dummyStrip}}" plate-bg="{{dummyPlateBg}}" plate-w="{{dummyPlateW}}" cards="{{dummyCards}}" card-w="{{dCardW}}" card-h="{{dCardH}}" rank-font="{{dRankFont}}" glyph-font="{{dGlyphFont}}" card-inset="2px" hint-size="290px,73px"></dc-import>
+  </div>
+  </sc-if>
+
+  <!-- centre band: the auction box area, or the trick, or the finished board -->
+  <div style="{{centreStyle}}">
+
+    <sc-if value="{{isAuction}}" hint-placeholder-val="{{false}}">
+    <div style="{{auctionBoxStyle}}">
+      <div style="{{auctionGridStyle}}">
+      <sc-for list="{{auctHead}}" as="hd" hint-placeholder-count="4">
+        <span style="{{hd.style}}">{{hd.s}}</span>
+      </sc-for>
+      </div>
+      <sc-for list="{{auctRows}}" as="row" hint-placeholder-count="3">
+      <div style="{{auctionGridStyle}}">
+      <sc-for list="{{row.cells}}" as="cell" hint-placeholder-count="4">
+        <span style="{{cell.style}}">{{cell.t}}</span>
+      </sc-for>
+      </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{isPlay}}" hint-placeholder-val="{{true}}">
+    <div style="{{trickBoxStyle}}">
+    <sc-for list="{{trickCards}}" as="tc" hint-placeholder-count="4">
+      <div style="{{tc.wrapStyle}}">
+        <sc-if value="{{tc.hasCard}}" hint-placeholder-val="{{true}}">
+        <span style="{{tc.cardStyle}}"><span style="{{tc.pipStyle}}"><span style="{{tc.rankStyle}}">{{tc.rank}}</span><span style="{{tc.glyphStyle}}">{{tc.glyph}}</span></span></span>
+        </sc-if>
+        <sc-if value="{{tc.waiting}}" hint-placeholder-val="{{false}}">
+        <span style="{{tc.slotStyle}}"></span>
+        </sc-if>
+      </div>
+    </sc-for>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+    <div style="{{doneCardStyle}}">
+      <span style="{{doneLineStyle}}">{{doneLine}}</span>
+      <span style="{{doneScoreStyle}}">{{doneScore}}</span>
+    </div>
+    </sc-if>
+
+  </div>
+
+  <!-- the bid tray, only while there is an auction to make -->
+  <sc-if value="{{isAuction}}" hint-placeholder-val="{{false}}">
+  <div style="{{trayStyle}}">
+    <div style="{{trayRowStyle}}">
+    <sc-for list="{{trayLevels}}" as="lv" hint-placeholder-count="7">
+      <button onClick="{{lv.on}}" style="{{lv.style}}">{{lv.t}}</button>
+    </sc-for>
+    </div>
+    <div style="{{trayRowStyle}}">
+      <sc-if value="{{hasStrains}}" hint-placeholder-val="{{true}}">
+      <sc-for list="{{trayStrains}}" as="sn" hint-placeholder-count="5">
+        <button onClick="{{sn.on}}" style="{{sn.style}}">{{sn.t}}</button>
+      </sc-for>
+      </sc-if>
+      <sc-if value="{{noStrains}}" hint-placeholder-val="{{false}}">
+      <span style="{{trayHintStyle}}">{{trayHint}}</span>
+      </sc-if>
+    </div>
+    <div style="{{trayRowStyle}}">
+    <sc-for list="{{trayCalls}}" as="cl" hint-placeholder-count="3">
+      <button onClick="{{cl.on}}" style="{{cl.style}}">{{cl.t}}</button>
+    </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- your hand -->
+  <div style="{{handRowStyle}}">
+    <dc-import name="SeatHand" seat="S" player="{{youName}}" tag="{{southTag}}" dealer="{{southDealer}}" strip="{{southStrip}}" plate-bg="{{southPlateBg}}" plate-w="{{southPlateW}}" cards="{{southCards}}" card-w="{{cardW}}" card-h="{{cardH}}" rank-font="{{rankFont}}" glyph-font="{{glyphFont}}" card-inset="3px" hint-size="367px,86px"></dc-import>
+  </div>
+
+</div>
+
+<div style="{{barSlotStyle}}">
+  <dc-import name="EdgeToolbar" side="bottom" items="{{bottomItems}}" thickness="{{barT}}" condensed="{{true}}" bg="{{barBg}}" hint-size="1100px,44px"></dc-import>
+</div>
+
+</sc-if>
+<sc-if value="{{tablePending}}" hint-placeholder-val="{{false}}">
+<div style="{{pendingStyle}}"></div>
+</sc-if>
+
+<!-- ========================== 3. RESULTS OVERLAY ============================= -->
+<!-- A portal in the real app. Absolute inside the frame here so the felt stays
+     visibly underneath: closing puts you back on the exact same trick, with the
+     exact same cards gone. Nothing about the attempt is touched. -->
+<sc-if value="{{overlayOpen}}" hint-placeholder-val="{{false}}">
+<div onClick="{{onCloseResults}}" style="{{scrimStyle}}"></div>
+<div style="{{sheetStyle}}">
+
+  <sc-if value="{{showGrabber}}" hint-placeholder-val="{{true}}">
+  <div onClick="{{onCloseResults}}" title="Close" style="{{grabberWrapStyle}}"><span style="{{grabberStyle}}"></span></div>
+  </sc-if>
+
+  <div style="{{sheetHeadStyle}}">
+    <div style="min-width:0">
+      <div style="{{sheetTitleStyle}}">Results</div>
+      <div style="{{sheetSubStyle}}">{{sheetSub}}</div>
+    </div>
+    <span style="flex:1"></span>
+    <button onClick="{{onCloseResults}}" title="Back to the board" style="{{closeBtnStyle}}">&#x2715;</button>
+  </div>
+
+  <div style="{{sheetBodyStyle}}">
+
+    <!-- standings: rank . name . total, final ranks only, ties share a rank -->
+    <div style="{{lbHeadStyle}}">
+      <span style="text-align:center">#</span>
+      <span>Player</span>
+      <span style="text-align:right">{{unitShort}}</span>
+    </div>
+    <sc-for list="{{lbRows}}" as="r" hint-placeholder-count="6">
+    <div style="{{r.rowStyle}}">
+      <span style="{{r.rankStyle}}">{{r.rank}}</span>
+      <div style="display:flex;align-items:center;gap:6px;min-width:0">
+        <span style="{{r.nameStyle}}">{{r.name}}</span>
+        <sc-if value="{{r.moderator}}" hint-placeholder-val="{{false}}"><span title="Moderator - created this challenge" style="{{r.markStyle}}">&#x25C7;</span></sc-if>
+        <sc-if value="{{r.editor}}" hint-placeholder-val="{{false}}"><span title="Set the boards - opened the pack editor" style="{{r.markStyle}}">&#x25C6;</span></sc-if>
+      </div>
+      <span style="{{r.totalStyle}}">{{r.total}}</span>
+    </div>
+    </sc-for>
+
+    <!-- BEN: hairline slate footer, outside the field, unranked -->
+    <div style="{{benRowStyle}}">
+      <span style="text-align:center;font-size:12px;color:#9aa8b0">&#x2013;</span>
+      <div style="display:flex;align-items:baseline;gap:7px;min-width:0">
+        <span style="font-size:13px;font-weight:700;color:#55636f">BEN</span>
+        <span style="font-size:10.5px;color:#8a949c">benchmark &#x00B7; unranked</span>
+      </div>
+      <span style="{{benTotalStyle}}">{{benTotal}}</span>
+    </div>
+
+    <div style="{{legendStyle}}">
+      <span>{{stillPlaying}}</span>
+      <span style="flex:1;min-width:10px"></span>
+      <span>&#x25C7; moderator &#x00B7; &#x25C6; set the boards</span>
+    </div>
+
+    <!-- compact board-by-board strip, your line only -->
+    <div style="{{stripHeadStyle}}">Board by board</div>
+    <div style="{{boardStripStyle}}">
+    <sc-for list="{{boardCells}}" as="bc" hint-placeholder-count="8">
+      <div title="{{bc.title}}" style="{{bc.style}}">
+        <span style="{{bc.noStyle}}">{{bc.no}}</span>
+        <span style="{{bc.valStyle}}">{{bc.val}}</span>
+      </div>
+    </sc-for>
+    </div>
+
+  </div>
+</div>
+</sc-if>
+
+<!-- mock-intent toast, inside the frame so it reads as table chrome -->
+<sc-if value="{{toastShown}}" hint-placeholder-val="{{false}}">
+<div onClick="{{onToastDismiss}}" style="{{toastStyle}}">{{toastText}}</div>
+</sc-if>
+
+</div>
+</div>
+
+<!-- Desktop is a PREVIEW inside the phone tile, never a silent crop: the whole
+     1000x820 frame is scaled proportionally and the caption says by how much. -->
+<sc-if value="{{desktopMode}}" hint-placeholder-val="{{false}}">
+<div style="{{capStyle}}">{{capText}}</div>
+</sc-if>
+
+<!-- ===================== REVIEW CONTROL (harness chrome) ===================== -->
+<!-- NOT product UI. Two states, because at 390 there is no spare corner: a 30px
+     CHIP parked on bare felt (measured overlap with the strip, the Results
+     button, either toolbar and either hand is zero), and, only when asked for,
+     a PANEL over its own scrim with an explicit close. Nothing under review is
+     ever hidden by the thing reviewing it. -->
+<sc-if value="{{pillClosed}}" hint-placeholder-val="{{true}}">
+<button onClick="{{onPillOpen}}" title="Preview controls - viewport, results, overlay, phase" style="{{chipStyle}}">
+  <span style="{{chipDotStyle}}"></span>
+</button>
+</sc-if>
+
+<sc-if value="{{pillOpen}}" hint-placeholder-val="{{false}}">
+<div onClick="{{onPillClose}}" style="{{pillScrimStyle}}"></div>
+<div style="{{pillStyle}}">
+  <div style="display:flex;align-items:center;gap:6px">
+    <span style="flex:none;width:6px;height:6px;border-radius:3px;background:#f2b64d"></span>
+    <span style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8f9a94">Preview</span>
+    <span style="font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#5c6863">review only</span>
+    <span style="flex:1"></span>
+    <button onClick="{{onPillClose}}" title="Close the preview controls" style="{{pillCloseStyle}}">&#x2715;</button>
+  </div>
+  <sc-for list="{{pillGroups}}" as="g" hint-placeholder-count="4">
+  <div style="display:flex;flex-direction:column;gap:4px">
+    <span style="font-size:8.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6b7873">{{g.label}}</span>
+    <div style="display:flex;gap:3px;padding:3px;border-radius:9px;background:#0d1310">
+    <sc-for list="{{g.opts}}" as="o" hint-placeholder-count="2">
+      <button onClick="{{o.on}}" style="{{o.style}}">{{o.label}}</button>
+    </sc-for>
+    </div>
+  </div>
+  </sc-for>
+  <span style="font-size:9px;line-height:1.5;color:#5c6863">{{pillNote}}</span>
+</div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844},&quot;viewport&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewport&quot;,&quot;options&quot;:[&quot;phone&quot;,&quot;desktop&quot;],&quot;default&quot;:&quot;phone&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;phase&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Phase&quot;,&quot;options&quot;:[&quot;auction&quot;,&quot;play&quot;],&quot;default&quot;:&quot;play&quot;,&quot;section&quot;:&quot;View&quot;},&quot;canSeeResults&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Results unlocked&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;View&quot;},&quot;overlay&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Results overlay&quot;,&quot;options&quot;:[&quot;closed&quot;,&quot;open&quot;],&quot;default&quot;:&quot;closed&quot;,&quot;section&quot;:&quot;View&quot;},&quot;title&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Challenge title&quot;,&quot;default&quot;:&quot;Tuesday Night Teams \u2014 Set 12&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;boardNo&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Board&quot;,&quot;min&quot;:1,&quot;max&quot;:16,&quot;default&quot;:4,&quot;section&quot;:&quot;Challenge&quot;},&quot;boardsTotal&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Boards in set&quot;,&quot;min&quot;:1,&quot;max&quot;:16,&quot;default&quot;:8,&quot;section&quot;:&quot;Challenge&quot;},&quot;scoring&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Scoring&quot;,&quot;options&quot;:[&quot;imps&quot;,&quot;mp&quot;,&quot;total&quot;],&quot;default&quot;:&quot;imps&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;youName&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Your plate name&quot;,&quot;default&quot;:&quot;You&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;stripH&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Strip height (phone)&quot;,&quot;min&quot;:30,&quot;max&quot;:64,&quot;default&quot;:40,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;barThickness&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Toolbar thickness (0 = auto)&quot;,&quot;min&quot;:0,&quot;max&quot;:64,&quot;default&quot;:0,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;handCardW&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Card width (0 = fit 13)&quot;,&quot;min&quot;:0,&quot;max&quot;:80,&quot;default&quot;:0,&quot;unit&quot;:&quot;px&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;skin&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Table skin&quot;,&quot;options&quot;:[&quot;bbo&quot;,&quot;midnight&quot;,&quot;parchment&quot;,&quot;noir&quot;,&quot;claret&quot;],&quot;default&quot;:&quot;bbo&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;accent&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Challenge accent&quot;,&quot;default&quot;:&quot;#0d707c&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;canvasBg&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Canvas backdrop&quot;,&quot;default&quot;:&quot;#0b100e&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+// ======================================================================
+// CHALLENGE TABLE - the play table wearing challenge chrome.
+//
+// Three layers, kept apart in the markup on purpose (see the template
+// comment): the STRIP above the table's top toolbar, the TABLE itself
+// (untouched leaves), and the RESULTS OVERLAY portalled over the felt.
+//
+// The table is not simulated with pictures: window.Bridge deals a real
+// pack, runs a real dealer-aligned auction, gates legal plays and lets
+// BEN answer. Your cards are clickable in both phases, which is what
+// makes the overlay's promise checkable - play, open Results, close,
+// and the board is exactly where you left it.
+// ======================================================================
+
+// ---- the board under the challenge -----------------------------------
+// A challenge board is a STORED pack, not a cycle deal: the pack comes
+// from the creator's set (here a fixed seed so every reviewer sees the
+// same hands), while dealer and vulnerability follow the standard cycle
+// for board 4 unless the creator overrode them (spec section 2).
+var SEED = 307;
+var DEALER = "W";
+var VUL = "All";
+// South opens 1S in fourth seat, North raises to game. Legal by
+// construction and honest against the seed: S has KQ743 with 14 HCP,
+// N has AJ62 with 10 - a 9-card fit and 24 points, so 4S by South.
+var AUCTION = ["P", "P", "P", "1S", "P", "3S", "P", "4S", "P", "P", "P"];
+var AUCTION_CUT = 7;   // auction phase stops here: South is to call
+var PLAY_TRICKS = 4;   // play phase opens mid-board, four tricks in
+
+// Skin tokens are read from window.Skins, which arrives with the helmet
+// script. One frame can render before it lands, so the fallback is the
+// bbo set verbatim rather than a guess.
+var SKIN_FALLBACK = {
+  feltFlat: "radial-gradient(140% 120% at 50% 50%,rgba(255,255,255,.05) 0%,rgba(0,0,0,.12) 100%),#1c6b4f",
+  barBg: "rgba(9,22,17,.90)",
+  stageBg: "#000",
+};
+
+// ---- standings model -------------------------------------------------
+// Same field, same per-board points matrix as the Challenge Page canvas,
+// so the two surfaces cannot disagree about who is winning. Fictional
+// players. BEN is scored the same way but kept OUT of the field.
+var FIELD = ["You", "Marta", "Devang", "Priya", "Tomas", "Lena"];
+var MATRIX = {
+  You: [630, -100, 620, 980, 170, 300, 400, -420],
+  Marta: [600, 140, 620, 480, 140, -200, 620, -420],
+  Devang: [630, 110, 170, 480, 140, 100, 400, -450],
+  Priya: [660, 140, 650, 980, -50, 300, 430, -420],
+  Tomas: [-100, 140, 620, 480, 170, -500, 400, -200],
+  Lena: [630, -50, 140, 450, 140, 100, 620, -420],
+  BEN: [660, 140, 650, 980, 170, 300, 620, -420],
+};
+var NAMES = {
+  Marta: "Marta Okonkwo", Devang: "Devang Rao", Priya: "Priya Sundaram",
+  Tomas: "Tomas Berg", Lena: "Lena Fischer",
+};
+var CREATOR = "Marta";     // moderator diamond
+var EDITOR = "Marta";      // "set the boards" diamond
+var STILL_PLAYING = 2;
+
+var IMP_STEPS = [15, 45, 85, 125, 165, 215, 265, 315, 365, 425, 495, 595, 745,
+  895, 1095, 1295, 1495, 1745, 1995, 2245, 2495, 2995, 3495, 3995];
+function impOf(diff) {
+  var a = Math.abs(diff), n = 0;
+  for (var i = 0; i < IMP_STEPS.length; i++) { if (a > IMP_STEPS[i]) n = i + 1; else break; }
+  return diff < 0 ? -n : n;
+}
+var col = function (key, b) { return MATRIX[key][b % 8]; };
+function datumAt(b) {
+  var s = 0;
+  for (var i = 0; i < FIELD.length; i++) s += col(FIELD[i], b);
+  return s / FIELD.length;
+}
+function cellValue(mode, key, b) {
+  if (mode === "total") return col(key, b);
+  if (mode === "imps") return impOf(col(key, b) - datumAt(b));
+  var others = key === "BEN" ? FIELD : FIELD.filter(function (x) { return x !== key; });
+  var mp = 0;
+  for (var i = 0; i < others.length; i++) {
+    var a = col(key, b), c = col(others[i], b);
+    mp += a > c ? 1 : a === c ? 0.5 : 0;
+  }
+  return others.length ? (mp / others.length) * 100 : 0;
+}
+function totalValue(mode, n, key) {
+  var s = 0;
+  for (var b = 0; b < n; b++) s += cellValue(mode, key, b);
+  return mode === "mp" ? s / n : s;
+}
+function fmtTotal(mode, v) {
+  if (mode === "mp") return v.toFixed(1) + "%";
+  if (mode === "total") return (v >= 0 ? "+" : "") + Math.round(v);
+  return (v >= 0 ? "+" : "") + Math.round(v);
+}
+function fmtCell(mode, v) {
+  if (mode === "mp") return Math.round(v) + "";
+  return (v > 0 ? "+" : "") + Math.round(v);
+}
+var POS = "#1c8a5a", NEG = "#c0392b", NEU = "#8b9a93", SLATE = "#55636f";
+function valColor(mode, v) {
+  if (mode === "mp") return v >= 55 ? POS : v <= 45 ? NEG : NEU;
+  return v > 0 ? POS : v < 0 ? NEG : NEU;
+}
+
+// EdgeToolbar prices its controls from its own thickness. The felt band
+// is whatever is left over after both bars, so the host has to know the
+// bar's rendered height exactly - this is that formula, verbatim from
+// EdgeToolbar.dc.html (no `scale` prop is passed, so the touch-floor
+// term drops out and the thickness alone prices the control).
+function edgeBarHeight(t) {
+  var ctrl = Math.min(Math.round(t * 2.2), Math.max(Math.round(t * 0.68), t - 14, 0));
+  return Math.max(t, ctrl + 14);
+}
+function clampInt(v, lo, hi, dflt) {
+  var n = Math.round(Number(v));
+  if (!isFinite(n)) n = dflt;
+  return Math.max(lo, Math.min(hi, n));
+}
+
+class Component extends DCLogic {
+  state = {
+    // review-control overrides: each mirrors its prop and re-syncs only
+    // when that prop changes (the lastX guard used across this project)
+    ovViewport: null, lastViewportProp: null,
+    ovPhase: null, lastPhaseProp: null,
+    ovResults: null, lastResultsProp: null,
+    ovOverlay: null, lastOverlayProp: null,
+    // live table state: the moves YOU have made on top of the seeded
+    // board, replayed deterministically every render
+    moves: [], movesKey: null,
+    armed: null,        // bid tray: the level currently picked
+    paused: false,      // BEN paused / stepping
+    ready: false,       // helmet scripts landed
+    toast: null,
+    panel: false,       // review control: chip (false) or full panel (true)
+  };
+
+  componentDidMount() {
+    this._tick = () => {
+      if (window.Bridge && window.Skins) {
+        if (this._poll) { clearInterval(this._poll); this._poll = null; }
+        if (!this.state.ready) this.setState({ ready: true });
+      }
+    };
+    if (window.Bridge && window.Skins) { this.setState({ ready: true }); return; }
+    // Helmet <script src> tags are appended to <head> during render, so
+    // they are async AND unordered. Listening for bridge-ready alone can
+    // miss Skins; a short bounded poll covers both.
+    window.addEventListener("bridge-ready", this._tick);
+    this._poll = setInterval(this._tick, 60);
+    this._stop = setTimeout(() => {
+      if (this._poll) { clearInterval(this._poll); this._poll = null; }
+    }, 6000);
+  }
+  componentWillUnmount() {
+    if (this._tick) window.removeEventListener("bridge-ready", this._tick);
+    if (this._poll) clearInterval(this._poll);
+    clearTimeout(this._stop);
+    clearTimeout(this._toastT);
+  }
+
+  flash(msg) {
+    this.setState({ toast: msg });
+    clearTimeout(this._toastT);
+    this._toastT = setTimeout(() => this.setState({ toast: null }), 2400);
+  }
+
+  // ---- the live board ------------------------------------------------
+  // Seed, then replay. Rebuilding from the seed on every render keeps the
+  // board a pure function of (phase, boardNo, moves) - no drift, and the
+  // review pill can reset it by changing the key.
+  seedState(B, phase, boardNo) {
+    var d = B.deal(SEED);
+    var st = Object.assign({}, d, {
+      board: boardNo, dealer: DEALER, vul: VUL,
+      auction: [], phase: "auction", turn: DEALER,
+      tricks: [{ plays: [] }], done: 0, contract: null,
+      trickCount: { NS: 0, EW: 0 }, armed: null, resolving: false,
+      claimed: false, score: null,
+    });
+    var calls = phase === "auction" ? AUCTION.slice(0, AUCTION_CUT) : AUCTION;
+    for (var i = 0; i < calls.length; i++) Object.assign(st, B.applyCall(st, calls[i]));
+    if (phase !== "auction") {
+      // Open mid-board: BEN drives every seat until the position we want
+      // to hand over - four tricks in, two cards on the table, you to play.
+      var guard = 0;
+      while (guard++ < 80 && st.phase === "play") {
+        if (st.resolving) {
+          Object.assign(st, B.resolveTrick(st));
+          if (st.phase !== "play") break;
+          st.tricks = st.tricks.concat([{ plays: [] }]);
+          continue;
+        }
+        var cur = st.tricks[st.tricks.length - 1];
+        if (st.done >= PLAY_TRICKS && st.turn === "S" && cur.plays.length >= 2) break;
+        var patch = B.applyPlay(st, st.turn, B.robotPlay(st));
+        if (!patch) break;
+        Object.assign(st, patch);
+      }
+    }
+    return st;
+  }
+
+  // Which seats are yours. When you declare, the dummy is yours to play
+  // too - which is exactly why the dummy gets a full face-up row rather
+  // than the one-line strip a defender sees.
+  mine(st) {
+    return st.contract && st.contract.declarer === "S" ? { S: true, N: true } : { S: true };
+  }
+
+  // BEN takes every seat that is not yours, until it is your turn again.
+  advance(B, st) {
+    var mine = this.mine(st), guard = 0;
+    while (guard++ < 120) {
+      if (st.phase === "complete") return;
+      if (st.resolving) {
+        Object.assign(st, B.resolveTrick(st));
+        if (st.phase === "complete") return;
+        st.tricks = st.tricks.concat([{ plays: [] }]);
+        mine = this.mine(st);
+        continue;
+      }
+      if (st.phase === "auction") {
+        if (st.turn === "S") return;
+        Object.assign(st, B.applyCall(st, B.robotCall(st)));
+        mine = this.mine(st);
+        continue;
+      }
+      if (st.phase !== "play") return;
+      if (mine[st.turn]) return;
+      var patch = B.applyPlay(st, st.turn, B.robotPlay(st));
+      if (!patch) return;
+      Object.assign(st, patch);
+    }
+  }
+
+  renderVals() {
+    var self = this;
+    var p = this.props || {};
+    var v = {};
+
+    // ---------------- props + review-control overrides ----------------
+    var viewportProp = p.viewport === "desktop" ? "desktop" : "phone";
+    var ovViewport = this.state.ovViewport;
+    if (this.state.lastViewportProp !== viewportProp) { ovViewport = viewportProp; this._vpSync = viewportProp; }
+    if (ovViewport !== "phone" && ovViewport !== "desktop") ovViewport = viewportProp;
+
+    var phaseProp = p.phase === "auction" ? "auction" : "play";
+    var ovPhase = this.state.ovPhase;
+    if (this.state.lastPhaseProp !== phaseProp) { ovPhase = phaseProp; this._phSync = phaseProp; }
+    if (ovPhase !== "auction" && ovPhase !== "play") ovPhase = phaseProp;
+
+    var resultsProp = p.canSeeResults !== false;
+    var ovResults = this.state.ovResults;
+    if (this.state.lastResultsProp !== resultsProp) { ovResults = resultsProp; this._rsSync = resultsProp; }
+    if (ovResults !== true && ovResults !== false) ovResults = resultsProp;
+
+    var overlayProp = p.overlay === "open" ? "open" : "closed";
+    var ovOverlay = this.state.ovOverlay;
+    if (this.state.lastOverlayProp !== overlayProp) { ovOverlay = overlayProp; this._olSync = overlayProp; }
+    if (ovOverlay !== "open" && ovOverlay !== "closed") ovOverlay = overlayProp;
+
+    var phone = ovViewport === "phone";
+    var allowed = ovResults === true;
+    var accent = p.accent || "#0d707c";
+    var canvasBg = p.canvasBg || "#0b100e";
+    var scoring = ["imps", "mp", "total"].indexOf(p.scoring) >= 0 ? p.scoring : "imps";
+    var title = p.title || "Tuesday Night Teams \u2014 Set 12";
+    var boardsTotal = clampInt(p.boardsTotal, 1, 16, 8);
+    var boardNo = Math.min(boardsTotal, clampInt(p.boardNo, 1, 16, 4));
+    var youName = p.youName || "You";
+
+    // ---------------- skin tokens ----------------
+    var skinName = p.skin || "bbo";
+    var T = window.Skins ? window.Skins.resolve(skinName, {}) : SKIN_FALLBACK;
+
+    // ---------------- frame + band budget ----------------
+    // ONE phone viewport: 390 x 844, an iPhone 13 to the pixel. $preview is
+    // that exact size, the canvas carries no padding and the phone frame no
+    // border, so the tile IS the phone - nothing floats inside a bigger tile,
+    // nothing is shrunk by a max-width, nothing falls off the bottom.
+    //
+    // The stack is the platform MobileTable contract minus the stage scale:
+    //
+    //   strip + top bar + [dummy row] + centre + [bid tray] + hand + bottom bar
+    //
+    // Every band is AUTHORED, the centre is the only flexible one, and they sum
+    // to exactly 844. Nothing here is scaled, so when the budget runs short the
+    // CARD SIZE is what yields (bandFit below walks it down one px at a time)
+    // rather than a band being pushed out under overflow:hidden.
+    //
+    // Desktop keeps its own 1000x820 frame; at review time it is scaled to fit
+    // inside the same 390x844 tile with a caption saying so (see stageStyle).
+    var fw = phone ? 390 : 1000;
+    var fh = phone ? 844 : 820;
+    var stripH = clampInt(p.stripH, 30, 64, 40) + (phone ? 0 : 6);
+    var barT = p.barThickness ? clampInt(p.barThickness, 30, 64, 42) : (phone ? 42 : 48);
+    var barH = edgeBarHeight(barT);
+    var feltH = Math.max(160, fh - stripH - 2 * barH);
+
+    var feltPadX = phone ? 10 : 24;
+    var feltPadY = phone ? 8 : 12;
+    var bandGap = phone ? 8 : 10;
+    var availW = fw - 2 * feltPadX;
+
+    // A phone hand is an OVERLAPPED row, not thirteen cards side by side: laid
+    // out side by side at 390 a card prices out at 29px, which is neither
+    // readable nor hittable. SHOW is the visible slice of every card but the
+    // last, so the hand can be half again as wide as the felt and still fit.
+    // Cards are sized for a FULL hand and never resized as it is played - a
+    // hand that grows while you empty it is not a hand.
+    var SHOW = 0.62;
+    var PLATE_H = 22, HAND_GAP = 3, DUMMY_RATIO = 0.8;
+    var capW = phone ? 48 : 60;
+    var cardW = p.handCardW
+      ? clampInt(p.handCardW, 16, 80, 44)
+      : Math.max(18, Math.min(capW, Math.floor(availW / (1 + 12 * SHOW))));
+
+    var trayBtnH = phone ? 46 : 48;
+    var trayRowGap = 6;
+    var trayH = 3 * trayBtnH + 2 * trayRowGap;
+
+    // ---------------- the live board ----------------
+    var B = window.Bridge || null;
+    v.tableReady = !!B;
+    v.tablePending = !B;
+    v.pendingStyle = "flex:1;min-height:0;width:100%;background:" + (T.feltFlat || SKIN_FALLBACK.feltFlat);
+
+    var st = null, isAuction = false, isPlay = false, isDone = false;
+    var movesKey = ovPhase + "/" + boardNo;
+    var moves = this.state.moves || [];
+    if (this.state.movesKey !== movesKey) { moves = []; this._mvSync = movesKey; }
+
+    if (B) {
+      st = this.seedState(B, ovPhase, boardNo);
+      for (var mi = 0; mi < moves.length; mi++) {
+        var mv = moves[mi];
+        if (mv.kind === "call" && st.phase === "auction") {
+          Object.assign(st, B.applyCall(st, mv.call));
+        } else if (mv.kind === "card" && st.phase === "play") {
+          var hand = st.hands[mv.seat] || [];
+          var card = hand.filter(function (c) { return c.s === mv.s && c.r === mv.r; })[0];
+          if (card) Object.assign(st, B.applyPlay(st, mv.seat, card) || {});
+        }
+        this.advance(B, st);
+      }
+      isAuction = st.phase === "auction";
+      isPlay = st.phase === "play";
+      isDone = st.phase === "complete";
+    }
+    v.isAuction = isAuction;
+    v.isPlay = isPlay;
+    v.isDone = isDone;
+
+    var showDummy = !!(st && !isAuction && st.contract && st.contract.declarer === "S");
+    v.showDummy = showDummy;
+
+    // ---------------- the band budget, resolved ----------------
+    // The felt's children, in order: [dummy row] centre [bid tray] hand. The
+    // centre takes what is left; the FLOOR is what keeps the trick and the
+    // auction readable, the CEILING is what stops a tall viewport from turning
+    // the centre into an acre of green with a small box marooned in the middle.
+    var kids = 2 + (showDummy ? 1 : 0) + (isAuction ? 1 : 0);
+    var gapTotal = bandGap * (kids - 1);
+    var CENTRE_MIN = phone ? 200 : 240;
+    var CENTRE_MAX = phone ? 640 : 720;
+    var bandFit = function (cw) {
+      var ch = Math.round(cw * 1.42);
+      var dw = Math.max(14, Math.round(cw * DUMMY_RATIO));
+      var dh = Math.round(dw * 1.42);
+      var south = ch + HAND_GAP + PLATE_H;
+      var dum = dh + HAND_GAP + PLATE_H;
+      var fixed = south + (showDummy ? dum : 0) + (isAuction ? trayH : 0);
+      return {
+        cw: cw, ch: ch, dw: dw, dh: dh, south: south, dummy: dum,
+        raw: feltH - 2 * feltPadY - gapTotal - fixed,
+      };
+    };
+    var fit = bandFit(cardW);
+    while (fit.raw < CENTRE_MIN && fit.cw > 18) fit = bandFit(fit.cw - 1);
+    cardW = fit.cw;
+    var cardH = fit.ch, dCardW = fit.dw, dCardH = fit.dh;
+    var southBlock = fit.south, dummyBlock = fit.dummy;
+    var centreH = Math.max(CENTRE_MIN, Math.min(CENTRE_MAX, fit.raw));
+    // Leftover (only ever when the ceiling binds) goes ABOVE the centre, never
+    // around it: the tray and the hand stay welded to the bottom toolbar, which
+    // is where a thumb expects to find them.
+    var feltPadTop = feltPadY + Math.max(0, fit.raw - centreH);
+    var feltPadBot = feltPadY;
+
+    // Card metrics that follow the resolved size. cardStep is what each card
+    // but the last actually shows, so the row is cardW + 12*cardStep wide and
+    // can never exceed the felt; the negative margin-left is handFaces' overlap.
+    var cardStep = Math.max(6, Math.min(cardW - 1, Math.floor((availW - cardW) / 12)));
+    var cardOv = cardStep - cardW;
+    var dCardStep = Math.max(6, Math.min(dCardW - 1, Math.round(dCardW * SHOW)));
+    var dCardOv = dCardStep - dCardW;
+    var rankFont = Math.max(10, Math.round(cardW * 0.5));
+    var glyphFont = Math.max(9, Math.round(cardW * 0.44));
+
+    // ---------------- centre geometry ----------------
+    // Both centre boxes are priced off the SAME band, so the auction and the
+    // trick occupy the same rectangle and the table does not jump when the
+    // auction ends. The trick is allowed to be taller than wide (a portrait
+    // table is), which is what stops the width cap from leaving dead felt.
+    var CENTRE_AIR = 10;
+    var boxW = Math.min(availW - 12, phone ? 360 : 520);
+    var boxH = Math.max(120, Math.min(centreH - 2 * CENTRE_AIR, Math.round(boxW * 1.34)));
+    // Played cards are LARGER than held cards, as they are at a real table: a
+    // hand is scanned, a trick is read. Sized off the box, floored off the hand.
+    var tw = Math.max(Math.round(cardW * 1.3), Math.round(Math.min(boxW, boxH) * 0.22));
+    var th = Math.round(tw * 1.42);
+    if (2 * th + 16 > boxH) { th = Math.max(26, Math.floor((boxH - 16) / 2)); tw = Math.round(th / 1.42); }
+    if (2 * tw + 16 > boxW) { tw = Math.max(20, Math.floor((boxW - 16) / 2)); th = Math.round(tw * 1.42); }
+
+    // ---------------- 1. challenge strip ----------------
+    v.title = title;
+    v.progressText = "Board " + boardNo + " of " + boardsTotal;
+    v.showResults = allowed;
+    var stripPad = phone ? 12 : 20;
+    v.stripStyle = "position:relative;flex:none;display:flex;align-items:center;gap:" + (phone ? 8 : 12)
+      + "px;height:" + stripH + "px;padding:0 " + stripPad + "px;background:#0e1a1c;"
+      + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    v.stripTitleStyle = "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+      + "font-size:" + (phone ? 12.5 : 14) + "px;font-weight:700;letter-spacing:.005em;color:#eaf1ef";
+    v.stripProgStyle = "flex:none;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,.06);"
+      + "font-size:" + (phone ? 10 : 11) + "px;font-weight:700;letter-spacing:.03em;color:#93aaa7;white-space:nowrap";
+    v.resultsBtnStyle = "flex:none;height:" + (phone ? 26 : 30) + "px;padding:0 " + (phone ? 12 : 15) + "px;"
+      + "border:1px solid rgba(255,255,255,.22);border-radius:7px;background:rgba(255,255,255,.06);"
+      + "color:#dbe8e6;font-family:inherit;font-size:" + (phone ? 11.5 : 12.5) + "px;font-weight:700;"
+      + "line-height:1;white-space:nowrap;cursor:pointer";
+    v.stripRuleStyle = "position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(255,255,255,.10);display:block";
+    var donePct = boardsTotal > 0 ? Math.round(((boardNo - 1) / boardsTotal) * 100) : 0;
+    v.stripFillStyle = "display:block;height:100%;width:" + donePct + "%;background:" + accent;
+
+    // ---------------- 2. the table ----------------
+    v.barT = barT;
+    v.barBg = T.barBg || SKIN_FALLBACK.barBg;
+    v.barSlotStyle = "flex:none;width:100%;height:" + barH + "px";
+    v.feltStyle = "flex:1;min-height:0;width:100%;display:flex;flex-direction:column;align-items:center;"
+      + "gap:" + bandGap + "px;padding:" + feltPadTop + "px " + feltPadX + "px " + feltPadBot + "px;"
+      + "overflow:hidden;background:" + (T.feltFlat || SKIN_FALLBACK.feltFlat);
+    v.handRowStyle = "flex:none;display:flex;justify-content:center;width:100%;height:" + southBlock + "px";
+    v.dummyRowStyle = "flex:none;display:flex;justify-content:center;width:100%;height:" + dummyBlock + "px";
+    v.centreStyle = "flex:none;height:" + centreH + "px;width:100%;display:flex;align-items:center;justify-content:center";
+
+    v.youName = youName;
+    v.cardW = cardW; v.cardH = cardH + "px";
+    v.rankFont = rankFont + "px"; v.glyphFont = glyphFont + "px";
+    v.dCardW = dCardW; v.dCardH = dCardH + "px";
+    v.dRankFont = Math.max(9, Math.round(dCardW * 0.5)) + "px";
+    v.dGlyphFont = Math.max(8, Math.round(dCardW * 0.44)) + "px";
+    v.dummyName = "BEN 1";
+    v.dummyDealer = false;
+    v.dummyStrip = B ? B.ROBOT_STRIPS.N : "#e0813a";
+    v.southStrip = B ? B.HUMAN_STRIP : "#12525e";
+    v.southDealer = !!(st && st.dealer === "S");
+    v.southTag = st && st.contract
+      ? (st.contract.declarer === "S" ? "DECLARER" : "DEFENDER")
+      : "";
+    var GOLD = B ? B.GOLD : "#fecd07", GREY = B ? B.GREY : "#d3d3d3";
+    v.southPlateBg = st && st.turn === "S" && !isDone ? GOLD : GREY;
+    v.dummyPlateBg = st && st.turn === "N" && !isDone ? GOLD : GREY;
+
+    var playCard = function (seat) {
+      return function (c) {
+        self.setState(function (s) {
+          return { moves: (s.moves || []).concat([{ kind: "card", seat: seat, s: c.s, r: c.r }]) };
+        });
+      };
+    };
+    v.southCards = [];
+    v.dummyCards = [];
+    // The plate spans the hand exactly, so it has to be told the overlap the
+    // hand was actually built with (SeatHand's own default assumes -1px).
+    v.southPlateW = (cardW + 12 * cardStep) + "px";
+    v.dummyPlateW = (dCardW + 12 * dCardStep) + "px";
+    if (B && st) {
+      var cur = st.tricks[st.tricks.length - 1] || { plays: [] };
+      var southLive = isPlay && !st.resolving && st.turn === "S" && !this.state.paused;
+      var dummyLive = isPlay && !st.resolving && st.turn === "N" && showDummy && !this.state.paused;
+      v.southCards = B.handFaces(st.hands.S, {
+        overlap: cardOv,
+        onPlay: southLive ? playCard("S") : null,
+        playable: southLive ? B.legalPlays(st.hands.S, cur.plays) : null,
+      });
+      v.southPlateW = (cardW + Math.max(0, st.hands.S.length - 1) * cardStep) + "px";
+      if (showDummy) {
+        v.dummyCards = B.handFaces(st.hands.N, {
+          overlap: dCardOv,
+          onPlay: dummyLive ? playCard("N") : null,
+          playable: dummyLive ? B.legalPlays(st.hands.N, cur.plays) : null,
+        });
+        v.dummyPlateW = (dCardW + Math.max(0, st.hands.N.length - 1) * dCardStep) + "px";
+      }
+    }
+
+    // ---- top toolbar: the board's own facts ----
+    // Scoring is a CHIP here, not the table's cycling button: the creator
+    // fixed it at create time and a player may not change it.
+    //
+    // The phone set is SHORTER, not scaled down. EdgeToolbar will happily
+    // push whatever does not fit into its overflow group, but the contract
+    // and the vulnerability are the two chips a declarer looks at most, so
+    // they must never be the ones that go. Dealer, declarer and the scoring
+    // basis are all readable elsewhere on a phone (the seat plates carry
+    // DEALER and DECLARER; the scoring basis is in the results sheet), so
+    // those are the chips the small bar gives up.
+    var scoringShort = { imps: "IMPs", mp: "MP %", total: "Points" }[scoring];
+    v.topItems = [];
+    if (B && st) {
+      var c0 = st.contract;
+      var vulLabel = st.vul === "All" ? "Both" : st.vul === "None" ? "None" : st.vul;
+      var contractChip = {
+        kind: "chip", label: "Contract", value: c0 ? B.contractText(c0) : "\u2014",
+        color: c0 && B.isRedSuit(c0.strain) ? "#ff8a8a" : "#eef4f1",
+      };
+      var vulChip = { kind: "chip", label: "Vul", value: vulLabel, color: st.vul === "None" ? "#eef4f1" : "#ff9c9c" };
+      v.topItems = phone
+        ? [
+            { kind: "chip", label: "Board", value: String(boardNo) },
+            vulChip,
+            contractChip,
+            { kind: "spacer" },
+            { kind: "chip", label: "NS", value: String(st.trickCount.NS) },
+            { kind: "chip", label: "EW", value: String(st.trickCount.EW) },
+          ]
+        : [
+            { kind: "chip", label: "Board", value: String(boardNo) },
+            { kind: "chip", label: "Dealer", value: st.dealer },
+            vulChip,
+            { kind: "divider" },
+            contractChip,
+            { kind: "chip", label: "By", value: c0 ? B.SEAT_NAME[c0.declarer] : "\u2014" },
+            { kind: "spacer" },
+            { kind: "chip", label: "NS", value: String(st.trickCount.NS) },
+            { kind: "chip", label: "EW", value: String(st.trickCount.EW) },
+            { kind: "chip", label: "Scoring", value: scoringShort },
+          ];
+    }
+
+    // ---- bottom toolbar: what a CHALLENGE table offers ----
+    // Undo and the four-hand Hands view are absent, not disabled: the
+    // challenge control overrides (spec section 2 - "Undo and Show-all-
+    // hands default OFF") revoke them before the bar is ever built, so
+    // there is no control to grey out.
+    var paused = this.state.paused;
+    v.bottomItems = [];
+    if (B && st) {
+      var items = [
+        {
+          kind: "button", label: paused ? "Play" : "Pause", tone: paused ? "warn" : "plain",
+          title: "Pause or resume BEN", on: function () { self.setState({ paused: !paused }); },
+        },
+        {
+          kind: "icon", label: "\u25b6", title: "Advance one action", disabled: !paused,
+          on: paused ? function () { self.flash("Steps BEN forward one action."); } : null,
+        },
+        { kind: "divider" },
+        { kind: "button", label: "Seats", title: "Who is in each seat", on: function () { self.flash("South is you. North, East and West are BEN."); } },
+        { kind: "spacer" },
+      ];
+      if (isPlay && st.done >= 1) {
+        items.push({ kind: "button", label: "Claim", tone: "accent", title: "Claim the rest", on: function () { self.flash("Claim - the rest of the tricks, at once."); } });
+      }
+      items.push({ kind: "icon", label: "\u2630", title: "Table settings", tone: "accent", on: function () { self.flash("Table settings. Undo and Hands are off for this challenge."); } });
+      v.bottomItems = items;
+    }
+
+    // ---- centre: the auction box ----
+    // Sized to FILL the centre band rather than sitting in it at a fixed 28px
+    // per row: the band is the same rectangle the trick gets, so the auction
+    // is as big as the felt honestly allows and the centre is never a void.
+    var aGap = 2, aPad = 6;
+    var aRowsModel = B && st ? B.auctionRows(st.auction, st.dealer) : [];
+    var aRowN = Math.max(2, aRowsModel.length);
+    var aColW = Math.max(40, Math.min(phone ? 80 : 74, Math.floor((boxW - 2 * aPad - 3 * aGap) / 4)));
+    var aCellH = Math.max(22, Math.min(phone ? 54 : 44,
+      Math.floor((boxH - 2 * aPad - aGap * aRowN) / (aRowN + 0.78))));
+    var aFont = Math.max(12, Math.round(aCellH * 0.44));
+    v.auctionGridStyle = "display:grid;grid-template-columns:repeat(4," + aColW + "px);gap:" + aGap + "px";
+    v.auctionBoxStyle = "display:flex;flex-direction:column;gap:" + aGap + "px;padding:" + aPad + "px;"
+      + "border-radius:4px;background:" + (T.auctionBg || "#acc5c5") + ";box-shadow:0 3px 10px rgba(0,0,0,.3)";
+    v.auctHead = [];
+    v.auctRows = [];
+    if (B && st) {
+      v.auctHead = B.auctionHead(st.vul, st.dealer).map(function (hd) {
+        return Object.assign({}, hd, {
+          style: "display:flex;align-items:center;justify-content:center;height:" + Math.round(aCellH * 0.78)
+            + "px;background:" + hd.bg + ";color:" + hd.fg + ";font-size:" + (aFont - 2)
+            + "px;font-weight:700;font-family:Arial,Helvetica,sans-serif",
+        });
+      });
+      v.auctRows = aRowsModel.map(function (row) {
+        return {
+          cells: row.cells.map(function (cl) {
+            return Object.assign({}, cl, {
+              style: "display:flex;align-items:center;justify-content:center;height:" + aCellH
+                + "px;background:" + cl.bg + ";color:" + cl.color + ";font-size:" + aFont
+                + "px;font-weight:700;font-family:Arial,Helvetica,sans-serif",
+            });
+          }),
+        };
+      });
+    }
+
+    // ---- centre: the trick ----
+    // Four fixed positions around a square. The played card sits at its
+    // seat; the seat that owes a card shows a dashed slot, which is the
+    // table's only "waiting" cue and the reason no spinner is needed.
+    v.trickBoxStyle = "position:relative;width:" + boxW + "px;height:" + boxH + "px";
+    v.trickCards = [];
+    if (B && st && !isAuction) {
+      var trick = st.tricks[st.tricks.length - 1] || { plays: [] };
+      var seats = ["N", "E", "S", "W"];
+      v.trickCards = seats.map(function (seat) {
+        var play = (trick.plays || []).filter(function (x) { return x.seat === seat; })[0];
+        var pos = seat === "N" ? "left:" + Math.round((boxW - tw) / 2) + "px;top:0"
+          : seat === "S" ? "left:" + Math.round((boxW - tw) / 2) + "px;top:" + (boxH - th) + "px"
+          : seat === "W" ? "left:0;top:" + Math.round((boxH - th) / 2) + "px"
+          : "left:" + (boxW - tw) + "px;top:" + Math.round((boxH - th) / 2) + "px";
+        var waiting = !play && st.turn === seat && !st.resolving && st.phase === "play";
+        return {
+          hasCard: !!play, waiting: waiting,
+          rank: play ? B.rankText(play.card.r) : "",
+          glyph: play ? B.GLYPH[play.card.s] : "",
+          wrapStyle: "position:absolute;" + pos + ";width:" + tw + "px;height:" + th + "px",
+          cardStyle: "display:block;width:100%;height:100%;position:relative;background:#fff;"
+            + "border:1px solid #6b6b6b;border-radius:4px;box-shadow:0 2px 6px rgba(0,0,0,.35)",
+          pipStyle: "position:absolute;left:3px;top:1px;display:flex;flex-direction:column;align-items:center;"
+            + "line-height:.95;color:" + (play ? B.suitColor(play.card.s) : "#000"),
+          rankStyle: "font-size:" + Math.max(11, Math.round(tw * 0.5)) + "px;font-weight:700",
+          glyphStyle: "font-size:" + Math.max(10, Math.round(tw * 0.44)) + "px",
+          slotStyle: "display:block;width:100%;height:100%;border:2px dashed rgba(255,255,255,.34);border-radius:4px",
+        };
+      });
+    }
+
+    // ---- centre: finished board ----
+    v.doneLine = B && st && st.score ? B.resultLine(st.score) : "";
+    v.doneScore = B && st && st.score ? B.resultScore(st.score, st.claimed) : "";
+    v.doneCardStyle = "display:flex;flex-direction:column;align-items:center;gap:4px;padding:16px 22px;"
+      + "border-radius:10px;background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.16)";
+    v.doneLineStyle = "font-size:" + (phone ? 18 : 22) + "px;font-weight:800;color:#f0f6f3;"
+      + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    v.doneScoreStyle = "font-size:" + (phone ? 12 : 13) + "px;font-weight:600;color:#9fb6ae;"
+      + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+    // ---- the bid tray ----
+    var armed = this.state.armed;
+    v.trayStyle = "flex:none;width:100%;max-width:" + Math.min(availW, 520) + "px;display:flex;"
+      + "flex-direction:column;gap:" + trayRowGap + "px";
+    v.trayRowStyle = "display:flex;gap:4px;height:" + trayBtnH + "px";
+    v.trayLevels = [];
+    v.trayStrains = [];
+    v.trayCalls = [];
+    v.hasStrains = false;
+    v.noStrains = true;
+    v.trayHint = "Pick a level";
+    v.trayHintStyle = "flex:1;display:flex;align-items:center;justify-content:center;border-radius:6px;"
+      + "background:rgba(0,0,0,.20);color:#9fb6ae;font-size:12px;font-weight:600;"
+      + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    if (B && st && isAuction) {
+      var mySeat = st.turn === "S" && !this.state.paused;
+      var legal = B.legalCalls(st.auction, "S");
+      var makeCall = function (callStr) {
+        return function () {
+          self.setState(function (s) {
+            return { armed: null, moves: (s.moves || []).concat([{ kind: "call", call: callStr }]) };
+          });
+        };
+      };
+      var box = B.bidBoxModel({
+        legal: legal, armed: armed, active: mySeat,
+        onArm: function (l) { self.setState({ armed: l }); },
+        onCall: null,
+      });
+      // Only the LEVEL row is taken verbatim from bidBoxModel: its `on` is
+      // the arm handler, which is the one piece of tray state the model
+      // owns. Strains and Pass/X/XX each need their own call, so they are
+      // re-bound below against the same `legal` set the model was given -
+      // the two can never disagree about what is legal.
+      v.trayLevels = box.levels.map(function (lv) {
+        return {
+          t: lv.t, on: lv.on,
+          style: "flex:1;min-width:0;border:1px solid #8a8a6a;border-radius:6px;background:" + lv.bg
+            + ";color:#111;font-family:Arial,Helvetica,sans-serif;font-size:" + (phone ? 16 : 18)
+            + "px;font-weight:700;cursor:" + lv.cursor + ";opacity:" + lv.opacity,
+        };
+      });
+      var strains = B.STRAINS.filter(function (sn) { return armed && legal.indexOf(armed + sn) >= 0; });
+      v.hasStrains = strains.length > 0;
+      v.noStrains = strains.length === 0;
+      v.trayStrains = strains.map(function (sn) {
+        return {
+          t: B.GLYPH[sn],
+          on: mySeat ? makeCall(armed + sn) : null,
+          style: "flex:1;min-width:0;border:1px solid #8a8a6a;border-radius:6px;background:"
+            + (T.strainBg || "#f8f8f8") + ";color:" + (sn === "N" ? "#000" : B.suitColor(sn))
+            + ";font-family:Arial,Helvetica,sans-serif;font-size:" + (phone ? 18 : 20)
+            + "px;font-weight:700;cursor:" + (mySeat ? "pointer" : "default") + ";opacity:" + (mySeat ? 1 : 0.42),
+        };
+      });
+      var callBtn = function (label, callStr, bg, border, wide) {
+        var live = mySeat && (callStr === "P" || legal.indexOf(callStr) >= 0);
+        return {
+          t: label, on: live ? makeCall(callStr) : null,
+          style: "flex:" + (wide ? 2 : 1) + ";min-width:0;border:1px solid " + border + ";border-radius:6px;"
+            + "background:" + (live ? bg : "#8fa39a") + ";color:#fff;font-family:Arial,Helvetica,sans-serif;"
+            + "font-size:" + (phone ? 14 : 16) + "px;font-weight:700;cursor:" + (live ? "pointer" : "default")
+            + ";opacity:" + (live ? 1 : 0.5),
+        };
+      };
+      v.trayCalls = [
+        callBtn("Pass", "P", "#116710", "#0c4b0b", true),
+        callBtn("X", "X", B.RED, "#8f0000", false),
+        callBtn("XX", "XX", "#1034a6", "#0a2170", false),
+      ];
+    }
+
+    // ---------------- 3. results overlay ----------------
+    var overlayOpen = allowed && ovOverlay === "open";
+    v.overlayOpen = overlayOpen;
+    v.showGrabber = phone;
+    v.onOpenResults = function () { self.setState({ ovOverlay: "open" }); };
+    v.onCloseResults = function () { self.setState({ ovOverlay: "closed" }); };
+
+    v.scrimStyle = "position:absolute;inset:0;z-index:40;background:rgba(6,14,11,.52)";
+    // The sheet is sized by its CONTENT, capped - not by a fixed share of
+    // the screen. A fixed height leaves white space under six standings
+    // rows and hides felt for nothing; the felt it does not need is the
+    // part of the design doing the reassuring.
+    var sheetMax = Math.round(fh * 0.78);
+    v.sheetStyle = phone
+      ? "position:absolute;left:0;right:0;bottom:0;z-index:41;max-height:" + sheetMax + "px;display:flex;"
+        + "flex-direction:column;background:#fff;border-radius:20px 20px 0 0;overflow:hidden;"
+        + "box-shadow:0 -14px 44px rgba(0,0,0,.42);"
+        + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#17211d"
+      : "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:41;width:540px;"
+        + "max-height:" + Math.round(fh * 0.82) + "px;display:flex;flex-direction:column;background:#fff;"
+        + "border-radius:16px;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,.46);"
+        + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#17211d";
+    v.grabberWrapStyle = "flex:none;display:flex;justify-content:center;padding:9px 0 3px;cursor:pointer";
+    v.grabberStyle = "display:block;width:38px;height:4px;border-radius:2px;background:#d3dbd6";
+    v.sheetHeadStyle = "flex:none;display:flex;align-items:flex-start;gap:10px;padding:"
+      + (phone ? "6px 18px 12px" : "18px 20px 12px");
+    v.sheetTitleStyle = "font-size:16px;font-weight:800;color:#16201c;line-height:1.2";
+    v.sheetSubStyle = "margin-top:3px;font-size:11.5px;color:#9aa8a1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+    v.sheetSub = title + " \u00b7 " + scoringShort;
+    v.closeBtnStyle = "flex:none;height:28px;width:28px;border:1px solid #e4e9e5;border-radius:9px;"
+      + "background:#fff;color:#93a199;font-family:inherit;font-size:13px;cursor:pointer";
+    v.sheetBodyStyle = "flex:1;min-height:0;overflow-y:auto;padding:0 " + (phone ? 18 : 20) + "px "
+      + (phone ? 22 : 20) + "px";
+
+    var GRID = "display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:10px;";
+    v.lbHeadStyle = GRID + "padding:2px 8px 6px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#a2ada7";
+    v.unitShort = { imps: "IMPs", mp: "MP %", total: "Points" }[scoring];
+
+    var rows = FIELD.map(function (key) {
+      return { key: key, v: totalValue(scoring, boardsTotal, key) };
+    }).sort(function (a, b) { return b.v - a.v; });
+    var rank = 0, seen = 0, prev = null;
+    rows.forEach(function (r) {
+      seen++;
+      if (prev === null || r.v !== prev) { rank = seen; prev = r.v; }
+      r.rank = rank;
+    });
+    v.lbRows = rows.map(function (r) {
+      var you = r.key === "You";
+      return {
+        rank: r.rank,
+        name: you ? youName : NAMES[r.key],
+        moderator: r.key === CREATOR,
+        editor: r.key === EDITOR,
+        markStyle: "flex:none;font-size:10px;line-height:1;color:" + accent,
+        rowStyle: GRID + "padding:7px 8px;border-radius:9px;background:" + (you ? "#eff7f6" : "transparent"),
+        rankStyle: "font-size:13px;font-weight:800;text-align:center;color:" + (r.rank <= 3 ? "#22302a" : "#8b9a93"),
+        nameStyle: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:"
+          + (you ? 800 : 600) + ";color:" + (you ? "#12403c" : "#2a3a34"),
+        totalStyle: "font-size:14px;font-weight:800;text-align:right;color:" + valColor(scoring, r.v),
+        total: fmtTotal(scoring, r.v),
+      };
+    });
+    v.benRowStyle = GRID + "margin-top:7px;padding:11px 8px 3px;border-top:1px solid #eef2ef";
+    v.benTotal = fmtTotal(scoring, totalValue(scoring, boardsTotal, "BEN"));
+    v.benTotalStyle = "font-size:14px;font-weight:800;text-align:right;color:" + SLATE;
+    v.stillPlaying = "Still playing: " + STILL_PLAYING;
+    v.legendStyle = "display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:10px;"
+      + "border-top:1px solid #eef2ef;font-size:10px;color:#a2ada7;flex-wrap:wrap";
+
+    v.stripHeadStyle = "margin-top:14px;font-size:10px;font-weight:800;letter-spacing:.08em;"
+      + "text-transform:uppercase;color:#8b9a93";
+    v.boardStripStyle = "display:flex;gap:5px;margin-top:8px;overflow-x:auto;padding-bottom:4px";
+    // 8 cells at 38 fit a 390 phone without a scroll bar; 16 boards do
+    // scroll, which is what the strip is for.
+    var cellW = phone ? 38 : 48;
+    v.boardCells = [];
+    for (var bi = 0; bi < boardsTotal; bi++) {
+      var cv = cellValue(scoring, "You", bi);
+      var here = bi + 1 === boardNo;
+      v.boardCells.push({
+        no: String(bi + 1),
+        val: fmtCell(scoring, cv),
+        title: "Board " + (bi + 1) + (here ? " - open at the table behind this sheet" : ""),
+        style: "flex:none;width:" + cellW + "px;display:flex;flex-direction:column;align-items:center;gap:2px;"
+          + "padding:6px 2px;border-radius:8px;background:" + (here ? "#eff7f6" : "#f7faf8")
+          + ";border:1px solid " + (here ? accent : "#e8eeea"),
+        noStyle: "font-size:9.5px;font-weight:700;color:" + (here ? accent : "#a2ada7"),
+        valStyle: "font-size:12.5px;font-weight:800;color:" + valColor(scoring, cv),
+      });
+    }
+
+    // ---------------- frame + canvas ----------------
+    // The canvas is the iPhone 13 tile itself: 390 x 844, no padding, no
+    // centring, no max-width. In phone mode the stage sits on it 1:1, so the
+    // frame is 390 x 844 to the pixel and the felt band is whatever the budget
+    // above left it - not "whatever fits after a 20px gutter and a scrollbar".
+    var SCREEN_W = 390, SCREEN_H = 844, CAP_H = 34;
+    v.canvasStyle = "position:relative;width:" + SCREEN_W + "px;height:" + SCREEN_H + "px;"
+      + "overflow:hidden;background:" + canvasBg;
+    v.desktopMode = !phone;
+    v.capText = "";
+    if (phone) {
+      v.stageStyle = "position:absolute;left:0;top:0;width:" + SCREEN_W + "px;height:" + SCREEN_H + "px";
+      // No border and no radius: at true device size the frame IS the screen,
+      // and a 1px border would spend a pixel of the 390 the hand needs.
+      v.frameStyle = "position:relative;width:" + fw + "px;height:" + fh + "px;display:flex;"
+        + "flex-direction:column;overflow:hidden;background:" + (T.stageBg || "#000");
+    } else {
+      // Desktop inside a phone tile: the WHOLE 1000x820 frame, scaled
+      // proportionally so nothing is cropped, and a caption that admits the
+      // scale. transform:scale leaves layout alone, so the frame still lays
+      // itself out at its real 1000x820 - what you see is the real thing small,
+      // not a different thing.
+      var kFit = Math.min((SCREEN_W - 16) / fw, (SCREEN_H - CAP_H - 16) / fh);
+      var sw = Math.round(fw * kFit), sh = Math.round(fh * kFit);
+      v.stageStyle = "position:absolute;left:" + Math.round((SCREEN_W - sw) / 2) + "px;"
+        + "top:" + Math.round(CAP_H + (SCREEN_H - CAP_H - sh) / 2) + "px;"
+        + "width:" + fw + "px;height:" + fh + "px;transform:scale(" + kFit.toFixed(4) + ");"
+        + "transform-origin:0 0";
+      v.frameStyle = "position:relative;width:" + fw + "px;height:" + fh + "px;display:flex;"
+        + "flex-direction:column;overflow:hidden;border-radius:14px;border:1px solid #26332e;"
+        + "box-shadow:0 26px 70px rgba(0,0,0,.55);background:" + (T.stageBg || "#000");
+      v.capText = "Desktop preview " + fw + " x " + fh + " at " + Math.round(kFit * 100) + "%";
+    }
+    v.capStyle = "position:absolute;left:0;right:0;top:0;z-index:6;height:" + CAP_H + "px;display:flex;"
+      + "align-items:center;justify-content:center;font-size:9.5px;font-weight:800;letter-spacing:.12em;"
+      + "text-transform:uppercase;color:#6b7873;"
+      + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+    // ---------------- toast ----------------
+    v.toastShown = !!this.state.toast;
+    v.toastText = this.state.toast || "";
+    v.onToastDismiss = function () { self.setState({ toast: null }); };
+    v.toastStyle = "position:absolute;left:50%;bottom:" + (barH + 14) + "px;transform:translateX(-50%);z-index:39;"
+      + "max-width:86%;padding:9px 14px;border-radius:10px;background:#17211d;color:#eaf2ee;"
+      + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
+      + "font-size:12px;font-weight:600;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.4);cursor:pointer";
+
+    // ---------------- review control (harness chrome) ----------------
+    // At 390 there is no spare corner: the old fixed panel sat over the strip
+    // and covered the Results button, which is the one control being reviewed.
+    // So it collapses. The CHIP is 30px and parks on bare felt in the table's
+    // top-left corner - the one rectangle no band ever paints, because both
+    // hands and both centre boxes are horizontally centred and leave a gutter.
+    // The PANEL only exists while asked for, over its own scrim, with a close.
+    var panelOpen = !!this.state.panel;
+    v.pillClosed = !panelOpen;
+    v.pillOpen = panelOpen;
+    v.onPillOpen = function () { self.setState({ panel: true }); };
+    v.onPillClose = function () { self.setState({ panel: false }); };
+    var CHIP = 30;
+    v.chipStyle = "position:absolute;left:" + (phone ? 5 : 8) + "px;top:"
+      + (phone ? stripH + barH + 6 : 6) + "px;z-index:60;width:" + CHIP + "px;height:" + CHIP + "px;"
+      + "padding:0;display:flex;align-items:center;justify-content:center;appearance:none;"
+      + "border:1px solid rgba(255,255,255,.24);border-radius:9px;background:rgba(9,17,14,.72);"
+      + "cursor:pointer;font-family:inherit";
+    v.chipDotStyle = "display:block;width:9px;height:9px;border-radius:5px;background:#f2b64d;"
+      + "box-shadow:0 0 0 3px rgba(242,182,77,.20)";
+    v.pillScrimStyle = "position:absolute;inset:0;z-index:70;background:rgba(6,14,11,.66)";
+
+    var seg = function (opts, current, setKey) {
+      return opts.map(function (o) {
+        return {
+          label: o.label,
+          on: function () { self.setState({ [setKey]: o.val }); },
+          style: "appearance:none;font-family:inherit;cursor:pointer;border:0;flex:1;padding:7px 4px;"
+            + "border-radius:7px;font-size:11px;font-weight:700;line-height:1;white-space:nowrap;text-align:center;"
+            + (o.val === current ? "background:#eef2f0;color:#12201b" : "background:transparent;color:#8b978f"),
+        };
+      });
+    };
+    v.pillStyle = "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:71;"
+      + "display:flex;flex-direction:column;gap:10px;width:" + (SCREEN_W - 68) + "px;"
+      + "max-height:" + (SCREEN_H - 72) + "px;overflow-y:auto;padding:12px 13px 13px;border-radius:14px;"
+      + "background:#171f1c;border:1px solid #2b3a34;box-shadow:0 18px 50px rgba(0,0,0,.55);"
+      + "font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    v.pillCloseStyle = "flex:none;width:24px;height:24px;padding:0;appearance:none;border:1px solid #2f3d38;"
+      + "border-radius:7px;background:#111917;color:#8f9a94;font-family:inherit;font-size:11px;"
+      + "line-height:1;cursor:pointer";
+    v.pillGroups = [
+      { label: "Viewport", opts: seg([{ val: "phone", label: "Phone" }, { val: "desktop", label: "Desktop" }], ovViewport, "ovViewport") },
+      { label: "Results", opts: seg([{ val: true, label: "Allowed" }, { val: false, label: "Not allowed" }], ovResults, "ovResults") },
+      { label: "Overlay", opts: seg([{ val: "closed", label: "Closed" }, { val: "open", label: "Open" }], ovOverlay, "ovOverlay") },
+      { label: "Phase", opts: seg([{ val: "auction", label: "Auction" }, { val: "play", label: "Play" }], ovPhase, "ovPhase") },
+    ];
+    v.pillNote = (allowed
+      ? "Play a card, open Results, close it - the board is where you left it."
+      : "Not unlocked: the strip has no Results button at all.")
+      + " Close this panel to hand the screen back; the amber chip on the felt brings it back.";
+
+    // ---- deferred prop/state re-syncs (never setState during render) ----
+    if (this._vpSync != null) { var a1 = this._vpSync; this._vpSync = null; setTimeout(function () { self.setState({ ovViewport: a1, lastViewportProp: a1 }); }, 0); }
+    if (this._phSync != null) { var a2 = this._phSync; this._phSync = null; setTimeout(function () { self.setState({ ovPhase: a2, lastPhaseProp: a2 }); }, 0); }
+    if (this._rsSync != null) { var a3 = this._rsSync; this._rsSync = null; setTimeout(function () { self.setState({ ovResults: a3, lastResultsProp: a3 }); }, 0); }
+    if (this._olSync != null) { var a4 = this._olSync; this._olSync = null; setTimeout(function () { self.setState({ ovOverlay: a4, lastOverlayProp: a4 }); }, 0); }
+    if (this._mvSync != null) { var a5 = this._mvSync; this._mvSync = null; setTimeout(function () { self.setState({ moves: [], movesKey: a5, armed: null }); }, 0); }
+
+    return v;
+  }
+}
+</script>
+</body>
+</html>

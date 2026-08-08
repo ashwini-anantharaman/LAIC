@@ -11,6 +11,8 @@ export default function NewBoardScreen() {
       // A fresh deal is a session like any other — leaving it mid-board asks
       // whether to keep it for Resume or discard it.
       confirmUnfinishedExit
+      // The board and its coach own the whole screen; the back chip floats.
+      fullScreen
     />
   );
 }

@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@bridge/access": "workspace:*",
+    "@bridge/challenges": "workspace:*",
     "@bridge/table-config": "workspace:*",
     "@bridge/audit": "workspace:*",
     "@bridge/kb": "workspace:*",

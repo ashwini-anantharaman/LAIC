@@ -9,7 +9,7 @@ import { TestCatalogueClient } from "./TestCatalogueClient";
 
 /** Test access catalogue (experiment): the capability-set designer wired to the
  *  live enforced catalogue. Assign SETS to roles, watch it compile to the real
- *  41-key matrix, optionally write it to the live catalogue. Gated behind the
+ *  43-key matrix, optionally write it to the live catalogue. Gated behind the
  *  governance page (page.teams) — it's a teams/roles experiment. */
 export default async function TestAccessCataloguePage({
   searchParams,
@@ -61,7 +61,7 @@ export default async function TestAccessCataloguePage({
         <p className="text-sm text-neutral-600">
           An experiment combining the capability-set designer with the live enforced catalogue:
           assign whole <em>sets</em> to roles, watch the assignment compile down to the real
-          41-key feature matrix the app enforces, and — if you can edit — write that compiled
+          43-key feature matrix the app enforces, and — if you can edit — write that compiled
           matrix straight to the live catalogue.
         </p>
       </header>

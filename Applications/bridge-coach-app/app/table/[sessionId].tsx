@@ -9,13 +9,17 @@ export default function TableScreen() {
   return (
     <BridgeEmbed
       title="Board"
-      next={`/m/table/${encodeURIComponent(sessionId ?? "")}`}
+      // The table page itself, not the /m/table redirect stub — the stub is
+      // one more serverless hop between the tap and the felt.
+      next={`/bridge/table2/${encodeURIComponent(sessionId ?? "")}`}
       // Opened from Play, Resume, Assignments or My Games — `back` returns to
       // whichever. With no history (a reloaded web tab, a deep link) a board
       // belongs to Play.
       backTo="/play"
       // Leaving mid-board asks: save it for Resume, or discard it.
       confirmUnfinishedExit
+      // The board and its coach own the whole screen; the back chip floats.
+      fullScreen
     />
   );
 }

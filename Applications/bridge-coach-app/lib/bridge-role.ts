@@ -122,12 +122,20 @@ export function isCoach(context: RoleContext | BridgeContext | null): boolean {
   // by any membership anywhere. Someone can be a learner in Club 1 and an
   // administrator of an unrelated program; that must not make them a coach here.
   const primary = primaryMembership(context);
-  if (primary) return ADMIN_ROLES.has(primary.role.toLowerCase());
-  // No membership to judge by — fall back to the profile role, then to a Bridge
-  // platform grant.
-  if (context.profileRole && ADMIN_PROFILE_ROLES.has(context.profileRole.toLowerCase())) {
+  if (primary && ADMIN_ROLES.has(primary.role.toLowerCase())) return true;
+  // No membership to judge by — the profile role may still administer.
+  if (
+    !primary &&
+    context.profileRole &&
+    ADMIN_PROFILE_ROLES.has(context.profileRole.toLowerCase())
+  ) {
     return true;
   }
+  // The Bridge grant last, and it only ever ADDS coach access (the header's
+  // promise) — a hired coach is usually enrolled as a plain "member", with
+  // their coach-ness carried by the bridge_coach platform role. The Club 1
+  // fix above is not weakened: partner-program members have no Bridge grant
+  // at all (/bridge/context 403s for them), so nothing here promotes them.
   return _bridgeGrantsCoach(context.bridge);
 }
 

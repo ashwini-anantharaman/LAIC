@@ -10,6 +10,7 @@ import { OptionCard, Screen } from "../../components/ui";
 import { Brand, Colors, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { getBridgeContextCached, isCoach, peekRoleContext } from "../../lib/bridge-role";
+import { peekBridgeOrigin } from "../../lib/launch-cache";
 import { type BridgeSummary } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
 import { peekSummary, refreshSummary } from "../../lib/summary-cache";
@@ -40,7 +41,7 @@ export default function CoachScreen() {
       if (!token) return;
       // Warm the screens this tab's cards open (role decides which are shown,
       // but warming both costs one idempotent GET each).
-      prewarmBridgePages(["/m/reviews", "/m/plays", "/m/library/new"]);
+      prewarmBridgePages(["/m/reviews", "/m/plays", "/m/library/new"], peekBridgeOrigin(token));
       let cancelled = false;
       refreshSummary(token)
         .then((s) => !cancelled && setSummary(s))

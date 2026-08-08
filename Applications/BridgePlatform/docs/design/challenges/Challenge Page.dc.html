@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;padding:0;background:#dfe4e0;overscroll-behavior:none}
+*{box-sizing:border-box}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#c7d0ca;border-radius:5px}
+::-webkit-scrollbar-track{background:transparent}
+</style>
+</helmet>
+
+<!--
+  CHALLENGE PAGE (spec section 6) - RESULTS-CENTRIC.
+  Play starts/resumes from the challenges list, never from here; this page is
+  what you see when the challenge is done for you, or when you are allowed
+  early sight. There is no cover card and no start/accept/decline flow.
+
+  Two phases via the `phase` prop (your own progress):
+    PLAYING  : you have not finished. Results are locked UNLESS you are a
+               moderator or the challenge sets standingsVisibility=always.
+    FINISHED : full results.
+  Access rule for full results (standings + board-by-board + comparisons):
+    viewer finished OR viewerRole=moderator OR standingsVisibility=always.
+
+  RESULTS is the default tab and the primary content: rank . name . total
+  leaderboard, slate BEN benchmark footer, and one 'Board-by-board' disclosure
+  holding the boards x players grid (BEN is a column). In each board row the
+  best score is teal-tinted and bolder - the board leader, ties included.
+  A left-aligned Compare button above that grid enters a two-click selection
+  mode: pick a cell, then a second cell in the SAME row (other rows dim and are
+  inert), and a mock 'Open comparison' confirmation names both lines.
+  BOARDS is the secondary tab: a compact numbered-square grid used only to
+  review or replay one board, with a review aside on desktop.
+  All rules text lives in ONE info popover. Every button is a mock intent that
+  flashes a toast. The leaderboard/grid are computed from ONE per-board points
+  matrix through a real field-scoring model (IMP table + matchpoints +
+  IMPs-vs-datum); BEN is scored the same way but kept OUT of the field as an
+  unranked benchmark. 7-bit ASCII end to end.
+-->
+
+<div style="{{outerStyle}}">
+<div style="{{appStyle}}">
+<div style="{{contentStyle}}">
+
+<!-- ============================== HEADER ============================== -->
+<!-- one line + subtitle + the single info popover trigger -->
+<div style="flex:none">
+  <div style="font-size:20px;line-height:1.2;font-weight:800;letter-spacing:-.01em;color:#16201c">{{title}}</div>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px">
+    <span style="font-size:12.5px;color:#8b9a93">{{subtitle}}</span>
+    <button onClick="{{onInfo}}" title="How this challenge works" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;background:transparent;color:#9aa8a1;font-family:inherit;font-size:16px;line-height:1;cursor:pointer">&#x24D8;</button>
+    <sc-if value="{{moreShown}}" hint-placeholder-val="{{false}}">
+    <button onClick="{{onMore}}" style="border:0;background:transparent;color:{{accent}};font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:0">{{moreLabel}}</button>
+    </sc-if>
+  </div>
+  <sc-if value="{{descOpen}}" hint-placeholder-val="{{false}}">
+  <div style="font-size:13px;line-height:1.55;color:#5f6f68;margin-top:9px;max-width:640px">{{description}}</div>
+  </sc-if>
+</div>
+
+<!-- tabs : Boards | Results (Results is the default) -->
+<div style="{{tabBarStyle}}">
+  <sc-for list="{{tabs}}" as="t" hint-placeholder-count="2">
+  <button onClick="{{t.on}}" style="{{t.style}}">
+    <span>{{t.label}}</span>
+    <sc-if value="{{t.chipShown}}" hint-placeholder-val="{{false}}"><span style="{{t.chipStyle}}">{{t.chipText}}</span></sc-if>
+    <sc-if value="{{t.lockShown}}" hint-placeholder-val="{{false}}"><span style="font-size:11px;color:#a2ada7">&#x1F512;</span></sc-if>
+  </button>
+  </sc-for>
+</div>
+
+<!-- body -->
+<div style="{{bodyStyle}}">
+
+  <!-- ------------------------ BOARDS COLUMN ------------------------ -->
+  <!-- secondary: review/replay one board. Never the primary CTA. -->
+  <div style="{{boardsColStyle}}">
+
+    <div style="flex:none;font-size:12.5px;color:#8b9a93">{{boardsCaption}}</div>
+
+    <div style="{{gridStyle}}">
+    <sc-for list="{{boards}}" as="b" hint-placeholder-count="8">
+    <div onClick="{{b.on}}" style="{{b.squareStyle}}">
+      <sc-if value="{{b.cornerShown}}" hint-placeholder-val="{{false}}"><span style="position:absolute;top:4px;left:6px;font-size:8.5px;font-weight:700;line-height:1;color:#9aa8a1">{{b.no}}</span></sc-if>
+      <sc-if value="{{b.scoreShown}}" hint-placeholder-val="{{false}}"><span style="{{b.scoreStyle}}">{{b.score}}</span></sc-if>
+      <sc-if value="{{b.numShown}}" hint-placeholder-val="{{true}}"><span style="{{b.numStyle}}">{{b.no}}</span></sc-if>
+    </div>
+    </sc-for>
+    </div>
+
+    <!-- phone : board review appears inline beneath the grid -->
+    <sc-if value="{{inlineDetailShown}}" hint-placeholder-val="{{false}}">
+    <div style="flex:none;border:1px solid #cfe1de;border-radius:14px;background:#fff;padding:14px 15px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:14px;font-weight:800;color:#22302a">Board {{detailNo}}</span>
+        <span style="flex:1"></span>
+        <button onClick="{{onDetailClose}}" style="height:26px;width:26px;border:1px solid #e4e9e5;border-radius:8px;background:#fff;color:#93a199;font-family:inherit;font-size:13px;cursor:pointer">&#x2715;</button>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <span style="font-size:17px;font-weight:800;color:#22302a">{{detailContract}}</span>
+        <span style="font-size:13px;font-weight:700;color:{{detailRawColor}}">{{detailRaw}}</span>
+      </div>
+      <div style="font-size:12px;color:#8b9a93">{{detailSub}}</div>
+      <div style="display:inline-flex;align-self:flex-start;align-items:baseline;gap:6px;height:28px;padding:0 11px;border-radius:8px;background:#fbfcfb;border:1px solid #e4e9e5">
+        <span style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#93a199">{{detailChUnit}}</span>
+        <span style="font-size:13px;font-weight:800;color:{{detailChColor}}">{{detailChScore}}</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:2px">
+        <button onClick="{{onDetailCompare}}" style="height:34px;padding:0 14px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">&#x21C4; Compare vs BEN</button>
+        <button onClick="{{onDetailPractice}}" style="height:34px;padding:0 12px;border:0;background:transparent;color:#6d7a73;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer">&#x21BB; Replay</button>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+
+  <!-- ------------------- REVIEW ASIDE (desktop) ------------------- -->
+  <sc-if value="{{asideShown}}" hint-placeholder-val="{{false}}">
+  <div style="{{asideColStyle}}">
+    <div style="flex:none;border:1px solid #cfe1de;border-radius:14px;background:#fff;padding:15px 16px;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:15px;font-weight:800;color:#22302a">Board {{detailNo}}</span>
+        <span style="flex:1"></span>
+        <button onClick="{{onDetailClose}}" style="height:26px;width:26px;border:1px solid #e4e9e5;border-radius:8px;background:#fff;color:#93a199;font-family:inherit;font-size:13px;cursor:pointer">&#x2715;</button>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span style="font-size:20px;font-weight:800;color:#22302a">{{detailContract}}</span>
+        <span style="font-size:13.5px;font-weight:700;color:{{detailRawColor}}">{{detailRaw}}</span>
+      </div>
+      <div style="font-size:12.5px;color:#8b9a93">{{detailSub}}</div>
+      <div style="display:inline-flex;align-self:flex-start;align-items:baseline;gap:6px;height:30px;padding:0 12px;border-radius:8px;background:#fbfcfb;border:1px solid #e4e9e5">
+        <span style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#93a199">{{detailChUnit}}</span>
+        <span style="font-size:14px;font-weight:800;color:{{detailChColor}}">{{detailChScore}}</span>
+      </div>
+      <div style="display:flex;gap:9px;margin-top:2px">
+        <button onClick="{{onDetailCompare}}" style="height:36px;padding:0 15px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">&#x21C4; Compare vs BEN</button>
+        <button onClick="{{onDetailPractice}}" style="height:36px;padding:0 12px;border:0;background:transparent;color:#6d7a73;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer">&#x21BB; Replay</button>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ------------------------ RESULTS COLUMN ------------------------ -->
+  <!-- primary content -->
+  <div style="{{resultsColStyle}}">
+
+    <!-- locked : quiet panel, spoiler-safe -->
+    <sc-if value="{{resultsLockedShown}}" hint-placeholder-val="{{false}}">
+    <div style="flex:none;border:1px solid #e2e7e3;border-radius:16px;background:#fff;padding:18px 16px">
+      <div style="display:flex;align-items:center;gap:11px">
+        <span style="display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex:none;border-radius:11px;background:#f1f4f2;font-size:17px">&#x1F512;</span>
+        <div>
+          <div style="font-size:14px;font-weight:800;color:#22302a">{{lockedTitle}}</div>
+          <div style="font-size:12px;line-height:1.5;color:#8b9a93">{{lockedSub}}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;margin-top:15px">
+        <div style="flex:1;height:6px;border-radius:3px;background:#e6ebe8;overflow:hidden"><div style="height:100%;width:{{lockedPct}}%;background:{{accent}};border-radius:3px"></div></div>
+        <span style="flex:none;font-size:12px;font-weight:800;color:#5a6a63">{{lockedFrac}}</span>
+      </div>
+      <div style="font-size:11.5px;color:#9aa8a1;margin-top:7px">{{lockedProgressLabel}}</div>
+    </div>
+    </sc-if>
+
+    <!-- unlocked : standings -->
+    <sc-if value="{{leaderboardShown}}" hint-placeholder-val="{{true}}">
+    <div style="flex:none;border:1px solid #e2e7e3;border-radius:16px;background:#fff;padding:16px 16px 14px;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <span style="font-size:15px;font-weight:800;color:#22302a">Standings</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;font-weight:700;color:{{accent}};background:#eff7f6;border-radius:11px;padding:3px 9px">{{lbUnit}}</span>
+      </div>
+      <div style="font-size:11.5px;color:#9aa8a1;margin-top:6px">{{summaryLine}}</div>
+
+      <!-- early sight : say WHY these are visible before you finished -->
+      <sc-if value="{{earlyNoteShown}}" hint-placeholder-val="{{false}}">
+      <div style="display:flex;align-items:flex-start;gap:7px;margin-top:9px;padding:8px 10px;border-radius:9px;background:#f3f5f7">
+        <span style="flex:none;font-size:10px;line-height:1.5;color:#8a949c">&#x25CF;</span>
+        <span style="font-size:11.5px;line-height:1.5;color:#55636f">{{earlyNote}}</span>
+      </div>
+      </sc-if>
+
+      <!-- column heads -->
+      <div style="display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:10px;padding:10px 8px 6px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#a2ada7">
+        <span style="text-align:center">#</span>
+        <span>Player</span>
+        <span style="text-align:right">{{lbUnitShort}}</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:3px">
+      <sc-for list="{{lbRows}}" as="r" hint-placeholder-count="6">
+      <div style="{{r.rowStyle}}">
+        <span style="{{r.rankStyle}}">{{r.rank}}</span>
+        <div style="display:flex;align-items:center;gap:6px;min-width:0">
+          <span style="{{r.nameStyle}}">{{r.name}}</span>
+          <sc-if value="{{r.editor}}" hint-placeholder-val="{{false}}"><span title="Opened the pack editor - has seen the hands" style="flex:none;font-size:10px;line-height:1;color:{{accent}}">&#x25C6;</span></sc-if>
+          <sc-if value="{{r.moderator}}" hint-placeholder-val="{{false}}"><span title="Moderator - could see the standings before finishing" style="flex:none;display:inline-flex;align-items:center;height:14px;padding:0 5px;border-radius:7px;background:#eef1f4;color:#55636f;font-size:8.5px;font-weight:800;letter-spacing:.07em;line-height:1">MOD</span></sc-if>
+        </div>
+        <span style="{{r.totalStyle}}">{{r.total}}</span>
+      </div>
+      </sc-for>
+      </div>
+
+      <!-- BEN : hairline slate footer, unranked -->
+      <div style="display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:10px;margin-top:7px;padding:11px 8px 3px;border-top:1px solid #eef2ef">
+        <span style="text-align:center;font-size:12px;color:#9aa8b0">&#x2013;</span>
+        <div style="display:flex;align-items:baseline;gap:7px;min-width:0">
+          <span style="font-size:13px;font-weight:700;color:#55636f">BEN</span>
+          <span style="font-size:10.5px;color:#8a949c">benchmark &middot; unranked</span>
+        </div>
+        <span style="font-size:14px;font-weight:800;color:#55636f;text-align:right">{{benTotal}}</span>
+      </div>
+
+      <!-- ONE disclosure for the board-by-board grid -->
+      <button onClick="{{onToggleScorecard}}" style="width:100%;height:40px;margin-top:12px;border:1px solid #dbe4e0;border-radius:10px;background:#f7faf8;color:#3f5a56;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">{{scorecardBtnLabel}}</button>
+
+      <!-- board-by-board : boards x players (BEN is a column) -->
+      <sc-if value="{{scorecardShown}}" hint-placeholder-val="{{false}}">
+      <div style="margin-top:12px;border-top:1px solid #eef2ef;padding-top:12px">
+
+        <!-- COMPARE control : left-aligned, directly above the grid.
+             Buttons on one row, hint on its own two-line-tall row, so switching
+             between idle / selecting / confirm never reflows the grid under a
+             finger mid-selection. -->
+        <div style="margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-height:32px">
+            <sc-if value="{{cmpIdle}}" hint-placeholder-val="{{true}}">
+            <button onClick="{{onCompareStart}}" style="flex:none;height:32px;padding:0 13px;border:1px solid #cfe1de;border-radius:9px;background:#eff7f6;color:{{accent}};font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">&#x21C4; Compare</button>
+            </sc-if>
+            <sc-if value="{{cmpMode}}" hint-placeholder-val="{{false}}">
+            <button onClick="{{onCompareCancel}}" title="Leave selection mode" style="flex:none;height:32px;padding:0 12px;border:1px solid #e0e6e2;border-radius:9px;background:#fff;color:#7d8a83;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer">&#x2715; Cancel</button>
+            <sc-if value="{{cmpConfirm}}" hint-placeholder-val="{{false}}">
+            <button onClick="{{onCompareOpen}}" style="flex:none;height:32px;padding:0 14px;border:0;border-radius:9px;background:{{accent}};color:#fff;font-family:inherit;font-size:12.5px;font-weight:800;cursor:pointer">Open comparison</button>
+            </sc-if>
+            </sc-if>
+          </div>
+          <div style="{{cmpHintStyle}}">{{cmpHint}}</div>
+        </div>
+
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+          <div style="min-width:{{scMinWidth}}px">
+            <div style="display:flex;gap:4px;margin-bottom:5px">
+              <span style="width:46px;flex:none"></span>
+              <sc-for list="{{scHeaders}}" as="h" hint-placeholder-count="7"><span style="{{h.style}}">{{h.label}}</span></sc-for>
+            </div>
+            <sc-for list="{{scRows}}" as="row" hint-placeholder-count="8">
+            <div style="display:flex;gap:4px;margin-bottom:3px;align-items:stretch">
+              <span style="{{row.labelStyle}}">{{row.label}}</span>
+              <sc-for list="{{row.cells}}" as="c" hint-placeholder-count="7"><div onClick="{{c.on}}" title="{{c.title}}" style="{{c.style}}">{{c.text}}</div></sc-for>
+            </div>
+            </sc-for>
+            <div style="display:flex;gap:4px;margin-top:6px;padding-top:6px;border-top:2px solid #eef2ef;align-items:stretch">
+              <span style="width:46px;flex:none;display:flex;align-items:center;padding:0 7px;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#8b9a93">Total</span>
+              <sc-for list="{{scTotals}}" as="tt" hint-placeholder-count="7"><span style="{{tt.style}}">{{tt.text}}</span></sc-for>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:10.5px;line-height:1.5;color:#9aa8a1;margin-top:8px">{{scLegend}}</div>
+      </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+  </div>
+</div>
+
+<!-- ============================ INFO POPOVER ============================ -->
+<!-- one popover holds ALL the rules text -->
+<sc-if value="{{infoOpen}}" hint-placeholder-val="{{false}}">
+<div onClick="{{onInfoClose}}" style="position:fixed;inset:0;z-index:60;background:rgba(20,28,24,.32)"></div>
+<div style="position:fixed;z-index:61;left:50%;top:50%;transform:translate(-50%,-50%);width:calc(100% - 40px);max-width:360px;max-height:80vh;overflow-y:auto;background:#fff;border:1px solid #e2e7e3;border-radius:18px;padding:20px 20px 18px;box-shadow:0 18px 50px rgba(0,0,0,.22)">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+    <span style="font-size:15px;font-weight:800;color:#16201c">{{infoTitle}}</span>
+    <span style="flex:1"></span>
+    <button onClick="{{onInfoClose}}" style="height:28px;width:28px;border:1px solid #e4e9e5;border-radius:9px;background:#fff;color:#93a199;font-family:inherit;font-size:14px;cursor:pointer">&#x2715;</button>
+  </div>
+  <sc-for list="{{infoRules}}" as="rule" hint-placeholder-count="7">
+  <div style="display:flex;gap:10px;align-items:flex-start;margin-top:12px">
+    <span style="flex:none;width:6px;height:6px;border-radius:3px;background:{{accent}};margin-top:7px"></span>
+    <span style="font-size:12.5px;line-height:1.55;color:#4a5c55">{{rule.text}}</span>
+  </div>
+  </sc-for>
+</div>
+</sc-if>
+
+<!-- toast -->
+<sc-if value="{{toastShown}}" hint-placeholder-val="{{false}}">
+<div onClick="{{onToastDismiss}}" style="position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:50;max-width:90%;display:flex;align-items:center;gap:9px;padding:11px 15px;border-radius:11px;background:#17211d;color:#eaf2ee;font-size:12.5px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.28);cursor:pointer">
+  <span style="color:{{accent}};font-size:14px">&#x25C6;</span><span>{{toastText}}</span>
+</div>
+</sc-if>
+
+<!-- ===================== REVIEW CONTROL (harness chrome) ===================== -->
+<!-- NOT product UI. An in-canvas review pill so a reviewer without the props
+     panel can reach every state: viewport, phase, viewer role (incl. moderator)
+     and the standings-visibility setting. position:fixed so it never pushes
+     page content. -->
+<div style="position:fixed;top:12px;right:12px;z-index:2147483000;display:flex;flex-direction:column;gap:8px;width:168px;padding:10px 11px 11px;border-radius:12px;background:#171f1c;box-shadow:0 8px 26px rgba(0,0,0,.34);font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <div style="display:flex;align-items:center;gap:6px">
+    <span style="flex:none;width:6px;height:6px;border-radius:3px;background:#f2b64d"></span>
+    <span style="font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8f9a94">Preview</span>
+    <span style="flex:1"></span>
+    <span style="font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#5c6863">review only</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font-size:8px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6b7873">Viewport</span>
+    <div style="display:flex;gap:2px;padding:2px;border-radius:8px;background:#0d1310">
+    <sc-for list="{{rcViewport}}" as="vp" hint-placeholder-count="2"><button onClick="{{vp.on}}" style="{{vp.style}}">{{vp.label}}</button></sc-for>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font-size:8px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6b7873">Phase</span>
+    <div style="display:flex;gap:2px;padding:2px;border-radius:8px;background:#0d1310">
+    <sc-for list="{{rcPhase}}" as="ph" hint-placeholder-count="2"><button onClick="{{ph.on}}" style="{{ph.style}}">{{ph.label}}</button></sc-for>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font-size:8px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6b7873">Viewer</span>
+    <div style="display:flex;gap:2px;padding:2px;border-radius:8px;background:#0d1310">
+    <sc-for list="{{rcRole}}" as="vr" hint-placeholder-count="3"><button onClick="{{vr.on}}" style="{{vr.style}}">{{vr.label}}</button></sc-for>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font-size:8px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#6b7873">Standings</span>
+    <div style="display:flex;gap:2px;padding:2px;border-radius:8px;background:#0d1310">
+    <sc-for list="{{rcStandings}}" as="sv" hint-placeholder-count="2"><button onClick="{{sv.on}}" style="{{sv.style}}">{{sv.label}}</button></sc-for>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+</div>
+
+</x-dc>
+
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:980},&quot;viewport&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewport&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;phone&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;section&quot;:&quot;Layout&quot;},&quot;phase&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Your progress&quot;,&quot;options&quot;:[&quot;playing&quot;,&quot;finished&quot;],&quot;default&quot;:&quot;finished&quot;,&quot;section&quot;:&quot;View&quot;},&quot;viewerRole&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Viewer role&quot;,&quot;options&quot;:[&quot;participant&quot;,&quot;creator&quot;,&quot;moderator&quot;],&quot;default&quot;:&quot;participant&quot;,&quot;section&quot;:&quot;View&quot;},&quot;standingsVisibility&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Standings visible&quot;,&quot;options&quot;:[&quot;after-finish&quot;,&quot;always&quot;],&quot;default&quot;:&quot;after-finish&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;scoring&quot;:{&quot;type&quot;:&quot;enum&quot;,&quot;label&quot;:&quot;Scoring&quot;,&quot;options&quot;:[&quot;imps&quot;,&quot;mp&quot;,&quot;total&quot;],&quot;default&quot;:&quot;imps&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;title&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Title&quot;,&quot;default&quot;:&quot;Tuesday Night Teams \u2014 Set 12&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;description&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Description&quot;,&quot;default&quot;:&quot;Same deals for everyone, BEN robots in the other three seats, one attempt per board. Start and resume from your challenges list; this page is where the results live.&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;creatorName&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;label&quot;:&quot;Creator name&quot;,&quot;default&quot;:&quot;Marta Okonkwo&quot;,&quot;section&quot;:&quot;Challenge&quot;},&quot;editorBadge&quot;:{&quot;type&quot;:&quot;boolean&quot;,&quot;label&quot;:&quot;Creator opened pack editor&quot;,&quot;default&quot;:true,&quot;section&quot;:&quot;Challenge&quot;},&quot;boardsCount&quot;:{&quot;type&quot;:&quot;int&quot;,&quot;label&quot;:&quot;Boards&quot;,&quot;min&quot;:2,&quot;max&quot;:8,&quot;default&quot;:8,&quot;section&quot;:&quot;Challenge&quot;},&quot;accent&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Accent&quot;,&quot;default&quot;:&quot;#0d707c&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;pageBg&quot;:{&quot;type&quot;:&quot;color&quot;,&quot;label&quot;:&quot;Backdrop&quot;,&quot;default&quot;:&quot;#dfe4e0&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+// ======================================================================
+// Challenge page - spec section 6, RESULTS-CENTRIC.
+//
+// Play starts/resumes from the challenges list, so this page never shows a
+// cover card or an accept/decline/start flow. It shows what you get when the
+// challenge is done for you, or when you are allowed early sight.
+//
+// Access rule for full results (standings + board-by-board + comparisons):
+//   viewer finished  OR  viewerRole === "moderator"  OR
+//   standingsVisibility === "always".
+// Otherwise the quiet locked panel.
+//
+// Results is the default tab and the primary content. Boards is secondary: a
+// compact numbered-square grid whose only job is reviewing/replaying a board.
+//
+// The leaderboard + board-by-board grid are computed from ONE per-board points
+// matrix through a real field-scoring model (IMP table + matchpoints +
+// IMPs-vs-datum), so the three scoring modes stay consistent. The field is the
+// set of COMPLETED humans, so a viewer with early sight who has not finished is
+// honestly absent from it. BEN is scored the same way but kept OUT of the field
+// as an unranked benchmark - it is a column in the grid, not a rank.
+//
+// Nothing mutates a server; every action flashes a toast. 7-bit ASCII throughout.
+// ======================================================================
+
+// ---- field scoring model (kept verbatim from the data model) ----
+// Standard IMP table: absolute point difference -> IMPs (signed by the caller).
+const IMP_STEPS = [15, 45, 85, 125, 165, 215, 265, 315, 365, 425, 495, 595, 745,
+  895, 1095, 1295, 1495, 1745, 1995, 2245, 2495, 2995, 3495, 3995];
+function impOf(diff) {
+  const a = Math.abs(diff);
+  let n = 0;
+  for (let i = 0; i < IMP_STEPS.length; i++) { if (a > IMP_STEPS[i]) n = i + 1; else break; }
+  return diff < 0 ? -n : n;
+}
+
+// Per-board points from each player's OWN perspective (N-S), all sitting the
+// same seat. Tuned to give a clean spread, a genuine shared rank (Devang & Lena
+// tie), BEN ahead of the field, and several DIFFERENT board leaders so the
+// leader highlight is visible on most rows.
+const FIELD_ALL = ["You", "Marta", "Devang", "Priya", "Tomas", "Lena"];
+const MATRIX = {
+  You:    [630, -100, 620, 980, 170, 300, 400, -420],
+  Marta:  [600, 140, 620, 480, 140, -200, 620, -420],
+  Devang: [630, 110, 170, 480, 140, 100, 400, -450],
+  Priya:  [660, 140, 650, 980, -50, 300, 430, -420],
+  Tomas:  [-100, 140, 620, 480, 170, -500, 400, -200],
+  Lena:   [630, -50, 140, 450, 140, 100, 620, -420],
+  BEN:    [660, 140, 650, 980, 170, 300, 620, -420],
+};
+
+// Your board-by-board raw line (only your own boards are ever shown as results).
+const YOUR_LINE = [
+  { line: "4\u2660 +1", detail: "You declared \u00B7 11 tricks" },
+  { line: "3NT \u22121", detail: "You declared \u00B7 vulnerable" },
+  { line: "4\u2660 =", detail: "You declared \u00B7 10 tricks" },
+  { line: "6\u2665 made", detail: "You declared \u00B7 small slam" },
+  { line: "3\u2666 +1", detail: "You declared \u00B7 part-score" },
+  { line: "Dbl +2", detail: "You defended \u00B7 set them two" },
+  { line: "3NT =", detail: "You declared \u00B7 9 tricks" },
+  { line: "E-W 4\u2660", detail: "You defended \u00B7 their game" },
+];
+
+// Display names + grid column codes. No avatars anywhere; the leaderboard is
+// text-only and the grid header uses short codes.
+const NAMES = { Marta: "Marta Okonkwo", Devang: "Devang Rao", Priya: "Priya Sundaram", Tomas: "Tomas Berg", Lena: "Lena Fischer" };
+const CODE = { You: "You", Marta: "MO", Devang: "DR", Priya: "PS", Tomas: "TB", Lena: "LF" };
+const PENDING = ["Sam Whitfield", "Aiko Tanaka"];  // still-open invites (count only)
+const STILL_PLAYING_OTHERS = 1;                    // other humans mid-challenge
+
+const POS = "#1c8a5a", NEG = "#c0392b", NEU = "#8b9a93";
+
+// ---- field scoring helpers (field is passed in: completed humans only) ----
+function datumAt(field, b) { let s = 0; for (const p of field) s += MATRIX[p][b]; return field.length ? s / field.length : 0; }
+function cellValue(mode, field, key, b) {
+  if (mode === "total") return MATRIX[key][b];
+  if (mode === "imps") return impOf(MATRIX[key][b] - datumAt(field, b));
+  // matchpoints: % of the field this player beats on this board
+  const others = field.filter((x) => x !== key);
+  let mp = 0;
+  for (const q of others) { const a = MATRIX[key][b], c = MATRIX[q][b]; mp += a > c ? 1 : a === c ? 0.5 : 0; }
+  return others.length ? (mp / others.length) * 100 : 0;
+}
+function totalValue(mode, field, N, key) {
+  let s = 0;
+  for (let b = 0; b < N; b++) s += cellValue(mode, field, key, b);
+  return mode === "mp" ? s / N : s;
+}
+function fmtTotal(mode, v) {
+  if (mode === "mp") return v.toFixed(1) + "%";
+  if (mode === "total") return (v >= 0 ? "+" : "") + Math.round(v).toLocaleString();
+  return (v >= 0 ? "+" : "") + Math.round(v);
+}
+function fmtCell(mode, v) {
+  if (mode === "mp") return Math.round(v) + "";
+  return (v > 0 ? "+" : "") + Math.round(v);
+}
+function valColor(mode, v) {
+  if (mode === "mp") return v >= 55 ? POS : v <= 45 ? NEG : NEU;
+  return v > 0 ? POS : v < 0 ? NEG : NEU;
+}
+
+class Component extends DCLogic {
+  state = {
+    infoOpen: false,      // rules popover
+    descOpen: false,      // header description "more" toggle
+    tab: null,            // active tab (null = the default, Results)
+    scorecard: false,     // board-by-board disclosure expanded
+    selBoard: null,       // selected played square -> review detail
+    cmpMode: false,       // compare selection mode over the board-by-board grid
+    cmpPicks: [],         // [{b, key}] - at most two, always the same board row
+    toast: null,
+    // review control (harness chrome) : each override mirrors its own prop and
+    // re-syncs when that prop changes.
+    ovViewport: null, lastViewportProp: null,
+    ovPhase: null, lastPhaseProp: null,
+    ovRole: null, lastRoleProp: null,
+    ovStandings: null, lastStandingsProp: null,
+  };
+
+  flash(msg) {
+    this.setState({ toast: msg });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => this.setState({ toast: null }), 2800);
+  }
+
+  renderVals() {
+    const p = this.props || {};
+    const accent = p.accent || "#0d707c";
+    const pageBg = p.pageBg || "#dfe4e0";
+    const scoring = ["imps", "mp", "total"].indexOf(p.scoring) >= 0 ? p.scoring : "imps";
+    const N = Math.max(2, Math.min(8, Math.round(Number(p.boardsCount ?? 8) || 8)));
+    const title = p.title || "Tuesday Night Teams \u2014 Set 12";
+    const description = (p.description || "").trim();
+    const hasDesc = !!description;
+    const editorBadge = p.editorBadge !== false;
+
+    // ---- review control overrides (harness chrome) ----
+    // The in-canvas review pill drives viewport / phase / viewerRole /
+    // standingsVisibility for a reviewer who has no props panel. Each override
+    // defaults to its prop and re-syncs whenever that prop changes.
+    const viewportProp = p.viewport === "phone" ? "phone" : "desktop";
+    let ovViewport = this.state.ovViewport;
+    if (this.state.lastViewportProp !== viewportProp) { ovViewport = viewportProp; this._vpSync = viewportProp; }
+    if (ovViewport !== "phone" && ovViewport !== "desktop") ovViewport = viewportProp;
+
+    const phaseRaw = ["playing", "finished"].indexOf(p.phase) >= 0 ? p.phase : "finished";
+    let ovPhase = this.state.ovPhase;
+    if (this.state.lastPhaseProp !== phaseRaw) { ovPhase = phaseRaw; this._phSync = phaseRaw; }
+    if (["playing", "finished"].indexOf(ovPhase) < 0) ovPhase = phaseRaw;
+
+    const roleRaw = ["participant", "creator", "moderator"].indexOf(p.viewerRole) >= 0 ? p.viewerRole : "participant";
+    let ovRole = this.state.ovRole;
+    if (this.state.lastRoleProp !== roleRaw) { ovRole = roleRaw; this._roSync = roleRaw; }
+    if (["participant", "creator", "moderator"].indexOf(ovRole) < 0) ovRole = roleRaw;
+
+    const stRaw = ["after-finish", "always"].indexOf(p.standingsVisibility) >= 0 ? p.standingsVisibility : "after-finish";
+    let ovStandings = this.state.ovStandings;
+    if (this.state.lastStandingsProp !== stRaw) { ovStandings = stRaw; this._stSync = stRaw; }
+    if (["after-finish", "always"].indexOf(ovStandings) < 0) ovStandings = stRaw;
+
+    // ---- role / phase / access ----
+    const role = ovRole;
+    const isCreator = role === "creator";
+    const isModerator = role === "moderator";
+    const standingsVisibility = ovStandings;
+    const alwaysVisible = standingsVisibility === "always";
+
+    const finished = ovPhase === "finished";     // finished = YOUR progress
+    const viewerFinished = finished;
+    // THE access rule for full results (standings + board-by-board + compare)
+    const unlocked = viewerFinished || isModerator || alwaysVisible;
+    const earlySight = unlocked && !viewerFinished;
+
+    const phone = ovViewport === "phone";
+
+    // ---- subtitle : "N boards . Scoring . by <creator> <diamond?>" ----
+    const creatorFirst = isCreator ? "you" : ((p.creatorName || "Marta Okonkwo").split(" ")[0]);
+    const scoringShort = { imps: "IMPs", mp: "Matchpoints", total: "Total points" }[scoring];
+    const subtitle = N + " boards \u00B7 " + scoringShort + " \u00B7 by " + creatorFirst + (editorBadge ? " \u25C6" : "");
+
+    // ---- your progress ----
+    const yourDone = finished ? N : Math.min(3, N - 1);
+
+    // ---- the field = COMPLETED humans. If you have early sight but have not
+    // finished, you are honestly not in it yet. ----
+    const field = viewerFinished ? FIELD_ALL : FIELD_ALL.filter((k) => k !== "You");
+
+    // ---- tabs : Results is the default and primary ----
+    let tab = this.state.tab;
+    tab = (tab === "boards" || tab === "results") ? tab : "results";
+    const boardsTabActive = tab === "boards";
+    const resultsTabActive = tab === "results";
+
+    const v = {};
+    v.accent = accent;
+
+    // ---- container ----
+    v.outerStyle = "height:100%;min-height:100%;background:" + pageBg + ";display:flex;justify-content:center;overflow-y:auto;overflow-x:hidden;font-family:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#17211d";
+    v.appStyle = phone
+      ? "width:412px;max-width:100%;min-height:100%;background:#f4f6f4;border-left:1px solid #d7ddd8;border-right:1px solid #d7ddd8"
+      : "width:100%;max-width:980px;min-height:100%;background:transparent";
+    v.contentStyle = "padding:" + (phone ? "16px 15px 44px" : "26px 28px 56px") + ";display:flex;flex-direction:column;gap:16px";
+
+    // ---- header ----
+    v.title = title;
+    v.subtitle = subtitle;
+    v.description = description;
+    v.onInfo = () => this.setState((s) => ({ infoOpen: !s.infoOpen }));
+    v.moreShown = hasDesc;
+    v.descOpen = hasDesc && !!this.state.descOpen;
+    v.moreLabel = this.state.descOpen ? "less \u25B4" : "more \u25BE";
+    v.onMore = () => this.setState((s) => ({ descOpen: !s.descOpen }));
+
+    // ---- tabs ----
+    v.tabBarStyle = phone
+      ? "flex:none;display:flex;gap:22px;align-items:flex-end;border-bottom:1px solid #e2e7e3;position:sticky;top:0;z-index:20;background:#f4f6f4;margin:0 -15px;padding:10px 15px 0"
+      : "flex:none;display:flex;gap:22px;align-items:flex-end;border-bottom:1px solid #e2e7e3";
+    const youRankHolder = { rank: null };  // filled by the leaderboard block below
+    const mkTab = (key, label, chipShown, chipText, lockShown) => {
+      const active = tab === key;
+      return {
+        label, chipShown, chipText, lockShown,
+        on: () => this.setState({ tab: key }),
+        style: "appearance:none;background:transparent;border:0;border-bottom:2px solid " + (active ? accent : "transparent")
+          + ";margin-bottom:-1px;padding:0 2px 11px;font-family:inherit;font-size:14px;font-weight:" + (active ? 800 : 600)
+          + ";color:" + (active ? "#16201c" : "#8b9a93") + ";cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap",
+        chipStyle: "display:inline-flex;align-items:center;justify-content:center;height:18px;padding:0 7px;border-radius:9px;background:"
+          + (active ? "#e9f1ee" : "#eef2f0") + ";color:" + (active ? "#0d707c" : "#93a199") + ";font-size:11px;font-weight:800",
+      };
+    };
+
+    // ================= BOARDS : compact review grid =================
+    // Secondary tab. Scores only appear where results are unlocked.
+    v.boardsCaption = finished
+      ? ("All " + N + " boards played \u00B7 tap one to review" + (phone ? "." : " it here."))
+      : (unlocked
+          ? (yourDone + " of " + N + " played \u00B7 tap a played board to review it.")
+          : (yourDone + " of " + N + " played \u00B7 scores appear when you finish."));
+
+    v.gridStyle = "flex:none;display:grid;grid-template-columns:repeat(auto-fill,50px);gap:8px;justify-content:start";
+
+    v.boards = [];
+    for (let no = 1; no <= N; no++) {
+      const b = no - 1;
+      const done = no <= yourDone;
+      const now = !finished && no === yourDone + 1;
+      const showScore = done && unlocked;
+      const selected = showScore && this.state.selBoard === no;
+
+      let bg, border, numColor;
+      if (now) { bg = "#f0faf9"; border = "2px solid " + accent; numColor = accent; }
+      else if (showScore) { bg = selected ? "#eef7f5" : "#f5f8f6"; border = (selected ? "2px solid " + accent : "1px solid #dfe7e2"); numColor = "#5a6a63"; }
+      else if (done) { bg = "#e9f1ee"; border = "1px solid #e0ece7"; numColor = "#0d707c"; }
+      else { bg = "#f1f4f2"; border = "1px solid #f1f4f2"; numColor = "#9aa8a1"; }
+
+      const tile = {
+        no,
+        squareStyle: "position:relative;width:50px;height:50px;border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:" + bg + ";border:" + border,
+        cornerShown: showScore,
+        scoreShown: showScore,
+        numShown: !showScore,
+        numStyle: "font-size:14px;font-weight:800;line-height:1;color:" + numColor,
+        score: "", scoreStyle: "",
+      };
+      if (showScore) {
+        const cv = cellValue(scoring, field, "You", b);
+        tile.score = fmtCell(scoring, cv);
+        tile.scoreStyle = "font-size:12.5px;font-weight:800;line-height:1;color:" + valColor(scoring, cv);
+        tile.on = () => this.setState({ selBoard: no });
+      } else if (now) {
+        tile.on = () => this.flash("Resume Board " + no + " at the table \u2014 BEN warming up\u2026");
+      } else if (done) {
+        tile.on = () => this.flash("Board " + no + " is complete \u2014 results unlock when you finish all " + N + ".");
+      } else {
+        tile.on = () => this.flash("Opens Board " + no + " at the table \u2014 BEN warming up\u2026");
+      }
+      v.boards.push(tile);
+    }
+
+    // ---- board review detail (aside on desktop, inline on phone) ----
+    const sel = this.state.selBoard;
+    const detailActive = unlocked && sel != null && sel >= 1 && sel <= yourDone;
+    v.detailNo = ""; v.detailContract = ""; v.detailRaw = ""; v.detailRawColor = NEU;
+    v.detailSub = ""; v.detailChUnit = ""; v.detailChScore = ""; v.detailChColor = NEU;
+    v.onDetailClose = () => this.setState({ selBoard: null });
+    v.onDetailCompare = () => {}; v.onDetailPractice = () => {};
+    if (detailActive) {
+      const b = sel - 1;
+      const yl = YOUR_LINE[b] || { line: "\u2014", detail: "" };
+      const raw = MATRIX.You[b];
+      const cv = cellValue(scoring, field, "You", b);
+      v.detailNo = sel;
+      v.detailContract = yl.line;
+      v.detailRaw = (raw >= 0 ? "+" : "") + raw + " N-S";
+      v.detailRawColor = raw >= 0 ? POS : NEG;
+      v.detailSub = yl.detail;
+      v.detailChUnit = { imps: "IMPs vs datum", mp: "Matchpoints", total: "Total points" }[scoring];
+      v.detailChScore = scoring === "mp" ? Math.round(cv) + "%" : fmtCell(scoring, cv);
+      v.detailChColor = valColor(scoring, cv);
+      v.onDetailCompare = () => this.flash("Open comparison \u2014 Board " + sel + ": You vs BEN.");
+      v.onDetailPractice = () => this.flash("Replay Board " + sel + " for practice (unscored) at a normal table.");
+    }
+    v.asideShown = boardsTabActive && !phone && detailActive;
+    v.inlineDetailShown = boardsTabActive && phone && detailActive;
+
+    // ================= RESULTS : locked =================
+    v.resultsLockedShown = resultsTabActive && !unlocked;
+    v.lockedTitle = "Results are locked";
+    v.lockedSub = "Finish all " + N + " boards to unlock the standings, the board-by-board grid and every comparison.";
+    v.lockedFrac = yourDone + "/" + N;
+    v.lockedPct = Math.round((yourDone / N) * 100);
+    v.lockedProgressLabel = yourDone + " of " + N + " boards done";
+
+    // ================= RESULTS : standings =================
+    // defaults so every binding + list resolves in any state
+    v.leaderboardShown = resultsTabActive && unlocked;
+    v.lbUnit = ""; v.lbUnitShort = ""; v.summaryLine = "";
+    v.lbRows = []; v.benTotal = "";
+    v.earlyNoteShown = false; v.earlyNote = "";
+    v.scorecardShown = false; v.scHeaders = []; v.scRows = []; v.scTotals = []; v.scMinWidth = 0; v.scLegend = "";
+    v.cmpIdle = true; v.cmpMode = false; v.cmpConfirm = false;
+    v.cmpHint = ""; v.cmpHintStyle = "margin-top:6px;min-height:34px;line-height:1.45;font-size:11.5px;font-weight:600;color:#9aa8a1";
+    v.onCompareStart = () => {}; v.onCompareCancel = () => {}; v.onCompareOpen = () => {};
+
+    // the disclosure : selection mode force-expands the grid
+    const cmpMode = !!this.state.cmpMode;
+    const picks = cmpMode ? (this.state.cmpPicks || []) : [];
+    const scOpen = !!this.state.scorecard || cmpMode;
+    v.onToggleScorecard = () => this.setState((s) => (s.scorecard || s.cmpMode)
+      ? { scorecard: false, cmpMode: false, cmpPicks: [] }
+      : { scorecard: true });
+    v.scorecardBtnLabel = scOpen ? "Hide board-by-board \u25B4" : "Board-by-board \u25BE";
+
+    if (unlocked) {
+      const creatorKey = isCreator ? "You" : "Marta";
+      const nameOf = (key) => key === "You" ? "You"
+        : key === "Marta" ? (isCreator ? "Marta Okonkwo" : (p.creatorName || "Marta Okonkwo"))
+        : NAMES[key];
+
+      v.lbUnit = { imps: "IMPs vs datum", mp: "Matchpoints %", total: "Total points" }[scoring];
+      v.lbUnitShort = { imps: "IMPs", mp: "MP %", total: "Pts" }[scoring];
+
+      const rows = field.map((k) => ({ key: k, v: totalValue(scoring, field, N, k) })).sort((a, b) => b.v - a.v);
+      let rank = 0, seen = 0, prev = null;
+      rows.forEach((r) => { seen++; if (prev === null || r.v !== prev) { rank = seen; prev = r.v; } r.rank = rank; });
+      const youRow = rows.find((r) => r.key === "You");
+      youRankHolder.rank = youRow ? youRow.rank : null;
+
+      v.lbRows = rows.map((r) => {
+        const isYou = r.key === "You";
+        return {
+          rank: r.rank,
+          rankStyle: "font-size:13px;font-weight:800;text-align:center;color:" + (r.rank <= 3 ? "#22302a" : "#8b9a93"),
+          name: nameOf(r.key),
+          nameStyle: "font-size:13.5px;font-weight:" + (isYou ? 800 : 600) + ";color:" + (isYou ? accent : "#25332c") + ";overflow:hidden;text-overflow:ellipsis;white-space:nowrap",
+          editor: r.key === creatorKey && editorBadge,
+          // a moderator who also competes had early sight - mark their row
+          moderator: isYou && isModerator,
+          total: fmtTotal(scoring, r.v),
+          totalStyle: "font-size:14px;font-weight:800;text-align:right;color:" + valColor(scoring, r.v),
+          rowStyle: "display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:10px;padding:9px 8px;border-radius:9px;"
+            + (isYou ? "background:#eff7f6" : "background:#fff"),
+        };
+      });
+      v.benTotal = fmtTotal(scoring, totalValue(scoring, field, N, "BEN"));
+      const stillPlaying = STILL_PLAYING_OTHERS + (viewerFinished ? 0 : 1);
+      v.summaryLine = field.length + " finished \u00B7 " + stillPlaying + " still playing"
+        + (viewerFinished ? "" : " (including you)") + " \u00B7 " + PENDING.length + " invited";
+
+      // why can you see this before you finished?
+      v.earlyNoteShown = earlySight;
+      v.earlyNote = isModerator
+        ? ("You are a moderator, so you see the standings before you finish. Your own row will be marked MOD once you are in it.")
+        : ("This challenge shows standings to everyone from the start. You are not ranked until you finish all " + N + " boards.");
+
+      // ---- board-by-board grid (boards x players, BEN is a column) ----
+      v.scorecardShown = resultsTabActive && scOpen;
+      if (v.scorecardShown) {
+        const cols = field.concat(["BEN"]);
+        const cellW = phone ? 46 : 54;
+        v.scMinWidth = 46 + cols.length * (cellW + 4) + 8;
+
+        const first = picks[0] || null;
+        const isPicked = (b, key) => picks.some((x) => x.b === b && x.key === key);
+        const headStyle = (key) => {
+          const isYou = key === "You", isBen = key === "BEN";
+          return "width:" + cellW + "px;flex:none;text-align:center;padding:5px 2px;border-radius:7px 7px 0 0;font-size:10.5px;font-weight:800;"
+            + (isBen ? "background:#eef1f4;color:#55636f;" : isYou ? "background:#eff7f6;color:#0d707c;" : "background:#f7faf8;color:#5a6a63;");
+        };
+        v.scHeaders = cols.map((k) => ({ label: k === "BEN" ? "BEN" : CODE[k], style: headStyle(k) }));
+
+        v.scRows = [];
+        for (let no = 1; no <= N; no++) {
+          const b = no - 1;
+          const vals = cols.map((k) => cellValue(scoring, field, k, b));
+          // board leader = best DISPLAYED figure on this row; ties all highlight.
+          const disp = vals.map((x) => Math.round(x));
+          const best = Math.max.apply(null, disp);
+          const rowInert = cmpMode && first != null && first.b !== b;
+
+          const cells = cols.map((k, i) => {
+            const cv = vals[i];
+            const leader = disp[i] === best;
+            const picked = isPicked(b, k);
+            const isYou = k === "You", isBen = k === "BEN";
+            const pickable = cmpMode && !rowInert;
+
+            const bg = picked ? "#d9efeb" : leader ? "#e4f2ef" : (isBen ? "#f6f8f9" : isYou ? "#f3faf9" : "#fff");
+            const border = picked ? ("2px solid " + accent)
+              : (pickable ? "1px dashed #b3d2ce"
+                : leader ? "1px solid #a9d3cd"
+                : isYou ? "1px solid #dcefec" : isBen ? "1px solid #dde3e7" : "1px solid #eef2ef");
+            const weight = leader ? 800 : (isYou || isBen ? 700 : 600);
+
+            let on;
+            let ttl;
+            if (!cmpMode) { on = () => {}; ttl = leader ? ("Best on Board " + no) : ""; }
+            else if (rowInert) {
+              on = () => this.flash("Pick two players on the SAME board \u2014 you started on Board " + (first.b + 1) + ".");
+              ttl = "Not this row \u2014 both picks must be on Board " + (first.b + 1);
+            } else if (picked) {
+              on = () => this.setState((s) => ({ cmpPicks: (s.cmpPicks || []).filter((x) => !(x.b === b && x.key === k)) }));
+              ttl = "Click again to deselect";
+            } else if (picks.length >= 2) {
+              on = () => this.flash("Two lines picked \u2014 open the comparison, or click a pick to drop it.");
+              ttl = "Two lines are already picked";
+            } else {
+              on = () => this.setState((s) => ({ cmpPicks: (s.cmpPicks || []).concat([{ b, key: k }]) }));
+              ttl = "Pick " + (k === "BEN" ? "BEN" : nameOf(k)) + " on Board " + no;
+            }
+
+            return {
+              text: fmtCell(scoring, cv),
+              title: ttl,
+              on,
+              style: "width:" + cellW + "px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:6px;"
+                + "padding:" + (picked ? "5px 1px" : "6px 2px") + ";background:" + bg + ";border:" + border
+                + ";font-size:11.5px;font-weight:" + weight + ";color:" + valColor(scoring, cv)
+                + ";opacity:" + (rowInert ? ".32" : "1")
+                + ";cursor:" + (!cmpMode ? "default" : rowInert ? "not-allowed" : "pointer") + ";",
+            };
+          });
+
+          v.scRows.push({
+            label: "Bd " + no,
+            labelStyle: "width:46px;flex:none;display:flex;align-items:center;padding:0 7px;border-radius:7px;background:#f7faf8;font-size:11px;font-weight:800;color:#3f4f48;opacity:"
+              + (rowInert ? ".32" : "1"),
+            cells,
+          });
+        }
+
+        v.scTotals = cols.map((k) => {
+          const tv = totalValue(scoring, field, N, k);
+          const isYou = k === "You", isBen = k === "BEN";
+          return {
+            text: fmtTotal(scoring, tv),
+            style: "width:" + cellW + "px;flex:none;display:flex;align-items:center;justify-content:center;padding:6px 2px;border-radius:6px;"
+              + "background:" + (isBen ? "#eef1f4" : isYou ? "#eff7f6" : "#f7faf8") + ";font-size:11px;font-weight:800;color:" + (isBen ? "#55636f" : valColor(scoring, tv)) + ";",
+          };
+        });
+        v.scLegend = "Tinted cell = best score on that board (ties share it). BEN is a benchmark column and is never ranked.";
+
+        // ---- compare : two-click cell selection ----
+        const labelFor = (pk) => pk.key === "BEN" ? "BEN" : nameOf(pk.key);
+        v.cmpMode = cmpMode;
+        v.cmpIdle = !cmpMode;
+        v.cmpConfirm = cmpMode && picks.length === 2;
+        v.onCompareStart = () => this.setState({ cmpMode: true, cmpPicks: [], scorecard: true });
+        v.onCompareCancel = () => this.setState({ cmpMode: false, cmpPicks: [] });
+        // The hint row is always two lines tall so the grid never shifts under a
+        // finger when the control changes state mid-selection.
+        const hintBox = "margin-top:6px;min-height:34px;line-height:1.45;";
+        if (!cmpMode) {
+          v.cmpHint = "Pick two cells on the same board to compare those two lines.";
+          v.cmpHintStyle = hintBox + "font-size:11.5px;font-weight:600;color:#9aa8a1";
+        } else if (picks.length === 0) {
+          v.cmpHint = "Pick two players on the same board.";
+          v.cmpHintStyle = hintBox + "font-size:11.5px;font-weight:600;color:#5f6f68";
+        } else if (picks.length === 1) {
+          v.cmpHint = "Board " + (first.b + 1) + ": " + labelFor(first) + " picked \u2014 now pick a second player in that row.";
+          v.cmpHintStyle = hintBox + "font-size:11.5px;font-weight:700;color:" + accent;
+        } else {
+          const pairLabel = "Board " + (picks[0].b + 1) + " \u00B7 " + labelFor(picks[0]) + " vs " + labelFor(picks[1]);
+          v.cmpHint = pairLabel;
+          v.cmpHintStyle = hintBox + "font-size:12px;font-weight:800;color:#22302a";
+          v.onCompareOpen = () => {
+            this.flash("Open comparison \u2014 " + pairLabel + " (synced boards, divergence flagged).");
+            this.setState({ cmpMode: false, cmpPicks: [] });
+          };
+        }
+      }
+    }
+
+    // ---- tabs (needs the computed rank) ----
+    const rankChip = unlocked && youRankHolder.rank != null;
+    v.tabs = [
+      mkTab("boards", "Boards", false, "", false),
+      mkTab("results", "Results", rankChip, rankChip ? ("#" + youRankHolder.rank) : "", !unlocked),
+    ];
+
+    // ---- body layout : columns shown/hidden by the active tab ----
+    v.bodyStyle = phone
+      ? "display:flex;flex-direction:column;gap:16px"
+      : "display:flex;flex-direction:row;gap:22px;align-items:flex-start";
+    v.boardsColStyle = (phone
+      ? "width:100%;display:flex;flex-direction:column;gap:14px"
+      : (v.asideShown
+          ? "flex:1.4;min-width:0;display:flex;flex-direction:column;gap:14px"
+          : "flex:1;min-width:0;max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:14px"))
+      + (boardsTabActive ? "" : ";display:none");
+    v.asideColStyle = "flex:1;min-width:0;max-width:360px;display:flex;flex-direction:column;gap:12px;position:sticky;top:20px";
+    v.resultsColStyle = (phone
+      ? "width:100%;display:flex;flex-direction:column;gap:14px"
+      : "flex:1;min-width:0;max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px")
+      + (resultsTabActive ? "" : ";display:none");
+
+    // ================= INFO POPOVER (all rules text) =================
+    v.infoOpen = !!this.state.infoOpen;
+    v.onInfoClose = () => this.setState({ infoOpen: false });
+    v.infoTitle = "How this challenge works";
+    const rules = [
+      "One attempt per board. Leave and resume anytime \u2014 a board never restarts once you open it. You start and resume play from your challenges list; this page is where the results live.",
+      alwaysVisible
+        ? ("Standings are OPEN in this challenge: everyone can see the leaderboard, the board-by-board grid and comparisons from the start, whether or not they have finished. You are only ranked once you finish all " + N + " boards.")
+        : ("Standings, the board-by-board grid and every comparison unlock the moment you finish all " + N + " boards. Until then nobody's scores are shown to you."),
+      "Moderators can see the standings before they finish. If a moderator also competes, their leaderboard row carries a MOD mark \u2014 they had early sight.",
+      "In the board-by-board grid the best score on each board is tinted (ties share it). Press Compare, then pick two cells in the SAME board row to open a comparison; BEN is a column, so comparing against BEN needs no separate control.",
+      "BEN plays the other three seats and a silent reference line. It is scored the same way but never ranked \u2014 a benchmark, not a rival.",
+      "Boards lock when the first player starts: deals, seats and table controls are fixed from then on. Invites stay open.",
+      "A diamond (\u25C6) after a name means that player opened the pack editor and has seen the hands.",
+    ];
+    if (isCreator) rules.push("As the creator you can invite more people at any time, even after play has started.");
+    v.infoRules = rules.map((text) => ({ text }));
+
+    // ---- toast ----
+    v.toastShown = !!this.state.toast;
+    v.toastText = this.state.toast || "";
+    v.onToastDismiss = () => this.setState({ toast: null });
+
+    // ---- review control (harness chrome) : four segmented switches ----
+    const seg = (opts, current, setKey, size) => opts.map((o) => ({
+      label: o.label,
+      on: () => this.setState({ [setKey]: o.val }),
+      style: "appearance:none;font-family:inherit;cursor:pointer;border:0;flex:1;padding:5px 3px;border-radius:6px;font-size:" + (size || 10)
+        + "px;font-weight:700;line-height:1;white-space:nowrap;text-align:center;"
+        + (o.val === current ? "background:#eef2f0;color:#12201b" : "background:transparent;color:#8b978f"),
+    }));
+    v.rcViewport = seg([{ val: "phone", label: "Phone" }, { val: "desktop", label: "Desktop" }], ovViewport, "ovViewport");
+    v.rcPhase = seg([{ val: "playing", label: "Playing" }, { val: "finished", label: "Finished" }], ovPhase, "ovPhase");
+    v.rcRole = seg([{ val: "participant", label: "Player" }, { val: "creator", label: "Creator" }, { val: "moderator", label: "Moderator" }], ovRole, "ovRole", 9);
+    v.rcStandings = seg([{ val: "after-finish", label: "After finish" }, { val: "always", label: "Always" }], ovStandings, "ovStandings", 9);
+
+    // persist the review-control overrides so each re-syncs only when its prop changes
+    if (this._vpSync != null) { const x = this._vpSync; this._vpSync = null; setTimeout(() => this.setState({ ovViewport: x, lastViewportProp: x }), 0); }
+    if (this._phSync != null) { const x = this._phSync; this._phSync = null; setTimeout(() => this.setState({ ovPhase: x, lastPhaseProp: x }), 0); }
+    if (this._roSync != null) { const x = this._roSync; this._roSync = null; setTimeout(() => this.setState({ ovRole: x, lastRoleProp: x }), 0); }
+    if (this._stSync != null) { const x = this._stSync; this._stSync = null; setTimeout(() => this.setState({ ovStandings: x, lastStandingsProp: x }), 0); }
+
+    return v;
+  }
+}
+</script>
+</body>
+</html>

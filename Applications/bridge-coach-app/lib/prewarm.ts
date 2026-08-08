@@ -54,15 +54,27 @@ export function prewarmAllDone(): Promise<void> {
   return allWarm ?? Promise.resolve();
 }
 
-export function prewarmBridgePages(paths: readonly string[]): void {
-  if (Platform.OS !== "web" || typeof window === "undefined") return;
-  if (window.location.protocol !== "https:") return;
+export function prewarmBridgePages(paths: readonly string[], bridgeOrigin?: string | null): void {
+  // WEB: ping through the same-origin proxy so the cookie session rides along
+  // and the ping warms the real query path. NATIVE: React Native's fetch has
+  // no CORS and carries no WebView cookies — the ping bounces to /welcome,
+  // but the bounce itself warms the function, the render path and the DB
+  // pool, which is the expensive part (the sign-in sweep's reasoning). The
+  // caller passes the bridge origin (launch-cache knows it after sign-in).
+  let base: string | null = null;
+  if (Platform.OS === "web") {
+    if (typeof window === "undefined" || window.location.protocol !== "https:") return;
+    base = window.location.origin;
+  } else {
+    base = bridgeOrigin ?? null;
+  }
+  if (!base) return;
   for (const p of paths) {
-    const url = `${window.location.origin}${p}`;
+    const url = `${base}${p}`;
     const at = last.get(url) ?? 0;
     if (Date.now() - at < TTL) continue;
     last.set(url, Date.now());
-    fetch(url, { credentials: "include" }).catch(() => {
+    fetch(url, Platform.OS === "web" ? { credentials: "include" } : undefined).catch(() => {
       // Warming is best-effort; a failed ping costs nothing.
     });
   }

@@ -32,7 +32,7 @@ import {
 } from "../../constants/brand-vectors";
 import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
-import { prefetchLaunch } from "../../lib/launch-cache";
+import { peekBridgeOrigin, prefetchLaunch } from "../../lib/launch-cache";
 import { type BridgeSummary } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
 import { peekSummary, refreshSummary } from "../../lib/summary-cache";
@@ -59,8 +59,15 @@ export default function PlayScreen() {
       if (!token) return;
       prefetchLaunch(token, "bridge"); // keep a launch warm — one tap away
       // Warm the screens this grid's cards open, so tapping one lands on a
-      // warm function instead of a cold start.
-      prewarmBridgePages(["/m/assigned", "/m/plays", "/welcome"]);
+      // warm function instead of a cold start. THE TABLE ITSELF is on the
+      // list: each route is its own serverless function, and the table's is
+      // the heaviest — a bogus id 404s cheaply while still paying its module
+      // init and DB pool. quick-play is NOT warmable (a GET there deals a
+      // real board).
+      prewarmBridgePages(
+        ["/m/assigned", "/m/plays", "/welcome", "/bridge/table2/prewarm"],
+        peekBridgeOrigin(token),
+      );
       let cancelled = false;
       setError(null);
       refreshSummary(token)

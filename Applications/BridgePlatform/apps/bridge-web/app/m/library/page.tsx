@@ -118,7 +118,7 @@ export default async function MobileLibraryPage({
       <div style={{ display: "flex", gap: 9, flexWrap: "wrap", marginBottom: 20 }}>
         {[
           { href: "/m/library/new", label: "+ New board" },
-          { href: "/m/library/new?kind=deal", label: "+ New deal" },
+          { href: "/m/library/new?kind=deal", label: "+ New pack" },
           { href: "/bridge/library/tables/new", label: "+ New table" },
         ].map((b) => (
           <Link

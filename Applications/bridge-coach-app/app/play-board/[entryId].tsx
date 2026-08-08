@@ -14,6 +14,8 @@ export default function PlayBoardScreen() {
       // The deep link creates a session; leaving it mid-board asks the same
       // save-or-discard question as any other table.
       confirmUnfinishedExit
+      // The board and its coach own the whole screen; the back chip floats.
+      fullScreen
     />
   );
 }

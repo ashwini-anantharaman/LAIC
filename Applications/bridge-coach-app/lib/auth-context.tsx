@@ -5,14 +5,17 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { AppState } from "react-native";
 
 import { clearAvatarCache } from "./avatar-store";
 import { clearBridgeRoleCache, getRoleContext } from "./bridge-role";
 import { clearLaunchCache } from "./launch-cache";
 import { clearLearningCache } from "./learning";
 import { prewarmAllDone } from "./prewarm";
+import { onSessionExpired } from "./session-expiry";
 import { clearSummaryCache, refreshSummary } from "./summary-cache";
 import { fetchGate, fetchMe, gateSignup, login, NexusUser } from "./nexus";
 import { clearToken, getToken, setToken } from "./token-store";
@@ -143,6 +146,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setNeedsOnboarding(false);
     setStatus("signedOut");
   }, []);
+
+  // ── Dead sessions end at the login screen, not in local errors ────────────
+  // The session token lives ONE HOUR and there is no refresh flow, so an app
+  // left open outlives its own credentials. Two nets catch that:
+  //
+  //  1. The request layer reports any token-bearing 401 (session-expiry.ts) —
+  //     whichever screen trips it first, the whole app signs out at once.
+  //  2. Returning to the FOREGROUND revalidates the token immediately, so the
+  //     tester's "played, came back 10 hours later" hits the login screen
+  //     right away instead of a broken New-board screen (2026-08-08 report;
+  //     "works after restarting the app" was this check, done manually).
+  useEffect(() => {
+    if (status !== "signedIn") {
+      onSessionExpired(null);
+      return;
+    }
+    onSessionExpired(() => {
+      void signOut();
+    });
+    return () => onSessionExpired(null);
+  }, [status, signOut]);
+
+  const lastRevalidate = useRef(0);
+  useEffect(() => {
+    if (status !== "signedIn" || !token) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      if (Date.now() - lastRevalidate.current < 60_000) return;
+      lastRevalidate.current = Date.now();
+      // A dead token 401s inside fetchMe, which reports through the wire
+      // above and signs out; any other failure (offline, a cold server) is
+      // not the token's fault and changes nothing.
+      fetchMe(token).catch(() => {});
+    });
+    return () => sub.remove();
+  }, [status, token]);
 
   const completeOnboarding = useCallback(() => {
     setNeedsOnboarding(false);

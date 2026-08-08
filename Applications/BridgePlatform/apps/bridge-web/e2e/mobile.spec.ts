@@ -24,15 +24,14 @@ test("mobile lobby renders with the tab bar and deals via Quickplay", async ({
   await page.getByRole("button", { name: /Deal a fresh board|Quickplay/ }).click();
   await page.waitForURL(/\/bridge\/table2\/bs_/, { timeout: 30_000 });
 
-  // The phone-tier table renders (its edge toolbar is present). The coach panel
-  // is PARKED (owner 2026-08-05; page flag coachParked in table2 page), so it no
-  // longer reserves space — its layer buttons are absent.
+  // The phone-tier table renders (its edge toolbar is present) with the coach
+  // panel live — a seated learner sees its facts-layer button.
   // (The redirect leaves the /m shell for /bridge/table2, so the mobile tab bar
   //  no longer applies here — the single table wears the /bridge chrome.)
   await expect(page.getByTestId("edge-toolbar").first()).toBeVisible();
   await expect(
     page.getByRole("button", { name: "What am I looking at?" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
 });
 
 test("mobile screens render real data", async ({ page, context }) => {
@@ -57,10 +56,10 @@ test("mobile Quickplay lands on the one table — no BBO view or skin toggle", a
   // The learner's table exposes no BBO-view switch and no skin toggle.
   await expect(page.getByRole("link", { name: "Switch to BBO view" })).toHaveCount(0);
   expect(page.url()).not.toContain("skin=");
-  // The one table renders (edge toolbar present); the coach panel is parked, so
-  // its layer buttons are absent (page flag coachParked in the table2 page).
+  // The one table renders (edge toolbar present) with the phone-tier coach
+  // panel live — a seated learner gets the facts-layer button.
   await expect(page.getByTestId("edge-toolbar").first()).toBeVisible();
   await expect(
     page.getByRole("button", { name: "What am I looking at?" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
 });
