@@ -1,12 +1,9 @@
-// Table coach — PARKED (owner, 2026-08-05: "for now, hide the coach panel").
-// The coach engine and its wiring are intact (lib/coach, CoachPanel, the
-// table.coach access key, /api/bridge/play-hint) but the panel is not rendered:
-// the page forces it off via `coachParked` in
-//   app/bridge/table2/[sessionId]/page.tsx
-// This spec is the tripwire for that parked state — it asserts the panel is
-// ABSENT while the table (its ☰ toolbar) still works. WHEN THE COACH IS
-// RE-ENABLED (flip coachParked to false), restore the populated-panel assertions
-// from git history for this file.
+// Table coach (phase-2 transplant — his engine, our shell). With the table.coach
+// feature on (mirror-today: every role), the phone-tier table2 reserves the
+// CoachPanel region and fills it with his LAYERED content the moment a seated
+// learner has a board: the facts layer ("What I'm looking at") shows on load,
+// and tapping "Help me think" swaps in his reasoning scaffold. Quickplay seats
+// the signed-in user at South, so lookingAt/thinkAid have a hand to reason from.
 //
 // Runs after kb.spec (alphabetical, workers=1) so the reviewer's quickplay works.
 
@@ -31,8 +28,8 @@ async function openTableSession(page: Page): Promise<string> {
   return sid;
 }
 
-test.describe("table coach — parked", () => {
-  test("the coach panel is absent while the table still renders", async ({
+test.describe("table coach — phone tier", () => {
+  test("the coach region fills with real content and a layer button produces lines", async ({
     page,
   }) => {
     await page.context().clearCookies();
@@ -41,18 +38,26 @@ test.describe("table coach — parked", () => {
     await page.setViewportSize(PHONE);
     await openTableSession(page);
 
-    // The table itself is live — its edge toolbars (with the ☰ Table menu) render.
-    await expect(page.getByTestId("edge-toolbar").first()).toBeVisible();
-
-    // The coach panel is not rendered at all — neither its layer buttons nor its
-    // honest empty-state line appear (absent, not merely empty). The dealt HCP
-    // facts line, the coach's tell, is likewise gone.
-    await expect(
-      page.getByRole("button", { name: "What am I looking at?" }),
-    ).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Help me think" })).toHaveCount(0);
+    // Seated South, the coach is NOT its honest empty state — the facts layer is
+    // showing, with at least one reading of the position (HCP from the dealt
+    // hand always appears in the facts line).
     await expect(
       page.getByText("Coach commentary appears here as the deal goes on."),
     ).toHaveCount(0);
+    await expect(page.getByText(/HCP/).first()).toBeVisible();
+
+    // His three layer buttons are the panel's actions.
+    await expect(page.getByRole("button", { name: "What am I looking at?" })).toBeVisible();
+    const think = page.getByRole("button", { name: "Help me think" });
+    await expect(think).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /What should I (bid|play)\?/ }),
+    ).toBeVisible();
+
+    // Tapping "Help me think" swaps the facts layer for his reasoning scaffold —
+    // deterministic, no network — whose "What you can work out" section always
+    // carries at least one worked-out fact for a seated learner.
+    await think.click();
+    await expect(page.getByText("What you can work out")).toBeVisible();
   });
 });

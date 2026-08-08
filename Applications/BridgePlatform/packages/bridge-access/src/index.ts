@@ -144,6 +144,14 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     description: "The table skins & appearance configurator; hidden, the appearance page is unreachable.",
     defaultRoles: ALL,
   },
+  {
+    key: "page.challenges",
+    label: "Challenges",
+    group: "Pages",
+    kind: "page",
+    description: "The challenges list and everything it opens; hidden, challenges are unreachable.",
+    defaultRoles: ALL,
+  },
 
   // Table: the controls and rails around a live table.
   {
@@ -382,6 +390,18 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     kind: "feature",
     description: "Creating and designating library collections; hidden, the Collections surface is gone.",
     defaultRoles: ["bridge_coach", "bridge_program_admin"],
+  },
+
+  // Challenges: creating one. Playing and viewing ride on page.challenges;
+  // the per-challenge controlOverrides layer is NOT a catalogue key — it is an
+  // explicit exception applied after these checks, in both directions (spec §7).
+  {
+    key: "challenge.create",
+    label: "Create challenges",
+    group: "Challenges",
+    kind: "feature",
+    description: "Assembling and inviting to a new challenge; hidden, challenges can only be played.",
+    defaultRoles: ALL,
   },
 
   // Organization: org-profile editing.

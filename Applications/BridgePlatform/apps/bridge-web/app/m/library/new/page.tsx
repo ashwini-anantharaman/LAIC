@@ -23,7 +23,9 @@ export default async function MobileNewDealPage({
     redirect("/m/library");
   const { kind: rawKind, error, flow } = await searchParams;
   const kind = rawKind === "deal" ? "deal" : "board";
-  const noun = kind === "deal" ? "deal" : "board";
+  // Display noun: the "deal" kind (a bare card distribution) is a "pack" in the
+  // library's vocabulary; the stored `kind` discriminator stays "deal".
+  const noun = kind === "deal" ? "pack" : "board";
   // The coach app's Create Assignment flow: same editor, but the save
   // continues to the assign picker (createDealAction reads the flag).
   const flowAssign = flow === "assign";
@@ -84,7 +86,9 @@ export default async function MobileNewDealPage({
         {flowAssign && <input type="hidden" name="flow" value="assign" />}
         <DealEditor
           hideBoardFacts={kind === "deal"}
-          submitLabel={flowAssign ? "Save & pick learners" : kind === "deal" ? "Save deal" : "Save board"}
+          submitLabel={
+            flowAssign ? "Save & pick learners" : kind === "deal" ? "Save pack" : "Save board"
+          }
           skin="app"
         />
       </form>

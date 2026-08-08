@@ -20,6 +20,7 @@ const nextConfig: NextConfig = {
   // Workspace packages ship TypeScript source directly (internal-package
   // pattern); Next transpiles them.
   transpilePackages: [
+    "@bridge/challenges",
     "@bridge/engine",
     "@bridge/events",
     "@bridge/config",

@@ -35,7 +35,7 @@ describe("partition", () => {
     for (const key of counts.keys()) {
       expect(knownKeys.has(key), `${key} is not a registry key`).toBe(true);
     }
-    // The union covers exactly the 41 registry keys.
+    // The union covers exactly the 43 registry keys.
     expect(counts.size).toBe(knownKeys.size);
   });
 });
