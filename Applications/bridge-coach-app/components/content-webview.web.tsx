@@ -184,13 +184,19 @@ export function ContentWebView({
         const rect = boxRef.current?.getBoundingClientRect();
         if (rect && rect.width > 0) show(key, rect);
       };
-      // After layout settles, then track size/viewport changes.
+      // Focus fires while the screen is still SLIDING IN: a rect measured
+      // mid-animation parks the iframe at the shifted position (covering the
+      // header's back arrow, reported 2026-08-07) — and ResizeObserver never
+      // corrects it, because position-only drift isn't a resize. Re-measure
+      // on a short settle schedule until the transition is over.
       const raf = requestAnimationFrame(sync);
+      const settles = [100, 250, 450, 700, 1000].map((ms) => setTimeout(sync, ms));
       const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null;
       if (ro && boxRef.current) ro.observe(boxRef.current);
       window.addEventListener("resize", sync);
       return () => {
         cancelAnimationFrame(raf);
+        for (const t of settles) clearTimeout(t);
         ro?.disconnect();
         window.removeEventListener("resize", sync);
         hide(key);
