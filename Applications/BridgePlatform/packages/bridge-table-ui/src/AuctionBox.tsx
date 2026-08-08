@@ -6,6 +6,7 @@
 // flags, the padded rows and the "you deal" empty line; this leaf draws them.
 
 import type { AuctionCall, Seat } from "@bridge/events";
+import { useLayoutEffect, useRef } from "react";
 import { DEALER_TINT, GREY, callText, callColor } from "./tokens";
 
 export interface AuctionBoxSizing {
@@ -45,6 +46,16 @@ export function AuctionBox({
   dealerCol,
   emptyText = null,
 }: Readonly<AuctionBoxProps>) {
+  // The band the grid is given is elastic and can sit at its floor, so a long
+  // auction outgrows it. It already scrolled; what it did not do was FOLLOW the
+  // auction, so the row that overflowed was the newest one — the call you most
+  // need — sliced through the middle. Older calls scroll off the top instead.
+  const rowsRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = rowsRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [rows.length]);
+
   return (
     <div style={{ width: m.width, height: m.height, maxHeight: m.height === "auto" ? 340 : undefined, background: bg, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ flex: "none", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 2, padding: 2, textAlign: "center" }}>
@@ -55,7 +66,7 @@ export function AuctionBox({
           </span>
         ))}
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 5px", display: "flex", flexDirection: "column", gap: 3 }}>
+      <div ref={rowsRef} data-testid="auction-rows" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 5px", display: "flex", flexDirection: "column", gap: 3 }}>
         {rows.map((row, i) => (
           <div key={i} style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4, textAlign: "center" }}>
             {[0, 1, 2, 3].map((j) => {

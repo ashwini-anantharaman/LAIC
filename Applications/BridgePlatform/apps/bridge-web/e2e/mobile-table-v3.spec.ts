@@ -58,6 +58,40 @@ test.describe("mobile table v3 — phone tier", () => {
       expect(overflow, `bar ${i} horizontal overflow`).toBeLessThanOrEqual(1);
     }
 
+    // The tray's touch floor YIELDS, like the bars'. At the reference phone it
+    // does not bind (three 44px rows, 28% of the table); in a shorter box the
+    // three rows shrink TOGETHER rather than the tray holding its physical size
+    // while the felt scales away under it — which left the auction it feeds
+    // shorter than the tray itself, pinned at CENTRE_MIN and clipped.
+    const trayShare = async () => {
+      const tray = await page.getByTestId("bid-tray").boundingBox();
+      const band = await page.getByTestId("centre-band").boundingBox();
+      const stage = await page
+        .locator('div[style*="matrix"], div[style*="scale("]')
+        .first()
+        .boundingBox();
+      return { tray: tray!.height, centre: band!.height, stage: stage!.height };
+    };
+    const tall = await trayShare();
+    expect(tall.tray / tall.stage, "tray share at 390x844").toBeLessThanOrEqual(0.32);
+    expect(tall.tray, "three 44px rows plus padding where there is room").toBeGreaterThan(120);
+
+    await page.setViewportSize({ width: 430, height: 600 });
+    await expect(page.getByTestId("bid-tray")).toBeVisible();
+    const short = await trayShare();
+    expect(short.tray / short.stage, "tray share in a short box").toBeLessThanOrEqual(0.32);
+    // It yields in absolute terms too, rather than holding its physical size
+    // while the felt scales away beneath it.
+    expect(short.tray, "the tray shrinks with the box").toBeLessThan(tall.tray);
+
+    // Whatever the band's height, the grid FOLLOWS the auction: the newest call
+    // is on screen, and it is the oldest rows that scroll off the top.
+    const atNewest = await page
+      .getByTestId("auction-rows")
+      .evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+    expect(atNewest, "auction grid pinned to the newest call").toBeLessThanOrEqual(1);
+    await page.setViewportSize(PHONE);
+
     // The phone chip row does not fit at 390px, so the ⋯ group is present. It
     // opens within the viewport and its items are reachable — nothing is ever
     // unreachable at any size.
@@ -164,6 +198,30 @@ test.describe("mobile table v3 — phone tier", () => {
     expect(b1, "second trick card box").toBeTruthy();
     expect(Math.abs(b0!.width - b1!.width), "trick card widths equal").toBeLessThanOrEqual(0.6);
     expect(Math.abs(b0!.height - b1!.height), "trick card heights equal").toBeLessThanOrEqual(0.6);
+
+    // (1b) The compass FITS its band. Prominence was a fixed 1.6 — a 419px ask
+    // against a centre band that can sit at its floor — and `align-items:center`
+    // with `overflow:hidden` sliced the North card off the top. Every trick card
+    // must lie fully inside the band, at both the reference phone and a short box.
+    const insideBand = async (label: string) => {
+      const band = (await page.getByTestId("centre-band").boundingBox())!;
+      const n = await cards.count();
+      for (let i = 0; i < n; i++) {
+        const c = (await cards.nth(i).boundingBox())!;
+        expect(c.y, `${label}: trick card ${i} top clipped`).toBeGreaterThanOrEqual(
+          band.y - 0.5,
+        );
+        expect(
+          c.y + c.height,
+          `${label}: trick card ${i} bottom clipped`,
+        ).toBeLessThanOrEqual(band.y + band.height + 0.5);
+      }
+    };
+    await insideBand("390x844");
+    await page.setViewportSize({ width: 430, height: 560 });
+    await expect(cards.first()).toBeVisible();
+    await insideBand("430x560");
+    await page.setViewportSize(PHONE);
 
     // (2) The dummy strip is labelled with the SEAT name, not the player name.
     const strip = page.getByTestId("dummy-strip");

@@ -71,7 +71,14 @@ const DUMMY_LINE = 54;
 const HAND_H = { row: 172, fan: 238 };
 /** The tray is three touch-floored rows plus its padding, so like the bars its
     authored height is a function of the scale, not a constant. */
-const trayHeight = (k: number) => 3 * Math.max(52, Math.ceil(TOUCH / (k || 1))) + 30;
+const TRAY_ROW_MIN = 52;
+/** Row gaps + the tray's own padding: 8/10 top/bottom and two 6px gaps. */
+const TRAY_PAD = 30;
+/** The tray's ceiling as a share of the table budget. At the reference phone
+    (390x844) the tray lands at 28%, so this does not bind there — it only bites
+    in a box shorter than the design's, which is exactly where the unyielding
+    version took a third of the table and left the auction shorter than itself. */
+const TRAY_MAX_SHARE = 0.3;
 /** The centre is the flexible band: it absorbs the leftover so the table fills
     exactly its share. The floor is what a four-row auction needs INSIDE the
     inset — below it the grid scrolls internally rather than being cut. */
@@ -376,6 +383,18 @@ export function PlayTable({
     const want = Math.max(BAR_BASE, Math.ceil(TOUCH / (k || 1)) + 14);
     return Math.min(want, Math.max(BAR_BASE, Math.round((0.13 * availPx) / (k || 1))));
   };
+  // The tray gets the bars' bargain: a touch floor that YIELDS. Its three rows
+  // are floored at 44 RENDERED px like every other target, but capped together
+  // at a share of the budget — so they shrink as one (nothing moves mid-bid)
+  // instead of the tray holding its physical size while the felt scales away
+  // beneath it. Uncapped, a short box spent a third of the table on the tray and
+  // pinned the auction it feeds to CENTRE_MIN, where the newest row was clipped.
+  const trayRowFor = (k: number) => {
+    const want = Math.max(TRAY_ROW_MIN, Math.ceil(TOUCH / (k || 1)));
+    const room = (TRAY_MAX_SHARE * availPx) / (k || 1) - TRAY_PAD;
+    return Math.min(want, Math.max(TRAY_ROW_MIN, Math.floor(room / 3)));
+  };
+  const trayFor = (k: number) => 3 * trayRowFor(k) + TRAY_PAD;
   const fit = (k: number, usePad: boolean) => {
     const bar = barFor(k);
     const avail = availPx / (k || 1);
@@ -383,7 +402,7 @@ export function PlayTable({
       bar * 2 + GAPS + slackFor(k) +
       (dummyIsStrip ? DUMMY_LINE : 0) +
       (dummyIsRow ? HAND_H.row : 0) +
-      (!usePad && inAuction ? trayHeight(k) : 0) +
+      (!usePad && inAuction ? trayFor(k) : 0) +
       HAND_H[fanLayout ? "fan" : "row"];
     let cell = 0;
     let centre: number;
@@ -396,7 +415,7 @@ export function PlayTable({
       centre = Math.max(CENTRE_MIN, Math.min(CENTRE_MAX, Math.round(avail - base)));
     }
     const content = base + (usePad ? padHeight(cell) : 0) + centre;
-    return { bar, cell, centre, content, usePad, scale: Math.min(1, widthScale, availPx / content) };
+    return { bar, cell, centre, content, usePad, trayRow: trayRowFor(k), scale: Math.min(1, widthScale, availPx / content) };
   };
   const converge = (usePad: boolean) => {
     let r = fit(widthScale, usePad);
@@ -417,6 +436,12 @@ export function PlayTable({
   const phonePadShown = phoneFit.usePad;
   const phonePadCell = phoneFit.usePad ? phoneFit.cell : 38;
   const feltH = phoneFit.centre;
+  /** The compass at phone prominence, CLAMPED to the band it is actually given.
+   *  A fixed 1.6 asks for 419px; the centre is the flexible band and can sit at
+   *  CENTRE_MIN, and `align-items:center` + `overflow:hidden` then sliced the
+   *  North card off the top. The box scales as one unit, so clamping keeps the
+   *  four cards identical — it just makes the trick fit. */
+  const trickK = Math.max(0.6, Math.min(1.6, (feltH - 8) / 262));
 
   // Wide/stacked: scale to FIT, down or up. Phone: a fixed 720-wide column at
   // the computed fixed-point scale (never up — thumb reach, not magnification).
@@ -731,8 +756,12 @@ export function PlayTable({
   );
 
   // Rendered-size touch floor, same reasoning as the toolbars: the phone
-  // stage is scaled, so 56 authored is ~30 under the thumb.
-  const touchH = Math.max(52, Math.ceil(44 / Math.max(0.05, scale)));
+  // stage is scaled, so 56 authored is ~30 under the thumb. On the phone the
+  // row height is whatever the BUDGET reserved (trayRowFor) — the two must be
+  // the same number or the tray overflows the band it was priced into.
+  const touchH = phone
+    ? phoneFit.trayRow
+    : Math.max(52, Math.ceil(44 / Math.max(0.05, scale)));
 
   /** The strain row is ALWAYS five slots tall, empty until a level is armed —
       rendering it only when armed grew the tray on the first tap and shoved
@@ -754,7 +783,7 @@ export function PlayTable({
   });
 
   const bidBoxNarrow = (
-    <div style={{ width: "100%", flex: "none", background: tok.trayBg, padding: "8px 10px 10px", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
+    <div data-testid="bid-tray" style={{ width: "100%", flex: "none", background: tok.trayBg, padding: "8px 10px 10px", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
       {pending ? (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "8px 0" }}>
           <span style={{ fontSize: 20, color: "#3a3a20" }}>Confirm your call</span>
@@ -936,7 +965,7 @@ export function PlayTable({
             NO vertical padding: feltH is the border-box height and is also what
             the auction box is handed, so vertical padding would push the box
             past feltH and overflow:hidden would eat the newest row. */}
-        <div style={{ flex: "none", height: feltH, display: "flex", alignItems: "flex-start", overflow: "hidden", padding: "0 10px" }}>
+        <div data-testid="centre-band" style={{ flex: "none", height: feltH, display: "flex", alignItems: "flex-start", overflow: "hidden", padding: "0 10px" }}>
           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
             {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: "100%", headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
             {inAuction && auctionDisplay === "seats" ? (
@@ -949,7 +978,7 @@ export function PlayTable({
                 ))}
               </div>
             ) : null}
-            {inPlay ? trickCross(1.6) : null}
+            {inPlay ? trickCross(trickK) : null}
             {complete ? resultCard : null}
           </div>
         </div>
