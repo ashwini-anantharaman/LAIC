@@ -101,6 +101,27 @@ export interface SessionRecord {
   /** The REAL Nexus program uuid partition (0022). Sessions are always
    *  personal (createdBy is the owner); this keeps programs disjoint. */
   nexusProgramId?: string;
+  /**
+   * The challenge board this sitting belongs to, stamped at creation. Additive
+   * jsonb, absent on every ordinary table.
+   *
+   * It exists so the HOST can pick a different BEN decider per session without
+   * a store round-trip: a challenge board must meet the CACHED opposition
+   * (challenges spec §3 — identical lines, identical opponents) and must never
+   * fall back to the shelved KB player, while an ordinary table keeps the
+   * degrade-don't-break decider. The package itself stays HTTP-free and simply
+   * carries the stamp through to `SessionServiceOptions.benDecider`.
+   */
+  challenge?: {
+    challengeId: string;
+    boardNo: number;
+    /**
+     * An UNSCORED replay taken after finishing (spec §2, Attempts). It still
+     * faces the cached BEN opposition, but nothing about it is recorded
+     * against the challenge — no play record, no pointer, no lock.
+     */
+    practice?: boolean;
+  };
 }
 
 export interface SessionStoreData {
@@ -324,6 +345,8 @@ export class SessionService {
     primedEvents?: GameEvent[];
     /** Initial status ("completed" for fully recorded boards). */
     status?: "active" | "completed";
+    /** Challenge stamp — see SessionRecord.challenge. */
+    challenge?: SessionRecord["challenge"];
   }): Promise<SessionRecord> {
     const record: SessionRecord = {
       sessionId: newId("bs"),
@@ -345,6 +368,7 @@ export class SessionService {
       forkedFromSessionId: input.forkedFromSessionId,
       programOrganizationId: input.programOrganizationId,
       nexusProgramId: input.nexusProgramId,
+      ...(input.challenge ? { challenge: input.challenge } : {}),
     };
     await this.store.putSession(record);
     return record;

@@ -18,6 +18,7 @@
     "@bridge/access": "workspace:*",
     "@bridge/audit": "workspace:*",
     "@bridge/b2f-template": "workspace:*",
+    "@bridge/challenges": "workspace:*",
     "@bridge/config": "workspace:*",
     "@bridge/engine": "workspace:*",
     "@bridge/events": "workspace:*",

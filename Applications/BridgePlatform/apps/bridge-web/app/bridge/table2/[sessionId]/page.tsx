@@ -16,7 +16,7 @@ import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { nextSkin, resolveSkin, skinLabel } from "@bridge/table-config";
-import { canUse, requireFeature } from "@/lib/access";
+import { requireFeature } from "@/lib/access";
 import { getAppearance } from "@/lib/appearance";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
@@ -27,6 +27,9 @@ import { lookingAt } from "@/lib/coach/looking";
 import { thinkAid } from "@/lib/coach/think";
 import type { CoachData } from "@/components/table/play/coachContent";
 import { patchAppearanceAction } from "./actions";
+import { ChallengeTableChrome } from "./ChallengeTableChrome";
+import { applyControlOverrides } from "./challengeControls";
+import { challengeTableContext, tableControlAccess } from "./challengeTable";
 
 // COACH (phase-2 transplant, owner decision 2 — "his engine, our shell"). His
 // old-path table carried the coach as a felt fab + rising sheet; that UI is
@@ -50,29 +53,6 @@ export default async function PlayTablePage({
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   await requireFeature(context, "page.play");
-  const [
-    canSeatsPanel,
-    canBenSeat,
-    canWorkbenchLink,
-    canUndo,
-    canStepControls,
-    canSettingsMenu,
-    canHandsView,
-    canSkinSettings,
-    canSkinsPage,
-    canCoach,
-  ] = await Promise.all([
-    canUse(context, "table.seats_panel"),
-    canUse(context, "table.ben_seat"),
-    canUse(context, "table.workbench_link"),
-    canUse(context, "table.undo"),
-    canUse(context, "table.step_controls"),
-    canUse(context, "table.settings_menu"),
-    canUse(context, "table.hands_view"),
-    canUse(context, "table.skin_settings"),
-    canUse(context, "page.skins"),
-    canUse(context, "table.coach"),
-  ]);
   // The viewer's saved skin & layout — resolved once here and threaded to the
   // table. Fails open to the built-in look inside getAppearance.
   const appearance = await getAppearance(context.nexusUserId);
@@ -86,8 +66,6 @@ export default async function PlayTablePage({
   };
   const { sessionId } = await params;
   const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
-  // Denied the hands-record view: the ?view=hands param is treated as absent.
-  const handsView = viewParam === "hands" && canHandsView;
 
   let view;
   try {
@@ -96,6 +74,35 @@ export default async function PlayTablePage({
     notFound();
   }
   const { record, state, actingSeat, actingIsHuman } = view;
+
+  // CHALLENGE BRANCH (spec ADDENDUM A4). Null for every ordinary table, and
+  // null again if the challenge store is unreachable — normal play is never
+  // disturbed by anything below. This is also where a finished challenge board
+  // is frozen into its play record.
+  const challenge = await challengeTableContext(view, context);
+
+  // Access catalogue first, then the board's controlOverrides laid OVER it in
+  // BOTH directions (spec §7): a control the creator hid is ABSENT from the
+  // toolbar and the ☰, a control they force-showed is present even where the
+  // catalogue denies it. Every gate below reads the resolved answer, so there
+  // is exactly one place the two layers meet.
+  const control = applyControlOverrides(
+    await tableControlAccess(context),
+    challenge?.board.controlOverrides,
+  );
+  const canSeatsPanel = control["table.seats_panel"];
+  const canBenSeat = control["table.ben_seat"];
+  const canWorkbenchLink = control["table.workbench_link"];
+  const canUndo = control["table.undo"];
+  const canStepControls = control["table.step_controls"];
+  const canSettingsMenu = control["table.settings_menu"];
+  const canHandsView = control["table.hands_view"];
+  const canSkinSettings = control["table.skin_settings"];
+  const canSkinsPage = control["page.skins"];
+  const canCoach = control["table.coach"];
+
+  // Denied the hands-record view: the ?view=hands param is treated as absent.
+  const handsView = viewParam === "hands" && canHandsView;
 
   const mySeat =
     (Object.entries(record.seats) as [Seat, (typeof record.seats)[Seat]][]).find(
@@ -107,7 +114,11 @@ export default async function PlayTablePage({
       ? (({ N: "S", S: "N", E: "W", W: "E" }) as Record<Seat, Seat>)[state.contract.declarer]
       : null;
 
-  const showAll = handsParam === "all" || (handsParam !== "mine" && !mySeat);
+  // At a challenge board the Hands control governs the CAPABILITY, not just the
+  // record view: hidden means unreachable, so ?hands=all is refused too and the
+  // ☰ row below is absent. Ordinary tables keep their existing behaviour.
+  const canSeeAllHands = !challenge || canHandsView;
+  const showAll = (handsParam === "all" || (handsParam !== "mine" && !mySeat)) && canSeeAllHands;
   // Dummy spreads only after the opening lead — real-bridge timing.
   const leadMade = state.tricks.length > 0 && (state.tricks[0]?.plays.length ?? 0) > 0;
   const canSee = (seat: Seat) =>
@@ -185,11 +196,15 @@ export default async function PlayTablePage({
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
   };
   const settings = [
-    {
-      label: "Show all four hands",
-      value: showAll ? "On" : "Off",
-      href: settingsHref({ hands: showAll ? "mine" : "all" }),
-    },
+    ...(canSeeAllHands
+      ? [
+          {
+            label: "Show all four hands",
+            value: showAll ? "On" : "Off",
+            href: settingsHref({ hands: showAll ? "mine" : "all" }),
+          },
+        ]
+      : []),
     {
       label: "Auction display",
       value: bboAuction === "seats" ? "At seats" : "Centre box",
@@ -266,6 +281,10 @@ export default async function PlayTablePage({
         initialPaused={Boolean(paused)}
         variant="rail"
         railScale={s}
+        // The session's own stamp, not the chrome: a practice replay wears an
+        // ordinary table but still faces the no-fallback challenge BEN, so it
+        // needs the same thinking/retry honesty.
+        strictBen={Boolean(record.challenge)}
       />
       {canUndo && record.events.length > 0 && state.phase !== "complete" && (
         <form action={undoAction} style={{ display: "flex" }}>
@@ -326,6 +345,39 @@ export default async function PlayTablePage({
     />
   );
 
+  const table = handsView ? (
+    handViewer
+  ) : (
+    <LivePlayTable
+      sessionId={sessionId}
+      state={{ ...state, dealer: record.board.dealer, vul: state.vul }}
+      seats={{
+        N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "", strip: seatStrip("N"), human: record.seats.N.kind === "human" },
+        E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "", strip: seatStrip("E"), human: record.seats.E.kind === "human" },
+        S: { name: seatName("S"), tag: dummy === "S" ? "dummy" : "", strip: seatStrip("S"), human: record.seats.S.kind === "human" },
+        W: { name: seatName("W"), tag: dummy === "W" ? "dummy" : "", strip: seatStrip("W"), human: record.seats.W.kind === "human" },
+      }}
+      visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
+      mySeat={mySeat}
+      legalCalls={state.phase === "auction" && myTurn ? [...legalCalls(state.auction, state.turn)] : []}
+      legalPlays={state.phase === "play" && myTurn ? legalPlays(state, state.turn) : []}
+      myTurn={myTurn}
+      boardLabel={boardNumber}
+      auctionDisplay={bboAuction === "seats" ? "seats" : "box"}
+      confirmBids={confirmBids}
+      resultLine={score ? resultLabel(score) : ""}
+      resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
+      controlsExtra={canStepControls ? controlsAt(1) : undefined}
+      controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
+      railExtra={seatsPanel}
+      settings={canSettingsMenu ? settings : undefined}
+      viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
+      appearance={resolvedAppearance}
+      showCoach={showCoach}
+      coach={coachData}
+    />
+  );
+
   return (
     <div className="mx-auto w-full">
       {error && (
@@ -350,37 +402,22 @@ export default async function PlayTablePage({
         className="overflow-hidden rounded-lg"
         style={{ height: "calc(100vh - 5.5rem)" }}
       >
-        {handsView ? (
-          handViewer
+        {/* A challenge board wears the strip above the table's top toolbar and
+            carries the standings as an overlay over the felt (spec A4). The
+            table itself is the SAME component either way — the chrome wraps it,
+            it never forks it, and the strip's 40px comes out of the band budget
+            because PlayTable measures the box the chrome leaves it. */}
+        {challenge ? (
+          <ChallengeTableChrome
+            strip={challenge.strip}
+            standings={challenge.standings}
+            boards={challenge.boards}
+            subtitle={challenge.subtitle}
+          >
+            {table}
+          </ChallengeTableChrome>
         ) : (
-          <LivePlayTable
-            sessionId={sessionId}
-            state={{ ...state, dealer: record.board.dealer, vul: state.vul }}
-            seats={{
-              N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "", strip: seatStrip("N"), human: record.seats.N.kind === "human" },
-              E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "", strip: seatStrip("E"), human: record.seats.E.kind === "human" },
-              S: { name: seatName("S"), tag: dummy === "S" ? "dummy" : "", strip: seatStrip("S"), human: record.seats.S.kind === "human" },
-              W: { name: seatName("W"), tag: dummy === "W" ? "dummy" : "", strip: seatStrip("W"), human: record.seats.W.kind === "human" },
-            }}
-            visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
-            mySeat={mySeat}
-            legalCalls={state.phase === "auction" && myTurn ? [...legalCalls(state.auction, state.turn)] : []}
-            legalPlays={state.phase === "play" && myTurn ? legalPlays(state, state.turn) : []}
-            myTurn={myTurn}
-            boardLabel={boardNumber}
-            auctionDisplay={bboAuction === "seats" ? "seats" : "box"}
-            confirmBids={confirmBids}
-            resultLine={score ? resultLabel(score) : ""}
-            resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
-            controlsExtra={canStepControls ? controlsAt(1) : undefined}
-            controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
-            railExtra={seatsPanel}
-            settings={canSettingsMenu ? settings : undefined}
-            viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
-            appearance={resolvedAppearance}
-            showCoach={showCoach}
-            coach={coachData}
-          />
+          table
         )}
       </div>
     </div>

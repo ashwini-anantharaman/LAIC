@@ -3,7 +3,7 @@
 // sets, and each set unlocks a fixed list of live feature keys ("surfaces").
 // This layer is pure metadata on top of the enforcement registry — it compiles
 // DOWN to the flat feature->roles rules the app already enforces, so the
-// designer never invents its own gating. The 15 sets partition all 41
+// designer never invents its own gating. The 16 sets partition all 43
 // ACCESS_FEATURES keys: every key lives in exactly one set.
 
 import { ALL_BRIDGE_ROLES } from "./index";
@@ -30,7 +30,7 @@ const ADMIN: readonly BridgeRole[] = [
 const ALL = ALL_BRIDGE_ROLES;
 
 /**
- * The 15 capability sets. Their featureKeys partition every ACCESS_FEATURES key
+ * The 16 capability sets. Their featureKeys partition every ACCESS_FEATURES key
  * — see sets.test.ts, which asserts the partition and the defaults invariant.
  */
 export const CAPABILITY_SETS: readonly CapabilitySet[] = [
@@ -54,6 +54,12 @@ export const CAPABILITY_SETS: readonly CapabilitySet[] = [
       "table.skin_settings",
       "table.coach",
     ],
+  },
+  {
+    id: "challenges",
+    name: "Challenges",
+    description: "Group challenges: the challenges list (playing, results, comparisons) and assembling a new one.",
+    featureKeys: ["page.challenges", "challenge.create"],
   },
   {
     id: "player_roster",
@@ -152,7 +158,7 @@ export const CAPABILITY_SETS: readonly CapabilitySet[] = [
 export type SetAssignment = Record<string, BridgeRole[]>;
 
 /**
- * The default assignment, mirroring the live enforcement defaults: the five
+ * The default assignment, mirroring the live enforcement defaults: the six
  * everyone-facing sets go to all eight roles; the admin sets to the ADMIN five;
  * org visibility/management to the org-manager roles. compileAssignment of this
  * equals every feature's defaultRoles — proven in sets.test.ts.
@@ -160,6 +166,7 @@ export type SetAssignment = Record<string, BridgeRole[]>;
 export const DEFAULT_ASSIGNMENT: SetAssignment = {
   basics: [...ALL],
   playing: [...ALL],
+  challenges: [...ALL],
   player_roster: [...ALL],
   neural_players: [...ALL],
   library: [...ALL],

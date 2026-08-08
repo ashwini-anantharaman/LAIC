@@ -18,3 +18,4 @@ export { PgAccessStore } from "./access";
 export { PgTableConfigStore } from "./tableConfig";
 export { PgSubmissionStore } from "./submissions";
 export { PgAssignmentStore } from "./assignments";
+export { PgChallengeStore } from "./challenges";

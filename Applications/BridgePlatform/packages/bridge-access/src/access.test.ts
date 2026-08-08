@@ -57,9 +57,11 @@ describe("registry sanity", () => {
     for (const f of ACCESS_FEATURES)
       for (const r of f.defaultRoles) expect(ALL_BRIDGE_ROLES).toContain(r);
   });
-  it("covers the Pages, Table, Players, Library and Organization groups", () => {
+  it("covers the Pages, Table, Players, Library, Challenges and Organization groups", () => {
     const groups = new Set(ACCESS_FEATURES.map((f) => f.group));
-    expect(groups).toEqual(new Set(["Pages", "Table", "Players", "Library", "Organization"]));
+    expect(groups).toEqual(
+      new Set(["Pages", "Table", "Players", "Library", "Challenges", "Organization"]),
+    );
   });
 });
 
