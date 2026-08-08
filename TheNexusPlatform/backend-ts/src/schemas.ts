@@ -239,6 +239,22 @@ export const usernameSchema = z
   .max(32, "Username must be at most 32 characters")
   .regex(/^[A-Za-z0-9._-]+$/, "Use only letters, numbers, dot, underscore or hyphen");
 
+/**
+ * A profile picture as a base64 data URL.
+ *
+ * Mirrors the profiles_avatar_shape constraint in migration 0040: one of the
+ * three formats a phone camera produces, capped at 200 kB of base64. The app
+ * downsizes to 256x256 JPEG first, which lands around 40 kB — the cap is a
+ * backstop against a client that skips that step, not the expected size.
+ */
+export const avatarDataUrlSchema = z
+  .string()
+  .max(200_000, "That picture is too large")
+  .regex(
+    /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/,
+    "Expected a base64 JPEG, PNG or WebP data URL",
+  );
+
 /** Minimum we are willing to set as a password on someone's behalf. */
 export const adminSetPasswordSchema = z
   .string()

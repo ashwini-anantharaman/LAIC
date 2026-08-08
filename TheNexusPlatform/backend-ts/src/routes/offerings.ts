@@ -1204,6 +1204,48 @@ async function _clubChatActor(c: Context) {
   return { user, programId, orgId: program.org_id as string, profileId };
 }
 
+// ── Club header image (the app's Club tab banner) ──────────────────────────
+//
+// Readable by any member of the club, writable by its staff only: the banner is
+// the club's own face, so setting it is an administrative act, while everyone
+// who belongs there sees it.
+
+const headerImageSchema = z.object({
+  header_image: z
+    .string()
+    .max(900_000, "That image is too large")
+    .regex(
+      /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/,
+      "Expected a base64 JPEG, PNG or WebP data URL",
+    )
+    .nullable(),
+});
+
+/** Staff of THIS club — the roles that may change what the club looks like. */
+const _CLUB_STAFF = new Set(["owner", "administrator", "instructor"]);
+
+offeringsRouter.get("/programs/:program_id/header-image", async (c) => {
+  const { programId } = await _clubChatActor(c);
+  return c.json({ header_image: await clubChat.getProgramHeaderImage(programId) });
+});
+
+offeringsRouter.put("/programs/:program_id/header-image", async (c) => {
+  const { user, programId, orgId } = await _clubChatActor(c);
+  // Membership in the ORG is what _clubChatActor checks; setting the banner
+  // additionally needs a staff role IN THIS PROGRAM, or org-level ownership.
+  const staff = user.memberships.some(
+    (m) =>
+      m.org_id === orgId &&
+      _CLUB_STAFF.has(m.role) &&
+      (m.program_id === programId || (!m.program_id && m.role === "owner")),
+  );
+  if (!staff) throw new HttpError(403, "Only a club's coaches can set its header");
+
+  const req = parseBody(headerImageSchema, await c.req.json());
+  await clubChat.setProgramHeaderImage(programId, req.header_image);
+  return c.json({ header_image: req.header_image });
+});
+
 offeringsRouter.get("/programs/:program_id/chat", async (c) => {
   const { orgId, programId, profileId } = await _clubChatActor(c);
   return c.json(await clubChat.listClubChatMessages(orgId, programId, profileId));

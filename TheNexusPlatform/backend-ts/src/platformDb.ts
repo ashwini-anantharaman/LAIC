@@ -1057,6 +1057,31 @@ export async function setProfileUsername(profileId: string, username: string | n
   return pg.setProfileUsername(profileId, username);
 }
 
+/** Session id -> org-scoped profile id. Null off the Postgres path. */
+export async function resolveProfileId(
+  authOrProfileId: string,
+  orgId: string | null,
+): Promise<string | null> {
+  if (!usePg()) return null;
+  return pg.resolveOrgProfileId(orgId, authOrProfileId);
+}
+
+/** Profile pictures are DB-backed only — the local JSON store has no column. */
+export async function getProfileAvatar(profileId: string): Promise<string | null> {
+  if (!usePg()) return null;
+  return pg.getProfileAvatar(profileId);
+}
+
+export async function getProfileAvatars(profileIds: string[]): Promise<Record<string, string>> {
+  if (!usePg()) return {};
+  return pg.getProfileAvatars(profileIds);
+}
+
+export async function setProfileAvatar(profileId: string, avatar: string | null): Promise<void> {
+  if (!usePg()) throw new HttpError(400, "Profile pictures require the database backend");
+  return pg.setProfileAvatar(profileId, avatar);
+}
+
 export async function getMembership(memberId: string): Promise<Row | null> {
   if (usePg()) return tpg.getMembership(memberId);
   if (await useLocal()) return local.localGetMembership(memberId);

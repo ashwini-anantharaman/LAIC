@@ -1,21 +1,24 @@
 // Club — the club's front door (Figma 630:4732; members 630:4982).
 //
-// The club name and blurb stay put; a home glyph and a small "Members" pill on
-// the same line switch between the two views. Green means you are on it, dark
-// grey means you are not — the pill fills green and gains a card behind it when
-// active, and is a plain outline when not.
+// The club name and blurb stay put; a small "Members" pill on the same line
+// opens the roster, and the back arrow in the chrome comes back. The pill fills
+// green with a card behind it while you are on the roster, and is a plain ink
+// outline while you are not.
 //
 //   Home     the latest challenge, then Practice Deal / Challenges / Feedback / Chat
-//   Members  the club roster, filtered by All Users / Learners / Coaches
+//   Members  the club roster, filtered by All Users / Members / Mentors
 //
 // The roster is REAL: /api/programs/:id/members is readable by any member of the
 // program, so a learner can see who else is in their club. The program is the
 // caller's own (a partner club like Club 1), not the app-wide PROGRAM_ID — that
 // constant points at the LAIC Bridge Program, which a Club 1 member is not in.
 // Every row carries the person's standing on the right, so "All Users" needs no
-// extra grouping to stay readable. Challenges are still placeholder content (the
+// extra grouping to stay readable. A club calls its two standings Members and
+// Mentors; "learner" and "coach" remain the words the API and the role checks
+// use, and the translation happens here at the edge. Challenges are still placeholder content (the
 // API has no clubs yet).
 
+import { StatusBar } from "expo-status-bar";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -26,7 +29,6 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { SvgXml } from "react-native-svg";
 
 import { BrandChrome } from "../../components/brand-chrome";
 import {
@@ -35,10 +37,9 @@ import {
   SEED_CHALLENGES,
 } from "../../components/challenge-tile";
 import { PERSON_ROW, PersonRow } from "../../components/person-row";
-import { tintSvg } from "../../components/svg-tint";
-import { ICON_HOME } from "../../constants/brand-vectors";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
+import { loadAvatars, loadClubHeader, subscribeToClubHeader } from "../../lib/avatar-store";
 import { getRoleContext, primaryMembership } from "../../lib/bridge-role";
 import {
   fetchBridgeSummary,
@@ -48,12 +49,23 @@ import {
 
 const DESIGN_WIDTH = 390;
 
-/** Header: title, blurb, and the two view switches on the title's line. */
-const HEAD = {
-  left: 25,
-  blurbGap: 13,
-  homeIcon: { w: 18.125, h: 20, right: 390 - 267 - 18.125, top: 8 },
-};
+/** Header: title, blurb, and the Members pill on the title's line. */
+const HEAD = { left: 25, blurbGap: 13, pillTop: 5, pillRight: 24 };
+/**
+ * How far a club's header image reaches below the safe area.
+ *
+ * It is the sum of what sits above its edge, not a round number: the top gap
+ * (28) + the title's line (~34) + the gap to the blurb (13) + the blurb's line
+ * (~22), and then 6 of air. It ended 24 below the blurb at first, which left the
+ * band running almost into "Latest Challenge"; cutting it close to the text puts
+ * that whitespace on the cream side of the edge, where it reads as breathing
+ * room rather than as dead photograph.
+ *
+ * Measured rather than laid out because the image sits behind BrandChrome's gap
+ * as well as the text — a wrapper around the text alone could not reach up
+ * under the status bar.
+ */
+const BANNER_DEPTH = 103;
 /**
  * Both switch pills share one size (58.5 x 27.4, radius 6.44). Active = a green
  * face with a darker card 3 down-and-right; inactive = a 1pt ink outline.
@@ -79,15 +91,15 @@ type Filter = "all" | "learners" | "coaches";
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "All Users" },
-  { key: "learners", label: "Learners" },
-  { key: "coaches", label: "Coaches" },
+  { key: "learners", label: "Members" },
+  { key: "coaches", label: "Mentors" },
 ];
+
+/** What a club calls each standing, on the pills and on every row. */
+const STANDING = { staff: "Mentor", learner: "Member" };
 
 /** Membership roles that make someone staff of the club rather than a learner. */
 const STAFF_ROLES = new Set(["owner", "administrator", "instructor", "teacher", "coach"]);
-
-const HOME_GREEN = tintSvg(ICON_HOME, Brand.green);
-const HOME_GREY = tintSvg(ICON_HOME, Brand.iconDark);
 
 function personName(row: ProgramMemberRow): string {
   return row.display_name?.trim() || row.username?.trim() || row.email?.trim() || "Member";
@@ -102,11 +114,14 @@ function Pill({
   label,
   active,
   onPress,
+  /** Outline and label colour while inactive — white over a banner, else ink. */
+  ink = Brand.ink,
   scale: s,
 }: {
   label: string;
   active: boolean;
   onPress: () => void;
+  ink?: string;
   scale: number;
 }) {
   const w = PILL.width * s;
@@ -145,13 +160,14 @@ function Pill({
             borderRadius: r,
             backgroundColor: active ? Brand.green : "transparent",
             borderWidth: active ? 0 : Math.max(1, 0.921 * s),
+            borderColor: ink,
           },
         ]}
       >
         <Text
           style={[
             styles.pillLabel,
-            { fontSize: PILL.font * s, color: active ? Brand.white : Brand.ink },
+            { fontSize: PILL.font * s, color: active ? Brand.white : ink },
           ]}
           numberOfLines={1}
         >
@@ -174,6 +190,10 @@ export default function ClubScreen() {
   const [club, setClub] = useState<{ id: string; name: string; org: string } | null>(null);
   const [roster, setRoster] = useState<ProgramMemberRow[] | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
+  /** profile_id -> picture, for the faces on the roster. */
+  const [avatars, setAvatars] = useState<Map<string, string | null>>(new Map());
+  /** The club's banner, if its coaches have set one. */
+  const [header, setHeader] = useState<string | null>(null);
   const [dealEntryId, setDealEntryId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -198,10 +218,30 @@ export default function ClubScreen() {
     let cancelled = false;
     setRosterError(null);
     fetchProgramMembers(token, club.id)
-      .then((rows) => !cancelled && setRoster(rows))
+      .then(async (rows) => {
+        if (cancelled) return;
+        setRoster(rows);
+        // One request for the whole roster's faces, not one per row.
+        const found = await loadAvatars(token, rows.map((r) => r.profile_id));
+        if (!cancelled) setAvatars(new Map(found));
+      })
       .catch(() => !cancelled && setRosterError("Couldn't load the club roster."));
     return () => {
       cancelled = true;
+    };
+  }, [token, club]);
+
+  useEffect(() => {
+    if (!token || !club) return;
+    let cancelled = false;
+    loadClubHeader(token, club.id).then((uri) => !cancelled && setHeader(uri));
+    // A coach can set the banner from the Menu drawer while this tab is mounted.
+    const stop = subscribeToClubHeader((id, uri) => {
+      if (!cancelled && id === club.id) setHeader(uri);
+    });
+    return () => {
+      cancelled = true;
+      stop();
     };
   }, [token, club]);
 
@@ -249,43 +289,39 @@ export default function ClubScreen() {
   ];
 
   const onHome = view === "home";
+  // Over a photograph the ink text and the ink outline both disappear.
+  const onBanner = header != null;
+  const headText = onBanner ? Brand.white : Brand.ink;
 
   return (
-    <BrandChrome>
+    <BrandChrome
+      onBack={onHome ? undefined : () => setView("home")}
+      banner={header ? { uri: header, height: BANNER_DEPTH * s } : null}
+    >
+      {/* A light status bar reads over the banner; cream needs the dark one. */}
+      <StatusBar style={onBanner ? "light" : "dark"} />
       <View style={styles.page}>
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.title, { marginLeft: HEAD.left * s }]}>
+            <Text style={[styles.title, { marginLeft: HEAD.left * s, color: headText }]}>
               {club?.name ?? "My Club"}
             </Text>
-            <Text style={[styles.blurb, { marginLeft: HEAD.left * s, marginTop: HEAD.blurbGap * s }]}>
+            <Text
+              style={[
+                styles.blurb,
+                { marginLeft: HEAD.left * s, marginTop: HEAD.blurbGap * s, color: headText },
+              ]}
+            >
               {club && club.org !== club.name ? `Under ${club.org}` : " "}
             </Text>
           </View>
 
-          <Pressable
-            onPress={() => setView("home")}
-            hitSlop={14}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: onHome }}
-            accessibilityLabel="Club home"
-            style={({ pressed }) => [
-              { marginTop: HEAD.homeIcon.top * s, marginRight: 14 * s },
-              pressed && styles.pressed,
-            ]}
-          >
-            <SvgXml
-              xml={onHome ? HOME_GREEN : HOME_GREY}
-              width={HEAD.homeIcon.w * s}
-              height={HEAD.homeIcon.h * s}
-            />
-          </Pressable>
-
-          <View style={{ marginTop: (HEAD.homeIcon.top - 3) * s, marginRight: 24 * s }}>
+          <View style={{ marginTop: HEAD.pillTop * s, marginRight: HEAD.pillRight * s }}>
             <Pill
               label="Members"
               active={!onHome}
-              onPress={() => setView("members")}
+              onPress={() => setView(onHome ? "members" : "home")}
+              ink={headText}
               scale={s}
             />
           </View>
@@ -385,6 +421,7 @@ export default function ClubScreen() {
 
             <Roster
               people={people}
+              avatars={avatars}
               loading={roster == null && rosterError == null}
               error={rosterError}
               scale={s}
@@ -399,11 +436,13 @@ export default function ClubScreen() {
 /** The roster list — every row states the person's standing on the right. */
 function Roster({
   people,
+  avatars,
   loading,
   error,
   scale: s,
 }: {
   people: ProgramMemberRow[];
+  avatars: Map<string, string | null>;
   loading: boolean;
   error: string | null;
   scale: number;
@@ -422,7 +461,8 @@ function Roster({
         <PersonRow
           key={p.membership_id ?? p.invitation_id ?? `${p.email}-${i}`}
           name={personName(p)}
-          standing={isStaff(p) ? "Coach" : "Learner"}
+          standing={isStaff(p) ? STANDING.staff : STANDING.learner}
+          avatar={p.profile_id ? avatars.get(p.profile_id) : null}
           scale={s}
         />
       ))}

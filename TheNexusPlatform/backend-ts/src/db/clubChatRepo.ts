@@ -13,9 +13,10 @@
  */
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 
+import { HttpError } from "../httpError";
 import { asPrivileged } from "./context";
-import { resolveProfileId } from "./resolveProfile";
-import { clubChatMessages, orgMemberships, profiles } from "./schema";
+import { resolveOrgProfileId } from "./identityRepo";
+import { clubChatMessages, orgMemberships, profiles, programs } from "./schema";
 
 type Row = Record<string, unknown>;
 
@@ -47,6 +48,36 @@ const messageRow = (
   mine: m.authorProfileId === actorProfileId,
   created_at: m.createdAt.toISOString(),
 });
+
+/**
+ * The club's header image, or null. Any member may read it — it is the banner
+ * everyone sees on the Club tab.
+ */
+export async function getProgramHeaderImage(programId: string): Promise<string | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select({ headerImage: programs.headerImage })
+      .from(programs)
+      .where(eq(programs.id, programId))
+      .limit(1);
+    return r.length ? (r[0].headerImage ?? null) : null;
+  });
+}
+
+/** Set or clear the club's header image. Staff only — enforced by the route. */
+export async function setProgramHeaderImage(
+  programId: string,
+  headerImage: string | null,
+): Promise<void> {
+  await asPrivileged(async (tx) => {
+    const r = await tx
+      .update(programs)
+      .set({ headerImage })
+      .where(eq(programs.id, programId))
+      .returning({ id: programs.id });
+    if (r.length === 0) throw new HttpError(404, "Program not found");
+  });
+}
 
 /**
  * The club's thread, oldest first — the order a chat reads in.
@@ -108,7 +139,7 @@ export async function resolveActorProfileId(
   orgId: string,
   authOrProfileId: string,
 ): Promise<string | null> {
-  return asPrivileged((tx) => resolveProfileId(tx, authOrProfileId, orgId));
+  return resolveOrgProfileId(orgId, authOrProfileId);
 }
 
 /** Post a message. `authorProfileId` must already be a profiles.id. */

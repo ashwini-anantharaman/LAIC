@@ -1,4 +1,4 @@
-// Shared primitives. Restyling these is what carries the BirdBridge look into
+// Shared primitives. Restyling these is what carries the Bridge Bird look into
 // every screen that has not been hand-designed yet.
 //
 // Type hierarchy (from the Learn design): a screen's main title is Neco Bold,

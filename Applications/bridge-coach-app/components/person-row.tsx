@@ -3,25 +3,23 @@
 // 630:4982). Avatar, name, and the person's standing on the right.
 
 import { StyleSheet, Text, View } from "react-native";
-import { SvgXml } from "react-native-svg";
 
-import { tintSvg } from "./svg-tint";
-import { ICON_AVATAR } from "../constants/brand-vectors";
+import { Avatar } from "./avatar";
 import { Brand, Fonts } from "../constants/theme";
 
 export const PERSON_ROW = { height: 48, radius: 12, offset: 5, pitch: 70 } as const;
 
-/** The avatar ships dark for the cream app bar; on a green row it must be light. */
-const AVATAR_CREAM = tintSvg(ICON_AVATAR, Brand.cream);
-
 export function PersonRow({
   name,
   standing,
+  avatar,
   scale: s,
 }: {
   name: string;
-  /** "Learner" / "Coach" — shown right-aligned. */
+  /** "Member" / "Mentor" — shown right-aligned. */
   standing: string;
+  /** This person's picture, if they have set one. */
+  avatar?: string | null;
   scale: number;
 }) {
   return (
@@ -54,7 +52,8 @@ export function PersonRow({
           },
         ]}
       >
-        <SvgXml xml={AVATAR_CREAM} width={29 * s} height={28.12 * s} />
+        {/* On a green row the fallback glyph has to be light, not dark. */}
+        <Avatar uri={avatar} width={29 * s} height={28.12 * s} tint={Brand.cream} />
         <Text style={[styles.name, { fontSize: 14.4 * s }]} numberOfLines={1}>
           {name}
         </Text>

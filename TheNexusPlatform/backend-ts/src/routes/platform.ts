@@ -56,6 +56,7 @@ import {
   signupSchema,
   updateMemberSchema,
   usernameSchema,
+  avatarDataUrlSchema,
 } from "../schemas";
 import {
   BRIDGE_ROLE_MAP,
@@ -832,6 +833,56 @@ platformRouter.get("/auth/me", async (c) => {
     memberships: await _membershipSummaries(user),
     nexus_role: nexusRole,
   });
+});
+
+// ── Profile picture ────────────────────────────────────────────────────────
+//
+// Your own picture, set by you. There is deliberately no admin path here: a
+// password an admin can reset is an access control, a face is not, and nothing
+// in the console asks to change someone's photo.
+//
+// Reading is separate from /auth/me because an avatar is tens of kilobytes and
+// /auth/me is called on every launch and every role check.
+
+const avatarSchema = z.object({ avatar: avatarDataUrlSchema.nullable() });
+
+/** The caller's own profile id in the org their session belongs to. */
+async function _selfProfileId(user: { id: string; memberships: { org_id: string }[] }) {
+  const orgId = user.memberships[0]?.org_id ?? null;
+  const profileId = await db.resolveProfileId(user.id, orgId);
+  if (!profileId) throw new HttpError(404, "Profile not found");
+  return profileId;
+}
+
+platformRouter.get("/profile/avatar", async (c) => {
+  const user = await getCurrentUser(c);
+  const profileId = await _selfProfileId(user);
+  return c.json({ avatar: await db.getProfileAvatar(profileId) });
+});
+
+platformRouter.put("/profile/avatar", async (c) => {
+  const user = await getCurrentUser(c);
+  const profileId = await _selfProfileId(user);
+  const req = parseBody(avatarSchema, await c.req.json());
+  await db.setProfileAvatar(profileId, req.avatar);
+  return c.json({ avatar: req.avatar });
+});
+
+/**
+ * Pictures for a set of profiles, as { profile_id: data_url }.
+ *
+ * Batched by design: a roster or a chat thread draws many faces at once, and one
+ * request per face would be dozens of round trips. Ids the caller may not see —
+ * or that have no picture — are simply absent from the response rather than an
+ * error, so a partial list still renders.
+ */
+platformRouter.post("/profile/avatars", async (c) => {
+  await getCurrentUser(c);
+  const req = parseBody(
+    z.object({ profile_ids: z.array(z.string().uuid()).max(200) }),
+    await c.req.json(),
+  );
+  return c.json({ avatars: await db.getProfileAvatars(req.profile_ids) });
 });
 
 // ── Platform context endpoints (Phase 3 — the role→platform bridge) ─────────

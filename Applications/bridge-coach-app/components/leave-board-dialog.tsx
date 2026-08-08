@@ -3,7 +3,7 @@
 // Replaces window.confirm / Alert.alert for leaving an unfinished board
 // (owner direction 2026-08-07: "an inside-the-application pop up,
 // consistent with the theme"). One component for every platform, wearing
-// BirdBridge's own clothes: a cream card on a dimmed table, Neco heading,
+// Bridge Bird's own clothes: a cream card on a dimmed table, Neco heading,
 // the app's pill buttons — green for the safe path, maroon for the
 // destructive one, a quiet text row to stay put.
 

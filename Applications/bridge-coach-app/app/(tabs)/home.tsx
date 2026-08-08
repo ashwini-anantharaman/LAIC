@@ -1,4 +1,4 @@
-// Home — the BirdBridge tree. Five nests are the five destinations; the top
+// Home — the Bridge Bird tree. Five nests are the five destinations; the top
 // app bar carries the menu, settings, cards and profile.
 //
 // The artwork and the nests are laid out in the Figma frame's coordinate space
@@ -8,7 +8,8 @@
 // where only the cream app bar sits.
 //
 // The tree is IDENTICAL for both roles. Everything coach-specific lives behind
-// the ☰ (coach-only) instead of changing the tree or the tab bar, so there is one
+// the Menu drawer's coach-only "Other" section instead of changing the tree or
+// the tab bar, so there is one
 // home screen to design and one navigation model to reason about.
 
 import { Image } from "expo-image";
@@ -18,12 +19,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
 
 import { JigglingOwl } from "../../components/jiggling-owl";
-import { APP_BAR_HEIGHT, BrandAppBar } from "../../components/brand-app-bar";
-import { useBrandSheets } from "../../components/use-brand-sheets";
+import { BrandAppBar } from "../../components/brand-app-bar";
+import { CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { WindTree } from "../../components/wind-tree";
 import { BrandArt } from "../../constants/brand-assets";
 import { HILLS_SVG } from "../../constants/brand-vectors";
-import { useIsCoach } from "../../lib/use-is-coach";
 import { Brand, Fonts, Type } from "../../constants/theme";
 
 const DESIGN = { width: 390, height: 852 };
@@ -51,10 +51,6 @@ const NESTS = [
 export default function HomeScreen() {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { open, sheets } = useBrandSheets(insets.top + APP_BAR_HEIGHT);
-  // The Menu holds coach-only surfaces, so a learner never sees the ☰. The tree
-  // itself is identical for both roles.
-  const coach = useIsCoach();
 
   const s = width / DESIGN.width;
   const artHeight = DESIGN.height * s;
@@ -124,18 +120,18 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* ── Chrome ──────────────────────────────────────────────────────── */}
-      <View style={[styles.chrome, { paddingTop: insets.top }]} pointerEvents="box-none">
-        <BrandAppBar
-          showMenu={coach}
-          onMenu={() => open("menu")}
-          onSettings={() => open("settings")}
-          onProfile={() => open("profile")}
-        />
+      {/* ── Chrome ──────────────────────────────────────────────────────────
+          Just the wordmark now. The ☰ / gear / avatar are gone: everything they
+          opened lives in the tab bar's Menu drawer. With no icon row above it,
+          the wordmark rides up into the space they left, the same lift every
+          other screen took when the bar went (BrandChrome.CONTENT_TOP_GAP). */}
+      <View
+        style={[styles.chrome, { paddingTop: insets.top + CONTENT_TOP_GAP }]}
+        pointerEvents="box-none"
+      >
+        <BrandAppBar showActions={false} />
       </View>
 
-      {/* Menu, Profile and Settings — all rising from the bottom. */}
-      {sheets}
     </View>
   );
 }

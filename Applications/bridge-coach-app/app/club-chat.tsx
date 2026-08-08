@@ -30,13 +30,15 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
 
+import { Avatar } from "../components/avatar";
 import { BrandChrome } from "../components/brand-chrome";
 import { BrandSheet } from "../components/brand-sheet";
 import { tintSvg } from "../components/svg-tint";
-import { APP_BAR_HEIGHT } from "../components/brand-app-bar";
-import { ICON_AVATAR, ICON_PIN } from "../constants/brand-vectors";
+import { CONTENT_TOP_GAP } from "../components/brand-chrome";
+import { ICON_PIN } from "../constants/brand-vectors";
 import { Brand, Fonts, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
+import { loadAvatars } from "../lib/avatar-store";
 import { getRoleContext, primaryMembership } from "../lib/bridge-role";
 import {
   loadThread,
@@ -59,7 +61,6 @@ const LABEL = { left: 100, font: 13, gap: 5 };
 /** Composer: 329 x 40 pill at x 29, with its darker twin 6 below. */
 const COMPOSER = { width: 329, height: 40, left: 29, radius: 100, offset: 6, padH: 22 };
 
-const AVATAR_DARK = ICON_AVATAR;
 const PIN_DARK = tintSvg(ICON_PIN, Brand.iconDark);
 const PIN_ON_CREAM = tintSvg(ICON_PIN, Brand.iconDark);
 const PIN_CREAM = tintSvg(ICON_PIN, Brand.cream);
@@ -156,6 +157,8 @@ export default function ClubChatScreen() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [pinsOpen, setPinsOpen] = useState(false);
+  /** author_profile_id -> picture, so each bubble carries its writer's face. */
+  const [avatars, setAvatars] = useState<Map<string, string | null>>(new Map());
   /** The long-pressed message and where its bubble sits, or null for no menu. */
   const [menu, setMenu] = useState<{ message: ClubChatMessage; anchor: Anchor } | null>(null);
   const scroller = useRef<ScrollView>(null);
@@ -179,6 +182,9 @@ export default function ClubChatScreen() {
       const rows = await loadThread(token, programId);
       setMessages(rows);
       setError(null);
+      // One request for every writer in the thread, and only for writers whose
+      // face is not already known.
+      setAvatars(new Map(await loadAvatars(token, rows.map((m) => m.author_profile_id))));
     } catch {
       setError("Couldn't load the chat.");
     }
@@ -285,7 +291,14 @@ export default function ClubChatScreen() {
                     </Text>
                     <View style={styles.incomingRow}>
                       <View style={{ marginLeft: IN.avatarLeft * s }}>
-                        <SvgXml xml={AVATAR_DARK} width={IN.avatarW * s} height={IN.avatarH * s} />
+                        {/* Beside the bubble, on the cream page — so the
+                            fallback glyph is the dark one. */}
+                        <Avatar
+                          uri={avatars.get(m.author_profile_id)}
+                          width={IN.avatarW * s}
+                          height={IN.avatarH * s}
+                          tint={Brand.iconDark}
+                        />
                       </View>
                       <View style={{ marginLeft: (IN.bubbleLeft - IN.avatarLeft - IN.avatarW) * s }}>
                         <Bubble message={m} scale={s} onLongPress={(anchor) => openMenu(m, anchor)} />
@@ -400,7 +413,7 @@ export default function ClubChatScreen() {
         visible={pinsOpen}
         onClose={() => setPinsOpen(false)}
         title="Pinned"
-        top={insets.top + APP_BAR_HEIGHT}
+        top={insets.top + CONTENT_TOP_GAP}
       >
         {pinned.length === 0 ? (
           <Text style={styles.sheetEmpty}>

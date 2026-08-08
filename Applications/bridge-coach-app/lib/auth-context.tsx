@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 
+import { clearAvatarCache } from "./avatar-store";
 import { clearBridgeRoleCache, getRoleContext } from "./bridge-role";
 import { clearLaunchCache } from "./launch-cache";
 import { clearLearningCache } from "./learning";
@@ -136,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearLaunchCache();
     clearBridgeRoleCache();
     clearSummaryCache();
+    clearAvatarCache();
     setTokenState(null);
     setUser(null);
     setNeedsOnboarding(false);

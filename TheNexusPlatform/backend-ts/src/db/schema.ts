@@ -19,6 +19,8 @@ export const profiles = pgTable("profiles", {
   email: text("email"),
   /** Optional second sign-in identifier; unique case-insensitively (0038). */
   username: text("username"),
+  /** Profile picture as a base64 data URL, capped at ~150 kB (0040). */
+  avatar: text("avatar"),
   role: text("role").notNull().default("student"),
   name: text("name"),
   grade: text("grade"),
@@ -150,6 +152,8 @@ export const programs = pgTable("programs", {
   category: text("category").notNull(),
   description: text("description"),
   icon: text("icon"),
+  /** The club's banner on the app's Club tab, as a data URL (0041). */
+  headerImage: text("header_image"),
   instructorLabel: text("instructor_label"),
   learnerLabel: text("learner_label"),
   status: text("status").notNull().default("active"),

@@ -24,7 +24,6 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { SvgXml } from "react-native-svg";
 
 import { BrandChrome } from "../components/brand-chrome";
 import { ChallengeFormPanel } from "../components/challenge-form-panel";
@@ -34,8 +33,7 @@ import {
   ChallengeTile,
   SEED_CHALLENGES,
 } from "../components/challenge-tile";
-import { tintSvg } from "../components/svg-tint";
-import { ICON_AVATAR } from "../constants/brand-vectors";
+import { Avatar } from "../components/avatar";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 import { useIsCoach } from "../lib/use-is-coach";
 
@@ -54,8 +52,6 @@ const CAPTION_GAP = 2.5;
 
 const BOARD_HEADING_GAP = 16;
 const ROW = { height: 48, offset: 5, pitch: 64, left: 20, radius: 12 };
-
-const AVATAR_CREAM = tintSvg(ICON_AVATAR, Brand.cream);
 
 /** One standing: a green row on a darker green one, offset to look stacked. */
 function LeaderboardRow({
@@ -99,7 +95,10 @@ function LeaderboardRow({
       >
         <Text style={[styles.rank, { fontSize: 14.4 * s, width: 14 * s }]}>{rank}</Text>
         <View style={{ marginLeft: 12 * s, marginRight: 22 * s }}>
-          <SvgXml xml={AVATAR_CREAM} width={29 * s} height={28.12 * s} />
+          {/* No picture: these standings are seed data with no profile behind
+              them. Drawn through Avatar so real entrants get their face the
+              day the leaderboard is fed by the API. */}
+          <Avatar uri={null} width={29 * s} height={28.12 * s} tint={Brand.cream} />
         </View>
         <Text style={[styles.name, { fontSize: 14.4 * s }]} numberOfLines={1}>
           {standing.name}

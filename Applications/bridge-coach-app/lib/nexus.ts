@@ -184,6 +184,8 @@ export function login(input: { email: string; password: string }): Promise<Sessi
 export type ProgramMemberRow = {
   membership_id: string | null;
   invitation_id: string | null;
+  /** Org-scoped profile id — the key this person's picture is stored under. */
+  profile_id?: string | null;
   email: string | null;
   username?: string | null;
   display_name: string | null;
@@ -257,6 +259,69 @@ export function setClubChatMessagePinned(
     `/api/programs/${programId}/chat/${messageId}/pin`,
     { method: "PATCH", token, body: { pinned } },
   );
+}
+
+// ── Profile pictures ─────────────────────────────────────────────────────────
+//
+// Stored as base64 data URLs on the profile row, so a picture is a string the
+// app can hand straight to <Image source={{ uri }}>. Reading is separate from
+// /auth/me because an avatar is tens of kilobytes and /auth/me runs on every
+// launch.
+
+/** The caller's own picture, or null. */
+export async function fetchMyAvatar(token: string): Promise<string | null> {
+  const res = await request<{ avatar: string | null }>("/api/platform/profile/avatar", { token });
+  return res.avatar;
+}
+
+/** Set the caller's own picture; pass null to remove it. */
+export async function setMyAvatar(token: string, avatar: string | null): Promise<void> {
+  await request("/api/platform/profile/avatar", { method: "PUT", token, body: { avatar } });
+}
+
+/**
+ * Pictures for many profiles at once, as { profile_id: data_url }.
+ *
+ * One request per face would be dozens of round trips for a roster or a chat
+ * thread. Ids with no picture are simply absent from the result.
+ */
+export async function fetchAvatars(
+  token: string,
+  profileIds: string[],
+): Promise<Record<string, string>> {
+  if (profileIds.length === 0) return {};
+  const res = await request<{ avatars: Record<string, string> }>(
+    "/api/platform/profile/avatars",
+    { method: "POST", token, body: { profile_ids: profileIds } },
+  );
+  return res.avatars;
+}
+
+// ── Club header image ────────────────────────────────────────────────────────
+
+/** The club's banner, or null. Readable by any member of the club. */
+export async function fetchClubHeaderImage(
+  token: string,
+  programId: string,
+): Promise<string | null> {
+  const res = await request<{ header_image: string | null }>(
+    `/api/programs/${programId}/header-image`,
+    { token },
+  );
+  return res.header_image;
+}
+
+/** Set or clear the club's banner. Staff only — a learner gets a 403. */
+export async function setClubHeaderImage(
+  token: string,
+  programId: string,
+  headerImage: string | null,
+): Promise<void> {
+  await request(`/api/programs/${programId}/header-image`, {
+    method: "PUT",
+    token,
+    body: { header_image: headerImage },
+  });
 }
 
 /** The signed-in user's identity. */
