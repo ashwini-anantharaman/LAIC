@@ -61,7 +61,10 @@ export default async function MobileQuickPlayPage({
       kbId: kb.kbId,
       quickPlay: true,
     });
-    redirect(`/m/table/${record.sessionId}`);
+    // Straight to the table page — /m/table/[id] is itself only a redirect
+    // to this, and each hop is a separate serverless invocation the player
+    // waits on (tester complaint 2026-08-08: the table is slow to open).
+    redirect(`/bridge/table2/${record.sessionId}`);
   }
   // No knowledge base compiles — nothing to play against.
   redirect("/m/library");

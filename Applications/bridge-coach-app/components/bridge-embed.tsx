@@ -1,6 +1,13 @@
 import { router, useFocusEffect, type Href } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 
 import { ContentWebView } from "./content-webview";
 import { LeaveBoardDialog } from "./leave-board-dialog";
@@ -14,6 +21,8 @@ import {
   rememberBridgeOrigin,
   takeLaunch,
 } from "../lib/launch-cache";
+import { NexusError } from "../lib/nexus";
+import { refreshSummary } from "../lib/summary-cache";
 
 /**
  * Opens one bridge-platform page inside the app: mint a single-use launch
@@ -27,6 +36,7 @@ export function BridgeEmbed({
   resetOnFocus = false,
   backTo,
   confirmUnfinishedExit = false,
+  fullScreen = false,
 }: {
   title: string;
   next: string;
@@ -43,8 +53,24 @@ export function BridgeEmbed({
    * boards, and pages that never reported, leave without ceremony.
    */
   confirmUnfinishedExit?: boolean;
+  /**
+   * The whole screen is the embed (owner direction 2026-08-08): no header
+   * row, no title — the board and its coach run edge to edge, and the only
+   * chrome is a small back chip floating over the table's top-left corner.
+   * The chip runs the same guarded back as the header arrow did.
+   */
+  fullScreen?: boolean;
 }) {
   const { token } = useAuth();
+  // The floating back arrow sits in the LEFT GUTTER, below the table's top
+  // band. The top corner is not safe: a declarer playing from dummy has
+  // dummy's cards along the very top edge, and a cream arrow on a white card
+  // vanishes (tester report 2026-08-08). Below that band the gutter is felt
+  // in every phase — the auction sheet is inset, the trick cross and hands
+  // are centred. The band's height scales with the table's width (720-wide
+  // stage → bands ≈ width × 172/720), so the offset does too.
+  const { width: winW } = useWindowDimensions();
+  const floatBackTop = Math.min(150, Math.round(winW * 0.27));
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Where the user actually is inside the embed (native only) + the bridge
@@ -82,7 +108,11 @@ export function BridgeEmbed({
         embedded: "1",
       });
       setUrl(`${base}?${params.toString()}`);
-    } catch {
+    } catch (e) {
+      // A dead session (401) is already being handled globally — the app is
+      // signing out to the login screen; this screen's own error would only
+      // flash something misleading on the way out.
+      if (e instanceof NexusError && e.status === 401) return;
       setError("Couldn't open the bridge platform. Check that it is running.");
     }
   }, [token, next]);
@@ -119,9 +149,13 @@ export function BridgeEmbed({
       clearTimeout(discardTimer.current);
       discardTimer.current = null;
     }
+    // Leaving a table means the board lists just changed (finished, saved,
+    // discarded…) — start the summary refresh NOW so Resume and Play greet
+    // the return with fresh lists instead of a stale-while-revalidate beat.
+    if (token) refreshSummary(token).catch(() => {});
     if (router.canGoBack()) router.back();
     else router.replace(backTo ?? "/home");
-  }, [backTo]);
+  }, [backTo, token]);
 
   // While the discard runs, the WebView must stay MOUNTED (unmounting aborts
   // the deletion request) but must show NOTHING: its navigation passes
@@ -161,12 +195,27 @@ export function BridgeEmbed({
         goBackNow();
         return;
       }
-      if (u.includes("/welcome") && Date.now() - lastRelaunch.current > 5000) {
-        lastRelaunch.current = Date.now();
-        // The session on the remembered origin is dead — a direct load would
-        // just bounce here again, so force the full handshake.
-        forgetBridgeOrigin();
-        load();
+      // The platform says this board no longer exists (opened from a list
+      // that hadn't refreshed after a discard) — nothing to show; leave.
+      if (u.includes("boardGone=1")) {
+        goBackNow();
+        return;
+      }
+      if (u.includes("/welcome")) {
+        if (Date.now() - lastRelaunch.current > 5000) {
+          lastRelaunch.current = Date.now();
+          // The session on the remembered origin is dead — a direct load
+          // would just bounce here again, so force the full handshake.
+          forgetBridgeOrigin();
+          load();
+        } else {
+          // The re-handshake ITSELF bounced back to the platform's sign-in.
+          // Whatever went wrong, a foreign welcome page must never be what
+          // the learner is left staring at — show the app's own error, whose
+          // "Try again" runs the handshake once more.
+          setUrl(null);
+          setError("The table lost its connection. Try again.");
+        }
       }
     },
     [load, goBackNow],
@@ -206,11 +255,13 @@ export function BridgeEmbed({
 
   return (
     <Screen>
-      <ScreenHeader
-        title={title}
-        backTo={backTo}
-        {...(confirmUnfinishedExit ? { onBack: handleBack } : {})}
-      />
+      {!fullScreen && (
+        <ScreenHeader
+          title={title}
+          backTo={backTo}
+          {...(confirmUnfinishedExit ? { onBack: handleBack } : {})}
+        />
+      )}
 
       {!url && !error && (
         <View style={styles.center}>
@@ -238,6 +289,25 @@ export function BridgeEmbed({
             </View>
           )}
         </View>
+      )}
+
+      {/* Full-screen chrome: one back chip riding the board's top-left
+          corner, running the same guarded back as the header arrow. It stays
+          up during loading and errors too — it is the screen's only exit. */}
+      {fullScreen && !discarding && (
+        <Pressable
+          onPress={() => handleBack(goBackNow)}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={10}
+          style={({ pressed }) => [
+            styles.floatBack,
+            { top: floatBackTop },
+            pressed && styles.floatBackPressed,
+          ]}
+        >
+          <Text style={styles.floatBackGlyph}>‹</Text>
+        </Pressable>
       )}
 
       <LeaveBoardDialog
@@ -270,6 +340,29 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.cream,
     alignItems: "center",
     justifyContent: "center",
+  },
+  // The full-screen mode's back control: just the arrow, no chip (owner
+  // direction 2026-08-08). The box stays 38px for the finger; only the glyph
+  // paints. Cream with a whisper of ink shadow, so it reads on the felt AND
+  // on the white auction sheet it can end up over.
+  floatBack: {
+    position: "absolute",
+    left: 4,
+    zIndex: 20,
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  floatBackPressed: { opacity: 0.6 },
+  floatBackGlyph: {
+    fontSize: 34,
+    lineHeight: 38,
+    color: Brand.cream,
+    marginTop: -3,
+    textShadowColor: "rgba(31,31,31,0.65)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   stateText: {
     fontSize: 15,

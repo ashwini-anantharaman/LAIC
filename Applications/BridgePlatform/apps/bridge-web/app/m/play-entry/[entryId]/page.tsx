@@ -48,5 +48,7 @@ export default async function PlayEntryDeepLink({
     fromLibrary: entryId,
     viaLesson: true,
   });
-  redirect(`/m/table/${record.sessionId}`);
+  // Straight to the table page — /m/table/[id] is itself only a redirect to
+  // it, and each hop is a serverless invocation the player waits on.
+  redirect(`/bridge/table2/${record.sessionId}`);
 }

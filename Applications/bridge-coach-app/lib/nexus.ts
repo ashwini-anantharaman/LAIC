@@ -9,6 +9,7 @@
 //   - All authenticated calls send `Authorization: Bearer <access_token>`.
 
 import { GATE_SLUG, NEXUS_API_URL, ORG_SLUG, PROGRAM_ID } from "./config";
+import { reportSessionExpired } from "./session-expiry";
 
 export class NexusError extends Error {
   status: number;
@@ -44,6 +45,10 @@ async function request<T>(
 
   const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
+    // A 401 on a TOKEN-BEARING call means the session token is dead (they
+    // live one hour) — report it so auth-context signs out to the login
+    // screen. Un-tokened 401s (a wrong password at login) are not that.
+    if (response.status === 401 && options.token) reportSessionExpired();
     const detail =
       typeof json.detail === "string" ? json.detail : `Request failed (${response.status})`;
     throw new NexusError(response.status, detail);

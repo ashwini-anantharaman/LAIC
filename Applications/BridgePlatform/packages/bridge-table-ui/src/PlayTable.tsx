@@ -236,6 +236,13 @@ export interface PlayTableProps {
    */
   appearance?: ResolvedAppearance;
 
+  /**
+   * Hide the phone tier's TOP info bar (board/dealer/vul/score chips). The
+   * embedded coach app prefers pure felt (owner direction 2026-08-08) — its
+   * coach panel narrates the position, so the chips read twice. The other
+   * tiers keep their bars regardless; this is a phone-tier concern only.
+   */
+  hideTopBar?: boolean;
   // ── phone-tier coach panel (Mobile Table.dc.html / CoachPanel.dc.html) ──────
   /** Reserve a coach panel below the table region on the phone tier. Default on. */
   showCoach?: boolean;
@@ -275,6 +282,7 @@ export function PlayTable({
   railExtra,
   settings,
   viewHref,
+  hideTopBar = false,
   appearance,
   showCoach = true,
   coachShare = 30,
@@ -363,6 +371,20 @@ export function PlayTable({
   const dummyIsRow = playing && !!dummy && dummy !== "S" && decHuman;
   const dummyIsStrip = playing && !!dummy && dummy !== "S" && !dummyIsRow;
 
+  // The bottom action toolbar earns its band only when something real rides
+  // it. For a learner inside the coach app every control it can carry is
+  // role-gated off (no transport, no hands link, no seats, no menu), and what
+  // rendered was an empty black bar under the hand — dead space the felt
+  // should have (owner request 2026-08-08). Presence is knowable from props
+  // alone, so the band budget below prices one bar or two accordingly.
+  const phoneBottomOn = Boolean(
+    (controlsExtraNarrow ?? controlsExtra) ||
+      viewHref ||
+      railExtra ||
+      (onClaim && inPlay) ||
+      menuHandler,
+  );
+
   // Only the BOX is measured (box, above); the content height is COMPUTED from
   // the band constants and iterated to a FIXED POINT. The bar/tray heights are
   // functions of the scale they help determine, so a single pass priced at the
@@ -383,7 +405,7 @@ export function PlayTable({
     const bar = barFor(k);
     const avail = availPx / (k || 1);
     const base =
-      bar * 2 + GAPS + slackFor(k) +
+      bar * ((hideTopBar ? 0 : 1) + (phoneBottomOn ? 1 : 0)) + GAPS + slackFor(k) +
       (dummyIsStrip ? DUMMY_LINE : 0) +
       (dummyIsRow ? HAND_H.row : 0) +
       (!usePad && inAuction ? trayHeight(k) : 0) +
@@ -925,14 +947,25 @@ export function PlayTable({
   // height is the sum of the band constants (never measured), and it bleeds its
   // scaled-away height back so the table packs to exactly its screen share.
   const mobileStack = (
-    <div style={{ width: MOBILE_W, minHeight: stageH, height: stageH, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}>
+    <div style={{ flex: "none", width: MOBILE_W, minHeight: stageH, height: stageH, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}>
+      {/* flex:none is LOAD-BEARING: the region centres this stage in a flex
+          row, and a flex item may SHRINK below its width. A 13-card hand
+          props the min-content width near the full 720 so nobody noticed —
+          but a DUMMY holds fewer cards, the prop vanishes, the stage
+          collapses to the screen width and the scale then halves it again:
+          a narrow felt column in a white void (tester report 2026-08-08). */}
       {/* Single-pricing: the host has already priced this bar against the touch
           floor (barFor), so EdgeToolbar takes thickness − 14 and is NOT handed
           the scale — dividing twice produced a control wider than its bar. */}
-      <EdgeToolbar side="top" items={infoItems} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />
+      {!hideTopBar && (
+        <EdgeToolbar side="top" items={infoItems} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />
+      )}
       {/* ONE felt wrapper behind dummy line/row, centre, pad and hand. The FLAT
-          skin variant, per Mobile Table.dc.html. */}
-      <div style={{ flex: "none", display: "flex", flexDirection: "column", background: tok.feltFlat }}>
+          skin variant, per Mobile Table.dc.html. flex:1, so the stage's slack
+          reserve (slackFor) renders as FELT under the hand rather than a bare
+          white strip above the coach panel (owner request 2026-08-08) — the
+          table reads as one continuous surface down to the coach's border. */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: tok.feltFlat }}>
         {dummyStripEl}
         {dummyRowEl}
         {/* The centre is the ONE flexible band, sized to the leftover (feltH).
@@ -986,7 +1019,9 @@ export function PlayTable({
           </div>
         </div>
       </div>
-      <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />
+      {phoneBottomOn && (
+        <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />
+      )}
     </div>
   );
 

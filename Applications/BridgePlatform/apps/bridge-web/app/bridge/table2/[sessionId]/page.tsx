@@ -97,6 +97,11 @@ export default async function PlayTablePage({
   try {
     view = await sessionService().view(sessionId);
   } catch {
+    // EMBEDDED, a bare 404 is a dead end inside the host app's frame — and a
+    // gone session is an ordinary event there (a discarded board tapped from
+    // a list that hadn't refreshed yet). Land somewhere the app recognizes:
+    // it watches for boardGone=1 and closes the screen.
+    if (embedded) redirect("/m/home?boardGone=1");
     notFound();
   }
   const { record, state, actingSeat, actingIsHuman } = view;
@@ -510,6 +515,10 @@ export default async function PlayTablePage({
             railExtra={seatsPanel}
             settings={canSettingsMenu ? settings : undefined}
             viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
+            // Inside the coach app the felt runs edge to edge: no info bar
+            // (the app's back chip floats where it sat, and the coach panel
+            // narrates the position). The desktop platform keeps its chips.
+            hideTopBar={embedded}
             appearance={resolvedAppearance}
             showCoach={showCoach}
             coach={coachData}
