@@ -1,13 +1,162 @@
-import { createElement, useEffect } from "react";
+import { useFocusEffect } from "expo-router";
+import { createElement, useCallback, useEffect, useRef } from "react";
 
 /**
- * Web fallback for the native WebView: react-native-webview does not run in
- * the browser, so render a plain iframe when previewing with `expo start` + w.
+ * Web fallback for the native WebView — with a KEEP-ALIVE POOL.
  *
- * The iframe is cross-origin, so its location can't be read directly — the
- * embedded bridge pages post it instead (EmbedLocationReporter), which lets
- * the host skip needless reloads on tab switches.
+ * Each iframe is a sealed browsing context: creating one boots the entire
+ * bridge web app from scratch (parse + execute + hydrate, seconds on a phone),
+ * and React unmounting the element throws that booted app away. So the
+ * iframes don't live inside the screen's tree at all: they live in a
+ * document-level host and merely get SHOWN over the screen's placeholder
+ * while it is focused, and HIDDEN (still running) when it isn't. Reopening a
+ * screen finds its app already booted — instant.
+ *
+ * Consequences the pool must own:
+ *  - POSITION: the placeholder <div> reports its rectangle; the pooled iframe
+ *    is absolutely positioned over it (resize-observed).
+ *  - STACKING: the host sits above the app's page content by DOM order, but
+ *    sheets/dialogs (BrandSheet z-50, RN modals portaled after the host)
+ *    still paint above the embed — measured against the root stacking
+ *    context, 50 beats the host's 0.
+ *  - MESSAGES: several iframes are now alive at once, so each screen's
+ *    listener accepts ONLY messages whose source is its own iframe — a
+ *    background table's state reports must never reach the wrong screen.
+ *  - STALENESS: table pages keep RUNNING while hidden (their JS advances
+ *    them), so reuse is always safe. List pages are server-rendered stills —
+ *    shown stale after a long absence they'd lie, so past a short TTL they
+ *    reload instead (still cheaper than a fresh boot: warm HTTP + bytecode
+ *    cache).
+ *  - MEMORY: each live iframe is a JS heap. The pool caps at MAX_ALIVE and
+ *    evicts the least-recently-used hidden one.
+ *
+ * The native file (content-webview.tsx) is untouched — real WebViews have OS
+ * lifecycle management of their own.
  */
+
+// ── The pool (module-level, one per page load) ──────────────────────────────
+
+const MAX_ALIVE = 3;
+/** Pages whose hidden JS keeps them current — always safe to reuse. */
+const LIVE_PREFIXES = ["/bridge/table2", "/m/table"];
+/** Hidden longer than this, a server-rendered page reloads on return. */
+const STALE_MS = 30_000;
+
+type Entry = {
+  iframe: HTMLIFrameElement;
+  lastUsed: number;
+  hiddenAt: number | null;
+};
+
+let host: HTMLDivElement | null = null;
+const entries = new Map<string, Entry>();
+
+function ensureHost(): HTMLDivElement {
+  if (!host) {
+    host = document.createElement("div");
+    host.style.position = "fixed";
+    host.style.inset = "0";
+    host.style.pointerEvents = "none";
+    host.style.zIndex = "0";
+    document.body.appendChild(host);
+  }
+  return host;
+}
+
+/** One iframe per DESTINATION: the launch URL and the direct URL of the same
+ *  page must share a key, or the first visit and every later one would boot
+ *  two apps. */
+function keyForUrl(url: string): string {
+  try {
+    const u = new URL(url, window.location.href);
+    if (u.pathname === "/nexus/launch") {
+      const next = new URLSearchParams(u.search).get("next");
+      if (next) return next.split("?")[0] ?? next;
+    }
+    return u.pathname;
+  } catch {
+    return url;
+  }
+}
+
+const absolute = (url: string): string => new URL(url, window.location.href).href;
+/** _r=… is a deliberate cache-buster, not a different destination. */
+const normalized = (url: string): string => absolute(url).replace(/([?&])_r=\d+/, "$1").replace(/[?&]$/, "");
+
+const isLivePage = (key: string): boolean => LIVE_PREFIXES.some((p) => key.startsWith(p));
+
+function evictIfOver(except: string): void {
+  if (entries.size <= MAX_ALIVE) return;
+  let victim: string | null = null;
+  let oldest = Infinity;
+  for (const [k, e] of entries) {
+    if (k === except || e.hiddenAt === null) continue; // never the visible one
+    if (e.lastUsed < oldest) {
+      oldest = e.lastUsed;
+      victim = k;
+    }
+  }
+  if (victim) {
+    entries.get(victim)!.iframe.remove();
+    entries.delete(victim);
+  }
+}
+
+/** Get-or-create the destination's iframe; navigate it if the caller asks for
+ *  a genuinely different URL (a reset's _r, a discard route, a re-launch). */
+function acquire(key: string, url: string): Entry {
+  ensureHost();
+  let e = entries.get(key);
+  if (!e) {
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "absolute";
+    iframe.style.border = "0";
+    iframe.style.display = "none";
+    iframe.style.pointerEvents = "auto";
+    iframe.src = url;
+    host!.appendChild(iframe);
+    e = { iframe, lastUsed: Date.now(), hiddenAt: null };
+    entries.set(key, e);
+    evictIfOver(key);
+  } else if (normalized(e.iframe.src) !== normalized(url)) {
+    e.iframe.src = url;
+  } else if (
+    !isLivePage(key) &&
+    e.hiddenAt !== null &&
+    Date.now() - e.hiddenAt > STALE_MS
+  ) {
+    // A long-hidden server-rendered page would show yesterday's list.
+    const sep = url.includes("?") ? "&" : "?";
+    e.iframe.src = `${url}${sep}_r=${Date.now()}`;
+  }
+  e.lastUsed = Date.now();
+  return e;
+}
+
+function show(key: string, rect: DOMRect): void {
+  const e = entries.get(key);
+  if (!e) return;
+  e.iframe.style.left = `${rect.left}px`;
+  e.iframe.style.top = `${rect.top}px`;
+  e.iframe.style.width = `${rect.width}px`;
+  e.iframe.style.height = `${rect.height}px`;
+  e.iframe.style.display = "block";
+  e.hiddenAt = null;
+  e.lastUsed = Date.now();
+}
+
+function hide(key: string): void {
+  const e = entries.get(key);
+  if (!e) return;
+  e.iframe.style.display = "none";
+  e.hiddenAt = Date.now();
+}
+
+const contentWindowOf = (key: string): Window | null =>
+  entries.get(key)?.iframe.contentWindow ?? null;
+
+// ── The component: a placeholder the pooled iframe shadows ─────────────────
+
 export function ContentWebView({
   url,
   onUrlChange,
@@ -18,8 +167,41 @@ export function ContentWebView({
   /** Structured messages posted BY the embedded page (postMessage). */
   onHostMessage?: (data: unknown) => void;
 }) {
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const key = keyForUrl(url);
+
+  // Create/navigate the pooled iframe whenever the requested URL changes.
+  useEffect(() => {
+    acquire(key, url);
+  }, [key, url]);
+
+  // Visible only while the SCREEN is focused: a pushed screen's own embed (or
+  // native content) must never be painted over by this one, and returning
+  // re-shows the still-running app.
+  useFocusEffect(
+    useCallback(() => {
+      const sync = () => {
+        const rect = boxRef.current?.getBoundingClientRect();
+        if (rect && rect.width > 0) show(key, rect);
+      };
+      // After layout settles, then track size/viewport changes.
+      const raf = requestAnimationFrame(sync);
+      const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null;
+      if (ro && boxRef.current) ro.observe(boxRef.current);
+      window.addEventListener("resize", sync);
+      return () => {
+        cancelAnimationFrame(raf);
+        ro?.disconnect();
+        window.removeEventListener("resize", sync);
+        hide(key);
+      };
+    }, [key]),
+  );
+
+  // Messages: only from OUR iframe — several are alive at once now.
   useEffect(() => {
     const listener = (e: MessageEvent) => {
+      if (e.source !== contentWindowOf(key)) return;
       const data = e.data as { type?: string; href?: string } | null;
       if (data?.type === "bridge:location" && typeof data.href === "string") {
         onUrlChange?.(data.href);
@@ -29,10 +211,10 @@ export function ContentWebView({
     };
     window.addEventListener("message", listener);
     return () => window.removeEventListener("message", listener);
-  }, [onUrlChange, onHostMessage]);
+  }, [key, onUrlChange, onHostMessage]);
 
-  return createElement("iframe", {
-    src: url,
-    style: { flex: 1, width: "100%", height: "100%", border: 0 },
+  return createElement("div", {
+    ref: boxRef,
+    style: { flex: 1, width: "100%", height: "100%" },
   });
 }
