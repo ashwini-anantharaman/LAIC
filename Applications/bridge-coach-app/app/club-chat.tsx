@@ -31,10 +31,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
 
 import { Avatar } from "../components/avatar";
-import { BrandChrome } from "../components/brand-chrome";
+import { BrandChrome, CONTENT_TOP_GAP } from "../components/brand-chrome";
 import { BrandSheet } from "../components/brand-sheet";
 import { tintSvg } from "../components/svg-tint";
-import { CONTENT_TOP_GAP } from "../components/brand-chrome";
 import { ICON_PIN } from "../constants/brand-vectors";
 import { Brand, Fonts, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
