@@ -1429,58 +1429,94 @@ platformRouter.delete("/club-app/roles/:id", async (c) => {
  * of the app entirely, so it degrades to an empty set and lets the app fall back
  * to its pre-roles behaviour.
  */
-platformRouter.get("/club-app/context", async (c) => {
+/**
+ * Resolve the caller against THE CLUB THEY ASKED ABOUT.
+ *
+ * Deliberately NOT resolvePlatformAccess: for a partner program that redirects
+ * to the CONNECTED program (so partners see the parent's bridge content), which
+ * is right for the desktop platform and wrong here — a club's app roles, its
+ * members and its chat all belong to the club itself, not to the Bridge Program
+ * it hangs off. It also gates on the `bridge` feature, which a partner club may
+ * legitimately have off while still using the app.
+ */
+async function _clubAppActor(c: Context) {
   const user = await getCurrentUser(c);
-  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
-  let result: { roleName: string | null; capabilities: string[] } = {
-    roleName: null,
-    capabilities: [],
-  };
+  const programId = c.req.query("program_id") ?? "";
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  const orgId = program.org_id as string;
+  // A Nexus operator has no place inside an org's club, exactly as on every
+  // other People surface.
+  if (user.role === "platform_admin") {
+    throw new HttpError(403, "Nexus operators cannot access an organization's members");
+  }
+  if (!user.memberships.some((m) => m.org_id === orgId)) {
+    throw new HttpError(403, "You are not a member of this organization");
+  }
+
+  // Structural tier: this club's own administrator, or the org's owner/admin.
+  // They hold the app entire, without needing a role — the same bypass every
+  // other catalogue gives them.
+  const isAdminRole = (m: { org_id: string; role: string; program_id?: string | null }) =>
+    m.org_id === orgId && ["owner", "administrator"].includes(m.role);
+  const structuralTier = user.memberships.some(
+    (m) => isAdminRole(m) && (!m.program_id || m.program_id === programId),
+  );
+
+  return { user, programId, orgId, programName: (program.name as string) ?? null, structuralTier };
+}
+
+platformRouter.get("/club-app/context", async (c) => {
+  const { user, programId, programName, structuralTier } = await _clubAppActor(c);
+
+  // The ONE role they hold in this club, and what it grants.
+  let roleName: string | null = null;
+  let granted: string[] = [];
+  if (!structuralTier && user.email) {
+    const role = await graph.getProgramRoleForEmail(programId, user.email).catch(() => null);
+    if (role) {
+      roleName = (role.role_name as string | null) ?? null;
+      const perms = (role.perms as Record<string, unknown>) ?? {};
+      granted = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
+    }
+  }
+
+  let result: { roleName: string | null; capabilities: string[] } = { roleName, capabilities: [] };
   try {
-    result = await appRoles.appAccessFor(access.programId, {
-      structuralTier: access.level === "admin",
-      roleName: access.roleName,
-      programRoleCapabilities: access.programRoleCapabilities,
-      assignedRoleId: access.platformRole ?? null,
+    result = await appRoles.appAccessFor(programId, {
+      structuralTier,
+      roleName,
+      programRoleCapabilities: granted,
     });
   } catch (e) {
+    // A bad role or catalogue must never lock someone out of the app entirely.
     console.error("club-app/context capability computation failed (using empty set):", e);
   }
   return c.json({
-    program_id: access.programId,
-    program_name: access.programName,
+    program_id: programId,
+    program_name: programName,
     role_name: result.roleName,
     capabilities: result.capabilities,
-    is_admin: access.level === "admin",
+    is_admin: structuralTier,
   });
 });
 
 /** Every member of the program with the app role they hold — the roster's
  *  labels, and the source of the club's role filter. */
 platformRouter.get("/club-app/members", async (c) => {
-  const user = await getCurrentUser(c);
-  const programId = c.req.query("program_id") ?? "";
-  const access = await resolvePlatformAccess(user, "bridge", programId);
-  const members = await graph.listProgramMembers(access.orgId, access.programId);
-  const assignments = await graph
-    .listPlatformRoleAssignments(access.programId, "club-app")
-    .catch(() => [] as Row[]);
-  const byEmail = new Map(
-    assignments.map((a: Row) => [String(a.email).toLowerCase(), String(a.role)]),
-  );
-  const roles = await appRoles.listAppRoles(access.programId);
-  const nameById = new Map(roles.map((r) => [r.id, r.name]));
-
+  const { programId, orgId } = await _clubAppActor(c);
+  const members = await graph.listProgramMembers(orgId, programId);
+  // listProgramMembers already carries `role_name` — the club role each person
+  // holds — so the roster's label is a join it has done for us.
   return c.json(
     members.map((m: Row) => {
-      const assigned = byEmail.get(String(m.email ?? "").toLowerCase()) ?? null;
       // A club administrator holds the app structurally, so they are labelled
       // as such rather than appearing role-less.
       const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
       return {
         ...m,
-        app_role_id: assigned,
-        app_role_name: isAdmin ? "Administrator" : (assigned ? nameById.get(assigned) ?? assigned : null),
+        app_role_id: (m.role_id as string | null) ?? null,
+        app_role_name: isAdmin ? "Administrator" : ((m.role_name as string | null) ?? null),
       };
     }),
   );
