@@ -28,7 +28,9 @@ import {
   removeClubHeader,
   subscribeToClubHeader,
 } from "../lib/avatar-store";
-import { getRoleContext, primaryMembership } from "../lib/bridge-role";
+import { can, getRoleContext, primaryMembership } from "../lib/bridge-role";
+import { useRoleContext } from "../lib/use-can";
+import { useIsCoach } from "../lib/use-is-coach";
 
 /** One tappable row, shared by both levels of the drawer. */
 function Row({
@@ -58,6 +60,7 @@ function Row({
 
 /** The drawer's own contents: the three sections it opens into. */
 export function MenuIndexBody({
+  /** Whether to offer "Other" — a capability, resolved by the caller. */
   coach,
   onOpen,
 }: {
@@ -82,7 +85,7 @@ export function MenuIndexBody({
           hint="Bidding system and table preferences"
           onPress={() => onOpen("settings")}
         />
-        {/* Coach-only: a learner has nothing behind this row. */}
+        {/* Capability-gated: without it there is nothing behind this row. */}
         {coach ? (
           <Row
             label="Other"
@@ -95,15 +98,45 @@ export function MenuIndexBody({
   );
 }
 
-const ITEMS: { label: string; hint: string; href: Href }[] = [
-  { label: "Learners", hint: "Your roster, history and feedback threads", href: "/learners" },
-  { label: "Assignments", hint: "Boards you've delegated, and who has finished", href: "/assignments" },
-  { label: "Reviews", hint: "Plays your learners sent for feedback", href: "/reviews" },
-  { label: "Library", hint: "Boards, deals, tables and collections", href: "/library" },
+/** Each coaching row carries the capability that reveals it. */
+const ITEMS: { label: string; hint: string; href: Href; capability: string }[] = [
+  {
+    label: "Learners",
+    hint: "Your roster, history and feedback threads",
+    href: "/learners",
+    capability: "app.coaching.learners.view",
+  },
+  {
+    label: "Assignments",
+    hint: "Boards you've delegated, and who has finished",
+    href: "/assignments",
+    capability: "app.coaching.assignments.view",
+  },
+  {
+    label: "Reviews",
+    hint: "Plays your learners sent for feedback",
+    href: "/reviews",
+    capability: "app.coaching.reviews.view",
+  },
+  {
+    label: "Library",
+    hint: "Boards, deals, tables and collections",
+    href: "/library",
+    capability: "app.coaching.library.view",
+  },
 ];
 
 export function OtherSheetBody({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
+  // Every row here is a capability. The fallbacks are the pre-roles behaviour:
+  // this sheet was coach-only, so a coach saw all of it.
+  const coach = useIsCoach();
+  const context = useRoleContext();
+  const caps = new Set(
+    ITEMS.filter((i) => can(context, i.capability, coach)).map((i) => i.capability),
+  );
+  const canSetHeader = can(context, "app.club.header.set", coach);
+  const canRemoveHeader = can(context, "app.club.header.remove", coach);
 
   const go = (href: Href) => {
     // Dismiss first so the sheet isn't left open behind the pushed screen.
@@ -117,15 +150,20 @@ export function OtherSheetBody({ onClose }: { onClose: () => void }) {
       <Text style={styles.email}>{user?.email ?? ""}</Text>
 
       <View style={styles.rows}>
-        {ITEMS.map((item) => (
+        {ITEMS.filter((item) => caps.has(item.capability)).map((item) => (
           <Row key={item.label} label={item.label} hint={item.hint} onPress={() => go(item.href)} />
         ))}
       </View>
 
-      <Text style={styles.section}>Club management</Text>
-      <View style={styles.rows}>
-        <ClubHeaderRow />
-      </View>
+      {/* Only shown to a role that can actually change something here. */}
+      {canSetHeader || canRemoveHeader ? (
+        <>
+          <Text style={styles.section}>Club management</Text>
+          <View style={styles.rows}>
+            <ClubHeaderRow canSet={canSetHeader} canRemove={canRemoveHeader} />
+          </View>
+        </>
+      ) : null}
     </ScrollView>
   );
 }
@@ -137,7 +175,7 @@ export function OtherSheetBody({ onClose }: { onClose: () => void }) {
  * a banner it offers to replace it and holds a Remove beneath. The club is the
  * caller's own program, resolved the same way the Club tab resolves it.
  */
-function ClubHeaderRow() {
+function ClubHeaderRow({ canSet, canRemove }: { canSet: boolean; canRemove: boolean }) {
   const { token } = useAuth();
   const [programId, setProgramId] = useState<string | null>(null);
   const [header, setHeader] = useState<string | null>(null);
@@ -196,16 +234,21 @@ function ClubHeaderRow() {
 
   return (
     <>
-      <Row
-        label={header ? "Change header" : "Set header"}
-        hint={
-          header
-            ? "The image behind your club's name"
-            : "Add an image behind your club's name"
-        }
-        onPress={choose}
-      />
-      {header ? <Row label="Remove header" hint="Back to plain cream" onPress={remove} /> : null}
+      {canSet ? (
+        <Row
+          label={header ? "Change header" : "Set header"}
+          hint={
+            header
+              ? "The image behind your club's name"
+              : "Add an image behind your club's name"
+          }
+          onPress={choose}
+        />
+      ) : null}
+      {/* Setting and clearing the club's face are separate grants. */}
+      {header && canRemove ? (
+        <Row label="Remove header" hint="Back to plain cream" onPress={remove} />
+      ) : null}
     </>
   );
 }

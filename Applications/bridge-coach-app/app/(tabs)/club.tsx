@@ -18,9 +18,10 @@
 // use, and the translation happens here at the edge. Challenges are still placeholder content (the
 // API has no clubs yet).
 
+import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { router } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -29,8 +30,10 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BrandChrome } from "../../components/brand-chrome";
+import { BrandChrome, CONTENT_TOP_GAP } from "../../components/brand-chrome";
+import { BrandSheet } from "../../components/brand-sheet";
 import {
   ChallengeCaption,
   ChallengeTile,
@@ -41,9 +44,11 @@ import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { loadAvatars, loadClubHeader, subscribeToClubHeader } from "../../lib/avatar-store";
 import { getRoleContext, primaryMembership } from "../../lib/bridge-role";
+import { useCan } from "../../lib/use-can";
 import {
-  fetchBridgeSummary,
+  fetchAppMembers,
   fetchProgramMembers,
+  type AppMemberRow,
   type ProgramMemberRow,
 } from "../../lib/nexus";
 
@@ -87,19 +92,18 @@ const BTN = {
 };
 
 type View2 = "home" | "members";
-type Filter = "all" | "learners" | "coaches";
+/**
+ * The roster's filter. "all" is the only fixed entry; every other value is the
+ * NAME of a role a club has authored, because a club's roles are its own
+ * ("Club Mentor", "Strange Mentor") rather than two fixed buckets.
+ */
+type Filter = string;
+const ALL: Filter = "all";
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "All Users" },
-  { key: "learners", label: "Members" },
-  { key: "coaches", label: "Mentors" },
-];
-
-/** What a club calls each standing, on the pills and on every row. */
-const STANDING = { staff: "Mentor", learner: "Member" };
-
-/** Membership roles that make someone staff of the club rather than a learner. */
+/** Membership roles that make someone staff of the club — the label for anyone
+ *  holding no app role yet, so the roster is never blank. */
 const STAFF_ROLES = new Set(["owner", "administrator", "instructor", "teacher", "coach"]);
+const FALLBACK_STANDING = { staff: "Mentor", learner: "Member" };
 
 function personName(row: ProgramMemberRow): string {
   return row.display_name?.trim() || row.username?.trim() || row.email?.trim() || "Member";
@@ -107,6 +111,14 @@ function personName(row: ProgramMemberRow): string {
 
 function isStaff(row: ProgramMemberRow): boolean {
   return STAFF_ROLES.has(row.membership_role.toLowerCase());
+}
+
+/** What shows beside a person: the role they hold, else their standing. */
+function standingOf(row: AppMemberRow): string {
+  return (
+    row.app_role_name?.trim() ||
+    (isStaff(row) ? FALLBACK_STANDING.staff : FALLBACK_STANDING.learner)
+  );
 }
 
 /** One switch or filter pill — green when you are on it, outlined when not. */
@@ -181,20 +193,29 @@ function Pill({
 export default function ClubScreen() {
   const { token } = useAuth();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const s = width / DESIGN_WIDTH;
 
+  // Each button is its own grant, so a role can have challenges without deals.
+  const canChat = useCan("app.chat.view", true);
+  const canChallenges = useCan("app.challenge.view", true);
+  const canDeals = useCan("app.deal.view", true);
+  const canMembers = useCan("app.club.members.view", true);
+
   const [view, setView] = useState<View2>("home");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>(ALL);
+  /** Which roles the filter sheet has ticked; empty means "no filter". */
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
 
   // The club is the caller's own program — a partner club wins over the default.
   const [club, setClub] = useState<{ id: string; name: string; org: string } | null>(null);
-  const [roster, setRoster] = useState<ProgramMemberRow[] | null>(null);
+  const [roster, setRoster] = useState<AppMemberRow[] | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
   /** profile_id -> picture, for the faces on the roster. */
   const [avatars, setAvatars] = useState<Map<string, string | null>>(new Map());
   /** The club's banner, if its coaches have set one. */
   const [header, setHeader] = useState<string | null>(null);
-  const [dealEntryId, setDealEntryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -217,7 +238,10 @@ export default function ClubScreen() {
     if (!token || !club) return;
     let cancelled = false;
     setRosterError(null);
-    fetchProgramMembers(token, club.id)
+    // The app-aware roster carries each person's role name; if that endpoint is
+    // not deployed yet, the plain member list still renders (without labels).
+    fetchAppMembers(token, club.id)
+      .catch(() => fetchProgramMembers(token, club.id) as Promise<AppMemberRow[]>)
       .then(async (rows) => {
         if (cancelled) return;
         setRoster(rows);
@@ -245,39 +269,35 @@ export default function ClubScreen() {
     };
   }, [token, club]);
 
-  // The Practice Deal is one board a day; re-check on each visit.
-  useFocusEffect(
-    useCallback(() => {
-      if (!token) return;
-      let cancelled = false;
-      fetchBridgeSummary(token)
-        .then((sum) => !cancelled && setDealEntryId(sum.deal_of_the_day?.entry_id ?? null))
-        .catch(() => !cancelled && setDealEntryId(null));
-      return () => {
-        cancelled = true;
-      };
-    }, [token]),
-  );
+  /** Every role present in this club, in a stable order — the carousel. */
+  const roleNames = useMemo(() => {
+    const seen = new Set<string>();
+    for (const r of roster ?? []) seen.add(standingOf(r));
+    return [...seen].sort((a, b) => a.localeCompare(b));
+  }, [roster]);
 
   const people = useMemo(() => {
     const rows = roster ?? [];
-    if (filter === "learners") return rows.filter((r) => !isStaff(r));
-    if (filter === "coaches") return rows.filter(isStaff);
-    return rows;
-  }, [roster, filter]);
+    // The checkbox filter wins when anything is ticked; otherwise the carousel's
+    // single selection governs. Two ways to ask the same question, and the more
+    // specific one is the one you just used.
+    if (checked.size > 0) return rows.filter((r) => checked.has(standingOf(r)));
+    if (filter === ALL) return rows;
+    return rows.filter((r) => standingOf(r) === filter);
+  }, [roster, filter, checked]);
 
   const latest = SEED_CHALLENGES[SEED_CHALLENGES.length - 1]!;
 
+  // A button its role cannot open is not dimmed but ABSENT: dimming says "not
+  // now", and this is "not yours". The grid closes up around what is left.
   const buttons = [
-    {
+    canDeals && {
       key: "deal",
       label: "Practice Deal",
-      onPress: () =>
-        dealEntryId &&
-        router.push({ pathname: "/play-board/[entryId]", params: { entryId: dealEntryId } }),
-      disabled: !dealEntryId,
+      onPress: () => router.push("/practice-deals"),
+      disabled: false,
     },
-    {
+    canChallenges && {
       key: "challenges",
       label: "Challenges",
       onPress: () => router.push("/club-challenges"),
@@ -285,8 +305,13 @@ export default function ClubScreen() {
     },
     // Feedback is drawn but not built yet — dimmed so the grid still matches.
     { key: "feedback", label: "Feedback", onPress: () => {}, disabled: true },
-    { key: "chat", label: "Chat", onPress: () => router.push("/club-chat"), disabled: false },
-  ];
+    canChat && {
+      key: "chat",
+      label: "Chat",
+      onPress: () => router.push("/club-chat"),
+      disabled: false,
+    },
+  ].filter(Boolean) as { key: string; label: string; onPress: () => void; disabled: boolean }[];
 
   const onHome = view === "home";
   // Over a photograph the ink text and the ink outline both disappear.
@@ -316,7 +341,14 @@ export default function ClubScreen() {
             </Text>
           </View>
 
-          <View style={{ marginTop: HEAD.pillTop * s, marginRight: HEAD.pillRight * s }}>
+          <View
+            style={{
+              marginTop: HEAD.pillTop * s,
+              marginRight: HEAD.pillRight * s,
+              opacity: canMembers ? 1 : 0,
+            }}
+            pointerEvents={canMembers ? "auto" : "none"}
+          >
             <Pill
               label="Members"
               active={!onHome}
@@ -407,16 +439,70 @@ export default function ClubScreen() {
           </View>
         ) : (
           <View style={styles.body}>
-            <View style={[styles.filterRow, { marginTop: FILTER.top * s, gap: (FILTER.pitch - PILL.width) * s }]}>
-              {FILTERS.map((f) => (
+            {/* All Users, then one pill per role the club actually has. It
+                SCROLLS: a club may author a dozen roles, and three fixed pills
+                could not hold them. */}
+            <View style={[styles.filterBar, { marginTop: FILTER.top * s }]}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ flexGrow: 0 }}
+                contentContainerStyle={{
+                  gap: (FILTER.pitch - PILL.width) * s,
+                  paddingHorizontal: 12 * s,
+                  alignItems: "center",
+                }}
+              >
                 <Pill
-                  key={f.key}
-                  label={f.label}
-                  active={filter === f.key}
-                  onPress={() => setFilter(f.key)}
+                  label="All Users"
+                  active={checked.size === 0 && filter === ALL}
+                  onPress={() => {
+                    setFilter(ALL);
+                    setChecked(new Set());
+                  }}
                   scale={s}
                 />
-              ))}
+                {roleNames.map((name) => (
+                  <Pill
+                    key={name}
+                    label={name}
+                    active={checked.size === 0 && filter === name}
+                    onPress={() => {
+                      setFilter(name);
+                      setChecked(new Set());
+                    }}
+                    scale={s}
+                  />
+                ))}
+              </ScrollView>
+
+              {/* Tick several roles at once — the carousel picks exactly one. */}
+              <Pressable
+                onPress={() => setFilterOpen(true)}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  checked.size ? `Filter roles (${checked.size} selected)` : "Filter roles"
+                }
+                style={({ pressed }) => [
+                  styles.filterButton,
+                  {
+                    width: PILL.height * s,
+                    height: PILL.height * s,
+                    borderRadius: PILL.radius * s,
+                    marginRight: 14 * s,
+                    backgroundColor: checked.size ? Brand.green : "transparent",
+                    borderWidth: checked.size ? 0 : Math.max(1, 0.921 * s),
+                  },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons
+                  name="funnel-outline"
+                  size={14 * s}
+                  color={checked.size ? Brand.white : Brand.ink}
+                />
+              </Pressable>
             </View>
 
             <Roster
@@ -429,6 +515,60 @@ export default function ClubScreen() {
           </View>
         )}
       </View>
+
+      {/* Tick the roles to show. Nothing ticked = no filter, and the carousel's
+          single selection governs instead. */}
+      <BrandSheet
+        visible={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        title="Filter by role"
+        top={insets.top + CONTENT_TOP_GAP}
+      >
+        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+          {roleNames.length === 0 ? (
+            <Text style={styles.sheetEmpty}>No roles in this club yet.</Text>
+          ) : (
+            roleNames.map((name) => {
+              const on = checked.has(name);
+              return (
+                <Pressable
+                  key={name}
+                  onPress={() => {
+                    const next = new Set(checked);
+                    if (on) next.delete(name);
+                    else next.add(name);
+                    setChecked(next);
+                    setFilter(ALL);
+                  }}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: on }}
+                  style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
+                >
+                  <Ionicons
+                    name={on ? "checkbox" : "square-outline"}
+                    size={20}
+                    color={Brand.cream}
+                  />
+                  <Text style={styles.checkLabel}>{name}</Text>
+                  <Text style={styles.checkCount}>
+                    {(roster ?? []).filter((r) => standingOf(r) === name).length}
+                  </Text>
+                </Pressable>
+              );
+            })
+          )}
+
+          {checked.size > 0 ? (
+            <Pressable
+              onPress={() => setChecked(new Set())}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.clearRow, pressed && styles.pressed]}
+            >
+              <Text style={styles.clearText}>Clear filter</Text>
+            </Pressable>
+          ) : null}
+        </ScrollView>
+      </BrandSheet>
     </BrandChrome>
   );
 }
@@ -461,7 +601,7 @@ function Roster({
         <PersonRow
           key={p.membership_id ?? p.invitation_id ?? `${p.email}-${i}`}
           name={personName(p)}
-          standing={isStaff(p) ? STANDING.staff : STANDING.learner}
+          standing={standingOf(p)}
           avatar={p.profile_id ? avatars.get(p.profile_id) : null}
           scale={s}
         />
@@ -487,6 +627,8 @@ const styles = StyleSheet.create({
   pillLabel: { fontFamily: Fonts.displayMedium },
   body: { flex: 1 },
   filterRow: { flexDirection: "row", justifyContent: "center" },
+  filterBar: { flexDirection: "row", alignItems: "center" },
+  filterButton: { alignItems: "center", justifyContent: "center", borderColor: Brand.ink },
   heading: {
     fontFamily: Fonts.displayMedium,
     fontSize: Type.sectionHeading,
@@ -512,6 +654,26 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingTop: 40,
     paddingHorizontal: 24,
+  },
+  checkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 22,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,244,215,0.14)",
+  },
+  checkLabel: { flex: 1, fontFamily: Fonts.body, fontSize: 15, color: Brand.cream },
+  checkCount: { fontFamily: Fonts.body, fontSize: 14, color: "rgba(255,244,215,0.6)" },
+  clearRow: { paddingVertical: 18, paddingHorizontal: 22 },
+  clearText: { fontFamily: Fonts.bodySemibold, fontSize: 14, color: Brand.cream, opacity: 0.85 },
+  sheetEmpty: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: "rgba(255,244,215,0.7)",
+    paddingHorizontal: 22,
+    paddingTop: 18,
   },
   pressed: { opacity: 0.75 },
 });

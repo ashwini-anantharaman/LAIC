@@ -854,7 +854,7 @@ export const DEFAULT_CAPABILITIES = {
   // Feature-areas an org may use — the SAME six keys as per-program features,
   // so the Nexus envelope and the org's program config speak one vocabulary.
   // Everything on by default; the operator narrows per org.
-  features: { learning: true, bridge: true, appbuilder: true, community: true, teams: true, partners: true },
+  features: { learning: true, bridge: true, clubapp: true, appbuilder: true, community: true, teams: true, partners: true },
   // Per-platform "Partial" provisioning at the org envelope: a capability subset
   // for a platform area (learning/bridge) that clamps what the org's programs and
   // roles can grant. Absent key = No/Full (governed by `features`).

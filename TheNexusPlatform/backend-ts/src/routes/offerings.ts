@@ -16,7 +16,7 @@ import * as graph from "../db/orgGraphRepo";
 import * as clubChat from "../db/clubChatRepo";
 import { validGrantsAcross, getCatalogue, type CatalogueRef } from "../accessCatalogue/store";
 import { grantableCapabilities } from "../accessCatalogue/resolver";
-import { requireCapability } from "../accessCatalogue/enforce";
+import { capabilitiesFor, requireCapability } from "../accessCatalogue/enforce";
 import { isOfferingAdmin } from "../permissions";
 import { platformRoleConfig } from "../platformAccess";
 import { BRIDGE_PREBUILT_ROLES } from "../platformAccess";
@@ -1188,7 +1188,22 @@ offeringsRouter.get("/programs/:program_id/members", async (c) => {
 // design surfaces it as a long-press on any message, with one shared pin list
 // per club.
 
-const chatPostSchema = z.object({ body: z.string().trim().min(1).max(2000) });
+const chatPostSchema = z
+  .object({
+    body: z.string().trim().max(2000).default(""),
+    image: z
+      .string()
+      .max(900_000, "That image is too large")
+      .regex(
+        /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/,
+        "Expected a base64 JPEG, PNG or WebP data URL",
+      )
+      .nullish(),
+  })
+  // A picture alone is a message; nothing at all is not.
+  .refine((v) => v.body.trim().length > 0 || !!v.image, {
+    message: "A message needs text or an image",
+  });
 const chatPinSchema = z.object({ pinned: z.boolean() });
 
 /** Resolve the program, check the caller belongs, and return their profile id. */
@@ -1239,9 +1254,19 @@ offeringsRouter.put("/programs/:program_id/header-image", async (c) => {
       _CLUB_STAFF.has(m.role) &&
       (m.program_id === programId || (!m.program_id && m.role === "owner")),
   );
-  if (!staff) throw new HttpError(403, "Only a club's coaches can set its header");
-
   const req = parseBody(headerImageSchema, await c.req.json());
+  // Setting and clearing the club's face are separate grants, so which one is
+  // required depends on what is being asked for.
+  const capability = req.header_image === null ? "app.club.header.remove" : "app.club.header.set";
+  const caps = await capabilitiesFor(user, { providerId: "club-app", orgId, programId });
+  // A fine-grained role governs alone; only a caller with NO role falls back to
+  // the coarse staff check (the same contract requireCapability uses).
+  if (caps.size > 0) {
+    if (!caps.has(capability)) throw new HttpError(403, `Missing capability: ${capability}`);
+  } else if (!staff) {
+    throw new HttpError(403, "Only a club's coaches can set its header");
+  }
+
   await clubChat.setProgramHeaderImage(programId, req.header_image);
   return c.json({ header_image: req.header_image });
 });
@@ -1252,13 +1277,23 @@ offeringsRouter.get("/programs/:program_id/chat", async (c) => {
 });
 
 offeringsRouter.post("/programs/:program_id/chat", async (c) => {
-  const { programId, profileId } = await _clubChatActor(c);
+  const { user, programId, orgId, profileId } = await _clubChatActor(c);
   const req = parseBody(chatPostSchema, await c.req.json());
-  return c.json(await clubChat.createClubChatMessage(programId, profileId, req.body), 201);
+  // Hidden buttons are not security: the app hides the composer without
+  // app.chat.post, and the server refuses it here too. Sending a PICTURE is a
+  // second, separate grant.
+  const scope = { providerId: "club-app" as const, orgId, programId };
+  await requireCapability(user, scope, "app.chat.post");
+  if (req.image) await requireCapability(user, scope, "app.chat.post_image");
+  return c.json(
+    await clubChat.createClubChatMessage(programId, profileId, req.body, req.image ?? null),
+    201,
+  );
 });
 
 offeringsRouter.patch("/programs/:program_id/chat/:message_id/pin", async (c) => {
-  const { programId, profileId } = await _clubChatActor(c);
+  const { user, programId, orgId, profileId } = await _clubChatActor(c);
+  await requireCapability(user, { providerId: "club-app", orgId, programId }, "app.chat.pin");
   const req = parseBody(chatPinSchema, await c.req.json());
   const updated = await clubChat.setClubChatMessagePinned(
     programId,

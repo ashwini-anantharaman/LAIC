@@ -40,6 +40,7 @@ const messageRow = (
   /** "Coach" | "Learner" — resolved from the author's membership in THIS club. */
   author_standing: standingFor(author.role),
   body: m.body,
+  image: m.image ?? null,
   pinned: m.pinnedAt != null,
   pinned_at: m.pinnedAt ? m.pinnedAt.toISOString() : null,
   pinned_by: m.pinnedBy ?? null,
@@ -142,22 +143,34 @@ export async function resolveActorProfileId(
   return resolveOrgProfileId(orgId, authOrProfileId);
 }
 
-/** Post a message. `authorProfileId` must already be a profiles.id. */
+/**
+ * Post a message. `authorProfileId` must already be a profiles.id.
+ *
+ * Either the body or the image may be empty, but not both — a picture with no
+ * words is an ordinary message, and the DB constraint enforces the rest.
+ */
 export async function createClubChatMessage(
   programId: string,
   authorProfileId: string,
   body: string,
+  image: string | null = null,
 ): Promise<Row> {
   const inserted = await asPrivileged(async (tx) => {
     const rows = await tx
       .insert(clubChatMessages)
-      .values({ programId, authorProfileId, body })
+      .values({ programId, authorProfileId, body, image })
       .returning();
     return rows[0];
   });
   // The author label is not re-joined here: the app refetches the thread right
   // after posting, and doing the join would mean a second transaction.
-  return { id: inserted.id, program_id: programId, body: inserted.body, created_at: inserted.createdAt.toISOString() };
+  return {
+    id: inserted.id,
+    program_id: programId,
+    body: inserted.body,
+    image: inserted.image ?? null,
+    created_at: inserted.createdAt.toISOString(),
+  };
 }
 
 /**

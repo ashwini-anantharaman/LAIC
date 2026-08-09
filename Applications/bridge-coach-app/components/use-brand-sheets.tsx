@@ -15,6 +15,7 @@ import { BrandSheet } from "./brand-sheet";
 import { MenuIndexBody, OtherSheetBody } from "./menu-sheet";
 import { ProfileSheetBody } from "./profile-sheet";
 import { SettingsSheetBody } from "./settings-sheet";
+import { useCan } from "../lib/use-can";
 import { useIsCoach } from "../lib/use-is-coach";
 
 type Section = "profile" | "settings" | "other";
@@ -32,7 +33,9 @@ export function useBrandSheets(top: number): {
 } {
   const [visible, setVisible] = useState(false);
   const [section, setSection] = useState<Section | null>(null);
+  // "Other" is a capability now. Fallback = the old rule: coaches only.
   const coach = useIsCoach();
+  const showOther = useCan("app.coaching.view", coach);
 
   const close = useCallback(() => {
     setVisible(false);
@@ -61,7 +64,7 @@ export function useBrandSheets(top: number): {
       ) : section === "other" ? (
         <OtherSheetBody onClose={close} />
       ) : (
-        <MenuIndexBody coach={coach} onOpen={setSection} />
+        <MenuIndexBody coach={showOther} onOpen={setSection} />
       )}
     </BrandSheet>
   );

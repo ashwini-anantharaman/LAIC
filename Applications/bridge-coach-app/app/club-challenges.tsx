@@ -2,11 +2,16 @@
 //
 // The same carousel + per-challenge leaderboard as the old Club tab, with the
 // changes the new design makes: the club name and blurb are gone (the Club tab
-// owns those now), the screen is titled "Challenges", and the coach's + is a
-// round button centred in the space that freed up rather than sitting inline
-// beside a heading.
+// owns those now) and the screen is titled "Challenges".
+//
+// The coach's + sits INLINE, immediately right of the title. It was a round
+// button centred under the title for a while, which left it floating in the gap
+// between the heading and the carousel with nothing to align to.
 //
 // It is a pushed screen, not a tab, so the app bar carries a back arrow.
+//
+// The + and the leaderboard are each gated on their own capability, so a role
+// may view challenges without creating them, or without seeing standings.
 //
 // The Nexus API has no clubs, challenges or leaderboards yet, so the content in
 // SEED_CHALLENGES is placeholder; the layout and interaction are real.
@@ -35,13 +40,14 @@ import {
 } from "../components/challenge-tile";
 import { Avatar } from "../components/avatar";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
+import { useCan } from "../lib/use-can";
 import { useIsCoach } from "../lib/use-is-coach";
 
 const DESIGN_WIDTH = 390;
 /** BrandChrome already supplies the gap under the status bar. */
 const TITLE_TOP = 0;
-/** The coach's + : 36 square, centred, 14 under the title. */
-const PLUS = { size: 36, gap: 14 };
+/** The coach's + : a 30pt disc sitting just right of the title's last letter. */
+const PLUS = { size: 30, gap: 14 };
 /** Tile 185.47 at left 101, the next at 338.53 — a wide slice peeks, which is
  *  how the design signals that it swipes. */
 const TILE = 185.469;
@@ -113,7 +119,11 @@ function LeaderboardRow({
 export default function ClubChallengesScreen() {
   const { width } = useWindowDimensions();
   const s = width / DESIGN_WIDTH;
+  // Capabilities, not a role. Each fallback is what this surface did before
+  // roles existed: only a coach could add a challenge, everyone saw standings.
   const coach = useIsCoach();
+  const canCreate = useCan("app.challenge.create", coach);
+  const canSeeBoard = useCan("app.challenge.leaderboard.view", true);
 
   const [challenges, setChallenges] = useState<Challenge[]>(SEED_CHALLENGES);
   const [active, setActive] = useState(0);
@@ -162,32 +172,36 @@ export default function ClubChallengesScreen() {
   return (
     <BrandChrome onBack={() => (router.canGoBack() ? router.back() : router.replace("/club"))}>
       <View style={styles.page}>
-        <Text style={[styles.title, { paddingTop: TITLE_TOP * s }]}>Challenges</Text>
-
-        {coach ? (
-          <Pressable
-            onPress={() => (configuring ? setConfiguring(false) : openConfigure())}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: configuring }}
-            accessibilityLabel={configuring ? "Close challenge settings" : "Add a challenge"}
-            style={({ pressed }) => [
-              styles.plus,
-              {
-                width: PLUS.size * s,
-                height: PLUS.size * s,
-                borderRadius: (PLUS.size / 2) * s,
-                marginTop: PLUS.gap * s,
-              },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons
-              name={configuring ? "chevron-down" : "add"}
-              size={22 * s}
-              color={Brand.cream}
-            />
-          </Pressable>
-        ) : null}
+        {/* Title and + on one line, the + hugging the text rather than the
+            screen's edge, so the pair reads as one heading. */}
+        <View style={[styles.titleRow, { paddingTop: TITLE_TOP * s }]}>
+          <Text style={styles.title}>Challenges</Text>
+          {canCreate ? (
+            <Pressable
+              onPress={() => (configuring ? setConfiguring(false) : openConfigure())}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: configuring }}
+              accessibilityLabel={configuring ? "Close challenge settings" : "Add a challenge"}
+              style={({ pressed }) => [
+                styles.plus,
+                {
+                  width: PLUS.size * s,
+                  height: PLUS.size * s,
+                  borderRadius: (PLUS.size / 2) * s,
+                  marginLeft: PLUS.gap * s,
+                },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons
+                name={configuring ? "chevron-down" : "add"}
+                size={19 * s}
+                color={Brand.cream}
+              />
+            </Pressable>
+          ) : null}
+        </View>
 
         {configuring ? (
           <ChallengeFormPanel
@@ -206,12 +220,7 @@ export default function ClubChallengesScreen() {
             showsHorizontalScrollIndicator={false}
             // Pinned: a horizontal ScrollView in a column parent otherwise
             // stretches to fill the height and pushes the leaderboard down.
-            // A learner has no +, so the carousel takes back that space.
-            style={{
-              height: TILE * s + captionH,
-              flexGrow: 0,
-              marginTop: (coach ? CAROUSEL_GAP : CAROUSEL_GAP + PLUS.size + PLUS.gap) * s,
-            }}
+            style={{ height: TILE * s + captionH, flexGrow: 0, marginTop: CAROUSEL_GAP * s }}
             onLayout={() => carousel.current?.scrollTo({ x: active * pitch, animated: false })}
             contentContainerStyle={{
               paddingLeft: FIRST_TILE_LEFT * s,
@@ -239,17 +248,20 @@ export default function ClubChallengesScreen() {
           </ScrollView>
         )}
 
-        <Text
-          style={[
-            styles.heading,
-            { paddingTop: BOARD_HEADING_GAP * s, paddingBottom: 14 * s, paddingLeft: ROW.left * s },
-          ]}
-        >
-          Challenge Leaderboard
-        </Text>
+        {canSeeBoard ? (
+          <Text
+            style={[
+              styles.heading,
+              { paddingTop: BOARD_HEADING_GAP * s, paddingBottom: 14 * s, paddingLeft: ROW.left * s },
+            ]}
+          >
+            Challenge Leaderboard
+          </Text>
+        ) : null}
 
         {/* Clipped so rows cut at both edges and scroll only within here. */}
         <View style={[styles.boardClip, { paddingHorizontal: ROW.left * s }]}>
+          {!canSeeBoard ? null : (
           <ScrollView showsVerticalScrollIndicator={false}>
             {challenge.standings.length === 0 ? (
               <Text style={styles.boardEmpty}>
@@ -266,6 +278,7 @@ export default function ClubChallengesScreen() {
               ))
             )}
           </ScrollView>
+          )}
         </View>
       </View>
     </BrandChrome>
@@ -274,18 +287,9 @@ export default function ClubChallengesScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, paddingBottom: TAB_BAR_CLEARANCE },
-  title: {
-    fontFamily: Fonts.display,
-    fontSize: Type.screenTitle,
-    color: Brand.ink,
-    paddingHorizontal: 25,
-  },
-  plus: {
-    alignSelf: "center",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Brand.ink,
-  },
+  titleRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 25 },
+  title: { fontFamily: Fonts.display, fontSize: Type.screenTitle, color: Brand.ink },
+  plus: { alignItems: "center", justifyContent: "center", backgroundColor: Brand.ink },
   heading: { fontFamily: Fonts.heading, fontSize: Type.sectionHeading, color: Brand.ink },
   boardClip: { flex: 1, overflow: "hidden" },
   rowShadow: { position: "absolute", left: 0, right: 0, backgroundColor: Brand.rowShadow },

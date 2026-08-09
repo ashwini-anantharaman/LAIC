@@ -28,6 +28,7 @@ import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
 import { resolveCapabilities, surfacesForCapabilities, grantableCapabilities } from "../accessCatalogue/resolver";
 import { capabilitiesFor, requireCapability } from "../accessCatalogue/enforce";
 import * as bridgeRoles from "../accessCatalogue/bridgeRoles";
+import * as appRoles from "../accessCatalogue/appRoles";
 import type { ProviderId } from "../accessCatalogue/types";
 import { isOfferingAdmin } from "../permissions";
 import {
@@ -1213,7 +1214,13 @@ async function _platformRolePut(user: PlatformUser, platform: string, body: Row)
   // A role is assignable if it's a pre-built assignable role OR (for bridge) a
   // custom capability-bound role defined for this program.
   if (req.role !== null && !cfg.assignable.includes(req.role)) {
-    const custom = platform === "bridge" ? await bridgeRoles.getBridgeRole(req.program_id, req.role) : null;
+    // A custom role id is assignable too — each platform looks up its own store.
+    const custom =
+      platform === "bridge"
+        ? await bridgeRoles.getBridgeRole(req.program_id, req.role)
+        : platform === "club-app"
+          ? await appRoles.getAppRole(req.program_id, req.role)
+          : null;
     if (!custom) throw new HttpError(400, `Not an assignable ${platform} role`);
   }
   const access = await _requirePlatformRoleAdmin(user, platform, req.program_id);
@@ -1358,6 +1365,125 @@ platformRouter.delete("/bridge/roles/:id", async (c) => {
   await _bridgeAdmin(c, pid);
   await bridgeRoles.deleteBridgeRole(pid, c.req.param("id"));
   return c.json({ ok: true });
+});
+
+// ── Bridge Bird APP roles & context (provider: club-app) ───────────────────
+//
+// The app's own permission surface, separate from the Bridge PLATFORM's above:
+// a club authors roles here ("Strange Mentor"), each binding capabilities from
+// the club-app catalogue, and the app asks /club-app/context for what the caller
+// holds. Administration is the club's, so the same admin guard applies.
+
+const appRoleCreateSchema = z.object({
+  program_id: z.string(),
+  name: z.string().min(1),
+  capabilities: z.array(z.string()).default([]),
+});
+const appRoleUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  capabilities: z.array(z.string()).optional(),
+});
+
+/** The app's catalogue — read by any member (the role builder needs it), written
+ *  by a club admin. */
+platformRouter.get("/club-app/catalogue", async (c) => {
+  await getCurrentUser(c);
+  return c.json(await catalogue.getCatalogue("club-app"));
+});
+
+platformRouter.get("/club-app/roles", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _bridgeAdmin(c, pid);
+  return c.json(await appRoles.listAppRoles(pid));
+});
+
+platformRouter.post("/club-app/roles", async (c) => {
+  const req = parseBody(appRoleCreateSchema, await c.req.json());
+  await _bridgeAdmin(c, req.program_id);
+  return c.json(await appRoles.createAppRole(req.program_id, req.name, req.capabilities), 201);
+});
+
+platformRouter.patch("/club-app/roles/:id", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _bridgeAdmin(c, pid);
+  const body = parseBody(appRoleUpdateSchema, await c.req.json());
+  const row = await appRoles.updateAppRole(pid, c.req.param("id") ?? "", body);
+  if (!row) throw new HttpError(404, "Role not found");
+  return c.json(row);
+});
+
+platformRouter.delete("/club-app/roles/:id", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _bridgeAdmin(c, pid);
+  await appRoles.deleteAppRole(pid, c.req.param("id") ?? "");
+  return c.json({ ok: true });
+});
+
+/**
+ * What the CALLER may do in the app, for one program.
+ *
+ * The app calls this on launch and gates every surface on `capabilities`.
+ * `role_name` is the one role they hold, shown beside them in the roster.
+ *
+ * Never 500s on a bad role or catalogue: a failure here would lock someone out
+ * of the app entirely, so it degrades to an empty set and lets the app fall back
+ * to its pre-roles behaviour.
+ */
+platformRouter.get("/club-app/context", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  let result: { roleName: string | null; capabilities: string[] } = {
+    roleName: null,
+    capabilities: [],
+  };
+  try {
+    result = await appRoles.appAccessFor(access.programId, {
+      structuralTier: access.level === "admin",
+      roleName: access.roleName,
+      programRoleCapabilities: access.programRoleCapabilities,
+      assignedRoleId: access.platformRole ?? null,
+    });
+  } catch (e) {
+    console.error("club-app/context capability computation failed (using empty set):", e);
+  }
+  return c.json({
+    program_id: access.programId,
+    program_name: access.programName,
+    role_name: result.roleName,
+    capabilities: result.capabilities,
+    is_admin: access.level === "admin",
+  });
+});
+
+/** Every member of the program with the app role they hold — the roster's
+ *  labels, and the source of the club's role filter. */
+platformRouter.get("/club-app/members", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.query("program_id") ?? "";
+  const access = await resolvePlatformAccess(user, "bridge", programId);
+  const members = await graph.listProgramMembers(access.orgId, access.programId);
+  const assignments = await graph
+    .listPlatformRoleAssignments(access.programId, "club-app")
+    .catch(() => [] as Row[]);
+  const byEmail = new Map(
+    assignments.map((a: Row) => [String(a.email).toLowerCase(), String(a.role)]),
+  );
+  const roles = await appRoles.listAppRoles(access.programId);
+  const nameById = new Map(roles.map((r) => [r.id, r.name]));
+
+  return c.json(
+    members.map((m: Row) => {
+      const assigned = byEmail.get(String(m.email ?? "").toLowerCase()) ?? null;
+      // A club administrator holds the app structurally, so they are labelled
+      // as such rather than appearing role-less.
+      const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
+      return {
+        ...m,
+        app_role_id: assigned,
+        app_role_name: isAdmin ? "Administrator" : (assigned ? nameById.get(assigned) ?? assigned : null),
+      };
+    }),
+  );
 });
 
 // The person's display name in THIS org (their org-scoped profile), falling

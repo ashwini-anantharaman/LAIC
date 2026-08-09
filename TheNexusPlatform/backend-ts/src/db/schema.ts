@@ -130,6 +130,8 @@ export const clubChatMessages = pgTable("club_chat_messages", {
   programId: uuid("program_id").notNull(),
   authorProfileId: uuid("author_profile_id").notNull(),
   body: text("body").notNull(),
+  /** An attached picture as a data URL (0042); a message may be image-only. */
+  image: text("image"),
   pinnedAt: timestamp("pinned_at", { withTimezone: true }),
   pinnedBy: uuid("pinned_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

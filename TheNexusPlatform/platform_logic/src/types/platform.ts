@@ -11,6 +11,8 @@ export type ProgramCategory = string;
 export type ProgramFeatureKey =
   | "learning"
   | "bridge"
+  /** The Bridge Bird mobile app — its own catalogue, provisioned like a platform. */
+  | "clubapp"
   | "appbuilder"
   | "community"
   | "teams"
@@ -20,6 +22,7 @@ export type ProgramFeatures = Record<ProgramFeatureKey, boolean>;
 export const PROGRAM_FEATURES: { key: ProgramFeatureKey; label: string }[] = [
   { key: "learning", label: "Content Studio" },
   { key: "bridge", label: "Bridge Platform" },
+  { key: "clubapp", label: "Bridge Bird App" },
   { key: "appbuilder", label: "App Studio" },
   { key: "community", label: "Community" },
   { key: "teams", label: "People" },
@@ -29,6 +32,7 @@ export const PROGRAM_FEATURES: { key: ProgramFeatureKey; label: string }[] = [
 export const DEFAULT_PROGRAM_FEATURES: ProgramFeatures = {
   learning: true,
   bridge: true,
+  clubapp: true,
   appbuilder: true,
   community: true,
   teams: true,
@@ -75,8 +79,10 @@ export interface Program {
 
 /** Platform feature keys that support the No/Partial/Full provisioning control
  *  (they have their own Access Catalog) — matches the role builder's 3-way. */
-export const FEATURE_ACCESS_KEYS = ["learning", "bridge"] as const;
-export const FEATURE_ACCESS_PROVIDER: Record<string, string> = { learning: "learning", bridge: "bridge" };
+export const FEATURE_ACCESS_KEYS = ["learning", "bridge", "clubapp"] as const;
+export const FEATURE_ACCESS_PROVIDER: Record<string, string> = {
+  learning: "learning", bridge: "bridge", clubapp: "club-app",
+};
 
 export interface Integration {
   id: string;

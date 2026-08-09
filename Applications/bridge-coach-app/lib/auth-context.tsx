@@ -12,6 +12,7 @@ import { AppState } from "react-native";
 
 import { clearAvatarCache } from "./avatar-store";
 import { clearBridgeRoleCache, getRoleContext } from "./bridge-role";
+import { clearDealChats } from "./deal-chat";
 import { clearLaunchCache } from "./launch-cache";
 import { clearLearningCache } from "./learning";
 import { prewarmAllDone } from "./prewarm";
@@ -141,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearBridgeRoleCache();
     clearSummaryCache();
     clearAvatarCache();
+    clearDealChats();
     setTokenState(null);
     setUser(null);
     setNeedsOnboarding(false);

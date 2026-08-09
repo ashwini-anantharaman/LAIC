@@ -229,6 +229,8 @@ export type ClubChatMessage = {
   /** "Coach" | "Learner" — the label shown beside the name. */
   author_standing: string;
   body: string;
+  /** An attached picture as a data URL; a message may be image-only. */
+  image: string | null;
   pinned: boolean;
   created_at: string;
   /** Did the caller write it? Decided server-side: the client holds an auth id,
@@ -245,11 +247,12 @@ export function postClubChatMessage(
   token: string,
   programId: string,
   body: string,
+  image?: string | null,
 ): Promise<{ id: string }> {
   return request<{ id: string }>(`/api/programs/${programId}/chat`, {
     method: "POST",
     token,
-    body: { body },
+    body: { body, image: image ?? null },
   });
 }
 
@@ -406,8 +409,52 @@ export type BridgeContext = {
   roles: string[];
   is_admin: boolean;
   program_name?: string | null;
+  /**
+   * The name of the ONE role this person holds in this program, as the console
+   * shows it — "Club Mentor", "Strange Mentor". Displayed beside them in the
+   * roster, and the label for whatever capabilities they carry.
+   */
   role_name?: string | null;
+  /**
+   * The capability ids that role grants, resolved server-side against the bridge
+   * access catalogue. This is what every gate in the app reads.
+   *
+   * Empty means "no fine-grained role assigned" — NOT "no access". The server
+   * uses the same convention (accessCatalogue/enforce.ts: an empty set means the
+   * coarse membership guard still governs), so an account that predates roles
+   * keeps working exactly as before.
+   */
+  capabilities?: string[];
 };
+
+/**
+ * What the caller may do in THIS APP — its own access catalogue (provider
+ * `club-app`), not the Bridge Platform's. `role_name` is the one role they hold
+ * in the club; `capabilities` is what that role grants.
+ */
+export type AppContext = {
+  program_id: string | null;
+  program_name: string | null;
+  role_name: string | null;
+  capabilities: string[];
+  is_admin: boolean;
+};
+
+export function fetchAppContext(token: string, programId: string): Promise<AppContext> {
+  return request<AppContext>(`/api/platform/club-app/context?program_id=${programId}`, { token });
+}
+
+/** One member of the club with the app role they hold — the roster's labels. */
+export type AppMemberRow = ProgramMemberRow & {
+  app_role_id?: string | null;
+  app_role_name?: string | null;
+};
+
+export function fetchAppMembers(token: string, programId: string): Promise<AppMemberRow[]> {
+  return request<AppMemberRow[]>(`/api/platform/club-app/members?program_id=${programId}`, {
+    token,
+  });
+}
 
 export function fetchBridgeContext(token: string): Promise<BridgeContext> {
   return request<BridgeContext>(

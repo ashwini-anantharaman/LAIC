@@ -16,7 +16,7 @@ export function PersonRow({
   scale: s,
 }: {
   name: string;
-  /** "Member" / "Mentor" — shown right-aligned. */
+  /** The role this person holds ("Club Mentor"), shown right-aligned. */
   standing: string;
   /** This person's picture, if they have set one. */
   avatar?: string | null;
@@ -57,7 +57,12 @@ export function PersonRow({
         <Text style={[styles.name, { fontSize: 14.4 * s }]} numberOfLines={1}>
           {name}
         </Text>
-        <Text style={[styles.standing, { fontSize: 14.4 * s }]} numberOfLines={1}>
+        {/* A role name can be long; it takes what the name leaves rather than
+            pushing it off the row. */}
+        <Text
+          style={[styles.standing, { fontSize: 14.4 * s, maxWidth: 130 * s }]}
+          numberOfLines={1}
+        >
           {standing}
         </Text>
       </View>
@@ -75,6 +80,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: Brand.green,
   },
-  name: { flex: 1, fontFamily: Fonts.display, color: Brand.white },
+  name: { flex: 1, fontFamily: Fonts.display, color: Brand.white, marginRight: 8 },
   standing: { fontFamily: Fonts.body, color: Brand.white },
 });

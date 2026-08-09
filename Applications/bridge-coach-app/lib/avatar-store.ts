@@ -22,6 +22,8 @@ import {
 
 /** What the camera's output is squeezed to before it leaves the phone. */
 const UPLOAD = { size: 256, quality: 0.7 };
+/** A chat picture keeps its own shape; only its long edge is bounded. */
+const CHAT_IMAGE = { longEdge: 1280, quality: 0.7 };
 /** A club banner is full-bleed, so it gets more pixels — and a 16:9 crop. */
 const BANNER = { width: 1080, quality: 0.7, aspect: [16, 9] as [number, number] };
 
@@ -192,6 +194,38 @@ export async function removeClubHeader(token: string, programId: string): Promis
   await setClubHeaderImage(token, programId, null);
   headers.set(programId, null);
   publishHeader(programId, null);
+}
+
+/**
+ * Pick a picture to send in a chat. Returns null when cancelled or declined.
+ *
+ * No forced crop and no square: a photo of a hand or a screenshot of a board
+ * should keep its shape. 1280 on the long edge is enough to read a scorecard
+ * while staying inside the column's cap.
+ */
+export async function pickChatImage(): Promise<string | null> {
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) return null;
+
+  const picked = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ["images"],
+    quality: 1,
+  });
+  if (picked.canceled || !picked.assets?.[0]) return null;
+
+  const asset = picked.assets[0];
+  // Resize by the LONG edge, so a portrait photo is not stretched to landscape.
+  const portrait = (asset.height ?? 0) > (asset.width ?? 0);
+  const rendered = await ImageManipulator.manipulate(asset.uri)
+    .resize(portrait ? { height: CHAT_IMAGE.longEdge } : { width: CHAT_IMAGE.longEdge })
+    .renderAsync();
+  const out = await rendered.saveAsync({
+    compress: CHAT_IMAGE.quality,
+    format: SaveFormat.JPEG,
+    base64: true,
+  });
+  if (!out.base64) throw new Error("Could not read the image");
+  return `data:image/jpeg;base64,${out.base64}`;
 }
 
 /** Remove the caller's picture. */

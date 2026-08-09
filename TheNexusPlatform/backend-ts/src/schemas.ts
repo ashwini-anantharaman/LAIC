@@ -44,6 +44,9 @@ const jsonRecord = z.record(z.string(), z.any());
 export const PROGRAM_FEATURE_KEYS = [
   "learning",
   "bridge",
+  /** The Bridge Bird mobile app — its own Access Catalogue (provider club-app),
+   *  provisioned No/Partial/Full like a platform. */
+  "clubapp",
   "appbuilder",
   "community",
   "teams",
@@ -55,6 +58,7 @@ export type ProgramFeatureKey = (typeof PROGRAM_FEATURE_KEYS)[number];
 export const DEFAULT_PROGRAM_FEATURES: Record<ProgramFeatureKey, boolean> = {
   learning: true,
   bridge: true,
+  clubapp: true,
   appbuilder: true,
   community: true,
   teams: true,

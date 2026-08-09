@@ -1,0 +1,618 @@
+{
+  "schemaVersion": "1.0",
+  "documentType": "capability_catalogue",
+  "id": "club-app-access",
+  "name": "Bridge Bird App",
+  "description": "What a club's role may see and do inside the Bridge Bird mobile app. Distinct from the Bridge Platform catalogue, which covers the desktop knowledge/CP/table surfaces: this document is the app's own inventory.",
+  "provider": {
+    "kind": "application",
+    "id": "club-app"
+  },
+  "catalogueVersion": "1.0",
+  "capabilities": [
+    {
+      "id": "app.club.view",
+      "label": "Open the Club tab",
+      "description": "See the club at all \u2014 its name, header and buttons",
+      "group": "club_home"
+    },
+    {
+      "id": "app.club.members.view",
+      "label": "View the club roster",
+      "description": "See who belongs to the club and the role each holds",
+      "group": "club_home"
+    },
+    {
+      "id": "app.chat.view",
+      "label": "Read the club chat",
+      "description": "Open Chat and read the club's messages",
+      "group": "club_chat"
+    },
+    {
+      "id": "app.chat.post",
+      "label": "Post in the club chat",
+      "description": "Send a message to the club",
+      "group": "club_chat"
+    },
+    {
+      "id": "app.chat.post_image",
+      "label": "Send pictures in the club chat",
+      "description": "Attach a picture to a message, or send one alone",
+      "group": "club_chat"
+    },
+    {
+      "id": "app.chat.pin",
+      "label": "Pin club chat messages",
+      "description": "Pin and unpin messages in the club's shared pin list",
+      "group": "club_chat"
+    },
+    {
+      "id": "app.chat.moderate",
+      "label": "Moderate the club chat",
+      "description": "Remove other people's messages (not yet built)",
+      "group": "club_chat"
+    },
+    {
+      "id": "app.challenge.view",
+      "label": "View challenges",
+      "description": "See the club's challenges and their boards",
+      "group": "club_challenges"
+    },
+    {
+      "id": "app.challenge.create",
+      "label": "Create challenges",
+      "description": "Add a challenge \u2014 the + beside Challenges",
+      "group": "club_challenges"
+    },
+    {
+      "id": "app.challenge.edit",
+      "label": "Edit challenges",
+      "description": "Rename a challenge or change its board count (not yet built)",
+      "group": "club_challenges"
+    },
+    {
+      "id": "app.challenge.delete",
+      "label": "Delete challenges",
+      "description": "Remove a challenge from the club (not yet built)",
+      "group": "club_challenges"
+    },
+    {
+      "id": "app.challenge.leaderboard.view",
+      "label": "View challenge standings",
+      "description": "See the leaderboard under a challenge",
+      "group": "club_challenges"
+    },
+    {
+      "id": "app.deal.view",
+      "label": "View practice deals",
+      "description": "See the club's practice deals and their descriptions",
+      "group": "club_deals"
+    },
+    {
+      "id": "app.deal.create",
+      "label": "Create practice deals",
+      "description": "Add a practice deal \u2014 the + beside Practice Deals",
+      "group": "club_deals"
+    },
+    {
+      "id": "app.deal.edit",
+      "label": "Edit practice deals",
+      "description": "Change a deal's name or description (not yet built)",
+      "group": "club_deals"
+    },
+    {
+      "id": "app.deal.discuss",
+      "label": "Discuss a practice deal",
+      "description": "Post in a deal's own discussion thread",
+      "group": "club_deals"
+    },
+    {
+      "id": "app.club.header.set",
+      "label": "Set the club header image",
+      "description": "Choose or replace the image behind the club's name",
+      "group": "club_management"
+    },
+    {
+      "id": "app.club.header.remove",
+      "label": "Remove the club header image",
+      "description": "Clear the club's header image",
+      "group": "club_management"
+    },
+    {
+      "id": "app.coaching.view",
+      "label": "Open the coaching menu",
+      "description": "See the Other section of the app's Menu drawer",
+      "group": "coaching"
+    },
+    {
+      "id": "app.coaching.learners.view",
+      "label": "View learners",
+      "description": "See the club's learners, their history and feedback threads",
+      "group": "coaching"
+    },
+    {
+      "id": "app.coaching.assignments.view",
+      "label": "View assignments",
+      "description": "See boards delegated to learners and who has finished",
+      "group": "coaching"
+    },
+    {
+      "id": "app.coaching.assignments.create",
+      "label": "Create assignments",
+      "description": "Author and delegate an assignment",
+      "group": "coaching"
+    },
+    {
+      "id": "app.coaching.reviews.view",
+      "label": "View reviews",
+      "description": "See plays learners sent for feedback",
+      "group": "coaching"
+    },
+    {
+      "id": "app.coaching.library.view",
+      "label": "View the library",
+      "description": "See boards, deals, tables and collections",
+      "group": "coaching"
+    },
+    {
+      "id": "app.play.view",
+      "label": "Open the Play tab",
+      "description": "Deal a board, resume one, and see boards played",
+      "group": "play"
+    },
+    {
+      "id": "app.learn.view",
+      "label": "Open the Learn tab",
+      "description": "See concept cards and lessons",
+      "group": "learn"
+    }
+  ],
+  "resourceTypes": [],
+  "uiSurfaces": [
+    {
+      "id": "club.tab",
+      "label": "Club tab",
+      "kind": "navigation",
+      "group": "club_home",
+      "routeOrComponent": "/(tabs)/club",
+      "requiredAnyCapabilities": [
+        "app.club.view"
+      ]
+    },
+    {
+      "id": "club.members",
+      "label": "Club roster",
+      "kind": "component",
+      "group": "club_home",
+      "routeOrComponent": "ClubMembersView",
+      "requiredAnyCapabilities": [
+        "app.club.members.view"
+      ]
+    },
+    {
+      "id": "club.button.chat",
+      "label": "Chat button",
+      "kind": "navigation",
+      "group": "club_chat",
+      "routeOrComponent": "/club-chat",
+      "requiredAnyCapabilities": [
+        "app.chat.view"
+      ]
+    },
+    {
+      "id": "club.chat.screen",
+      "label": "Club chat",
+      "kind": "screen",
+      "group": "club_chat",
+      "routeOrComponent": "/club-chat",
+      "requiredAnyCapabilities": [
+        "app.chat.view"
+      ]
+    },
+    {
+      "id": "club.chat.composer",
+      "label": "Chat composer",
+      "kind": "component",
+      "group": "club_chat",
+      "routeOrComponent": "ClubChatComposer",
+      "requiredAnyCapabilities": [
+        "app.chat.post"
+      ]
+    },
+    {
+      "id": "club.chat.attach",
+      "label": "Attach a picture",
+      "kind": "action",
+      "group": "club_chat",
+      "routeOrComponent": "ClubChatAttach",
+      "requiredAnyCapabilities": [
+        "app.chat.post_image"
+      ]
+    },
+    {
+      "id": "club.chat.pin",
+      "label": "Pin a message",
+      "kind": "action",
+      "group": "club_chat",
+      "routeOrComponent": "ClubChatPin",
+      "requiredAnyCapabilities": [
+        "app.chat.pin"
+      ]
+    },
+    {
+      "id": "club.button.challenges",
+      "label": "Challenges button",
+      "kind": "navigation",
+      "group": "club_challenges",
+      "routeOrComponent": "/club-challenges",
+      "requiredAnyCapabilities": [
+        "app.challenge.view"
+      ]
+    },
+    {
+      "id": "club.challenges.screen",
+      "label": "Challenges",
+      "kind": "screen",
+      "group": "club_challenges",
+      "routeOrComponent": "/club-challenges",
+      "requiredAnyCapabilities": [
+        "app.challenge.view"
+      ]
+    },
+    {
+      "id": "club.challenges.add",
+      "label": "Add a challenge",
+      "kind": "action",
+      "group": "club_challenges",
+      "routeOrComponent": "ClubChallengeAdd",
+      "requiredAnyCapabilities": [
+        "app.challenge.create"
+      ]
+    },
+    {
+      "id": "club.leaderboard",
+      "label": "Challenge leaderboard",
+      "kind": "component",
+      "group": "club_challenges",
+      "routeOrComponent": "ChallengeLeaderboard",
+      "requiredAnyCapabilities": [
+        "app.challenge.leaderboard.view"
+      ]
+    },
+    {
+      "id": "club.button.deal",
+      "label": "Practice Deal button",
+      "kind": "navigation",
+      "group": "club_deals",
+      "routeOrComponent": "/practice-deals",
+      "requiredAnyCapabilities": [
+        "app.deal.view"
+      ]
+    },
+    {
+      "id": "club.deals.screen",
+      "label": "Practice Deals",
+      "kind": "screen",
+      "group": "club_deals",
+      "routeOrComponent": "/practice-deals",
+      "requiredAnyCapabilities": [
+        "app.deal.view"
+      ]
+    },
+    {
+      "id": "club.deals.add",
+      "label": "Add a practice deal",
+      "kind": "action",
+      "group": "club_deals",
+      "routeOrComponent": "ClubDealAdd",
+      "requiredAnyCapabilities": [
+        "app.deal.create"
+      ]
+    },
+    {
+      "id": "club.deal.discussion",
+      "label": "Deal discussion",
+      "kind": "component",
+      "group": "club_deals",
+      "routeOrComponent": "DealChat",
+      "requiredAnyCapabilities": [
+        "app.deal.discuss"
+      ]
+    },
+    {
+      "id": "menu.club_management",
+      "label": "Menu: Club management",
+      "kind": "component",
+      "group": "club_management",
+      "routeOrComponent": "MenuClubManagement",
+      "requiredAnyCapabilities": [
+        "app.club.header.set",
+        "app.club.header.remove"
+      ]
+    },
+    {
+      "id": "menu.header_set",
+      "label": "Set header",
+      "kind": "action",
+      "group": "club_management",
+      "routeOrComponent": "ClubHeaderSet",
+      "requiredAnyCapabilities": [
+        "app.club.header.set"
+      ]
+    },
+    {
+      "id": "menu.header_remove",
+      "label": "Remove header",
+      "kind": "action",
+      "group": "club_management",
+      "routeOrComponent": "ClubHeaderRemove",
+      "requiredAnyCapabilities": [
+        "app.club.header.remove"
+      ]
+    },
+    {
+      "id": "menu.other",
+      "label": "Menu: Other",
+      "kind": "navigation",
+      "group": "coaching",
+      "routeOrComponent": "MenuOther",
+      "requiredAnyCapabilities": [
+        "app.coaching.view"
+      ]
+    },
+    {
+      "id": "menu.coaching",
+      "label": "Menu: Coaching",
+      "kind": "component",
+      "group": "coaching",
+      "routeOrComponent": "MenuCoaching",
+      "requiredAnyCapabilities": [
+        "app.coaching.learners.view",
+        "app.coaching.assignments.view",
+        "app.coaching.reviews.view",
+        "app.coaching.library.view"
+      ]
+    },
+    {
+      "id": "tab.play",
+      "label": "Play tab",
+      "kind": "navigation",
+      "group": "play",
+      "routeOrComponent": "/(tabs)/play",
+      "requiredAnyCapabilities": [
+        "app.play.view"
+      ]
+    },
+    {
+      "id": "tab.learn",
+      "label": "Learn tab",
+      "kind": "navigation",
+      "group": "learn",
+      "routeOrComponent": "/(tabs)/learn",
+      "requiredAnyCapabilities": [
+        "app.learn.view"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "id": "club_home",
+      "label": "Club",
+      "description": "The club's front door and its roster.",
+      "order": 1,
+      "capabilityIds": [
+        "app.club.view",
+        "app.club.members.view"
+      ],
+      "uiSurfaceIds": [
+        "club.tab",
+        "club.members"
+      ]
+    },
+    {
+      "id": "club_chat",
+      "label": "Club Chat",
+      "description": "The club conversation. Reading, posting, pictures and pinning are separate grants.",
+      "order": 2,
+      "capabilityIds": [
+        "app.chat.view",
+        "app.chat.post",
+        "app.chat.post_image",
+        "app.chat.pin",
+        "app.chat.moderate"
+      ],
+      "uiSurfaceIds": [
+        "club.button.chat",
+        "club.chat.screen",
+        "club.chat.composer",
+        "club.chat.attach",
+        "club.chat.pin"
+      ]
+    },
+    {
+      "id": "club_challenges",
+      "label": "Challenges",
+      "description": "Multi-board club challenges and their standings.",
+      "order": 3,
+      "capabilityIds": [
+        "app.challenge.view",
+        "app.challenge.create",
+        "app.challenge.edit",
+        "app.challenge.delete",
+        "app.challenge.leaderboard.view"
+      ],
+      "uiSurfaceIds": [
+        "club.button.challenges",
+        "club.challenges.screen",
+        "club.challenges.add",
+        "club.leaderboard"
+      ]
+    },
+    {
+      "id": "club_deals",
+      "label": "Practice Deals",
+      "description": "Single-board practice deals, each with its own description and discussion.",
+      "order": 4,
+      "capabilityIds": [
+        "app.deal.view",
+        "app.deal.create",
+        "app.deal.edit",
+        "app.deal.discuss"
+      ],
+      "uiSurfaceIds": [
+        "club.button.deal",
+        "club.deals.screen",
+        "club.deals.add",
+        "club.deal.discussion"
+      ]
+    },
+    {
+      "id": "club_management",
+      "label": "Club Management",
+      "description": "The club's own presentation \u2014 its header image.",
+      "order": 5,
+      "capabilityIds": [
+        "app.club.header.set",
+        "app.club.header.remove"
+      ],
+      "uiSurfaceIds": [
+        "menu.club_management",
+        "menu.header_set",
+        "menu.header_remove"
+      ]
+    },
+    {
+      "id": "coaching",
+      "label": "Coaching",
+      "description": "The coach-facing surfaces behind the app's Menu drawer.",
+      "order": 6,
+      "capabilityIds": [
+        "app.coaching.view",
+        "app.coaching.learners.view",
+        "app.coaching.assignments.view",
+        "app.coaching.assignments.create",
+        "app.coaching.reviews.view",
+        "app.coaching.library.view"
+      ],
+      "uiSurfaceIds": [
+        "menu.other",
+        "menu.coaching"
+      ]
+    },
+    {
+      "id": "play",
+      "label": "Play",
+      "description": "Playing boards outside the club.",
+      "order": 7,
+      "capabilityIds": [
+        "app.play.view"
+      ],
+      "uiSurfaceIds": [
+        "tab.play"
+      ]
+    },
+    {
+      "id": "learn",
+      "label": "Learn",
+      "description": "Concept cards and lessons.",
+      "order": 8,
+      "capabilityIds": [
+        "app.learn.view"
+      ],
+      "uiSurfaceIds": [
+        "tab.learn"
+      ]
+    }
+  ],
+  "sampleRoleTemplates": [
+    {
+      "id": "club-member",
+      "name": "Club Member",
+      "description": "Reads the club, talks in chat and deal discussions.",
+      "grants": [
+        {
+          "capabilityIds": [
+            "app.club.view",
+            "app.club.members.view",
+            "app.chat.view",
+            "app.chat.post",
+            "app.challenge.view",
+            "app.challenge.leaderboard.view",
+            "app.deal.view",
+            "app.deal.discuss",
+            "app.play.view",
+            "app.learn.view"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "club-mentor",
+      "name": "Club Mentor",
+      "description": "A member who also coaches: creates challenges and deals, and sees the coaching menu.",
+      "grants": [
+        {
+          "capabilityIds": [
+            "app.club.view",
+            "app.club.members.view",
+            "app.chat.view",
+            "app.chat.post",
+            "app.challenge.view",
+            "app.challenge.leaderboard.view",
+            "app.deal.view",
+            "app.deal.discuss",
+            "app.play.view",
+            "app.learn.view",
+            "app.chat.post_image",
+            "app.chat.pin",
+            "app.challenge.create",
+            "app.deal.create",
+            "app.coaching.view",
+            "app.coaching.learners.view",
+            "app.coaching.assignments.view",
+            "app.coaching.assignments.create",
+            "app.coaching.reviews.view",
+            "app.coaching.library.view"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "club-manager",
+      "name": "Club Manager",
+      "description": "A mentor who also manages the club itself \u2014 its header, and moderation.",
+      "grants": [
+        {
+          "capabilityIds": [
+            "app.club.view",
+            "app.club.members.view",
+            "app.chat.view",
+            "app.chat.post",
+            "app.challenge.view",
+            "app.challenge.leaderboard.view",
+            "app.deal.view",
+            "app.deal.discuss",
+            "app.play.view",
+            "app.learn.view",
+            "app.chat.post_image",
+            "app.chat.pin",
+            "app.challenge.create",
+            "app.deal.create",
+            "app.coaching.view",
+            "app.coaching.learners.view",
+            "app.coaching.assignments.view",
+            "app.coaching.assignments.create",
+            "app.coaching.reviews.view",
+            "app.coaching.library.view",
+            "app.chat.moderate",
+            "app.challenge.edit",
+            "app.challenge.delete",
+            "app.deal.edit",
+            "app.club.header.set",
+            "app.club.header.remove"
+          ]
+        }
+      ]
+    }
+  ]
+}
