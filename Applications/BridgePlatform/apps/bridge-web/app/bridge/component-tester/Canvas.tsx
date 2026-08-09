@@ -114,6 +114,8 @@ export const PARTS: Record<string, PartDef[]> = {
   ResultCard: [
     { key: "score", label: "Score", off: { score: "" } },
     { key: "detail", label: "Detail", off: { detail: "" } },
+    // The way onward a challenge board draws on the canvas.
+    { key: "action", label: "Next board", off: { action: undefined, actionNote: undefined } },
   ],
 };
 
@@ -282,7 +284,13 @@ function baseProps(ctx: VizContext, slot: CanvasSlot, exposure: HandExposure): R
       return { plays, turn: s.turn, variant: "cross" };
     }
     case "ResultCard":
-      return { line: ctx.result.line, score: ctx.result.score, detail: ctx.result.detail };
+      return {
+        line: ctx.result.line,
+        score: ctx.result.score,
+        detail: ctx.result.detail,
+        action: { label: "Next board \u2192", href: "#" },
+        actionNote: "3 boards left",
+      };
     case "HandViewer":
       return {
         boardLabel: 7,

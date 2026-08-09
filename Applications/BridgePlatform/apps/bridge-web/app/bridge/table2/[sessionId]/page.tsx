@@ -367,6 +367,14 @@ export default async function PlayTablePage({
       confirmBids={confirmBids}
       resultLine={score ? resultLabel(score) : ""}
       resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
+      // A finished challenge board draws its way onward ON the canvas — the
+      // result card in the centre, not a band stacked around the table.
+      completedAction={
+        challenge?.done
+          ? { label: `${challenge.onward.label} \u2192`, href: challenge.onward.href }
+          : undefined
+      }
+      completedNote={challenge?.done ? challenge.onward.note : undefined}
       controlsExtra={canStepControls ? controlsAt(1) : undefined}
       controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
       railExtra={seatsPanel}
@@ -413,12 +421,6 @@ export default async function PlayTablePage({
             standings={challenge.standings}
             boards={challenge.boards}
             subtitle={challenge.subtitle}
-            done={challenge.done}
-            onward={challenge.onward}
-            resultLine={score ? resultLabel(score) : ""}
-            resultScore={
-              score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""
-            }
           >
             {table}
           </ChallengeTableChrome>

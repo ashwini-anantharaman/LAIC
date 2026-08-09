@@ -40,7 +40,7 @@ import { SeatPlate } from "./SeatPlate";
 import { SeatDiagram } from "./SeatDiagram";
 import { AuctionBox, type AuctionBoxSizing } from "./AuctionBox";
 import { TrickArea } from "./TrickArea";
-import { ResultCard } from "./ResultCard";
+import { ResultCard, type ResultCardAction } from "./ResultCard";
 import { SeatsPopup } from "./SeatsPopup";
 import { CoachPanel, type CoachLine, type CoachAction } from "./CoachPanel";
 import {
@@ -213,6 +213,15 @@ export interface PlayTableProps {
   confirmBids?: boolean;
   resultLine?: string;
   resultScore?: string;
+  /**
+   * The one action a FINISHED board offers, drawn on the result card in the
+   * centre — a challenge's "Next board", say. It lives on the canvas rather
+   * than in a band the host stacks around the table: every control belongs
+   * inside the design, and at completion the card is where the eye already is.
+   */
+  completedAction?: ResultCardAction;
+  /** Quiet line under that action, e.g. "3 boards left". */
+  completedNote?: string;
 
   onCall?: (call: string) => void;
   onPlay?: (seat: Seat, card: Card) => void;
@@ -268,6 +277,8 @@ export function PlayTable({
   scoringLabel = "IMPs",
   auctionDisplay = "box",
   confirmBids = false,
+  completedAction,
+  completedNote,
   resultLine = "",
   resultScore = "",
   onCall,
@@ -634,7 +645,14 @@ export function PlayTable({
   const trickCross = (k = 1) => <TrickArea plays={currentPlays} turn={state.turn} scale={k} />;
 
   const resultCard = (
-    <ResultCard line={resultLine} score={resultScore} detail={`NS ${state.trickCount.NS} · EW ${state.trickCount.EW}`} />
+    <ResultCard
+      line={resultLine}
+      score={resultScore}
+      detail={`NS ${state.trickCount.NS} · EW ${state.trickCount.EW}`}
+      action={completedAction}
+      actionNote={completedNote}
+      accent={tok.accent}
+    />
   );
 
   /** Stacked-narrow centre: the TrickArea design's pill variant. */

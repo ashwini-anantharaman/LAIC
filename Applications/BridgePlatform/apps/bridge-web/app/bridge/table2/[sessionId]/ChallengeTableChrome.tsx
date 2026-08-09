@@ -22,13 +22,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CHALLENGE_STRIP_HEIGHT,
-  ChallengeDoneBar,
   ChallengeResultsOverlay,
   ChallengeStrip,
   type ChallengeBoardCell,
   type ChallengeStripProps,
   type LeaderboardProps,
-  type OnwardStep,
 } from "@bridge/table-ui";
 
 export interface ChallengeTableChromeProps {
@@ -37,13 +35,6 @@ export interface ChallengeTableChromeProps {
   standings: LeaderboardProps;
   boards: readonly ChallengeBoardCell[];
   subtitle?: string;
-  /** The board has finished: the done bar takes a band under the table. */
-  done?: boolean;
-  /** Where the done bar sends you. Required once `done`. */
-  onward?: OnwardStep;
-  /** How the board finished, for the done bar's line. */
-  resultLine?: string;
-  resultScore?: string;
   /** The table itself, rendered on the server and slotted in untouched. */
   children: ReactNode;
 }
@@ -53,10 +44,6 @@ export function ChallengeTableChrome({
   standings,
   boards,
   subtitle,
-  done = false,
-  onward,
-  resultLine,
-  resultScore,
   children,
 }: Readonly<ChallengeTableChromeProps>) {
   const [open, setOpen] = useState(false);
@@ -99,15 +86,6 @@ export function ChallengeTableChrome({
         onResults={() => setOpen(true)}
       />
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>{children}</div>
-      {/* Only once the board is over — the band it takes comes straight out of
-          the table's budget, so it must not exist a trick early. */}
-      {done && onward && (
-        <ChallengeDoneBar
-          onward={onward}
-          resultLine={resultLine}
-          resultScore={resultScore}
-        />
-      )}
       <ChallengeResultsOverlay
         open={showing}
         onClose={() => setOpen(false)}
