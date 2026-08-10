@@ -637,6 +637,22 @@ export function removeProgramPartner(programId: string, partnerId: string): Prom
   });
 }
 
+/**
+ * Issue a single-use claim code for a member whose password they now own.
+ *
+ * Returned ONCE — it is stored hashed, so a lost code can only be reissued, never
+ * looked up. Read it out to the person; they redeem it in the app and choose a
+ * password nobody else sees.
+ */
+export function issueMemberClaimCode(
+  membershipId: string,
+): Promise<{ code: string; expires_at: string }> {
+  return request<{ code: string; expires_at: string }>(
+    `/api/platform/members/${membershipId}/claim-code`,
+    { method: "POST" },
+  );
+}
+
 /** The partners connected to a program (its Partners tab). */
 export async function listPartnersForProgram(programId: string): Promise<Program[]> {
   return request<Program[]>(`/api/platform/programs/${programId}/partners`);

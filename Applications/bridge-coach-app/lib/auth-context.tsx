@@ -39,6 +39,8 @@ type AuthContextValue = {
     name?: string;
   }) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
+  /** Re-read /auth/me — used after setting a password, so must_set_password clears. */
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -135,6 +137,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [adoptSession],
   );
 
+  const refreshUser = useCallback(async () => {
+    if (!token) return;
+    const me = await fetchMe(token);
+    setUser(me);
+  }, [token]);
+
   const signOut = useCallback(async () => {
     await clearToken();
     clearLearningCache();
@@ -199,8 +207,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signUp,
       signOut,
+      refreshUser,
     }),
-    [status, user, token, needsOnboarding, completeOnboarding, signIn, signUp, signOut],
+    [status, user, token, needsOnboarding, completeOnboarding, signIn, signUp, signOut, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

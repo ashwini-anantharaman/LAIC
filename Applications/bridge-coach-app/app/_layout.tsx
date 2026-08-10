@@ -13,21 +13,28 @@ import { Brand, Colors } from "../constants/theme";
 const PUBLIC_ROOTS = new Set(["", "login", "register"]);
 
 function AuthGate({ children }: { children: ReactNode }) {
-  const { status, needsOnboarding } = useAuth();
+  const { status, needsOnboarding, user } = useAuth();
   const segments = useSegments();
 
   const root = segments[0] ?? "";
   const onPublicRoute = PUBLIC_ROOTS.has(root);
+  // The password is still the one a club typed. Until they replace it, that club
+  // can sign in as them — and into their other clubs — so nothing else opens.
+  const mustSetPassword = status === "signedIn" && user?.must_set_password === true;
 
   useEffect(() => {
     if (status === "loading") return;
-    if (status === "signedIn" && onPublicRoute) {
+    if (mustSetPassword) {
+      if (root !== "set-password") router.replace("/set-password");
+      return;
+    }
+    if (status === "signedIn" && (onPublicRoute || root === "set-password")) {
       // Fresh registrations go through onboarding once; sign-ins go home.
       router.replace(needsOnboarding ? "/onboarding" : "/home");
     } else if (status === "signedOut" && !onPublicRoute) {
       router.replace("/");
     }
-  }, [status, onPublicRoute, needsOnboarding]);
+  }, [status, onPublicRoute, needsOnboarding, mustSetPassword, root]);
 
   if (status === "loading") {
     return (

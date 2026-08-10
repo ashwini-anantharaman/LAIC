@@ -19,6 +19,12 @@ export const profiles = pgTable("profiles", {
   email: text("email"),
   /** Optional second sign-in identifier; unique case-insensitively (0038). */
   username: text("username"),
+  /** When the person set their OWN password (0046). Null = admins may still set
+   *  a starting one; set = only they can change it, via a claim code. */
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  /** SHA-256 of a pending single-use claim code, and its expiry (0046). */
+  claimCodeHash: text("claim_code_hash"),
+  claimCodeExpiresAt: timestamp("claim_code_expires_at", { withTimezone: true }),
   /** Profile picture as a base64 data URL, capped at ~150 kB (0043). */
   avatar: text("avatar"),
   role: text("role").notNull().default("student"),

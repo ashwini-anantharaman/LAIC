@@ -14,6 +14,12 @@
  *  • The backend rejects a caller who is not an admin at the right altitude, and
  *    refuses anyone outranking the actor. This UI hides the button in the same
  *    cases, but the server is the authority.
+ *  • ONCE THE PERSON HAS SET THEIR OWN PASSWORD, the server refuses to change it
+ *    (409) and this dialog offers a CLAIM CODE instead. One credential is shared
+ *    across every club someone belongs to, so a reset here would hand this club a
+ *    working key to another club's member. A code lets the admin help without
+ *    ever holding that key: they read it out, the person redeems it in the app
+ *    and chooses a password nobody else sees.
  */
 import { useEffect, useState } from "react";
 import { KeyRound } from "lucide-react";
@@ -30,7 +36,7 @@ import {
 } from "@/app/components/ui/dialog";
 import { Input } from "@/app/components/ui/input";
 import { Label } from "@/app/components/ui/label";
-import { setMemberCredentials } from "@/services/api";
+import { issueMemberClaimCode, setMemberCredentials } from "@/services/api";
 
 /** Mirrors usernameSchema on the server. */
 const USERNAME_RE = /^[A-Za-z0-9._-]{3,32}$/;
@@ -69,6 +75,24 @@ export function CredentialsButton({
   const somethingToSave = (usernameChanged && usernameValid) || password.length > 0;
   const canSave = somethingToSave && usernameValid && passwordValid && !saving;
 
+  /** Set when the server refuses a password change because they own it. */
+  const [ownsPassword, setOwnsPassword] = useState(false);
+  /** An issued code, shown once — the server stores only its hash. */
+  const [claimCode, setClaimCode] = useState<string | null>(null);
+
+  async function issueCode() {
+    setSaving(true);
+    try {
+      const res = await issueMemberClaimCode(membershipId);
+      setClaimCode(res.code);
+      setPassword("");
+    } catch (exc) {
+      toast.error((exc as Error)?.message ?? "Could not issue a claim code");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function save() {
     if (!canSave) return;
     setSaving(true);
@@ -88,7 +112,15 @@ export function CredentialsButton({
       setOpen(false);
       onSaved?.();
     } catch (exc) {
-      toast.error((exc as Error)?.message ?? "Could not update the sign-in details");
+      const message = (exc as Error)?.message ?? "Could not update the sign-in details";
+      // 409 from the server: they own their password now. Explain it here rather
+      // than as a toast that vanishes, and offer the way forward.
+      if (/set their own password/i.test(message)) {
+        setOwnsPassword(true);
+        setPassword("");
+      } else {
+        toast.error(message);
+      }
     } finally {
       setSaving(false);
     }
@@ -140,26 +172,57 @@ export function CredentialsButton({
               )}
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="cred-password">New password</Label>
-              <Input
-                id="cred-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Leave blank to keep the current password"
-                autoComplete="new-password"
-              />
-              {!passwordValid ? (
-                <p className="text-xs text-red-600 dark:text-red-400">
-                  At least {MIN_PASSWORD} characters.
-                </p>
-              ) : (
+            {claimCode ? (
+              /* Shown once — the server keeps only a hash of it. */
+              <div className="space-y-1.5 rounded-md border border-border bg-muted/40 p-3">
+                <Label>Claim code</Label>
+                <code className="block select-all text-lg font-mono tracking-widest text-foreground">
+                  {claimCode}
+                </code>
                 <p className="text-xs text-muted-foreground">
-                  You are setting this on their behalf — tell them what it is.
+                  Read this out to {personLabel}. They enter it in the app and choose their
+                  own password. It works once, expires in 24 hours, and cannot be shown
+                  again — issue a new one if it is lost.
                 </p>
-              )}
-            </div>
+              </div>
+            ) : ownsPassword ? (
+              /* They own their password now, so there is nothing to set here. */
+              <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+                <p className="text-sm text-foreground">
+                  {personLabel} has set their own password, so it cannot be changed here.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  One sign-in covers every club they belong to, so changing it from one
+                  club would give that club access to the others. Issue a claim code
+                  instead: they redeem it in the app and pick a password only they know.
+                </p>
+                <Button size="sm" onClick={() => void issueCode()} disabled={saving}>
+                  {saving ? "Issuing…" : "Issue claim code"}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="cred-password">New password</Label>
+                <Input
+                  id="cred-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Leave blank to keep the current password"
+                  autoComplete="new-password"
+                />
+                {!passwordValid ? (
+                  <p className="text-xs text-red-600 dark:text-red-400">
+                    At least {MIN_PASSWORD} characters.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    A starting password, for someone who has not signed in yet — the app
+                    asks them to choose their own on first use. Tell them what you set.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter>

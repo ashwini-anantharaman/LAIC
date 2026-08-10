@@ -826,6 +826,12 @@ platformRouter.get("/auth/me", async (c) => {
     dbEnabled() && user.email && user.role !== "platform_admin"
       ? await graph.getNexusRoleForEmail(user.email).catch(() => null)
       : null;
+  // Has this person set their own password? Until they have, the credential is
+  // one an admin handed them, and the app makes them choose their own before it
+  // shows anything else (0046).
+  const orgId = user.memberships[0]?.org_id ?? null;
+  const profileId = dbEnabled() ? await db.resolveProfileId(user.id, orgId).catch(() => null) : null;
+  const claim = profileId ? await db.getClaimState(profileId).catch(() => null) : null;
   return c.json({
     id: user.id,
     email: user.email,
@@ -833,6 +839,8 @@ platformRouter.get("/auth/me", async (c) => {
     role: user.role,
     memberships: await _membershipSummaries(user),
     nexus_role: nexusRole,
+    // Absent/false for an operator or a demo backend — nothing to claim there.
+    must_set_password: claim ? !claim.claimed : false,
   });
 });
 
@@ -1624,6 +1632,88 @@ platformRouter.get("/club-app/members", async (c) => {
       };
     }),
   );
+});
+
+// ── Password ownership: claim codes (0046) ──────────────────────────────────
+//
+// No email is wired in this stack, so recovery for a claimed account is a
+// single-use code an admin issues and reads out. The person redeems it in the app
+// and picks a password nobody else ever sees — which is the whole point: the
+// admin regains the ability to HELP without regaining the ability to log in as
+// them.
+
+/** Issue a claim code for a member. Same authority as setting credentials. */
+platformRouter.post("/members/:member_id/claim-code", async (c) => {
+  const user = await getCurrentUser(c);
+  const memberId = c.req.param("member_id") ?? "";
+  const membership = await db.getMembership(memberId);
+  if (!membership) throw new HttpError(404, "Member not found");
+  _assertCanManageCredentials(user, membership);
+
+  const profile = await db.getProfile(membership.profile_id as string);
+  if (!profile) throw new HttpError(404, "Profile not found");
+  if (!profile.email) throw new HttpError(400, "This member has no email");
+
+  const issued = await db.issueClaimCode(membership.profile_id as string);
+  await db.recordAuditEvent("member.claim_code_issued", {
+    orgId: membership.org_id as string,
+    actorUserId: user.id,
+    scopeType: "program",
+    scopeId: (membership.program_id as string) ?? null,
+    targetType: "profile",
+    targetId: membership.profile_id as string,
+    // The code itself is never recorded — only that one was issued.
+    metadata: { email: profile.email, expires_at: issued.expiresAt },
+  });
+  return c.json({ code: issued.code, expires_at: issued.expiresAt });
+});
+
+/**
+ * Redeem a claim code and set a password. UNAUTHENTICATED by necessity — the
+ * person cannot sign in, which is why they have a code.
+ */
+platformRouter.post("/auth/claim", async (c) => {
+  const body = parseBody(
+    z.object({
+      identifier: z.string().trim().min(1),
+      code: z.string().trim().min(1),
+      password: z.string().min(8, "Use at least 8 characters").max(128),
+    }),
+    await c.req.json(),
+  );
+  const redeemed = await db.redeemClaimCode(body.identifier, body.code);
+  // One message for every failure — a wrong code, an expired one and an unknown
+  // account must be indistinguishable.
+  if (!redeemed) throw new HttpError(400, "That code is not valid or has expired");
+
+  await setAuthUserPassword(redeemed.email, body.password);
+  await db.markPasswordClaimed(redeemed.profileId);
+  return c.json({ ok: true, email: redeemed.email });
+});
+
+/** Change your own password. The current one is required — a live session is not
+ *  on its own proof enough to replace the credential it rests on. */
+platformRouter.post("/auth/password", async (c) => {
+  const user = await getCurrentUser(c);
+  const body = parseBody(
+    z.object({
+      current_password: z.string().min(1),
+      password: z.string().min(8, "Use at least 8 characters").max(128),
+    }),
+    await c.req.json(),
+  );
+  if (!user.email) throw new HttpError(400, "This account has no email");
+  // Verified by signing in with it, which is the only check that cannot be
+  // fooled by a stale session.
+  await signInUser(user.email, body.current_password).catch(() => {
+    throw new HttpError(403, "That current password is not right");
+  });
+  await setAuthUserPassword(user.email, body.password);
+
+  const orgId = user.memberships[0]?.org_id ?? null;
+  const profileId = await db.resolveProfileId(user.id, orgId);
+  if (profileId) await db.markPasswordClaimed(profileId);
+  return c.json({ ok: true });
 });
 
 // The person's display name in THIS org (their org-scoped profile), falling
@@ -2710,6 +2800,18 @@ platformRouter.patch("/members/:member_id/credentials", async (c) => {
   }
 
   if (req.password !== undefined) {
+    // A credential is SHARED across every club its owner belongs to. While it is
+    // unclaimed nobody owns it, so a starting password is a courtesy; once the
+    // person has set their own, setting it here would hand this club a working
+    // key to another club's member. Refuse, and point at the code instead.
+    const claim = await db.getClaimState(membership.profile_id as string);
+    if (claim?.claimed) {
+      throw new HttpError(
+        409,
+        "This person has set their own password, so it cannot be changed here. " +
+          "Issue a claim code instead — they redeem it in the app and choose a new one.",
+      );
+    }
     await setAuthUserPassword(email, req.password);
     changed.push("password");
   }
