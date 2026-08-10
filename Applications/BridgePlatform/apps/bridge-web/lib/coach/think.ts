@@ -113,7 +113,7 @@ export function thinkAid(state: ThinkState, seat: Seat | null): ThinkAid | null 
           {
             title: "Your role",
             value: "dummy",
-            detail: "You're dummy — partner is playing your cards, so there's nothing here to decide.",
+            detail: "You're dummy — partner plays your cards.",
           },
         ]),
         candidates: [],
@@ -168,7 +168,7 @@ function knownInAuction(state: ThinkState, seat: Seat): KnownCard[] {
   out.push({
     title: "Points out there",
     value: String(40 - hcp(mine)),
-    detail: `${40 - hcp(mine)} of the 40 points are in the other three hands.`,
+    detail: `${40 - hcp(mine)} of the 40 points sit in the other three hands.`,
   });
 
   // WHAT A PASS DOES. Deterministic, and the thing a beginner most often misses:
@@ -182,12 +182,12 @@ function knownInAuction(state: ThinkState, seat: Seat): KnownCard[] {
         ? {
             title: "If you pass",
             value: "board thrown in",
-            detail: "Pass now and the board is thrown in — nobody plays it.",
+            detail: "The board is thrown in — nobody plays it.",
           }
         : {
             title: "If you pass",
             value: "moves along",
-            detail: "Nobody has bid, so passing just moves it along.",
+            detail: "Nobody has bid — passing moves it along.",
           },
     );
   } else if (since >= 2) {
@@ -197,14 +197,14 @@ function knownInAuction(state: ThinkState, seat: Seat): KnownCard[] {
       title: "If you pass",
       value: "auction ends",
       detail: final
-        ? `Pass now and the auction is over — ${relative(final.seat, seat)} plays ${callLabel(final.call)}.`
-        : "Pass now and the auction is over.",
+        ? `The auction ends — ${relative(final.seat, seat)} plays ${callLabel(final.call)}.`
+        : "The auction ends here.",
     });
   } else {
     out.push({
       title: "If you pass",
       value: "carries on",
-      detail: "Pass now and the auction carries on — it won't end here.",
+      detail: "The auction carries on — it won't end here.",
     });
   }
 
@@ -216,19 +216,19 @@ function knownInAuction(state: ThinkState, seat: Seat): KnownCard[] {
     out.push({
       title: "The auction",
       value: "yours so far",
-      detail: "The opponents haven't bid — this auction belongs to you and partner.",
+      detail: "Only your side has bid so far.",
     });
   else if (oppsBid && !partnerBid)
     out.push({
       title: "The auction",
       value: "they're in",
-      detail: "The opponents are in and partner hasn't spoken yet.",
+      detail: "The opponents are in; partner hasn't spoken.",
     });
   else if (oppsBid && partnerBid)
     out.push({
       title: "The auction",
       value: "contested",
-      detail: "Both sides are bidding — the room is contested.",
+      detail: "Both sides are bidding.",
     });
 
   return out;
@@ -284,7 +284,7 @@ function knownInPlay(state: ThinkState, seat: Seat): KnownCard[] {
   out.push({
     title: "Points hidden",
     value: String(missing),
-    detail: `${missing} points are unaccounted for, ${between}.`,
+    detail: `${missing} points sit ${between}.`,
   });
 
   // SHOWING OUT IS PROOF. If a seat failed to follow a led suit, they hold none
@@ -302,7 +302,7 @@ function knownInPlay(state: ThinkState, seat: Seat): KnownCard[] {
       out.push({
         title: Relative(s, seat),
         value: `no ${GLYPH[v]}s`,
-        detail: `${Relative(s, seat)} has no ${SUIT_WORD[v]}s — they discarded on one.`,
+        detail: `${Relative(s, seat)} has no ${SUIT_WORD[v]}s — they couldn't follow suit.`,
       });
     }
   }
@@ -318,12 +318,12 @@ function knownInPlay(state: ThinkState, seat: Seat): KnownCard[] {
         ? {
             title: "Still out",
             value: `no ${GLYPH[focus]}s`,
-            detail: `Every ${SUIT_WORD[focus]} is accounted for — none are left outstanding.`,
+            detail: `No ${SUIT_WORD[focus]}s are left in the hidden hands.`,
           }
         : {
             title: "Still out",
             value: `${outstanding} ${GLYPH[focus]}`,
-            detail: `${outstanding} ${GLYPH[focus]} ${outstanding === 1 ? "is" : "are"} still out, in the hands you can't see.`,
+            detail: `${outstanding} ${GLYPH[focus]} ${outstanding === 1 ? "is" : "are"} still in the hidden hands.`,
           },
     );
   }
@@ -337,7 +337,7 @@ function knownInPlay(state: ThinkState, seat: Seat): KnownCard[] {
     out.push({
       title: "Winning so far",
       value: best.seat === seat ? "you" : Relative(best.seat, seat),
-      detail: `${Relative(best.seat, seat)} ${best.seat === seat ? "are" : "is"} winning it so far, with the ${cardLabel(best.card)}.`,
+      detail: `${Relative(best.seat, seat)} ${best.seat === seat ? "are" : "is"} winning it with the ${cardLabel(best.card)}.`,
     });
   }
 

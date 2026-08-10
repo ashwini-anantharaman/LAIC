@@ -93,17 +93,18 @@ export interface LookingAt {
   eventGroups: LookingEventGroup[];
 }
 
-/** The flip side of the HCP chip — one definition, used in every phase. */
-const HCP_DETAIL = "High-card points: ace 4, king 3, queen 2, jack 1. The whole deck holds 40.";
+/** The flip side of the HCP chip — one definition, used in every phase.
+ *  Backs are read inside a ~110px card, so every one is cut to the bone. */
+const HCP_DETAIL = "A=4, K=3, Q=2, J=1. The deck holds 40.";
 
 /** The flip side of each shape `kind` — a definition, not a recommendation. */
 const KIND_DETAIL: Record<string, string> = {
-  balanced: "No void, no singleton, and at most one doubleton.",
-  "very long suit": "Seven or more cards in a single suit.",
+  balanced: "No void or singleton, at most one doubleton.",
+  "very long suit": "Seven or more cards in one suit.",
   "six-card suit": "Six cards in your longest suit.",
-  "two long suits": "Two suits of five or more cards each.",
-  "a void": "At least one suit with no cards in it at all.",
-  unbalanced: "Short in at least one suit — a singleton or more than one doubleton.",
+  "two long suits": "Two suits of five or more cards.",
+  "a void": "A suit with no cards in it.",
+  unbalanced: "Short in at least one suit.",
 };
 
 /**
@@ -153,7 +154,7 @@ export function lookingAt(
 
   // The shape's flip side spells the glyphs out in words, so the back can be
   // read by someone who hasn't internalized the symbols yet.
-  const shapeDetail = `Your 13 cards by suit: ${SUITS
+  const shapeDetail = `${SUITS
     .map((s) => {
       const n = dealt.filter((c) => c.suit === s).length;
       return `${n} ${SUIT_WORD[s]}${n === 1 ? "" : "s"}`;
@@ -168,7 +169,7 @@ export function lookingAt(
         { label: "", value: shape, detail: shapeDetail },
         { label: "", value: kind, ...(KIND_DETAIL[kind] ? { detail: KIND_DETAIL[kind] } : {}) },
         ...(system
-          ? [{ label: "", value: system, detail: "The bidding system this table plays — what each call promises comes from it." }]
+          ? [{ label: "", value: system, detail: "The bidding system this table plays." }]
           : []),
       ],
       eventGroups: state.auction.length
@@ -254,10 +255,10 @@ export function lookingAt(
         {
           label: "",
           value: `Trick ${Math.min(done + 1, 13)}`,
-          detail: `Trick ${Math.min(done + 1, 13)} of 13${done ? ` — ${done} already finished` : ""}.`,
+          detail: `Trick ${Math.min(done + 1, 13)} of 13.`,
         },
-        { label: "yours", value: String(ours), detail: "Tricks won so far by your side — you and partner together." },
-        { label: "theirs", value: String(done - ours), detail: "Tricks won so far by the opponents." },
+        { label: "yours", value: String(ours), detail: "Won by you and partner so far." },
+        { label: "theirs", value: String(done - ours), detail: "Won by the opponents so far." },
         { label: "HCP dealt", value: String(points), detail: HCP_DETAIL },
       ],
       eventGroups: groups,
