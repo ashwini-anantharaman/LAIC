@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BridgeEmbedBlock } from './tutorialV2/BridgeEmbedBlock';
+import { QuestionMedia } from './QuestionMedia';
 import { ArrowLeft, BookOpen, Layers, Play, Pause, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../../App';
@@ -725,6 +726,7 @@ export function QuizBlock({
           )}
         </div>
         <p style={{ fontSize: 14.5, fontWeight: 600, color: '#0B1220', marginBottom: 14, lineHeight: 1.4 }}>{q.question}</p>
+        <QuestionMedia q={q} />
 
         {q.type === 'short-answer' ? (
           <input
@@ -960,6 +962,7 @@ function FlashcardSet({ content, objectId }: { content: FlashcardSetContent; obj
     hook: c.hook,
     hint: c.hint,
     imageUrl: c.imageUrl,
+    videoUrl: c.videoUrl,
   }));
   return <FlashcardStudy cards={cards} direction={content.direction || 'Front→back'} storageKey={objectId} />;
 }

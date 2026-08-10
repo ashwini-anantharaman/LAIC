@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, Eye, Pencil, Check, Plus, Trash2 } from 'lucide-react';
 import { useApp } from '../../App';
 import { VideoScriptPlayer, emptyCheckpoint, patchCheckpointQuestion } from './VideoScriptPlayer';
+import { ItemMediaAttach } from './objectV2/ItemMediaAttach';
 import type { CreatorPipelineDraft, LearningObject, VideoScriptContent, VideoScriptCheckpoint } from '../../../lib/types';
 
 type Mode = 'edit' | 'preview';
@@ -293,6 +294,15 @@ export function VideoScriptEditor({
                     placeholder="Explanation (optional)"
                     className="w-full rounded-xl px-3 py-1.5 mt-2"
                     style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.08)', outline: 'none', color: '#6B7280' }}
+                  />
+                  <ItemMediaAttach
+                    imageUrl={cp.question.imageUrl}
+                    videoUrl={cp.question.videoUrl}
+                    onChange={(m) => updateCp(cp.id, {
+                      ...(m.imageUrl !== undefined ? { imageUrl: m.imageUrl || undefined } : {}),
+                      ...(m.videoUrl !== undefined ? { videoUrl: m.videoUrl || undefined } : {}),
+                    })}
+                    compact
                   />
                 </div>
               ))}

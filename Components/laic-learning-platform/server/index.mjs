@@ -2111,6 +2111,8 @@ function normalizePart(raw, idx) {
         hints,
         label: typeof q.label === 'string' ? q.label : undefined,
         ...(sources ? { sources } : {}),
+        ...(typeof q.imageUrl === 'string' && q.imageUrl ? { imageUrl: q.imageUrl } : {}),
+        ...(typeof q.videoUrl === 'string' && q.videoUrl ? { videoUrl: q.videoUrl } : {}),
       };
     }).filter(Boolean);
     if (!questions.length) return null;
@@ -3518,6 +3520,7 @@ function normalizeEditedFlashcard(raw, prev) {
   else if (raw.hint === null) { /* cleared */ }
   else if (prev.hint) out.hint = prev.hint;
   if (prev.imageUrl) out.imageUrl = prev.imageUrl;
+  if (prev.videoUrl) out.videoUrl = prev.videoUrl;
   return out;
 }
 
@@ -3728,6 +3731,8 @@ export async function handler(req, res) {
       const normalized = normalizeQuizQuestion(obj, 0, { writeExplanations: true });
       if (!normalized) throw new LlmError(502, 'llm_parse', 'The model did not return a usable question.');
       if (item.id) normalized.id = item.id;
+      if (item.imageUrl && !normalized.imageUrl) normalized.imageUrl = item.imageUrl;
+      if (item.videoUrl && !normalized.videoUrl) normalized.videoUrl = item.videoUrl;
       return send(res, 200, { item: normalized });
     } catch (e) {
       const status = e instanceof LlmError ? e.status : 500;

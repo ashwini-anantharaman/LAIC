@@ -21,8 +21,17 @@ import {
   getTutorialTemplate,
 } from '../../../lib/tutorialV2/tutorialTemplates';
 import type { RecipeItem, TutorialTemplate } from '../../../lib/types';
+import { getObjectTemplate, type TemplateObjectType } from '../../../lib/objectTemplates';
+import {
+  X_SLOT_NOUN,
+  isStructuredV2Type,
+  seedUnitsFromTemplate,
+} from '../../../lib/objectV2/structuredDraft';
 import { useApp } from '../../App';
 import { GlassFolderTile, tintForKey } from '../GlassFolder';
+
+/** Types that get the "How do you want to build this?" authoring-path modal. */
+const PATH_PICKER_TYPES = ['tutorial-v2', 'quiz', 'flashcard-set', 'concept-card', 'video-script'];
 
 interface ObjectTile {
   id: string;
@@ -544,15 +553,34 @@ function OutlineList({ nodes, depth = 0 }: { nodes: OutlineNode[]; depth?: numbe
   );
 }
 
+/** Outline for structured object templates (quiz / cards / concept / video). */
+function buildStructuredOutline(objectType: string, templateId: string): { name: string; outline: OutlineNode[] } {
+  const t = getObjectTemplate(templateId, objectType as TemplateObjectType);
+  const fv = t?.knobDefaults || {};
+  if (!isStructuredV2Type(objectType)) return { name: t?.name || 'Template', outline: [] };
+  const units = seedUnitsFromTemplate(objectType, fv);
+  const slotNoun = X_SLOT_NOUN[objectType];
+  const outline: OutlineNode[] = [];
+  if (t?.description?.trim()) outline.push({ label: t.description.trim() });
+  outline.push({
+    label: `${units.length} part${units.length === 1 ? '' : 's'} to author`,
+    children: units.map((u) => ({
+      label: `${u.title} — ${u.slots.length} ${slotNoun}${u.slots.length === 1 ? '' : 's'}`,
+    })),
+  });
+  outline.push({ label: 'Each part: write it yourself (with images/videos) or generate it from marked-up sources.' });
+  return { name: t?.name || 'Template', outline };
+}
+
 function TemplatePreviewPopup({
-  template,
+  name,
+  outline,
   onClose,
 }: {
-  template: TutorialTemplate;
+  name: string;
+  outline: OutlineNode[];
   onClose: () => void;
 }) {
-  const outline = useMemo(() => buildTemplateOutline(template), [template]);
-
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center p-4"
@@ -574,7 +602,7 @@ function TemplatePreviewPopup({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label={`Preview ${template.name}`}
+        aria-label={`Preview ${name}`}
       >
         <div
           className="flex items-start gap-3 px-4 py-3.5 shrink-0"
@@ -593,7 +621,7 @@ function TemplatePreviewPopup({
             <p style={{ fontSize: 11, fontWeight: 700, color: '#6D28D9', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
               Template preview
             </p>
-            <p style={{ fontSize: 15, fontWeight: 700, color: '#4C1D95', marginTop: 2 }}>{template.name}</p>
+            <p style={{ fontSize: 15, fontWeight: 700, color: '#4C1D95', marginTop: 2 }}>{name}</p>
           </div>
           <button
             type="button"
@@ -627,6 +655,7 @@ function TemplatePreviewPopup({
 
 function AuthoringPathModal({
   objectLabel,
+  objectType,
   defaultTemplateName,
   defaultTemplateId,
   value,
@@ -636,7 +665,9 @@ function AuthoringPathModal({
   onClose,
 }: {
   objectLabel: string;
-  /** Org-assigned / Template Library default for Tutorial V2. */
+  /** 'tutorial-v2' or a structured type (quiz / flashcard-set / concept-card / video-script). */
+  objectType: string;
+  /** Org-assigned / Template Library default template. */
   defaultTemplateName: string;
   defaultTemplateId: string;
   value: 'template' | 'write-yourself' | null;
@@ -646,10 +677,13 @@ function AuthoringPathModal({
   onClose: () => void;
 }) {
   const [showPreview, setShowPreview] = useState(false);
-  const previewTemplate = useMemo(
-    () => getTutorialTemplate(defaultTemplateId),
-    [defaultTemplateId],
-  );
+  const preview = useMemo(() => {
+    if (objectType === 'tutorial-v2') {
+      const tpl = getTutorialTemplate(defaultTemplateId);
+      return { name: tpl.name, outline: buildTemplateOutline(tpl) };
+    }
+    return buildStructuredOutline(objectType, defaultTemplateId);
+  }, [objectType, defaultTemplateId]);
 
   return (
     <div
@@ -859,7 +893,8 @@ function AuthoringPathModal({
 
       {showPreview && (
         <TemplatePreviewPopup
-          template={previewTemplate}
+          name={preview.name}
+          outline={preview.outline}
           onClose={() => setShowPreview(false)}
         />
       )}
@@ -915,7 +950,7 @@ export function CDCreate() {
   const proceedWithCollections = () => {
     if (!pendingType) return;
     setCreateCollectionIds(pickerIds);
-    if (pendingType === 'tutorial-v2') {
+    if (PATH_PICKER_TYPES.includes(pendingType)) {
       setPathChoice(null);
       setShowPathPicker(true);
       return;
@@ -931,9 +966,9 @@ export function CDCreate() {
   };
 
   const proceedWithAuthoringPath = () => {
-    if (!pathChoice || pendingType !== 'tutorial-v2') return;
+    if (!pathChoice || !pendingType || !PATH_PICKER_TYPES.includes(pendingType)) return;
     setPendingAuthoringPath(pathChoice);
-    setCreatorObjectType('tutorial-v2');
+    setCreatorObjectType(pendingType);
     closeCreateFlow();
     navigate('cd-creator');
   };
@@ -1027,11 +1062,16 @@ export function CDCreate() {
         />
       )}
 
-      {pendingTile && showPathPicker && pendingType === 'tutorial-v2' && (
+      {pendingTile && showPathPicker && pendingType && PATH_PICKER_TYPES.includes(pendingType) && (
         <AuthoringPathModal
           objectLabel={pendingTile.label}
-          defaultTemplateName={orgDefaultTutorialV2Name}
-          defaultTemplateId={orgDefaultTutorialV2Id}
+          objectType={pendingType}
+          defaultTemplateName={pendingType === 'tutorial-v2'
+            ? orgDefaultTutorialV2Name
+            : (getObjectTemplate(getDefaultTemplateId(pendingType as TemplateObjectType), pendingType as TemplateObjectType)?.name || 'Default template')}
+          defaultTemplateId={pendingType === 'tutorial-v2'
+            ? orgDefaultTutorialV2Id
+            : (getDefaultTemplateId(pendingType as TemplateObjectType) || '')}
           value={pathChoice}
           onChange={setPathChoice}
           onContinue={proceedWithAuthoringPath}

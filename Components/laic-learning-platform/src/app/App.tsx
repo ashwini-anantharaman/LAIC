@@ -485,6 +485,9 @@ function StudioApp() {
         tutorialV2Draft: (partial as any).tutorialV2Draft !== undefined
           ? (partial as any).tutorialV2Draft
           : (existing as any)?.tutorialV2Draft,
+        structuredV2Draft: (partial as any).structuredV2Draft !== undefined
+          ? (partial as any).structuredV2Draft
+          : (existing as any)?.structuredV2Draft,
       };
       const nextList = [obj, ...prev.filter(o => o.id !== id)];
       const result = saveUserObjects(ownerId, nextList);

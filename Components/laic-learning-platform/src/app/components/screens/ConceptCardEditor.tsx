@@ -6,6 +6,7 @@ import type { GeneratedConceptCard } from '../../../lib/api';
 import { editConceptCard, errorMessage } from '../../../lib/api';
 import { normalizeConceptCardContent } from '../../../lib/conceptCard';
 import { ConceptCardTemplate } from './ConceptCardTemplate';
+import { ItemMediaAttach } from './objectV2/ItemMediaAttach';
 
 type Mode = 'edit' | 'preview';
 
@@ -324,6 +325,32 @@ export function ConceptCardEditor({
                   />
                 );
               })}
+              <div className="pt-1">
+                <p style={lbl}>Panel media — attach an image or YouTube video to any panel</p>
+                <div className="space-y-2">
+                  {(content.categories || []).filter((c) => c.enabled !== false).map((cat) => (
+                    <div key={`media-${cat.id}`} className="rounded-xl border px-3 py-2" style={{ borderColor: 'rgba(0,0,0,0.08)', background: 'rgba(255,255,255,0.7)' }}>
+                      <p style={{ fontSize: 11.5, fontWeight: 650, color: '#6B7280' }}>{cat.label}</p>
+                      <ItemMediaAttach
+                        imageUrl={local.categoryMedia?.[cat.id]?.kind === 'image' ? local.categoryMedia?.[cat.id]?.url : ''}
+                        videoUrl={local.categoryMedia?.[cat.id]?.kind === 'video' ? local.categoryMedia?.[cat.id]?.url : ''}
+                        onChange={(m) => {
+                          const next = { ...(local.categoryMedia || {}) };
+                          if (m.imageUrl !== undefined) {
+                            if (m.imageUrl) next[cat.id] = { url: m.imageUrl, kind: 'image' };
+                            else delete next[cat.id];
+                          } else if (m.videoUrl !== undefined) {
+                            if (m.videoUrl) next[cat.id] = { url: m.videoUrl, kind: 'video' };
+                            else delete next[cat.id];
+                          }
+                          set({ categoryMedia: next });
+                        }}
+                        compact
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
             <p style={{ fontSize: 12, color: '#9AA3AF', marginBottom: 8 }}>Live sheet preview</p>
             <ConceptCardTemplate content={content} />
