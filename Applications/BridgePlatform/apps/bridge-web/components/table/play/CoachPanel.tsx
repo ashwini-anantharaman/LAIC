@@ -1062,7 +1062,7 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
     position: "absolute", inset: 0, borderRadius: 9,
     backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
     display: "flex", flexDirection: "column", justifyContent: "center",
-    padding: "7px 9px", textAlign: "center",
+    padding: "5px 7px", textAlign: "center",
   };
   return (
     <button
@@ -1073,7 +1073,7 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
       style={{
         // The 3D stage. The button owns the footprint so the grid rows stay
         // even while either face is showing.
-        position: "relative", minHeight: 74, perspective: 600,
+        position: "relative", minHeight: 54, perspective: 600,
         padding: 0, borderWidth: 0, background: "transparent",
         cursor: canFlip ? "pointer" : "default", textAlign: "inherit",
         fontFamily: "inherit",
@@ -1088,16 +1088,16 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
       >
         {/* front: the chip, grown into a card */}
         <span style={{ ...face, background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: INK, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
             <RedSuits>{card.value}</RedSuits>
           </span>
           {card.title && (
-            <span style={{ marginTop: 3, fontSize: 9.5, fontWeight: 600, letterSpacing: ".07em", textTransform: "uppercase", color: "#6b5f50" }}>
+            <span style={{ marginTop: 2, fontSize: 8.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#6b5f50" }}>
               {card.title}
             </span>
           )}
           {canFlip && (
-            <span aria-hidden style={{ position: "absolute", top: 4, right: 6, fontSize: 9, color: "#b3a789" }}>
+            <span aria-hidden style={{ position: "absolute", top: 3, right: 5, fontSize: 8, color: "#b3a789" }}>
               ⟳
             </span>
           )}
@@ -1110,7 +1110,7 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
               background: FELT_SOFT, borderWidth: 1, borderStyle: "solid", borderColor: "#e0cfa4",
             }}
           >
-            <span style={{ fontSize: 10.5, lineHeight: 1.4, color: FELT_DEEP, fontWeight: 500 }}>
+            <span style={{ fontSize: 9.5, lineHeight: 1.35, color: FELT_DEEP, fontWeight: 500 }}>
               <RedSuits>{card.detail!}</RedSuits>
             </span>
           </span>
@@ -1149,8 +1149,8 @@ function GameState({
       {cards.length > 0 && (
         <div
           style={{
-            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(104px, 1fr))",
-            gap: 7, marginTop: looking ? 9 : 0,
+            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))",
+            gap: 6, marginTop: looking ? 9 : 0,
           }}
         >
           {cards.map((c) => (
