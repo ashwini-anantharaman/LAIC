@@ -1,18 +1,31 @@
 // A destination the design reserves but hasn't specified yet.
 // Deliberately plain and honest — no fake data, no dead controls.
 //
-// Its only use is a TAB (Analysis), so it takes no back arrow — a tab has nothing
-// to go back to. It wears BrandChrome's empty bar, which keeps its layout on the
-// same vertical rhythm as every other screen.
+// Analysis uses it as a PUSHED screen, so it takes a back arrow; a caller that is
+// a tab passes `pushed={false}` and gets BrandChrome's plain gap instead.
 
+import { router } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 
 import { BrandChrome } from "./brand-chrome";
 import { Brand, Colors, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 
-export function ComingSoon({ title, blurb }: { title: string; blurb: string }) {
+export function ComingSoon({
+  title,
+  blurb,
+  /** False for a tab, which has nothing to go back to. */
+  pushed = true,
+}: {
+  title: string;
+  blurb: string;
+  pushed?: boolean;
+}) {
   return (
-    <BrandChrome>
+    <BrandChrome
+      onBack={
+        pushed ? () => (router.canGoBack() ? router.back() : router.replace("/home")) : undefined
+      }
+    >
       <View style={styles.body}>
         <Text style={styles.heading}>{title}</Text>
         <Text style={styles.blurb}>{blurb}</Text>

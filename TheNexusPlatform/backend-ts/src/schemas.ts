@@ -44,6 +44,9 @@ const jsonRecord = z.record(z.string(), z.any());
 export const PROGRAM_FEATURE_KEYS = [
   "learning",
   "bridge",
+  /** The Bridge Bird mobile app — its own Access Catalogue (provider club-app),
+   *  provisioned No/Partial/Full like a platform. */
+  "clubapp",
   "appbuilder",
   "community",
   "teams",
@@ -55,6 +58,7 @@ export type ProgramFeatureKey = (typeof PROGRAM_FEATURE_KEYS)[number];
 export const DEFAULT_PROGRAM_FEATURES: Record<ProgramFeatureKey, boolean> = {
   learning: true,
   bridge: true,
+  clubapp: true,
   appbuilder: true,
   community: true,
   teams: true,
@@ -238,6 +242,22 @@ export const usernameSchema = z
   .min(3, "Username must be at least 3 characters")
   .max(32, "Username must be at most 32 characters")
   .regex(/^[A-Za-z0-9._-]+$/, "Use only letters, numbers, dot, underscore or hyphen");
+
+/**
+ * A profile picture as a base64 data URL.
+ *
+ * Mirrors the profiles_avatar_shape constraint in migration 0040: one of the
+ * three formats a phone camera produces, capped at 200 kB of base64. The app
+ * downsizes to 256x256 JPEG first, which lands around 40 kB — the cap is a
+ * backstop against a client that skips that step, not the expected size.
+ */
+export const avatarDataUrlSchema = z
+  .string()
+  .max(200_000, "That picture is too large")
+  .regex(
+    /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/,
+    "Expected a base64 JPEG, PNG or WebP data URL",
+  );
 
 /** Minimum we are willing to set as a password on someone's behalf. */
 export const adminSetPasswordSchema = z

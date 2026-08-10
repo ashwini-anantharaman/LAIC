@@ -99,5 +99,9 @@ export const PROVIDER_IDS = [
   "learning",
   "bridge",
   "library",
+  // The Bridge Bird mobile app. Its own application, distinct from the Bridge
+  // PLATFORM above: the platform's catalogue covers desktop knowledge, CPs and
+  // tables, while this one covers what a club's role may see and do in the app.
+  "club-app",
 ] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];

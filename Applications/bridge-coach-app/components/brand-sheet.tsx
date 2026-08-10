@@ -31,6 +31,8 @@ const SPRING = { damping: 22, stiffness: 220, mass: 0.9 } as const;
 export function BrandSheet({
   visible,
   onClose,
+  /** Given when the sheet is one level deep: a back arrow left of the title. */
+  onBack,
   title,
   /** Distance from the top of the screen where the panel begins. */
   top,
@@ -38,6 +40,7 @@ export function BrandSheet({
 }: {
   visible: boolean;
   onClose: () => void;
+  onBack?: () => void;
   title: string;
   top: number;
   children: ReactNode;
@@ -116,7 +119,18 @@ export function BrandSheet({
           <View style={styles.header}>
             <View style={styles.grabber} />
             <View style={styles.headerRow}>
-              <Text style={styles.title}>{title}</Text>
+              {onBack ? (
+                <Pressable
+                  onPress={onBack}
+                  hitSlop={14}
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to Menu"
+                  style={({ pressed }) => [styles.back, pressed && styles.pressed]}
+                >
+                  <Ionicons name="chevron-back" size={24} color={SHEET_TEXT} />
+                </Pressable>
+              ) : null}
+              <Text style={[styles.title, styles.titleFill]}>{title}</Text>
               <Pressable
                 onPress={onClose}
                 hitSlop={14}
@@ -173,6 +187,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   content: { flex: 1 },
+  /** Sits inline before the title, so the heading reads "< Profile". */
+  back: { marginRight: 8, marginLeft: -4 },
+  /** Takes the slack so the ✕ stays pinned right whether or not there is an arrow. */
+  titleFill: { flex: 1 },
   title: {
     fontFamily: "Neco-Bold",
     fontSize: 25.9,

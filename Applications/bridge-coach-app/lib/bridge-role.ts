@@ -20,9 +20,11 @@
 // since it exposes no coach-only surfaces.
 
 import {
+  AppContext,
   BridgeContext,
   NexusError,
   NexusMembership,
+  fetchAppContext,
   fetchBridgeContext,
   fetchMe,
 } from "./nexus";
@@ -53,6 +55,12 @@ export type RoleContext = {
   bridge: BridgeContext | null;
   memberships: NexusMembership[];
   profileRole: string | null;
+  /**
+   * The APP's own access — provider `club-app`, resolved from the one role this
+   * person holds in their club. Distinct from `bridge`, which is the desktop
+   * Bridge Platform's grant.
+   */
+  app: AppContext | null;
 };
 
 // Session-scoped cache, keyed by TOKEN: an in-flight fetch from a previous
@@ -89,16 +97,27 @@ export async function getRoleContext(token: string): Promise<RoleContext> {
   if (inflight && inflight.token === token) return inflight.promise;
 
   const promise = (async () => {
-    // Independent and both optional — one failing must not deny the other.
+    // Independent and all optional — one failing must not deny the others.
     const [bridge, me] = await Promise.all([
       settle(fetchBridgeContext(token)),
       settle(fetchMe(token)),
     ]);
 
+    // The app's own access is program-scoped, so it needs the membership first:
+    // a club member's program is their club, not the app-wide PROGRAM_ID.
+    const memberships = me.value?.memberships ?? [];
+    const programId =
+      memberships.filter((m) => m.program_id).find((m) => m.program_category === "partner")
+        ?.program_id ??
+      memberships.find((m) => m.program_id)?.program_id ??
+      null;
+    const app = programId ? await settle(fetchAppContext(token, programId)) : { answered: true, value: null };
+
     const value: RoleContext = {
       bridge: bridge.value,
-      memberships: me.value?.memberships ?? [],
+      memberships,
       profileRole: me.value?.role ?? null,
+      app: app.value,
     };
     // Only an ANSWERED resolve is worth remembering; a hiccup retries on the
     // next call instead of masquerading as "learner" until sign-out.
@@ -109,6 +128,59 @@ export async function getRoleContext(token: string): Promise<RoleContext> {
   });
   inflight = { token, promise };
   return promise;
+}
+
+// ── Capabilities — the fine-grained layer ────────────────────────────────────
+//
+// A person holds ONE role in a program (that is what the Nexus partner page
+// assigns), the role has a name, and the role carries a set of capability ids
+// from the APP's own access catalogue (provider `club-app`). The server resolves role → capabilities and
+// sends them on /bridge/context; every gate in the app reads them through can().
+//
+// isCoach stays, and stays meaningful: it is the STRUCTURAL TIER check
+// (owner/administrator of this program), which the catalogue design keeps
+// bypassing every fine grant. A club's admin does not need a role to run it.
+
+/** The capability ids this person's app role grants; empty when they hold none. */
+export function capabilitiesOf(context: RoleContext | null): Set<string> {
+  return new Set(context?.app?.capabilities ?? []);
+}
+
+/** Does this person hold a fine-grained role at all? */
+export function hasFineGrants(context: RoleContext | null): boolean {
+  return capabilitiesOf(context).size > 0;
+}
+
+/**
+ * May this person do `capability`?
+ *
+ * Three cases, in order:
+ *   1. A structural tier (the club's owner/administrator) — always yes. They
+ *      bypass the catalogue server-side too, so gating them here would only
+ *      disagree with the server.
+ *   2. A fine-grained role — exactly what the role grants, nothing more.
+ *   3. NO role yet — fall back to `fallback`, which each call site sets to the
+ *      behaviour that shipped before roles existed. Without this an account that
+ *      predates role assignment would lose surfaces it has always had, and the
+ *      server's own convention (enforce.ts: "empty set → the coarse guard
+ *      governs") would disagree with the app. Once a club assigns roles, case 2
+ *      takes over and the fallback stops being reached.
+ */
+export function can(
+  context: RoleContext | null,
+  capability: string,
+  fallback = false,
+): boolean {
+  if (!context) return fallback;
+  if (isCoach(context)) return true;
+  const caps = capabilitiesOf(context);
+  if (caps.size === 0) return fallback;
+  return caps.has(capability);
+}
+
+/** The name of the ONE role this person holds, for display beside them. */
+export function roleNameOf(context: RoleContext | null): string | null {
+  return context?.app?.role_name ?? null;
 }
 
 /** True when the person's OWN program membership administers it. */

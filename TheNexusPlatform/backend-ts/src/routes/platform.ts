@@ -28,6 +28,7 @@ import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
 import { resolveCapabilities, surfacesForCapabilities, grantableCapabilities } from "../accessCatalogue/resolver";
 import { capabilitiesFor, requireCapability } from "../accessCatalogue/enforce";
 import * as bridgeRoles from "../accessCatalogue/bridgeRoles";
+import * as appRoles from "../accessCatalogue/appRoles";
 import type { ProviderId } from "../accessCatalogue/types";
 import { isOfferingAdmin } from "../permissions";
 import {
@@ -56,6 +57,7 @@ import {
   signupSchema,
   updateMemberSchema,
   usernameSchema,
+  avatarDataUrlSchema,
 } from "../schemas";
 import {
   BRIDGE_ROLE_MAP,
@@ -834,6 +836,56 @@ platformRouter.get("/auth/me", async (c) => {
   });
 });
 
+// ── Profile picture ────────────────────────────────────────────────────────
+//
+// Your own picture, set by you. There is deliberately no admin path here: a
+// password an admin can reset is an access control, a face is not, and nothing
+// in the console asks to change someone's photo.
+//
+// Reading is separate from /auth/me because an avatar is tens of kilobytes and
+// /auth/me is called on every launch and every role check.
+
+const avatarSchema = z.object({ avatar: avatarDataUrlSchema.nullable() });
+
+/** The caller's own profile id in the org their session belongs to. */
+async function _selfProfileId(user: { id: string; memberships: { org_id: string }[] }) {
+  const orgId = user.memberships[0]?.org_id ?? null;
+  const profileId = await db.resolveProfileId(user.id, orgId);
+  if (!profileId) throw new HttpError(404, "Profile not found");
+  return profileId;
+}
+
+platformRouter.get("/profile/avatar", async (c) => {
+  const user = await getCurrentUser(c);
+  const profileId = await _selfProfileId(user);
+  return c.json({ avatar: await db.getProfileAvatar(profileId) });
+});
+
+platformRouter.put("/profile/avatar", async (c) => {
+  const user = await getCurrentUser(c);
+  const profileId = await _selfProfileId(user);
+  const req = parseBody(avatarSchema, await c.req.json());
+  await db.setProfileAvatar(profileId, req.avatar);
+  return c.json({ avatar: req.avatar });
+});
+
+/**
+ * Pictures for a set of profiles, as { profile_id: data_url }.
+ *
+ * Batched by design: a roster or a chat thread draws many faces at once, and one
+ * request per face would be dozens of round trips. Ids the caller may not see —
+ * or that have no picture — are simply absent from the response rather than an
+ * error, so a partial list still renders.
+ */
+platformRouter.post("/profile/avatars", async (c) => {
+  await getCurrentUser(c);
+  const req = parseBody(
+    z.object({ profile_ids: z.array(z.string().uuid()).max(200) }),
+    await c.req.json(),
+  );
+  return c.json({ avatars: await db.getProfileAvatars(req.profile_ids) });
+});
+
 // ── Platform context endpoints (Phase 3 — the role→platform bridge) ─────────
 // External platforms call these with the caller's session token to learn "may
 // this person enter, and as what". The grant is derived from program membership
@@ -1266,7 +1318,13 @@ async function _platformRolePut(user: PlatformUser, platform: string, body: Row)
   // A role is assignable if it's a pre-built assignable role OR (for bridge) a
   // custom capability-bound role defined for this program.
   if (req.role !== null && !cfg.assignable.includes(req.role)) {
-    const custom = platform === "bridge" ? await bridgeRoles.getBridgeRole(req.program_id, req.role) : null;
+    // A custom role id is assignable too — each platform looks up its own store.
+    const custom =
+      platform === "bridge"
+        ? await bridgeRoles.getBridgeRole(req.program_id, req.role)
+        : platform === "club-app"
+          ? await appRoles.getAppRole(req.program_id, req.role)
+          : null;
     if (!custom) throw new HttpError(400, `Not an assignable ${platform} role`);
   }
   const access = await _requirePlatformRoleAdmin(user, platform, req.program_id);
@@ -1411,6 +1469,161 @@ platformRouter.delete("/bridge/roles/:id", async (c) => {
   await _bridgeAdmin(c, pid);
   await bridgeRoles.deleteBridgeRole(pid, c.req.param("id"));
   return c.json({ ok: true });
+});
+
+// ── Bridge Bird APP roles & context (provider: club-app) ───────────────────
+//
+// The app's own permission surface, separate from the Bridge PLATFORM's above:
+// a club authors roles here ("Strange Mentor"), each binding capabilities from
+// the club-app catalogue, and the app asks /club-app/context for what the caller
+// holds. Administration is the club's, so the same admin guard applies.
+
+const appRoleCreateSchema = z.object({
+  program_id: z.string(),
+  name: z.string().min(1),
+  capabilities: z.array(z.string()).default([]),
+});
+const appRoleUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  capabilities: z.array(z.string()).optional(),
+});
+
+/** The app's catalogue — read by any member (the role builder needs it), written
+ *  by a club admin. */
+platformRouter.get("/club-app/catalogue", async (c) => {
+  await getCurrentUser(c);
+  return c.json(await catalogue.getCatalogue("club-app"));
+});
+
+platformRouter.get("/club-app/roles", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _bridgeAdmin(c, pid);
+  return c.json(await appRoles.listAppRoles(pid));
+});
+
+platformRouter.post("/club-app/roles", async (c) => {
+  const req = parseBody(appRoleCreateSchema, await c.req.json());
+  await _bridgeAdmin(c, req.program_id);
+  return c.json(await appRoles.createAppRole(req.program_id, req.name, req.capabilities), 201);
+});
+
+platformRouter.patch("/club-app/roles/:id", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _bridgeAdmin(c, pid);
+  const body = parseBody(appRoleUpdateSchema, await c.req.json());
+  const row = await appRoles.updateAppRole(pid, c.req.param("id") ?? "", body);
+  if (!row) throw new HttpError(404, "Role not found");
+  return c.json(row);
+});
+
+platformRouter.delete("/club-app/roles/:id", async (c) => {
+  const pid = c.req.query("program_id") ?? "";
+  await _bridgeAdmin(c, pid);
+  await appRoles.deleteAppRole(pid, c.req.param("id") ?? "");
+  return c.json({ ok: true });
+});
+
+/**
+ * What the CALLER may do in the app, for one program.
+ *
+ * The app calls this on launch and gates every surface on `capabilities`.
+ * `role_name` is the one role they hold, shown beside them in the roster.
+ *
+ * Never 500s on a bad role or catalogue: a failure here would lock someone out
+ * of the app entirely, so it degrades to an empty set and lets the app fall back
+ * to its pre-roles behaviour.
+ */
+/**
+ * Resolve the caller against THE CLUB THEY ASKED ABOUT.
+ *
+ * Deliberately NOT resolvePlatformAccess: for a partner program that redirects
+ * to the CONNECTED program (so partners see the parent's bridge content), which
+ * is right for the desktop platform and wrong here — a club's app roles, its
+ * members and its chat all belong to the club itself, not to the Bridge Program
+ * it hangs off. It also gates on the `bridge` feature, which a partner club may
+ * legitimately have off while still using the app.
+ */
+async function _clubAppActor(c: Context) {
+  const user = await getCurrentUser(c);
+  const programId = c.req.query("program_id") ?? "";
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  const orgId = program.org_id as string;
+  // A Nexus operator has no place inside an org's club, exactly as on every
+  // other People surface.
+  if (user.role === "platform_admin") {
+    throw new HttpError(403, "Nexus operators cannot access an organization's members");
+  }
+  if (!user.memberships.some((m) => m.org_id === orgId)) {
+    throw new HttpError(403, "You are not a member of this organization");
+  }
+
+  // Structural tier: this club's own administrator, or the org's owner/admin.
+  // They hold the app entire, without needing a role — the same bypass every
+  // other catalogue gives them.
+  const isAdminRole = (m: { org_id: string; role: string; program_id?: string | null }) =>
+    m.org_id === orgId && ["owner", "administrator"].includes(m.role);
+  const structuralTier = user.memberships.some(
+    (m) => isAdminRole(m) && (!m.program_id || m.program_id === programId),
+  );
+
+  return { user, programId, orgId, programName: (program.name as string) ?? null, structuralTier };
+}
+
+platformRouter.get("/club-app/context", async (c) => {
+  const { user, programId, programName, structuralTier } = await _clubAppActor(c);
+
+  // The ONE role they hold in this club, and what it grants.
+  let roleName: string | null = null;
+  let granted: string[] = [];
+  if (!structuralTier && user.email) {
+    const role = await graph.getProgramRoleForEmail(programId, user.email).catch(() => null);
+    if (role) {
+      roleName = (role.role_name as string | null) ?? null;
+      const perms = (role.perms as Record<string, unknown>) ?? {};
+      granted = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
+    }
+  }
+
+  let result: { roleName: string | null; capabilities: string[] } = { roleName, capabilities: [] };
+  try {
+    result = await appRoles.appAccessFor(programId, {
+      structuralTier,
+      roleName,
+      programRoleCapabilities: granted,
+    });
+  } catch (e) {
+    // A bad role or catalogue must never lock someone out of the app entirely.
+    console.error("club-app/context capability computation failed (using empty set):", e);
+  }
+  return c.json({
+    program_id: programId,
+    program_name: programName,
+    role_name: result.roleName,
+    capabilities: result.capabilities,
+    is_admin: structuralTier,
+  });
+});
+
+/** Every member of the program with the app role they hold — the roster's
+ *  labels, and the source of the club's role filter. */
+platformRouter.get("/club-app/members", async (c) => {
+  const { programId, orgId } = await _clubAppActor(c);
+  const members = await graph.listProgramMembers(orgId, programId);
+  // listProgramMembers already carries `role_name` — the club role each person
+  // holds — so the roster's label is a join it has done for us.
+  return c.json(
+    members.map((m: Row) => {
+      // A club administrator holds the app structurally, so they are labelled
+      // as such rather than appearing role-less.
+      const isAdmin = m.membership_role === "administrator" || m.membership_role === "owner";
+      return {
+        ...m,
+        app_role_id: (m.role_id as string | null) ?? null,
+        app_role_name: isAdmin ? "Administrator" : ((m.role_name as string | null) ?? null),
+      };
+    }),
+  );
 });
 
 // The person's display name in THIS org (their org-scoped profile), falling
@@ -1835,6 +2048,56 @@ platformRouter.get("/programs/:program_id/partners", async (c) => {
   return c.json((await db.listPartnersForProgram(programId)).map(_programResponse));
 });
 
+/**
+ * Remove a partner FROM the program it is connected to.
+ *
+ * Only from the program's side, never the partner's. That is not a policy check
+ * bolted on: a partner carries `connected_program_id` pointing AT its parent, and
+ * the parent carries none pointing back, so the requirement below — "the target
+ * must be a partner of THIS program" — can only ever be satisfied in one
+ * direction. A partner admin calling this against the program they hang off
+ * fails on the relationship itself, before any permission is considered.
+ *
+ * A partner IS a program, so removing one deletes that program and everything
+ * scoped to it: its memberships, gates, stage nodes and app roles. The console
+ * asks for confirmation; this endpoint does not soft-delete.
+ */
+platformRouter.delete("/programs/:program_id/partners/:partner_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id") ?? "";
+  const partnerId = c.req.param("partner_id") ?? "";
+
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  const partner = await db.getProgram(partnerId);
+  if (!partner) throw new HttpError(404, "Partner not found");
+
+  // The relationship, checked before the permission — this is the one-way guard.
+  if (!partner.is_partner || partner.connected_program_id !== programId) {
+    throw new HttpError(422, "That program is not a partner of this program");
+  }
+  // Belt and braces: a partner and its parent are always in one org, and a
+  // cross-org delete should never be reachable.
+  if (partner.org_id !== program.org_id) {
+    throw new HttpError(422, "That partner belongs to a different organization");
+  }
+  // Authority over the CONNECTING program — its own administrator, or an org
+  // admin. A partner's administrator holds their membership against the partner,
+  // so they never satisfy this for the parent.
+  await _assertProgramConfigAccess(user, program.org_id as string, programId);
+  await _requireOrgCap(user, program.org_id as string, "org.programs.delete");
+
+  await db.deleteProgram(partnerId);
+  await db.recordAuditEvent("partner.removed", {
+    orgId: program.org_id as string,
+    actorUserId: user.id,
+    scopeType: "program",
+    scopeId: partnerId,
+    metadata: { name: partner.name, connected_program_id: programId },
+  });
+  return c.json({ ok: true });
+});
+
 // Partner login-portal context — resolve a partner by its slug (privileged, the
 // visitor is a partner member). Returns the partner + connected program summary.
 platformRouter.get("/partner-portal/:slug", async (c) => {
@@ -1889,7 +2152,11 @@ async function _assertProgramConfigAccess(user: PlatformUser, orgId: string, pro
 
 // Partial-access provisioning is scoped to the platform areas that have their
 // own Access Catalog (matching the role builder's 3-way): learning + bridge.
-const _FEATURE_ACCESS_PROVIDERS: Record<string, ProviderId> = { learning: "learning", bridge: "bridge" };
+const _FEATURE_ACCESS_PROVIDERS: Record<string, ProviderId> = {
+  learning: "learning",
+  bridge: "bridge",
+  clubapp: "club-app",
+};
 /** Keep only platform-area keys, with capabilities validated against that
  *  platform's catalog (unknown/foreign ids dropped). */
 async function _sanitizeFeatureAccess(

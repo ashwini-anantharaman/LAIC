@@ -1,40 +1,72 @@
-// The three sheets the top app bar opens — Menu, Profile, Settings — and the
-// state that decides which one is up.
+// The Menu drawer — one sheet, two levels.
 //
-// Shared so Home (which positions its chrome over the artwork) and BrandChrome
-// (used by ordinary screens) can't drift apart in behaviour. Only one sheet is
-// open at a time, so tapping ☰ while Profile is up swaps rather than stacks.
+// It used to be three sheets behind three icons in the top app bar (☰, gear,
+// avatar). Those icons are gone: the tab bar's Menu slot opens this instead, and
+// everything they held is a row inside it. Small drawers, one dresser.
+//
+// Level 0 is the index (Profile · Settings · Other); level 1 is whichever section
+// you picked, with a back arrow in the sheet's own header. The panel never
+// closes and reopens between the two, so it reads as one drawer being navigated
+// rather than sheets stacking on sheets.
 
 import { ReactElement, useCallback, useState } from "react";
 
 import { BrandSheet } from "./brand-sheet";
-import { MenuSheetBody } from "./menu-sheet";
+import { MenuIndexBody, OtherSheetBody } from "./menu-sheet";
 import { ProfileSheetBody } from "./profile-sheet";
 import { SettingsSheetBody } from "./settings-sheet";
+import { useCan } from "../lib/use-can";
+import { useIsCoach } from "../lib/use-is-coach";
 
-export type BrandSheetName = "menu" | "profile" | "settings";
+type Section = "profile" | "settings" | "other";
+
+const TITLES: Record<Section, string> = {
+  profile: "Profile",
+  settings: "Settings",
+  other: "Other",
+};
 
 export function useBrandSheets(top: number): {
-  open: (name: BrandSheetName) => void;
+  open: () => void;
   close: () => void;
   sheets: ReactElement;
 } {
-  const [sheet, setSheet] = useState<BrandSheetName | null>(null);
-  const close = useCallback(() => setSheet(null), []);
-  const open = useCallback((name: BrandSheetName) => setSheet(name), []);
+  const [visible, setVisible] = useState(false);
+  const [section, setSection] = useState<Section | null>(null);
+  // "Other" is a capability now. Fallback = the old rule: coaches only.
+  const coach = useIsCoach();
+  const showOther = useCan("app.coaching.view", coach);
+
+  const close = useCallback(() => {
+    setVisible(false);
+    // Reset AFTER the dismissal, so the panel doesn't flash back to the index
+    // on its way down.
+    setTimeout(() => setSection(null), 220);
+  }, []);
+
+  const open = useCallback(() => {
+    setSection(null);
+    setVisible(true);
+  }, []);
 
   const sheets = (
-    <>
-      <BrandSheet visible={sheet === "menu"} onClose={close} title="Menu" top={top}>
-        <MenuSheetBody onClose={close} />
-      </BrandSheet>
-      <BrandSheet visible={sheet === "profile"} onClose={close} title="Profile" top={top}>
+    <BrandSheet
+      visible={visible}
+      onClose={close}
+      onBack={section ? () => setSection(null) : undefined}
+      title={section ? TITLES[section] : "Menu"}
+      top={top}
+    >
+      {section === "profile" ? (
         <ProfileSheetBody onClose={close} />
-      </BrandSheet>
-      <BrandSheet visible={sheet === "settings"} onClose={close} title="Settings" top={top}>
+      ) : section === "settings" ? (
         <SettingsSheetBody />
-      </BrandSheet>
-    </>
+      ) : section === "other" ? (
+        <OtherSheetBody onClose={close} />
+      ) : (
+        <MenuIndexBody coach={showOther} onOpen={setSection} />
+      )}
+    </BrandSheet>
   );
 
   return { open, close, sheets };

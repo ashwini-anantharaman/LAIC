@@ -1,4 +1,4 @@
-// A BirdBridge playing card.
+// A Bridge Bird playing card.
 //
 // From the Learn design (Figma 476:663): a 146.88x211.2 card, radius 12.17,
 // with a second card of #2a0506 offset behind it (+6.77, -5.8) so the pair reads

@@ -90,6 +90,76 @@ export async function getProfileByUsername(username: string): Promise<Row | null
 }
 
 /**
+ * The profile id a session's id maps to inside an org.
+ *
+ * A session carries the shared AUTH id; person-FK columns and memberships
+ * reference the org-scoped profile id, so the two have to be reconciled before
+ * anything can be written against "the caller". Null when they have no profile
+ * in that org.
+ */
+export async function resolveOrgProfileId(
+  orgId: string | null,
+  authOrProfileId: string,
+): Promise<string | null> {
+  return asPrivileged((tx) => resolveProfileId(tx, authOrProfileId, orgId));
+}
+
+/**
+ * A profile's picture, as a base64 data URL, or null.
+ *
+ * Deliberately NOT part of profileRow: that shape is embedded in member lists,
+ * audit payloads and /auth/me, and an avatar is tens of kilobytes. Callers ask
+ * for pictures only where they draw them.
+ */
+export async function getProfileAvatar(profileId: string): Promise<string | null> {
+  return asPrivileged(async (tx) => {
+    const r = await tx
+      .select({ avatar: profiles.avatar })
+      .from(profiles)
+      .where(eq(profiles.id, profileId))
+      .limit(1);
+    return r.length ? (r[0].avatar ?? null) : null;
+  });
+}
+
+/** Pictures for several profiles at once — one query for a whole roster. */
+export async function getProfileAvatars(
+  profileIds: string[],
+): Promise<Record<string, string>> {
+  if (profileIds.length === 0) return {};
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .select({ id: profiles.id, authUserId: profiles.authUserId, avatar: profiles.avatar })
+      .from(profiles)
+      .where(or(inArray(profiles.id, profileIds), inArray(profiles.authUserId, profileIds)));
+    const out: Record<string, string> = {};
+    for (const r of rows) {
+      if (!r.avatar) continue;
+      // Keyed by BOTH ids: memberships reference either the profile's own id or
+      // its auth-credential id, and the caller holds whichever it was given.
+      out[r.id] = r.avatar;
+      if (r.authUserId) out[r.authUserId] = r.avatar;
+    }
+    return out;
+  });
+}
+
+/** Set or clear a profile's picture. Pass null to remove it. */
+export async function setProfileAvatar(
+  profileId: string,
+  avatar: string | null,
+): Promise<void> {
+  await asPrivileged(async (tx) => {
+    const r = await tx
+      .update(profiles)
+      .set({ avatar, updatedAt: new Date() })
+      .where(eq(profiles.id, profileId))
+      .returning({ id: profiles.id });
+    if (!r.length) throw new HttpError(404, "Profile not found");
+  });
+}
+
+/**
  * Set or clear a profile's username. Pass null to clear.
  *
  * Uniqueness is enforced by the partial unique index, so a race between two

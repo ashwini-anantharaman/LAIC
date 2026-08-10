@@ -8,7 +8,7 @@
 
 import { Image } from "expo-image";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SvgXml } from "react-native-svg";
 
 import { BrandIcons } from "../constants/brand-assets";
@@ -22,6 +22,12 @@ import {
   primaryMembership,
 } from "../lib/bridge-role";
 import { useAuth } from "../lib/auth-context";
+import {
+  loadMyAvatar,
+  pickAndUploadAvatar,
+  removeMyAvatar,
+  subscribeToMyAvatar,
+} from "../lib/avatar-store";
 
 /** The avatar ships dark for the cream app bar; on the maroon sheet it must be white. */
 const AVATAR_WHITE = tintSvg(ICON_AVATAR, "#ffffff");
@@ -89,6 +95,53 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
   const membership = context ? primaryMembership(context) : null;
   const amCoach = context ? isCoach(context) : false;
 
+  // The picture the camera badge sets, and that every other surface reads.
+  const [myAvatar, setMyAvatarUri] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    loadMyAvatar(token).then((uri) => !cancelled && setMyAvatarUri(uri));
+    // Stay in step if it changes elsewhere (or is cleared on sign-out).
+    const stop = subscribeToMyAvatar((uri) => !cancelled && setMyAvatarUri(uri));
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [token]);
+
+  async function choosePicture() {
+    if (!token || busy) return;
+    setBusy(true);
+    try {
+      // null means cancelled or permission declined — both are ordinary, and
+      // neither deserves an alert.
+      await pickAndUploadAvatar(token);
+    } catch {
+      Alert.alert("Couldn't save that picture", "Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function removePicture() {
+    if (!token || busy) return;
+    Alert.alert("Remove your picture?", "Your avatar goes back to the default.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => {
+          setBusy(true);
+          removeMyAvatar(token)
+            .catch(() => Alert.alert("Couldn't remove that picture", "Please try again."))
+            .finally(() => setBusy(false));
+        },
+      },
+    ]);
+  }
+
   return (
     <ScrollView
       style={styles.scroll}
@@ -96,13 +149,26 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.avatarWrap}>
+      <Pressable
+        onPress={choosePicture}
+        onLongPress={myAvatar ? removePicture : undefined}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={
+          myAvatar ? "Change your profile picture. Hold to remove it." : "Add a profile picture"
+        }
+        style={({ pressed }) => [styles.avatarWrap, (pressed || busy) && styles.pressed]}
+      >
         {/* Vector: this is drawn at 92pt, where the 31px @1x PNG was worst. */}
-        <SvgXml xml={AVATAR_WHITE} width={92} height={89.2} />
+        {myAvatar ? (
+          <Image source={{ uri: myAvatar }} style={styles.photo} contentFit="cover" />
+        ) : (
+          <SvgXml xml={AVATAR_WHITE} width={92} height={89.2} />
+        )}
         <View style={styles.photoBadge}>
           <Image source={BrandIcons.photoBadge} style={styles.photoBadgeIcon} contentFit="contain" />
         </View>
-      </View>
+      </Pressable>
 
       <Field label="First Name" value={first} placeholder="Not set" />
       <Field label="Last Name" value={last} placeholder="Not set" />
@@ -158,6 +224,8 @@ const styles = StyleSheet.create({
    */
   body: { paddingHorizontal: 15, paddingBottom: TAB_BAR_CLEARANCE + 32 },
   avatarWrap: { alignSelf: "center", marginTop: 8, marginBottom: 30 },
+  /** Circular, matching the glyph it replaces — the source is cropped square. */
+  photo: { width: 92, height: 92, borderRadius: 46 },
   avatar: { width: 92, height: 92 },
   photoBadge: {
     position: "absolute",

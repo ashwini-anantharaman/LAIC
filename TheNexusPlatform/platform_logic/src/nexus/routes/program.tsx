@@ -43,6 +43,7 @@ import {
   listPrograms,
   listProgramOrgAffiliations,
   listPartnersForProgram,
+  removeProgramPartner,
   setProgramOrgAffiliationAccess,
   listProgramGateRequests,
   approveProgramGateRequest,
@@ -1284,6 +1285,43 @@ export function ProgramPartners() {
   const [partners, setPartners] = useState<Program[] | null>(null);
   const [connected, setConnected] = useState<Program | null>(null);
   const isPartner = !!program?.is_partner;
+  /** Ticked partners, for removing several at once. */
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const toggle = (id: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  async function removePicked() {
+    if (!programId || picked.size === 0) return;
+    setBusy(true);
+    const ids = [...picked];
+    // One at a time, and report honestly: a partial failure must not claim
+    // everything went.
+    const failed: string[] = [];
+    for (const id of ids) {
+      try {
+        await removeProgramPartner(programId, id);
+      } catch (e) {
+        failed.push(partners?.find((p) => p.id === id)?.name ?? id);
+      }
+    }
+    setBusy(false);
+    setConfirming(false);
+    setPicked(new Set());
+    if (failed.length === 0) {
+      toast.success(ids.length === 1 ? "Partner removed" : `${ids.length} partners removed`);
+    } else {
+      toast.error(`Could not remove: ${failed.join(", ")}`);
+    }
+    listPartnersForProgram(programId).then(setPartners).catch(() => setPartners([]));
+  }
 
   useEffect(() => {
     if (!programId) return;
@@ -1324,6 +1362,35 @@ export function ProgramPartners() {
   return (
     <div>
       <Head program={program} subtitle="Partner organizations connected to this program, each with its own login and a restricted view." />
+
+      {/* Removal lives on the PROGRAM's side only. A partner's own Partners tab
+          (above) shows its connected program with no controls — it cannot remove
+          the program it hangs off, and the server refuses that direction too. */}
+      {picked.size > 0 ? (
+        <div className="mb-3 flex items-center gap-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2">
+          <span className="text-sm text-foreground">
+            {picked.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={busy}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-destructive px-2.5 py-1.5 text-xs font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+          >
+            <Trash2 className="size-3.5" />
+            Remove
+          </button>
+          <button
+            type="button"
+            onClick={() => setPicked(new Set())}
+            disabled={busy}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
+
       {!partners ? (
         <Spinner />
       ) : partners.length === 0 ? (
@@ -1335,6 +1402,13 @@ export function ProgramPartners() {
             return (
               <div key={p.id} className="glass-card p-4">
                 <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={picked.has(p.id)}
+                    onChange={() => toggle(p.id)}
+                    aria-label={`Select ${p.name}`}
+                    className="mt-1 size-3.5 shrink-0 accent-current"
+                  />
                   <Handshake className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
                     <Link to={`/o/${orgId}/p/${p.id}`} className="font-medium text-foreground hover:underline">{p.name}</Link>
@@ -1353,6 +1427,68 @@ export function ProgramPartners() {
           })}
         </div>
       )}
+
+      {confirming ? (
+        <ConfirmDialog
+          title={picked.size === 1 ? "Remove this partner?" : `Remove ${picked.size} partners?`}
+          body={
+            "A partner is a program of its own, so removing it deletes that program and " +
+            "everything inside it — its people, its login link and its gates. This cannot be undone."
+          }
+          confirmLabel={busy ? "Removing…" : "Remove"}
+          busy={busy}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void removePicked()}
+          names={(partners ?? []).filter((p) => picked.has(p.id)).map((p) => p.name)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** A deliberate stop before an irreversible delete, naming exactly what goes. */
+function ConfirmDialog({
+  title, body, names, confirmLabel, busy, onCancel, onConfirm,
+}: {
+  title: string;
+  body: string;
+  names: string[];
+  confirmLabel: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+      <div className="glass-card w-full max-w-md p-5">
+        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+        <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+        {names.length ? (
+          <ul className="mt-3 max-h-40 space-y-1 overflow-y-auto rounded-md bg-muted/40 p-2.5">
+            {names.map((n) => (
+              <li key={n} className="truncate text-sm text-foreground">{n}</li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

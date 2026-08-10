@@ -81,13 +81,15 @@ export async function sendMessage(
   programId: string,
   body: string,
   author: ChatAuthor,
+  /** An attached picture as a data URL. A picture alone is a message. */
+  image?: string | null,
 ): Promise<ClubChatMessage[]> {
   const text = body.trim();
-  if (!text) return loadThread(token, programId);
+  if (!text && !image) return loadThread(token, programId);
 
   if (!localOnly.has(programId)) {
     try {
-      await postClubChatMessage(token, programId, text);
+      await postClubChatMessage(token, programId, text, image ?? null);
       return await loadThread(token, programId);
     } catch (error) {
       if (!isMissingEndpoint(error)) throw error;
@@ -102,6 +104,7 @@ export async function sendMessage(
     author_name: author.name,
     author_standing: author.standing,
     body: text,
+    image: image ?? null,
     pinned: false,
     created_at: new Date().toISOString(),
     mine: true,

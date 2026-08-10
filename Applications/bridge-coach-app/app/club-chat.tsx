@@ -4,6 +4,10 @@
 // a "Name ∘ Coach" label above the bubble; your own sit on the right in maroon
 // with no label, which is how iMessage tells the two apart without a legend.
 //
+// A message may carry a picture, with or without words: the ⊕ beside the
+// composer picks one, it previews above the field until sent, and it renders in
+// the bubble at the sender's own aspect ratio.
+//
 // Long-press a message and a small menu drops down under it with Pin (or Unpin)
 // — holding never pins outright, so a stray long-press costs nothing. The pin
 // beside the title opens the club's pinned list. Pins are shared, not
@@ -12,6 +16,7 @@
 // Pushed screen, so the app bar carries a back arrow and there is no tab bar;
 // the composer takes that space.
 
+import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,13 +35,16 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
 
-import { BrandChrome } from "../components/brand-chrome";
+import { Image } from "expo-image";
+
+import { Avatar } from "../components/avatar";
+import { BrandChrome, CONTENT_TOP_GAP } from "../components/brand-chrome";
 import { BrandSheet } from "../components/brand-sheet";
 import { tintSvg } from "../components/svg-tint";
-import { APP_BAR_HEIGHT } from "../components/brand-app-bar";
-import { ICON_AVATAR, ICON_PIN } from "../constants/brand-vectors";
+import { ICON_PIN } from "../constants/brand-vectors";
 import { Brand, Fonts, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
+import { loadAvatars, pickChatImage } from "../lib/avatar-store";
 import { getRoleContext, primaryMembership } from "../lib/bridge-role";
 import {
   loadThread,
@@ -44,6 +52,7 @@ import {
   setPinned,
   type ClubChatMessage,
 } from "../lib/club-chat";
+import { useCan } from "../lib/use-can";
 import { useIsCoach } from "../lib/use-is-coach";
 
 const DESIGN_WIDTH = 390;
@@ -56,10 +65,11 @@ const IN = { avatarLeft: 25, avatarW: 41.3, avatarH: 40, bubbleLeft: 90, maxWidt
 const OUT = { right: 21, maxWidth: 214 };
 const BUBBLE = { radius: 15, padH: 14, padV: 11, font: 13, offset: 5, gap: 26 };
 const LABEL = { left: 100, font: 13, gap: 5 };
+/** An attached picture in a bubble — a fixed box, cropped to fill. */
+const IMAGE = { width: 214, height: 150 };
 /** Composer: 329 x 40 pill at x 29, with its darker twin 6 below. */
 const COMPOSER = { width: 329, height: 40, left: 29, radius: 100, offset: 6, padH: 22 };
 
-const AVATAR_DARK = ICON_AVATAR;
 const PIN_DARK = tintSvg(ICON_PIN, Brand.iconDark);
 const PIN_ON_CREAM = tintSvg(ICON_PIN, Brand.iconDark);
 const PIN_CREAM = tintSvg(ICON_PIN, Brand.cream);
@@ -126,11 +136,36 @@ function Bubble({
         style={{
           borderRadius: BUBBLE.radius * s,
           backgroundColor: face,
-          paddingHorizontal: BUBBLE.padH * s,
-          paddingVertical: BUBBLE.padV * s,
+          overflow: "hidden",
+          // An image bubble is the picture; only a text one needs the inset.
+          paddingHorizontal: message.image ? 0 : BUBBLE.padH * s,
+          paddingVertical: message.image ? 0 : BUBBLE.padV * s,
         }}
       >
-        <Text style={[styles.bubbleText, { fontSize: BUBBLE.font * s }]}>{message.body}</Text>
+        {message.image ? (
+          <Image
+            source={{ uri: message.image }}
+            style={{ width: IMAGE.width * s, height: IMAGE.height * s }}
+            contentFit="cover"
+            transition={140}
+            accessibilityLabel="Attached picture"
+          />
+        ) : null}
+        {message.body ? (
+          <Text
+            style={[
+              styles.bubbleText,
+              {
+                fontSize: BUBBLE.font * s,
+                // A caption under a picture needs the inset the bubble dropped.
+                paddingHorizontal: message.image ? BUBBLE.padH * s : 0,
+                paddingVertical: message.image ? BUBBLE.padV * s : 0,
+              },
+            ]}
+          >
+            {message.body}
+          </Text>
+        ) : null}
       </View>
       {/* The marker hangs off the bubble's top-right, i.e. on the cream page —
           so it is the dark icon colour, not cream on cream. */}
@@ -146,6 +181,11 @@ function Bubble({
 export default function ClubChatScreen() {
   const { token, user } = useAuth();
   const coach = useIsCoach();
+  // Reading, posting, attaching and pinning are four separate grants: a role may
+  // follow the conversation without joining it, or talk without sending images.
+  const canPost = useCan("app.chat.post", true);
+  const canAttach = useCan("app.chat.post_image", true);
+  const canPin = useCan("app.chat.pin", true);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const s = width / DESIGN_WIDTH;
@@ -154,8 +194,12 @@ export default function ClubChatScreen() {
   const [messages, setMessages] = useState<ClubChatMessage[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  /** A picked picture waiting to be sent, previewed above the composer. */
+  const [attachment, setAttachment] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [pinsOpen, setPinsOpen] = useState(false);
+  /** author_profile_id -> picture, so each bubble carries its writer's face. */
+  const [avatars, setAvatars] = useState<Map<string, string | null>>(new Map());
   /** The long-pressed message and where its bubble sits, or null for no menu. */
   const [menu, setMenu] = useState<{ message: ClubChatMessage; anchor: Anchor } | null>(null);
   const scroller = useRef<ScrollView>(null);
@@ -179,6 +223,9 @@ export default function ClubChatScreen() {
       const rows = await loadThread(token, programId);
       setMessages(rows);
       setError(null);
+      // One request for every writer in the thread, and only for writers whose
+      // face is not already known.
+      setAvatars(new Map(await loadAvatars(token, rows.map((m) => m.author_profile_id))));
     } catch {
       setError("Couldn't load the chat.");
     }
@@ -199,20 +246,37 @@ export default function ClubChatScreen() {
 
   async function send() {
     const text = draft.trim();
-    if (!token || !programId || !text || sending) return;
+    // A picture alone is a message; nothing at all is not.
+    if (!token || !programId || sending || (!text && !attachment)) return;
+    const image = attachment;
     setSending(true);
     setDraft("");
+    setAttachment(null);
     try {
-      setMessages(await sendMessage(token, programId, text, author));
+      setMessages(await sendMessage(token, programId, text, author, image));
     } catch {
-      setDraft(text); // put it back rather than losing what they typed
+      // Put both back rather than losing what they typed or picked.
+      setDraft(text);
+      setAttachment(image);
       setError("Couldn't send that message.");
     } finally {
       setSending(false);
     }
   }
 
+  async function attach() {
+    if (sending) return;
+    try {
+      const uri = await pickChatImage();
+      if (uri) setAttachment(uri);
+    } catch {
+      setError("Couldn't attach that picture.");
+    }
+  }
+
   function openMenu(message: ClubChatMessage, anchor: Anchor) {
+    // The only action in the menu is Pin; without that grant it would be empty.
+    if (!canPin) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setMenu({ message, anchor });
   }
@@ -238,6 +302,7 @@ export default function ClubChatScreen() {
       >
         <View style={{ height: 44 * s, paddingTop: HEAD.titleTop * s }}>
           <Text style={[styles.title, { marginLeft: HEAD.titleLeft * s }]}>Chat</Text>
+          {canPin ? (
           <Pressable
             onPress={() => setPinsOpen(true)}
             hitSlop={16}
@@ -250,6 +315,7 @@ export default function ClubChatScreen() {
           >
             <SvgXml xml={PIN_DARK} width={HEAD.pin * s} height={HEAD.pin * s} />
           </Pressable>
+          ) : null}
         </View>
 
         <ScrollView
@@ -285,7 +351,14 @@ export default function ClubChatScreen() {
                     </Text>
                     <View style={styles.incomingRow}>
                       <View style={{ marginLeft: IN.avatarLeft * s }}>
-                        <SvgXml xml={AVATAR_DARK} width={IN.avatarW * s} height={IN.avatarH * s} />
+                        {/* Beside the bubble, on the cream page — so the
+                            fallback glyph is the dark one. */}
+                        <Avatar
+                          uri={avatars.get(m.author_profile_id)}
+                          width={IN.avatarW * s}
+                          height={IN.avatarH * s}
+                          tint={Brand.iconDark}
+                        />
                       </View>
                       <View style={{ marginLeft: (IN.bubbleLeft - IN.avatarLeft - IN.avatarW) * s }}>
                         <Bubble message={m} scale={s} onLongPress={(anchor) => openMenu(m, anchor)} />
@@ -300,6 +373,28 @@ export default function ClubChatScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </ScrollView>
 
+        {/* The picked picture sits above the field until sent, with an ✕ to
+            change your mind — sending blind would be a guess. */}
+        {attachment && canPost ? (
+          <View style={[styles.previewRow, { paddingLeft: COMPOSER.left * s }]}>
+            <Image
+              source={{ uri: attachment }}
+              style={{ width: 58 * s, height: 58 * s, borderRadius: 10 * s }}
+              contentFit="cover"
+            />
+            <Pressable
+              onPress={() => setAttachment(null)}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Remove attached picture"
+              style={({ pressed }) => [styles.previewClear, pressed && styles.pressed]}
+            >
+              <Ionicons name="close" size={15 * s} color={Brand.cream} />
+            </Pressable>
+          </View>
+        ) : null}
+
+        {canPost ? (
         <View
           style={{
             height: (COMPOSER.height + COMPOSER.offset) * s,
@@ -330,6 +425,18 @@ export default function ClubChatScreen() {
               },
             ]}
           >
+            {canAttach ? (
+            <Pressable
+              onPress={attach}
+              hitSlop={10}
+              disabled={sending}
+              accessibilityRole="button"
+              accessibilityLabel="Attach a picture"
+              style={({ pressed }) => pressed && styles.pressed}
+            >
+              <Ionicons name="add-circle-outline" size={21 * s} color={Brand.cream} />
+            </Pressable>
+            ) : null}
             <TextInput
               value={draft}
               onChangeText={setDraft}
@@ -344,11 +451,11 @@ export default function ClubChatScreen() {
             <Pressable
               onPress={() => void send()}
               hitSlop={12}
-              disabled={!draft.trim() || sending}
+              disabled={(!draft.trim() && !attachment) || sending}
               accessibilityRole="button"
               accessibilityLabel="Send"
               style={({ pressed }) => [
-                { opacity: draft.trim() && !sending ? 1 : 0.4 },
+                { opacity: (draft.trim() || attachment) && !sending ? 1 : 0.4 },
                 pressed && styles.pressed,
               ]}
             >
@@ -356,6 +463,17 @@ export default function ClubChatScreen() {
             </Pressable>
           </View>
         </View>
+        ) : (
+          // Read-only: say so rather than leaving a dead field on screen.
+          <Text
+            style={[
+              styles.readOnly,
+              { marginBottom: Math.max(insets.bottom, 12 * s) + 8 * s },
+            ]}
+          >
+            Your role can read this chat but not post in it.
+          </Text>
+        )}
       </KeyboardAvoidingView>
 
       {/* The long-press menu. Rendered at screen level, above the thread, and
@@ -400,7 +518,7 @@ export default function ClubChatScreen() {
         visible={pinsOpen}
         onClose={() => setPinsOpen(false)}
         title="Pinned"
-        top={insets.top + APP_BAR_HEIGHT}
+        top={insets.top + CONTENT_TOP_GAP}
       >
         {pinned.length === 0 ? (
           <Text style={styles.sheetEmpty}>
@@ -452,6 +570,24 @@ const styles = StyleSheet.create({
     color: Brand.maroon,
     textAlign: "center",
     paddingTop: 12,
+  },
+  readOnly: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: "rgba(31,31,31,0.55)",
+    textAlign: "center",
+    paddingHorizontal: 32,
+  },
+  previewRow: { flexDirection: "row", alignItems: "flex-start", paddingBottom: 8 },
+  previewClear: {
+    marginLeft: -10,
+    marginTop: -4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Brand.maroon,
   },
   composerShadow: { position: "absolute", backgroundColor: Brand.rowShadow },
   composerFace: {

@@ -1,4 +1,4 @@
-// The landing page (Figma 617:3799): three birds in flight, the BirdBridge
+// The landing page (Figma 617:3799): three birds in flight, the Bridge Bird
 // wordmark, two stacked buttons, and the hills running off the bottom edge.
 //
 // Laid out in the design's 390x852 space and scaled to the real screen width,
@@ -24,8 +24,13 @@ const DESIGN = { width: 390, height: 852 };
 /** Hills: same placement as Home. */
 const HILLS = { top: 625, width: 390, height: 223 };
 
-/** The wordmark's baseline block. */
-const WORDMARK = { left: 92, top: 302, size: 38.17 };
+/**
+ * The wordmark's baseline block. The design pins it at x=92, which is simply
+ * where "Bridge Bird" lands when centred at this size — so it is CENTRED here
+ * rather than left-pinned, and a longer or shorter name stays centred instead of
+ * drifting off the birds it sits under.
+ */
+const WORDMARK = { top: 302, size: 38.17 };
 
 /**
  * One bird = one shared vector rotated three ways (all three Figma nodes carry
@@ -153,12 +158,10 @@ export default function LandingScreen() {
         ))}
 
         <Text
-          style={[
-            styles.wordmark,
-            { left: WORDMARK.left * s, top: WORDMARK.top * s, fontSize: WORDMARK.size * s },
-          ]}
+          style={[styles.wordmark, { top: WORDMARK.top * s, fontSize: WORDMARK.size * s }]}
+          numberOfLines={1}
         >
-          BirdBridge
+          Bridge Bird
         </Text>
 
         <StackedButton
@@ -183,6 +186,9 @@ const styles = StyleSheet.create({
   art: { position: "absolute", left: 0 },
   wordmark: {
     position: "absolute",
+    left: 0,
+    right: 0,
+    textAlign: "center",
     fontFamily: Fonts.display,
     color: Brand.ink,
   },

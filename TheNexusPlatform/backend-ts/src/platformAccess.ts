@@ -132,6 +132,17 @@ export const PLATFORM_ROLES: Record<string, PlatformRoleConfig> = {
     assignable: ["bridge_coach", "bridge_reviewer", "bridge_learner"],
     level: BRIDGE_ROLE_LEVEL,
   },
+  // The Bridge Bird app. It has NO pre-built roles by design: a club authors its
+  // own ("Club Mentor", "Strange Mentor"), so every assignable role is a custom
+  // one and the assign path looks it up in the app-role store. Access to the app
+  // itself still rides on the bridge grant — this config governs role naming
+  // only, not entry.
+  "club-app": {
+    prebuilt: [],
+    adminRoles: [],
+    assignable: [],
+    level: {},
+  },
   learning: {
     prebuilt: LEARNING_PREBUILT_ROLES,
     adminRoles: ["administrator"],
@@ -337,7 +348,8 @@ async function _grantLevel(
   //    App Shell, Bridge. The org admin's tool to lock a program's people out of
   //    the runtimes while they still manage the program. Org admins set it, so
   //    it never restricts them.
-  const isPlatformArea = area === "learning" || area === "bridge" || area === "appbuilder";
+  const isPlatformArea =
+    area === "learning" || area === "bridge" || area === "clubapp" || area === "appbuilder";
   const platformsLocked = isPlatformArea && (program.platforms_open as boolean | undefined) === false;
 
   // This program's reserved administrator (program-scoped) — full workspace, but

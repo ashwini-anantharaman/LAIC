@@ -59,14 +59,17 @@ function catalogueLoader(loaders: Array<() => Promise<CapabilityCatalogueDocumen
 
 // ── Program ─────────────────────────────────────────────────────────────────
 const PROGRAM_AREA_LABELS: Record<string, string> = {
-  learning: "Content Studio", bridge: "Bridge Platform", appbuilder: "App Studio",
-  community: "Community", teams: "People", partners: "Partners",
+  learning: "Content Studio", bridge: "Bridge Platform", clubapp: "Bridge Bird App",
+  appbuilder: "App Studio", community: "Community", teams: "People", partners: "Partners",
 };
-const PROGRAM_PLATFORM_AREAS = new Set(["learning", "bridge"]);
+// Areas whose grant is a 3-way (No / Partial / Full) backed by their own Access
+// Catalogue. The mobile app is one of these: its capabilities are the club and
+// coaching surfaces a role may see, toggled here like any platform's.
+const PROGRAM_PLATFORM_AREAS = new Set(["learning", "bridge", "clubapp"]);
 // A platform area's 3-way picker (No/Partial/Full) reveals that platform's
 // Access-Catalogue capabilities. Match the loaded catalogue by its provider id.
 const PROGRAM_PLATFORM_CATALOGUE: Record<string, string> = {
-  learning: "learning-platform", bridge: "bridge-platform",
+  learning: "learning-platform", bridge: "bridge-platform", clubapp: "club-app",
 };
 // Feature areas that map 1:1 to a program-console catalogue group (→ the coarse
 // level seeds that group's capabilities). learning/bridge/appbuilder open a
@@ -77,7 +80,9 @@ const PROGRAM_AREA_GROUP: Record<string, string> = {
 
 // A platform provisioned "Partial" caps its role builder to that subset. Map the
 // feature key to the platform catalogue's provider id used in the builder.
-const PLATFORM_PROVIDER_BY_KEY: Record<string, string> = { learning: "learning-platform", bridge: "bridge-platform" };
+const PLATFORM_PROVIDER_BY_KEY: Record<string, string> = {
+  learning: "learning-platform", bridge: "bridge-platform", clubapp: "club-app",
+};
 
 export function programRgAdapter(
   orgId: string,
@@ -116,6 +121,12 @@ export function programRgAdapter(
       const loaders: Array<() => Promise<CapabilityCatalogueDocument>> = [() => getProgramCatalogue(programId)];
       if (enabledAreaKeys.includes("learning")) loaders.push(() => getCatalogue("learning"));
       if (enabledAreaKeys.includes("bridge")) loaders.push(() => getCatalogue("bridge"));
+      // The mobile app's own inventory. It rides on the bridge grant (the app
+      // signs in through the same platform access), so it is offered wherever
+      // bridge is — or on its own key once a program provisions it separately.
+      if (enabledAreaKeys.includes("bridge") || enabledAreaKeys.includes("clubapp")) {
+        loaders.push(() => getCatalogue("club-app"));
+      }
       const built = await catalogueLoader(loaders)();
       if (!featureAccess) return built;
       const allowedByProvider: Record<string, Set<string>> = {};

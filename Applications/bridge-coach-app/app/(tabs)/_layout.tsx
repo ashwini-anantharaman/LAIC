@@ -1,5 +1,5 @@
-// The app's spine: six persistent tabs — Home · Learn · Play · Coach · Club ·
-// Analysis — matching the BirdBridge design's floating bar.
+// The app's spine: five persistent tabs — Home · Learn · Play · Coach · Club —
+// plus a Menu button in the bar's sixth slot.
 //
 // These are MATERIAL TOP TABS pinned to the bottom, not bottom-tabs. Bottom-tabs
 // has no swipe: it mounts one screen at a time with no shared gesture. Top-tabs
@@ -12,10 +12,11 @@
 // continuously, which is what lets the active marker travel WITH your finger
 // instead of snapping after the fact.
 //
-// Home is the tree; each nest on it leads to one of the other five. Menu is not a
-// tab (the design spends every slot on a destination) — it hangs off the ☰ in the
-// top app bar as a stack screen, and still holds Library, My Games, Profile,
-// Today and sign-out.
+// Home is the tree. Menu is NOT a tab: it opens a drawer over whatever page you
+// are on, which is why it lives here rather than in a screen — the bar is drawn
+// once, for every tab, so the drawer has to be owned at the same level. It took
+// Analysis's slot, which had a tab and a nest but no feature behind it (Analysis
+// is a pushed screen now, still reachable from its nest).
 
 import {
   createMaterialTopTabNavigator,
@@ -25,9 +26,12 @@ import {
 import type { ParamListBase, TabNavigationState } from "@react-navigation/native";
 import { withLayoutContext } from "expo-router";
 import { Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { BrandTabBar } from "../../components/brand-tab-bar";
 import { BridgeSessionWarmer } from "../../components/bridge-session-warmer";
+import { useBrandSheets } from "../../components/use-brand-sheets";
 import { Brand } from "../../constants/theme";
 
 const { Navigator } = createMaterialTopTabNavigator();
@@ -41,6 +45,11 @@ const SwipeTabs = withLayoutContext<
 >(Navigator);
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  // The drawer starts where a screen's first line does, so it covers the page
+  // and leaves the status bar clear.
+  const { open, sheets } = useBrandSheets(insets.top + CONTENT_TOP_GAP);
+
   return (
     <>
       {/* Runs the bridge launch handshake invisibly the moment the tabs
@@ -49,7 +58,7 @@ export default function TabsLayout() {
       <BridgeSessionWarmer />
       <SwipeTabs
       tabBarPosition="bottom"
-      tabBar={(props) => <BrandTabBar {...props} />}
+      tabBar={(props) => <BrandTabBar {...props} onOpenMenu={open} />}
       screenOptions={{
         // Swiping between tabs is a NATIVE gesture. In a mobile browser it
         // fights Safari's own edge-swipes — and worse, the pager's gesture
@@ -73,8 +82,10 @@ export default function TabsLayout() {
       <SwipeTabs.Screen name="play" options={{ title: "Play" }} />
       <SwipeTabs.Screen name="coach" options={{ title: "Coach" }} />
       <SwipeTabs.Screen name="club" options={{ title: "Club" }} />
-      <SwipeTabs.Screen name="analysis" options={{ title: "Analysis" }} />
       </SwipeTabs>
+
+      {/* The Menu drawer — over the tabs, so it survives switching between them. */}
+      {sheets}
     </>
   );
 }

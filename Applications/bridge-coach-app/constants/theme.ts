@@ -1,4 +1,4 @@
-// BirdBridge design system.
+// Bridge Bird design system.
 //
 // Sourced from the Figma wireframes (file zCABHj6P4zQcWtMuDJHqtf): the home
 // tree screen, and the Profile / Settings sheets. The `Colors` keys that
@@ -80,7 +80,7 @@ export const TAB_BAR_CLEARANCE = 96;
  * nest labels, the wordmark); General Sans is the UI/body face.
  */
 export const Fonts = {
-  /** The main title of a screen, and the BirdBridge wordmark. */
+  /** The main title of a screen, and the Bridge Bird wordmark. */
   display: "Neco-Bold",
   /**
    * Section headings and card titles — one step down from the title. Neco Medium

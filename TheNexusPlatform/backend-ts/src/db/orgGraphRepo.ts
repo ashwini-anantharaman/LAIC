@@ -370,6 +370,8 @@ export async function listProgramMembers(orgId: string, programId: string): Prom
       return {
         membership_id: m.id,
         invitation_id: null as string | null,
+        /** The person's org-scoped profile id — the key their picture is under. */
+        profile_id: p?.id ?? null,
         email: p?.email ?? null,
         /** Optional sign-in username, so the roster can show and edit it. */
         username: p?.username ?? null,

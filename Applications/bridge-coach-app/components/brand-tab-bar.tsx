@@ -1,4 +1,4 @@
-// The floating BirdBridge tab bar — liquid glass, and swipe-aware.
+// The floating Bridge Bird tab bar — liquid glass, and swipe-aware.
 //
 // Design (Figma home frame, 390pt wide): a 356x67 rounded bar inset 19pt from
 // each edge, sitting 20pt off the bottom, filled with a translucent pink wash
@@ -14,9 +14,16 @@
 // react-native's Animated here rather than Reanimated: `position` comes from
 // react-native-tab-view as an RN Animated node.
 //
-// One departure from the static frame: it hand-places six icons at uneven offsets
-// and only ever shows Home active, so its 64.9pt block doesn't describe the other
-// five positions. Six equal slots are used, marker one slot wide.
+// Two departures from the static frame. It hand-places six icons at uneven
+// offsets and only ever shows Home active, so its 64.9pt block doesn't describe
+// the other five positions — six equal slots are used, marker one slot wide.
+//
+// And the icons are NOT drawn at their Figma bounding boxes. Those boxes are the
+// glyphs' natural extents, which differ wildly (Club is 24x17.45, Analysis is
+// 22x34.22), so drawn raw the row read as six different sizes and the short
+// glyphs pushed their labels up out of line. Every glyph is instead fitted into
+// one ICON_BOX, keeping its aspect ratio, and the box is a fixed size — so the
+// icons carry even visual weight and all six labels sit on the same line.
 
 import type { MaterialTopTabBarProps } from "@react-navigation/material-top-tabs";
 import { BlurView } from "expo-blur";
@@ -32,11 +39,11 @@ import {
 import { SvgXml } from "react-native-svg";
 
 import {
-  ICON_ANALYSIS,
   ICON_CLUB,
   ICON_COACH,
   ICON_HOME,
   ICON_LEARN,
+  ICON_MENU,
   ICON_PLAY,
 } from "../constants/brand-vectors";
 import { tintSvg } from "./svg-tint";
@@ -52,33 +59,54 @@ const DESIGN_WIDTH = 390;
  * They ship cream (for a dark bar) but are tinted to #292929: over the cream
  * screens the glass bar reads light, where cream glyphs washed out.
  */
+/**
+ * The uniform box every glyph is fitted into. Slightly wider than tall, because
+ * the widest glyph (Club, two people side by side) is the flattest one — this
+ * lets it fill the width and so match the others' visual weight.
+ */
+const ICON_BOX = { w: 30, h: 26 };
+
+/** Scale a glyph's natural size down (or up) to sit inside ICON_BOX. */
+function fitToBox(w: number, h: number): { w: number; h: number } {
+  const k = Math.min(ICON_BOX.w / w, ICON_BOX.h / h);
+  return { w: w * k, h: h * k };
+}
+
 const TABS: Record<string, { label: string; icon: string; w: number; h: number }> = {
   home: { label: "Home", icon: tintSvg(ICON_HOME, Brand.iconDark), w: 29, h: 32 },
   learn: { label: "Learn", icon: tintSvg(ICON_LEARN, Brand.iconDark), w: 29, h: 32.22 },
   play: { label: "Play", icon: tintSvg(ICON_PLAY, Brand.iconDark), w: 33, h: 33 },
   coach: { label: "Coach", icon: tintSvg(ICON_COACH, Brand.iconDark), w: 33, h: 33 },
   club: { label: "Club", icon: tintSvg(ICON_CLUB, Brand.iconDark), w: 24, h: 17.45 },
-  analysis: {
-    label: "Analysis",
-    icon: tintSvg(ICON_ANALYSIS, Brand.iconDark),
-    w: 22,
-    h: 34.22,
-  },
 };
+
+/**
+ * The sixth slot. Menu is NOT a route: it opens the drawer over whatever page
+ * you are on, so it has no page to swipe to and takes no part in the marker.
+ * It replaced Analysis, which had a slot and a nest but no feature behind it.
+ *
+ * The ☰ glyph is 18x12 — far flatter than any tab icon — so it is drawn at the
+ * box's full width and fitToBox leaves the height to follow.
+ */
+const MENU_TAB = { label: "Menu", icon: tintSvg(ICON_MENU, Brand.iconDark), w: 18, h: 12 };
 
 export function BrandTabBar({
   state,
   position,
   jumpTo,
   navigation,
-}: MaterialTopTabBarProps) {
+  /** Opens the Menu drawer. The Menu slot is a button, not a destination. */
+  onOpenMenu,
+}: MaterialTopTabBarProps & { onOpenMenu?: () => void }) {
   const { width } = useWindowDimensions();
   const s = width / DESIGN_WIDTH;
 
   const barWidth = 356 * s;
   const barHeight = 67 * s;
   const radius = 22 * s;
-  const count = state.routes.length;
+  // Five routes plus the Menu button share the bar equally, so every glyph keeps
+  // the same slot width as before.
+  const count = state.routes.length + 1;
   const slot = barWidth / count;
 
   const inputRange = state.routes.map((_, i) => i);
@@ -168,8 +196,19 @@ export function BrandTabBar({
               accessibilityLabel={meta.label}
               style={[styles.slot, { width: slot }]}
             >
-              <Animated.View style={{ opacity }}>
-                <SvgXml xml={meta.icon} width={meta.w * s} height={meta.h * s} />
+              {/* The box is a fixed size whatever the glyph's shape, so the
+                  label below it lands on the same line in every slot. */}
+              <Animated.View
+                style={[
+                  styles.iconBox,
+                  { width: ICON_BOX.w * s, height: ICON_BOX.h * s, opacity },
+                ]}
+              >
+                <SvgXml
+                  xml={meta.icon}
+                  width={fitToBox(meta.w, meta.h).w * s}
+                  height={fitToBox(meta.w, meta.h).h * s}
+                />
               </Animated.View>
               <Animated.Text
                 style={[styles.label, { fontSize: Type.tabLabel * s, opacity }]}
@@ -180,6 +219,29 @@ export function BrandTabBar({
             </Pressable>
           );
         })}
+
+        {/* The Menu slot: same geometry as a tab, but it opens the drawer over
+            the current page instead of navigating, so it never takes the
+            marker. */}
+        <Pressable
+          {...(Platform.OS === "web" ? { onPressIn: onOpenMenu } : { onPress: onOpenMenu })}
+          accessibilityRole="button"
+          accessibilityLabel={MENU_TAB.label}
+          style={[styles.slot, { width: slot }]}
+        >
+          <View
+            style={[styles.iconBox, { width: ICON_BOX.w * s, height: ICON_BOX.h * s, opacity: 0.65 }]}
+          >
+            <SvgXml
+              xml={MENU_TAB.icon}
+              width={fitToBox(MENU_TAB.w, MENU_TAB.h).w * s}
+              height={fitToBox(MENU_TAB.w, MENU_TAB.h).h * s}
+            />
+          </View>
+          <Text style={[styles.label, { fontSize: Type.tabLabel * s, opacity: 0.65 }]} numberOfLines={1}>
+            {MENU_TAB.label}
+          </Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -216,7 +278,8 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   markerTint: { backgroundColor: "rgba(255,244,215,0.16)" },
-  slot: { alignItems: "center", justifyContent: "center", gap: 3 },
+  slot: { alignItems: "center", justifyContent: "center", gap: 4 },
+  iconBox: { alignItems: "center", justifyContent: "center" },
   label: {
     fontFamily: Fonts.body,
     color: Brand.cream,
