@@ -14,6 +14,11 @@ test("deal editor: author a board on the card grid and save it", async ({ page, 
 
   await page.getByPlaceholder("e.g. Weak 2 defense, board 4").fill("E2E authored board");
 
+  // The editor frames itself red until every hand holds 13 cards.
+  const editor = page.getByRole("group", { name: /^Deal editor/ });
+  await expect(editor).toHaveAttribute("aria-label", /not yet 13/);
+  await expect(editor).toHaveClass(/border-rose-400/);
+
   // Assign 13 cards each to North, East, South by clicking the grid.
   const deal: [string, string[]][] = [
     ["North", ["♠A", "♠K", "♠Q", "♠J", "♥A", "♥K", "♥Q", "♦A", "♦K", "♦Q", "♣A", "♣K", "♣Q"]],
@@ -29,6 +34,12 @@ test("deal editor: author a board on the card grid and save it", async ({ page, 
   await page.getByRole("button", { name: /West/ }).first().click();
   await page.getByRole("button", { name: /give the rest to West/ }).click();
   await expect(page.getByText("Every card is placed.")).toBeVisible();
+
+  // 13 apiece now, so the frame goes green — the same condition that enables
+  // the submit button, never a second opinion about it.
+  await expect(editor).toHaveAttribute("aria-label", /all four hands hold 13/);
+  await expect(editor).toHaveClass(/border-emerald-500/);
+  await expect(page.getByRole("button", { name: "Save board" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Save board" }).click();
   await page.waitForURL(/\/bridge\/library\/le_/);
