@@ -16,8 +16,8 @@ import { afterAll, describe, expect, it } from "vitest";
 // Isolated local store BEFORE importing app modules (forces demo mode).
 const tempDir = mkdtempSync(join(tmpdir(), "owlwise-ctx-"));
 process.env.LOCAL_DATA_DIR = tempDir;
-delete process.env.SUPABASE_URL;
-delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+process.env.SUPABASE_URL = "";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "";
 process.env.DATABASE_URL = "";
 process.env.SUPABASE_DB_URL = "";
 

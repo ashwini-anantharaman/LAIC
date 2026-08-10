@@ -8,11 +8,14 @@ import { afterAll, describe, expect, it } from "vitest";
 // SUPABASE_URL is unset in tests).
 const tempDir = mkdtempSync(join(tmpdir(), "owlwise-flow-"));
 process.env.LOCAL_DATA_DIR = tempDir;
-delete process.env.SUPABASE_URL;
-delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 // Pin to local-store mode: these flows exercise the legacy JSON-store path.
-// Set to "" (not delete) so `import "dotenv/config"` — which loads backend-ts/.env
-// — doesn't repopulate DATABASE_URL and silently flip these into Postgres mode.
+//
+// EVERY one of these is set to "" and never `delete`d. `import "dotenv/config"`
+// (via src/config.ts) loads backend-ts/.env, and dotenv only skips keys that are
+// already DEFINED — so a deleted key is one dotenv happily refills. Deleting
+// SUPABASE_URL therefore handed this local-mode flow the real cloud project.
+process.env.SUPABASE_URL = "";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "";
 process.env.DATABASE_URL = "";
 process.env.SUPABASE_DB_URL = "";
 
