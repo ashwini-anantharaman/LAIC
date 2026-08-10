@@ -496,6 +496,13 @@ function buildTemplateOutline(template: TutorialTemplate): OutlineNode[] {
     }
   }
 
+  if (analysis.hasSections && analysis.topLevelGenerateEmbeds.length) {
+    roots.push({
+      label: 'To generate (tutorial-level)',
+      children: analysis.topLevelGenerateEmbeds.map((r) => ({ label: recipeItemLabel(r) })),
+    });
+  }
+
   if (analysis.libraryEmbeds.length) {
     roots.push({
       label: 'Library slots (tutorial-level)',

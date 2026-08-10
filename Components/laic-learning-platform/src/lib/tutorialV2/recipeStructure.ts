@@ -22,8 +22,9 @@ export interface RecipeStructureAnalysis {
   /** Library embeds shown as Structure pickers (tutorial-level). */
   libraryEmbeds: EmbeddedObjectItem[];
   /**
-   * Generate embeds at tutorial level (only when there is no Section block).
-   * With sections, generate embeds stay inside each section's recipe.
+   * Generate embeds at tutorial level — every generate embed in the recipe,
+   * with or without a Section block. A template with both a Section block and
+   * an embedded quiz shows the sections AND the quiz on Structure.
    */
   topLevelGenerateEmbeds: EmbeddedObjectItem[];
   /** True when Sources → markup → generate is needed. */
@@ -57,13 +58,13 @@ export function analyzeTemplateRecipe(template: TutorialTemplate): RecipeStructu
   const libraryEmbeds = embeds.filter(isLibraryMode);
   const generateEmbeds = embeds.filter(isGenerateMode);
 
-  const topLevelGenerateEmbeds = hasSections ? [] : generateEmbeds;
+  // Generate embeds are their own Structure items even when sections exist —
+  // one quiz block in the template means one quiz to generate, not one per section.
+  const topLevelGenerateEmbeds = generateEmbeds;
 
   const sectionAtomics = recipe.filter((r) => r.kind === 'atomic');
-  // Per-section: atomics + generate embeds (library embeds are tutorial-level only).
-  const sectionRecipe = hasSections
-    ? recipe.filter((r) => r.kind === 'atomic' || (r.kind === 'embedded' && isGenerateMode(r)))
-    : [];
+  // Per-section: atomics only (embeds are tutorial-level Structure items).
+  const sectionRecipe = hasSections ? sectionAtomics : [];
 
   const needsSources = hasSections
     || topLevelGenerateEmbeds.length > 0;
