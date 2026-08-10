@@ -131,3 +131,22 @@ describe("standard board cycle", () => {
     expect(standardVul(16)).toBe("ew");
   });
 });
+
+describe("a board's own vulnerability", () => {
+  it("is optional — a random board follows the standard cycle instead", () => {
+    expect(validateDraft(draft())).toEqual([]);
+  });
+
+  it("is accepted when a board carries one (an imported BBO deal does)", () => {
+    const d = draft();
+    d.boards[0]!.vul = "ew";
+    expect(validateDraft(d)).toEqual([]);
+  });
+
+  it("is rejected when it is not a vulnerability at all", () => {
+    const d = draft();
+    // A client is never the authority: a hand-rolled payload gets checked.
+    (d.boards[0] as { vul?: unknown }).vul = "everyone";
+    expect(validateDraft(d)).toContain("Board 1 has no vulnerability.");
+  });
+});

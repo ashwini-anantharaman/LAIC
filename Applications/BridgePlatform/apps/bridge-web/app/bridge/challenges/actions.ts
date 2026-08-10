@@ -99,7 +99,9 @@ export async function createChallengeAction(draft: ChallengeDraft): Promise<void
       boardNo: board.boardNo,
       pack: packOf(board),
       dealer: board.dealer,
-      vul: standardVul(board.boardNo),
+      // An imported board carries its own vulnerability; a random one follows
+      // the standard cycle for its position.
+      vul: board.vul ?? standardVul(board.boardNo),
       humanSeat: board.humanSeat,
       controlOverrides: draft.controlOverrides,
     };

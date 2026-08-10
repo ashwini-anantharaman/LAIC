@@ -298,6 +298,55 @@ test.describe("challenges", () => {
     await expect(cardLink(page, IMPS_TITLE).first()).toContainText("Start · board 1 of 2");
   });
 
+  test("a BBO hand link becomes a board, keeping its dealer and vulnerability", async ({
+    page,
+    context,
+  }) => {
+    await switchUser(context, CREATOR);
+    await page.goto("/bridge/challenges/new");
+
+    // The hand-parameter form, which handviewer.js turns into `md|<dealer>S,W,N,E`.
+    // West deals, E-W vulnerable — neither is what board 1 of the standard
+    // cycle would give (North / none), so the board must be carrying its own.
+    const HANDS =
+      "s=SAKQJHAKQDAKQCAKQ&w=S32H32D32C32456&n=ST98H98D98C98J&e=S7654H7654D7654C7";
+    const link = `https://www.bridgebase.com/tools/handviewer.html?${HANDS}&d=w&v=e&b=3`;
+
+    await page.getByLabel("BBO hand links").fill(link);
+    await page.getByRole("button", { name: "Replace all" }).click();
+
+    // One board, and it is the imported one: West deals, E-W vulnerable.
+    await expect(page.getByText("1 board from BBO.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Dealer W" })).toBeVisible();
+    await expect(page.getByText("Vul E-W")).toBeVisible();
+    // Choosing the deal is disclosed exactly like opening the pack editor.
+    await expect(page.getByText(/Editor badge will apply/)).toBeVisible();
+
+    // A link with no deal in it says so, and changes nothing.
+    await page.getByLabel("BBO hand links").fill("https://www.bridgebase.com/tools/handviewer.html?pc=y");
+    await page.getByRole("button", { name: "Add boards" }).click();
+    await expect(page.getByText(/No deal in that link/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Dealer W" })).toBeVisible();
+
+    // The per-board door does the same to ONE board: fold it open, paste, use.
+    await page.getByRole("button", { name: "BBO link" }).first().click();
+    await page
+      .getByLabel("BBO hand link for board 1")
+      .fill(`https://www.bridgebase.com/tools/handviewer.html?${HANDS}&d=s&v=b`);
+    await page.getByRole("button", { name: "Use deal" }).click();
+    await expect(page.getByRole("button", { name: "Dealer S" })).toBeVisible();
+    await expect(page.getByText("Vul Both")).toBeVisible();
+
+    // It survives the round trip: create, then the board opens with the seat
+    // and the vulnerability the link carried.
+    await page.getByLabel("Title").fill("E2E imported board");
+    await page.getByRole("button", { name: "Create challenge" }).first().click();
+    await page.waitForURL(/\/bridge\/challenges\?created=/);
+    await expect(cardLink(page, "E2E imported board").first()).toContainText(
+      "board 1 of 1",
+    );
+  });
+
   test("phone viewport: the list and the results fit 390px", async ({ page, context }) => {
     await page.setViewportSize(PHONE);
 

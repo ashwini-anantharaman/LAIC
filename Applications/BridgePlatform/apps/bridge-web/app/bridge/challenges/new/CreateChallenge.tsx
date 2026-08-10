@@ -21,6 +21,7 @@ import {
   type StandingsVisibility,
 } from "@bridge/challenges";
 import { seededDeal } from "@bridge/engine";
+import { parseBbo } from "@bridge/formats";
 import type { Card, Seat } from "@bridge/events";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { createChallengeAction } from "../actions";
@@ -104,6 +105,9 @@ export function CreateChallenge({
   const [query, setQuery] = useState("");
   const [invited, setInvited] = useState<{ userId: string; moderator: boolean }[]>([]);
   const [editorBadge, setEditorBadge] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importInfo, setImportInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -153,6 +157,62 @@ export function CreateChallenge({
         return { ...b, seed, hands: seededDeal(seed), edited: false };
       }),
     );
+  /** One pasted line -> boards. A single line may itself hold several boards
+   *  (a multi-board LIN), so this flattens rather than counting lines. */
+  const readImport = (): BoardDraftState[] | null => {
+    const lines = importText
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (!lines.length) {
+      setImportError("Paste a BBO hand link first.");
+      return null;
+    }
+    const out: BoardDraftState[] = [];
+    for (const line of lines) {
+      const parsed = parseBbo(line);
+      if (!parsed.ok) {
+        setImportError(parsed.error);
+        return null;
+      }
+      for (const board of parsed.boards)
+        out.push({
+          boardNo: 0, // renumbered by position below
+          seed: freshSeed(),
+          dealer: board.dealer,
+          humanSeat: "S",
+          vul: board.vul,
+          hands: board.hands,
+          touched: true,
+          edited: true,
+        });
+    }
+    return out;
+  };
+
+  const applyImport = (mode: "add" | "replace") => {
+    const imported = readImport();
+    if (!imported) return;
+    setBoards((prev) => {
+      const kept = mode === "replace" ? [] : prev;
+      return [...kept, ...imported]
+        .slice(0, MAX_BOARDS)
+        .map((board, i) => ({ ...board, boardNo: i + 1 }));
+    });
+    // Choosing the deals is the act the badge exists to disclose (spec §3),
+    // and pasting a hand link is choosing them as squarely as the editor is.
+    setEditorBadge(true);
+    setImportError(null);
+    setImportText("");
+    const room = MAX_BOARDS - (mode === "replace" ? 0 : boards.length);
+    const used = Math.min(imported.length, Math.max(0, room));
+    setImportInfo(
+      used < imported.length
+        ? `Took ${used} of ${imported.length} — a challenge holds ${MAX_BOARDS} boards.`
+        : `${used} board${used === 1 ? "" : "s"} from BBO.`,
+    );
+  };
+
   const toggleInvite = (userId: string) =>
     setInvited((prev) =>
       prev.some((r) => r.userId === userId)
@@ -195,6 +255,7 @@ export function CreateChallenge({
       seed: b.seed,
       dealer: b.dealer,
       humanSeat: b.humanSeat,
+      vul: b.vul,
       ...(b.edited ? { pack: serializePack(b.hands) } : {}),
     })),
     controlOverrides: controlOverridesOf(controls),
@@ -445,14 +506,56 @@ export function CreateChallenge({
           aside={`${boards.length} boards`}
         >
           <p className="mb-3 text-[12.5px] leading-relaxed text-neutral-600">
-            Each board is a random deal. Re-roll for a new one, or open the pack
-            editor to set the cards by hand.
+            Each board is a random deal. Re-roll for a new one, paste a BBO hand
+            link, or open the pack editor to set the cards by hand.
           </p>
+
+          <div className="mb-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+            <Label className="text-neutral-500">From BBO</Label>
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              rows={2}
+              placeholder="Paste Hand Viewer links, one per line"
+              aria-label="BBO hand links"
+              className="w-full resize-y rounded-lg border border-neutral-300 px-2.5 py-2 text-[12px] text-neutral-900"
+            />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => applyImport("add")}
+                disabled={!importText.trim()}
+                className="h-9 rounded-lg bg-neutral-800 px-3.5 text-[12px] font-bold text-white disabled:bg-neutral-200 disabled:text-neutral-400"
+              >
+                Add boards
+              </button>
+              <button
+                type="button"
+                onClick={() => applyImport("replace")}
+                disabled={!importText.trim()}
+                className="h-9 rounded-lg border border-neutral-300 bg-white px-3.5 text-[12px] font-bold text-neutral-700 disabled:text-neutral-300"
+              >
+                Replace all
+              </button>
+            </div>
+            {importError && (
+              <p className="mt-2 rounded border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11.5px] text-invalid">
+                {importError}
+              </p>
+            )}
+            {!importError && importInfo && (
+              <p className="mt-2 text-[11.5px] text-emerald-800">{importInfo}</p>
+            )}
+            <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+              An imported board keeps its own dealer and vulnerability. The
+              auction and play in the link are ignored — you bid it yourself.
+            </p>
+          </div>
           {editorBadge && (
             <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] leading-relaxed text-draft">
-              <b>Editor badge will apply.</b> You opened a pack editor, so you
-              have seen the hands — your leaderboard row will show{" "}
-              <b>“set the boards.”</b> This can’t be undone.
+              <b>Editor badge will apply.</b> You chose these hands — a pack
+              editor opened, or a deal imported — so your leaderboard row will
+              show <b>“set the boards.”</b> This can’t be undone.
             </p>
           )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -685,8 +788,8 @@ export function CreateChallenge({
               k="Editor badge"
               v={
                 editorBadge
-                  ? "Applied — you opened a pack editor, so your row shows “set the boards.”"
-                  : "Not set — you have not opened any pack editor."
+                  ? "Applied — you chose the hands, so your row shows “set the boards.”"
+                  : "Not set — every board is a deal you have not seen."
               }
               warn={editorBadge}
               last
