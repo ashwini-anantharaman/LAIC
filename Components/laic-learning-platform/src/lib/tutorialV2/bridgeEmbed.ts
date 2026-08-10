@@ -23,7 +23,16 @@ export const BRIDGE_ORIGIN: string =
   (import.meta.env?.VITE_BRIDGE_ORIGIN as string | undefined)?.replace(/\/$/, '') ||
   'https://nexus-bridge-79lkq4.vercel.app';
 
-export type BridgeEmbedKind = 'table';
+/**
+ * The MODE of a Bridge block — one block, three shapes, chosen on the first row
+ * of Configure. There is deliberately not a block type per shape: an author who
+ * has laid out a lesson and then wants the drill instead of the table should
+ * change a chip, not delete a block and add another one in the right place.
+ *
+ * Each mode is a component in @bridge/table-embed, and each answers only its own
+ * settings — a drill has no skin, a diagram has no robot pace.
+ */
+export type BridgeEmbedKind = 'table' | 'drill' | 'diagram';
 
 export interface BridgeEmbedDef {
   kind: BridgeEmbedKind;
@@ -45,6 +54,29 @@ export const BRIDGE_EMBEDS: readonly BridgeEmbedDef[] = [
     path: '/bridge/table2/demo',
     ratio: 4 / 3,
   },
+  {
+    kind: 'drill',
+    label: 'Bidding drill',
+    blurb: 'Hands to bid, one at a time, with BEN’s call beside yours.',
+    path: '/bridge/table2/demo',
+    // A drill is column-shaped and sizes to its content; the ratio is only the
+    // thumbnail's, which is why it is wider and shorter than the table's.
+    ratio: 16 / 9,
+  },
+  {
+    kind: 'diagram',
+    label: 'Deal diagram',
+    blurb: 'A deal to look at. Nothing to play.',
+    path: '/bridge/table2/demo',
+    // HandViewer's own design stage (1976 × 1232), so the board never letterboxes.
+    ratio: 1976 / 1232,
+  },
+];
+
+export const BRIDGE_MODES: readonly { id: BridgeEmbedKind; label: string; hint: string }[] = [
+  { id: 'table', label: 'Playable table', hint: 'The full board — bid it and play it out' },
+  { id: 'drill', label: 'Bidding drill', hint: 'One hand at a time: make a call, compare with BEN' },
+  { id: 'diagram', label: 'Deal diagram', hint: 'A static deal to look at — no interaction' },
 ];
 
 export function bridgeEmbedDef(kind: string | undefined): BridgeEmbedDef {
@@ -90,8 +122,25 @@ export type BridgeVul = 'none' | 'ns' | 'ew' | 'both';
 export type BridgeHandLayout = 'row' | 'fan';
 export type BridgeBidPad = 'grid' | 'columns';
 
-/** Everything an author can choose about a table block. */
+/** One problem in a drill: a board, and the author's word on it. */
+export interface BridgeDrillHand {
+  /** The deal, derived deterministically — same seed, same hand, every reader. */
+  seed: number;
+  /** Shown with the feedback, under the comparison with BEN. */
+  note: string;
+}
+
+/**
+ * Everything an author can choose about a Bridge block.
+ *
+ * ONE config for all three modes, not one per mode. The four things that are
+ * true of every shape — the board, who the learner is, who deals, who is
+ * vulnerable — are shared fields, so switching mode keeps the deal the author
+ * chose instead of resetting it. Only the mode-specific knobs are separate, and
+ * the panel shows a mode only its own.
+ */
 export interface BridgeEmbedConfig {
+  /** The MODE: 'table' | 'drill' | 'diagram'. */
   kind: string;
   /** The deal, derived deterministically so every reader sees one board. */
   seed: number;
@@ -107,6 +156,10 @@ export interface BridgeEmbedConfig {
   showCoach: boolean;
   /** Pause before a robot acts, so a board can be followed. */
   robotDelayMs: number;
+  /** drill: the hands, in the order the learner meets them. */
+  drillHands: BridgeDrillHand[];
+  /** diagram: the whole board, or one seat's hand on its own. */
+  diagramShow: 'all' | BridgeSeat;
 }
 
 export const BRIDGE_SKINS: readonly { id: string; label: string }[] = [
@@ -138,7 +191,19 @@ export const BRIDGE_PACES: readonly { id: number; label: string }[] = [
   { id: 900, label: 'Slow' },
 ];
 
-/** What a table block looks like before the author touches anything. */
+/** Which seats a diagram can show — the whole board, or one hand. */
+export const BRIDGE_DIAGRAM_SHOWS: readonly { id: 'all' | BridgeSeat; label: string }[] = [
+  { id: 'all', label: 'All four hands' },
+  { id: 'N', label: 'North only' },
+  { id: 'E', label: 'East only' },
+  { id: 'S', label: 'South only' },
+  { id: 'W', label: 'West only' },
+];
+
+/** More than this and a drill is a test, not a drill. */
+export const BRIDGE_DRILL_MAX_HANDS = 12;
+
+/** What a Bridge block looks like before the author touches anything. */
 export const BRIDGE_EMBED_DEFAULTS: BridgeEmbedConfig = {
   kind: 'table',
   seed: 7,
@@ -152,6 +217,8 @@ export const BRIDGE_EMBED_DEFAULTS: BridgeEmbedConfig = {
   showAllHands: false,
   showCoach: false,
   robotDelayMs: 350,
+  drillHands: [],
+  diagramShow: 'all',
 };
 
 function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
@@ -160,6 +227,26 @@ function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T)
 
 const SEAT_IDS = ['N', 'E', 'S', 'W'] as const;
 const VUL_IDS = ['none', 'ns', 'ew', 'both'] as const;
+const KIND_IDS = ['table', 'drill', 'diagram'] as const;
+
+/**
+ * The drill's hands, out of whatever a part or a block carries. An array of
+ * objects has to survive JSON both ways, so it is validated rather than trusted:
+ * a seed that is not a number, a note that is not a string, or a list longer than
+ * the cap cannot reach the drill.
+ */
+function readDrillHands(raw: unknown): BridgeDrillHand[] {
+  if (!Array.isArray(raw)) return [];
+  const out: BridgeDrillHand[] = [];
+  for (const item of raw) {
+    if (out.length >= BRIDGE_DRILL_MAX_HANDS) break;
+    const h = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+    const seed = h.seed;
+    if (typeof seed !== 'number' || !Number.isFinite(seed)) continue;
+    out.push({ seed: Math.floor(seed), note: typeof h.note === 'string' ? h.note : '' });
+  }
+  return out;
+}
 
 /**
  * Read a config out of anything that carries the fields — a part
@@ -172,9 +259,11 @@ export function readBridgeConfig(src: unknown): BridgeEmbedConfig {
   const pick = (a: string, b: string) => (s[a] !== undefined ? s[a] : s[b]);
   const seed = pick('embedSeed', 'seed');
   const delay = pick('embedRobotDelayMs', 'robotDelayMs');
+  const seedNum = typeof seed === 'number' && Number.isFinite(seed) ? seed : BRIDGE_EMBED_DEFAULTS.seed;
+  const drillHands = readDrillHands(pick('embedDrillHands', 'drillHands'));
   return {
-    kind: (pick('embedKind', 'kind') as string) || BRIDGE_EMBED_DEFAULTS.kind,
-    seed: typeof seed === 'number' && Number.isFinite(seed) ? seed : BRIDGE_EMBED_DEFAULTS.seed,
+    kind: oneOf(pick('embedKind', 'kind'), KIND_IDS, 'table'),
+    seed: seedNum,
     humanSeat: oneOf(pick('embedHumanSeat', 'humanSeat'), SEAT_IDS, BRIDGE_EMBED_DEFAULTS.humanSeat),
     dealer: oneOf(pick('embedDealer', 'dealer'), SEAT_IDS, BRIDGE_EMBED_DEFAULTS.dealer),
     vul: oneOf(pick('embedVul', 'vul'), VUL_IDS, BRIDGE_EMBED_DEFAULTS.vul),
@@ -187,12 +276,28 @@ export function readBridgeConfig(src: unknown): BridgeEmbedConfig {
     showCoach: !!pick('embedShowCoach', 'showCoach'),
     robotDelayMs:
       typeof delay === 'number' && Number.isFinite(delay) ? delay : BRIDGE_EMBED_DEFAULTS.robotDelayMs,
+    // A drill with no hands is a broken block, so an empty list falls back to the
+    // block's own board — one hand is a small drill, none is nothing to do.
+    drillHands: drillHands.length ? drillHands : [{ seed: seedNum, note: '' }],
+    diagramShow: oneOf(
+      pick('embedDiagramShow', 'diagramShow'),
+      ['all', ...SEAT_IDS] as const,
+      BRIDGE_EMBED_DEFAULTS.diagramShow,
+    ),
   };
 }
 
-/** config → the `embed*` fields of an editor part. */
+/**
+ * config → the `embed*` fields of an editor part.
+ *
+ * `label` rides along because the mode names the block: change the mode and the
+ * part's label in the editor's list has to follow, or a drill sits in the outline
+ * calling itself "Bridge table". Every hop that writes part fields calls this, so
+ * the label cannot fall out of step in one of them.
+ */
 export function configToPartFields(c: BridgeEmbedConfig): Partial<TutorialV2Part> {
   return {
+    label: bridgeEmbedDef(c.kind).label,
     embedKind: c.kind,
     embedSeed: c.seed,
     embedHumanSeat: c.humanSeat,
@@ -204,6 +309,8 @@ export function configToPartFields(c: BridgeEmbedConfig): Partial<TutorialV2Part
     embedShowAllHands: c.showAllHands,
     embedShowCoach: c.showCoach,
     embedRobotDelayMs: c.robotDelayMs,
+    embedDrillHands: c.drillHands,
+    embedDiagramShow: c.diagramShow,
   };
 }
 
@@ -221,6 +328,8 @@ export function configToBlockContent(c: BridgeEmbedConfig, caption: string) {
     showAllHands: c.showAllHands,
     showCoach: c.showCoach,
     robotDelayMs: c.robotDelayMs,
+    drillHands: c.drillHands,
+    diagramShow: c.diagramShow,
     caption,
   };
 }
@@ -233,13 +342,18 @@ export function rollBridgeSeed(): number {
 /* ------------------------------------------------------------------ *
  * The deal a seed means.
  *
- * @bridge/table-embed derives the deal from the seed internally and does
- * not export the derivation, so this MIRRORS it (same PRNG, same deck
- * order, same S-W-N-E rotation) purely so an author can see the board a
- * re-roll produced. It is author-facing decoration: the table itself
- * always derives its own deal from the seed, so a drift here shows up as
- * a wrong summary, never as a wrong board. Worth exporting from the
- * package next time it is built.
+ * This MIRRORS @bridge/table-embed's derivation (same mulberry32, same
+ * deck order, same S-W-N-E rotation) purely so an author can see the
+ * board a re-roll produced. It is author-facing decoration: the table
+ * itself always derives its own deal from the seed, so a drift here shows
+ * up as a wrong summary, never as a wrong board.
+ *
+ * The package NOW EXPORTS `seededDeal`, and the mirror still stays. This
+ * module is imported by draftModel and the reader — eagerly, on every page
+ * — so importing the vendored bundle here would drag 102kB of table into
+ * the main chunk and undo the whole point of the lazy block. The mirror is
+ * the price of that; it is checked against the engine's own seededDeal
+ * (packages/bridge-engine/src/decide/simulate.ts) and matches it today.
  * ------------------------------------------------------------------ */
 
 export type BridgeSuit = 'S' | 'H' | 'D' | 'C';

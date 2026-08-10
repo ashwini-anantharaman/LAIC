@@ -63,6 +63,10 @@ export type TutorialV2Part = Omit<GeneratedPart, 'type'> & {
   embedShowAllHands?: boolean;
   embedShowCoach?: boolean;
   embedRobotDelayMs?: number;
+  /** drill mode: the hands the learner bids, in order. */
+  embedDrillHands?: { seed: number; note: string }[];
+  /** diagram mode: the whole board, or one seat's hand. */
+  embedDiagramShow?: 'all' | 'N' | 'E' | 'S' | 'W';
   /** From template media slot — steers the empty Start from scratch UI. */
   mediaKind?: 'image' | 'video' | 'either';
   mediaHint?: string;
