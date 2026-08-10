@@ -10,6 +10,7 @@ import { legalCalls, legalPlays, resultLabel, scoreBoard } from "@bridge/engine"
 import type { Seat } from "@bridge/events";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { after } from "next/server";
 import { undoAction } from "@/app/bridge/table/actions";
 import { HandViewer } from "@bridge/table-ui";
 import { EmbedTableState } from "@/components/mobile/EmbedTableState";
@@ -55,15 +56,29 @@ export default async function PlayTablePage({
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
-  await requireFeature(context, "page.play");
-  // Inside the coach app's WebView the host owns the frame and the table
-  // renders its phone tier; on the desktop platform it keeps the wide view.
-  // (The table.* capability gates moved below — challenges lay their board's
-  // controlOverrides over the catalogue, so gating resolves in one place.)
-  const embedded = await isEmbeddedLaunch();
-  // The viewer's saved skin & layout — resolved once here and threaded to the
-  // table. Fails open to the built-in look inside getAppearance.
-  const appearance = await getAppearance(context.nexusUserId);
+  const { sessionId: sessionIdParam } = await params;
+
+  // THE BOARD'S FOUR INDEPENDENT LOADS, TOGETHER. The catalogue check, the
+  // viewer's appearance and the session fold each cost ~80–100ms and need
+  // nothing from one another; run sequentially they were ~260ms of the open,
+  // which is most of the wait before a board paints (measured 2026-08-09).
+  // The challenge lookup still follows, because it reads the folded view.
+  const [, embedded, appearance, viewResult] = await Promise.all([
+    requireFeature(context, "page.play"),
+    // Inside the coach app's WebView the host owns the frame and the table
+    // renders its phone tier; on the desktop platform it keeps the wide view.
+    isEmbeddedLaunch(),
+    // The viewer's saved skin & layout, threaded to the table. Fails open to
+    // the built-in look inside getAppearance.
+    getAppearance(context.nexusUserId),
+    // Settled, not thrown: a missing session is an ordinary event inside the
+    // host app (a discarded board tapped from a stale list), and the branch
+    // below needs `embedded` to decide where to send them.
+    sessionService()
+      .view(sessionIdParam)
+      .then((v) => ({ ok: true as const, v }))
+      .catch(() => ({ ok: false as const })),
+  ]);
   const resolvedAppearance = {
     ...resolveSkin(appearance.skin, appearance.overrides),
     handLayout: appearance.handLayout,
@@ -72,13 +87,10 @@ export default async function PlayTablePage({
     fanSpread: appearance.fanSpread,
     fanRadius: appearance.fanRadius,
   };
-  const { sessionId } = await params;
+  const sessionId = sessionIdParam;
   const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error, from } = await searchParams;
 
-  let view;
-  try {
-    view = await sessionService().view(sessionId);
-  } catch {
+  if (!viewResult.ok) {
     // EMBEDDED, a bare 404 is a dead end inside the host app's frame — and a
     // gone session is an ordinary event there (a discarded board tapped from
     // a list that hadn't refreshed yet). Land somewhere the app recognizes:
@@ -86,8 +98,23 @@ export default async function PlayTablePage({
     if (embedded) redirect("/m/home?boardGone=1");
     notFound();
   }
+  const view = viewResult.v;
   const { record, state, actingSeat, actingIsHuman } = view;
   const complete = state.phase === "complete";
+
+  // THE COMPLETION EVENT. If this board belongs to an assignment, finishing it
+  // is what sends the play to its reviewers — and this is the moment we know it
+  // finished. It used to depend on someone later opening an assignments list,
+  // which meant feedback could simply never be delivered.
+  //
+  // after() so the player waits on nothing: the response is already sent, and
+  // delivery is idempotent, so a repeat render costs one cheap read.
+  if (complete) {
+    after(async () => {
+      const { deliverForSession } = await import("@/lib/assignments");
+      await deliverForSession(sessionId);
+    });
+  }
 
   // CHALLENGE BRANCH (spec ADDENDUM A4). Null for every ordinary table, and
   // null again if the challenge store is unreachable — normal play is never

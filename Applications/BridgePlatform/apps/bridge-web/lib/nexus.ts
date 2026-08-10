@@ -135,6 +135,15 @@ export async function getMyCoach(): Promise<{ coach_id: string; name: string } |
   return body?.coach ?? null;
 }
 
+/** EVERY coach the calling learner has hired (multi-coach) — the send-for-
+ *  review picker's roster. Empty when none hired (or stub mode). */
+export async function getMyCoaches(): Promise<{ coach_id: string; name: string }[]> {
+  const body = await nexusGet<{ coaches?: { coach_id: string; name: string }[] }>(
+    "/api/platform/bridge/my-coaches",
+  );
+  return body?.coaches ?? [];
+}
+
 export type RosterLearner = {
   /** The id space bridge artifacts key on — a participant's context resolves
    *  nexusUserId to this same id. */
@@ -143,9 +152,22 @@ export type RosterLearner = {
   name: string | null;
 };
 
-/** The calling coach's roster (learners who hired them), from Nexus. */
+/**
+ * The calling coach's roster (learners who hired them), from Nexus.
+ *
+ * Cached for the usual short TTL: every Nexus read pays that service's
+ * per-request verification chain (~0.5s locally, more in production), and this
+ * list is asked for by the assign picker AND by the assignment editor every time
+ * it opens. A hire propagates within the minute.
+ */
 export async function getMyLearners(): Promise<RosterLearner[]> {
-  return (await nexusGet<RosterLearner[]>("/api/platform/bridge/learners")) ?? [];
+  const cookieStore = await cookies();
+  const token = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  if (!token) return (await nexusGet<RosterLearner[]>("/api/platform/bridge/learners")) ?? [];
+  const { cachedNexusGet } = await import("./nexusCache");
+  return cachedNexusGet(`learners:${token}`, async () => {
+    return (await nexusGet<RosterLearner[]>("/api/platform/bridge/learners")) ?? [];
+  });
 }
 
 export type ProgramCoach = {
@@ -156,9 +178,22 @@ export type ProgramCoach = {
   learner_count: number;
 };
 
-/** The program's coaches, from Nexus (names + ids only). */
+/**
+ * The program's coaches, from Nexus (names + ids only).
+ *
+ * Cached on the same short TTL as the roster, and for the same reason: this is
+ * what the reviewer picker reads, so it was a fresh cross-service call every time
+ * the assignment editor opened. Reviewer pools go through lib/reviewers.ts — do
+ * not call this directly to build one.
+ */
 export async function getProgramCoaches(): Promise<ProgramCoach[]> {
-  return (await nexusGet<ProgramCoach[]>("/api/platform/bridge/coaches")) ?? [];
+  const cookieStore = await cookies();
+  const token = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  if (!token) return (await nexusGet<ProgramCoach[]>("/api/platform/bridge/coaches")) ?? [];
+  const { cachedNexusGet } = await import("./nexusCache");
+  return cachedNexusGet(`coaches:${token}`, async () => {
+    return (await nexusGet<ProgramCoach[]>("/api/platform/bridge/coaches")) ?? [];
+  });
 }
 
 /**

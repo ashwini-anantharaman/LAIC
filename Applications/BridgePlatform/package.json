@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "demo": "tsx tools/demo.ts",
     "db:apply": "node db/apply.mjs",
-    "db:status": "node db/apply.mjs --status"
+    "db:status": "node db/apply.mjs --status",
+    "db:parity": "node db/checkTreeParity.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

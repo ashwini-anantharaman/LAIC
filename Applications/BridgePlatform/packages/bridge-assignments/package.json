@@ -1,0 +1,33 @@
+{
+  "name": "@bridge/assignments",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The assignment component family: what a coach composes (a brief with contents, learners and reviewers), the pure view model its surfaces read, the copy they say, and the props-driven React that renders them. No store access and no palette of its own — the host supplies both — so a new content kind (a drill, a tutorial) is a member of one union plus a renderer, and nothing else moves.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bridge/sessions": "workspace:*"
+  },
+  "peerDependencies": {
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.9.3"
+  }
+}

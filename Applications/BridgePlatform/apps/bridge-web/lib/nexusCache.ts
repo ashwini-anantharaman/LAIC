@@ -11,7 +11,16 @@ const store = (
   }
 ).__nexusReadCache ??= new Map();
 
-export async function cachedNexusGet<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+/**
+ * Read through a short-TTL cache that survives across REQUESTS.
+ *
+ * React's cache() only memoizes within one request, so anything read on every
+ * page render was paying its round trip on every navigation. Use this for reads
+ * that are (a) hot on a path someone is waiting on and (b) have a known write
+ * site that can invalidate them — never for anything a stale answer could
+ * mislead about.
+ */
+export async function cachedRead<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
   const hit = store.get(key);
   if (hit && hit.expires > Date.now()) return hit.value as T;
   const value = await fetcher();
@@ -21,6 +30,10 @@ export async function cachedNexusGet<T>(key: string, fetcher: () => Promise<T>):
 }
 
 /** Drop cached reads whose key starts with `prefix` (mutation call sites). */
-export function invalidateNexusReads(prefix: string): void {
+export function invalidateReads(prefix: string): void {
   for (const key of store.keys()) if (key.startsWith(prefix)) store.delete(key);
 }
+
+/** The original Nexus-shaped names, kept for the existing call sites. */
+export const cachedNexusGet = cachedRead;
+export const invalidateNexusReads = invalidateReads;

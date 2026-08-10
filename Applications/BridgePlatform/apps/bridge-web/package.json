@@ -16,6 +16,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
     "@bridge/access": "workspace:*",
+    "@bridge/assignments": "workspace:*",
     "@bridge/audit": "workspace:*",
     "@bridge/b2f-template": "workspace:*",
     "@bridge/challenges": "workspace:*",

@@ -30,6 +30,20 @@ import { refreshSummary } from "../lib/summary-cache";
  * (cookie session) and deep-links to `next`. embedded=1 hides the platform's
  * own sign-out — the app owns the surrounding navigation.
  */
+/**
+ * Is this embed URL showing a BOARD? Both platform routes that render one:
+ * /bridge/table2/<id> is the table itself, and /m/table/<id> is the mobile entry
+ * that redirects onto it (and also serves the finished hand record via
+ * ?view=hands, which wants the whole screen just as much).
+ *
+ * Path-only on purpose — query strings carry ?from=, ?view=, ?discarded= and must
+ * not change the answer.
+ */
+function isTableHref(href: string): boolean {
+  const path = href.split("?")[0] ?? "";
+  return path.includes("/bridge/table2/") || path.includes("/m/table/");
+}
+
 export function BridgeEmbed({
   title,
   next,
@@ -137,10 +151,35 @@ export function BridgeEmbed({
     [],
   );
 
+  /**
+   * A BOARD IS ALWAYS THE WHOLE SCREEN, whichever screen it opened from.
+   *
+   * Most tables have their own Expo screen and ask for fullScreen. But a board
+   * can also open INSIDE another screen's embed — Start on an assignment, Replay
+   * in My Games — and those kept the host screen's header, so the table was
+   * squeezed into what was left (owner report 2026-08-09). The table page tells
+   * us where we are (EmbedTableState, on both the native WebView and the web
+   * iframe), so the chrome follows the content rather than the route.
+   */
+  const [atTable, setAtTable] = useState(false);
+
+
   const handleHostMessage = useCallback((data: unknown) => {
-    const m = data as { type?: unknown; sessionId?: unknown; phase?: unknown } | null;
+    const m = data as {
+      type?: unknown;
+      sessionId?: unknown;
+      phase?: unknown;
+      href?: unknown;
+    } | null;
     if (m?.type === "bridge:table" && typeof m.sessionId === "string" && typeof m.phase === "string") {
       tableState.current = { sessionId: m.sessionId, phase: m.phase };
+      setAtTable(true);
+    }
+    // Any other page inside /m reports its location; that is how the web iframe
+    // learns the board has been left (a native WebView uses the url change).
+    if (m?.type === "bridge:location" && typeof m.href === "string" && !isTableHref(m.href)) {
+      tableState.current = null;
+      setAtTable(false);
     }
   }, []);
 
@@ -190,6 +229,14 @@ export function BridgeEmbed({
   const handleUrlChange = useCallback(
     (u: string) => {
       currentUrl.current = u;
+      // Native's own read of "am I at a board", so the chrome is right even
+      // before the page's first state report — and is dropped again the moment
+      // the embed navigates back to a list.
+      if (isTableHref(u)) setAtTable(true);
+      else {
+        tableState.current = null;
+        setAtTable(false);
+      }
       // The discard's landing page — the deletion went through; leave now.
       if (u.includes("discarded=1") && discardTimer.current) {
         goBackNow();
@@ -253,9 +300,17 @@ export function BridgeEmbed({
     }, [resetOnFocus, next, load]),
   );
 
+  // The board owns the screen whether the host screen asked for it (a table
+  // route) or the embed simply navigated onto one (an assignment's Start, a
+  // Replay). Note the save-or-discard question stays tied to confirmUnfinishedExit
+  // and is NOT inferred: discarding deletes the session, and an assignment's row
+  // points at that session — offering it here would strand the assignment.
+  const immersive = fullScreen || atTable;
+
+
   return (
     <Screen>
-      {!fullScreen && (
+      {!immersive && (
         <ScreenHeader
           title={title}
           backTo={backTo}
@@ -294,9 +349,14 @@ export function BridgeEmbed({
       {/* Full-screen chrome: one back chip riding the board's top-left
           corner, running the same guarded back as the header arrow. It stays
           up during loading and errors too — it is the screen's only exit. */}
-      {fullScreen && !discarding && (
+      {immersive && !discarding && (
         <Pressable
-          onPress={() => handleBack(goBackNow)}
+          // Only a screen that OPTED IN gets the save-or-discard question. On an
+          // inferred full-screen board — an assignment's Continue, a Replay —
+          // leaving simply leaves: the board keeps its progress, which is what
+          // "In progress" promises. Offering Discard here would delete the very
+          // session the assignment row points at and strand it.
+          onPress={() => (confirmUnfinishedExit ? handleBack(goBackNow) : goBackNow())}
           accessibilityRole="button"
           accessibilityLabel="Go back"
           hitSlop={10}

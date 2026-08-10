@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getBridgeContext, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
+import { getBridgeContext, nexusProgramIdOf, orgScopeOf, isBridgeCoach } from "@/lib/nexus";
 import { submissionStore } from "@/lib/sessions";
 
 // BirdBridge typefaces (loaded in the /m layout): Neco for display, General
@@ -21,6 +21,10 @@ const GREEN_EDGE = "#052a20";
 export default async function MobileReviewsPage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
+  // Gated, not merely empty. This page used to rely on the query returning
+  // nothing for a learner — which is a filter, not a permission, and one
+  // mistake in that filter turns a queue into a leak.
+  if (!isBridgeCoach(context)) redirect("/m/home");
 
   const programId = (await nexusProgramIdOf()) ?? undefined;
   const submissions = await submissionStore().listSubmissions({

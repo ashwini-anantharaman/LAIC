@@ -73,7 +73,10 @@ export class PgSubmissionStore implements SubmissionStore {
       .from("bridge_play_submissions")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(200);
+      // Raised from 200: one finished play now yields one submission PER
+      // REVIEWER (0028 fan-out), so a learner's visible history was being
+      // divided by their reviewer count with nothing to show it had been cut.
+      .limit(1000);
     if (filter?.programOrganizationId !== undefined)
       query = query.eq("program_organization_id", filter.programOrganizationId);
     if (filter?.nexusProgramId !== undefined)
@@ -81,6 +84,12 @@ export class PgSubmissionStore implements SubmissionStore {
     if (filter?.learnerId !== undefined) query = query.eq("learner_id", filter.learnerId);
     if (filter?.coachId !== undefined) query = query.eq("coach_id", filter.coachId);
     if (filter?.sessionId !== undefined) query = query.eq("session_id", filter.sessionId);
+    // One round trip for many sessions. An empty list must match NOTHING, so it
+    // short-circuits rather than falling through to an unfiltered read.
+    if (filter?.sessionIds !== undefined) {
+      if (filter.sessionIds.length === 0) return [];
+      query = query.in("session_id", [...filter.sessionIds]);
+    }
     const rows = check(await query, "submissions.list");
     return rows.map(fromSubmissionRow);
   }
@@ -95,6 +104,17 @@ export class PgSubmissionStore implements SubmissionStore {
         created_at: comment.createdAt,
       }),
       "comments.add",
+    );
+  }
+  async deleteSubmission(submissionId: string) {
+    // bridge_play_comments.submission_id is ON DELETE CASCADE (bridge schema
+    // 0001), so the conversation goes with the submission in one statement.
+    check(
+      await this.db
+        .from("bridge_play_submissions")
+        .delete()
+        .eq("submission_id", submissionId),
+      "submissions.delete",
     );
   }
   async listComments(submissionId: string) {

@@ -37,7 +37,7 @@ export function startPrewarmAll(): void {
     // cookie they bounce to /welcome, but the bounce itself warms the
     // function, the Next.js render path and the DB pool — the expensive part.
     ...(window.location.protocol === "https:"
-      ? ["/welcome", "/m/plays", "/m/library", "/m/assigned", "/m/reviews"].map(
+      ? ["/welcome", "/m/plays", "/m/library", "/m/assigned", "/m/reviews", "/m/assignments"].map(
           (p) => `${window.location.origin}${p}`,
         )
       : []),

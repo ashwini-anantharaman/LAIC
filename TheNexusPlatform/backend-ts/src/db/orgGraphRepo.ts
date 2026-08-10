@@ -1997,8 +1997,11 @@ export async function findLearnerParticipations(
 export async function listProgramLearners(
   orgId: string,
   programId: string,
-  opts: { groupId?: string } = {},
+  // A coach's roster is the UNION of their legacy roster group and the
+  // multi-coach relationship rows (0040) — either filter alone under-counts.
+  opts: { groupId?: string; participantIds?: string[] } = {},
 ): Promise<Row[]> {
+  const scoped = Boolean(opts.groupId) || Boolean(opts.participantIds?.length);
   return asPrivileged(async (tx) => {
     const rows = await tx
       .select({
@@ -2015,7 +2018,16 @@ export async function listProgramLearners(
           eq(participants.programId, programId),
           eq(participants.participantType, "learner"),
           eq(participants.status, "active"),
-          ...(opts.groupId ? [eq(participants.groupId, opts.groupId)] : []),
+          ...(scoped
+            ? [
+                or(
+                  ...(opts.groupId ? [eq(participants.groupId, opts.groupId)] : []),
+                  ...(opts.participantIds?.length
+                    ? [inArray(participants.id, opts.participantIds)]
+                    : []),
+                ),
+              ]
+            : []),
         ),
       );
     // user_id IS the id space the platforms key artifacts on: a participant's
@@ -2115,6 +2127,118 @@ export async function setParticipantGroup(participantId: string, groupId: string
   });
 }
 
+/**
+ * Every coach this learner has hired: the roster-group coach (the learner's
+ * PRIMARY — participants.group_id, which rosters and assignments key on)
+ * plus the additive rows in bridge_learner_coaches (migration 0040). Deduped
+ * — hiring writes both places for the first coach — and name-sorted.
+ */
+export async function listLearnerCoaches(
+  orgId: string,
+  programId: string,
+  participant: Row,
+  /**
+   * The learner's PROFILE id (access.profileId) — the id space
+   * bridge_play_submissions.learner_id keys on, so each coach can carry the
+   * learner's own sent/reviewed/pending tallies with them. Null skips the
+   * tallies (callers that only need ids and names).
+   *
+   * Must NOT default to participant.user_id: a learner who also holds an org
+   * membership resolves to the membership's profile id, and that is the id
+   * submissions were written under. The wrong one counts zero, silently.
+   */
+  learnerProfileId: string | null = null,
+): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      with hired as (
+        select (g.metadata_json->>'coach_profile_id')::uuid as coach_profile_id
+        from groups g
+        where g.id = ${(participant.group_id as string) ?? null}
+          and g.metadata_json->>'kind' = 'coach_roster'
+        union
+        select lc.coach_profile_id
+        from bridge_learner_coaches lc
+        where lc.participant_id = ${participant.id as string}
+          and lc.organization_id = ${orgId} and lc.program_id = ${programId}
+      ),
+      -- This learner's plays, split per coach. Scoped exactly as bridge-web's
+      -- own /m/plays read is (learner + org + program) so a coach's number can
+      -- never disagree with the list that number opens.
+      counts as (
+        select s.coach_id,
+               count(*) as sent,
+               count(*) filter (where s.status = 'reviewed') as reviewed,
+               -- <> 'reviewed', not = 'submitted': status has no CHECK
+               -- constraint and 'submitted' is only the column default.
+               count(*) filter (where s.status <> 'reviewed') as pending
+        from bridge_play_submissions s
+        where ${learnerProfileId}::text is not null
+          and s.learner_id = ${learnerProfileId}
+          and s.program_organization_id = ${orgId}
+          and (${programId}::text is null or s.nexus_program_id = ${programId})
+        group by s.coach_id
+      )
+      select p.id as coach_id,
+             coalesce(p.display_name, p.name, split_part(p.email, '@', 1)) as name,
+             coalesce(c.sent, 0)::int as sent,
+             coalesce(c.reviewed, 0)::int as reviewed,
+             coalesce(c.pending, 0)::int as pending
+      from profiles p
+      join hired h on h.coach_profile_id = p.id
+      -- p.id is uuid, submissions.coach_id is text. Cast the uuid: casting the
+      -- other way raises 22P02 on any non-uuid legacy value.
+      left join counts c on c.coach_id = p.id::text`);
+    return (rows as unknown as Row[]).sort((a, b) =>
+      String(a.name ?? "").localeCompare(String(b.name ?? "")),
+    );
+  });
+}
+
+/** Record a hire (idempotent). The caller decides about the roster group. */
+export async function addLearnerCoach(
+  orgId: string,
+  programId: string,
+  participantId: string,
+  coachProfileId: string,
+): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx.execute(sql`
+      insert into bridge_learner_coaches
+        (organization_id, program_id, participant_id, coach_profile_id)
+      values (${orgId}, ${programId}, ${participantId}, ${coachProfileId})
+      on conflict (participant_id, coach_profile_id) do nothing`);
+  });
+}
+
+/** Dissolve one hire (the roster group is the caller's business). */
+export async function removeLearnerCoach(
+  participantId: string,
+  coachProfileId: string,
+): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx.execute(sql`
+      delete from bridge_learner_coaches
+      where participant_id = ${participantId} and coach_profile_id = ${coachProfileId}`);
+  });
+}
+
+/** Participant ids that hired this coach via the relationship table —
+ *  unioned into the coach's roster beside their legacy roster group. */
+export async function listParticipantIdsForCoach(
+  orgId: string,
+  programId: string,
+  coachProfileId: string,
+): Promise<string[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select participant_id from bridge_learner_coaches
+      where organization_id = ${orgId} and program_id = ${programId}
+        and coach_profile_id = ${coachProfileId}`);
+    return (rows as unknown as Row[]).map((r) => String(r.participant_id));
+  });
+}
+
 /** The coach behind a roster group, or null when the group isn't one. */
 export async function getCoachForGroup(groupId: string): Promise<Row | null> {
   return asPrivileged(async (tx) => {
@@ -2153,24 +2277,39 @@ export async function getBridgeActivitySummary(
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
       select
-        (select count(*) from bridge_assignments a
+        -- One assignment = one BRIEF (0028). A brief that later holds several
+        -- boards is ONE thing the learner was asked to do, not three; a legacy
+        -- row has no brief and counts as its own group, so this number is
+        -- unchanged for pre-0028 data.
+        (select count(distinct coalesce(a.brief_id, a.assignment_id))
+           from bridge_assignments a
           where a.learner_id = ${userId}
             and (${programId}::text is null or a.nexus_program_id = ${programId})
             and a.status in ('assigned','started')) as assignments_open,
-        (select count(*) from bridge_play_submissions s
+        -- DISTINCT SESSION, not count(*): a finished play now yields one
+        -- submission per REVIEWER, and the app renders this as "N games
+        -- reviewed". Two coaches reviewing one game is ONE game reviewed.
+        (select count(distinct s.session_id) from bridge_play_submissions s
           where s.learner_id = ${userId}
             and (${programId}::text is null or s.nexus_program_id = ${programId})
             and s.status = 'reviewed') as plays_reviewed,
+        -- count(*) is RIGHT here and must stay: the grain is the THREAD, one per
+        -- (coach, session), and the app says "N plays awaiting review" — N things
+        -- for THIS coach to do. Another reviewer's row has a different coach_id
+        -- and is invisible to this count.
         (select count(*) from bridge_play_submissions s
           where s.coach_id = ${userId}
             and (${programId}::text is null or s.nexus_program_id = ${programId})
             and s.status = 'submitted') as reviews_pending,
-        (select count(*) from participants pa
-          join groups g on g.id = pa.group_id
-          where g.organization_id = ${orgId}
+        (select count(distinct pa.id) from participants pa
+          left join groups g on g.id = pa.group_id
             and g.metadata_json->>'kind' = 'coach_roster'
             and g.metadata_json->>'coach_profile_id' = ${userId}
-            and pa.participant_type = 'learner' and pa.status = 'active') as roster_count
+          left join bridge_learner_coaches lc on lc.participant_id = pa.id
+            and lc.coach_profile_id = ${userId}::uuid
+          where pa.organization_id = ${orgId}
+            and pa.participant_type = 'learner' and pa.status = 'active'
+            and (g.id is not null or lc.id is not null)) as roster_count
     `);
     return (rows as unknown as Row[])[0] ?? {};
   });
