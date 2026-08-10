@@ -135,13 +135,29 @@ export async function getMyCoach(): Promise<{ coach_id: string; name: string } |
   return body?.coach ?? null;
 }
 
-/** EVERY coach the calling learner has hired (multi-coach) — the send-for-
- *  review picker's roster. Empty when none hired (or stub mode). */
+/**
+ * EVERY coach the calling learner has hired (multi-coach) — the send-for-review
+ * picker's roster. Empty when none hired (or stub mode).
+ *
+ * Cached on the same short TTL, and for the same reason, as getMyLearners below:
+ * this is a Nexus read, so it pays that service's whole per-request verification
+ * chain, and My games asks for it on EVERY load just to decide the send picker's
+ * options. A hire propagates within the minute.
+ */
 export async function getMyCoaches(): Promise<{ coach_id: string; name: string }[]> {
-  const body = await nexusGet<{ coaches?: { coach_id: string; name: string }[] }>(
-    "/api/platform/bridge/my-coaches",
-  );
-  return body?.coaches ?? [];
+  const fetchCoaches = async () =>
+    (
+      await nexusGet<{ coaches?: { coach_id: string; name: string }[] }>(
+        "/api/platform/bridge/my-coaches",
+      )
+    )?.coaches ?? [];
+  const cookieStore = await cookies();
+  const token = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  // Keyed by the token, never cached without one: the answer is per-learner, and
+  // a shared key would hand one learner another's coaches.
+  if (!token) return fetchCoaches();
+  const { cachedNexusGet } = await import("./nexusCache");
+  return cachedNexusGet(`coaches:${token}`, fetchCoaches);
 }
 
 export type RosterLearner = {

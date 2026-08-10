@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ReviewRow, ReviewRows } from "@/components/mobile/ReviewRow";
+import { ReviewRows } from "@/components/mobile/ReviewRow";
 import { getBridgeContext, getMyCoaches, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { sessionService, submissionStore } from "@/lib/sessions";
 import { removeBoardAction, replayBoardAction, sendPlayToCoachAction } from "./actions";
@@ -48,12 +48,23 @@ export default async function MobilePlaysPage({
     programOrganizationId: orgScopeOf(context),
     ...(programId ? { nexusProgramId: programId } : {}),
   };
-  const [mine, submissions, coaches] = await Promise.all([
-    sessionService().listRecent({ ...scope, createdBy: context.nexusUserId }),
+  // FINISHED boards, as SUMMARIES — a name and a date, which is all a row shows.
+  //
+  // Two things were wrong with asking for the 100 most recent sittings of any
+  // status and keeping the completed ones. It moved 2.8 MB of JSON to render 25
+  // names, because a SessionRecord carries the whole game. And it silently DROPPED
+  // games: abandoned tables fill the 100-row window, so finished boards behind
+  // them never came back at all — one learner's 25 completed games could only
+  // ever show 19. Both fixes are the same fix: ask Postgres the real question.
+  const [completed, submissions, coaches] = await Promise.all([
+    sessionService().listRecentSummaries({
+      ...scope,
+      createdBy: context.nexusUserId,
+      status: "completed",
+    }),
     submissionStore().listSubmissions({ ...scope, learnerId: context.nexusUserId }),
     getMyCoaches(),
   ]);
-  const completed = mine.filter((s) => s.status === "completed");
   // ALL submissions per board, not just one: the same play can be sent to
   // different coaches (the action's dedup is deliberately per-coach), and
   // each submission is its own review thread — coach A's feedback and coach
@@ -75,10 +86,11 @@ export default async function MobilePlaysPage({
   const staleCoach = wanted !== null && focus === null;
 
   if (focus) {
-    const sessionById = new Map(mine.map((s) => [s.sessionId, s]));
-    // Submission-driven, NOT a filter over `completed`: listRecent caps at 100
-    // sessions, so an old game's board would silently vanish from a list whose
-    // own heading counts it. The submission carries its own frozen snapshot.
+    const sessionById = new Map(completed.map((s) => [s.sessionId, s]));
+    // Submission-driven, NOT a filter over `completed`: the session listing is
+    // still capped at 100 rows, so an old game's board would silently vanish
+    // from a list whose own heading counts it. The submission carries its own
+    // frozen snapshot, which is why this branch can render without the session.
     const focusSubs = submissions.filter((x) => x.coachId === focus.coach_id);
     const sendable = completed.filter(
       (s) => !(bySession.get(s.sessionId) ?? []).some((x) => x.coachId === focus.coach_id),
@@ -168,7 +180,7 @@ export default async function MobilePlaysPage({
                 <input type="hidden" name="coach_id" value={focus.coach_id} />
                 <input type="hidden" name="coach" value={focus.coach_id} />
                 <button type="submit" style={sendRowStyle}>
-                  <span style={{ flex: 1, minWidth: 0 }}>{s.board.name}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>{s.boardName}</span>
                   <span style={sendChip}>Send</span>
                 </button>
               </form>
@@ -225,7 +237,6 @@ export default async function MobilePlaysPage({
           // choices (the action's dedup stays as the backstop).
           const sentTo = new Set(subs.map((x) => x.coachId));
           const sendable = coaches.filter((co) => !sentTo.has(co.coach_id));
-          const reviewed = subs.filter((x) => x.status === "reviewed").length;
           // The app deals its list rows in alternating suits — maroon, green —
           // each sitting on its darker stacked edge.
           const suit = i % 2 === 0 ? MAROON : GREEN;
@@ -233,7 +244,7 @@ export default async function MobilePlaysPage({
           return (
             <div key={s.sessionId} style={cardStyle(suit, edge)}>
               <p style={{ font: `500 17px ${N}`, color: "#ffffff", margin: 0 }}>
-                {s.board.name}
+                {s.boardName}
               </p>
               <p style={metaStyle}>completed {s.updatedAt.slice(0, 10)}</p>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

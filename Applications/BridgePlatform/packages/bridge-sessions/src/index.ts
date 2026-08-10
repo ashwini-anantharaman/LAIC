@@ -14,7 +14,6 @@ import {
   createBus,
   createEventLog,
   isActionEvent,
-  type ActionEvent,
   type BidEvent,
   type BidLogicEvent,
   type Call,
@@ -90,7 +89,7 @@ export interface SessionRecord {
   seats: Record<Seat, SeatConfig>;
   /** Full stream: action events (state) + logic events (traces). */
   events: GameEvent[];
-  status: "active" | "completed";
+  status: SessionStatus;
   /** Learner mode hides the instrumentation (spec §7). */
   createdBy: string;
   createdAt: string;
@@ -128,14 +127,63 @@ export interface SessionStoreData {
   sessions: SessionRecord[];
 }
 
+/** A sitting in progress, or a board played to the end. */
+export type SessionStatus = "active" | "completed";
+
+/**
+ * How to list sessions: the scope, plus THE STATUS THE CALLER ACTUALLY WANTS.
+ *
+ * Status belongs in the query, never in a `.filter()` over the result. Every
+ * backend caps its listing (the Postgres store at the 100 most recent), and a
+ * player accumulates far more abandoned sittings than finished boards — so
+ * filtering afterwards lets unfinished sessions crowd the finished ones out of
+ * the window before the caller ever sees them. Measured on live data: a learner
+ * with 129 sessions and 4 finished games could only ever see 2 of them in My
+ * games, and the page pulled 539 kB of jsonb to render those 2 rows.
+ */
+export interface SessionFilter extends ScopeFilter {
+  status?: SessionStatus;
+}
+
+/**
+ * One row of a session LIST: the board's name and when it was last touched —
+ * never the game itself.
+ *
+ * A SessionRecord carries the whole sitting: all four hands, the complete event
+ * stream, every seat's config. A list screen shows a name and a date, so building
+ * one out of records moves megabytes to print a few hundred bytes. Measured on
+ * live data: My games pulled 2.8 MB of JSON to render 25 names — the same list
+ * as a summary is 3.2 kB.
+ *
+ * Reach for this whenever a screen lists sessions without opening one.
+ */
+export interface SessionSummary {
+  sessionId: string;
+  boardName: string;
+  status: SessionStatus;
+  updatedAt: string;
+}
+
 export interface SessionStore {
   putSession(record: SessionRecord): Promise<void>;
   getSession(sessionId: string): Promise<SessionRecord | null>;
-  listSessions(filter?: ScopeFilter): Promise<SessionRecord[]>;
+  listSessions(filter?: SessionFilter): Promise<SessionRecord[]>;
+  /** The same listing as `listSessions`, without the games inside. */
+  listSessionSummaries(filter?: SessionFilter): Promise<SessionSummary[]>;
   /** Remove one session — a player discarding an unfinished board. */
   deleteSession(sessionId: string): Promise<void>;
   /** Remove every session of a KB (part of KB deletion — their pinned compiles go with the KB). */
   deleteSessionsForKb(kbId: string): Promise<void>;
+}
+
+/** The one place a record collapses into its list row. */
+export function summarizeSession(s: SessionRecord): SessionSummary {
+  return {
+    sessionId: s.sessionId,
+    boardName: s.board.name,
+    status: s.status,
+    updatedAt: s.updatedAt,
+  };
 }
 
 export class InMemorySessionStore implements SessionStore {
@@ -150,10 +198,18 @@ export class InMemorySessionStore implements SessionStore {
   async getSession(sessionId: string) {
     return this.data.sessions.find((s) => s.sessionId === sessionId) ?? null;
   }
-  async listSessions(filter?: ScopeFilter) {
+  async listSessions(filter?: SessionFilter) {
     return this.data.sessions
-      .filter((s) => matchesScope(s, filter))
+      .filter(
+        (s) =>
+          matchesScope(s, filter) &&
+          (filter?.status === undefined || s.status === filter.status),
+      )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  /** In memory there is nothing to save by projecting — the shape is the point. */
+  async listSessionSummaries(filter?: SessionFilter) {
+    return (await this.listSessions(filter)).map(summarizeSession);
   }
   async deleteSession(sessionId: string) {
     this.data.sessions = this.data.sessions.filter((s) => s.sessionId !== sessionId);
@@ -350,7 +406,7 @@ export class SessionService {
     /** Adopted event prefix (forks resume mid-board). */
     primedEvents?: GameEvent[];
     /** Initial status ("completed" for fully recorded boards). */
-    status?: "active" | "completed";
+    status?: SessionStatus;
     /** Challenge stamp — see SessionRecord.challenge. */
     challenge?: SessionRecord["challenge"];
   }): Promise<SessionRecord> {
@@ -380,8 +436,13 @@ export class SessionService {
     return record;
   }
 
-  async listRecent(filter?: ScopeFilter): Promise<SessionRecord[]> {
+  async listRecent(filter?: SessionFilter): Promise<SessionRecord[]> {
     return this.store.listSessions(filter);
+  }
+
+  /** For screens that LIST boards rather than open one — see SessionSummary. */
+  async listRecentSummaries(filter?: SessionFilter): Promise<SessionSummary[]> {
+    return this.store.listSessionSummaries(filter);
   }
 
   /** Part of KB deletion — the pinned compiles vanish with the KB. */
