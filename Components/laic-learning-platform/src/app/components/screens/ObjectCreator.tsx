@@ -233,6 +233,21 @@ function partsToBlocks(parts: any[], fv: Record<string, any> = {}): Block[] {
       return { id, type: 'video-embed', content: { provider: 'youtube', url: p.url || '', videoId: p.videoId || parseYtId(p.url || ''), start: parseTimestamp(p.startText || ''), end: parseTimestamp(p.endText || ''), caption: p.caption || '' } };
     if (p.type === 'library-embed')
       return libraryEmbedPartToBlock({ ...p, id });
+    // A Bridge table travels as its CONFIG. Without this case it fell through to
+    // the rich-text default below and a published tutorial carried the words
+    // "Bridge table" instead of a table.
+    if (p.type === 'bridge-embed')
+      return {
+        id,
+        type: 'bridge-table',
+        content: {
+          kind: p.embedKind || 'table',
+          seed: typeof p.embedSeed === 'number' ? p.embedSeed : 7,
+          skin: p.embedSkin || 'bbo',
+          showAllHands: !!p.embedShowAllHands,
+          caption: p.caption || '',
+        },
+      };
     return {
       id,
       type: 'rich-text',
@@ -249,6 +264,19 @@ function partsToBlocks(parts: any[], fv: Record<string, any> = {}): Block[] {
 function blocksToParts(blocks: Block[]): any[] {
   return (blocks || []).map((b, i) => {
     const id = b.id || `edit-${i}`;
+    if (b.type === 'bridge-table') {
+      const c = (b.content || {}) as any;
+      return {
+        id,
+        type: 'bridge-embed',
+        label: 'Bridge table',
+        embedKind: c.kind || 'table',
+        embedSeed: typeof c.seed === 'number' ? c.seed : 7,
+        embedSkin: c.skin || 'bbo',
+        embedShowAllHands: !!c.showAllHands,
+        caption: c.caption || '',
+      };
+    }
     if (b.type === 'library-embed') {
       const c = (b.content || {}) as any;
       return {

@@ -589,6 +589,22 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
   };
   return (parts || []).map((p: any, i: number) => {
     const id = String(p.id || `blk-${i}`);
+    // A Bridge table travels as its CONFIG. Without this case it fell through to
+    // the rich-text default at the end and a published tutorial carried the
+    // words "Bridge table" where the table should be.
+    if (p.type === 'bridge-embed') {
+      return {
+        id,
+        type: 'bridge-table',
+        content: {
+          kind: p.embedKind || 'table',
+          seed: typeof p.embedSeed === 'number' ? p.embedSeed : 7,
+          skin: p.embedSkin || 'bbo',
+          showAllHands: !!p.embedShowAllHands,
+          caption: p.caption || '',
+        },
+      };
+    }
     if (p.type === 'concept-card') {
       return { id, type: 'concept-card', content: { term: p.concept || p.label || '', definition: p.plain || '', example: p.misc || '' } };
     }

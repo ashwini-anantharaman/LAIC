@@ -861,6 +861,17 @@ export type BlockContent =
   | DrillContent
   | LibraryEmbedContent;
 
+/** A published Bridge table block: everything needed to mount the component. */
+export interface BridgeTableContent {
+  /** Which Bridge component (today: 'table'). */
+  kind?: string;
+  /** The deal, derived deterministically so every reader sees the same board. */
+  seed?: number;
+  skin?: string;
+  showAllHands?: boolean;
+  caption?: string;
+}
+
 export interface Block {
   id: string;
   type:
@@ -879,6 +890,8 @@ export interface Block {
     | 'video-embed'
     | 'video-script'
     | 'bridge-play'
+    /** A live Bridge Platform table, configured by the author. */
+    | 'bridge-table'
     | 'bidding-sequence'
     /** Pinned Activity-library object embedded inside a tutorial. */
     | 'library-embed';

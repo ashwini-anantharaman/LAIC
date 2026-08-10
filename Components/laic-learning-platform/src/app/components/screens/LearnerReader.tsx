@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { BridgeEmbedBlock } from './tutorialV2/BridgeEmbedBlock';
 import { ArrowLeft, BookOpen, Layers, Play, Pause, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../../App';
@@ -1131,6 +1132,23 @@ function BlockRenderer({
       );
     case 'flashcard-set':
       return <FlashcardSet content={block.content as FlashcardSetContent} objectId={objectId} />;
+    case 'bridge-table': {
+      // The author's configuration, mounted as the real component. Dormant until
+      // the reader opens it, so a lesson with several tables costs nothing to load.
+      const c = (block.content || {}) as {
+        kind?: string; seed?: number; skin?: string; showAllHands?: boolean; caption?: string;
+      };
+      return (
+        <BridgeEmbedBlock
+          kind={c.kind}
+          seed={c.seed ?? 7}
+          skin={c.skin}
+          showAllHands={!!c.showAllHands}
+          caption={c.caption}
+          readOnly
+        />
+      );
+    }
     case 'bridge-play':
       return <BridgePlay content={block.content as BridgePlayContent} />;
     case 'bidding-sequence':
