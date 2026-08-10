@@ -34,6 +34,7 @@ import {
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
   deleteVersionsForObject as storeDeleteVersionsForObject,
+  sealVersionTip as storeSealVersionTip,
   listVersionsForObject,
   listAllVersions,
   subscribeObjectVersions,
@@ -104,7 +105,15 @@ export interface AppState {
   editingObjectId: string | null;
   /** Template id chosen in Template Library before opening the creator. */
   pendingTemplateId: string | null;
-  navigate: (screen: string) => void;
+  /**
+   * One-shot: when set, Content Library opens this folder once then clears.
+   * Normal nav to Content Library leaves this null → collections root.
+   */
+  pendingLibraryFolderId: string | null;
+  clearPendingLibraryFolderId: () => void;
+  /** Bumps when opening Content Library at root so the screen remounts outside any folder. */
+  libraryRootNonce: number;
+  navigate: (screen: string, opts?: { libraryFolderId?: string | null }) => void;
   login: (userId: string) => void;
   logout: () => void;
   setRole: (role: Role) => void;
@@ -156,6 +165,9 @@ function StudioApp() {
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
+  const [pendingLibraryFolderId, setPendingLibraryFolderId] = useState<string | null>(null);
+  const [libraryRootNonce, setLibraryRootNonce] = useState(0);
+  const clearPendingLibraryFolderId = useCallback(() => setPendingLibraryFolderId(null), []);
   /** Only persist to localStorage after the library for this user has been loaded. */
   const [libraryReady, setLibraryReady] = useState(false);
   const [nexusMode, setNexusMode] = useState(false);
@@ -373,7 +385,12 @@ function StudioApp() {
     setCreatedObjects([]);
   }, [nexusMode]);
 
-  const navigate = useCallback((screen: string) => {
+  const navigate = useCallback((screen: string, opts?: { libraryFolderId?: string | null }) => {
+    if (screen === 'cd-library') {
+      const folderId = opts && 'libraryFolderId' in opts ? (opts.libraryFolderId || null) : null;
+      setPendingLibraryFolderId(folderId);
+      setLibraryRootNonce((n) => n + 1);
+    }
     setCurrentScreen(screen);
     setReaderObjectId(null);
     if (screen !== 'cd-creator') setEditingObjectId(null);
@@ -513,6 +530,8 @@ function StudioApp() {
 
   const setCreateCollectionIds = useCallback((ids: string[]) => {
     const unique = [...new Set(ids.filter(Boolean))];
+    // Keep ref in sync immediately so the next addObject (same tick) sees the pick.
+    createCollectionIdsRef.current = unique;
     setCreateCollectionIdsState(unique);
     if (unique[0]) {
       storeSetActiveObjectCollectionId(activeUserIdRef.current, unique[0]);
@@ -602,14 +621,20 @@ function StudioApp() {
   }, []);
 
   const openEditor = useCallback((objectId: string) => {
-    const fromCreated = createdObjects.find(o => o.id === objectId);
+    const fromCreated = (createdObjectsRef.current || []).find(o => o.id === objectId);
     const obj = fromCreated || OBJECTS.find(o => o.id === objectId);
     if (obj) setCreatorObjectTypeState(obj.type);
+    // Next content-differing save should commit a new version (git-style).
+    try {
+      storeSealVersionTip(activeUserIdRef.current, objectId);
+    } catch (err: any) {
+      console.warn('[versions] seal tip failed:', err?.message || err);
+    }
     setEditingObjectId(objectId);
     setReaderObjectId(null);
     setReaderVersionId(null);
     setCurrentScreen('cd-creator');
-  }, [createdObjects]);
+  }, []);
 
   const clearEditingObject = useCallback(() => {
     setEditingObjectId(null);
@@ -646,6 +671,7 @@ function StudioApp() {
     createObjectCollection, renameObjectCollection,
     deleteObjectCollection, setObjectCollectionIds, deleteCreatedObject,
     editingObjectId, pendingTemplateId,
+    pendingLibraryFolderId, clearPendingLibraryFolderId, libraryRootNonce,
     navigate, login, logout,
     setRole, setProgram, openReader, closeReader, setCreatorObjectType, setPendingTemplateId, addObject,
     openEditor, clearEditingObject,

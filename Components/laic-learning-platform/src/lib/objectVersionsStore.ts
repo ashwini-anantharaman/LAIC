@@ -1,14 +1,18 @@
 /**
  * Local-first learning-object versions.
- * Head object in the library stays editable; versions are immutable numbered
- * snapshots (created on first save, then only via “Save as new version”).
- * They can be locked, previewed, or deleted — never overwritten by later edits.
+ * Head object in the library stays editable. Versions are numbered content
+ * snapshots — like git commits: the first save creates v1; each later save
+ * whose content differs from the tip becomes v2, v3, … (unlocked tip may be
+ * amended briefly while the author is still typing).
  */
 
 import type { LearningObject, ObjectVersionSnapshot, Version } from './types';
 import { VERSIONS as SEED_VERSIONS } from './data';
 
 const KEY = (userId: string) => `laic-object-versions:${userId || 'anon'}`;
+
+/** While unlocked tip is this fresh, content-changing saves amend it instead of spawning vN. */
+const AMEND_WINDOW_MS = 90_000;
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -47,6 +51,58 @@ export function snapshotFromObject(obj: LearningObject): ObjectVersionSnapshot {
       ? JSON.parse(JSON.stringify(obj.tutorialV2Draft))
       : undefined,
   };
+}
+
+/** Stable content hash — ignores UI-only draft fields so phase navigation isn’t a “commit”. */
+export function contentFingerprint(snap: ObjectVersionSnapshot | LearningObject): string {
+  const title = String((snap as any).title || '');
+  const description = String((snap as any).description || '');
+  const estimatedTime = String((snap as any).estimatedTime || '10 min');
+  const status = String((snap as any).status || '');
+  const type = String((snap as any).type || '');
+  const blocks = (snap as any).blocks;
+  const tags = (snap as any).tags || [];
+  const sourceIds = (snap as any).sourceIds || [];
+  const pipelineDraft = (snap as any).pipelineDraft;
+  let tutorialV2Draft = (snap as any).tutorialV2Draft
+    ? JSON.parse(JSON.stringify((snap as any).tutorialV2Draft))
+    : undefined;
+  if (tutorialV2Draft && typeof tutorialV2Draft === 'object') {
+    delete tutorialV2Draft.phase;
+    delete tutorialV2Draft.activeSectionId;
+    delete tutorialV2Draft.activeSlotId;
+    delete tutorialV2Draft.updatedAt;
+    delete tutorialV2Draft.createdAt;
+    delete tutorialV2Draft.assistantMessages;
+  }
+  return JSON.stringify({
+    title,
+    description,
+    estimatedTime,
+    status,
+    type,
+    blocks: blocks || [],
+    tags,
+    sourceIds,
+    pipelineDraft: pipelineDraft || null,
+    tutorialV2Draft: tutorialV2Draft || null,
+  });
+}
+
+function contentEqualsSnapshot(
+  tipSnapshot: ObjectVersionSnapshot | undefined,
+  obj: LearningObject,
+): boolean {
+  if (!tipSnapshot) return false;
+  return contentFingerprint(tipSnapshot) === contentFingerprint(snapshotFromObject(obj));
+}
+
+function tipCreatedAtMs(tip: Version): number {
+  const raw = (tip as any).createdAtMs;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  // Date-only createdAt → treat as old so the next real edit commits a new version.
+  const d = Date.parse(tip.createdAt);
+  return Number.isFinite(d) ? d : 0;
 }
 
 export function objectFromVersion(
@@ -131,50 +187,14 @@ function upsertLocal(userId: string, version: Version) {
   writeAll(userId, next);
 }
 
-/**
- * Ensure the object has at least one frozen local version (v1 on first save).
- * Does not rewrite existing snapshots — later edits live on the head object only.
- * Use saveAsNewVersion to checkpoint the current head as v2, v3, …
- */
-export function syncWorkingVersion(
-  userId: string,
+function makeVersion(
   obj: LearningObject,
   createdBy: string,
+  n: number,
+  notes: string,
 ): Version {
-  const localOnly = readAll(userId).filter((v) => v.objectId === obj.id);
-  if (localOnly.length) {
-    return localOnly.reduce((a, b) => (a.versionNumber >= b.versionNumber ? a : b));
-  }
-
-  const existing = listVersionsForObject(userId, obj.id);
-  const n = existing.length ? nextVersionNumber(existing) : 1;
-  const v: Version = {
-    id: versionIdFor(obj.id, n),
-    objectId: obj.id,
-    objectTitle: obj.title,
-    versionNumber: n,
-    status: obj.status,
-    createdAt: obj.updatedAt || today(),
-    createdBy,
-    isLive: n === 1 && (obj.status === 'published' || obj.status === 'approved'),
-    notes: n === 1 ? 'Initial version' : `Local snapshot (v${n})`,
-    locked: false,
-    snapshot: snapshotFromObject(obj),
-  };
-  upsertLocal(userId, v);
-  return v;
-}
-
-/** Explicit “Save as new version” — always appends a new numbered snapshot. */
-export function saveAsNewVersion(
-  userId: string,
-  obj: LearningObject,
-  createdBy: string,
-  notes?: string,
-): Version {
-  const existing = listVersionsForObject(userId, obj.id);
-  const n = nextVersionNumber(existing);
-  const v: Version = {
+  const now = Date.now();
+  return {
     id: versionIdFor(obj.id, n),
     objectId: obj.id,
     objectTitle: obj.title,
@@ -183,12 +203,106 @@ export function saveAsNewVersion(
     createdAt: today(),
     createdBy,
     isLive: n === 1 && (obj.status === 'published' || obj.status === 'approved'),
-    notes: (notes || '').trim() || (n === 1 ? 'Initial version' : `Version ${n}`),
+    notes,
     locked: false,
     snapshot: snapshotFromObject(obj),
+    // Internal amend clock (persisted; ignored by readers that don’t know it).
+    ...( { createdAtMs: now } as any ),
   };
+}
+
+/**
+ * Git-style sync on every library save:
+ * - No history → commit v1
+ * - Same content as tip → no-op
+ * - Different content + unlocked tip still in amend window → update tip snapshot
+ * - Different content otherwise → commit next version (v2, v3, …)
+ */
+export function syncWorkingVersion(
+  userId: string,
+  obj: LearningObject,
+  createdBy: string,
+): Version {
+  const localOnly = readAll(userId).filter((v) => v.objectId === obj.id);
+  const tip = localOnly.length
+    ? localOnly.reduce((a, b) => (a.versionNumber >= b.versionNumber ? a : b))
+    : null;
+
+  if (!tip) {
+    const existing = listVersionsForObject(userId, obj.id);
+    const n = existing.length ? nextVersionNumber(existing) : 1;
+    const v = makeVersion(
+      obj,
+      createdBy,
+      n,
+      n === 1 ? 'Initial version' : `Version ${n}`,
+    );
+    upsertLocal(userId, v);
+    return v;
+  }
+
+  if (contentEqualsSnapshot(tip.snapshot, obj)) {
+    return tip;
+  }
+
+  const age = Date.now() - tipCreatedAtMs(tip);
+  const canAmend = !tip.locked && age >= 0 && age < AMEND_WINDOW_MS;
+
+  if (canAmend) {
+    const amended: Version = {
+      ...tip,
+      objectTitle: obj.title,
+      status: obj.status,
+      createdAt: today(),
+      createdBy: tip.createdBy || createdBy,
+      snapshot: snapshotFromObject(obj),
+      notes: tip.notes || (tip.versionNumber === 1 ? 'Initial version' : `Version ${tip.versionNumber}`),
+      ...( { createdAtMs: (tip as any).createdAtMs || Date.now() } as any ),
+    };
+    upsertLocal(userId, amended);
+    return amended;
+  }
+
+  const n = nextVersionNumber(listVersionsForObject(userId, obj.id));
+  const v = makeVersion(obj, createdBy, n, `Version ${n}`);
   upsertLocal(userId, v);
   return v;
+}
+
+/** Explicit “Save as new version” — appends a new numbered snapshot (skips if identical & no note). */
+export function saveAsNewVersion(
+  userId: string,
+  obj: LearningObject,
+  createdBy: string,
+  notes?: string,
+): Version {
+  const existing = listVersionsForObject(userId, obj.id);
+  const tip = existing[0];
+  if (tip?.snapshot && contentEqualsSnapshot(tip.snapshot, obj) && !(notes || '').trim()) {
+    return tip;
+  }
+  const n = nextVersionNumber(existing);
+  const v = makeVersion(
+    obj,
+    createdBy,
+    n,
+    (notes || '').trim() || (n === 1 ? 'Initial version' : `Version ${n}`),
+  );
+  upsertLocal(userId, v);
+  return v;
+}
+
+/**
+ * Close the amend window on the tip so the next content-differing save
+ * commits a new version (e.g. author reopened the object from the library).
+ */
+export function sealVersionTip(userId: string, objectId: string): void {
+  const localOnly = readAll(userId).filter((v) => v.objectId === objectId);
+  if (!localOnly.length) return;
+  const tip = localOnly.reduce((a, b) => (a.versionNumber >= b.versionNumber ? a : b));
+  if (tip.locked) return;
+  if ((tip as any).createdAtMs === 0) return;
+  upsertLocal(userId, { ...tip, ...( { createdAtMs: 0 } as any ) });
 }
 
 export function setVersionLocked(

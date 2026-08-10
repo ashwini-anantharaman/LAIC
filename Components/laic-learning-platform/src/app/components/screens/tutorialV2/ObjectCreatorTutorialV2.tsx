@@ -138,10 +138,12 @@ function buildPoolFromSources(args: {
 
 export function ObjectCreatorTutorialV2() {
   const {
-    navigate, editingObjectId, clearEditingObject, createdObjects,
+    navigate, editingObjectId, clearEditingObject, createdObjects: createdObjectsRaw,
     pendingTemplateId, setPendingTemplateId, addObject, createCollectionIds,
-    objectCollections, setActiveObjectCollectionId,
+    objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
   } = useApp();
+  const createdObjects = createdObjectsRaw || [];
+  const objectCollections = objectCollectionsRaw || [];
   const confirm = useConfirm();
 
   const defaultTplId = getDefaultTemplateId('tutorial-v2') || DEFAULT_TUTORIAL_TEMPLATE_ID;
@@ -387,7 +389,7 @@ export function ObjectCreatorTutorialV2() {
     });
     if (continueEditing) return false;
     clearEditingObject?.();
-    navigate('cd-library');
+    navigate('cd-library', { libraryFolderId: ids[0] || null });
     return true;
   }, [confirm, draftCollectionLabel, setActiveObjectCollectionId, clearEditingObject, navigate]);
 

@@ -45,7 +45,7 @@ import { TestContainer } from './screens/TestContainer';
 import { CoachScreen } from './screens/CoachScreen';
 
 function ScreenRouter() {
-  const { currentScreen, readerObjectId, creatorObjectType } = useApp();
+  const { currentScreen, readerObjectId, creatorObjectType, libraryRootNonce } = useApp();
 
   if (readerObjectId) return <LearnerReader objectId={readerObjectId} />;
 
@@ -57,7 +57,7 @@ function ScreenRouter() {
     case 'cd-create':   return <CDCreate />;
     case 'cd-templates': return <TemplateLibrary />;
     case 'cd-sources':  return <CDSources />;
-    case 'cd-library':  return <ObjectLibrary />;
+    case 'cd-library':  return <ObjectLibrary key={libraryRootNonce} />;
     case 'cd-test-container': return <TestContainer />;
     case 'cd-submissions': return <MySubmissions />;
     case 'cd-versions': return <VersionsPublishing />;

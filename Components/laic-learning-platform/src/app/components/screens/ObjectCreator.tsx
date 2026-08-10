@@ -4833,7 +4833,7 @@ export function ObjectCreator() {
       cancelLabel: 'Stay here',
       destructive: false,
     });
-    if (go) navigate('cd-library');
+    if (go) navigate('cd-library', { libraryFolderId: ids[0] || null });
   };
 
   /** Leave the draft editor and reopen the full create pipeline (same object). */
