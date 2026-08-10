@@ -280,3 +280,40 @@ describe("thinkAid — declarer plays two hands", () => {
     expect(thinkAid(s, "S")!.candidates[0]!.note).toBe("your lowest diamond");
   });
 });
+
+describe("the known facts as flip cards", () => {
+  // The cards are the source and the plain lines are their backs, verbatim —
+  // the contract that lets the Game State UI and every older consumer of
+  // `known` read the same facts without either drifting.
+  it("derives `known` from knownCards, back for back", () => {
+    const auction = thinkAid(state({ auction: [call("E", "1C")], turn: "S" }), "S")!;
+    expect(auction.known).toEqual(auction.knownCards.map((k) => k.detail));
+    // Every front is genuinely glanceable: a title and a short value.
+    for (const k of auction.knownCards) {
+      expect(k.title.length).toBeGreaterThan(0);
+      expect(k.value.length).toBeGreaterThan(0);
+      expect(k.value.length).toBeLessThanOrEqual(16);
+    }
+  });
+
+  it("holds in the play too, voids and all", () => {
+    const s = state({
+      phase: "play",
+      contract: { level: 3, strain: "H", declarer: "S", doubled: 0 } as GameState["contract"],
+      turn: "S",
+      hands: { N: cards("D6 S3"), E: cards("SJ"), S: cards("SA HK"), W: cards("S6") },
+      tricks: [
+        { leader: "W", plays: [
+          { seat: "W", card: one("D2") }, { seat: "N", card: one("D6") }, { seat: "E", card: one("SJ") },
+        ] },
+      ],
+    });
+    const a = thinkAid(s, "S")!;
+    expect(a.known).toEqual(a.knownCards.map((k) => k.detail));
+    // East — a hand the declarer can NOT see — failed to follow the diamond
+    // lead. That inference must survive the restructuring as a card with a
+    // real front. (Dummy's discards prove nothing extra: dummy is face up.)
+    const voidCard = a.knownCards.find((k) => k.detail.includes("has no diamonds"));
+    expect(voidCard?.value).toBe("no ♦s");
+  });
+});
