@@ -15,13 +15,16 @@ import { AppState } from "react-native";
 import { useAuth } from "./auth-context";
 import {
   can,
+  getAppContext,
   getRoleContext,
+  peekAppContext,
   peekRoleContext,
   refreshRoleContext,
   roleNameOf,
   subscribeToRoleContext,
   type RoleContext,
 } from "./bridge-role";
+import { useSelectedClubId } from "./club-context";
 
 /** The whole role context, resolved once per session. */
 export function useRoleContext(): RoleContext | null {
@@ -55,6 +58,48 @@ export function useRoleContext(): RoleContext | null {
 }
 
 /**
+ * The context WITH the selected club's access folded in.
+ *
+ * Capabilities are per club, so every gate has to ask about the club currently
+ * being looked at. Until a club is chosen (the My Clubs screen) there is nothing
+ * to resolve, and gates fall back to their pre-roles behaviour — which is what
+ * the whole-app surfaces (Play, Learn) want anyway.
+ */
+function useClubScopedContext(): RoleContext | null {
+  const { token } = useAuth();
+  const base = useRoleContext();
+  const clubId = useSelectedClubId();
+  const [app, setApp] = useState(() =>
+    token && clubId ? peekAppContext(token, clubId) : null,
+  );
+
+  useEffect(() => {
+    if (!token || !clubId) {
+      setApp(null);
+      return;
+    }
+    let cancelled = false;
+    getAppContext(token, clubId).then((v) => !cancelled && setApp(v));
+    return () => {
+      cancelled = true;
+    };
+  }, [token, clubId]);
+
+  // A refresh clears the per-club cache too, so re-read on context changes.
+  useEffect(() => {
+    if (!token || !clubId) return;
+    let cancelled = false;
+    getAppContext(token, clubId).then((v) => !cancelled && setApp(v));
+    return () => {
+      cancelled = true;
+    };
+  }, [base, token, clubId]);
+
+  if (!base) return null;
+  return { ...base, app };
+}
+
+/**
  * Re-resolve permissions when the app returns to the foreground.
  *
  * Roles are edited in the console while the app is open, so coming back to the
@@ -77,13 +122,12 @@ export function useRoleRefreshOnForeground(): void {
   }, [token]);
 }
 
-/** May the signed-in person do this? */
+/** May the signed-in person do this, in the club they are looking at? */
 export function useCan(capability: string, fallback = false): boolean {
-  const context = useRoleContext();
-  return can(context, capability, fallback);
+  return can(useClubScopedContext(), capability, fallback);
 }
 
-/** The name of the role they hold, for display. */
+/** The name of the role they hold IN THIS CLUB, for display. */
 export function useRoleName(): string | null {
-  return roleNameOf(useRoleContext());
+  return roleNameOf(useClubScopedContext());
 }

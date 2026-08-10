@@ -45,7 +45,7 @@ import { ICON_PIN } from "../constants/brand-vectors";
 import { Brand, Fonts, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { loadAvatars, pickChatImage } from "../lib/avatar-store";
-import { getRoleContext, primaryMembership } from "../lib/bridge-role";
+import { useSelectedClubId } from "../lib/club-context";
 import {
   loadThread,
   sendMessage,
@@ -190,7 +190,8 @@ export default function ClubChatScreen() {
   const { width } = useWindowDimensions();
   const s = width / DESIGN_WIDTH;
 
-  const [programId, setProgramId] = useState<string | null>(null);
+  // The chat belongs to the club being looked at, so it follows the selection.
+  const programId = useSelectedClubId();
   const [messages, setMessages] = useState<ClubChatMessage[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -203,19 +204,6 @@ export default function ClubChatScreen() {
   /** The long-pressed message and where its bubble sits, or null for no menu. */
   const [menu, setMenu] = useState<{ message: ClubChatMessage; anchor: Anchor } | null>(null);
   const scroller = useRef<ScrollView>(null);
-
-  // The club is the caller's own program, exactly as the Club tab resolves it.
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    getRoleContext(token).then((ctx) => {
-      const primary = primaryMembership(ctx);
-      if (!cancelled) setProgramId(primary?.program_id ?? null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
 
   const refresh = useCallback(async () => {
     if (!token || !programId) return;

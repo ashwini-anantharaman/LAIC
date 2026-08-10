@@ -34,6 +34,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BrandChrome, CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { BrandSheet } from "../../components/brand-sheet";
+import { MyClubs } from "../../components/my-clubs";
 import {
   ChallengeCaption,
   ChallengeTile,
@@ -43,7 +44,7 @@ import { PERSON_ROW, PersonRow } from "../../components/person-row";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { loadAvatars, loadClubHeader, subscribeToClubHeader } from "../../lib/avatar-store";
-import { getRoleContext, primaryMembership } from "../../lib/bridge-role";
+import { useClubs } from "../../lib/club-context";
 import { useCan } from "../../lib/use-can";
 import {
   fetchAppMembers,
@@ -208,31 +209,26 @@ export default function ClubScreen() {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
 
-  // The club is the caller's own program — a partner club wins over the default.
-  const [club, setClub] = useState<{ id: string; name: string; org: string } | null>(null);
+  // The club is whichever one is selected; My Clubs picks it when there are
+  // several, and it is automatic when there is only one.
+  const { clubs, selected, loading: clubsLoading, select, clearSelection, otherClub } = useClubs();
+  // Memoised: it feeds effect dependencies, and a fresh object each render would
+  // refetch the roster and the header on every paint.
+  const club = useMemo(
+    () =>
+      selected
+        ? { id: selected.programId, name: selected.name, org: selected.orgName }
+        : null,
+    [selected],
+  );
+  /** Open when there are 3+ clubs and the switcher is tapped. */
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const [roster, setRoster] = useState<AppMemberRow[] | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
   /** profile_id -> picture, for the faces on the roster. */
   const [avatars, setAvatars] = useState<Map<string, string | null>>(new Map());
   /** The club's banner, if its coaches have set one. */
   const [header, setHeader] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    getRoleContext(token).then((ctx) => {
-      const primary = primaryMembership(ctx);
-      if (cancelled || !primary?.program_id) return;
-      setClub({
-        id: primary.program_id,
-        name: primary.program_name ?? primary.org_name,
-        org: primary.org_name,
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
 
   useEffect(() => {
     if (!token || !club) return;
@@ -318,6 +314,16 @@ export default function ClubScreen() {
   const onBanner = header != null;
   const headText = onBanner ? Brand.white : Brand.ink;
 
+  // More than one club and none chosen yet: pick first. The tab bar stays, so
+  // Play and Learn are still reachable without choosing.
+  if (!clubsLoading && !selected && clubs.length > 1) {
+    return (
+      <BrandChrome>
+        <MyClubs clubs={clubs} onPick={select} scale={s} />
+      </BrandChrome>
+    );
+  }
+
   return (
     <BrandChrome
       onBack={onHome ? undefined : () => setView("home")}
@@ -328,9 +334,32 @@ export default function ClubScreen() {
       <View style={styles.page}>
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.title, { marginLeft: HEAD.left * s, color: headText }]}>
-              {club?.name ?? "My Club"}
-            </Text>
+            <View style={[styles.titleRow, { marginLeft: HEAD.left * s }]}>
+              <Text style={[styles.title, { color: headText }]} numberOfLines={1}>
+                {club?.name ?? "My Club"}
+              </Text>
+              {/* Only meaningful with somewhere to switch TO. Two clubs toggle
+                  straight over; three or more open the list. */}
+              {clubs.length > 1 ? (
+                <Pressable
+                  onPress={() => {
+                    if (otherClub) select(otherClub.programId);
+                    else setSwitcherOpen(true);
+                  }}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    otherClub ? `Switch to ${otherClub.name}` : "Switch club"
+                  }
+                  style={({ pressed }) => [
+                    { marginLeft: 10 * s },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="swap-horizontal" size={20 * s} color={headText} />
+                </Pressable>
+              ) : null}
+            </View>
             <Text
               style={[
                 styles.blurb,
@@ -516,6 +545,46 @@ export default function ClubScreen() {
         )}
       </View>
 
+      {/* Three or more clubs: choose from the list rather than cycling. */}
+      <BrandSheet
+        visible={switcherOpen}
+        onClose={() => setSwitcherOpen(false)}
+        title="Switch club"
+        top={insets.top + CONTENT_TOP_GAP}
+      >
+        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+          {clubs.map((c) => (
+            <Pressable
+              key={c.programId}
+              onPress={() => {
+                select(c.programId);
+                setSwitcherOpen(false);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: c.programId === selected?.programId }}
+              style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
+            >
+              <Ionicons
+                name={c.programId === selected?.programId ? "radio-button-on" : "radio-button-off"}
+                size={20}
+                color={Brand.cream}
+              />
+              <Text style={styles.checkLabel}>{c.name}</Text>
+            </Pressable>
+          ))}
+          <Pressable
+            onPress={() => {
+              clearSelection();
+              setSwitcherOpen(false);
+            }}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.clearRow, pressed && styles.pressed]}
+          >
+            <Text style={styles.clearText}>Back to My Clubs</Text>
+          </Pressable>
+        </ScrollView>
+      </BrandSheet>
+
       {/* Tick the roles to show. Nothing ticked = no filter, and the carousel's
           single selection governs instead. */}
       <BrandSheet
@@ -614,6 +683,7 @@ function Roster({
 const styles = StyleSheet.create({
   page: { flex: 1, paddingBottom: TAB_BAR_CLEARANCE },
   headerRow: { flexDirection: "row", alignItems: "flex-start" },
+  titleRow: { flexDirection: "row", alignItems: "center" },
   title: { fontFamily: Fonts.display, fontSize: Type.screenTitle, color: Brand.ink },
   blurb: { fontFamily: Fonts.body, fontSize: Type.clubDetail, color: Brand.ink },
   pillFace: {

@@ -28,7 +28,8 @@ import {
   removeClubHeader,
   subscribeToClubHeader,
 } from "../lib/avatar-store";
-import { can, getRoleContext, primaryMembership } from "../lib/bridge-role";
+import { can } from "../lib/bridge-role";
+import { useSelectedClubId } from "../lib/club-context";
 import { useRoleContext } from "../lib/use-can";
 import { useIsCoach } from "../lib/use-is-coach";
 
@@ -177,20 +178,17 @@ export function OtherSheetBody({ onClose }: { onClose: () => void }) {
  */
 function ClubHeaderRow({ canSet, canRemove }: { canSet: boolean; canRemove: boolean }) {
   const { token } = useAuth();
-  const [programId, setProgramId] = useState<string | null>(null);
+  // The header belongs to the selected club.
+  const programId = useSelectedClubId();
   const [header, setHeader] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    getRoleContext(token).then(async (ctx) => {
-      const id = primaryMembership(ctx)?.program_id ?? null;
-      if (cancelled || !id) return;
-      setProgramId(id);
-      const uri = await loadClubHeader(token, id);
-      if (!cancelled) setHeader(uri);
-    });
+    if (programId) {
+      loadClubHeader(token, programId).then((uri) => !cancelled && setHeader(uri));
+    }
     const stop = subscribeToClubHeader((id, uri) => {
       if (!cancelled) setHeader((prev) => (id === programId ? uri : prev));
     });

@@ -6,6 +6,7 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AuthProvider, useAuth } from "../lib/auth-context";
+import { ClubProvider } from "../lib/club-context";
 import { Brand, Colors } from "../constants/theme";
 
 /** Routes reachable without a session (landing, login, register). */
@@ -66,12 +67,16 @@ export default function RootLayout() {
       <AuthProvider>
         <StatusBar style="dark" />
         <AuthGate>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: Brand.cream },
-            }}
-          />
+          {/* Which club is being looked at — session-scoped, above the tabs so a
+              switch is seen by every club screen at once. */}
+          <ClubProvider>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: Brand.cream },
+              }}
+            />
+          </ClubProvider>
         </AuthGate>
       </AuthProvider>
     </GestureHandlerRootView>
