@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { BridgeEmbedBlock } from './tutorialV2/BridgeEmbedBlock';
+import { QuestionMedia } from './QuestionMedia';
 import { ArrowLeft, BookOpen, Layers, Play, Pause, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useApp } from '../../App';
@@ -26,6 +28,7 @@ import { SummaryView, ReflectionView, AssignmentView, DrillView } from './Struct
 import { ConceptCardTemplate } from './ConceptCardTemplate';
 import { VideoScriptPlayer } from './VideoScriptPlayer';
 import { mockDrillContent } from '../../../lib/mockDrillBlueprint';
+import { richTextToSafeHtml } from '../../../lib/richTextMarkdown';
 
 import { McqClusterExperience, type McqClusterQuestion, type QuizResolveStatus } from './McqClusterExperience';
 
@@ -451,17 +454,9 @@ function VideoEmbed({ content }: { content: VideoEmbedContent }) {
 }
 
 function RichText({ text, heading, subheads }: { text: string; heading?: string; subheads?: string[] }) {
-  const html = text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^## (.+)$/gm, '<h3 style="font-size:17px;font-weight:700;color:#0B1220;margin:22px 0 10px;letter-spacing:-0.3px">$1</h3>')
-    .replace(/\n\n+/g, '</p><p style="margin:0 0 14px">')
-    .replace(/\n/g, '<br/>');
-  const body = text.trim()
-    ? `<p style="margin:0 0 14px">${html}</p>`
-    : '';
+  const body = text.trim() ? richTextToSafeHtml(text) : '';
   return (
-    <div style={{ marginBottom: 4 }}>
+    <div style={{ marginBottom: 4 }} className="learner-rich-text">
       {heading && (
         <h2 style={{ fontSize: 19, fontWeight: 700, color: '#0B1220', margin: '0 0 14px', letterSpacing: '-0.35px', lineHeight: 1.3 }}>
           {heading}
@@ -478,6 +473,28 @@ function RichText({ text, heading, subheads }: { text: string; heading?: string;
           dangerouslySetInnerHTML={{ __html: body }}
         />
       )}
+      <style>{`
+        .learner-rich-text h1 { font-size: 1.45rem; font-weight: 750; color: #0B1220; margin: 22px 0 10px; letter-spacing: -0.3px; line-height: 1.3; }
+        .learner-rich-text h2 { font-size: 1.2rem; font-weight: 700; color: #0B1220; margin: 20px 0 10px; letter-spacing: -0.25px; line-height: 1.3; }
+        .learner-rich-text h3 { font-size: 1.05rem; font-weight: 700; color: #0B1220; margin: 18px 0 8px; letter-spacing: -0.2px; }
+        .learner-rich-text p { margin: 0 0 14px; }
+        .learner-rich-text ul { margin: 0 0 14px; padding-left: 1.25rem; list-style: disc; }
+        .learner-rich-text ol { margin: 0 0 14px; padding-left: 1.25rem; list-style: decimal; }
+        .learner-rich-text li { margin: 0 0 4px; }
+        .learner-rich-text blockquote {
+          margin: 0 0 14px; padding: 10px 14px;
+          border-left: 3px solid rgba(109,40,217,0.35);
+          background: rgba(109,40,217,0.05); border-radius: 0 12px 12px 0; color: #4B5563;
+        }
+        .learner-rich-text code {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 0.9em; background: rgba(15,23,42,0.06); padding: 0.1em 0.35em; border-radius: 4px;
+        }
+        .learner-rich-text a { color: #2563EB; text-decoration: underline; }
+        .learner-rich-text strong { font-weight: 700; color: #0B1220; }
+        .learner-rich-text em { font-style: italic; }
+        .learner-rich-text u { text-decoration: underline; }
+      `}</style>
     </div>
   );
 }
@@ -709,6 +726,7 @@ export function QuizBlock({
           )}
         </div>
         <p style={{ fontSize: 14.5, fontWeight: 600, color: '#0B1220', marginBottom: 14, lineHeight: 1.4 }}>{q.question}</p>
+        <QuestionMedia q={q} />
 
         {q.type === 'short-answer' ? (
           <input
@@ -944,6 +962,7 @@ function FlashcardSet({ content, objectId }: { content: FlashcardSetContent; obj
     hook: c.hook,
     hint: c.hint,
     imageUrl: c.imageUrl,
+    videoUrl: c.videoUrl,
   }));
   return <FlashcardStudy cards={cards} direction={content.direction || 'Front→back'} storageKey={objectId} />;
 }
@@ -1148,6 +1167,23 @@ function BlockRenderer({
       );
     case 'flashcard-set':
       return <FlashcardSet content={block.content as FlashcardSetContent} objectId={objectId} />;
+    case 'bridge-table': {
+      // The author's configuration, mounted as the real component. Dormant until
+      // the reader opens it, so a lesson with several tables costs nothing to load.
+      const c = (block.content || {}) as {
+        kind?: string; seed?: number; skin?: string; showAllHands?: boolean; caption?: string;
+      };
+      return (
+        <BridgeEmbedBlock
+          kind={c.kind}
+          seed={c.seed ?? 7}
+          skin={c.skin}
+          showAllHands={!!c.showAllHands}
+          caption={c.caption}
+          readOnly
+        />
+      );
+    }
     case 'bridge-play':
       return <BridgePlay content={block.content as BridgePlayContent} />;
     case 'bidding-sequence':

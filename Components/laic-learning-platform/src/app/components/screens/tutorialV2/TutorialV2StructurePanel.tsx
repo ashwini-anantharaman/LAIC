@@ -1,7 +1,7 @@
 /**
  * Tutorial V2 Structure — recipe checklist:
  * library pick slots, generate-later slots, and N section title rows.
- * No template picker / objective here.
+ * Also assigns student-preview pages (which outline items share a learner page).
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Library, Plus, Sparkles, Trash2 } from 'lucide-react';
@@ -12,6 +12,7 @@ import {
   embedTypeLabel,
   structureIsReady,
   type RecipeStructureAnalysis,
+  type StructureSectionTitle,
 } from '../../../../lib/tutorialV2/recipeStructure';
 import {
   listEmbeddableLibraryObjects,
@@ -34,8 +35,8 @@ export function TutorialV2StructurePanel({
   template: TutorialTemplate;
   slots: V2TopLevelSlot[];
   onChangeSlots: (next: V2TopLevelSlot[]) => void;
-  sectionTitles: { id?: string; title: string; intent?: string }[];
-  onChangeSectionTitles: (next: { id?: string; title: string; intent?: string }[]) => void;
+  sectionTitles: StructureSectionTitle[];
+  onChangeSectionTitles: (next: StructureSectionTitle[]) => void;
   createdObjects?: LearningObject[];
   writeYourself?: boolean;
 }) {
@@ -67,9 +68,9 @@ export function TutorialV2StructurePanel({
     if (writeYourself) {
       if (!sectionTitles.length) {
         onChangeSectionTitles([
-          { title: 'Section 1', intent: '' },
-          { title: 'Section 2', intent: '' },
-          { title: 'Section 3', intent: '' },
+          { title: 'Section 1', intent: '', learnerPage: 1 },
+          { title: 'Section 2', intent: '', learnerPage: 2 },
+          { title: 'Section 3', intent: '', learnerPage: 3 },
         ]);
       }
       return;
@@ -82,10 +83,40 @@ export function TutorialV2StructurePanel({
     if (sectionTitles.length === n) return;
     const next = sectionTitles.slice(0, n);
     while (next.length < n) {
-      next.push({ title: `Section ${next.length + 1}`, intent: '' });
+      next.push({
+        title: `Section ${next.length + 1}`,
+        intent: '',
+        learnerPage: next.length + 1,
+      });
     }
     onChangeSectionTitles(next);
   }, [analysis.hasSections, analysis.sectionCount, writeYourself]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ensure every outline row has a learnerPage once Structure is shown.
+  useEffect(() => {
+    if (!sectionTitles.length) return;
+    if (sectionTitles.every((r) => r.learnerPage != null)) return;
+    onChangeSectionTitles(sectionTitles.map((r, i) => ({
+      ...r,
+      learnerPage: r.learnerPage ?? (i + 1),
+    })));
+  }, [sectionTitles, onChangeSectionTitles]);
+
+  useEffect(() => {
+    if (!slots.length) return;
+    if (slots.every((s) => s.learnerPage != null)) return;
+    onChangeSlots(slots.map((s, i) => ({
+      ...s,
+      learnerPage: s.learnerPage ?? (i + 1),
+    })));
+  }, [slots, onChangeSlots]);
+
+  const pageOptionCount = Math.max(
+    1,
+    sectionTitles.length + slots.length,
+    ...sectionTitles.map((r) => Number(r.learnerPage) || 1),
+    ...slots.map((s) => Number(s.learnerPage) || 1),
+  );
 
   const pickerSlot = slots.find((s) => s.id === pickerSlotId) || null;
 
@@ -122,16 +153,64 @@ export function TutorialV2StructurePanel({
         </div>
       )}
 
+      {(sectionTitles.length > 0 || slots.length > 0) && (
+        <div
+          className="rounded-xl px-3.5 py-3"
+          style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.18)' }}
+        >
+          <p style={{ fontSize: 12, fontWeight: 650, color: '#1D4ED8', letterSpacing: '.04em', textTransform: 'uppercase' }}>
+            Student preview pages
+          </p>
+          <p style={{ fontSize: 12.5, color: '#1E40AF', marginTop: 4, lineHeight: 1.45 }}>
+            Choose which sections share a page. Same page number = shown together; different numbers = Prev/Next in the student view.
+          </p>
+          <div className="flex flex-wrap gap-2 mt-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                let page = 1;
+                if (slots.length) {
+                  onChangeSlots(slots.map((s) => ({ ...s, learnerPage: page++ })));
+                }
+                onChangeSectionTitles(sectionTitles.map((r) => ({ ...r, learnerPage: page++ })));
+              }}
+              className="px-2.5 py-1 rounded-full border"
+              style={{ fontSize: 11.5, fontWeight: 600, color: '#1D4ED8', borderColor: 'rgba(29,78,216,0.25)', background: '#fff' }}
+            >
+              One per page
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onChangeSectionTitles(sectionTitles.map((r) => ({ ...r, learnerPage: 1 })));
+                if (slots.length) {
+                  onChangeSlots(slots.map((s) => ({ ...s, learnerPage: 1 })));
+                }
+              }}
+              className="px-2.5 py-1 rounded-full border"
+              style={{ fontSize: 11.5, fontWeight: 600, color: '#1D4ED8', borderColor: 'rgba(29,78,216,0.25)', background: '#fff' }}
+            >
+              All on page 1
+            </button>
+          </div>
+        </div>
+      )}
+
       {!writeYourself && slots.filter((s) => s.kind === 'library').length > 0 && (
         <div>
           <p style={{ fontSize: 12, fontWeight: 650, color: '#9AA3AF', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 8 }}>
             From Content Library
           </p>
           <div className="space-y-2">
-            {slots.filter((s) => s.kind === 'library').map((slot) => (
+            {slots.filter((s) => s.kind === 'library').map((slot, idx) => (
               <LibrarySlotRow
                 key={slot.id}
                 slot={slot}
+                pageOptionCount={pageOptionCount}
+                learnerPage={slot.learnerPage ?? (idx + 1)}
+                onChangePage={(page) => {
+                  onChangeSlots(slots.map((s) => (s.id === slot.id ? { ...s, learnerPage: page } : s)));
+                }}
                 onBrowse={() => {
                   setPickerSlotId(slot.id);
                   setPickerType(slot.objectType);
@@ -148,8 +227,16 @@ export function TutorialV2StructurePanel({
             To generate
           </p>
           <div className="space-y-2">
-            {slots.filter((s) => s.kind === 'generate').map((slot) => (
-              <GenerateSlotRow key={slot.id} slot={slot} />
+            {slots.filter((s) => s.kind === 'generate').map((slot, idx) => (
+              <GenerateSlotRow
+                key={slot.id}
+                slot={slot}
+                pageOptionCount={pageOptionCount}
+                learnerPage={slot.learnerPage ?? (idx + 1)}
+                onChangePage={(page) => {
+                  onChangeSlots(slots.map((s) => (s.id === slot.id ? { ...s, learnerPage: page } : s)));
+                }}
+              />
             ))}
           </div>
         </div>
@@ -166,7 +253,11 @@ export function TutorialV2StructurePanel({
                 type="button"
                 onClick={() => onChangeSectionTitles([
                   ...sectionTitles,
-                  { title: `Section ${sectionTitles.length + 1}`, intent: '' },
+                  {
+                    title: `Section ${sectionTitles.length + 1}`,
+                    intent: '',
+                    learnerPage: sectionTitles.length + 1,
+                  },
                 ])}
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border"
                 style={{ fontSize: 12, fontWeight: 600, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: '#fff' }}
@@ -177,13 +268,14 @@ export function TutorialV2StructurePanel({
           </div>
           <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 8 }}>
             {writeYourself
-              ? 'Add as many sections as you need. Each one is written by hand next.'
+              ? 'Add as many sections as you need. Use the page dropdown to control student preview paging.'
               : (
                 <>
                   Sources and markup apply to these sections
                   {analysis.sectionRecipe.some((r) => r.kind === 'embedded')
                     ? ' (including per-section generated content from the recipe).'
                     : '.'}
+                  {' '}Set student page per section below.
                 </>
               )}
           </p>
@@ -221,6 +313,18 @@ export function TutorialV2StructurePanel({
                     placeholder="What this section teaches (optional)"
                     style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.06)', borderRadius: 10, padding: '6px 10px', color: '#374151' }}
                   />
+                  <label className="flex items-center gap-2">
+                    <span style={{ fontSize: 11.5, fontWeight: 650, color: '#6B7280' }}>Student page</span>
+                    <PageSelect
+                      value={row.learnerPage ?? (i + 1)}
+                      max={pageOptionCount}
+                      onChange={(page) => {
+                        onChangeSectionTitles(sectionTitles.map((r, j) => (
+                          j === i ? { ...r, learnerPage: page } : r
+                        )));
+                      }}
+                    />
+                  </label>
                 </div>
                 {writeYourself && sectionTitles.length > 1 && (
                   <button
@@ -265,12 +369,49 @@ export function TutorialV2StructurePanel({
   );
 }
 
+function PageSelect({
+  value,
+  max,
+  onChange,
+}: {
+  value: number;
+  max: number;
+  onChange: (page: number) => void;
+}) {
+  const opts = Array.from({ length: Math.max(1, max, value) }, (_, i) => i + 1);
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(Math.max(1, Number(e.target.value) || 1))}
+      style={{
+        fontSize: 12,
+        fontWeight: 600,
+        color: '#1D4ED8',
+        border: '1px solid rgba(29,78,216,0.25)',
+        borderRadius: 8,
+        padding: '4px 8px',
+        background: '#fff',
+      }}
+    >
+      {opts.map((n) => (
+        <option key={n} value={n}>Page {n}</option>
+      ))}
+    </select>
+  );
+}
+
 function LibrarySlotRow({
   slot,
   onBrowse,
+  pageOptionCount,
+  learnerPage,
+  onChangePage,
 }: {
   slot: V2TopLevelSlot;
   onBrowse: () => void;
+  pageOptionCount: number;
+  learnerPage: number;
+  onChangePage: (page: number) => void;
 }) {
   const label = embedTypeLabel(String(slot.objectType));
   const picked = !!slot.versionPin?.objectId;
@@ -293,21 +434,37 @@ function LibrarySlotRow({
           {slot.authoringNote && (
             <p style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{slot.authoringNote}</p>
           )}
-          <button
-            type="button"
-            onClick={onBrowse}
-            className="mt-2 px-3 py-1.5 rounded-full border"
-            style={{ fontSize: 12, fontWeight: 600, background: '#fff', borderColor: 'rgba(0,0,0,0.1)' }}
-          >
-            {picked ? 'Change…' : 'Browse Content Library…'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <button
+              type="button"
+              onClick={onBrowse}
+              className="px-3 py-1.5 rounded-full border"
+              style={{ fontSize: 12, fontWeight: 600, background: '#fff', borderColor: 'rgba(0,0,0,0.1)' }}
+            >
+              {picked ? 'Change…' : 'Browse Content Library…'}
+            </button>
+            <label className="inline-flex items-center gap-1.5">
+              <span style={{ fontSize: 11.5, fontWeight: 650, color: '#6B7280' }}>Student page</span>
+              <PageSelect value={learnerPage} max={pageOptionCount} onChange={onChangePage} />
+            </label>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function GenerateSlotRow({ slot }: { slot: V2TopLevelSlot }) {
+function GenerateSlotRow({
+  slot,
+  pageOptionCount,
+  learnerPage,
+  onChangePage,
+}: {
+  slot: V2TopLevelSlot;
+  pageOptionCount: number;
+  learnerPage: number;
+  onChangePage: (page: number) => void;
+}) {
   const label = embedTypeLabel(String(slot.objectType));
   return (
     <div
@@ -315,7 +472,7 @@ function GenerateSlotRow({ slot }: { slot: V2TopLevelSlot }) {
       style={{ background: 'rgba(237,233,254,0.7)', border: '1px solid rgba(109,40,217,0.2)' }}
     >
       <Sparkles size={14} style={{ color: '#6D28D9', marginTop: 2 }} />
-      <div>
+      <div className="flex-1 min-w-0">
         <p style={{ fontSize: 13, fontWeight: 650, color: '#5B21B6' }}>
           {label} — generate after Sources
           {slot.required ? '' : ' (optional)'}
@@ -326,6 +483,10 @@ function GenerateSlotRow({ slot }: { slot: V2TopLevelSlot }) {
         <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
           After Sources, open this content from the outline to pick sources → mark up → generate.
         </p>
+        <label className="inline-flex items-center gap-1.5 mt-2">
+          <span style={{ fontSize: 11.5, fontWeight: 650, color: '#6B7280' }}>Student page</span>
+          <PageSelect value={learnerPage} max={pageOptionCount} onChange={onChangePage} />
+        </label>
       </div>
     </div>
   );

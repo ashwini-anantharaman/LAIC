@@ -77,6 +77,7 @@ import {
 import { generateEmbedPart } from '../../../lib/tutorialEmbedGenerate';
 import { objectCollectionIds } from '../../../lib/objectCollectionsStore';
 import { LibraryPickerModal } from '../LibraryPickerModal';
+import { RichTextEditor } from '../RichTextEditor';
 import { useConfirm } from '../ConfirmDialog';
 import {
   applyEditActionsToParts,
@@ -233,6 +234,21 @@ function partsToBlocks(parts: any[], fv: Record<string, any> = {}): Block[] {
       return { id, type: 'video-embed', content: { provider: 'youtube', url: p.url || '', videoId: p.videoId || parseYtId(p.url || ''), start: parseTimestamp(p.startText || ''), end: parseTimestamp(p.endText || ''), caption: p.caption || '' } };
     if (p.type === 'library-embed')
       return libraryEmbedPartToBlock({ ...p, id });
+    // A Bridge table travels as its CONFIG. Without this case it fell through to
+    // the rich-text default below and a published tutorial carried the words
+    // "Bridge table" instead of a table.
+    if (p.type === 'bridge-embed')
+      return {
+        id,
+        type: 'bridge-table',
+        content: {
+          kind: p.embedKind || 'table',
+          seed: typeof p.embedSeed === 'number' ? p.embedSeed : 7,
+          skin: p.embedSkin || 'bbo',
+          showAllHands: !!p.embedShowAllHands,
+          caption: p.caption || '',
+        },
+      };
     return {
       id,
       type: 'rich-text',
@@ -249,6 +265,19 @@ function partsToBlocks(parts: any[], fv: Record<string, any> = {}): Block[] {
 function blocksToParts(blocks: Block[]): any[] {
   return (blocks || []).map((b, i) => {
     const id = b.id || `edit-${i}`;
+    if (b.type === 'bridge-table') {
+      const c = (b.content || {}) as any;
+      return {
+        id,
+        type: 'bridge-embed',
+        label: 'Bridge table',
+        embedKind: c.kind || 'table',
+        embedSeed: typeof c.seed === 'number' ? c.seed : 7,
+        embedSkin: c.skin || 'bbo',
+        embedShowAllHands: !!c.showAllHands,
+        caption: c.caption || '',
+      };
+    }
     if (b.type === 'library-embed') {
       const c = (b.content || {}) as any;
       return {
@@ -2358,7 +2387,7 @@ function S3({ extracts, setExtracts, markHighlights, docTitle, typeNoun }: any) 
   );
 }
 
-function ConceptCategoryEditor({
+export function ConceptCategoryEditor({
   categories,
   onChange,
 }: {
@@ -3034,8 +3063,12 @@ function EditPanel({ part, onChange, onClose }: any) {
           </div>
           <div>
             <label style={lbl}>Body</label>
-            <textarea value={part.body || ''} onChange={e => onChange({ body: e.target.value })} rows={5}
-              className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
+            <RichTextEditor
+              value={part.body || ''}
+              onChange={(body) => onChange({ body })}
+              placeholder="Write this section…"
+              minHeight={140}
+            />
           </div>
         </>
       )}
@@ -4888,7 +4921,7 @@ export function ObjectCreator() {
       cancelLabel: 'Stay here',
       destructive: false,
     });
-    if (go) navigate('cd-library');
+    if (go) navigate('cd-library', { libraryFolderId: ids[0] || null });
   };
 
   /** Leave the draft editor and reopen the full create pipeline (same object). */

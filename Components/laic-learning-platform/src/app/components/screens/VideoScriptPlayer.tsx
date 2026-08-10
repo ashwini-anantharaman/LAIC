@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Pause, MessageCircle, FileText, HelpCircle, Check, X, Send, Loader2 } from 'lucide-react';
 import { askAboutVideo, errorMessage } from '../../../lib/api';
+import { QuestionMedia } from './QuestionMedia';
 import type {
   LearningObject, QuestionContent, VideoScriptContent, VideoScriptCheckpoint, VideoScriptTranscriptSegment,
 } from '../../../lib/types';
@@ -74,6 +75,7 @@ function CheckpointQuestion({
       <p style={{ fontSize: 15, fontWeight: 650, color: '#0B1220', lineHeight: 1.45, marginBottom: 14 }}>
         {q.question}
       </p>
+      <QuestionMedia q={q} />
       <div className="space-y-2 flex-1 overflow-y-auto">
         {(q.options || []).map((opt, i) => {
           const isPick = picked === i;

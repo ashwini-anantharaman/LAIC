@@ -29,8 +29,45 @@ import type {
 } from '../types';
 import { embedTypeLabel } from './recipeStructure';
 
+/** True when a part has real authored/generated content (not an empty scaffold). */
+export function partHasContent(p: TutorialV2Part | Record<string, unknown> | null | undefined): boolean {
+  if (!p || typeof p !== 'object') return false;
+  const any = p as Record<string, any>;
+  const t = String(any.type || '');
+  if (typeof any.body === 'string' && any.body.trim()) return true;
+  if (t === 'image' || any.mediaKind === 'image') return !!(any.url && String(any.url).trim());
+  if (t === 'video' || any.mediaKind === 'video') {
+    return !!(any.videoId && String(any.videoId).trim()) || !!(any.url && String(any.url).trim());
+  }
+  if (Array.isArray(any.questions) && any.questions.length) return true;
+  if (Array.isArray(any.cards) && any.cards.length) return true;
+  if (any.conceptCard || any.libraryObjectId || any.objectId || any.embedObjectId) return true;
+  if (typeof any.prompt === 'string' && any.prompt.trim()) return true;
+  if (typeof any.front === 'string' && any.front.trim()) return true;
+  return false;
+}
+
+export function sectionHasContent(sec: V2Section): boolean {
+  return (sec.parts || []).some((p) => partHasContent(p));
+}
+
+/** Section is ready for Review — explicit done checkbox or real content. */
+export function sectionSatisfied(sec: V2Section): boolean {
+  return !!sec.done || sectionHasContent(sec);
+}
+
+export function slotSatisfied(slot: {
+  done?: boolean;
+  parts?: TutorialV2Part[] | null;
+  part?: TutorialV2Part | null;
+}): boolean {
+  if (slot.done) return true;
+  if ((slot.parts || []).some((p) => partHasContent(p))) return true;
+  return partHasContent(slot.part || null);
+}
+
 export function deriveSectionStatus(sec: V2Section): SectionStatus {
-  if (sec.done) return 'done';
+  if (sectionSatisfied(sec)) return 'done';
   const hasAuthored =
     (sec.parts && sec.parts.length > 0)
     || (sec.pickedSourceIds && sec.pickedSourceIds.length > 0)
@@ -40,29 +77,29 @@ export function deriveSectionStatus(sec: V2Section): SectionStatus {
 }
 
 export function requiredSectionsRemaining(sections: V2Section[]): number {
-  return (sections || []).filter((s) => s.required && !s.done).length;
+  return (sections || []).filter((s) => s.required && !sectionSatisfied(s)).length;
 }
 
 export function allRequiredDone(
   sections: V2Section[],
-  topLevelSlots?: { required: boolean; done: boolean }[],
+  topLevelSlots?: { required: boolean; done: boolean; parts?: TutorialV2Part[] | null; part?: TutorialV2Part | null }[],
 ): boolean {
   const slots = topLevelSlots || [];
   const requiredSlots = slots.filter((s) => s.required);
-  const slotsOk = requiredSlots.every((s) => s.done);
+  const slotsOk = requiredSlots.every((s) => slotSatisfied(s));
   const required = (sections || []).filter((s) => s.required);
   if (!required.length && !(sections || []).length) {
-    return slotsOk && (slots.length === 0 || slots.every((s) => !s.required || s.done));
+    return slotsOk && (slots.length === 0 || slots.every((s) => !s.required || slotSatisfied(s)));
   }
   if (!required.length) {
-    return slotsOk && ((sections || []).every((s) => s.done) || (sections || []).length === 0);
+    return slotsOk && ((sections || []).every((s) => sectionSatisfied(s)) || (sections || []).length === 0);
   }
-  return slotsOk && required.every((s) => s.done);
+  return slotsOk && required.every((s) => sectionSatisfied(s));
 }
 
 export function doneCount(sections: V2Section[]): { done: number; total: number } {
   const list = sections || [];
-  return { done: list.filter((s) => s.done).length, total: list.length };
+  return { done: list.filter((s) => sectionSatisfied(s)).length, total: list.length };
 }
 
 export function structureFromTemplate(template: TutorialTemplate): TutorialV2Structure {
@@ -264,20 +301,23 @@ export function emptyTutorialV2Draft(partial: {
   title?: string;
   templateId: string;
   structure: TutorialV2Structure;
+  phase?: TutorialV2Draft['phase'];
+  metadata?: TutorialV2Draft['metadata'];
 }): TutorialV2Draft {
   const now = Date.now();
   return {
     id: partial.id || `tv2-${now.toString(36)}`,
     type: 'tutorial-v2',
     title: partial.title || '',
-    metadata: {},
+    metadata: partial.metadata || {},
     templateId: partial.templateId,
     structure: partial.structure,
     sections: [],
     topLevelSlots: [],
     sourcePool: [],
     status: 'draft',
-    phase: 'start',
+    // New creates land on Plan (path choice happens in the Create modal).
+    phase: partial.phase || 'start',
     activeSectionId: null,
     activeSlotId: null,
     createdAt: now,
@@ -394,10 +434,115 @@ export function collectRecipeParts(draft: TutorialV2Draft): TutorialV2Part[] {
   return out;
 }
 
+/**
+ * Stamp `pageBreakBefore` from Structure learnerPage grouping.
+ * Only runs when at least one slot/section has an explicit learnerPage.
+ */
+export function applyLearnerPageBreaksToParts(
+  draft: TutorialV2Draft,
+  parts: TutorialV2Part[],
+): TutorialV2Part[] {
+  const list = parts || [];
+  if (!list.length) return list;
+
+  const slots = draft.topLevelSlots || [];
+  const sections = draft.sections || [];
+  const anyExplicit = slots.some((s) => s.learnerPage != null)
+    || sections.some((s) => s.learnerPage != null);
+  if (!anyExplicit) {
+    return list.map((p) => {
+      if (!p.pageBreakBefore) return p;
+      const next = { ...p };
+      delete next.pageBreakBefore;
+      return next;
+    });
+  }
+
+  const pageByPartId = new Map<string, number>();
+  const outline = [
+    ...slots.map((s, i) => ({
+      page: s.learnerPage ?? (i + 1),
+      partIds: (s.parts?.length ? s.parts : (s.part ? [s.part] : [])).map((p) => p.id),
+    })),
+    ...sections.map((s, i) => ({
+      page: s.learnerPage ?? (slots.length + i + 1),
+      partIds: (s.parts || []).map((p) => p.id),
+    })),
+  ];
+  for (const item of outline) {
+    for (const id of item.partIds) pageByPartId.set(id, Math.max(1, Number(item.page) || 1));
+  }
+
+  let prevPage: number | null = null;
+  return list.map((p) => {
+    const page = pageByPartId.has(p.id) ? pageByPartId.get(p.id)! : prevPage;
+    if (page == null) {
+      if (!p.pageBreakBefore) return p;
+      const next = { ...p };
+      delete next.pageBreakBefore;
+      return next;
+    }
+    const breakBefore = prevPage !== null && page !== prevPage;
+    prevPage = page;
+    if (breakBefore) return { ...p, pageBreakBefore: true };
+    if (!p.pageBreakBefore) return p;
+    const next = { ...p };
+    delete next.pageBreakBefore;
+    return next;
+  });
+}
+
 /** Concatenate top-level embed parts + section parts for review / publish. */
 export function assembleAllParts(draft: TutorialV2Draft): TutorialV2Part[] {
-  if (draft.assembledParts?.length) return draft.assembledParts;
-  return collectRecipeParts(draft);
+  const base = draft.assembledParts?.length ? draft.assembledParts : collectRecipeParts(draft);
+  return applyLearnerPageBreaksToParts(draft, base);
+}
+
+/**
+ * Push Review (assembledParts) edits back into section / slot parts by id
+ * so revisiting Plan → Structure → Author keeps authored content.
+ */
+export function syncAssembledPartsIntoDraft(draft: TutorialV2Draft): TutorialV2Draft {
+  const assembled = draft.assembledParts;
+  if (!assembled?.length) return draft;
+  const byId = new Map(assembled.map((p) => [p.id, p]));
+
+  const sections = (draft.sections || []).map((sec) => {
+    if (!sec.parts?.length) return sec;
+    let changed = false;
+    const parts = sec.parts.map((p) => {
+      const next = byId.get(p.id);
+      if (next && next !== p) {
+        changed = true;
+        return next;
+      }
+      return p;
+    });
+    return changed ? { ...sec, parts } : sec;
+  });
+
+  const topLevelSlots = (draft.topLevelSlots || []).map((slot) => {
+    const list = slot.parts?.length ? slot.parts : (slot.part ? [slot.part] : []);
+    if (!list.length) return slot;
+    let changed = false;
+    const parts = list.map((p) => {
+      const next = byId.get(p.id);
+      if (next && next !== p) {
+        changed = true;
+        return next;
+      }
+      return p;
+    });
+    if (!changed) return slot;
+    return {
+      ...slot,
+      parts,
+      part: parts[0],
+      done: !!(slot.done || parts.length),
+    };
+  });
+
+  return { ...draft, sections, topLevelSlots };
 }
 
 /** Build a V1-shaped pipeline draft so Hoot can see sources / markup on Review. */
@@ -502,13 +647,37 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
   };
   return (parts || []).map((p: any, i: number) => {
     const id = String(p.id || `blk-${i}`);
+    const pageBreakBefore = p.pageBreakBefore ? true : undefined;
+    // A Bridge table travels as its CONFIG. Without this case it fell through to
+    // the rich-text default at the end and a published tutorial carried the
+    // words "Bridge table" where the table should be.
+    if (p.type === 'bridge-embed') {
+      return {
+        id,
+        type: 'bridge-table',
+        pageBreakBefore,
+        content: {
+          kind: p.embedKind || 'table',
+          seed: typeof p.embedSeed === 'number' ? p.embedSeed : 7,
+          skin: p.embedSkin || 'bbo',
+          showAllHands: !!p.embedShowAllHands,
+          caption: p.caption || '',
+        },
+      };
+    }
     if (p.type === 'concept-card') {
-      return { id, type: 'concept-card', content: { term: p.concept || p.label || '', definition: p.plain || '', example: p.misc || '' } };
+      return {
+        id,
+        type: 'concept-card',
+        pageBreakBefore,
+        content: { term: p.concept || p.label || '', definition: p.plain || '', example: p.misc || '' },
+      };
     }
     if (p.type === 'question') {
       return {
         id,
         type: 'quiz',
+        pageBreakBefore,
         content: {
           ...quizScoreMeta,
           questions: [{
@@ -527,6 +696,7 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
       return {
         id,
         type: 'quiz',
+        pageBreakBefore,
         content: {
           ...quizScoreMeta,
           embeddedQuiz: true,
@@ -549,6 +719,7 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
       return {
         id,
         type: 'library-embed',
+        pageBreakBefore,
         content: {
           label: p.label,
           libraryTitle: p.libraryTitle,
@@ -559,14 +730,25 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
       };
     }
     if (p.type === 'image') {
-      return { id, type: 'image', content: { url: p.url || '', caption: p.caption || '', alt: p.caption || '' } };
+      return {
+        id,
+        type: 'image',
+        pageBreakBefore,
+        content: { url: p.url || '', caption: p.caption || '', alt: p.caption || '' },
+      };
     }
     if (p.type === 'video') {
-      return { id, type: 'video-embed', content: { provider: 'youtube', url: p.url || '', videoId: p.videoId || '', caption: p.caption || '' } };
+      return {
+        id,
+        type: 'video-embed',
+        pageBreakBefore,
+        content: { provider: 'youtube', url: p.url || '', videoId: p.videoId || '', caption: p.caption || '' },
+      };
     }
     return {
       id,
       type: 'rich-text',
+      pageBreakBefore,
       content: {
         text: p.body || p.plain || p.label || '',
         heading: p.heading || undefined,

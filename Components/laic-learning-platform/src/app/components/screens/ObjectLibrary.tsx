@@ -120,9 +120,8 @@ export function ObjectLibrary() {
   const {
     openReader,
     openEditor,
-    createdObjects,
-    objectCollections,
-    activeObjectCollectionId,
+    createdObjects: createdObjectsRaw,
+    objectCollections: objectCollectionsRaw,
     setActiveObjectCollectionId,
     createObjectCollection,
     renameObjectCollection,
@@ -132,8 +131,15 @@ export function ObjectLibrary() {
     saveObjectAsNewVersion,
     listObjectVersions,
     objectVersionsTick,
+    pendingLibraryFolderId,
+    clearPendingLibraryFolderId,
   } = useApp();
+  const createdObjects = createdObjectsRaw || [];
+  const objectCollections = objectCollectionsRaw || [];
   const confirm = useConfirm();
+
+  const opened = objectCollections.find((c) => c.id === openedCollectionId) ?? null;
+  const breadcrumb = opened ? [...getCollectionPath(objectCollections, opened.id), opened] : [];
 
   const removeOrDeleteObject = (item: LearningObject) => {
     void (async () => {
@@ -180,7 +186,9 @@ export function ObjectLibrary() {
     })();
   };
 
-  const versionCount = (objectId: string) => listObjectVersions(objectId).length;
+  const versionCount = (objectId: string) => (
+    typeof listObjectVersions === 'function' ? listObjectVersions(objectId).length : 0
+  );
   // Keep count reactive when history changes.
   void objectVersionsTick;
 
@@ -194,16 +202,17 @@ export function ObjectLibrary() {
     window.setTimeout(() => setVersionToast(null), 2200);
   };
 
-  // When returning from Create (“Saved under X”), open that collection immediately.
+  // One-shot deep-link from save → “Go to Content Library” (not from sidebar).
   useEffect(() => {
-    if (!activeObjectCollectionId) return;
-    if (!objectCollections.some((c) => c.id === activeObjectCollectionId)) return;
-    setOpenedCollectionId(activeObjectCollectionId);
-    setSelectedFolderId(activeObjectCollectionId);
-  }, [activeObjectCollectionId, objectCollections]);
-
-  const opened = objectCollections.find((c) => c.id === openedCollectionId) ?? null;
-  const breadcrumb = opened ? [...getCollectionPath(objectCollections, opened.id), opened] : [];
+    if (!pendingLibraryFolderId) return;
+    if (!objectCollections.some((c) => c.id === pendingLibraryFolderId)) {
+      clearPendingLibraryFolderId();
+      return;
+    }
+    setOpenedCollectionId(pendingLibraryFolderId);
+    setSelectedFolderId(pendingLibraryFolderId);
+    clearPendingLibraryFolderId();
+  }, [pendingLibraryFolderId, objectCollections, clearPendingLibraryFolderId]);
 
   const rootFolders = useMemo(() => {
     const roots = getRootCollections(objectCollections);
@@ -444,7 +453,10 @@ export function ObjectLibrary() {
                           key={c.id}
                           type="button"
                           onClick={() => {
-                            const next = on ? ids.filter((x) => x !== c.id) : [...ids, c.id];
+                            const next = on
+                              ? ids.filter((x) => x !== c.id)
+                              // Newly checked folder becomes primary (first) for save → library deep-link.
+                              : [c.id, ...ids.filter((x) => x !== c.id)];
                             if (!next.length) return;
                             setObjectCollectionIds(item.id, next);
                           }}

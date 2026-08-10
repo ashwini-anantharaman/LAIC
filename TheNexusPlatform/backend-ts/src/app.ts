@@ -53,6 +53,8 @@ export function createApp(): Hono {
   const vercelRe = /^https:\/\/.*\.vercel\.app$/;
   const localhostRe = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
   const trycloudflareRe = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;
+  // Phone on same Wi‑Fi hitting Mac LAN IP (mobile org app :5181 / CS :5173).
+  const lanRe = /^http:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):\d+$/;
 
   app.use(
     "*",
@@ -63,7 +65,8 @@ export function createApp(): Hono {
           allowed.has(origin) ||
           vercelRe.test(origin) ||
           localhostRe.test(origin) ||
-          trycloudflareRe.test(origin)
+          trycloudflareRe.test(origin) ||
+          lanRe.test(origin)
         ) {
           return origin;
         }

@@ -5,6 +5,7 @@ import {
   Plus, Trash2, Sparkles, Loader2, Eye, Pencil,
 } from 'lucide-react';
 import { useApp } from '../../App';
+import { ItemMediaAttach } from './objectV2/ItemMediaAttach';
 import { editFlashcard, errorMessage } from '../../../lib/api';
 import { resolveSessionQueueItem } from '../../../lib/sessionMasteryQueue';
 
@@ -17,6 +18,8 @@ export interface StudyCard {
   hint?: string;
   /** Image → label: picture shown on the front side. */
   imageUrl?: string;
+  /** Optional YouTube video shown on the prompt side. */
+  videoUrl?: string;
 }
 
 type Mode = 'standard' | 'spaced' | 'confidence' | 'bookmarked';
@@ -308,18 +311,40 @@ type SessionStats = {
   graduated: number; // entered review/mastered this session
 };
 
+function cardYtId(url?: string): string {
+  const raw = (url || '').trim();
+  if (!raw) return '';
+  if (/^[A-Za-z0-9_-]{11}$/.test(raw)) return raw;
+  const m = raw.match(/(?:youtu\.be\/|youtube\.com\/(?:embed|shorts|live|v)\/|watch\?.*?v=)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : '';
+}
+
 function CardFaceText({
   text,
   imageUrl,
+  videoUrl,
   emphasize,
 }: {
   text: string;
   imageUrl?: string;
+  videoUrl?: string;
   emphasize?: boolean;
 }) {
   const cueOnly = /^what is shown\??$/i.test(text.trim());
+  const ytId = cardYtId(videoUrl);
   return (
     <div className="w-full flex flex-col items-center gap-3">
+      {ytId ? (
+        <div className="rounded-xl overflow-hidden w-full" style={{ aspectRatio: '16 / 9', maxWidth: 360 }}>
+          <iframe
+            title="Flashcard video"
+            src={`https://www.youtube-nocookie.com/embed/${ytId}`}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            style={{ width: '100%', height: '100%', border: 0 }}
+          />
+        </div>
+      ) : null}
       {imageUrl ? (
         <img
           src={imageUrl}
@@ -928,6 +953,7 @@ export function FlashcardStudy({
                   <CardFaceText
                     text={promptText}
                     imageUrl={!promptIsBack ? card.imageUrl : undefined}
+                    videoUrl={!promptIsBack ? card.videoUrl : undefined}
                     emphasize
                   />
                 </div>
@@ -950,6 +976,7 @@ export function FlashcardStudy({
                     <CardFaceText
                       text={answerText}
                       imageUrl={promptIsBack ? card.imageUrl : undefined}
+                      videoUrl={promptIsBack ? card.videoUrl : undefined}
                     />
                     {card.hook && (
                       <p style={{ fontSize: 12.5, color: '#7C3AED', marginTop: 14, fontStyle: 'italic' }}>💡 {card.hook}</p>
@@ -1233,6 +1260,7 @@ export function FlashcardEditor({
           ...(c.hook ? { hook: c.hook } : {}),
           ...(c.hint ? { hint: c.hint } : {}),
           ...(c.imageUrl ? { imageUrl: c.imageUrl } : {}),
+            ...(c.videoUrl ? { videoUrl: c.videoUrl } : {}),
         })),
         direction,
       },
@@ -1380,9 +1408,15 @@ export function FlashcardEditor({
                         <input value={c.hook || ''} onChange={(e) => updateCard(id, { hook: e.target.value })}
                           className="w-full rounded-xl px-3 py-2" style={field} />
                       </div>
-                      {c.imageUrl && (
-                        <img src={c.imageUrl} alt="" style={{ maxHeight: 120, borderRadius: 10, objectFit: 'contain' }} />
-                      )}
+                      <ItemMediaAttach
+                        imageUrl={c.imageUrl}
+                        videoUrl={c.videoUrl}
+                        onChange={(m) => updateCard(id, {
+                          ...(m.imageUrl !== undefined ? { imageUrl: m.imageUrl || undefined } : {}),
+                          ...(m.videoUrl !== undefined ? { videoUrl: m.videoUrl || undefined } : {}),
+                        })}
+                        compact
+                      />
                     </div>
                   ) : aiId === id ? (
                     <AskAiCard card={c} onApply={(patch) => updateCard(id, patch)} onClose={() => setAiId(null)} />

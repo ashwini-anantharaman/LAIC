@@ -32,7 +32,7 @@ export interface V2SourceRef {
 
 /** Editor part = GeneratedPart plus library-embed / image / video extras used in V1 editor. */
 export type TutorialV2Part = Omit<GeneratedPart, 'type'> & {
-  type: GeneratedPart['type'] | 'image' | 'video' | 'library-embed';
+  type: GeneratedPart['type'] | 'image' | 'video' | 'library-embed' | 'bridge-embed';
   url?: string;
   caption?: string;
   videoId?: string;
@@ -45,9 +45,16 @@ export type TutorialV2Part = Omit<GeneratedPart, 'type'> & {
   sources?: unknown[];
   hints?: string[];
   hint?: string;
+  /** Which Bridge component a 'bridge-embed' block mounts. */
+  embedKind?: string;
+  /** Its configuration: the deal seed and the skin the author picked. */
+  embedSeed?: number;
+  embedSkin?: string;
   /** From template media slot — steers the empty Start from scratch UI. */
   mediaKind?: 'image' | 'video' | 'either';
   mediaHint?: string;
+  /** Hard learner page break before this part (from Structure page grouping). */
+  pageBreakBefore?: boolean;
 };
 
 /**
@@ -75,6 +82,11 @@ export interface V2TopLevelSlot {
   markupFlags?: any[];
   units?: ContentUnit[];
   done: boolean;
+  /**
+   * Student-preview page (1-based). Same number = same learner page.
+   * Set on Structure; omitted means legacy auto word-budget pagination.
+   */
+  learnerPage?: number;
 }
 
 export interface V2Section {
@@ -91,6 +103,11 @@ export interface V2Section {
   authorMode: SectionAuthorMode;
   done: boolean;
   required: boolean;
+  /**
+   * Student-preview page (1-based). Same number = same learner page.
+   * Set on Structure; omitted means legacy auto word-budget pagination.
+   */
+  learnerPage?: number;
 }
 
 export interface TutorialV2Structure {
@@ -137,7 +154,7 @@ export interface TutorialV2Draft {
   tutorialDefinition?: import('../types').TutorialDefinition;
   status: 'draft' | 'ready' | 'submitted';
   /** Top-level UI phase to restore on reopen. */
-  phase?: 'start' | 'structure' | 'sources' | 'navigator' | 'section' | 'slot' | 'review';
+  phase?: 'path' | 'start' | 'structure' | 'sources' | 'navigator' | 'section' | 'slot' | 'review';
   /** Active section id when phase === 'section'. */
   activeSectionId?: string | null;
   /** Active top-level generate slot id when phase === 'slot'. */

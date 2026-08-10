@@ -2111,6 +2111,8 @@ function normalizePart(raw, idx) {
         hints,
         label: typeof q.label === 'string' ? q.label : undefined,
         ...(sources ? { sources } : {}),
+        ...(typeof q.imageUrl === 'string' && q.imageUrl ? { imageUrl: q.imageUrl } : {}),
+        ...(typeof q.videoUrl === 'string' && q.videoUrl ? { videoUrl: q.videoUrl } : {}),
       };
     }).filter(Boolean);
     if (!questions.length) return null;
@@ -3518,6 +3520,7 @@ function normalizeEditedFlashcard(raw, prev) {
   else if (raw.hint === null) { /* cleared */ }
   else if (prev.hint) out.hint = prev.hint;
   if (prev.imageUrl) out.imageUrl = prev.imageUrl;
+  if (prev.videoUrl) out.videoUrl = prev.videoUrl;
   return out;
 }
 
@@ -3537,7 +3540,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ─── Router ──────────────────────────────────────────────────────── */
 
-const server = createServer(async (req, res) => {
+/** Request handler — exported so Vercel serverless (api/index.mjs) can reuse it. */
+export async function handler(req, res) {
   const { method } = req;
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const path = url.pathname;
@@ -3727,6 +3731,8 @@ const server = createServer(async (req, res) => {
       const normalized = normalizeQuizQuestion(obj, 0, { writeExplanations: true });
       if (!normalized) throw new LlmError(502, 'llm_parse', 'The model did not return a usable question.');
       if (item.id) normalized.id = item.id;
+      if (item.imageUrl && !normalized.imageUrl) normalized.imageUrl = item.imageUrl;
+      if (item.videoUrl && !normalized.videoUrl) normalized.videoUrl = item.videoUrl;
       return send(res, 200, { item: normalized });
     } catch (e) {
       const status = e instanceof LlmError ? e.status : 500;
@@ -4518,9 +4524,12 @@ const server = createServer(async (req, res) => {
   }
 
   return send(res, 404, { code: 'not_found', message: `No route for ${method} ${path}` });
-});
+}
 
-server.listen(PORT, () => {
+const server = createServer(handler);
+
+// Vercel imports the handler; only local dev binds a port.
+if (!process.env.VERCEL) server.listen(PORT, () => {
   console.log(`\nLAIC dev backend → http://localhost:${PORT}`);
   console.log(`LLM: ${ANTHROPIC_API_KEY ? `enabled (model ${LLM_MODEL})` : 'DISABLED — set ANTHROPIC_API_KEY in .env'}`);
   console.log('Tutorial: POST /api/tutorials/ingest-web · POST /api/tutorials/ingest-youtube · POST /api/tutorials/expand-prompt · POST /api/tutorials/suggest-highlights · POST /api/tutorials/suggest-markup-flags · POST /api/tutorials/extract-knowledge · POST /api/tutorials/generate (SSE)');

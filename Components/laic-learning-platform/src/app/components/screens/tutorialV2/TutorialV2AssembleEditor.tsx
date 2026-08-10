@@ -6,8 +6,9 @@
 import React, { useState } from 'react';
 import {
   ArrowLeft, Eye, Pencil, Send, Sparkles, ChevronUp, ChevronDown, Trash2,
-  ExternalLink,
+  ExternalLink, Save,
 } from 'lucide-react';
+import { pastelFromHex } from '../../../../lib/pastel';
 import { partsToBlocks } from '../../../../lib/tutorialV2/draftModel';
 import {
   isNestedEditablePart,
@@ -16,7 +17,11 @@ import {
 import type { TutorialV2Draft, TutorialV2Part } from '../../../../lib/tutorialV2/types';
 import { LearningBlocksPreview } from '../LearnerReader';
 import { TutorialV2NestedEditor } from './TutorialV2NestedEditor';
+import { parseYtId } from './TutorialV2SourcePanel';
 import { TutorialV2RefineSidebar } from './TutorialV2RefineSidebar';
+import { BridgeEmbedBlock } from './BridgeEmbedBlock';
+import { isBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
+import { RichTextEditor } from '../../RichTextEditor';
 
 export function TutorialV2AssembleEditor({
   draft,
@@ -119,25 +124,16 @@ export function TutorialV2AssembleEditor({
           >
             <ArrowLeft size={14} /> Back to outline
           </button>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onSave}
-              className="px-3 py-1.5 rounded-full border"
-              style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              disabled={!canSubmit || !parts.length}
-              onClick={onSubmit}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-white disabled:opacity-40"
-              style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
-            >
-              <Send size={13} /> Submit
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={!parts.length}
+            onClick={onSubmit}
+            title={!canSubmit ? 'Some required items are still incomplete — you can still submit a draft for review.' : undefined}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-white disabled:opacity-40"
+            style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
+          >
+            <Send size={13} /> Submit
+          </button>
         </div>
         {rail}
         {(onBackToPlan || onBackToStructure) && (
@@ -287,23 +283,21 @@ export function TutorialV2AssembleEditor({
                             <button type="button" onClick={(e) => { e.stopPropagation(); movePart(i, 1); }} disabled={i === parts.length - 1} className="p-1 rounded" style={{ color: i === parts.length - 1 ? '#E5E7EB' : '#6B7280' }}>
                               <ChevronDown size={14} />
                             </button>
-                            {!isNestedEditablePart(p) && (
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); openRefineForPart(p.id); }}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-full border ml-1"
-                                style={{ fontSize: 11.5, color: '#6D28D9', borderColor: 'rgba(109,40,217,0.25)' }}
-                              >
-                                <Sparkles size={11} /> Ask Hoot
-                              </button>
-                            )}
                             <button type="button" onClick={(e) => { e.stopPropagation(); removePart(p.id); }} className="p-1 rounded ml-0.5" style={{ color: '#9CA3AF' }} title="Remove">
                               <Trash2 size={13} />
                             </button>
                           </div>
                         </div>
 
-                        {isNestedEditablePart(p) ? (
+                        {isBridgeEmbedPart(p) ? (
+                          <BridgeEmbedBlock
+                            kind={p.embedKind}
+                            seed={p.embedSeed ?? 7}
+                            skin={p.embedSkin}
+                            caption={p.caption}
+                            onChangeCaption={(caption) => updatePart(p.id, { caption })}
+                          />
+                        ) : isNestedEditablePart(p) ? (
                           <div>
                             <p style={{ fontSize: 13.5, color: '#374151', marginBottom: 8 }}>
                               {p.type === 'library-embed'
@@ -345,10 +339,16 @@ export function TutorialV2AssembleEditor({
                             )}
                             {(p.type === 'image' || p.mediaKind === 'image') ? (
                               <div className="space-y-2" onClick={(e) => e.stopPropagation()} role="presentation">
+                                {p.url ? (
+                                  <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,0,0,0.08)' }}>
+                                    <img src={p.url} alt={p.caption || ''} style={{ width: '100%', display: 'block' }} />
+                                  </div>
+                                ) : null}
                                 <input
                                   className="w-full"
-                                  value={p.url || ''}
-                                  placeholder="Image URL"
+                                  value={typeof p.url === 'string' && p.url.startsWith('data:') ? '' : (p.url || '')}
+                                  placeholder={typeof p.url === 'string' && p.url.startsWith('data:') ? 'Uploaded image' : 'Image URL'}
+                                  disabled={typeof p.url === 'string' && p.url.startsWith('data:')}
                                   onChange={(e) => updatePart(p.id, { url: e.target.value })}
                                   style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '8px 10px' }}
                                 />
@@ -362,6 +362,18 @@ export function TutorialV2AssembleEditor({
                               </div>
                             ) : (p.type === 'video' || p.mediaKind === 'video') ? (
                               <div className="space-y-2" onClick={(e) => e.stopPropagation()} role="presentation">
+                                {parseYtId(p.url || '') ? (
+                                  <div
+                                    className="rounded-xl overflow-hidden"
+                                    style={{ position: 'relative', width: '100%', paddingTop: '56.25%', background: '#000' }}
+                                  >
+                                    <img
+                                      src={`https://i.ytimg.com/vi/${parseYtId(p.url || '')}/hqdefault.jpg`}
+                                      alt=""
+                                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.9 }}
+                                    />
+                                  </div>
+                                ) : null}
                                 <input
                                   className="w-full"
                                   value={p.url || ''}
@@ -378,15 +390,35 @@ export function TutorialV2AssembleEditor({
                                 />
                               </div>
                             ) : (
-                              <textarea
-                                className="w-full resize-y"
-                                rows={5}
-                                value={p.body || p.plain || ''}
-                                placeholder="Edit this block…"
-                                onChange={(e) => updatePart(p.id, { body: e.target.value, plain: e.target.value })}
-                                onClick={(e) => e.stopPropagation()}
-                                style={{ fontSize: 13.5, lineHeight: 1.55, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: 10 }}
-                              />
+                              <div onClick={(e) => e.stopPropagation()} role="presentation">
+                                {(p.type === 'rich-text' || !p.type || p.type === 'explanation') ? (
+                                  <RichTextEditor
+                                    value={p.body || p.plain || ''}
+                                    onChange={(next) => updatePart(p.id, { body: next, plain: next })}
+                                    placeholder="Edit this block…"
+                                    minHeight={140}
+                                    trailingActions={
+                                      <button
+                                        type="button"
+                                        onClick={() => openRefineForPart(p.id)}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border"
+                                        style={{ fontSize: 12, color: '#6D28D9', borderColor: 'rgba(109,40,217,0.25)', background: '#fff' }}
+                                      >
+                                        <Sparkles size={11} /> Ask AI
+                                      </button>
+                                    }
+                                  />
+                                ) : (
+                                  <textarea
+                                    className="w-full resize-y"
+                                    rows={5}
+                                    value={p.body || p.plain || ''}
+                                    placeholder="Edit this block…"
+                                    onChange={(e) => updatePart(p.id, { body: e.target.value, plain: e.target.value })}
+                                    style={{ fontSize: 13.5, lineHeight: 1.55, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: 10 }}
+                                  />
+                                )}
+                              </div>
                             )}
                           </>
                         )}
@@ -412,6 +444,21 @@ export function TutorialV2AssembleEditor({
           />
         )}
       </div>
+      <button
+        type="button"
+        onClick={onSave}
+        className="fixed bottom-5 left-5 z-40 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full"
+        style={{
+          fontSize: 13.5,
+          fontWeight: 650,
+          color: '#065F46',
+          background: pastelFromHex('#059669', 0.82),
+          border: '1px solid rgba(5,150,105,0.3)',
+          boxShadow: '0 10px 28px -12px rgba(5,150,105,0.55)',
+        }}
+      >
+        <Save size={15} /> Save
+      </button>
     </div>
   );
 }

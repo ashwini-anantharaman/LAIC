@@ -1,6 +1,6 @@
 /**
- * Split tutorial blocks into learner pages by approximate word budget.
- * Prefers breaks before section headings so teaching + that section’s checks stay together.
+ * Split tutorial blocks into learner pages.
+ * Prefer author hard breaks (Structure page grouping); otherwise word-budget auto-split.
  */
 
 function wordsInText(s) {
@@ -40,10 +40,11 @@ export function countBlocksWords(blocks) {
 function isSectionStart(block) {
   if (!block || block.type !== 'rich-text') return false;
   const h = String(block.content?.heading || '').trim();
-  if (!h) return false;
-  const lower = h.toLowerCase();
-  if (lower === 'introduction' || lower === 'intro' || lower === 'recap' || lower === 'summary') return true;
-  return true; // any headed rich-text is a natural page-break candidate
+  return !!h;
+}
+
+function hasHardBreak(block) {
+  return !!(block?.pageBreakBefore || block?.content?.pageBreakBefore);
 }
 
 /**
@@ -56,10 +57,11 @@ export function paginateTutorialBlocks(blocks, opts = {}) {
   if (!list.length) return [];
 
   const wordsPerPage = Math.max(200, Number(opts.wordsPerPage) || 520);
+  const authorPaged = list.some(hasHardBreak);
   const total = countBlocksWords(list);
 
-  // Short tutorials: single page
-  if (total <= wordsPerPage * 1.15 || list.length <= 4) {
+  // Short tutorials with no author page map: single page
+  if (!authorPaged && (total <= wordsPerPage * 1.15 || list.length <= 4)) {
     return [list];
   }
 
@@ -77,18 +79,24 @@ export function paginateTutorialBlocks(blocks, opts = {}) {
   for (let i = 0; i < list.length; i++) {
     const b = list[i];
     const w = blockWordWeight(b);
-    const atBreak = current.length > 0 && isSectionStart(b) && currentWords >= wordsPerPage * 0.55;
-    const wouldOverflow = current.length > 0 && currentWords + w > wordsPerPage && currentWords >= wordsPerPage * 0.4;
+    const hardBreak = current.length > 0 && hasHardBreak(b);
 
-    if (atBreak || wouldOverflow) flush();
+    if (hardBreak) {
+      flush();
+    } else if (!authorPaged) {
+      // Legacy soft packing only when Structure did not assign pages.
+      const atBreak = current.length > 0 && isSectionStart(b) && currentWords >= wordsPerPage * 0.55;
+      const wouldOverflow = current.length > 0 && currentWords + w > wordsPerPage && currentWords >= wordsPerPage * 0.4;
+      if (atBreak || wouldOverflow) flush();
+    }
 
     current.push(b);
     currentWords += w;
   }
   flush();
 
-  // Avoid tiny trailing page: merge into previous if very short
-  if (pages.length >= 2) {
+  // Avoid tiny trailing page when using auto word-budget only.
+  if (!authorPaged && pages.length >= 2) {
     const last = pages[pages.length - 1];
     const lastW = countBlocksWords(last);
     if (lastW < wordsPerPage * 0.28 && last.length <= 2) {

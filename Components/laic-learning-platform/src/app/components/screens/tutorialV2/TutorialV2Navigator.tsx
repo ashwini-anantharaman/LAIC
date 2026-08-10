@@ -2,7 +2,7 @@
  * Tutorial V2 section navigator — outline + status + enter section / generate slot.
  */
 import React from 'react';
-import { Check, PenLine, Sparkles, ChevronRight, Eye, Database } from 'lucide-react';
+import { Check, PenLine, Sparkles, ChevronRight, Eye, Database, Trash2 } from 'lucide-react';
 import type { TutorialV2Draft, V2Section, V2TopLevelSlot } from '../../../../lib/tutorialV2/types';
 import {
   allRequiredDone,
@@ -31,6 +31,7 @@ export function TutorialV2Navigator({
   writeYourself = false,
   onOpenSection,
   onOpenSlot,
+  onDeleteSection,
   onReview,
   onBackToSources,
   onBackToStructure,
@@ -42,6 +43,8 @@ export function TutorialV2Navigator({
   writeYourself?: boolean;
   onOpenSection: (sectionId: string) => void;
   onOpenSlot: (slotId: string) => void;
+  /** Author can remove any section from the outline. */
+  onDeleteSection?: (sectionId: string) => void;
   onReview: () => void;
   onBackToSources: () => void;
   onBackToStructure: () => void;
@@ -51,7 +54,7 @@ export function TutorialV2Navigator({
   const remaining = requiredSectionsRemaining(draft.sections);
   const slots = draft.topLevelSlots || [];
   const canReview = allRequiredDone(draft.sections, slots)
-    && (total > 0 || slots.some((s) => s.done) || slots.length > 0);
+    && (total > 0 || slots.some((s) => s.done || (s.parts || []).length > 0 || !!s.part));
   const hasLibrarySlots = slots.some((s) => s.kind === 'library');
   const hasGenerateSlots = slots.some((s) => s.kind === 'generate');
   const pendingGenerate = slots.filter((s) => s.kind === 'generate' && !s.done).length;
@@ -142,7 +145,13 @@ export function TutorialV2Navigator({
 
       <div className="space-y-2">
         {draft.sections.map((sec, i) => (
-          <SectionRow key={sec.id} index={i} sec={sec} onOpen={() => onOpenSection(sec.id)} />
+          <SectionRow
+            key={sec.id}
+            index={i}
+            sec={sec}
+            onOpen={() => onOpenSection(sec.id)}
+            onDelete={onDeleteSection ? () => onDeleteSection(sec.id) : undefined}
+          />
         ))}
         {!draft.sections.length && !slots.length && (
           <p style={{ fontSize: 13.5, color: '#9AA3AF' }}>
@@ -244,55 +253,73 @@ function SectionRow({
   index,
   sec,
   onOpen,
+  onDelete,
 }: {
   index: number;
   sec: V2Section;
   onOpen: () => void;
+  onDelete?: () => void;
 }) {
   const status = deriveSectionStatus(sec);
   const style = STATUS_STYLE[status];
   const mode = MODE_HINT[sec.authorMode] || '';
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left transition-colors hover:bg-white"
+    <div
+      className="flex items-stretch gap-1 rounded-2xl"
       style={{
         background: 'rgba(255,255,255,0.72)',
         border: '1px solid rgba(0,0,0,0.06)',
         boxShadow: '0 4px 16px -8px rgba(30,50,80,0.12)',
       }}
     >
-      <div
-        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-        style={{ background: status === 'done' ? '#D1FAE5' : '#EEF2FF', color: status === 'done' ? '#065F46' : '#4338CA', fontSize: 13, fontWeight: 700 }}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="min-w-0 flex-1 flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left transition-colors hover:bg-white"
       >
-        {status === 'done' ? <Check size={14} /> : index + 1}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span style={{ fontSize: 14.5, fontWeight: 650, color: '#0B1220' }}>{sec.title || `Section ${index + 1}`}</span>
-          {!sec.required && (
-            <span style={{ fontSize: 11, color: '#9AA3AF' }}>optional</span>
-          )}
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: status === 'done' ? '#D1FAE5' : '#EEF2FF', color: status === 'done' ? '#065F46' : '#4338CA', fontSize: 13, fontWeight: 700 }}
+        >
+          {status === 'done' ? <Check size={14} /> : index + 1}
         </div>
-        {sec.intent ? (
-          <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 2 }} className="truncate">{sec.intent}</p>
-        ) : null}
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {mode ? (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ fontSize: 11, color: '#6B7280', background: '#F3F4F6' }}>
-            {mode === 'generated' ? <Sparkles size={10} /> : <PenLine size={10} />}
-            {mode}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ fontSize: 14.5, fontWeight: 650, color: '#0B1220' }}>{sec.title || `Section ${index + 1}`}</span>
+            {!sec.required && (
+              <span style={{ fontSize: 11, color: '#9AA3AF' }}>optional</span>
+            )}
+          </div>
+          {sec.intent ? (
+            <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 2 }} className="truncate">{sec.intent}</p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {mode ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ fontSize: 11, color: '#6B7280', background: '#F3F4F6' }}>
+              {mode === 'generated' ? <Sparkles size={10} /> : <PenLine size={10} />}
+              {mode}
+            </span>
+          ) : null}
+          <span className="px-2 py-0.5 rounded-full" style={{ fontSize: 11, fontWeight: 600, background: style.bg, color: style.text }}>
+            {style.label}
           </span>
-        ) : null}
-        <span className="px-2 py-0.5 rounded-full" style={{ fontSize: 11, fontWeight: 600, background: style.bg, color: style.text }}>
-          {style.label}
-        </span>
-        <ChevronRight size={16} style={{ color: '#9AA3AF' }} />
-      </div>
-    </button>
+          <ChevronRight size={16} style={{ color: '#9AA3AF' }} />
+        </div>
+      </button>
+      {onDelete ? (
+        <button
+          type="button"
+          onClick={onDelete}
+          className="shrink-0 px-3 rounded-r-2xl hover:bg-red-50 transition-colors"
+          style={{ color: '#EF4444' }}
+          title={`Delete ${sec.title || `Section ${index + 1}`}`}
+          aria-label={`Delete ${sec.title || `Section ${index + 1}`}`}
+        >
+          <Trash2 size={15} />
+        </button>
+      ) : null}
+    </div>
   );
 }
