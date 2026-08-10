@@ -17,6 +17,7 @@ import {
 import type { TutorialV2Draft, TutorialV2Part } from '../../../../lib/tutorialV2/types';
 import { LearningBlocksPreview } from '../LearnerReader';
 import { TutorialV2NestedEditor } from './TutorialV2NestedEditor';
+import { parseYtId } from './TutorialV2SourcePanel';
 import { TutorialV2RefineSidebar } from './TutorialV2RefineSidebar';
 import { BridgeEmbedBlock } from './BridgeEmbedBlock';
 import { isBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
@@ -337,10 +338,16 @@ export function TutorialV2AssembleEditor({
                             )}
                             {(p.type === 'image' || p.mediaKind === 'image') ? (
                               <div className="space-y-2" onClick={(e) => e.stopPropagation()} role="presentation">
+                                {p.url ? (
+                                  <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,0,0,0.08)' }}>
+                                    <img src={p.url} alt={p.caption || ''} style={{ width: '100%', display: 'block' }} />
+                                  </div>
+                                ) : null}
                                 <input
                                   className="w-full"
-                                  value={p.url || ''}
-                                  placeholder="Image URL"
+                                  value={typeof p.url === 'string' && p.url.startsWith('data:') ? '' : (p.url || '')}
+                                  placeholder={typeof p.url === 'string' && p.url.startsWith('data:') ? 'Uploaded image' : 'Image URL'}
+                                  disabled={typeof p.url === 'string' && p.url.startsWith('data:')}
                                   onChange={(e) => updatePart(p.id, { url: e.target.value })}
                                   style={{ fontSize: 13, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '8px 10px' }}
                                 />
@@ -354,6 +361,18 @@ export function TutorialV2AssembleEditor({
                               </div>
                             ) : (p.type === 'video' || p.mediaKind === 'video') ? (
                               <div className="space-y-2" onClick={(e) => e.stopPropagation()} role="presentation">
+                                {parseYtId(p.url || '') ? (
+                                  <div
+                                    className="rounded-xl overflow-hidden"
+                                    style={{ position: 'relative', width: '100%', paddingTop: '56.25%', background: '#000' }}
+                                  >
+                                    <img
+                                      src={`https://i.ytimg.com/vi/${parseYtId(p.url || '')}/hqdefault.jpg`}
+                                      alt=""
+                                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.9 }}
+                                    />
+                                  </div>
+                                ) : null}
                                 <input
                                   className="w-full"
                                   value={p.url || ''}
