@@ -457,9 +457,21 @@ export function fetchBridgeSummary(token: string): Promise<BridgeSummary> {
 }
 
 /** Mint a single-use launch into the bridge platform (works for learners). */
-export function launchBridgePlatform(token: string): Promise<PlatformLaunch> {
+/**
+ * Mint a launch into the bridge platform.
+ *
+ * `programId` decides WHO the platform thinks you are. Launching the app-wide
+ * Bridge Program is right for a member of it — and wrong for a club's people, who
+ * are not in that program and so arrive with no standing at all (every challenge
+ * route then renders its 404-for-forbidden). Pass the club and the partner path
+ * resolves instead, emitting bridge_club_member.
+ */
+export function launchBridgePlatform(
+  token: string,
+  programId: string = PROGRAM_ID,
+): Promise<PlatformLaunch> {
   return request<PlatformLaunch>(
-    `/api/programs/${PROGRAM_ID}/bridge-platform/launch`,
+    `/api/programs/${programId}/bridge-platform/launch`,
     { method: "POST", token },
   );
 }

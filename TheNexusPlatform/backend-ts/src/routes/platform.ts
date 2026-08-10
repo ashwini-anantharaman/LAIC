@@ -971,7 +971,20 @@ platformRouter.get("/bridge/context", async (c) => {
     // A pre-built role picked in the Nexus role builder is authoritative;
     // a custom (capability-bound) role or graded grant falls back to the
     // level→role map so the emitted `roles` stays a valid BridgeRole set.
-    roles: isPrebuilt ? [access.platformRole] : mapped.roles,
+    // A club's people all get bridge_club_member — deliberately narrow, and
+    // deliberately the same for a club's admin. The platform gates by role
+    // against ONE GLOBAL catalogue, so the parent program's coach role would open
+    // every page it reaches, and bridge_club_admin sits in the platform's ADMIN
+    // set (its admin & expert-review areas). Neither belongs to a club.
+    //
+    // bridge_club_member holds page.challenges and challenge.create, nothing
+    // more. WHICH club people may create is then the app's own catalogue's
+    // business (app.challenge.create) — the platform permits, the club role gates.
+    roles: isPrebuilt
+      ? [access.platformRole]
+      : access.partnerClub
+        ? ["bridge_club_member"]
+        : mapped.roles,
     permissions: [`bridge:${access.level}`],
     accessLevel: mapped.accessLevel,
     capabilities, // effective bridge-catalogue capability ids (tab gating + display)

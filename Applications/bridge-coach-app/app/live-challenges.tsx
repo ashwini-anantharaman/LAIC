@@ -12,7 +12,21 @@
 // platform, not more work here.
 
 import { BridgeEmbed } from "../components/bridge-embed";
+import { useSelectedClubId } from "../lib/club-context";
 
 export default function LiveChallengesScreen() {
-  return <BridgeEmbed title="Challenges" next="/bridge/challenges" backTo="/club" />;
+  // Launch as the CLUB, not the app-wide program. A club's people are not in that
+  // program, so launching it gave them no standing and every challenge route
+  // answered 404 — which is how this page reports "forbidden". Launching the club
+  // takes the partner path, which emits bridge_club_member: page.challenges and
+  // challenge.create, nothing else on the platform.
+  const clubId = useSelectedClubId();
+  return (
+    <BridgeEmbed
+      title="Challenges"
+      next="/bridge/challenges"
+      backTo="/club"
+      programId={clubId ?? undefined}
+    />
+  );
 }

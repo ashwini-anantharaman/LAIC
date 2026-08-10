@@ -45,6 +45,8 @@ function isTableHref(href: string): boolean {
 }
 
 export function BridgeEmbed({
+  /** Launch as this program instead of the app-wide one — a club's own id. */
+  programId: programIdProp,
   title,
   next,
   resetOnFocus = false,
@@ -54,6 +56,7 @@ export function BridgeEmbed({
 }: {
   title: string;
   next: string;
+  programId?: string;
   /** Tab screens: every return to the tab restarts at `next`, so wandering
    *  into a sub-page (board editor, a table) never becomes the tab's state. */
   resetOnFocus?: boolean;
@@ -93,6 +96,10 @@ export function BridgeEmbed({
   const originRef = useRef<string | null>(null);
   const lastRelaunch = useRef(0);
 
+  // The app-wide program unless a caller names its own — a club, for its people
+  // who are not in the app-wide one.
+  const programId = programIdProp ?? PROGRAM_ID;
+
   const load = useCallback(async () => {
     if (!token) return;
     setError(null);
@@ -109,7 +116,7 @@ export function BridgeEmbed({
       return;
     }
     try {
-      const launch = await takeLaunch(token, "bridge");
+      const launch = await takeLaunch(token, "bridge", programId);
       const base = BRIDGE_LAUNCH_URL_OVERRIDE ?? launch.launch_url;
       if (!base) throw new Error("bridge platform URL not configured");
       const origin = new URL(base).origin;
@@ -117,7 +124,9 @@ export function BridgeEmbed({
       rememberBridgeOrigin(token, origin);
       const params = new URLSearchParams({
         launch_token: launch.launch_token,
-        program_id: PROGRAM_ID,
+        // The platform scopes /bridge/context by this, so it must be the SAME
+        // program the launch was minted for — a club, when opened from a club.
+        program_id: programId,
         next,
         embedded: "1",
       });
@@ -129,7 +138,7 @@ export function BridgeEmbed({
       if (e instanceof NexusError && e.status === 401) return;
       setError("Couldn't open the bridge platform. Check that it is running.");
     }
-  }, [token, next]);
+  }, [token, next, programId]);
 
   useEffect(() => {
     load();

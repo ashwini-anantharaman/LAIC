@@ -252,6 +252,23 @@ export default function ClubChallengesScreen() {
           </ScrollView>
         )}
 
+        {/* Through to the working feature, while this screen is still a shell
+            over seeded data. Outside the canSeeBoard gate deliberately: seeing
+            standings and reaching the real challenges are different things. */}
+        <Pressable
+          onPress={() => router.push("/live-challenges")}
+          accessibilityRole="button"
+          accessibilityLabel="Open live challenges on the bridge platform"
+          style={({ pressed }) => [
+            styles.liveRow,
+            { marginTop: 14 * s, marginHorizontal: ROW.left * s },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={[styles.liveText, { fontSize: 14 * s }]}>Open live challenges</Text>
+          <Ionicons name="arrow-forward" size={15 * s} color={Brand.cream} />
+        </Pressable>
+
         {canSeeBoard ? (
           <Text
             style={[

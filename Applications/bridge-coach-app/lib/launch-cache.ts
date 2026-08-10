@@ -13,12 +13,12 @@ import {
 
 export type LaunchTarget = "learning" | "bridge";
 
-const MINT: Record<LaunchTarget, (token: string) => Promise<PlatformLaunch>> = {
+const MINT: Record<LaunchTarget, (token: string, programId?: string) => Promise<PlatformLaunch>> = {
   learning: launchLearningPlatform,
   bridge: launchBridgePlatform,
 };
 
-type CacheEntry = { token: string; launch: PlatformLaunch };
+type CacheEntry = { token: string; launch: PlatformLaunch; programId?: string };
 
 const cached: Partial<Record<LaunchTarget, CacheEntry>> = {};
 const inflight: Partial<Record<LaunchTarget, { token: string; promise: Promise<void> }>> = {};
@@ -29,13 +29,17 @@ function isFresh(launch: PlatformLaunch): boolean {
 }
 
 /** Fire-and-forget: make sure an unused launch is (being) fetched. */
-export function prefetchLaunch(token: string, target: LaunchTarget): void {
+export function prefetchLaunch(
+  token: string,
+  target: LaunchTarget,
+  programId?: string,
+): void {
   const have = cached[target];
-  if (have && have.token === token && isFresh(have.launch)) return;
+  if (have && have.token === token && have.programId === programId && isFresh(have.launch)) return;
   if (inflight[target]?.token === token) return;
-  const promise = MINT[target](token)
+  const promise = MINT[target](token, programId)
     .then((launch) => {
-      cached[target] = { token, launch };
+      cached[target] = { token, launch, programId };
     })
     .catch(() => {
       /* opening the screen will mint on demand */
@@ -50,13 +54,22 @@ export function prefetchLaunch(token: string, target: LaunchTarget): void {
 export async function takeLaunch(
   token: string,
   target: LaunchTarget,
+  /**
+   * Which program to launch as. A club's people must launch THEIR CLUB — the
+   * app-wide program gives them no standing on the platform. A prewarmed launch
+   * is only reused when it was minted for the same program, since the program is
+   * what the platform reads the caller's roles from.
+   */
+  programId?: string,
 ): Promise<PlatformLaunch> {
   const pending = inflight[target];
   if (pending?.token === token) await pending.promise;
   const have = cached[target];
   cached[target] = undefined;
-  if (have && have.token === token && isFresh(have.launch)) return have.launch;
-  return MINT[target](token);
+  if (have && have.token === token && have.programId === programId && isFresh(have.launch)) {
+    return have.launch;
+  }
+  return MINT[target](token, programId);
 }
 
 // One SIGNED-IN bridge origin per session token: after the first launch
