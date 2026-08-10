@@ -16,8 +16,9 @@
   "files": [
     "dist"
   ],
+  "//types-beside-the-bundle": "The build also copies index.d.ts to dist/table-embed.d.ts, so a host that VENDORS the artifact and imports './table-embed.js' by path — rather than resolving the package name — still gets types: TypeScript substitutes a sibling .d.ts for a .js import. Without it such a host typechecks against whatever tsc can infer from a rolled-up bundle, which is worse than nothing: it reports every optional prop as required.",
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.build.json",
+    "build": "vite build && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/table-embed.d.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
