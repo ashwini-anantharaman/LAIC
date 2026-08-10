@@ -1,5 +1,7 @@
 /** Platform layer API routes for orgs, challenges, permissions, and join codes. */
 
+import { randomBytes } from "node:crypto";
+
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 
@@ -4170,9 +4172,20 @@ platformRouter.get("/admin/organizations", async (c) => {
 // The operator's provisioning event — a fixed, repeatable sequence: create the
 // org + isolation boundary, grant default entitlements, then enroll every named
 // administrator (first = owner) as an ACTIVE member with an account right away —
-// no pending activation link. New accounts get a shared temp password (returned
-// so the operator can hand it off) until the real reset flow lands.
-const PROVISION_PASSWORD = "NexusDev2026!";
+// no pending activation link. Each new account gets ITS OWN starting password,
+// returned once so the operator can hand it off; the app makes them replace it at
+// first sign-in (0046).
+//
+// It used to be one constant shared by every account this path created, which
+// meant anyone who knew it could sign in as a freshly provisioned org admin
+// before that person got there.
+const STARTING_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+function newStartingPassword(): string {
+  const bytes = randomBytes(12);
+  let out = "";
+  for (let i = 0; i < 12; i += 1) out += STARTING_ALPHABET[bytes[i] % STARTING_ALPHABET.length];
+  return `${out.slice(0, 4)}-${out.slice(4, 8)}-${out.slice(8)}`;
+}
 const provisionOrgSchema = z.object({
   name: z.string().min(1),
   // Optional operator-chosen URL slug; normalized + made unique server-side.
@@ -4180,12 +4193,25 @@ const provisionOrgSchema = z.object({
   admins: z.array(z.object({ email: z.string().email(), display_name: z.string().nullish() })).min(1),
 });
 
-/** Resolve an existing login by email, or create one. Returns the auth id. */
-async function _resolveOrCreateAccount(email: string): Promise<{ authId: string; created: boolean }> {
+/**
+ * Resolve an existing login by email, or create one with its own starting
+ * password. An existing account keeps the password it has — provisioning an org
+ * must never overwrite someone's credential.
+ */
+async function _resolveOrCreateAccount(
+  email: string,
+): Promise<{ authId: string; created: boolean; startingPassword: string | null }> {
   const existing = await db.getProfileByEmail(email.trim().toLowerCase());
-  if (existing) return { authId: (existing.auth_user_id as string) ?? (existing.id as string), created: false };
-  const acct = await createAuthUser(email.trim().toLowerCase(), PROVISION_PASSWORD);
-  return { authId: acct.id as string, created: true };
+  if (existing) {
+    return {
+      authId: (existing.auth_user_id as string) ?? (existing.id as string),
+      created: false,
+      startingPassword: null,
+    };
+  }
+  const startingPassword = newStartingPassword();
+  const acct = await createAuthUser(email.trim().toLowerCase(), startingPassword);
+  return { authId: acct.id as string, created: true, startingPassword };
 }
 
 platformRouter.post("/admin/organizations", async (c) => {
@@ -4207,8 +4233,18 @@ platformRouter.post("/admin/organizations", async (c) => {
     allowSecondOrg: true,
   });
 
-  const enrolled: Array<{ email: string; role: string; created: boolean }> = [
-    { email: owner.email.trim().toLowerCase(), role: "owner", created: ownerAcct.created },
+  const enrolled: Array<{
+    email: string;
+    role: string;
+    created: boolean;
+    temp_password: string | null;
+  }> = [
+    {
+      email: owner.email.trim().toLowerCase(),
+      role: "owner",
+      created: ownerAcct.created,
+      temp_password: ownerAcct.startingPassword,
+    },
   ];
   // Remaining named admins → active administrator memberships in the new org.
   for (const a of rest) {
@@ -4218,7 +4254,12 @@ platformRouter.post("/admin/organizations", async (c) => {
       email, role: "org_admin", displayName: a.display_name ?? null, allowSecondOrg: true,
     });
     await db.addMembership(result.organizationId, profileId, "administrator", null, "edit", null);
-    enrolled.push({ email, role: "administrator", created: acct.created });
+    enrolled.push({
+      email,
+      role: "administrator",
+      created: acct.created,
+      temp_password: acct.startingPassword,
+    });
   }
 
   await db.recordAuditEvent("organization.provisioned", {
@@ -4230,7 +4271,8 @@ platformRouter.post("/admin/organizations", async (c) => {
   });
   return c.json({
     organization: { id: result.organizationId, name: req.name, slug: result.slug, status: "active" },
-    admins: enrolled.map((e) => ({ ...e, temp_password: e.created ? PROVISION_PASSWORD : null })),
+    // Each new account's own password, returned once. Existing accounts: null.
+    admins: enrolled,
   });
 });
 
