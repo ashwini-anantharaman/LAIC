@@ -233,6 +233,30 @@ export function primaryMembership(context: RoleContext): NexusMembership | null 
   );
 }
 
+/** Everyone currently rendering a gate, so a refresh redraws all of them. */
+const roleListeners = new Set<(ctx: RoleContext) => void>();
+
+export function subscribeToRoleContext(fn: (ctx: RoleContext) => void): () => void {
+  roleListeners.add(fn);
+  return () => roleListeners.delete(fn);
+}
+
+/**
+ * Re-resolve from the server, ignoring the cache, and tell every gate.
+ *
+ * Roles are edited in the Nexus console while the app is open, and the resolve
+ * is cached for the session — so without this, a permission change needed a
+ * sign-out to take effect. Called when the app returns to the foreground, which
+ * is exactly when someone comes back from changing something.
+ */
+export async function refreshRoleContext(token: string): Promise<RoleContext> {
+  if (cached?.token === token) cached = null;
+  inflight = null;
+  const value = await getRoleContext(token);
+  for (const fn of roleListeners) fn(value);
+  return value;
+}
+
 export function clearBridgeRoleCache(): void {
   cached = null;
   inflight = null;

@@ -32,6 +32,7 @@ import { CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { BrandTabBar } from "../../components/brand-tab-bar";
 import { BridgeSessionWarmer } from "../../components/bridge-session-warmer";
 import { useBrandSheets } from "../../components/use-brand-sheets";
+import { useRoleRefreshOnForeground } from "../../lib/use-can";
 import { Brand } from "../../constants/theme";
 
 const { Navigator } = createMaterialTopTabNavigator();
@@ -46,6 +47,10 @@ const SwipeTabs = withLayoutContext<
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  // One listener for the whole app: permissions re-resolve when it comes back
+  // to the foreground, so a role edited in the console takes effect without a
+  // sign-out.
+  useRoleRefreshOnForeground();
   // The drawer starts where a screen's first line does, so it covers the page
   // and leaves the status bar clear.
   const { open, sheets } = useBrandSheets(insets.top + CONTENT_TOP_GAP);

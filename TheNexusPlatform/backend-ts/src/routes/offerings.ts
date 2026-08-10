@@ -983,6 +983,20 @@ offeringsRouter.get("/programs/:program_id/roles", async (c) => {
   return c.json(await graph.listProgramRoles(programId));
 });
 
+/**
+ * The catalogues a PROGRAM role may bind capabilities from: this program's own
+ * console inventory, plus each app it can grant. Named once — when a provider was
+ * missing from one of the two call sites that used to inline this, its
+ * capabilities were silently dropped on save: the role stored none, the builder
+ * showed every toggle off, and the app fell back to its no-role behaviour.
+ */
+const _programRoleCatalogues = (programId: string) => [
+  { providerId: "program-console" as const, instanceId: programId },
+  { providerId: "learning" as const },
+  { providerId: "bridge" as const },
+  { providerId: "club-app" as const },
+];
+
 offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
@@ -997,10 +1011,7 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   const validCaps = req.capabilities !== undefined
     ? await _clampCapsToProvisioning(
         program,
-        await validGrantsAcross(
-          [{ providerId: "program-console", instanceId: programId }, { providerId: "learning" }, { providerId: "bridge" }],
-          req.capabilities,
-        ),
+        await validGrantsAcross(_programRoleCatalogues(programId), req.capabilities),
       )
     : undefined;
   const finalPerms: Record<string, unknown> =
@@ -1033,7 +1044,7 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
   // Fold fine-grained capabilities into perms without wiping the area perms.
   if (req.capabilities !== undefined) {
     const refs: CatalogueRef[] = existing.program_id
-      ? [{ providerId: "program-console", instanceId: existing.program_id as string }, { providerId: "learning" }, { providerId: "bridge" }]
+      ? _programRoleCatalogues(existing.program_id as string)
       : existing.organization_id
         ? [{ providerId: "org-console", instanceId: existing.organization_id as string }]
         : [{ providerId: "nexus-console" }];
