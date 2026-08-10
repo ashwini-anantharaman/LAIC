@@ -12,7 +12,7 @@
 // updates from the new props. Rows may instead carry a direct callback (`on`),
 // the design's "prop handler wins" rule.
 
-import { useRouter } from "next/navigation";
+import { useTableHost } from "./host";
 import type { CSSProperties } from "react";
 
 export interface SettingsItem {
@@ -42,7 +42,7 @@ export function SettingsMenu({
   items: readonly SettingsItem[];
   onClose: () => void;
 }>) {
-  const router = useRouter();
+  const { navigate } = useTableHost();
   // One shared row style so an action row (a <form> submit) is pixel-identical
   // to an href/handler row (a plain <button>).
   const rowStyle: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, width: "100%", background: "#fff", border: 0, borderBottom: "1px solid #e2e2e2", padding: "9px 10px", fontSize: 16, color: "#000", textAlign: "left", cursor: "pointer" };
@@ -84,8 +84,7 @@ export function SettingsMenu({
                       // Same-page toggles replace (no history spam, menu stays
                       // open); leaving the page is a real navigation — push.
                       const samePage = item.href!.split("?")[0] === window.location.pathname;
-                      if (samePage) router.replace(item.href!, { scroll: false });
-                      else router.push(item.href!);
+                      navigate(item.href!, { replace: samePage });
                     }
                   : undefined)
               }
