@@ -351,9 +351,70 @@ function json3ToSegments(raw, chunkSec = 8) {
   }));
 }
 
+/**
+ * Serverless-friendly transcript fetch — YouTube InnerTube player API, no
+ * yt-dlp needed. Used on Vercel and as a fallback when yt_dlp is missing.
+ */
+async function fetchYoutubeTranscriptInnertube(id) {
+  // The IOS player client returns caption URLs that work without a
+  // proof-of-origin token, and honors fmt=json3. (The plain web timedtext
+  // URLs return empty bodies without a botguard token.)
+  const CLIENTS = [
+    {
+      client: {
+        clientName: 'IOS', clientVersion: '20.10.4', deviceMake: 'Apple',
+        deviceModel: 'iPhone16,2', osName: 'iPhone', osVersion: '18.3.2.22D82', hl: 'en',
+      },
+      ua: 'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)',
+    },
+    {
+      client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 30, hl: 'en' },
+      ua: 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
+    },
+  ];
+  let lastErr = null;
+  for (const { client, ua } of CLIENTS) {
+    try {
+      const res = await fetch('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'User-Agent': ua },
+        body: JSON.stringify({ videoId: id, context: { client } }),
+      });
+      if (!res.ok) { lastErr = new Error(`player API ${res.status}`); continue; }
+      const player = await res.json();
+      if (player?.playabilityStatus?.status && player.playabilityStatus.status !== 'OK') {
+        lastErr = new Error(`video not playable (${player.playabilityStatus.status})`);
+        continue;
+      }
+      const title = String(player?.videoDetails?.title || `YouTube video ${id}`);
+      const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+      if (!tracks.length) {
+        lastErr = new LlmError(422, 'no_captions', 'No transcript is available for this video (captions may be disabled).');
+        continue;
+      }
+      const track = tracks.find((t) => String(t.languageCode || '').startsWith('en')) || tracks[0];
+      const sep = String(track.baseUrl).includes('?') ? '&' : '?';
+      const subRes = await fetch(`${track.baseUrl}${sep}fmt=json3`, { headers: { 'User-Agent': ua } });
+      if (!subRes.ok) { lastErr = new Error(`captions ${subRes.status}`); continue; }
+      const raw = await subRes.text();
+      if (!raw || raw.trimStart().startsWith('<')) { lastErr = new Error('captions came back in an unexpected format'); continue; }
+      const transcript = json3ToText(raw);
+      if (!transcript) { lastErr = new LlmError(422, 'empty_transcript', 'The transcript came back empty.'); continue; }
+      return { title, videoId: id, sentences: toSentences(transcript), segments: json3ToSegments(raw) };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (lastErr instanceof LlmError) throw lastErr;
+  throw new LlmError(502, 'yt_fetch', `Could not fetch the transcript from YouTube${lastErr ? ` (${lastErr.message})` : ''}.`);
+}
+
 async function fetchYoutubeTranscript(url) {
   const id = parseVideoId(url);
   if (!id) throw new LlmError(400, 'bad_url', "That doesn't look like a YouTube link.");
+
+  // Serverless (Vercel) has no python/yt-dlp — go straight to InnerTube.
+  if (process.env.VERCEL) return fetchYoutubeTranscriptInnertube(id);
 
   const dir = await mkdtemp(join(tmpdir(), 'laic_yt_'));
   try {
@@ -374,7 +435,8 @@ async function fetchYoutubeTranscript(url) {
     } catch (e) {
       const msg = String(e.stderr || e.message || '');
       if (/No module named yt_dlp|not found|ENOENT/i.test(msg)) {
-        throw new LlmError(500, 'no_ytdlp', 'YouTube support needs yt-dlp on the server. Install it with: python3 -m pip install --user yt-dlp');
+        // yt-dlp missing — fall back to the dependency-free InnerTube path.
+        return await fetchYoutubeTranscriptInnertube(id);
       }
       // yt-dlp exits non-zero on some sub errors even when a file was written; continue to check for output.
     }
