@@ -21,8 +21,10 @@ import { getBridgeContext, isFellowDemo, nexusMode } from "@/lib/nexus";
 import { listBridgePeople, nexusProgramId, type BridgePerson } from "@/lib/nexusPeople";
 import { profileService } from "@/lib/profiles";
 
-/** Standard bridge roles an admin can assign directly from the roster (admin
- *  itself comes from Nexus membership, never granted here). */
+/** Standard bridge roles an admin can assign directly from the roster. The admin
+ *  roles come from Nexus membership and are never granted here — and neither is
+ *  bridge_club_member, which Nexus emits for anyone entering from a partner
+ *  club's app. */
 const ASSIGNABLE_ROLES: readonly BridgeRole[] = [
   "bridge_coach",
   "bridge_reviewer",
@@ -31,11 +33,12 @@ const ASSIGNABLE_ROLES: readonly BridgeRole[] = [
   "bridge_guest",
 ];
 
-/** Compact column headers — the matrix is 8 roles wide. Full name in title. */
+/** Compact column headers — the matrix is 9 roles wide. Full name in title. */
 const SHORT_ROLE: Record<BridgeRole, string> = {
   bridge_program_admin: "Prog",
   bridge_org_admin: "Org",
   bridge_club_admin: "Club",
+  bridge_club_member: "Member",
   bridge_coach: "Coach",
   bridge_reviewer: "Rev",
   bridge_fellow: "Fellow",

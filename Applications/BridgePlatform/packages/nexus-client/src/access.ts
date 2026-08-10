@@ -35,6 +35,7 @@ const ROLE_LABELS: Record<BridgeRole, string> = {
   bridge_program_admin: "Program Admin",
   bridge_org_admin: "Organization Admin",
   bridge_club_admin: "Club Admin",
+  bridge_club_member: "Club member",
   bridge_coach: "Coach",
   bridge_reviewer: "Reviewer",
   bridge_fellow: "Fellow",
