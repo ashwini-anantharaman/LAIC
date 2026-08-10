@@ -550,7 +550,8 @@ function WritePane({
           {isBridgeEmbedPart(p) ? (
             <BridgeEmbedBlock
               kind={p.embedKind}
-              url={p.url || ''}
+              seed={p.embedSeed ?? 7}
+              skin={p.embedSkin}
               caption={p.caption}
               onChangeCaption={(caption) => onChangePart(p.id, { caption })}
             />

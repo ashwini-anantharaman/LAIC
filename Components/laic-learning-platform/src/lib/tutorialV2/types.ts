@@ -45,8 +45,11 @@ export type TutorialV2Part = Omit<GeneratedPart, 'type'> & {
   sources?: unknown[];
   hints?: string[];
   hint?: string;
-  /** Which Bridge Platform component a 'bridge-embed' block frames. */
+  /** Which Bridge component a 'bridge-embed' block mounts. */
   embedKind?: string;
+  /** Its configuration: the deal seed and the skin the author picked. */
+  embedSeed?: number;
+  embedSkin?: string;
   /** From template media slot — steers the empty Start from scratch UI. */
   mediaKind?: 'image' | 'video' | 'either';
   mediaHint?: string;

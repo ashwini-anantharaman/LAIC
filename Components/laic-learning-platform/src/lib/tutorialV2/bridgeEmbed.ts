@@ -69,7 +69,8 @@ export function makeBridgeEmbedPart(kind: BridgeEmbedKind, id: string): Tutorial
     type: 'bridge-embed',
     label: def.label,
     embedKind: def.kind,
-    url: bridgeEmbedUrl(def.kind),
+    embedSeed: 7,
+    embedSkin: 'bbo',
     caption: '',
   } as TutorialV2Part;
 }

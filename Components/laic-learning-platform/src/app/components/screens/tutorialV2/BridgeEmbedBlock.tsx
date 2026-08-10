@@ -13,9 +13,17 @@
  * against the real table, and costs no network.
  */
 
-import { useState } from 'react';
-import { ExternalLink, Play, X } from 'lucide-react';
+import { Suspense, lazy, useState } from 'react';
+import { Play, X } from 'lucide-react';
 import { bridgeEmbedDef, type BridgeEmbedKind } from '../../../../lib/tutorialV2/bridgeEmbed';
+
+// The table is a COMPONENT, not a site in a frame — @bridge/table-embed carries
+// the real PlayTable plus the real game law in one 19kB-gzipped module whose only
+// runtime dependency is React. Lazily imported so a dormant block costs nothing:
+// the chunk is not even fetched until a reader opens one.
+const BridgeTable = lazy(async () => ({
+  default: (await import('../../../../vendor/bridge-table/table-embed.js')).BridgeTable,
+}));
 
 const FELT = '#1c6b4f';
 
@@ -61,13 +69,18 @@ function TablePreview() {
 
 export function BridgeEmbedBlock({
   kind,
-  url,
+  seed = 7,
+  skin = 'bbo',
+  showAllHands = false,
   caption,
   onChangeCaption,
   readOnly,
 }: Readonly<{
   kind: BridgeEmbedKind | string | undefined;
-  url: string;
+  /** The deal, derived deterministically so every reader sees the same board. */
+  seed?: number;
+  skin?: string;
+  showAllHands?: boolean;
   caption?: string;
   onChangeCaption?: (next: string) => void;
   readOnly?: boolean;
@@ -89,17 +102,30 @@ export function BridgeEmbedBlock({
       >
         {live ? (
           <>
-            <iframe
-              src={url}
-              title={def.label}
-              loading="lazy"
-              allow="fullscreen"
-              style={{ width: '100%', height: '100%', border: 0, display: 'block', background: '#fff' }}
-            />
+            <Suspense
+              fallback={
+                <div
+                  style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', color: '#fff', fontSize: 12.5 }}
+                >
+                  Loading the table…
+                </div>
+              }
+            >
+              <BridgeTable
+                seed={seed}
+                humanSeat="S"
+                // The learner deals, so the block is playable the moment it opens.
+                // Robot seats need a `decide` (BEN); until one is wired they wait,
+                // which is why the learner acting first matters here.
+                dealer="S"
+                appearance={{ skin, handLayout: 'row' }}
+                showAllHands={showAllHands}
+              />
+            </Suspense>
             <button
               type="button"
               onClick={() => setLive(false)}
-              title="Close — this stops the table"
+              title="Close — this unmounts the table"
               className="absolute flex items-center justify-center rounded-full"
               style={{
                 top: 8,
@@ -109,6 +135,7 @@ export function BridgeEmbedBlock({
                 background: 'rgba(11,15,26,0.78)',
                 color: '#fff',
                 border: '1px solid rgba(255,255,255,0.18)',
+                zIndex: 2,
               }}
             >
               <X size={14} />
@@ -181,15 +208,6 @@ export function BridgeEmbedBlock({
         <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 6 }}>{caption}</p>
       ) : null}
 
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 mt-2"
-        style={{ fontSize: 11.5, color: '#6B7280' }}
-      >
-        <ExternalLink size={11} /> Open in Bridge
-      </a>
     </div>
   );
 }
