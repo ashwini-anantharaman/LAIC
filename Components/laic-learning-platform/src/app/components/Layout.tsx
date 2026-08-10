@@ -33,6 +33,7 @@ import { VersionsPublishing } from './screens/VersionsPublishing';
 import { AuthorAnalytics } from './screens/AuthorAnalytics';
 import { ObjectCreator } from './screens/ObjectCreator';
 import { ObjectCreatorTutorialV2 } from './screens/tutorialV2/ObjectCreatorTutorialV2';
+import { ObjectCreatorPipelineV2 } from './screens/objectV2/ObjectCreatorPipelineV2';
 import { CourseWizard } from './screens/CourseWizard';
 import { ObjectReviews } from './screens/ObjectReviews';
 import { CourseReviews } from './screens/CourseReviews';
@@ -65,7 +66,9 @@ function ScreenRouter() {
     case 'cd-creator':
       return creatorObjectType === 'tutorial-v2'
         ? <ObjectCreatorTutorialV2 />
-        : <ObjectCreator />;
+        : ['quiz', 'flashcard-set', 'concept-card', 'video-script'].includes(creatorObjectType || '')
+          ? <ObjectCreatorPipelineV2 />
+          : <ObjectCreator />;
     case 'cd-wizard':   return <CourseWizard />;
     case 'or-reviews':  return <ObjectReviews />;
     case 'cr-reviews':  return <CourseReviews />;

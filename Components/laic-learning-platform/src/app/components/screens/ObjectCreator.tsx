@@ -2380,7 +2380,7 @@ function S3({ extracts, setExtracts, markHighlights, docTitle, typeNoun }: any) 
   );
 }
 
-function ConceptCategoryEditor({
+export function ConceptCategoryEditor({
   categories,
   onChange,
 }: {
