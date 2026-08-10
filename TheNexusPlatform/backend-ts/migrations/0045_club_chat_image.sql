@@ -1,6 +1,6 @@
 -- Pictures in the club chat.
 --
--- Same storage decision as profile pictures (0040) and club headers (0041): a
+-- Same storage decision as profile pictures (0043) and club headers (0044): a
 -- base64 data URL on the row. The app downsizes to 1280 on the long edge before
 -- upload, which lands a few hundred kilobytes — enough for a screenshot of a
 -- hand, and the cap below is the guard that keeps it so.
