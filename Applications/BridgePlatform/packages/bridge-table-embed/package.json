@@ -1,0 +1,41 @@
+{
+  "name": "@bridge/table-embed",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Bridge table as a portable, self-contained React component: real game law, real table, no platform.",
+  "type": "module",
+  "main": "./dist/table-embed.js",
+  "module": "./dist/table-embed.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/table-embed.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bridge/engine": "workspace:*",
+    "@bridge/events": "workspace:*",
+    "@bridge/table-config": "workspace:*",
+    "@bridge/table-ui": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5"
+  }
+}
