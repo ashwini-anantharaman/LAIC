@@ -1057,65 +1057,99 @@ type StateCard = { title: string; value: string; detail?: string };
 
 function FlipCard({ card }: Readonly<{ card: StateCard }>) {
   const [flipped, setFlipped] = useState(false);
+  // The 3D stage exists ONLY while the card is turning. A face that sits under
+  // perspective/preserve-3d/backface-visibility lives on a composited layer,
+  // where the text is a rasterized texture — visibly blurry at this size. At
+  // rest the visible face renders flat, with no transform anywhere, so the
+  // glyphs come off the ordinary crisp text path.
+  const [turning, setTurning] = useState(false);
   const canFlip = Boolean(card.detail);
+  const flip = () => {
+    setTurning(true);
+    // Two frames so the stage PAINTS at the old angle first — flipping state in
+    // the same frame it mounts would jump straight to the target, unanimated.
+    requestAnimationFrame(() => requestAnimationFrame(() => setFlipped((f) => !f)));
+    // Backstop for environments where transitionend never fires (reduced
+    // motion sets transition:none): settle to the crisp flat face regardless.
+    setTimeout(() => setTurning(false), 650);
+  };
   const face: React.CSSProperties = {
     position: "absolute", inset: 0, borderRadius: 9,
-    backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
     display: "flex", flexDirection: "column", justifyContent: "center",
     padding: "5px 7px", textAlign: "center",
   };
+  const front = (
+    <span style={{ ...face, background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
+      <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+        <RedSuits>{card.value}</RedSuits>
+      </span>
+      {card.title && (
+        <span style={{ marginTop: 2, fontSize: 8.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#6b5f50" }}>
+          {card.title}
+        </span>
+      )}
+      {canFlip && (
+        <span aria-hidden style={{ position: "absolute", top: 3, right: 5, fontSize: 8, color: "#b3a789" }}>
+          ⟳
+        </span>
+      )}
+    </span>
+  );
+  const back = canFlip ? (
+    <span
+      style={{
+        ...face, overflowY: "auto",
+        background: FELT_SOFT, borderWidth: 1, borderStyle: "solid", borderColor: "#e0cfa4",
+      }}
+    >
+      <span style={{ fontSize: 9.5, lineHeight: 1.35, color: FELT_DEEP, fontWeight: 500 }}>
+        <RedSuits>{card.detail!}</RedSuits>
+      </span>
+    </span>
+  ) : null;
   return (
     <button
       type="button"
-      onClick={canFlip ? () => setFlipped((f) => !f) : undefined}
+      onClick={canFlip ? flip : undefined}
       aria-pressed={flipped}
       aria-label={card.detail ? `${card.title || card.value} — tap to flip` : card.value}
       style={{
-        // The 3D stage. The button owns the footprint so the grid rows stay
-        // even while either face is showing.
-        position: "relative", minHeight: 54, perspective: 600,
+        // The button owns the footprint so the grid rows stay even while
+        // either face is showing.
+        position: "relative", minHeight: 54,
+        ...(turning ? { perspective: 600 } : {}),
         padding: 0, borderWidth: 0, background: "transparent",
         cursor: canFlip ? "pointer" : "default", textAlign: "inherit",
         fontFamily: "inherit",
       }}
     >
-      <span
-        className="coach-flip"
-        style={{
-          position: "absolute", inset: 0, transformStyle: "preserve-3d",
-          transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
-        }}
-      >
-        {/* front: the chip, grown into a card */}
-        <span style={{ ...face, background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
-            <RedSuits>{card.value}</RedSuits>
+      {turning ? (
+        <span
+          className="coach-flip"
+          onTransitionEnd={() => setTurning(false)}
+          style={{
+            position: "absolute", inset: 0, transformStyle: "preserve-3d",
+            transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+          }}
+        >
+          <span style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
+            {front}
           </span>
-          {card.title && (
-            <span style={{ marginTop: 2, fontSize: 8.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#6b5f50" }}>
-              {card.title}
-            </span>
-          )}
-          {canFlip && (
-            <span aria-hidden style={{ position: "absolute", top: 3, right: 5, fontSize: 8, color: "#b3a789" }}>
-              ⟳
+          {back && (
+            <span
+              style={{
+                position: "absolute", inset: 0, transform: "rotateY(180deg)",
+                backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
+              }}
+            >
+              {back}
             </span>
           )}
         </span>
-        {/* back: the whole fact */}
-        {canFlip && (
-          <span
-            style={{
-              ...face, transform: "rotateY(180deg)", overflowY: "auto",
-              background: FELT_SOFT, borderWidth: 1, borderStyle: "solid", borderColor: "#e0cfa4",
-            }}
-          >
-            <span style={{ fontSize: 9.5, lineHeight: 1.35, color: FELT_DEEP, fontWeight: 500 }}>
-              <RedSuits>{card.detail!}</RedSuits>
-            </span>
-          </span>
-        )}
-      </span>
+      ) : (
+        // At rest: one face, no transforms — this is where the crispness lives.
+        <span style={{ position: "absolute", inset: 0 }}>{flipped && back ? back : front}</span>
+      )}
     </button>
   );
 }
