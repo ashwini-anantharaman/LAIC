@@ -32,7 +32,6 @@ import {
   allRequiredDone,
   applySectionPatchToSlot,
   assembleAllParts,
-  collectRecipeParts,
   draftFromLearningObject,
   emptyTutorialV2Draft,
   partsToBlocks,
@@ -60,6 +59,7 @@ import {
   applySectionOutline,
   seedTopLevelSlots,
   structureIsReady,
+  type StructureSectionTitle,
 } from '../../../../lib/tutorialV2/recipeStructure';
 import type { TutorialV2Draft, TutorialV2Phase, V2SourceRef } from '../../../../lib/tutorialV2/types';
 import { TutorialV2StructurePanel } from './TutorialV2StructurePanel';
@@ -177,12 +177,12 @@ export function ObjectCreatorTutorialV2() {
     });
   });
   const [phase, setPhase] = useState<TutorialV2Phase>('start');
-  const [sectionTitles, setSectionTitles] = useState<{ id?: string; title: string; intent?: string }[]>(() => (
+  const [sectionTitles, setSectionTitles] = useState<StructureSectionTitle[]>(() => (
     pendingAuthoringPath === 'write-yourself'
       ? [
-          { title: 'Section 1', intent: '' },
-          { title: 'Section 2', intent: '' },
-          { title: 'Section 3', intent: '' },
+          { title: 'Section 1', intent: '', learnerPage: 1 },
+          { title: 'Section 2', intent: '', learnerPage: 2 },
+          { title: 'Section 3', intent: '', learnerPage: 3 },
         ]
       : []
   ));
@@ -494,10 +494,11 @@ export function ObjectCreatorTutorialV2() {
     if (existing) {
       setDraft(existing);
       if (existing.sections.length) {
-        setSectionTitles(existing.sections.map((s) => ({
+        setSectionTitles(existing.sections.map((s, i) => ({
           id: s.id,
           title: s.title,
           intent: s.intent || '',
+          learnerPage: s.learnerPage ?? (i + 1),
         })));
       }
       const pRaw = existing.phase || (existing.sections.length || (existing.topLevelSlots || []).length ? 'navigator' : existing.title ? 'structure' : 'start');
@@ -658,10 +659,11 @@ export function ObjectCreatorTutorialV2() {
     if (next === 'structure') {
       // Refresh Structure title rows from current sections (ids preserved).
       if (synced.sections.length) {
-        setSectionTitles(synced.sections.map((s) => ({
+        setSectionTitles(synced.sections.map((s, i) => ({
           id: s.id,
           title: s.title,
           intent: s.intent || '',
+          learnerPage: s.learnerPage ?? (i + 1),
         })));
       }
       commit(touchDraft(synced, {
@@ -698,10 +700,8 @@ export function ObjectCreatorTutorialV2() {
         (!s.done && slotSatisfied(s)) ? { ...s, done: true } : s
       ));
       const base = { ...synced, sections, topLevelSlots };
-      // Prefer existing assembled order if present; else rebuild from sections.
-      const parts = base.assembledParts?.length
-        ? base.assembledParts
-        : collectRecipeParts(base);
+      // Assemble + stamp Structure learner-page breaks for student preview.
+      const parts = assembleAllParts(base);
       const blocks = partsToBlocks(parts, {
         passOn: true,
         pass: draft.structure.pass || '70%',
@@ -747,15 +747,17 @@ export function ObjectCreatorTutorialV2() {
     setDraft((d) => touchDraft(d, { topLevelSlots: seeded }));
     if (!sectionTitles.length) {
       if (draft.sections.length) {
-        setSectionTitles(draft.sections.map((s) => ({
+        setSectionTitles(draft.sections.map((s, i) => ({
           id: s.id,
           title: s.title,
           intent: s.intent || '',
+          learnerPage: s.learnerPage ?? (i + 1),
         })));
       } else if (analysis.hasSections) {
         setSectionTitles(Array.from({ length: analysis.sectionCount }, (_, i) => ({
           title: `Section ${i + 1}`,
           intent: '',
+          learnerPage: i + 1,
         })));
       }
     }
@@ -984,10 +986,11 @@ export function ObjectCreatorTutorialV2() {
             onClick={() => {
               const synced = syncAssembledPartsIntoDraft(draft);
               if (synced.sections.length && !sectionTitles.length) {
-                setSectionTitles(synced.sections.map((s) => ({
+                setSectionTitles(synced.sections.map((s, i) => ({
                   id: s.id,
                   title: s.title,
                   intent: s.intent || '',
+                  learnerPage: s.learnerPage ?? (i + 1),
                 })));
               }
               const next = touchDraft(synced, {

@@ -896,6 +896,8 @@ export interface Block {
     /** Pinned Activity-library object embedded inside a tutorial. */
     | 'library-embed';
   content: BlockContent;
+  /** Author-controlled hard page break before this block (Tutorial V2 Structure). */
+  pageBreakBefore?: boolean;
 }
 
 /**

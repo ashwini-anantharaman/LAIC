@@ -99,6 +99,7 @@ export function seedTopLevelSlots(
       libraryTitle: old?.libraryTitle || item.libraryTitle,
       part: old?.part,
       done: !!(old?.versionPin?.objectId || old?.part),
+      learnerPage: old?.learnerPage,
     });
   }
 
@@ -122,6 +123,7 @@ export function seedTopLevelSlots(
       markupFlags: old?.markupFlags,
       units: old?.units,
       done: !!(old?.done || old?.part || parts?.length),
+      learnerPage: old?.learnerPage,
     });
   }
 
@@ -160,9 +162,17 @@ export function seedSectionsFromAnalysis(
 }
 
 /** Write-it-yourself: seed from whatever section titles the author named (no fixed count). */
+export type StructureSectionTitle = {
+  id?: string;
+  title: string;
+  intent?: string;
+  /** Student-preview page (1-based). */
+  learnerPage?: number;
+};
+
 export function seedWriteYourselfSections(
   analysis: RecipeStructureAnalysis,
-  titles: { id?: string; title: string; intent?: string }[],
+  titles: StructureSectionTitle[],
 ): V2Section[] {
   return applySectionOutline([], titles, analysis, { writeYourself: true });
 }
@@ -174,7 +184,7 @@ export function seedWriteYourselfSections(
  */
 export function applySectionOutline(
   existing: V2Section[],
-  titles: { id?: string; title: string; intent?: string }[],
+  titles: StructureSectionTitle[],
   analysis: RecipeStructureAnalysis,
   opts?: { writeYourself?: boolean },
 ): V2Section[] {
@@ -201,6 +211,10 @@ export function applySectionOutline(
 
   return outline.map((row, i) => {
     const title = String(row.title || '').trim() || `Section ${i + 1}`;
+    const learnerPage = Math.max(
+      1,
+      Number(row.learnerPage != null ? row.learnerPage : (i + 1)) || (i + 1),
+    );
     let prev = (row.id && byId.get(row.id)) || undefined;
     if (!prev && !row.id) {
       const atIndex = existing[i];
@@ -218,6 +232,7 @@ export function applySectionOutline(
         ...prev,
         title,
         intent: row.intent !== undefined ? String(row.intent) : prev.intent,
+        learnerPage,
       };
     }
     return {
@@ -232,6 +247,7 @@ export function applySectionOutline(
       authorMode: 'empty' as const,
       done: false,
       required: true,
+      learnerPage,
     };
   });
 }

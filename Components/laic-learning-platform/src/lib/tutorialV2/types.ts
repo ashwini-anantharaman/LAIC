@@ -53,6 +53,8 @@ export type TutorialV2Part = Omit<GeneratedPart, 'type'> & {
   /** From template media slot — steers the empty Start from scratch UI. */
   mediaKind?: 'image' | 'video' | 'either';
   mediaHint?: string;
+  /** Hard learner page break before this part (from Structure page grouping). */
+  pageBreakBefore?: boolean;
 };
 
 /**
@@ -80,6 +82,11 @@ export interface V2TopLevelSlot {
   markupFlags?: any[];
   units?: ContentUnit[];
   done: boolean;
+  /**
+   * Student-preview page (1-based). Same number = same learner page.
+   * Set on Structure; omitted means legacy auto word-budget pagination.
+   */
+  learnerPage?: number;
 }
 
 export interface V2Section {
@@ -96,6 +103,11 @@ export interface V2Section {
   authorMode: SectionAuthorMode;
   done: boolean;
   required: boolean;
+  /**
+   * Student-preview page (1-based). Same number = same learner page.
+   * Set on Structure; omitted means legacy auto word-budget pagination.
+   */
+  learnerPage?: number;
 }
 
 export interface TutorialV2Structure {

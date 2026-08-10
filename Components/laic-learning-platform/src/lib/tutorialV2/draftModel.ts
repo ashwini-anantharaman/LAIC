@@ -434,10 +434,68 @@ export function collectRecipeParts(draft: TutorialV2Draft): TutorialV2Part[] {
   return out;
 }
 
+/**
+ * Stamp `pageBreakBefore` from Structure learnerPage grouping.
+ * Only runs when at least one slot/section has an explicit learnerPage.
+ */
+export function applyLearnerPageBreaksToParts(
+  draft: TutorialV2Draft,
+  parts: TutorialV2Part[],
+): TutorialV2Part[] {
+  const list = parts || [];
+  if (!list.length) return list;
+
+  const slots = draft.topLevelSlots || [];
+  const sections = draft.sections || [];
+  const anyExplicit = slots.some((s) => s.learnerPage != null)
+    || sections.some((s) => s.learnerPage != null);
+  if (!anyExplicit) {
+    return list.map((p) => {
+      if (!p.pageBreakBefore) return p;
+      const next = { ...p };
+      delete next.pageBreakBefore;
+      return next;
+    });
+  }
+
+  const pageByPartId = new Map<string, number>();
+  const outline = [
+    ...slots.map((s, i) => ({
+      page: s.learnerPage ?? (i + 1),
+      partIds: (s.parts?.length ? s.parts : (s.part ? [s.part] : [])).map((p) => p.id),
+    })),
+    ...sections.map((s, i) => ({
+      page: s.learnerPage ?? (slots.length + i + 1),
+      partIds: (s.parts || []).map((p) => p.id),
+    })),
+  ];
+  for (const item of outline) {
+    for (const id of item.partIds) pageByPartId.set(id, Math.max(1, Number(item.page) || 1));
+  }
+
+  let prevPage: number | null = null;
+  return list.map((p) => {
+    const page = pageByPartId.has(p.id) ? pageByPartId.get(p.id)! : prevPage;
+    if (page == null) {
+      if (!p.pageBreakBefore) return p;
+      const next = { ...p };
+      delete next.pageBreakBefore;
+      return next;
+    }
+    const breakBefore = prevPage !== null && page !== prevPage;
+    prevPage = page;
+    if (breakBefore) return { ...p, pageBreakBefore: true };
+    if (!p.pageBreakBefore) return p;
+    const next = { ...p };
+    delete next.pageBreakBefore;
+    return next;
+  });
+}
+
 /** Concatenate top-level embed parts + section parts for review / publish. */
 export function assembleAllParts(draft: TutorialV2Draft): TutorialV2Part[] {
-  if (draft.assembledParts?.length) return draft.assembledParts;
-  return collectRecipeParts(draft);
+  const base = draft.assembledParts?.length ? draft.assembledParts : collectRecipeParts(draft);
+  return applyLearnerPageBreaksToParts(draft, base);
 }
 
 /**
@@ -589,6 +647,7 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
   };
   return (parts || []).map((p: any, i: number) => {
     const id = String(p.id || `blk-${i}`);
+    const pageBreakBefore = p.pageBreakBefore ? true : undefined;
     // A Bridge table travels as its CONFIG. Without this case it fell through to
     // the rich-text default at the end and a published tutorial carried the
     // words "Bridge table" where the table should be.
@@ -596,6 +655,7 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
       return {
         id,
         type: 'bridge-table',
+        pageBreakBefore,
         content: {
           kind: p.embedKind || 'table',
           seed: typeof p.embedSeed === 'number' ? p.embedSeed : 7,
@@ -606,12 +666,18 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
       };
     }
     if (p.type === 'concept-card') {
-      return { id, type: 'concept-card', content: { term: p.concept || p.label || '', definition: p.plain || '', example: p.misc || '' } };
+      return {
+        id,
+        type: 'concept-card',
+        pageBreakBefore,
+        content: { term: p.concept || p.label || '', definition: p.plain || '', example: p.misc || '' },
+      };
     }
     if (p.type === 'question') {
       return {
         id,
         type: 'quiz',
+        pageBreakBefore,
         content: {
           ...quizScoreMeta,
           questions: [{
@@ -630,6 +696,7 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
       return {
         id,
         type: 'quiz',
+        pageBreakBefore,
         content: {
           ...quizScoreMeta,
           embeddedQuiz: true,
@@ -652,6 +719,7 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
       return {
         id,
         type: 'library-embed',
+        pageBreakBefore,
         content: {
           label: p.label,
           libraryTitle: p.libraryTitle,
@@ -662,14 +730,25 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
       };
     }
     if (p.type === 'image') {
-      return { id, type: 'image', content: { url: p.url || '', caption: p.caption || '', alt: p.caption || '' } };
+      return {
+        id,
+        type: 'image',
+        pageBreakBefore,
+        content: { url: p.url || '', caption: p.caption || '', alt: p.caption || '' },
+      };
     }
     if (p.type === 'video') {
-      return { id, type: 'video-embed', content: { provider: 'youtube', url: p.url || '', videoId: p.videoId || '', caption: p.caption || '' } };
+      return {
+        id,
+        type: 'video-embed',
+        pageBreakBefore,
+        content: { provider: 'youtube', url: p.url || '', videoId: p.videoId || '', caption: p.caption || '' },
+      };
     }
     return {
       id,
       type: 'rich-text',
+      pageBreakBefore,
       content: {
         text: p.body || p.plain || p.label || '',
         heading: p.heading || undefined,
