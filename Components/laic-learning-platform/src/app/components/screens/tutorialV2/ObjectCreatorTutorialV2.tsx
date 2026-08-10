@@ -918,7 +918,6 @@ export function ObjectCreatorTutorialV2() {
         title="Plan"
         subtitle="Name the tutorial"
         rail={pipelineRail}
-        assistant={globalHoot}
       >
         <div className="max-w-lg mx-auto space-y-4">
           {writeYourself ? (
@@ -1029,7 +1028,6 @@ export function ObjectCreatorTutorialV2() {
           ? 'Name your sections — no template recipe'
           : 'Slots and sections from your template recipe'}
         rail={pipelineRail}
-        assistant={globalHoot}
       >
         <div className="max-w-2xl mx-auto pb-8">
           <TutorialV2StructurePanel
@@ -1337,7 +1335,6 @@ export function ObjectCreatorTutorialV2() {
       title={draft.title || 'Tutorial V2'}
       subtitle="Section-by-section authoring"
       rail={pipelineRail}
-      assistant={globalHoot}
     >
       <TutorialV2Navigator
         draft={draft}
