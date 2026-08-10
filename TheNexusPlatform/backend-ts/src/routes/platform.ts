@@ -150,56 +150,55 @@ function _programResponse(row: Row): Row {
 }
 
 async function _membershipSummaries(user: PlatformUser): Promise<Row[]> {
-  const summaries: Row[] = [];
-  for (const m of user.memberships) {
-    const org = await db.getOrganization(m.org_id);
-    let stageName: string | null = null;
-    let stageType = m.stage_type ?? null;
-    if (m.stage_node_id) {
-      const stage = await db.getStageNode(m.stage_node_id);
-      if (stage) {
-        stageName = stage.name ?? null;
-        stageType = stage.stage_type ?? stageType;
-      }
-    }
-    let programName: string | null = null;
-    let programCategory: string | null = null;
-    let registeredAppId: string | null = null;
-    let appLaunchUrl: string | null = null;
-    if (m.program_id) {
-      const program = await db.getProgram(m.program_id);
-      if (program) {
-        programName = program.name ?? null;
-        programCategory = program.category ?? null;
-      }
-      const apps = (await db.listRegisteredApps(m.program_id)).filter((a) => a.status === "active");
-      if (apps.length > 0) {
-        registeredAppId = apps[0].id;
-        appLaunchUrl = apps[0].launch_url ?? null;
-      }
-    }
-    summaries.push({
+  // One read per DISTINCT org/stage/program, all in flight together. This was
+  // a sequential loop making up to four round trips PER membership, which put
+  // /auth/me — called on every app launch and role check — at ~130ms for a
+  // one-membership learner but ~900ms for a coach. The people with the most
+  // memberships paid the most, on the least interesting endpoint.
+  const distinct = <T>(xs: (T | null | undefined)[]): T[] => [...new Set(xs.filter((x): x is T => Boolean(x)))];
+  const orgIds = distinct(user.memberships.map((m) => m.org_id));
+  const stageIds = distinct(user.memberships.map((m) => m.stage_node_id));
+  const programIds = distinct(user.memberships.map((m) => m.program_id));
+
+  const [orgRows, stageRows, programRows, appRows] = await Promise.all([
+    Promise.all(orgIds.map((id) => db.getOrganization(id))),
+    Promise.all(stageIds.map((id) => db.getStageNode(id))),
+    Promise.all(programIds.map((id) => db.getProgram(id))),
+    Promise.all(programIds.map((id) => db.listRegisteredApps(id))),
+  ]);
+  const orgs = new Map(orgIds.map((id, i) => [id, orgRows[i]]));
+  const stages = new Map(stageIds.map((id, i) => [id, stageRows[i]]));
+  const programs = new Map(programIds.map((id, i) => [id, programRows[i]]));
+  const apps = new Map(programIds.map((id, i) => [id, appRows[i]]));
+
+  return user.memberships.map((m) => {
+    const org = orgs.get(m.org_id) ?? null;
+    const stage = m.stage_node_id ? (stages.get(m.stage_node_id) ?? null) : null;
+    const program = m.program_id ? (programs.get(m.program_id) ?? null) : null;
+    const active = m.program_id
+      ? (apps.get(m.program_id) ?? []).filter((a) => a.status === "active")
+      : [];
+    return {
       id: m.id,
       org_id: m.org_id,
       org_name: org ? org.name : "",
-      org_slug: org ? org.slug ?? null : null,
+      org_slug: org ? (org.slug ?? null) : null,
       // The org-scoped person id (profiles.id) — the canonical identity WITHIN
       // this org's space (Phase 2). Platform context endpoints (bridge/learning)
       // key on this, never on the cross-cutting auth credential id.
       profile_id: m.profile_id ?? null,
       role: m.role,
       stage_node_id: m.stage_node_id ?? null,
-      stage_name: stageName,
-      stage_type: stageType,
+      stage_name: stage ? (stage.name ?? null) : null,
+      stage_type: stage ? (stage.stage_type ?? m.stage_type ?? null) : (m.stage_type ?? null),
       access: m.access,
       program_id: m.program_id ?? null,
-      program_name: programName,
-      program_category: programCategory,
-      registered_app_id: registeredAppId,
-      app_launch_url: appLaunchUrl,
-    });
-  }
-  return summaries;
+      program_name: program ? (program.name ?? null) : null,
+      program_category: program ? (program.category ?? null) : null,
+      registered_app_id: active.length > 0 ? active[0].id : null,
+      app_launch_url: active.length > 0 ? (active[0].launch_url ?? null) : null,
+    };
+  });
 }
 
 // LOOSE membership check: any membership that touches this org (org-level OR
@@ -820,18 +819,23 @@ platformRouter.post("/gates/:gate_id/signin", async (c) => {
 
 platformRouter.get("/auth/me", async (c) => {
   const user = await getCurrentUser(c);
-  // A confined Nexus operator (custom platform-scope role) — drives the
-  // operator mode + confined console nav.
-  const nexusRole =
+  // The confined-operator role and the membership summaries touch different
+  // tables and share nothing — fetched together. This endpoint is called on
+  // every launch and every role check, so its latency is pure overhead.
+  const [nexusRole, memberships] = await Promise.all([
+    // A confined Nexus operator (custom platform-scope role) — drives the
+    // operator mode + confined console nav.
     dbEnabled() && user.email && user.role !== "platform_admin"
-      ? await graph.getNexusRoleForEmail(user.email).catch(() => null)
-      : null;
+      ? graph.getNexusRoleForEmail(user.email).catch(() => null)
+      : Promise.resolve(null),
+    _membershipSummaries(user),
+  ]);
   return c.json({
     id: user.id,
     email: user.email,
     display_name: user.display_name,
     role: user.role,
-    memberships: await _membershipSummaries(user),
+    memberships,
     nexus_role: nexusRole,
   });
 });
@@ -1035,30 +1039,26 @@ function learnerCoachOut(co: Row) {
 platformRouter.get("/bridge/summary", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
-  const s = await graph.getBridgeActivitySummary(
-    access.orgId,
-    access.programId,
-    access.profileId,
-  );
-  // The learner's coaches ride along so Home can show the relationships.
-  // `coach` stays the primary (older callers); `coaches` is the full set.
-  let coach: Row | null = null;
-  let coachList: Row[] = [];
-  if (user.email) {
+  // Four independent strands, previously run one after another. Only the
+  // coach lookup is a true chain (participant → their coaches → the group's
+  // primary); the tallies, the resume list and the day's board never needed
+  // to wait behind it. This endpoint is the app's most frequent call — every
+  // tab focus — so its shape IS the app's felt baseline.
+  const coachStrand = (async (): Promise<{ coach: Row | null; coachList: Row[] }> => {
+    if (!user.email) return { coach: null, coachList: [] };
     const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
-    if (participant) {
-      coachList = await graph.listLearnerCoaches(
-        access.orgId,
-        access.programId,
-        participant,
-        access.profileId,
-      );
-      if (participant.group_id) coach = await graph.getCoachForGroup(participant.group_id as string);
-      if (!coach) coach = coachList[0] ?? null;
-    }
-  }
-  // The app's Play launcher: unfinished boards to resume, and the day's board.
-  const [inProgress, deal] = await Promise.all([
+    if (!participant) return { coach: null, coachList: [] };
+    const [coachList, groupCoach] = await Promise.all([
+      graph.listLearnerCoaches(access.orgId, access.programId, participant, access.profileId),
+      participant.group_id
+        ? graph.getCoachForGroup(participant.group_id as string)
+        : Promise.resolve(null),
+    ]);
+    return { coach: groupCoach ?? coachList[0] ?? null, coachList };
+  })();
+  const [s, { coach, coachList }, inProgress, deal] = await Promise.all([
+    graph.getBridgeActivitySummary(access.orgId, access.programId, access.profileId),
+    coachStrand,
     graph
       .listBridgeInProgressSessions(access.programId, access.profileId)
       .catch(() => [] as Row[]),

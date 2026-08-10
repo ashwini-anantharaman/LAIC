@@ -189,9 +189,15 @@ export async function resolvePlatformAccess(
   // Students never hold memberships — they exist only as learner PARTICIPANTS
   // (the Registrations funnel; invisible to the console's people surfaces).
   // Their standing is looked up per-program in the loop below.
-  const participations = user.email
-    ? await graph.findLearnerParticipations(user.email, programId ?? null).catch(() => [] as Row[])
-    : [];
+  //
+  // When the program is pinned (every app call pins it), the program row is
+  // needed unconditionally a few lines down and doesn't depend on the
+  // participations — start both reads together instead of in sequence.
+  const participationsP = user.email
+    ? graph.findLearnerParticipations(user.email, programId ?? null).catch(() => [] as Row[])
+    : Promise.resolve([] as Row[]);
+  const pinnedProgramP = programId ? db.getProgram(programId).catch(() => null) : null;
+  const participations = await participationsP;
   if (user.memberships.length === 0 && participations.length === 0) {
     throw new HttpError(403, "No organization membership");
   }
@@ -221,8 +227,9 @@ export async function resolvePlatformAccess(
   for (const pid of [...new Set(candidates)]) {
     // Students can't read program rows under RLS (no membership) — resolve
     // their candidate programs through the privileged access-check read.
+    // (The pinned program's row was already fetched in parallel above.)
     const program =
-      (await db.getProgram(pid)) ??
+      (pid === programId && pinnedProgramP ? await pinnedProgramP : await db.getProgram(pid)) ??
       (participations.some((p) => p.program_id === pid) ? await graph.getProgramForAccess(pid) : null);
     if (!program) continue;
     sawProgram = true;
@@ -304,7 +311,13 @@ export async function resolvePlatformAccess(
       continue;
     }
 
-    const level = await _grantLevel(user, program, area);
+    // Both are per-program reads with no dependency between them; the role
+    // name is only rendered, never gated on, so reading it speculatively while
+    // the grant check runs changes nothing but the wall clock.
+    const [level, roleName] = await Promise.all([
+      _grantLevel(user, program, area),
+      _roleName(user, pid),
+    ]);
     if (!level) continue;
 
     return {
@@ -314,7 +327,7 @@ export async function resolvePlatformAccess(
       programName: (program.name as string) ?? "",
       level: level.level,
       platformRole: level.platformRole ?? null,
-      roleName: level.level === "admin" && !level.platformRole ? null : await _roleName(user, pid),
+      roleName: level.level === "admin" && !level.platformRole ? null : roleName,
       programRoleCapabilities: level.programRoleCapabilities ?? null,
     };
   }
