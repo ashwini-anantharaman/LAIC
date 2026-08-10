@@ -18,6 +18,8 @@ import type { TutorialV2Draft, TutorialV2Part } from '../../../../lib/tutorialV2
 import { LearningBlocksPreview } from '../LearnerReader';
 import { TutorialV2NestedEditor } from './TutorialV2NestedEditor';
 import { TutorialV2RefineSidebar } from './TutorialV2RefineSidebar';
+import { BridgeEmbedBlock } from './BridgeEmbedBlock';
+import { isBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
 import { RichTextEditor } from '../../RichTextEditor';
 
 export function TutorialV2AssembleEditor({
@@ -286,7 +288,14 @@ export function TutorialV2AssembleEditor({
                           </div>
                         </div>
 
-                        {isNestedEditablePart(p) ? (
+                        {isBridgeEmbedPart(p) ? (
+                          <BridgeEmbedBlock
+                            kind={p.embedKind}
+                            url={p.url || ''}
+                            caption={p.caption}
+                            onChangeCaption={(caption) => updatePart(p.id, { caption })}
+                          />
+                        ) : isNestedEditablePart(p) ? (
                           <div>
                             <p style={{ fontSize: 13.5, color: '#374151', marginBottom: 8 }}>
                               {p.type === 'library-embed'

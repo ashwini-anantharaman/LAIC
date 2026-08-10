@@ -32,7 +32,7 @@ export interface V2SourceRef {
 
 /** Editor part = GeneratedPart plus library-embed / image / video extras used in V1 editor. */
 export type TutorialV2Part = Omit<GeneratedPart, 'type'> & {
-  type: GeneratedPart['type'] | 'image' | 'video' | 'library-embed';
+  type: GeneratedPart['type'] | 'image' | 'video' | 'library-embed' | 'bridge-embed';
   url?: string;
   caption?: string;
   videoId?: string;
@@ -45,6 +45,8 @@ export type TutorialV2Part = Omit<GeneratedPart, 'type'> & {
   sources?: unknown[];
   hints?: string[];
   hint?: string;
+  /** Which Bridge Platform component a 'bridge-embed' block frames. */
+  embedKind?: string;
   /** From template media slot — steers the empty Start from scratch UI. */
   mediaKind?: 'image' | 'video' | 'either';
   mediaHint?: string;

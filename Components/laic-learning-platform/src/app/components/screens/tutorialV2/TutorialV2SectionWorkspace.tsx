@@ -2,6 +2,8 @@
  * Per-section workspace: write+refine (8a) and section-scoped generate (8b).
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BridgeEmbedBlock } from './BridgeEmbedBlock';
+import { isBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
 import {
   ArrowLeft, Check, Loader2, PenLine, Sparkles, AlertTriangle,
   Image as ImageIcon, Youtube, Upload, ExternalLink, Plus, Trash2, Type,
@@ -545,7 +547,14 @@ function WritePane({
               </button>
             </div>
           </div>
-          {isNestedEditablePart(p) ? (
+          {isBridgeEmbedPart(p) ? (
+            <BridgeEmbedBlock
+              kind={p.embedKind}
+              url={p.url || ''}
+              caption={p.caption}
+              onChangeCaption={(caption) => onChangePart(p.id, { caption })}
+            />
+          ) : isNestedEditablePart(p) ? (
             <div>
               <p style={{ fontSize: 13.5, color: '#374151', marginBottom: 8 }}>
                 {p.libraryTitle || p.label || nestedEditorKindForPart(p) || p.type}
