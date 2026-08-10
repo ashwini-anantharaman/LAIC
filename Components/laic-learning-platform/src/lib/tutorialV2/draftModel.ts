@@ -301,20 +301,23 @@ export function emptyTutorialV2Draft(partial: {
   title?: string;
   templateId: string;
   structure: TutorialV2Structure;
+  phase?: TutorialV2Draft['phase'];
+  metadata?: TutorialV2Draft['metadata'];
 }): TutorialV2Draft {
   const now = Date.now();
   return {
     id: partial.id || `tv2-${now.toString(36)}`,
     type: 'tutorial-v2',
     title: partial.title || '',
-    metadata: {},
+    metadata: partial.metadata || {},
     templateId: partial.templateId,
     structure: partial.structure,
     sections: [],
     topLevelSlots: [],
     sourcePool: [],
     status: 'draft',
-    phase: 'start',
+    // New creates land on Plan (path choice happens in the Create modal).
+    phase: partial.phase || 'start',
     activeSectionId: null,
     activeSlotId: null,
     createdAt: now,
@@ -435,6 +438,53 @@ export function collectRecipeParts(draft: TutorialV2Draft): TutorialV2Part[] {
 export function assembleAllParts(draft: TutorialV2Draft): TutorialV2Part[] {
   if (draft.assembledParts?.length) return draft.assembledParts;
   return collectRecipeParts(draft);
+}
+
+/**
+ * Push Review (assembledParts) edits back into section / slot parts by id
+ * so revisiting Plan → Structure → Author keeps authored content.
+ */
+export function syncAssembledPartsIntoDraft(draft: TutorialV2Draft): TutorialV2Draft {
+  const assembled = draft.assembledParts;
+  if (!assembled?.length) return draft;
+  const byId = new Map(assembled.map((p) => [p.id, p]));
+
+  const sections = (draft.sections || []).map((sec) => {
+    if (!sec.parts?.length) return sec;
+    let changed = false;
+    const parts = sec.parts.map((p) => {
+      const next = byId.get(p.id);
+      if (next && next !== p) {
+        changed = true;
+        return next;
+      }
+      return p;
+    });
+    return changed ? { ...sec, parts } : sec;
+  });
+
+  const topLevelSlots = (draft.topLevelSlots || []).map((slot) => {
+    const list = slot.parts?.length ? slot.parts : (slot.part ? [slot.part] : []);
+    if (!list.length) return slot;
+    let changed = false;
+    const parts = list.map((p) => {
+      const next = byId.get(p.id);
+      if (next && next !== p) {
+        changed = true;
+        return next;
+      }
+      return p;
+    });
+    if (!changed) return slot;
+    return {
+      ...slot,
+      parts,
+      part: parts[0],
+      done: !!(slot.done || parts.length),
+    };
+  });
+
+  return { ...draft, sections, topLevelSlots };
 }
 
 /** Build a V1-shaped pipeline draft so Hoot can see sources / markup on Review. */

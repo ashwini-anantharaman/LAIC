@@ -453,7 +453,10 @@ export function ObjectLibrary() {
                           key={c.id}
                           type="button"
                           onClick={() => {
-                            const next = on ? ids.filter((x) => x !== c.id) : [...ids, c.id];
+                            const next = on
+                              ? ids.filter((x) => x !== c.id)
+                              // Newly checked folder becomes primary (first) for save → library deep-link.
+                              : [c.id, ...ids.filter((x) => x !== c.id)];
                             if (!next.length) return;
                             setObjectCollectionIds(item.id, next);
                           }}

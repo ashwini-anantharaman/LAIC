@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Eye } from 'lucide-react';
+import { Eye, PanelLeft } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { ScreenErrorBoundary } from './ScreenErrorBoundary';
@@ -89,6 +89,10 @@ export function Layout() {
   const narrow = useIsMobile();
   const [mobileLaunch, setMobileLaunch] = useState(() => isNexusMobileShell());
   const [navOpen, setNavOpen] = useState(false);
+  /** While editing, sidebar auto-collapses; user can reopen with the edge button. */
+  const [editorSidebarOpen, setEditorSidebarOpen] = useState(false);
+
+  const editingObject = currentScreen === 'cd-creator' || currentScreen === 'cd-wizard';
 
   // Re-read after boot in case launch params land after first paint.
   // Standalone demo/localhost never stays in the Nexus mobile shell.
@@ -109,24 +113,78 @@ export function Layout() {
     if (!mobile) setNavOpen(false);
   }, [mobile]);
 
+  // Leaving the editor restores the normal expanded sidebar.
+  useEffect(() => {
+    if (!editingObject) setEditorSidebarOpen(false);
+  }, [editingObject]);
+
   useEffect(() => {
     document.documentElement.dataset.csShell = mobile ? 'mobile' : 'desktop';
     if (mobileLaunch) document.documentElement.dataset.csMobileLaunch = '1';
     else delete document.documentElement.dataset.csMobileLaunch;
+    if (!mobile && editingObject) {
+      document.documentElement.dataset.csEditor = editorSidebarOpen ? 'nav-open' : 'immersive';
+    } else {
+      delete document.documentElement.dataset.csEditor;
+    }
     return () => {
       delete document.documentElement.dataset.csShell;
       delete document.documentElement.dataset.csMobileLaunch;
+      delete document.documentElement.dataset.csEditor;
     };
-  }, [mobile, mobileLaunch]);
+  }, [mobile, mobileLaunch, editingObject, editorSidebarOpen]);
+
+  const desktopSidebarCollapsed = !mobile && editingObject && !editorSidebarOpen;
 
   // Isolate each screen so a crash (e.g. the student-preview crash) shows a
   // recoverable boundary instead of blanking the whole app.
   const boundaryKey = readerObjectId ? `reader:${readerObjectId}` : currentScreen || 'unknown';
   return (
     <div className="flex h-[100dvh] min-h-0 overflow-hidden">
-      {!mobile ? <Sidebar /> : <Sidebar mobileOpen={navOpen} onMobileClose={() => setNavOpen(false)} />}
+      {mobile ? (
+        <Sidebar mobileOpen={navOpen} onMobileClose={() => setNavOpen(false)} />
+      ) : (
+        <>
+          <div
+            className="relative shrink-0 h-full overflow-hidden"
+            style={{
+              width: desktopSidebarCollapsed ? 0 : 224,
+              transition: 'width 320ms cubic-bezier(0.22, 1, 0.36, 1)',
+            }}
+          >
+            <div className="w-56 h-full">
+              <Sidebar
+                onRequestCollapse={editingObject ? () => setEditorSidebarOpen(false) : undefined}
+              />
+            </div>
+          </div>
+          {desktopSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setEditorSidebarOpen(true)}
+              className="fixed left-3 top-3 z-50 inline-flex items-center gap-1.5 px-3 py-2 rounded-full"
+              style={{
+                fontSize: 12.5,
+                fontWeight: 650,
+                color: '#374151',
+                background: 'rgba(255,255,255,0.92)',
+                border: '1px solid rgba(0,0,0,0.08)',
+                boxShadow: '0 8px 24px -10px rgba(15,23,42,0.35)',
+                backdropFilter: 'blur(10px)',
+              }}
+              aria-label="Open navigation"
+              title="Open navigation"
+            >
+              <PanelLeft size={15} />
+              Menu
+            </button>
+          )}
+        </>
+      )}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        <TopBar mobile={mobile} onOpenNav={() => setNavOpen(true)} />
+        {!(editingObject && !mobile) ? (
+          <TopBar mobile={mobile} onOpenNav={() => setNavOpen(true)} />
+        ) : null}
         <ReadOnlyBanner />
         <main
           className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col ${mobile ? 'cs-mobile-main' : ''}`}

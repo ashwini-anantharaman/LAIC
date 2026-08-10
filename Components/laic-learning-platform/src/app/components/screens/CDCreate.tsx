@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   BookOpen, Layers, HelpCircle, Copy, Lightbulb, FileText, Zap, PenLine, Video, BookMarked, Play, ArrowRight,
-  Plus, Check, X, Search, ChevronRight, FolderOpen,
+  Plus, Check, X, Search, ChevronRight, FolderOpen, Eye,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { pastelChipFromHex, pastelFromHex } from '../../../lib/pastel';
@@ -11,6 +11,16 @@ import {
   getChildCollections,
   type ObjectCollection,
 } from '../../../lib/objectCollectionsStore';
+import { getDefaultTemplateId } from '../../../lib/templateDefaults';
+import { analyzeTemplateRecipe } from '../../../lib/tutorialV2/recipeStructure';
+import {
+  ATOMIC_BLOCK_OPTIONS,
+  DEFAULT_TUTORIAL_TEMPLATE_ID,
+  EMBEDDED_OBJECT_OPTIONS,
+  SOURCE_MODE_OPTIONS,
+  getTutorialTemplate,
+} from '../../../lib/tutorialV2/tutorialTemplates';
+import type { RecipeItem, TutorialTemplate } from '../../../lib/types';
 import { useApp } from '../../App';
 import { GlassFolderTile, tintForKey } from '../GlassFolder';
 
@@ -438,6 +448,418 @@ function CollectionPickerModal({
   );
 }
 
+/**
+ * Same chrome as CollectionPickerModal — path choice for Tutorial V2
+ * (template vs write-yourself) right after folder Continue.
+ */
+function recipeItemLabel(item: RecipeItem): string {
+  if (item.kind === 'atomic') {
+    const label = ATOMIC_BLOCK_OPTIONS.find((o) => o.type === item.blockType)?.label || item.blockType;
+    if (item.blockType === 'section-heading') return label;
+    const req = item.required === false ? ' (optional)' : '';
+    return `${label}${req}`;
+  }
+  const typeLabel = EMBEDDED_OBJECT_OPTIONS.find((o) => o.type === item.objectType)?.label || item.objectType;
+  const mode = SOURCE_MODE_OPTIONS.find((o) => o.id === (item.sourceMode || 'generate'))?.label;
+  const req = item.required === false ? ' · optional' : '';
+  return mode ? `${typeLabel} — ${mode}${req}` : `${typeLabel}${req}`;
+}
+
+type OutlineNode = { label: string; children?: OutlineNode[] };
+
+function buildTemplateOutline(template: TutorialTemplate): OutlineNode[] {
+  const analysis = analyzeTemplateRecipe(template);
+  const roots: OutlineNode[] = [];
+
+  if (template.description?.trim()) {
+    roots.push({ label: template.description.trim() });
+  }
+
+  if (analysis.hasSections) {
+    const perSection = (analysis.sectionRecipe.length
+      ? analysis.sectionRecipe
+      : analysis.sectionAtomics
+    )
+      .filter((r) => !(r.kind === 'atomic' && r.blockType === 'section-heading'))
+      .map((r) => ({ label: recipeItemLabel(r) }));
+
+    roots.push({
+      label: `${analysis.sectionCount} section${analysis.sectionCount === 1 ? '' : 's'}`,
+      children: perSection.length
+        ? [{ label: 'Each section contains', children: perSection }]
+        : undefined,
+    });
+  } else {
+    const recipe = (template.recipe || []).map((r) => ({ label: recipeItemLabel(r) }));
+    if (recipe.length) {
+      roots.push({ label: 'Contents', children: recipe });
+    }
+  }
+
+  if (analysis.libraryEmbeds.length) {
+    roots.push({
+      label: 'Library slots (tutorial-level)',
+      children: analysis.libraryEmbeds.map((r) => ({ label: recipeItemLabel(r) })),
+    });
+  }
+
+  return roots.length ? roots : [{ label: 'No recipe items yet' }];
+}
+
+function OutlineList({ nodes, depth = 0 }: { nodes: OutlineNode[]; depth?: number }) {
+  return (
+    <ul
+      className="m-0"
+      style={{
+        listStyleType: depth === 0 ? 'disc' : depth === 1 ? 'circle' : 'square',
+        paddingLeft: depth === 0 ? 18 : 16,
+        marginTop: depth === 0 ? 0 : 4,
+      }}
+    >
+      {nodes.map((n, i) => (
+        <li
+          key={`${depth}-${i}-${n.label}`}
+          style={{
+            fontSize: depth === 0 ? 13.5 : 13,
+            fontWeight: depth === 0 ? 600 : 500,
+            color: depth === 0 ? '#0B1220' : '#374151',
+            lineHeight: 1.45,
+            marginTop: i === 0 && depth > 0 ? 0 : 4,
+          }}
+        >
+          {n.label}
+          {n.children && n.children.length > 0 ? (
+            <OutlineList nodes={n.children} depth={depth + 1} />
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function TemplatePreviewPopup({
+  template,
+  onClose,
+}: {
+  template: TutorialTemplate;
+  onClose: () => void;
+}) {
+  const outline = useMemo(() => buildTemplateOutline(template), [template]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+      style={{ background: 'rgba(11,18,32,0.45)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+      role="presentation"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 12, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        className="w-full max-w-md flex flex-col overflow-hidden"
+        style={{
+          maxHeight: 'min(560px, 85vh)',
+          background: '#fff',
+          borderRadius: 20,
+          border: '1px solid rgba(0,0,0,0.1)',
+          boxShadow: '0 24px 64px -16px rgba(30,50,80,0.35)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Preview ${template.name}`}
+      >
+        <div
+          className="flex items-start gap-3 px-4 py-3.5 shrink-0"
+          style={{
+            background: 'linear-gradient(180deg, #FFFFFF 0%, #F5F3FF 100%)',
+            borderBottom: '1px solid rgba(109,40,217,0.15)',
+          }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: 'rgba(109,40,217,0.1)', color: '#6D28D9' }}
+          >
+            <Eye size={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p style={{ fontSize: 11, fontWeight: 700, color: '#6D28D9', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              Template preview
+            </p>
+            <p style={{ fontSize: 15, fontWeight: 700, color: '#4C1D95', marginTop: 2 }}>{template.name}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-black/5"
+            aria-label="Close preview"
+          >
+            <X size={16} style={{ color: '#6B7280' }} />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+          <OutlineList nodes={outline} />
+        </div>
+        <div
+          className="shrink-0 px-4 py-3 flex justify-end"
+          style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: '#FAFAFA' }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-full"
+            style={{ background: '#0B0F1A', color: '#fff', fontSize: 13, fontWeight: 600 }}
+          >
+            Done
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function AuthoringPathModal({
+  objectLabel,
+  defaultTemplateName,
+  defaultTemplateId,
+  value,
+  onChange,
+  onContinue,
+  onBack,
+  onClose,
+}: {
+  objectLabel: string;
+  /** Org-assigned / Template Library default for Tutorial V2. */
+  defaultTemplateName: string;
+  defaultTemplateId: string;
+  value: 'template' | 'write-yourself' | null;
+  onChange: (v: 'template' | 'write-yourself') => void;
+  onContinue: () => void;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  const [showPreview, setShowPreview] = useState(false);
+  const previewTemplate = useMemo(
+    () => getTutorialTemplate(defaultTemplateId),
+    [defaultTemplateId],
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
+      style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+      role="presentation"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full flex flex-col overflow-hidden"
+        style={{
+          maxWidth: 920,
+          height: 'min(780px, 90vh)',
+          background: '#F7F8FA',
+          borderRadius: 20,
+          border: '1px solid rgba(0,0,0,0.1)',
+          boxShadow: '0 28px 80px -24px rgba(15,23,42,0.45)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="How do you want to build this?"
+      >
+        {/* Title bar — same as Save to collections */}
+        <div
+          className="flex items-center gap-3 px-4 py-3 shrink-0"
+          style={{
+            background: 'linear-gradient(180deg, #FFFFFF 0%, #F3F4F6 100%)',
+            borderBottom: '1px solid rgba(0,0,0,0.08)',
+          }}
+        >
+          <Layers size={18} style={{ color: '#6D28D9' }} />
+          <div className="flex-1 min-w-0">
+            <p style={{ fontSize: 14, fontWeight: 750, color: '#0B1220' }}>How do you want to build this?</p>
+            <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+              Choose a path for this <strong style={{ color: '#374151' }}>{objectLabel}</strong>
+              {' '}· template recipe or write it yourself
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-black/5"
+            aria-label="Close"
+          >
+            <X size={16} style={{ color: '#6B7280' }} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+          <p
+            className="mb-3"
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#9AA3AF',
+              letterSpacing: '.06em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Build path
+          </p>
+          <div className="space-y-3 max-w-xl">
+            <button
+              type="button"
+              onClick={() => onChange('template')}
+              className="w-full text-left rounded-2xl px-4 py-4 border transition-colors"
+              style={{
+                background: value === 'template' ? 'rgba(109,40,217,0.08)' : '#fff',
+                borderColor: value === 'template' ? 'rgba(109,40,217,0.35)' : 'rgba(0,0,0,0.08)',
+                boxShadow: value === 'template' ? '0 0 0 1px rgba(109,40,217,0.15)' : undefined,
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p style={{ fontSize: 14, fontWeight: 700, color: '#4C1D95' }}>From a template</p>
+                  <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 4, lineHeight: 1.45 }}>
+                    Uses your organization’s assigned template.
+                    {' '}Plan → Structure → Sources → Author → Review.
+                  </p>
+                  <div
+                    className="mt-3 rounded-xl px-3 py-2.5 flex items-center gap-2"
+                    style={{
+                      background: value === 'template' ? 'rgba(109,40,217,0.1)' : 'rgba(109,40,217,0.06)',
+                      border: '1px solid rgba(109,40,217,0.18)',
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p style={{ fontSize: 10.5, fontWeight: 700, color: '#6D28D9', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                        Organization template
+                      </p>
+                      <p style={{ fontSize: 13.5, fontWeight: 650, color: '#4C1D95', marginTop: 2 }}>
+                        {defaultTemplateName}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowPreview(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full shrink-0"
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 650,
+                        color: '#5B21B6',
+                        background: '#fff',
+                        border: '1px solid rgba(109,40,217,0.28)',
+                      }}
+                      aria-label={`Preview ${defaultTemplateName}`}
+                    >
+                      <Eye size={13} /> Preview
+                    </button>
+                  </div>
+                </div>
+                {value === 'template' && (
+                  <span
+                    className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                    style={{ background: '#059669', color: '#fff' }}
+                  >
+                    <Check size={11} strokeWidth={3} />
+                  </span>
+                )}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange('write-yourself')}
+              className="w-full text-left rounded-2xl px-4 py-4 border transition-colors"
+              style={{
+                background: value === 'write-yourself' ? 'rgba(5,150,105,0.08)' : '#fff',
+                borderColor: value === 'write-yourself' ? 'rgba(5,150,105,0.35)' : 'rgba(0,0,0,0.08)',
+                boxShadow: value === 'write-yourself' ? '0 0 0 1px rgba(5,150,105,0.15)' : undefined,
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: '#065F46' }}>Write it yourself</p>
+                  <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 4, lineHeight: 1.45 }}>
+                    No template. Plan → Structure → Author → Review. Add text, images, and videos in each section by hand.
+                  </p>
+                </div>
+                {value === 'write-yourself' && (
+                  <span
+                    className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                    style={{ background: '#059669', color: '#fff' }}
+                  >
+                    <Check size={11} strokeWidth={3} />
+                  </span>
+                )}
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Footer — same as Save to collections */}
+        <div
+          className="shrink-0 px-4 py-3 flex flex-wrap items-center gap-3"
+          style={{ background: '#fff', borderTop: '1px solid rgba(0,0,0,0.08)' }}
+        >
+          <div className="flex-1 min-w-[180px]">
+            {!value ? (
+              <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>Select a build path to continue</p>
+            ) : value === 'template' ? (
+              <p style={{ fontSize: 12.5, color: '#6B7280' }} className="line-clamp-2">
+                <strong style={{ color: '#0B1220' }}>Selected</strong>
+                {' · '}
+                From a template
+                {' · '}
+                <span style={{ color: '#4C1D95', fontWeight: 650 }}>{defaultTemplateName}</span>
+              </p>
+            ) : (
+              <p style={{ fontSize: 12.5, color: '#6B7280' }}>
+                <strong style={{ color: '#0B1220' }}>Selected</strong>
+                {' · '}
+                Write it yourself
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onBack}
+            className="px-4 py-2.5 rounded-full"
+            style={{ background: 'rgba(0,0,0,0.05)', fontSize: 13, fontWeight: 600, color: '#374151' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!value}
+            onClick={onContinue}
+            className="px-4 py-2.5 rounded-full inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
+            style={{
+              background: '#0B0F1A',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            Continue <ArrowRight size={14} />
+          </button>
+        </div>
+      </motion.div>
+
+      {showPreview && (
+        <TemplatePreviewPopup
+          template={previewTemplate}
+          onClose={() => setShowPreview(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 export function CDCreate() {
   const {
     navigate,
@@ -446,20 +868,27 @@ export function CDCreate() {
     createCollectionIds,
     setCreateCollectionIds,
     createObjectCollection,
+    setPendingAuthoringPath,
   } = useApp();
 
   const [pendingType, setPendingType] = useState<string | null>(null);
   const [pickerIds, setPickerIds] = useState<string[]>([]);
   const [showNewCol, setShowNewCol] = useState(false);
   const [newColParentId, setNewColParentId] = useState<string | null>(null);
+  const [showPathPicker, setShowPathPicker] = useState(false);
+  const [pathChoice, setPathChoice] = useState<'template' | 'write-yourself' | null>(null);
 
   const pendingTile = TILES.find((t) => t.id === pendingType) ?? null;
   const newColParentName = newColParentId
     ? objectCollections.find((c) => c.id === newColParentId)?.name
     : null;
+  const orgDefaultTutorialV2Id = getDefaultTemplateId('tutorial-v2') || DEFAULT_TUTORIAL_TEMPLATE_ID;
+  const orgDefaultTutorialV2Name = getTutorialTemplate(orgDefaultTutorialV2Id).name;
 
   const openCollectionPicker = (typeId: string) => {
     setPendingType(typeId);
+    setShowPathPicker(false);
+    setPathChoice(null);
     // Keep prior picks if any; otherwise start empty so Continue works without a folder.
     setPickerIds(
       createCollectionIds.filter((id) => objectCollections.some((c) => c.id === id)),
@@ -470,9 +899,20 @@ export function CDCreate() {
     setPickerIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
+  const closeCreateFlow = () => {
+    setPendingType(null);
+    setShowPathPicker(false);
+    setPathChoice(null);
+  };
+
   const proceedWithCollections = () => {
     if (!pendingType) return;
     setCreateCollectionIds(pickerIds);
+    if (pendingType === 'tutorial-v2') {
+      setPathChoice(null);
+      setShowPathPicker(true);
+      return;
+    }
     const typeId = pendingType;
     setPendingType(null);
     if (typeId === 'course') {
@@ -481,6 +921,14 @@ export function CDCreate() {
       setCreatorObjectType(typeId);
       navigate('cd-creator');
     }
+  };
+
+  const proceedWithAuthoringPath = () => {
+    if (!pathChoice || pendingType !== 'tutorial-v2') return;
+    setPendingAuthoringPath(pathChoice);
+    setCreatorObjectType('tutorial-v2');
+    closeCreateFlow();
+    navigate('cd-creator');
   };
 
   return (
@@ -557,18 +1005,34 @@ export function CDCreate() {
         </div>
       </div>
 
-      {pendingTile && (
+      {pendingTile && !showPathPicker && (
         <CollectionPickerModal
           objectLabel={pendingTile.label}
           collections={objectCollections}
           selectedIds={pickerIds}
           onToggle={togglePickerId}
           onContinue={proceedWithCollections}
-          onClose={() => setPendingType(null)}
+          onClose={closeCreateFlow}
           onNewCollection={(parentId) => {
             setNewColParentId(parentId);
             setShowNewCol(true);
           }}
+        />
+      )}
+
+      {pendingTile && showPathPicker && pendingType === 'tutorial-v2' && (
+        <AuthoringPathModal
+          objectLabel={pendingTile.label}
+          defaultTemplateName={orgDefaultTutorialV2Name}
+          defaultTemplateId={orgDefaultTutorialV2Id}
+          value={pathChoice}
+          onChange={setPathChoice}
+          onContinue={proceedWithAuthoringPath}
+          onBack={() => {
+            setShowPathPicker(false);
+            setPathChoice(null);
+          }}
+          onClose={closeCreateFlow}
         />
       )}
 

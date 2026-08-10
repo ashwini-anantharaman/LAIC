@@ -106,6 +106,12 @@ export interface AppState {
   /** Template id chosen in Template Library before opening the creator. */
   pendingTemplateId: string | null;
   /**
+   * One-shot from Create: Tutorial V2 path after folder picker
+   * (`template` | `write-yourself`). Cleared when the creator consumes it.
+   */
+  pendingAuthoringPath: 'template' | 'write-yourself' | null;
+  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
+  /**
    * One-shot: when set, Content Library opens this folder once then clears.
    * Normal nav to Content Library leaves this null → collections root.
    */
@@ -122,6 +128,7 @@ export interface AppState {
   closeReader: () => void;
   setCreatorObjectType: (type: string) => void;
   setPendingTemplateId: (id: string | null) => void;
+  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
   addObject: (partial: Partial<LearningObject> & { type: ObjectType; title: string }) => string;
   openEditor: (objectId: string) => void;
   clearEditingObject: () => void;
@@ -165,6 +172,7 @@ function StudioApp() {
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
+  const [pendingAuthoringPath, setPendingAuthoringPath] = useState<'template' | 'write-yourself' | null>(null);
   const [pendingLibraryFolderId, setPendingLibraryFolderId] = useState<string | null>(null);
   const [libraryRootNonce, setLibraryRootNonce] = useState(0);
   const clearPendingLibraryFolderId = useCallback(() => setPendingLibraryFolderId(null), []);
@@ -590,6 +598,11 @@ function StudioApp() {
       }
       return next;
     });
+    // Primary folder for deep-link after save → Content Library.
+    if (ids[0]) {
+      storeSetActiveObjectCollectionId(uid, ids[0]);
+      setActiveObjectCollectionIdState(ids[0]);
+    }
   }, []);
 
   const deleteCreatedObject = useCallback((objectId: string) => {
@@ -624,6 +637,16 @@ function StudioApp() {
     const fromCreated = (createdObjectsRef.current || []).find(o => o.id === objectId);
     const obj = fromCreated || OBJECTS.find(o => o.id === objectId);
     if (obj) setCreatorObjectTypeState(obj.type);
+    // Keep Create-folder picks aligned with where the object lives now (after moves).
+    if (fromCreated) {
+      const ids = objectCollectionIds(fromCreated);
+      createCollectionIdsRef.current = ids;
+      setCreateCollectionIdsState(ids);
+      if (ids[0]) {
+        storeSetActiveObjectCollectionId(activeUserIdRef.current, ids[0]);
+        setActiveObjectCollectionIdState(ids[0]);
+      }
+    }
     // Next content-differing save should commit a new version (git-style).
     try {
       storeSealVersionTip(activeUserIdRef.current, objectId);
@@ -670,10 +693,10 @@ function StudioApp() {
     setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,
     createObjectCollection, renameObjectCollection,
     deleteObjectCollection, setObjectCollectionIds, deleteCreatedObject,
-    editingObjectId, pendingTemplateId,
+    editingObjectId, pendingTemplateId, pendingAuthoringPath,
     pendingLibraryFolderId, clearPendingLibraryFolderId, libraryRootNonce,
     navigate, login, logout,
-    setRole, setProgram, openReader, closeReader, setCreatorObjectType, setPendingTemplateId, addObject,
+    setRole, setProgram, openReader, closeReader, setCreatorObjectType, setPendingTemplateId, setPendingAuthoringPath, addObject,
     openEditor, clearEditingObject,
   };
 

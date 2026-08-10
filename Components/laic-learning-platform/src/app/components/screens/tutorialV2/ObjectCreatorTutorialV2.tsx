@@ -1,7 +1,8 @@
 /**
  * Tutorial V2 object creator — Approach 2 section-by-section authoring.
  * Mounted only when creatorObjectType === "tutorial-v2".
- * Flow: Start → Structure → Sources → Navigator ⇄ Section workspace → Review.
+ * Flow: Plan → Structure → Sources → Navigator ⇄ Section workspace → Review.
+ * (Create flow: folder modal → path modal → then Plan.)
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -9,6 +10,7 @@ import {
   Check, ChevronRight, ListOrdered, LayoutList, Database, PenLine, Eye,
 } from 'lucide-react';
 import { useApp } from '../../../App';
+import { pastelFromHex } from '../../../../lib/pastel';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../../lib/pdf';
 import {
   errorMessage, ingestYoutube, ingestWeb,
@@ -38,6 +40,7 @@ import {
   sectionHasContent,
   slotSatisfied,
   structureFromTemplate,
+  syncAssembledPartsIntoDraft,
   topLevelSlotAsSection,
   touchDraft,
   updateSection,
@@ -54,9 +57,8 @@ import {
 import type { AssistantMessage, EditAction, ObjectSelection } from '../../../../lib/types';
 import {
   analyzeTemplateRecipe,
-  seedSectionsFromAnalysis,
+  applySectionOutline,
   seedTopLevelSlots,
-  seedWriteYourselfSections,
   structureIsReady,
 } from '../../../../lib/tutorialV2/recipeStructure';
 import type { TutorialV2Draft, TutorialV2Phase, V2SourceRef } from '../../../../lib/tutorialV2/types';
@@ -139,7 +141,8 @@ function buildPoolFromSources(args: {
 export function ObjectCreatorTutorialV2() {
   const {
     navigate, editingObjectId, clearEditingObject, createdObjects: createdObjectsRaw,
-    pendingTemplateId, setPendingTemplateId, addObject, createCollectionIds,
+    pendingTemplateId, setPendingTemplateId, pendingAuthoringPath, setPendingAuthoringPath,
+    addObject, createCollectionIds,
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
   } = useApp();
   const createdObjects = createdObjectsRaw || [];
@@ -149,15 +152,40 @@ export function ObjectCreatorTutorialV2() {
   const defaultTplId = getDefaultTemplateId('tutorial-v2') || DEFAULT_TUTORIAL_TEMPLATE_ID;
   const [draft, setDraft] = useState<TutorialV2Draft>(() => {
     const launchId = resolveTutorialV2LaunchTemplate(pendingTemplateId);
+    const authoringPath = pendingAuthoringPath;
+
+    if (authoringPath === 'write-yourself') {
+      const tpl = writeYourselfTutorialTemplate();
+      return emptyTutorialV2Draft({
+        templateId: WRITE_YOURSELF_TUTORIAL_TEMPLATE_ID,
+        structure: structureFromTemplate(tpl),
+        title: '',
+        phase: 'start',
+        metadata: { authoringPath: 'write-yourself', pathMode: 'manual' },
+      });
+    }
+
     const tpl = getTutorialTemplate(launchId || defaultTplId);
     return emptyTutorialV2Draft({
       templateId: tpl.id,
       structure: structureFromTemplate(tpl),
       title: '',
+      phase: 'start',
+      metadata: (launchId || authoringPath === 'template')
+        ? { authoringPath: 'template' }
+        : {},
     });
   });
   const [phase, setPhase] = useState<TutorialV2Phase>('start');
-  const [sectionTitles, setSectionTitles] = useState<{ id?: string; title: string; intent?: string }[]>([]);
+  const [sectionTitles, setSectionTitles] = useState<{ id?: string; title: string; intent?: string }[]>(() => (
+    pendingAuthoringPath === 'write-yourself'
+      ? [
+          { title: 'Section 1', intent: '' },
+          { title: 'Section 2', intent: '' },
+          { title: 'Section 3', intent: '' },
+        ]
+      : []
+  ));
   const restored = useRef(false);
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const structureSeeded = useRef(false);
@@ -336,9 +364,11 @@ export function ObjectCreatorTutorialV2() {
       || partsToBlocks(assembleAllParts(next), fv);
     const existing = createdObjects.find((o) => o.id === next.id);
     const fromExisting = existing ? objectCollectionIds(existing) : [];
-    const collectionIds = createCollectionIds?.length
-      ? createCollectionIds
-      : (fromExisting.length ? fromExisting : undefined);
+    // Prefer folders already on the object (after Content Library moves).
+    // Only fall back to Create-flow picks on the first save of a new draft.
+    const collectionIds = fromExisting.length
+      ? fromExisting
+      : (createCollectionIds?.length ? createCollectionIds : undefined);
     addObject({
       id: next.id,
       type: 'tutorial-v2',
@@ -346,7 +376,9 @@ export function ObjectCreatorTutorialV2() {
       status: next.status === 'submitted' ? 'in-review' : next.status === 'ready' ? 'approved' : 'draft',
       description: String(next.metadata.objective || ''),
       blocks,
-      tutorialV2Draft: { ...next, phase },
+      // Prefer the draft's phase (commit already stamped it) over React state,
+      // which can lag a tick behind and corrupt reopen.
+      tutorialV2Draft: { ...next, phase: next.phase || phase },
       collectionIds,
     } as any);
     return collectionIds || [];
@@ -355,9 +387,9 @@ export function ObjectCreatorTutorialV2() {
   const draftCollectionLabel = useCallback((collectionIds?: string[]) => {
     const existing = createdObjects.find((o) => o.id === draft.id);
     const fromExisting = existing ? objectCollectionIds(existing) : [];
-    const useIds = (collectionIds && collectionIds.length)
-      ? collectionIds
-      : (fromExisting.length ? fromExisting : (createCollectionIds || []));
+    const useIds = fromExisting.length
+      ? fromExisting
+      : ((collectionIds && collectionIds.length) ? collectionIds : (createCollectionIds || []));
     const names = useIds.map((id) => {
       const path = getCollectionPath(objectCollections || [], id);
       const self = (objectCollections || []).find((c) => c.id === id);
@@ -448,6 +480,11 @@ export function ObjectCreatorTutorialV2() {
     }
   };
 
+  // Re-open (pen icon) must reload the draft for the new id.
+  useEffect(() => {
+    restored.current = false;
+  }, [editingObjectId]);
+
   useEffect(() => {
     if (restored.current || !editingObjectId) return;
     const obj = createdObjects.find((o) => o.id === editingObjectId);
@@ -463,7 +500,8 @@ export function ObjectCreatorTutorialV2() {
           intent: s.intent || '',
         })));
       }
-      const p = existing.phase || (existing.sections.length || (existing.topLevelSlots || []).length ? 'navigator' : existing.title ? 'structure' : 'start');
+      const pRaw = existing.phase || (existing.sections.length || (existing.topLevelSlots || []).length ? 'navigator' : existing.title ? 'structure' : 'start');
+      const p = pRaw === 'path' ? 'start' : pRaw;
       if (p === 'section' && existing.activeSectionId) setPhase('section');
       else if (p === 'slot' && existing.activeSlotId) setPhase('slot');
       else if (p === 'section' || p === 'slot') setPhase('navigator');
@@ -492,6 +530,11 @@ export function ObjectCreatorTutorialV2() {
   }, [editingObjectId, createdObjects]);
 
   useEffect(() => {
+    if (!pendingAuthoringPath) return;
+    setPendingAuthoringPath(null);
+  }, [pendingAuthoringPath, setPendingAuthoringPath]);
+
+  useEffect(() => {
     if (editingObjectId) return;
     const launchId = resolveTutorialV2LaunchTemplate(pendingTemplateId);
     if (!launchId) return;
@@ -513,7 +556,9 @@ export function ObjectCreatorTutorialV2() {
         pathMode: undefined,
       },
       topLevelSlots: seedTopLevelSlots(analysis, d.topLevelSlots),
+      phase: 'start',
     }));
+    setPhase('start');
     // Keep session key briefly so Strict Mode remount can re-apply the same id.
     const t = window.setTimeout(() => {
       clearTutorialV2LaunchTemplate();
@@ -533,18 +578,17 @@ export function ObjectCreatorTutorialV2() {
     if (phase === 'structure') {
       const tpl = getTutorialTemplate(draft.templateId);
       const analysis = analyzeTemplateRecipe(tpl);
-      const sections = draft.sections.length
-        ? draft.sections.map((s, i) => {
-          const row = sectionTitles.find((t) => t.id && t.id === s.id) || sectionTitles[i];
-          return row
-            ? { ...s, title: String(row.title || s.title).trim() || s.title, intent: row.intent || '' }
-            : s;
-        })
-        : (analysis.hasSections ? seedSectionsFromAnalysis(analysis, sectionTitles) : []);
-      next = touchDraft(draft, {
+      const wy = isWriteYourselfTutorial(draft.templateId)
+        || draft.metadata.authoringPath === 'write-yourself';
+      const synced = syncAssembledPartsIntoDraft(draft);
+      const titles = sectionTitles.length
+        ? sectionTitles
+        : synced.sections.map((s) => ({ id: s.id, title: s.title, intent: s.intent || '' }));
+      const sections = applySectionOutline(synced.sections, titles, analysis, { writeYourself: wy });
+      next = touchDraft(synced, {
         phase: 'structure',
         sections,
-        topLevelSlots: seedTopLevelSlots(analysis, draft.topLevelSlots),
+        topLevelSlots: wy ? [] : seedTopLevelSlots(analysis, synced.topLevelSlots),
         structure: structureFromTemplate(tpl),
       });
     } else if (phase === 'sources') {
@@ -598,60 +642,66 @@ export function ObjectCreatorTutorialV2() {
     return analyzeTemplateRecipe(tpl).needsSources;
   }, [draft.templateId, writeYourself]);
 
-  const chooseWriteYourself = () => {
-    const tpl = writeYourselfTutorialTemplate();
-    setSectionTitles([
-      { title: 'Section 1', intent: '' },
-      { title: 'Section 2', intent: '' },
-      { title: 'Section 3', intent: '' },
-    ]);
-    setDraft((d) => touchDraft(d, {
-      templateId: WRITE_YOURSELF_TUTORIAL_TEMPLATE_ID,
-      structure: structureFromTemplate(tpl),
-      topLevelSlots: [],
-      sections: [],
-      metadata: { ...d.metadata, authoringPath: 'write-yourself', pathMode: 'manual' },
-    }));
-  };
-
-  const chooseTemplatePath = () => {
-    const launchId = resolveTutorialV2LaunchTemplate(pendingTemplateId);
-    const tpl = getTutorialTemplate(launchId || defaultTplId);
-    setDraft((d) => touchDraft(d, {
-      templateId: tpl.id,
-      structure: structureFromTemplate(tpl),
-      metadata: { ...d.metadata, authoringPath: 'template', pathMode: undefined },
-    }));
-  };
-
   /** Jump back (or forward) along the top-level Plan → Structure → Sources → Author rail. */
   const goToPipelinePhase = useCallback((next: TutorialV2Phase) => {
+    // Keep Review edits when revisiting earlier steps / Author.
+    const synced = syncAssembledPartsIntoDraft(draft);
+
     if (next === 'start') {
-      commit(touchDraft(draft, { phase: 'start', activeSectionId: null, activeSlotId: null }), 'start');
+      commit(touchDraft(synced, {
+        phase: 'start',
+        activeSectionId: null,
+        activeSlotId: null,
+      }), 'start');
       return;
     }
     if (next === 'structure') {
-      commit(touchDraft(draft, { phase: 'structure', activeSectionId: null, activeSlotId: null }), 'structure');
+      // Refresh Structure title rows from current sections (ids preserved).
+      if (synced.sections.length) {
+        setSectionTitles(synced.sections.map((s) => ({
+          id: s.id,
+          title: s.title,
+          intent: s.intent || '',
+        })));
+      }
+      commit(touchDraft(synced, {
+        phase: 'structure',
+        activeSectionId: null,
+        activeSlotId: null,
+      }), 'structure');
       return;
     }
     if (next === 'sources') {
-      commit(touchDraft(draft, { phase: 'sources', activeSectionId: null, activeSlotId: null }), 'sources');
+      commit(touchDraft(synced, {
+        phase: 'sources',
+        activeSectionId: null,
+        activeSlotId: null,
+      }), 'sources');
       return;
     }
     if (next === 'navigator') {
-      commit(touchDraft(draft, { phase: 'navigator', activeSectionId: null, activeSlotId: null }), 'navigator');
+      commit(touchDraft(synced, {
+        phase: 'navigator',
+        activeSectionId: null,
+        activeSlotId: null,
+        // Author reads section.parts; drop stale assemble override after sync.
+        assembledParts: undefined,
+      }), 'navigator');
       return;
     }
     if (next === 'review') {
       // Mark contentful sections/slots done so Review stays reachable after reload.
-      const sections = (draft.sections || []).map((s) => (
+      const sections = (synced.sections || []).map((s) => (
         (!s.done && sectionHasContent(s)) ? { ...s, done: true } : s
       ));
-      const topLevelSlots = (draft.topLevelSlots || []).map((s) => (
+      const topLevelSlots = (synced.topLevelSlots || []).map((s) => (
         (!s.done && slotSatisfied(s)) ? { ...s, done: true } : s
       ));
-      const base = { ...draft, sections, topLevelSlots };
-      const parts = collectRecipeParts(base);
+      const base = { ...synced, sections, topLevelSlots };
+      // Prefer existing assembled order if present; else rebuild from sections.
+      const parts = base.assembledParts?.length
+        ? base.assembledParts
+        : collectRecipeParts(base);
       const blocks = partsToBlocks(parts, {
         passOn: true,
         pass: draft.structure.pass || '70%',
@@ -711,6 +761,15 @@ export function ObjectCreatorTutorialV2() {
     }
   }, [phase, draft.templateId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Editing an existing object (or any draft past Plan) can always revisit Plan/Structure.
+  const canRevisitEarlySteps = !!(
+    editingObjectId
+    || draft.sections.length
+    || (draft.topLevelSlots || []).length
+    || draft.assembledParts?.length
+    || phase === 'navigator' || phase === 'section' || phase === 'slot' || phase === 'review' || phase === 'sources'
+  );
+
   const pipelineRail = (
     <PipelineRail
       phase={phase}
@@ -719,6 +778,7 @@ export function ObjectCreatorTutorialV2() {
       canReview={allRequiredDone(draft.sections, draft.topLevelSlots)
         || phase === 'review'
         || !!(draft.assembledParts && draft.assembledParts.length)}
+      canRevisitEarlySteps={canRevisitEarlySteps}
     />
   );
 
@@ -795,16 +855,7 @@ export function ObjectCreatorTutorialV2() {
           nextTitles.push({ title, intent: String(a.content?.text || a.content?.body || '') });
         }
         setSectionTitles(nextTitles);
-        const sections = writeYourself
-          ? seedWriteYourselfSections(analysis, nextTitles)
-          : seedSectionsFromAnalysis(analysis, nextTitles);
-        // Preserve authored parts when section ids match.
-        const byId = new Map(draft.sections.map((s) => [s.id, s]));
-        const byTitle = new Map(draft.sections.map((s) => [s.title.trim().toLowerCase(), s]));
-        const merged = sections.map((s) => {
-          const prev = (s.id && byId.get(s.id)) || byTitle.get(s.title.trim().toLowerCase());
-          return prev ? { ...s, id: prev.id, parts: prev.parts, done: prev.done, authorMode: prev.authorMode, pickedSourceIds: prev.pickedSourceIds, highlights: prev.highlights } : s;
-        });
+        const merged = applySectionOutline(draft.sections, nextTitles, analysis, { writeYourself });
         commit(touchDraft(draft, { sections: merged, assembledParts: undefined }));
         return;
       }
@@ -859,57 +910,30 @@ export function ObjectCreatorTutorialV2() {
   /* ── A. Start / Plan ──────────────────────────────────────── */
   if (phase === 'start') {
     const tpl = getTutorialTemplate(draft.templateId);
-    const templatePath = draft.metadata.authoringPath === 'template';
-    const pathChosen = writeYourself
-      || templatePath
-      || !!editingObjectId
-      || !!resolveTutorialV2LaunchTemplate(pendingTemplateId);
 
     return (
       <Shell
         onBack={goBack}
         onSave={saveDraft}
         title="Plan"
-        subtitle="Name the tutorial and choose how you’ll build it"
+        subtitle="Name the tutorial"
         rail={pipelineRail}
         assistant={globalHoot}
       >
         <div className="max-w-lg mx-auto space-y-4">
-          {!editingObjectId && (
-            <div className="space-y-2">
-              <p style={{ fontSize: 12, fontWeight: 650, color: '#6B7280' }}>How do you want to build this?</p>
-              <button
-                type="button"
-                onClick={chooseTemplatePath}
-                className="w-full text-left rounded-2xl px-4 py-3.5 border transition-colors"
-                style={{
-                  background: templatePath ? 'rgba(109,40,217,0.08)' : '#fff',
-                  borderColor: templatePath ? 'rgba(109,40,217,0.35)' : 'rgba(0,0,0,0.08)',
-                }}
-              >
-                <p style={{ fontSize: 13.5, fontWeight: 700, color: '#4C1D95' }}>From a template</p>
-                <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 3, lineHeight: 1.45 }}>
-                  Plan → Structure → Sources → Author → Review. Use the recipe, sources, and AI generate when you want.
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={chooseWriteYourself}
-                className="w-full text-left rounded-2xl px-4 py-3.5 border transition-colors"
-                style={{
-                  background: writeYourself ? 'rgba(5,150,105,0.08)' : '#fff',
-                  borderColor: writeYourself ? 'rgba(5,150,105,0.35)' : 'rgba(0,0,0,0.08)',
-                }}
-              >
-                <p style={{ fontSize: 13.5, fontWeight: 700, color: '#065F46' }}>Write it yourself</p>
-                <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 3, lineHeight: 1.45 }}>
-                  No template. Plan → Structure → Author → Review. Add text, images, and videos in each section by hand.
-                </p>
-              </button>
+          {writeYourself ? (
+            <div
+              className="rounded-xl px-3.5 py-2.5"
+              style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.22)' }}
+            >
+              <p style={{ fontSize: 11, fontWeight: 650, color: '#059669', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                Write it yourself
+              </p>
+              <p style={{ fontSize: 13.5, color: '#065F46', marginTop: 2 }}>
+                No template — you’ll add sections by hand.
+              </p>
             </div>
-          )}
-
-          {templatePath && (
+          ) : (
             <div
               className="rounded-xl px-3.5 py-2.5"
               style={{ background: 'rgba(109,40,217,0.06)', border: '1px solid rgba(109,40,217,0.18)' }}
@@ -957,17 +981,21 @@ export function ObjectCreatorTutorialV2() {
           </Field>
           <button
             type="button"
-            disabled={!draft.title.trim() || !pathChosen}
+            disabled={!draft.title.trim()}
             onClick={() => {
-              const withPath = draft.metadata.authoringPath
-                ? draft
-                : touchDraft(draft, {
-                    metadata: {
-                      ...draft.metadata,
-                      authoringPath: writeYourself ? 'write-yourself' : 'template',
-                    },
-                  });
-              const next = touchDraft(withPath, { title: draft.title.trim(), phase: 'structure' });
+              const synced = syncAssembledPartsIntoDraft(draft);
+              if (synced.sections.length && !sectionTitles.length) {
+                setSectionTitles(synced.sections.map((s) => ({
+                  id: s.id,
+                  title: s.title,
+                  intent: s.intent || '',
+                })));
+              }
+              const next = touchDraft(synced, {
+                title: draft.title.trim(),
+                metadata: draft.metadata,
+                phase: 'structure',
+              });
               commit(next, 'structure');
             }}
             className="w-full py-3 rounded-full text-white disabled:opacity-40"
@@ -975,11 +1003,6 @@ export function ObjectCreatorTutorialV2() {
           >
             Save & continue to structure →
           </button>
-          {!pathChosen && !editingObjectId && (
-            <p style={{ fontSize: 12.5, color: '#B45309' }}>
-              Choose “From a template” or “Write it yourself” above to continue.
-            </p>
-          )}
         </div>
       </Shell>
     );
@@ -1023,28 +1046,42 @@ export function ObjectCreatorTutorialV2() {
             <button
               type="button"
               disabled={!ready}
-              onClick={() => {
+            onClick={() => {
+                // Merge outline edits into existing sections — never wipe authored parts.
+                const synced = syncAssembledPartsIntoDraft(draft);
                 if (writeYourself) {
-                  const sections = seedWriteYourselfSections(analysis, sectionTitles);
-                  const next = touchDraft(draft, {
+                  const sections = applySectionOutline(
+                    synced.sections,
+                    sectionTitles,
+                    analysis,
+                    { writeYourself: true },
+                  );
+                  const next = touchDraft(synced, {
                     sections,
                     topLevelSlots: [],
                     structure: structureFromTemplate(tpl),
                     phase: 'navigator',
-                    metadata: { ...draft.metadata, authoringPath: 'write-yourself', pathMode: 'manual' },
+                    assembledParts: undefined,
+                    metadata: { ...synced.metadata, authoringPath: 'write-yourself', pathMode: 'manual' },
                   });
                   commit(next, 'navigator');
                   return;
                 }
-                const sections = seedSectionsFromAnalysis(analysis, sectionTitles);
-                const nextSlots = seedTopLevelSlots(analysis, slots);
+                const sections = applySectionOutline(
+                  synced.sections,
+                  sectionTitles,
+                  analysis,
+                  { writeYourself: false },
+                );
+                const nextSlots = seedTopLevelSlots(analysis, synced.topLevelSlots?.length ? synced.topLevelSlots : slots);
                 const nextPhase: TutorialV2Phase = analysis.needsSources ? 'sources' : 'navigator';
-                const next = touchDraft(draft, {
+                const next = touchDraft(synced, {
                   sections,
                   topLevelSlots: nextSlots,
                   structure: structureFromTemplate(tpl),
                   phase: nextPhase,
-                  metadata: { ...draft.metadata, authoringPath: 'template' },
+                  assembledParts: undefined,
+                  metadata: { ...synced.metadata, authoringPath: 'template' },
                 });
                 commit(next, nextPhase);
               }}
@@ -1082,14 +1119,6 @@ export function ObjectCreatorTutorialV2() {
               style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}
             >
               <ArrowLeft size={14} /> Back to Structure
-            </button>
-            <button
-              type="button"
-              onClick={() => void saveDraft()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border"
-              style={{ fontSize: 13, fontWeight: 600, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)' }}
-            >
-              <Save size={14} /> Save
             </button>
           </div>
           {pipelineRail}
@@ -1191,6 +1220,7 @@ export function ObjectCreatorTutorialV2() {
           </button>
         </div>
       </div>
+      <FixedSaveButton onClick={() => void saveDraft()} />
       {globalHoot}
       </>
     );
@@ -1319,6 +1349,24 @@ export function ObjectCreatorTutorialV2() {
         onOpenSlot={(slotId) => {
           commit(touchDraft(draft, { phase: 'slot', activeSlotId: slotId, activeSectionId: null }), 'slot');
         }}
+        onDeleteSection={(sectionId) => {
+          void (async () => {
+            const sec = draft.sections.find((s) => s.id === sectionId);
+            const label = sec?.title?.trim() || 'this section';
+            const ok = await confirm({
+              title: 'Delete section?',
+              description: `Delete “${label}” and its content from this tutorial?`,
+              confirmLabel: 'Delete',
+              destructive: true,
+            });
+            if (!ok) return;
+            commit(touchDraft(draft, {
+              sections: draft.sections.filter((s) => s.id !== sectionId),
+              assembledParts: undefined,
+              activeSectionId: draft.activeSectionId === sectionId ? null : draft.activeSectionId,
+            }), 'navigator');
+          })();
+        }}
         onReview={() => goToPipelinePhase('review')}
         onBackToSources={() => goToPipelinePhase('sources')}
         onBackToStructure={() => goToPipelinePhase('structure')}
@@ -1339,6 +1387,27 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 };
 
+/** Always pinned bottom-left — pastel green draft save. */
+function FixedSaveButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="fixed bottom-5 left-5 z-40 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full"
+      style={{
+        fontSize: 13.5,
+        fontWeight: 650,
+        color: '#065F46',
+        background: pastelFromHex('#059669', 0.82),
+        border: '1px solid rgba(5,150,105,0.3)',
+        boxShadow: '0 10px 28px -12px rgba(5,150,105,0.55)',
+      }}
+    >
+      <Save size={15} /> Save
+    </button>
+  );
+}
+
 function Shell({
   onBack, onSave, title, subtitle, children, rail, assistant,
 }: {
@@ -1352,9 +1421,15 @@ function Shell({
 }) {
   return (
     <>
-      <div className="min-h-full px-4 py-5" style={{ background: 'linear-gradient(180deg, #F4F6FB 0%, #EEF1F8 100%)' }}>
+      <div
+        className="min-h-full px-4 py-5"
+        style={{
+          background: 'linear-gradient(180deg, #F4F6FB 0%, #EEF1F8 100%)',
+          paddingBottom: onSave ? 88 : undefined,
+        }}
+      >
         <div className="max-w-4xl mx-auto mb-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-3 mb-3">
             <button
               type="button"
               onClick={onBack}
@@ -1363,16 +1438,6 @@ function Shell({
             >
               <ArrowLeft size={14} /> Back
             </button>
-            {onSave ? (
-              <button
-                type="button"
-                onClick={onSave}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border"
-                style={{ fontSize: 13, fontWeight: 600, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: 'rgba(255,255,255,0.85)' }}
-              >
-                <Save size={14} /> Save
-              </button>
-            ) : null}
           </div>
           {rail}
           <h1 style={{ fontSize: 22, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.3px', marginTop: rail ? 12 : 0 }}>{title}</h1>
@@ -1380,6 +1445,7 @@ function Shell({
         </div>
         {children}
       </div>
+      {onSave ? <FixedSaveButton onClick={() => void onSave()} /> : null}
       {assistant}
     </>
   );
@@ -1392,11 +1458,14 @@ function PipelineRail({
   needsSources,
   onGo,
   canReview,
+  canRevisitEarlySteps,
 }: {
   phase: TutorialV2Phase;
   needsSources: boolean;
   onGo: (p: TutorialV2Phase) => void;
   canReview: boolean;
+  /** When true, Plan/Structure stay clickable even if the rail thinks you're still early. */
+  canRevisitEarlySteps?: boolean;
 }) {
   const steps: { id: PipelineStepId; label: string; icon: React.ReactNode }[] = [
     { id: 'start', label: 'Plan', icon: <ListOrdered size={12} /> },
@@ -1418,12 +1487,12 @@ function PipelineRail({
     <div className="flex items-center gap-0 overflow-x-auto py-1">
       {steps.map((s, i) => {
         const isActive = s.id === activeId;
-        const isPast = i < activeIndex;
+        const isPast = i < activeIndex || (!!canRevisitEarlySteps && (s.id === 'start' || s.id === 'structure') && !isActive);
         const canClick = s.id === 'start' || s.id === 'structure'
-          ? activeIndex >= i
+          ? activeIndex >= i || !!canRevisitEarlySteps
           : s.id === 'review'
             ? canReview || isPast || isActive
-            : i <= activeIndex;
+            : i <= activeIndex || (!!canRevisitEarlySteps && (s.id === 'navigator' || s.id === 'sources'));
 
         return (
           <React.Fragment key={s.id}>

@@ -164,25 +164,76 @@ export function seedWriteYourselfSections(
   analysis: RecipeStructureAnalysis,
   titles: { id?: string; title: string; intent?: string }[],
 ): V2Section[] {
-  const named = (titles || []).filter((t) => String(t.title || '').trim());
-  const outline = named.length ? named : [{ title: 'Section 1', intent: '' }];
+  return applySectionOutline([], titles, analysis, { writeYourself: true });
+}
+
+/**
+ * Apply Plan/Structure section outline onto existing sections.
+ * Renames / reorders / adds / removes by id (with title/index fallback),
+ * and keeps authored parts / done state for sections that remain.
+ */
+export function applySectionOutline(
+  existing: V2Section[],
+  titles: { id?: string; title: string; intent?: string }[],
+  analysis: RecipeStructureAnalysis,
+  opts?: { writeYourself?: boolean },
+): V2Section[] {
+  const writeYourself = !!opts?.writeYourself;
+  let outline = [...(titles || [])];
+  if (writeYourself) {
+    outline = outline.filter((t) => String(t.title || '').trim());
+    if (!outline.length) outline = [{ title: 'Section 1', intent: '' }];
+  } else {
+    if (!analysis.hasSections) return [];
+    const n = analysis.sectionCount;
+    outline = outline.slice(0, n);
+    while (outline.length < n) {
+      outline.push({ title: `Section ${outline.length + 1}`, intent: '' });
+    }
+  }
+
+  const byId = new Map((existing || []).map((s) => [s.id, s]));
+  const unused = new Set((existing || []).map((s) => s.id));
   const recipe = cloneRecipeItems(
     analysis.sectionRecipe.length ? analysis.sectionRecipe : analysis.sectionAtomics,
     true,
   );
-  return outline.map((row) => ({
-    id: row.id || newSectionId(),
-    title: String(row.title || '').trim() || 'Section',
-    intent: row.intent || '',
-    recipe: cloneRecipeItems(recipe, true),
-    parts: [],
-    pickedSourceIds: [],
-    highlights: [],
-    units: undefined,
-    authorMode: 'empty' as const,
-    done: false,
-    required: true,
-  }));
+
+  return outline.map((row, i) => {
+    const title = String(row.title || '').trim() || `Section ${i + 1}`;
+    let prev = (row.id && byId.get(row.id)) || undefined;
+    if (!prev && !row.id) {
+      const atIndex = existing[i];
+      if (atIndex && unused.has(atIndex.id)) prev = atIndex;
+    }
+    if (!prev) {
+      const needle = title.toLowerCase();
+      prev = (existing || []).find(
+        (s) => unused.has(s.id) && s.title.trim().toLowerCase() === needle,
+      );
+    }
+    if (prev) {
+      unused.delete(prev.id);
+      return {
+        ...prev,
+        title,
+        intent: row.intent !== undefined ? String(row.intent) : prev.intent,
+      };
+    }
+    return {
+      id: row.id || newSectionId(),
+      title,
+      intent: row.intent || '',
+      recipe: cloneRecipeItems(recipe, true),
+      parts: [],
+      pickedSourceIds: [],
+      highlights: [],
+      units: undefined,
+      authorMode: 'empty' as const,
+      done: false,
+      required: true,
+    };
+  });
 }
 
 /** Structure continue gate: required library slots pinned; sections named when present. */

@@ -26,6 +26,7 @@ import { SummaryView, ReflectionView, AssignmentView, DrillView } from './Struct
 import { ConceptCardTemplate } from './ConceptCardTemplate';
 import { VideoScriptPlayer } from './VideoScriptPlayer';
 import { mockDrillContent } from '../../../lib/mockDrillBlueprint';
+import { richTextToSafeHtml } from '../../../lib/richTextMarkdown';
 
 import { McqClusterExperience, type McqClusterQuestion, type QuizResolveStatus } from './McqClusterExperience';
 
@@ -451,17 +452,9 @@ function VideoEmbed({ content }: { content: VideoEmbedContent }) {
 }
 
 function RichText({ text, heading, subheads }: { text: string; heading?: string; subheads?: string[] }) {
-  const html = text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^## (.+)$/gm, '<h3 style="font-size:17px;font-weight:700;color:#0B1220;margin:22px 0 10px;letter-spacing:-0.3px">$1</h3>')
-    .replace(/\n\n+/g, '</p><p style="margin:0 0 14px">')
-    .replace(/\n/g, '<br/>');
-  const body = text.trim()
-    ? `<p style="margin:0 0 14px">${html}</p>`
-    : '';
+  const body = text.trim() ? richTextToSafeHtml(text) : '';
   return (
-    <div style={{ marginBottom: 4 }}>
+    <div style={{ marginBottom: 4 }} className="learner-rich-text">
       {heading && (
         <h2 style={{ fontSize: 19, fontWeight: 700, color: '#0B1220', margin: '0 0 14px', letterSpacing: '-0.35px', lineHeight: 1.3 }}>
           {heading}
@@ -478,6 +471,28 @@ function RichText({ text, heading, subheads }: { text: string; heading?: string;
           dangerouslySetInnerHTML={{ __html: body }}
         />
       )}
+      <style>{`
+        .learner-rich-text h1 { font-size: 1.45rem; font-weight: 750; color: #0B1220; margin: 22px 0 10px; letter-spacing: -0.3px; line-height: 1.3; }
+        .learner-rich-text h2 { font-size: 1.2rem; font-weight: 700; color: #0B1220; margin: 20px 0 10px; letter-spacing: -0.25px; line-height: 1.3; }
+        .learner-rich-text h3 { font-size: 1.05rem; font-weight: 700; color: #0B1220; margin: 18px 0 8px; letter-spacing: -0.2px; }
+        .learner-rich-text p { margin: 0 0 14px; }
+        .learner-rich-text ul { margin: 0 0 14px; padding-left: 1.25rem; list-style: disc; }
+        .learner-rich-text ol { margin: 0 0 14px; padding-left: 1.25rem; list-style: decimal; }
+        .learner-rich-text li { margin: 0 0 4px; }
+        .learner-rich-text blockquote {
+          margin: 0 0 14px; padding: 10px 14px;
+          border-left: 3px solid rgba(109,40,217,0.35);
+          background: rgba(109,40,217,0.05); border-radius: 0 12px 12px 0; color: #4B5563;
+        }
+        .learner-rich-text code {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 0.9em; background: rgba(15,23,42,0.06); padding: 0.1em 0.35em; border-radius: 4px;
+        }
+        .learner-rich-text a { color: #2563EB; text-decoration: underline; }
+        .learner-rich-text strong { font-weight: 700; color: #0B1220; }
+        .learner-rich-text em { font-style: italic; }
+        .learner-rich-text u { text-decoration: underline; }
+      `}</style>
     </div>
   );
 }

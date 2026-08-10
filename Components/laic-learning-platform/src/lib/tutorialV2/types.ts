@@ -137,7 +137,7 @@ export interface TutorialV2Draft {
   tutorialDefinition?: import('../types').TutorialDefinition;
   status: 'draft' | 'ready' | 'submitted';
   /** Top-level UI phase to restore on reopen. */
-  phase?: 'start' | 'structure' | 'sources' | 'navigator' | 'section' | 'slot' | 'review';
+  phase?: 'path' | 'start' | 'structure' | 'sources' | 'navigator' | 'section' | 'slot' | 'review';
   /** Active section id when phase === 'section'. */
   activeSectionId?: string | null;
   /** Active top-level generate slot id when phase === 'slot'. */

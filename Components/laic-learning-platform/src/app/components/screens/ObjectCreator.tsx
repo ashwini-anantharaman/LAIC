@@ -77,6 +77,7 @@ import {
 import { generateEmbedPart } from '../../../lib/tutorialEmbedGenerate';
 import { objectCollectionIds } from '../../../lib/objectCollectionsStore';
 import { LibraryPickerModal } from '../LibraryPickerModal';
+import { RichTextEditor } from '../RichTextEditor';
 import { useConfirm } from '../ConfirmDialog';
 import {
   applyEditActionsToParts,
@@ -3027,8 +3028,12 @@ function EditPanel({ part, onChange, onClose }: any) {
           </div>
           <div>
             <label style={lbl}>Body</label>
-            <textarea value={part.body || ''} onChange={e => onChange({ body: e.target.value })} rows={5}
-              className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
+            <RichTextEditor
+              value={part.body || ''}
+              onChange={(body) => onChange({ body })}
+              placeholder="Write this section…"
+              minHeight={140}
+            />
           </div>
         </>
       )}

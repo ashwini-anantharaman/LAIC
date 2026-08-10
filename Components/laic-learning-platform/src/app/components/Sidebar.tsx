@@ -228,9 +228,11 @@ interface SidebarProps {
   /** When set, render as a slide-over drawer instead of the desktop rail. */
   mobileOpen?: boolean;
   onMobileClose?: () => void;
+  /** Desktop editor immersive mode — show a control to collapse the rail. */
+  onRequestCollapse?: () => void;
 }
 
-export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
+export function Sidebar({ mobileOpen, onMobileClose, onRequestCollapse }: SidebarProps) {
   const isDrawer = typeof mobileOpen === 'boolean';
 
   if (isDrawer) {
@@ -263,13 +265,24 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
   return (
     <aside
-      className="flex flex-col w-56 min-h-screen shrink-0"
+      className="relative flex flex-col w-56 h-full min-h-0 shrink-0"
       style={{
         ...panelStyle,
         background: 'rgba(255,255,255,0.55)',
         borderRight: '1px solid rgba(255,255,255,0.6)',
       }}
     >
+      {onRequestCollapse ? (
+        <button
+          type="button"
+          onClick={onRequestCollapse}
+          className="absolute top-3 right-2 z-10 p-1.5 rounded-lg text-[#9AA3AF] hover:text-[#0B1220] hover:bg-white/70"
+          aria-label="Collapse navigation"
+          title="Collapse navigation"
+        >
+          <X size={15} />
+        </button>
+      ) : null}
       <NavBody />
     </aside>
   );
