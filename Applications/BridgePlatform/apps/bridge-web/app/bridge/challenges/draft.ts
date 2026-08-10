@@ -15,7 +15,7 @@ import {
   type ControlOverride,
   type StandingsVisibility,
 } from "@bridge/challenges";
-import { SEATS, type Card, type Seat } from "@bridge/events";
+import { SEATS, VUL_LABEL, type Card, type Seat, type Vul } from "@bridge/events";
 // Relative, not "@/": this module is unit-tested and the vitest config has no
 // path aliases.
 import { handFromSerialized } from "../../../lib/dealText";
@@ -149,6 +149,13 @@ export interface ChallengeBoardDraft {
   seed: number;
   dealer: Seat;
   humanSeat: Seat;
+  /**
+   * The board's OWN vulnerability. Omitted, it follows the standard cycle for
+   * its position — which is what a random board wants. A board imported from a
+   * BBO link brings its own, because vulnerability is part of the deal that was
+   * imported and re-deriving it would score the same cards differently.
+   */
+  vul?: Vul;
   /** Set once the creator hand-edited this board: ♠.♥.♦.♣ text per seat. */
   pack?: Record<Seat, string>;
 }
@@ -172,6 +179,7 @@ export interface ChallengeDraft {
 }
 
 const SEAT_SET = new Set<string>(SEATS);
+const VUL_SET = new Set<string>(Object.keys(VUL_LABEL));
 const SCORINGS = new Set<string>(SCORING_OPTIONS.map((s) => s.key));
 const STANDINGS = new Set<string>(STANDINGS_OPTIONS.map((s) => s.key));
 const CONTROL_KEYS = new Set(CHALLENGE_CONTROLS.map((c) => c.key));
@@ -218,6 +226,8 @@ export function validateDraft(draft: ChallengeDraft): string[] {
     if (!Number.isInteger(board.seed)) errors.push(`Board ${board.boardNo} has no deal.`);
     if (!SEAT_SET.has(board.dealer)) errors.push(`Board ${board.boardNo} has no dealer.`);
     if (!SEAT_SET.has(board.humanSeat)) errors.push(`Board ${board.boardNo} has no seat for you.`);
+    if (board.vul !== undefined && !VUL_SET.has(board.vul))
+      errors.push(`Board ${board.boardNo} has no vulnerability.`);
     if (board.pack) {
       const parsed = packFromDraft(board.pack);
       if ("error" in parsed) errors.push(`Board ${board.boardNo} pack — ${parsed.error}.`);
