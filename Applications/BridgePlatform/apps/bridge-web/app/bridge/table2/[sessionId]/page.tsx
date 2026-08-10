@@ -81,6 +81,16 @@ export default async function PlayTablePage({
   // is frozen into its play record.
   const challenge = await challengeTableContext(view, context);
 
+  // BIDDING-ONLY (owner, 2026-08-10): the board ends when the auction ends.
+  // The engine still moves to `play` and puts the opening leader on turn, but
+  // in this format that phase belongs to nobody — so from here down the board
+  // is treated as FINISHED. Derived from the challenge's format and the phase,
+  // never from the freeze: a freeze that failed to store must not leave the
+  // robots free to start playing the board out.
+  const auctionWasTheBoard = Boolean(challenge?.biddingOnly) && state.phase !== "auction";
+  /** The board has nothing left to do — either phase, either format. */
+  const boardOver = state.phase === "complete" || auctionWasTheBoard;
+
   // Access catalogue first, then the board's controlOverrides laid OVER it in
   // BOTH directions (spec §7): a control the creator hid is ABSENT from the
   // toolbar and the ☰, a control they force-showed is present even where the
@@ -121,10 +131,14 @@ export default async function PlayTablePage({
   const showAll = (handsParam === "all" || (handsParam !== "mine" && !mySeat)) && canSeeAllHands;
   // Dummy spreads only after the opening lead — real-bridge timing.
   const leadMade = state.tricks.length > 0 && (state.tricks[0]?.plays.length ?? 0) > 0;
+  // A finished board is face-up — and a bidding-only board is finished the
+  // moment the auction is, so the four hands open then, exactly as they would
+  // after the thirteenth trick.
   const canSee = (seat: Seat) =>
-    showAll || seat === mySeat || (seat === dummy && leadMade) || state.phase === "complete";
+    showAll || seat === mySeat || (seat === dummy && leadMade) || boardOver;
 
   const myTurn =
+    !boardOver &&
     actingIsHuman &&
     record.seats[actingSeat].kind === "human" &&
     (record.seats[actingSeat] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
@@ -140,7 +154,15 @@ export default async function PlayTablePage({
   const coachState = { ...state, dealer: record.board.dealer, vul: state.vul };
   const coachData: CoachData | undefined = showCoach
     ? {
-        phase: state.phase === "auction" ? "auction" : state.phase === "play" ? "play" : "other",
+        // A finished board asks nothing, so the coach offers no question —
+        // including a bidding-only board, which never has a card to play.
+        phase: boardOver
+          ? "other"
+          : state.phase === "auction"
+            ? "auction"
+            : state.phase === "play"
+              ? "play"
+              : "other",
         active: myTurn,
         looking: lookingAt(coachState, mySeat),
         think: thinkAid(coachState, mySeat),
@@ -274,9 +296,12 @@ export default async function PlayTablePage({
       <AutoAdvance
         key={paused ?? "run"}
         sessionId={sessionId}
-        active={!actingIsHuman && state.phase !== "complete"}
+        // `boardOver`, not the phase: on a bidding-only board the robots must
+        // not step past the last pass, or they would play out a board nobody
+        // is scored on and burn BEN calls doing it.
+        active={!actingIsHuman && !boardOver}
         seq={record.events.length}
-        complete={state.phase === "complete"}
+        complete={boardOver}
         beatMs={beatMs}
         initialPaused={Boolean(paused)}
         variant="rail"
@@ -286,7 +311,10 @@ export default async function PlayTablePage({
         // needs the same thinking/retry honesty.
         strictBen={Boolean(record.challenge)}
       />
-      {canUndo && record.events.length > 0 && state.phase !== "complete" && (
+      {/* Undo is off by default in challenges, but a creator may force it on.
+          It still stops at the end of the board — on a bidding-only board that
+          is the end of the auction, whose last pass is already frozen. */}
+      {canUndo && record.events.length > 0 && !boardOver && (
         <form action={undoAction} style={{ display: "flex" }}>
           <input type="hidden" name="sessionId" value={sessionId} />
           <button
@@ -305,7 +333,7 @@ export default async function PlayTablePage({
   // The hand-record view (HandViewer design): all four panels big, the full
   // auction, and honest info panels. Mid-play it shows the REMAINING cards
   // (and respects visibility); a completed board shows the original deal.
-  const complete = state.phase === "complete";
+  const complete = boardOver;
   const viewerHands = complete
     ? { N: originalHand(state, "N"), E: originalHand(state, "E"), S: originalHand(state, "S"), W: originalHand(state, "W") }
     : state.hands;
@@ -314,6 +342,19 @@ export default async function PlayTablePage({
     : state.phase === "auction"
       ? "Auction in progress"
       : "Passed out";
+
+  // THE RESULT CARD on a bidding-only board. There is no score and no trick
+  // tally, so the card leads with the contract that was reached and says why
+  // nothing follows it — rather than printing "NS 0 · EW 0", which would read
+  // as a board played badly instead of a board never played.
+  const resultLine = score ? resultLabel(score) : auctionWasTheBoard ? contractText : "";
+  const resultScore = score
+    ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}`
+    : "";
+  const resultDetail = auctionWasTheBoard
+    ? "Bidding only · the auction was the board"
+    : undefined;
+
   const handViewer = (
     <HandViewer
       boardLabel={boardNumber}
@@ -350,7 +391,17 @@ export default async function PlayTablePage({
   ) : (
     <LivePlayTable
       sessionId={sessionId}
-      state={{ ...state, dealer: record.board.dealer, vul: state.vul }}
+      // The table is shown a COMPLETE board once the auction was the board:
+      // PlayTable derives all its "is there anything left to do" chrome from
+      // the phase, so this is what puts the result card on the felt, folds the
+      // bid tray away, drops the turn highlight and stops any card lifting to
+      // a tap. It is not a fiction — in this format the board really is over.
+      state={{
+        ...state,
+        ...(auctionWasTheBoard ? { phase: "complete" as const } : {}),
+        dealer: record.board.dealer,
+        vul: state.vul,
+      }}
       seats={{
         N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "", strip: seatStrip("N"), human: record.seats.N.kind === "human" },
         E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "", strip: seatStrip("E"), human: record.seats.E.kind === "human" },
@@ -365,8 +416,9 @@ export default async function PlayTablePage({
       boardLabel={boardNumber}
       auctionDisplay={bboAuction === "seats" ? "seats" : "box"}
       confirmBids={confirmBids}
-      resultLine={score ? resultLabel(score) : ""}
-      resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
+      resultLine={resultLine}
+      resultScore={resultScore}
+      resultDetail={resultDetail}
       // A finished challenge board draws its way onward ON the canvas — the
       // result card in the centre, not a band stacked around the table.
       completedAction={

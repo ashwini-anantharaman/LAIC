@@ -25,6 +25,14 @@
 //   · "Replay for practice (unscored)" — it is gated on having FINISHED every
 //     board, which cannot happen without BEN.
 //
+// The same line runs through BIDDING-ONLY (owner, 2026-08-10): the option, its
+// effect on the wizard and its survival through create → list → results ARE
+// asserted below, because none of that needs a board to be played. What ends
+// the board — the freeze at the close of the auction, the felt refusing to
+// invite a card, the contract-vs-BEN figures with real contracts in them — is
+// downstream of BEN and lives in resultsView.test.ts, scoring.test.ts and
+// challengeBaselines.test.ts instead.
+//
 // State: this spec sorts SECOND (after access.spec, which leaves the catalogue
 // at defaults) and shares the JSON stores with every later spec, so the one
 // test that edits the access catalogue puts it back — afterAll resets it even
@@ -45,6 +53,7 @@ const MODERATOR_NAME = "Paul Osei";
 /** Titles are shared across the serial tests below. */
 const IMPS_TITLE = "E2E spoiler-safe challenge";
 const ALWAYS_TITLE = "E2E live-standings challenge";
+const BIDDING_TITLE = "E2E bidding-only challenge";
 
 /** Sign a fresh cookie in (each block clears the prior dev user first). */
 async function switchUser(context: BrowserContext, devUserId: string): Promise<void> {
@@ -92,6 +101,8 @@ async function createChallenge(
     title: string;
     boards: number;
     scoring?: "IMPs" | "Matchpoints" | "Total points";
+    /** Pick the bidding-only format in 01 · Basics. */
+    biddingOnly?: boolean;
     standingsAlways?: boolean;
     invite?: readonly { name: string; moderator?: boolean }[];
   }>,
@@ -99,6 +110,10 @@ async function createChallenge(
   await page.goto("/bridge/challenges/new");
   await page.getByLabel("Title").fill(opts.title);
 
+  // Format before scoring: a bidding-only challenge is not scored against a
+  // field, so the scoring chips are not on the page at all once it is picked.
+  if (opts.biddingOnly)
+    await page.getByRole("button", { name: "Bidding only", exact: true }).click();
   if (opts.scoring)
     await page.getByRole("button", { name: opts.scoring, exact: true }).click();
 
@@ -344,6 +359,67 @@ test.describe("challenges", () => {
     await expect(cardLink(page, "E2E imported board").first()).toContainText(
       "board 1 of 1",
     );
+  });
+
+  test("bidding-only: the wizard offers it, and it survives the round trip", async ({
+    page,
+    context,
+  }) => {
+    await switchUser(context, CREATOR);
+    await page.goto("/bridge/challenges/new");
+
+    // The default is the v1 board, and the scoring question belongs to it.
+    await expect(page.getByRole("button", { name: "Bid & play", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByRole("button", { name: "IMPs", exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "Bidding only", exact: true }).click();
+    // Scoring is a question about a field of played boards. There is none, so
+    // the control is GONE rather than sitting there inert.
+    await expect(page.getByRole("button", { name: "IMPs", exact: true })).toHaveCount(0);
+    await expect(page.getByText(/The board ends when the auction ends/)).toBeVisible();
+
+    // The Review step and the draft rail both say which mode it is in.
+    await expect(
+      page.getByText(/Bidding only — the board ends with the auction/),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Matched BEN's contract, board by board — no field scoring"),
+    ).toBeVisible();
+    await expect(page.getByText("BEN's own auction is the reference")).toBeVisible();
+
+    const id = await createChallenge(page, {
+      title: BIDDING_TITLE,
+      boards: 2,
+      biddingOnly: true,
+      invite: [{ name: INVITEE_NAME }],
+    });
+
+    // Round trip: the stored record reads back as bidding-only, and the card
+    // names the format rather than a scoring mode it does not use.
+    const card = cardLink(page, BIDDING_TITLE).first();
+    await expect(card).toContainText("2 boards");
+    await expect(card).toContainText("Bidding only");
+    await expect(card).not.toContainText("IMPs vs datum");
+
+    // The creator is always a moderator, so the results are open to them (A2).
+    await page.goto(`/bridge/challenges/${id}/results`);
+    await expect(page.getByText("2 boards · Bidding only · by you")).toBeVisible();
+    await expect(page.getByText("Contract vs BEN")).toBeVisible();
+    await expect(page.getByText("Nobody has finished every board yet.")).toBeVisible();
+    // Nothing prints a score where there is none.
+    await expect(page.getByText("IMPs vs datum")).toHaveCount(0);
+
+    // A bidding-only board still refuses to start without BEN — the format
+    // changes what a board asks for, never the no-fallback rule (spec §2).
+    await page.goto("/bridge/challenges");
+    await cardLink(page, BIDDING_TITLE).first().click();
+    await page.waitForURL(/\/bridge\/challenges\?error=/);
+    await expect(
+      page.getByText(/Challenges are played against BEN, and BEN isn't configured/),
+    ).toBeVisible();
   });
 
   test("phone viewport: the list and the results fit 390px", async ({ page, context }) => {

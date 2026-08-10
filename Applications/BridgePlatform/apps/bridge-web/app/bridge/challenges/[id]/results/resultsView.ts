@@ -16,15 +16,26 @@
 //  2. THE LEADER IS COMPUTED ON THE DISPLAYED FIGURE (A5). So every cell
 //     carries `value` = the number that was actually printed (matchpoints are
 //     rounded to the integer the cell shows), never the unrounded score.
+//
+// A BIDDING-ONLY challenge (owner, 2026-08-10) obeys both, but its figure is
+// not a score: the board ends with the auction, so a cell holds the CONTRACT
+// reached and the standings hold "matched BEN's contract on N of M boards".
+// Rule 1 still decides who is ranked (a complete card, every board); rule 2
+// still decides what is tinted (a match, and only a match). The two paths meet
+// in `assemble` and share every part of the surface that is not a figure.
 
-import { challengeScores } from "@bridge/challenges";
+import { biddingScores, challengeScores, isBiddingOnly } from "@bridge/challenges";
 import type {
+  BiddingBoardResult,
+  BiddingScores,
   Challenge,
   ChallengeBaseline,
   ChallengeBoard,
   ChallengeInvite,
   ChallengePlay,
   ChallengeScoring,
+  ContractVerdict,
+  ReachedContract,
 } from "@bridge/challenges";
 import type {
   BoardSquare,
@@ -118,6 +129,52 @@ export function shortCode(name: string): string {
   return (code || name.slice(0, 2)).toUpperCase();
 }
 
+// ── bidding-only formatting ─────────────────────────────────────────────────
+
+const STRAIN_GLYPH: Record<string, string> = {
+  S: "♠",
+  H: "♥",
+  D: "♦",
+  C: "♣",
+  N: "NT",
+};
+
+/**
+ * A contract in a 46px grid cell: "4♠S", "3NT×W", "Pass". Empty when there is
+ * no line at all — a blank cell, never a zero.
+ */
+export function contractCell(contract: ReachedContract | undefined): string {
+  if (contract === undefined) return "";
+  if (contract === null) return "Pass";
+  const dbl = contract.doubled === 1 ? "×" : contract.doubled === 2 ? "××" : "";
+  return `${contract.level}${STRAIN_GLYPH[contract.strain] ?? contract.strain}${dbl}${contract.declarer}`;
+}
+
+/** The same contract in prose: "4♠ by S", "Passed out", or an em-dash. */
+export function contractPhrase(contract: ReachedContract | undefined): string {
+  if (contract === undefined) return EMDASH;
+  if (contract === null) return "Passed out";
+  const dbl = contract.doubled === 1 ? " ×" : contract.doubled === 2 ? " ××" : "";
+  return `${contract.level}${STRAIN_GLYPH[contract.strain] ?? contract.strain}${dbl} by ${contract.declarer}`;
+}
+
+/**
+ * How a board reads against BEN's auction. NEVER "wrong": BEN's bidding system
+ * is not necessarily the convention a lesson teaches, so a different contract
+ * is reported as a difference and toned NEUTRAL, not negative (owner,
+ * 2026-08-10). Only a match is ever tinted.
+ */
+export function verdictLabel(verdict: ContractVerdict, sameDeclarer: boolean): string {
+  if (verdict === "unrated") return "BEN has not bid this board yet";
+  if (verdict === "differed") return "A different contract";
+  return sameDeclarer ? "Matched BEN" : "Matched BEN, from the other side";
+}
+
+/** Matched tints; differed and unrated stay quiet. There is no negative tone. */
+export function verdictTone(verdict: ContractVerdict): ChallengeTone {
+  return verdict === "matched" ? "pos" : "neutral";
+}
+
 const VUL_LABEL: Record<Vul, string> = {
   none: "None vul",
   ns: "N-S vul",
@@ -199,16 +256,171 @@ export interface ResultsViewInput {
   names: Readonly<Record<string, string>>;
 }
 
+
+/**
+ * The results surface for one challenge.
+ *
+ * TWO PATHS, ONE SHELL. A `full` challenge is scored against a field of
+ * completed humans (IMPs vs datum / matchpoints / total points); a
+ * `bidding-only` challenge has no field at all — its board ends with the
+ * auction, and the result is the contract reached beside the contract BEN
+ * reached on the same deal. Everything they share — the roster line, the
+ * header, the viewer's own progress, the marks — is computed once below; only
+ * the FIGURES differ, and each path builds its own.
+ */
 export function buildResultsView(input: ResultsViewInput): ResultsView {
-  const { challenge, invites, viewerId, viewerFinished, resultsUnlocked } = input;
-  const mode = challenge.scoring;
+  return isBiddingOnly(input.challenge)
+    ? buildBiddingResultsView(input)
+    : buildFieldResultsView(input);
+}
+
+// ── the parts both paths share ──────────────────────────────────────────────
+
+interface CommonParts {
+  boards: ChallengeBoard[];
+  total: number;
+  nameOf: (userId: string) => string;
+  marksFor: (userId: string) => LeaderboardMark[];
+  /** The viewer's own plays, by board number. */
+  myPlays: Map<number, ChallengePlay>;
+  doneCount: number;
+  nextBoardNo: number | null;
+}
+
+function commonParts(input: ResultsViewInput): CommonParts {
+  const { challenge, invites, viewerId } = input;
   const boards = [...input.boards].sort((a, b) => a.boardNo - b.boardNo);
-  const total = boards.length;
 
   const nameOf = (userId: string): string =>
     userId === viewerId ? "You" : (input.names[userId] ?? userId);
 
-  // ── scoring ───────────────────────────────────────────────────────────────
+  const editorId = challenge.editorBadge ? challenge.createdBy : null;
+  const moderators = new Set(invites.filter((i) => i.moderator).map((i) => i.userId));
+  moderators.add(challenge.createdBy); // the creator is always a moderator (A2)
+  const marksFor = (userId: string): LeaderboardMark[] => {
+    const marks: LeaderboardMark[] = [];
+    if (userId === editorId) marks.push("editor");
+    if (moderators.has(userId)) marks.push("moderator");
+    return marks;
+  };
+
+  const myPlays = new Map(
+    input.plays.filter((p) => p.userId === viewerId).map((p) => [p.boardNo, p]),
+  );
+
+  return {
+    boards,
+    total: boards.length,
+    nameOf,
+    marksFor,
+    myPlays,
+    doneCount: [...myPlays.values()].filter((p) => p.status === "completed").length,
+    nextBoardNo:
+      boards.find((b) => myPlays.get(b.boardNo)?.status !== "completed")?.boardNo ?? null,
+  };
+}
+
+/** Everything a path computes for itself: the figures and how they read. */
+interface ResultsFigures {
+  /** The unit chip over the standings. */
+  scoringUnit: string;
+  /** The standings column head. */
+  scoringLabel: string;
+  /** The word in the header subtitle. */
+  unitName: string;
+  leaderboard: LeaderboardRow[];
+  benRow: LeaderboardBenchRow | null;
+  scorecard: ScorecardView | null;
+  viewerRank: number | null;
+  /** The players with a complete card — the "finished" count on the roster line. */
+  finishedIds: Set<string>;
+  squares: BoardSquare[];
+  details: Record<number, BoardDetail>;
+}
+
+/**
+ * The shell: header, roster line, unlock note and progress, wrapped around
+ * whichever set of figures the challenge's format produced.
+ */
+function assemble(
+  input: ResultsViewInput,
+  common: CommonParts,
+  figures: ResultsFigures,
+): ResultsView {
+  const { challenge, invites, viewerId, viewerFinished, resultsUnlocked } = input;
+  const { total, doneCount } = common;
+
+  // ── the roster line ───────────────────────────────────────────────────────
+  // finished = the field. still playing = accepted participants without a
+  // complete card (the viewer included when they have not finished, said out
+  // loud). invited = invites still pending a response.
+  const roster = new Set(invites.filter((i) => i.status === "accepted").map((i) => i.userId));
+  roster.add(viewerId);
+  const stillPlaying = [...roster].filter((id) => !figures.finishedIds.has(id)).length;
+  const invited = invites.filter((i) => i.status === "pending").length;
+  const summaryLine =
+    `${figures.finishedIds.size} finished ${MIDDOT} ` +
+    `${stillPlaying} still playing${viewerFinished ? "" : " (including you)"} ${MIDDOT} ` +
+    `${invited} invited`;
+
+  const earlyNote =
+    resultsUnlocked && !viewerFinished
+      ? input.viewerIsModerator
+        ? "You are a moderator, so you see the standings before you finish. Your own row will be marked MOD once you are in it."
+        : `This challenge shows standings to everyone from the start. You are not ranked until you finish all ${total} boards.`
+      : null;
+
+  const boardsCaption = viewerFinished
+    ? `All ${total} boards played ${MIDDOT} tap one to review it.`
+    : resultsUnlocked
+      ? `${doneCount} of ${total} played ${MIDDOT} tap a played board to review it.`
+      : `${doneCount} of ${total} played ${MIDDOT} scores appear when you finish.`;
+
+  const creatorName =
+    challenge.createdBy === viewerId
+      ? "you"
+      : ((input.names[challenge.createdBy] ?? challenge.createdByName ?? challenge.createdBy).split(
+          /\s+/,
+        )[0] ?? challenge.createdBy);
+  const subtitle =
+    `${total} board${total === 1 ? "" : "s"} ${MIDDOT} ${figures.unitName} ${MIDDOT} ` +
+    `by ${creatorName}${challenge.editorBadge ? ` ${EDITOR}` : ""}`;
+
+  return {
+    challengeId: challenge.challengeId,
+    benKey: BEN_KEY,
+    title: challenge.title,
+    subtitle,
+    description: challenge.description ?? "",
+    resultsUnlocked,
+    viewerFinished,
+    viewerRank: figures.viewerRank,
+    scoringLabel: figures.scoringLabel,
+    scoringUnit: figures.scoringUnit,
+    summaryLine,
+    earlyNote,
+    leaderboard: figures.leaderboard,
+    benRow: figures.benRow,
+    scorecard: figures.scorecard,
+    boardsCaption,
+    squares: figures.squares,
+    details: figures.details,
+    progress: {
+      done: doneCount,
+      total,
+      pct: total ? Math.round((doneCount / total) * 100) : 0,
+    },
+  };
+}
+
+// ── path 1: a board scored against the field (the v1 challenge) ─────────────
+
+function buildFieldResultsView(input: ResultsViewInput): ResultsView {
+  const { challenge, viewerId, resultsUnlocked } = input;
+  const mode = challenge.scoring;
+  const common = commonParts(input);
+  const { boards, nameOf, marksFor, myPlays, nextBoardNo } = common;
+
   // Only completed plays carrying a raw score are in a field; an in-progress
   // board contributes nothing to anyone's datum.
   const completed = input.plays.filter(
@@ -245,24 +457,15 @@ export function buildResultsView(input: ResultsViewInput): ResultsView {
   // ── standings ─────────────────────────────────────────────────────────────
   // Final ranks only: `standings` already holds just the players with a scored
   // result on every board. Ties share a rank.
-  const editorId = challenge.editorBadge ? challenge.createdBy : null;
-  const moderators = new Set(invites.filter((i) => i.moderator).map((i) => i.userId));
-  moderators.add(challenge.createdBy); // the creator is always a moderator (A2)
-
-  const leaderboard: LeaderboardRow[] = scores.standings.map((s) => {
-    const marks: LeaderboardMark[] = [];
-    if (s.userId === editorId) marks.push("editor");
-    if (moderators.has(s.userId)) marks.push("moderator");
-    return {
-      rank: s.rank,
-      name: nameOf(s.userId),
-      total: formatTotal(mode, s.total),
-      value: s.total,
-      tone: toneFor(mode, s.total),
-      marks,
-      isYou: s.userId === viewerId,
-    };
-  });
+  const leaderboard: LeaderboardRow[] = scores.standings.map((s) => ({
+    rank: s.rank,
+    name: nameOf(s.userId),
+    total: formatTotal(mode, s.total),
+    value: s.total,
+    tone: toneFor(mode, s.total),
+    marks: marksFor(s.userId),
+    isYou: s.userId === viewerId,
+  }));
 
   // BEN is measured AGAINST the field, so with no field there is nothing to
   // benchmark: an empty leaderboard shows no benchmark footer either.
@@ -270,31 +473,6 @@ export function buildResultsView(input: ResultsViewInput): ResultsView {
     scores.benTotal === null || scores.standings.length === 0
       ? null
       : { total: formatTotal(mode, scores.benTotal) };
-
-  const viewerRank = scores.standings.find((s) => s.userId === viewerId)?.rank ?? null;
-
-  // ── the summary line ──────────────────────────────────────────────────────
-  // finished = the field. still playing = accepted participants without a
-  // complete card (the viewer included when they have not finished, said out
-  // loud). invited = invites still pending a response.
-  const finishedIds = new Set(scores.standings.map((s) => s.userId));
-  const roster = new Set(
-    invites.filter((i) => i.status === "accepted").map((i) => i.userId),
-  );
-  roster.add(viewerId);
-  const stillPlaying = [...roster].filter((id) => !finishedIds.has(id)).length;
-  const invited = invites.filter((i) => i.status === "pending").length;
-  const summaryLine =
-    `${finishedIds.size} finished ${MIDDOT} ` +
-    `${stillPlaying} still playing${viewerFinished ? "" : " (including you)"} ${MIDDOT} ` +
-    `${invited} invited`;
-
-  const earlyNote =
-    resultsUnlocked && !viewerFinished
-      ? input.viewerIsModerator
-        ? "You are a moderator, so you see the standings before you finish. Your own row will be marked MOD once you are in it."
-        : `This challenge shows standings to everyone from the start. You are not ranked until you finish all ${total} boards.`
-      : null;
 
   // ── the board-by-board grid ───────────────────────────────────────────────
   // Columns are the field in rank order plus BEN. A player who has not
@@ -343,13 +521,6 @@ export function buildResultsView(input: ResultsViewInput): ResultsView {
     : null;
 
   // ── the viewer's own boards ───────────────────────────────────────────────
-  const myPlays = new Map(
-    input.plays.filter((p) => p.userId === viewerId).map((p) => [p.boardNo, p]),
-  );
-  const doneCount = [...myPlays.values()].filter((p) => p.status === "completed").length;
-  const nextBoardNo =
-    boards.find((b) => myPlays.get(b.boardNo)?.status !== "completed")?.boardNo ?? null;
-
   const squares: BoardSquare[] = boards.map((b) => {
     const play = myPlays.get(b.boardNo);
     const done = play?.status === "completed";
@@ -396,46 +567,203 @@ export function buildResultsView(input: ResultsViewInput): ResultsView {
     }
   }
 
-  const boardsCaption = viewerFinished
-    ? `All ${total} boards played ${MIDDOT} tap one to review it.`
-    : resultsUnlocked
-      ? `${doneCount} of ${total} played ${MIDDOT} tap a played board to review it.`
-      : `${doneCount} of ${total} played ${MIDDOT} scores appear when you finish.`;
-
-  // ── header ────────────────────────────────────────────────────────────────
-  const creatorName =
-    challenge.createdBy === viewerId
-      ? "you"
-      : ((input.names[challenge.createdBy] ?? challenge.createdByName ?? challenge.createdBy).split(
-          /\s+/,
-        )[0] ?? challenge.createdBy);
-  const subtitle =
-    `${total} board${total === 1 ? "" : "s"} ${MIDDOT} ${scoringName(mode)} ${MIDDOT} ` +
-    `by ${creatorName}${challenge.editorBadge ? ` ${EDITOR}` : ""}`;
-
-  return {
-    challengeId: challenge.challengeId,
-    benKey: BEN_KEY,
-    title: challenge.title,
-    subtitle,
-    description: challenge.description ?? "",
-    resultsUnlocked,
-    viewerFinished,
-    viewerRank,
-    scoringLabel: scoringShort(mode),
+  return assemble(input, common, {
     scoringUnit: scoringUnit(mode),
-    summaryLine,
-    earlyNote,
+    scoringLabel: scoringShort(mode),
+    unitName: scoringName(mode),
     leaderboard,
     benRow,
     scorecard,
-    boardsCaption,
+    viewerRank: scores.standings.find((s) => s.userId === viewerId)?.rank ?? null,
+    finishedIds: new Set(scores.standings.map((s) => s.userId)),
     squares,
     details,
-    progress: {
-      done: doneCount,
-      total,
-      pct: total ? Math.round((doneCount / total) * 100) : 0,
-    },
+  });
+}
+
+// ── path 2: a board that ends with the auction ──────────────────────────────
+
+/** The chip, the column head and the header word for a bidding-only challenge. */
+export const BIDDING_UNIT = "Contract vs BEN";
+export const BIDDING_LABEL = "vs BEN";
+export const BIDDING_NAME = "Bidding only";
+
+function buildBiddingResultsView(input: ResultsViewInput): ResultsView {
+  const { viewerId, resultsUnlocked } = input;
+  const common = commonParts(input);
+  const { boards, nameOf, marksFor, myPlays, nextBoardNo } = common;
+
+  // BEN's own auction on each deal, from the full-BEN reference line. A
+  // bidding-only baseline stops at the end of the auction, so it carries a
+  // contract but no raw score — `undefined` means "no reference yet" and
+  // `null` means "BEN passed it out", which is a result, not a gap.
+  const benContractByBoard = new Map<number, ReachedContract>();
+  for (const b of input.baselines) {
+    if (b.kind !== "full_ben" || b.status !== "ready" || !b.snapshot) continue;
+    if (b.snapshot.contract === undefined) continue;
+    benContractByBoard.set(b.boardNo, b.snapshot.contract);
+  }
+
+  // A completed attempt is one that carries a frozen line. There is no raw
+  // score to filter on here — that is precisely what this format does not have.
+  const completed = input.plays.filter((p) => p.status === "completed" && p.snapshot);
+  // Every bidding-only freeze writes `contract` (null when the board was passed
+  // out), because that IS the result it records — so the fallback here is only
+  // ever exercised by a record that could not exist in this format.
+  const contractOf = (play: ChallengePlay): ReachedContract => play.snapshot?.contract ?? null;
+
+  const scores: BiddingScores = biddingScores({
+    boards: boards.map((b) => ({
+      boardNo: b.boardNo,
+      contracts: completed
+        .filter((p) => p.boardNo === b.boardNo)
+        .map((p) => ({ userId: p.userId, contract: contractOf(p) })),
+      // `has` first: a stored `null` is a real answer and must not be read as
+      // an absent one.
+      ...(benContractByBoard.has(b.boardNo)
+        ? { benContract: benContractByBoard.get(b.boardNo) as ReachedContract }
+        : {}),
+    })),
+  });
+
+  /** boardNo -> userId -> how that auction stood beside BEN's. */
+  const resultByBoard = new Map<number, Map<string, BiddingBoardResult>>();
+  for (const board of scores.boards) {
+    resultByBoard.set(board.boardNo, new Map(board.results.map((r) => [r.userId, r])));
+  }
+  const talliesByUser = new Map(scores.totals.map((t) => [t.userId, t]));
+
+  /** "3/5" — matched on 3 of the 5 boards BEN has bid. Never a bare number. */
+  const tallyText = (userId: string): string => {
+    const t = talliesByUser.get(userId);
+    if (!t || t.rated === 0) return EMDASH;
+    return `${t.matched}/${t.rated}`;
   };
+  /** Tinted only when every rated board matched. There is no negative tone. */
+  const tallyTone = (userId: string): ChallengeTone => {
+    const t = talliesByUser.get(userId);
+    return t && t.rated > 0 && t.matched === t.rated ? "pos" : "neutral";
+  };
+
+  const leaderboard: LeaderboardRow[] = scores.standings.map((s) => ({
+    rank: s.rank,
+    name: nameOf(s.userId),
+    total: tallyText(s.userId),
+    value: s.total,
+    tone: tallyTone(s.userId),
+    marks: marksFor(s.userId),
+    isYou: s.userId === viewerId,
+  }));
+
+  // NO BENCHMARK FOOTER. Every figure on this surface is already measured
+  // against BEN, so a BEN row would read "BEN matched itself on every board".
+  // BEN is the yardstick here, not a rival.
+  const benRow: LeaderboardBenchRow | null = null;
+
+  const fieldIds = scores.standings.map((s) => s.userId);
+
+  /**
+   * One grid cell. `value` is set ONLY on a match, so `leaderFlags` tints the
+   * players who found BEN's contract and tints nobody when nobody did — a
+   * contract's text ("4♠S", "Pass") parses to NaN, which is exactly the "no
+   * readable figure" the leader math already handles.
+   */
+  const cellFor = (result: BiddingBoardResult | undefined): ScorecardCell => {
+    if (!result) return { text: "" };
+    return {
+      text: contractCell(result.contract),
+      ...(result.verdict === "matched" ? { value: 1 } : {}),
+      tone: verdictTone(result.verdict),
+    };
+  };
+
+  const scorecard: ScorecardView | null = fieldIds.length
+    ? {
+        columns: [
+          ...fieldIds.map<ScorecardColumn>((id) => ({
+            key: id,
+            label: id === viewerId ? "You" : shortCode(nameOf(id)),
+            name: nameOf(id),
+            isYou: id === viewerId,
+          })),
+          { key: BEN_KEY, label: "BEN", name: "BEN", isBenchmark: true },
+        ],
+        rows: boards.map<ScorecardRow>((b) => {
+          const byUser = resultByBoard.get(b.boardNo);
+          const ben = benContractByBoard.has(b.boardNo)
+            ? (benContractByBoard.get(b.boardNo) as ReachedContract)
+            : undefined;
+          return {
+            boardNo: b.boardNo,
+            cells: [
+              ...fieldIds.map((id) => cellFor(byUser?.get(id))),
+              // BEN's own cell carries no value: it is the line every other
+              // cell is measured against, so it is never itself a leader.
+              { text: contractCell(ben) },
+            ],
+          };
+        }),
+        totals: [
+          ...fieldIds.map<ScorecardCell>((id) => ({
+            text: tallyText(id),
+            tone: tallyTone(id),
+          })),
+          { text: "" },
+        ],
+      }
+    : null;
+
+  const squares: BoardSquare[] = boards.map((b) => {
+    const play = myPlays.get(b.boardNo);
+    const done = play?.status === "completed";
+    const mine = resultByBoard.get(b.boardNo)?.get(viewerId);
+    const show = done && resultsUnlocked && mine !== undefined;
+    return {
+      boardNo: b.boardNo,
+      state: done ? "done" : b.boardNo === nextBoardNo ? "current" : "todo",
+      score: show ? contractCell(mine.contract) : undefined,
+      ...(show && mine.verdict === "matched" ? { value: 1 } : {}),
+      tone: show ? verdictTone(mine.verdict) : undefined,
+      disabled: !(done && resultsUnlocked),
+    };
+  });
+
+  const details: Record<number, BoardDetail> = {};
+  if (resultsUnlocked) {
+    for (const b of boards) {
+      const play = myPlays.get(b.boardNo);
+      if (!play || play.status !== "completed") continue;
+      const mine = resultByBoard.get(b.boardNo)?.get(viewerId);
+      const benKnown = benContractByBoard.has(b.boardNo);
+      const ben = benKnown ? (benContractByBoard.get(b.boardNo) as ReachedContract) : undefined;
+      const verdict: ContractVerdict = mine?.verdict ?? "unrated";
+      details[b.boardNo] = {
+        boardNo: b.boardNo,
+        // The learner's contract, printed the way the table printed it.
+        contract: play.snapshot?.contractLabel ?? contractPhrase(contractOf(play)),
+        sub: `Dealer ${b.dealer} ${MIDDOT} ${VUL_LABEL[b.vul]} ${MIDDOT} you sat ${SEAT_LABEL[b.humanSeat]}`,
+        // THE COMPARISON, in the slot a raw score occupies on a scored board:
+        // your contract, and next to it BEN's on the same deal.
+        raw: benKnown ? `BEN: ${contractPhrase(ben)}` : "BEN has not bid it yet",
+        rawTone: "neutral",
+        unit: BIDDING_UNIT,
+        score: verdictLabel(verdict, mine?.sameDeclarer ?? false),
+        scoreTone: verdictTone(verdict),
+        benReady: benKnown,
+      };
+    }
+  }
+
+  return assemble(input, common, {
+    scoringUnit: BIDDING_UNIT,
+    scoringLabel: BIDDING_LABEL,
+    unitName: BIDDING_NAME,
+    leaderboard,
+    benRow,
+    scorecard,
+    viewerRank: scores.standings.find((s) => s.userId === viewerId)?.rank ?? null,
+    finishedIds: new Set(scores.standings.map((s) => s.userId)),
+    squares,
+    details,
+  });
 }

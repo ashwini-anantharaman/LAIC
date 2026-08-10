@@ -214,6 +214,13 @@ export interface PlayTableProps {
   resultLine?: string;
   resultScore?: string;
   /**
+   * Replaces the trick tally under the result line. A board that ended before
+   * anyone played a card — a bidding-only challenge board, where the auction
+   * IS the board — has no tricks to count, and "NS 0 · EW 0" would read as a
+   * board played badly rather than a board never played.
+   */
+  resultDetail?: string;
+  /**
    * The one action a FINISHED board offers, drawn on the result card in the
    * centre — a challenge's "Next board", say. It lives on the canvas rather
    * than in a band the host stacks around the table: every control belongs
@@ -281,6 +288,7 @@ export function PlayTable({
   completedNote,
   resultLine = "",
   resultScore = "",
+  resultDetail,
   onCall,
   onPlay,
   onMenu,
@@ -648,7 +656,7 @@ export function PlayTable({
     <ResultCard
       line={resultLine}
       score={resultScore}
-      detail={`NS ${state.trickCount.NS} · EW ${state.trickCount.EW}`}
+      detail={resultDetail ?? `NS ${state.trickCount.NS} · EW ${state.trickCount.EW}`}
       action={completedAction}
       actionNote={completedNote}
       accent={tok.accent}

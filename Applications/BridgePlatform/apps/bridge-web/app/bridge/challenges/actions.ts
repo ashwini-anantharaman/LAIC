@@ -9,6 +9,7 @@
 
 import type { AuditAction } from "@bridge/audit";
 import {
+  challengeFormat,
   standardVul,
   type Challenge,
   type ChallengeBoard,
@@ -77,10 +78,16 @@ export async function createChallengeAction(draft: ChallengeDraft): Promise<void
   const challengeId = newId("chl");
   const now = new Date().toISOString();
 
+  // Written ONLY when it is not the default, so a bid-and-play challenge's
+  // record is byte-identical to one created before the option existed — which
+  // is what makes this additive with no migration owed.
+  const format = challengeFormat(draft);
+
   const challenge: Challenge = {
     challengeId,
     title: draft.title.trim(),
     ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
+    ...(format === "full" ? {} : { format }),
     scoring: draft.scoring,
     createdBy: context.nexusUserId,
     ...(displayNameOf(context) ? { createdByName: displayNameOf(context) } : {}),
@@ -145,6 +152,7 @@ export async function createChallengeAction(draft: ChallengeDraft): Promise<void
   await auditChallenge(context, "challenge.created", challengeId, {
     title: challenge.title,
     boards: draft.boards.length,
+    format,
     scoring: draft.scoring,
     standingsVisibility: draft.standingsVisibility,
     invited,

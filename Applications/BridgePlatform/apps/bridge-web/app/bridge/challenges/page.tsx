@@ -1,8 +1,8 @@
-import type { Challenge, ChallengeInvite } from "@bridge/challenges";
+import { isBiddingOnly, type Challenge, type ChallengeInvite } from "@bridge/challenges";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { respondInviteAction } from "./actions";
-import { SCORING_OPTIONS, STANDINGS_OPTIONS } from "./draft";
+import { FORMAT_OPTIONS, SCORING_OPTIONS, STANDINGS_OPTIONS } from "./draft";
 import { canUse, requireFeature } from "@/lib/access";
 import {
   challengeViewerAccess,
@@ -14,6 +14,15 @@ import { getBridgeContext } from "@/lib/nexus";
 
 const scoringLabel = (key: string) =>
   SCORING_OPTIONS.find((s) => s.key === key)?.full ?? key;
+/**
+ * What the card names as the challenge's unit. A bidding-only challenge is not
+ * scored against a field, so naming its (unused) scoring mode would be a lie —
+ * it names the format instead.
+ */
+const unitLabel = (challenge: Challenge) =>
+  isBiddingOnly(challenge)
+    ? (FORMAT_OPTIONS.find((f) => f.key === "bidding-only")?.label ?? "Bidding only")
+    : scoringLabel(challenge.scoring);
 const standingsLabel = (key: string) =>
   STANDINGS_OPTIONS.find((s) => s.key === key)?.label ?? key;
 
@@ -199,7 +208,7 @@ function CardFacts({ row }: Readonly<{ row: Row }>) {
       <p className="mt-1.5 text-xs text-neutral-500">
         {challenge.createdByName ?? challenge.createdBy} ·{" "}
         {access.totalBoards || "?"} board{access.totalBoards === 1 ? "" : "s"} ·{" "}
-        {scoringLabel(challenge.scoring)}
+        {unitLabel(challenge)}
         {challenge.standingsVisibility === "always" &&
           ` · standings ${standingsLabel("always").toLowerCase()}`}
       </p>

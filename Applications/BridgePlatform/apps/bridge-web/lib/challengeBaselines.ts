@@ -7,6 +7,8 @@
 //   full_ben       BEN bids AND plays the whole board in all four seats. One
 //                  per (challenge, board). Kicked off in the background at
 //                  create; repaired lazily the first time anything needs it.
+//                  In a BIDDING-ONLY challenge it bids and stops — that is the
+//                  whole reference line, because that is the whole board.
 //   your_contract  BEN adopts ONE user's auction verbatim, then plays the
 //                  cards out — "what BEN would have made of your contract".
 //   from_point     the user's own line frozen to `ply`, then BEN plays their
@@ -19,7 +21,10 @@
 //   · FAIRNESS — a baseline meets exactly the opposition every participant
 //     meets on that line, because they read the same cache.
 //   · RESUMABILITY — BEN takes ~1.5 s per call to bid but ~21 s per card, so a
-//     52-card board CANNOT finish inside one serverless invocation. Each
+//     52-card board CANNOT finish inside one serverless invocation. (A
+//     bidding-only board is the opposite: ~a dozen bids, ~20 s, one
+//     invocation, no resume needed — the mode is read off the challenge inside
+//     `ensureBaseline`.) Each
 //     invocation therefore runs to a wall-clock budget and stops; the record
 //     stays `pending`, and the next invocation replays the settled part from
 //     the cache in milliseconds and continues where it left off. Nothing is
@@ -34,6 +39,7 @@
 
 import {
   baselineId,
+  isBiddingOnly,
   type BaselineKey,
   type ChallengeBaseline,
   type ChallengeBoard,
@@ -95,6 +101,12 @@ export interface BaselineRunOptions extends ChallengeBenDeps {
   budgetMs?: number;
   /** Recompute even if a `ready` baseline exists (explicit repair). */
   force?: boolean;
+  /**
+   * Stop the playout when the auction closes. NOT normally passed: it is read
+   * off the challenge's own format inside `ensureBaseline`, so no caller can
+   * forget it. Present for tests that have no challenge record to read.
+   */
+  biddingOnly?: boolean;
 }
 
 export interface BaselineResult {
@@ -220,6 +232,8 @@ async function playOut(
   prefix: { auction: { seat: Seat; call: Call }[]; play: { seat: Seat; card: Card }[] },
   opts: BaselineRunOptions | undefined,
   deadline: number,
+  /** Bidding only: the reference line ends where the auction does. */
+  biddingOnly: boolean,
 ): Promise<PlayOutResult> {
   let state = applyPrefix(
     initialState(`ch_${challengeId}_b${board.boardNo}`, board.dealer, board.vul, board.pack),
@@ -231,6 +245,13 @@ async function playOut(
   let seq = prefix.auction.length + prefix.play.length;
 
   while (state.phase !== "complete") {
+    // THE BIG SAVING. Card play is ~97% of a baseline's wall clock (/bid ~1.5 s
+    // against /lead ~42 s and /play ~21 s, times 52 cards), so a bidding-only
+    // reference line is roughly a dozen /bid calls and finishes inside ONE
+    // invocation instead of five. Everything downstream is unchanged: the
+    // snapshot freezes with a contract and no tricks, which is precisely the
+    // result the format is scored on.
+    if (biddingOnly && state.phase !== "auction") break;
     if (Date.now() >= deadline) return { state, actions, benCalls, timedOut: true };
     if (actions >= MAX_ACTIONS)
       throw new Error(`baseline playout exceeded ${MAX_ACTIONS} actions — refusing to loop`);
@@ -266,6 +287,8 @@ async function playOut(
  * baseline and a human line through one renderer.
  */
 function freeze(name: string, board: ChallengeBoard, state: GameState): ChallengeSnapshot {
+  // Null on a bidding-only line, which stops before a card is played — there
+  // is no result to label, and that absence is the honest answer.
   const score = scoreBoard(state);
   return {
     name,
@@ -276,6 +299,9 @@ function freeze(name: string, board: ChallengeBoard, state: GameState): Challeng
     play: state.tricks.flatMap((t) => t.plays.map((p) => ({ seat: p.seat, card: p.card }))),
     contractLabel: state.contract ? contractLabel(state.contract) : undefined,
     resultLabel: score ? resultLabel(score) : undefined,
+    // What a bidding-only challenge is scored on: BEN's contract on this deal,
+    // structured so it compares with a learner's without parsing a label.
+    contract: state.contract,
   };
 }
 
@@ -351,6 +377,16 @@ async function ensureBaseline(
   const createdAt = existing?.createdAt ?? nowIso(opts);
   const deadline = Date.now() + baselineBudget(opts);
 
+  // THE MODE IS READ FROM THE CHALLENGE, not from the caller: every kind of
+  // baseline in a bidding-only challenge ends where the auction ends, and a
+  // route or a compare action that forgot to say so would silently spend
+  // twenty minutes of BEN on cards nobody will ever see. An unreadable
+  // challenge falls back to a full playout — the answer that is never wrong,
+  // only slow.
+  const biddingOnly =
+    opts?.biddingOnly ??
+    isBiddingOnly((await store.getChallenge(key.challengeId).catch(() => null)) ?? {});
+
   // Say out loud that BEN is working on it — readers see "pending", not a hole.
   // (A concurrent worker on the same board is harmless: both replay the same
   // cached decisions and converge.)
@@ -364,7 +400,7 @@ async function ensureBaseline(
 
   let out: PlayOutResult;
   try {
-    out = await playOut(key.challengeId, board, prefix, opts, deadline);
+    out = await playOut(key.challengeId, board, prefix, opts, deadline, biddingOnly);
   } catch (e) {
     if (!isBenUnavailable(e)) throw e;
     console.error(`[challenge-baseline] ${baselineId(key)} failed:`, e);

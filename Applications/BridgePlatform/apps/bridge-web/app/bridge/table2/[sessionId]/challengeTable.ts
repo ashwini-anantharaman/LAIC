@@ -8,9 +8,11 @@
 // a challenge read must never take the table down.
 //
 // It is also where a challenge board's COMPLETION is noticed. The freeze runs
-// here, on the render that first sees `phase === "complete"` — the same lazy
-// reconcile as assignments — and the frozen play IS the sequential pointer, so
+// here, on the render that first sees the board run out — the last trick
+// resolved, or, in a BIDDING-ONLY challenge, the auction closed — the same lazy
+// reconcile as assignments; and the frozen play IS the sequential pointer, so
 // the next entry lands on the next board with no separate cursor to keep true.
+// `challengeBoardIsOver` (play/entry.ts) is the one place that rule is written.
 //
 // The standings the overlay shows are built by the RESULTS view model, not by a
 // second adapter: a viewer who opens the overlay mid-board and then walks to
@@ -19,7 +21,7 @@
 //
 // SERVER-ONLY.
 
-import type { ChallengeBoard, ChallengePlay } from "@bridge/challenges";
+import { isBiddingOnly, type ChallengeBoard, type ChallengePlay } from "@bridge/challenges";
 import type { NexusBridgeContext } from "@bridge/nexus-client";
 import type { SessionView } from "@bridge/sessions";
 import type {
@@ -29,12 +31,16 @@ import type {
   OnwardStep,
 } from "@bridge/table-ui";
 import { onwardFromBoard } from "@bridge/table-ui";
-import { freezeChallengePlay } from "@/app/bridge/challenges/[id]/play/entry";
+import {
+  challengeBoardIsOver,
+  freezeChallengePlay,
+} from "@/app/bridge/challenges/[id]/play/entry";
 import { buildResultsView } from "@/app/bridge/challenges/[id]/results/resultsView";
 import { canUse } from "@/lib/access";
 import {
   challengeStore,
   challengeViewerAccess,
+  getChallenge,
   getChallengeBoard,
   listChallengeBaselines,
   listChallengeBoards,
@@ -49,6 +55,13 @@ export interface ChallengeTableContext {
   boardNo: number;
   /** Carries `controlOverrides` — the exception layer over the catalogue. */
   board: ChallengeBoard;
+  /**
+   * The board ends with the auction — no card is legal, no robot steps, and
+   * the felt shows its result the moment the last pass lands. True from the
+   * challenge's format alone, NOT from the freeze: if the freeze failed the
+   * table must still refuse to play on.
+   */
+  biddingOnly: boolean;
   /** The strip above the top toolbar; the host binds `onResults`. */
   strip: Omit<ChallengeStripProps, "onResults">;
   /** Fed straight to the overlay's <Leaderboard>. Empty while results are locked. */
@@ -98,15 +111,23 @@ export async function challengeTableContext(
   }
   if (!play) return null;
 
-  // COMPLETION: the last trick has resolved, so freeze the snapshot + rawScore
-  // into the play record. This also advances the pointer — `nextBoardNo` is the
-  // first board without a completed play.
-  if (play.status === "in_progress" && view.state.phase === "complete") {
+  const challengeId = play.challengeId;
+  const boardNo = play.boardNo;
+
+  // The format first, because it decides when this board is OVER. Reading the
+  // challenge here is safe ahead of the freeze — the freeze never touches the
+  // challenge record, and `getChallenge` is the same request-cached reader
+  // `challengeViewerAccess` will use below.
+  const biddingOnly = isBiddingOnly((await getChallenge(challengeId)) ?? {});
+
+  // COMPLETION: the board has run out — the last trick resolved, or (bidding
+  // only) the auction closed — so freeze the snapshot into the play record.
+  // This also advances the pointer: `nextBoardNo` is the first board without a
+  // completed play.
+  if (play.status === "in_progress" && challengeBoardIsOver(view.state.phase, biddingOnly)) {
     play = await freezeChallengePlay(play);
   }
 
-  const challengeId = play.challengeId;
-  const boardNo = play.boardNo;
   const [access, board] = await Promise.all([
     challengeViewerAccess(challengeId, userId),
     getChallengeBoard(challengeId, boardNo),
@@ -139,6 +160,7 @@ export async function challengeTableContext(
       challengeId,
       boardNo,
       board,
+      biddingOnly,
       strip,
       subtitle: challenge.title,
       standings: { rows: [], scoringLabel: "" },
@@ -176,6 +198,7 @@ export async function challengeTableContext(
     challengeId,
     boardNo,
     board,
+    biddingOnly,
     strip,
     subtitle: results.subtitle,
     standings: {

@@ -19,6 +19,7 @@
 
 import {
   boardParticipants,
+  isBiddingOnly,
   type Challenge,
   type ChallengeBoard,
   type ChallengePlay,
@@ -31,7 +32,12 @@ import type { NexusBridgeContext } from "@bridge/nexus-client";
 import { audit } from "@/lib/audit";
 import { BEN_SEAT_LABEL, benAvailable } from "@/lib/benSeat";
 import { warmBen } from "@/lib/challengeBen";
-import { challengeStore, challengeViewerAccess, getChallengeBoard } from "@/lib/challenges";
+import {
+  challengeStore,
+  challengeViewerAccess,
+  getChallenge,
+  getChallengeBoard,
+} from "@/lib/challenges";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assertAiAllowed } from "@/lib/org";
@@ -40,6 +46,25 @@ import { sessionService } from "@/lib/sessions";
 const SEATS: readonly Seat[] = ["N", "E", "S", "W"];
 
 // ── freezing a finished board ───────────────────────────────────────────────
+
+/**
+ * WHEN AN ATTEMPT IS OVER, in one place.
+ *
+ * A full board is over when the last trick has resolved. A BIDDING-ONLY board
+ * is over the moment the auction closes (owner, 2026-08-10): the engine's
+ * `play` phase belongs to nobody there — no participant and no robot will ever
+ * enter it — so `auction → done` is the whole life of the board. A passed-out
+ * board reaches `complete` straight from the auction and satisfies both.
+ *
+ * Exported because the table has to ask the same question a render earlier, to
+ * decide whether the felt should still be inviting a card.
+ */
+export function challengeBoardIsOver(
+  phase: "auction" | "play" | "complete",
+  biddingOnly: boolean,
+): boolean {
+  return biddingOnly ? phase !== "auction" : phase === "complete";
+}
 
 /**
  * If this attempt's session has finished, freeze the play: a render-ready
@@ -61,19 +86,32 @@ export async function freezeChallengePlay(play: ChallengePlay): Promise<Challeng
     return play;
   }
   const { record, state } = view;
-  if (state.phase !== "complete") return play;
+
+  // The format decides when this attempt ends, so it is read before anything
+  // else. An unreadable challenge falls back to the full-board rule — the
+  // conservative answer, which never ends a board early.
+  const challenge = await getChallenge(play.challengeId);
+  const biddingOnly = challenge ? isBiddingOnly(challenge) : false;
+  if (!challengeBoardIsOver(state.phase, biddingOnly)) return play;
 
   const { resultLabel, scoreBoard, seededDeal } = await import("@bridge/engine");
-  const { callLabel } = await import("@bridge/events");
+  const { contractLabel } = await import("@bridge/events");
 
   const board = await getChallengeBoard(play.challengeId, play.boardNo);
+  // Null on a bidding-only board that stopped at the end of the auction —
+  // there are no tricks to score, and that absence is the point.
   const score = scoreBoard(state);
   // scoreBoard reports from NS's side; every participant plays the board's
   // humanSeat, so flip it for an E/W seat and the figure always reads "good for
   // the participant". A passed-out board is a flat 0 for the whole field.
   const humanSeat = board?.humanSeat ?? "S";
-  const nsScore = score?.nsScore ?? 0;
-  const rawScore = humanSeat === "N" || humanSeat === "S" ? nsScore : -nsScore;
+  // NO SCORE IS NOT A SCORE OF ZERO. A bidding-only board leaves `rawScore`
+  // absent rather than writing a 0 that would join a field as a flat board.
+  const rawScore = score
+    ? humanSeat === "N" || humanSeat === "S"
+      ? score.nsScore
+      : -score.nsScore
+    : undefined;
 
   const snapshot: ChallengeSnapshot = {
     name: record.board.name,
@@ -82,17 +120,21 @@ export async function freezeChallengePlay(play: ChallengePlay): Promise<Challeng
     hands: record.board.hands ?? seededDeal(record.board.seed),
     auction: state.auction.map((x) => ({ seat: x.seat, call: x.call })),
     play: state.tricks.flatMap((t) => t.plays.map((p) => ({ seat: p.seat, card: p.card }))),
-    contractLabel: state.contract
-      ? `${callLabel(`${state.contract.level}${state.contract.strain}`)} by ${state.contract.declarer}`
-      : undefined,
+    // One formatter, shared with the baselines' freeze, so a learner's contract
+    // and BEN's are printed the same way when they are set side by side — and
+    // so a doubled contract stops losing its X on this path.
+    contractLabel: state.contract ? contractLabel(state.contract) : undefined,
     resultLabel: score ? resultLabel(score) : undefined,
+    // The structured contract is what a bidding-only board is scored on; null
+    // says "passed out", which is a result, not a gap.
+    contract: state.contract,
   };
 
   const completed: ChallengePlay = {
     ...play,
     status: "completed",
     snapshot,
-    rawScore,
+    ...(rawScore === undefined ? {} : { rawScore }),
     completedAt: record.updatedAt ?? new Date().toISOString(),
   };
   await challengeStore().putPlay(completed);

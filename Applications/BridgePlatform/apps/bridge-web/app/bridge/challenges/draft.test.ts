@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { seededDeal } from "@bridge/engine";
-import { standardDealer, standardVul } from "@bridge/challenges";
+import { challengeFormat, isBiddingOnly, standardDealer, standardVul } from "@bridge/challenges";
 import type { Card, Seat } from "@bridge/events";
 import { rankLabel } from "@bridge/events";
 import { SUIT_ORDER } from "../../../lib/dealText";
@@ -8,6 +8,7 @@ import {
   CHALLENGE_CONTROLS,
   controlOverridesOf,
   defaultControlStates,
+  FORMAT_OPTIONS,
   packFromDraft,
   validateDraft,
   type ChallengeDraft,
@@ -148,5 +149,40 @@ describe("a board's own vulnerability", () => {
     // A client is never the authority: a hand-rolled payload gets checked.
     (d.boards[0] as { vul?: unknown }).vul = "everyone";
     expect(validateDraft(d)).toContain("Board 1 has no vulnerability.");
+  });
+});
+
+describe("the challenge FORMAT (bid & play vs bidding only)", () => {
+  it("is optional, and absent means the full board — nothing stored changes", () => {
+    const d = draft();
+    expect(d.format).toBeUndefined();
+    expect(validateDraft(d)).toEqual([]);
+    expect(challengeFormat(d)).toBe("full");
+  });
+
+  it("accepts either option explicitly", () => {
+    expect(validateDraft(draft({ format: "full" }))).toEqual([]);
+    expect(validateDraft(draft({ format: "bidding-only" }))).toEqual([]);
+    expect(challengeFormat({ format: "bidding-only" })).toBe("bidding-only");
+    expect(isBiddingOnly({ format: "bidding-only" })).toBe(true);
+    expect(isBiddingOnly({})).toBe(false);
+  });
+
+  it("rejects anything else — a client is never the authority", () => {
+    const d = draft();
+    (d as { format?: unknown }).format = "declarer-play-only";
+    expect(validateDraft(d)).toContain(
+      "Pick whether the board is bid and played, or bidding only.",
+    );
+  });
+
+  it("still requires a legal scoring mode, which bidding-only carries unused", () => {
+    const d = draft({ format: "bidding-only" });
+    (d as { scoring?: unknown }).scoring = "vibes";
+    expect(validateDraft(d)).toContain("Pick a scoring method.");
+  });
+
+  it("offers exactly the two formats the model knows about", () => {
+    expect(FORMAT_OPTIONS.map((f) => f.key)).toEqual(["full", "bidding-only"]);
   });
 });
