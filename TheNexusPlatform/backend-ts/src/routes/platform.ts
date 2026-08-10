@@ -2048,7 +2048,11 @@ async function _assertProgramConfigAccess(user: PlatformUser, orgId: string, pro
 
 // Partial-access provisioning is scoped to the platform areas that have their
 // own Access Catalog (matching the role builder's 3-way): learning + bridge.
-const _FEATURE_ACCESS_PROVIDERS: Record<string, ProviderId> = { learning: "learning", bridge: "bridge" };
+const _FEATURE_ACCESS_PROVIDERS: Record<string, ProviderId> = {
+  learning: "learning",
+  bridge: "bridge",
+  clubapp: "club-app",
+};
 /** Keep only platform-area keys, with capabilities validated against that
  *  platform's catalog (unknown/foreign ids dropped). */
 async function _sanitizeFeatureAccess(

@@ -880,7 +880,13 @@ offeringsRouter.post("/offerings/:offering_id/registrations/bulk-import", async 
 // Platform areas: learning grants "administrator" as a single toggle; bridge
 // grants one of the pre-built Bridge roles (the picker). Other areas keep the
 // graded view/edit/comment levels.
-const _ACCESS_LEVEL = z.enum(["view", "edit", "comment", "administrator"]);
+// "partial" is the third state of a PLATFORM area's picker: No access / Partial /
+// Full. Partial means "this area is on, and the role's capabilities decide what
+// inside it" — resolvePlatformAccess reads exactly that value (platformAccess.ts,
+// `level === "partial"`), so it has always been expected at read time. It was
+// missing here, which meant the console could never SAVE it: every Partial grant
+// came back "Invalid input", for bridge and learning as much as for the app.
+const _ACCESS_LEVEL = z.enum(["view", "edit", "comment", "administrator", "partial"]);
 const _BRIDGE_ROLE = z.enum(BRIDGE_PREBUILT_ROLES);
 // perms.capabilities (fine-grained capability ids) rides inside this same blob
 // (see _permsWithCapabilities / the capabilities fold below) and round-trips
@@ -928,7 +934,11 @@ function _permsWithinFeatures<V>(perms: Record<string, V>, programFeatures: unkn
 // Platform areas provisioned "Partial" cap what their roles may grant. Drop any
 // learning/bridge capability the program (intersected with the org envelope)
 // didn't provision. Full/unrestricted platforms pass through untouched.
-const _FEATURE_ACCESS_PROVIDER: Record<string, "learning" | "bridge"> = { learning: "learning", bridge: "bridge" };
+const _FEATURE_ACCESS_PROVIDER: Record<string, "learning" | "bridge" | "club-app"> = {
+  learning: "learning",
+  bridge: "bridge",
+  clubapp: "club-app",
+};
 async function _clampCapsToProvisioning(program: Record<string, unknown>, capabilities: string[]): Promise<string[]> {
   const featureAccess = (program.feature_access as Record<string, { capabilities?: string[] }> | null) ?? {};
   const enabled = normalizeProgramFeatures(program.features as Record<string, unknown>);
