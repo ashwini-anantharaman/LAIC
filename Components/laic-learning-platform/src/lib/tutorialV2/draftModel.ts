@@ -10,6 +10,7 @@ import {
   templateHasSectionBlock,
 } from './tutorialTemplates';
 import { filterRecipeEmbedsForSection, newSectionId } from './tutorialDefinition';
+import { configToBlockContent, readBridgeConfig } from './bridgeEmbed';
 import type {
   SectionAuthorMode,
   SectionStatus,
@@ -651,18 +652,17 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
     // A Bridge table travels as its CONFIG. Without this case it fell through to
     // the rich-text default at the end and a published tutorial carried the
     // words "Bridge table" where the table should be.
+    //
+    // NOTE: ObjectCreator.tsx has its own partsToBlocks with the same case —
+    // V1 uses that one, Tutorial V2 uses this one. Both delegate the field
+    // mapping to configToBlockContent so a new knob cannot land in one and
+    // not the other.
     if (p.type === 'bridge-embed') {
       return {
         id,
         type: 'bridge-table',
         pageBreakBefore,
-        content: {
-          kind: p.embedKind || 'table',
-          seed: typeof p.embedSeed === 'number' ? p.embedSeed : 7,
-          skin: p.embedSkin || 'bbo',
-          showAllHands: !!p.embedShowAllHands,
-          caption: p.caption || '',
-        },
+        content: configToBlockContent(readBridgeConfig(p), p.caption || ''),
       };
     }
     if (p.type === 'concept-card') {

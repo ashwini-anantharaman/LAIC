@@ -20,7 +20,11 @@ import { TutorialV2NestedEditor } from './TutorialV2NestedEditor';
 import { parseYtId } from './TutorialV2SourcePanel';
 import { TutorialV2RefineSidebar } from './TutorialV2RefineSidebar';
 import { BridgeEmbedBlock } from './BridgeEmbedBlock';
-import { isBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
+import {
+  configToPartFields,
+  isBridgeEmbedPart,
+  readBridgeConfig,
+} from '../../../../lib/tutorialV2/bridgeEmbed';
 import { RichTextEditor } from '../../RichTextEditor';
 
 export function TutorialV2AssembleEditor({
@@ -290,13 +294,14 @@ export function TutorialV2AssembleEditor({
                         </div>
 
                         {isBridgeEmbedPart(p) ? (
-                          <BridgeEmbedBlock
-                            kind={p.embedKind}
-                            seed={p.embedSeed ?? 7}
-                            skin={p.embedSkin}
-                            caption={p.caption}
-                            onChangeCaption={(caption) => updatePart(p.id, { caption })}
-                          />
+                          <div onClick={(e) => e.stopPropagation()} role="presentation">
+                            <BridgeEmbedBlock
+                              config={readBridgeConfig(p)}
+                              caption={p.caption}
+                              onChangeCaption={(caption) => updatePart(p.id, { caption })}
+                              onChangeConfig={(next) => updatePart(p.id, configToPartFields(next))}
+                            />
+                          </div>
                         ) : isNestedEditablePart(p) ? (
                           <div>
                             <p style={{ fontSize: 13.5, color: '#374151', marginBottom: 8 }}>

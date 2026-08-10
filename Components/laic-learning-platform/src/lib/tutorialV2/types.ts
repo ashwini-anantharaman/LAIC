@@ -47,9 +47,22 @@ export type TutorialV2Part = Omit<GeneratedPart, 'type'> & {
   hint?: string;
   /** Which Bridge component a 'bridge-embed' block mounts. */
   embedKind?: string;
-  /** Its configuration: the deal seed and the skin the author picked. */
+  /**
+   * Its configuration — what the author chose on the block's Configure
+   * panel. Mapped to and from published blocks by the helpers in
+   * `bridgeEmbed.ts`; add a field there rather than here alone, or the
+   * save/re-open round trip will silently drop it.
+   */
   embedSeed?: number;
   embedSkin?: string;
+  embedHumanSeat?: 'N' | 'E' | 'S' | 'W';
+  embedDealer?: 'N' | 'E' | 'S' | 'W';
+  embedVul?: 'none' | 'ns' | 'ew' | 'both';
+  embedHandLayout?: 'row' | 'fan';
+  embedBidPad?: 'grid' | 'columns';
+  embedShowAllHands?: boolean;
+  embedShowCoach?: boolean;
+  embedRobotDelayMs?: number;
   /** From template media slot — steers the empty Start from scratch UI. */
   mediaKind?: 'image' | 'video' | 'either';
   mediaHint?: string;

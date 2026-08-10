@@ -869,7 +869,12 @@ export type BlockContent =
   | DrillContent
   | LibraryEmbedContent;
 
-/** A published Bridge table block: everything needed to mount the component. */
+/**
+ * A published Bridge table block: everything needed to mount the component.
+ * These are the author's Configure choices, frozen at save. Every field is
+ * optional because older saved blocks predate the knob; the reader fills the
+ * gaps from `BRIDGE_EMBED_DEFAULTS`.
+ */
 export interface BridgeTableContent {
   /** Which Bridge component (today: 'table'). */
   kind?: string;
@@ -878,6 +883,14 @@ export interface BridgeTableContent {
   skin?: string;
   showAllHands?: boolean;
   caption?: string;
+  /** The seat the learner sits and plays. */
+  humanSeat?: 'N' | 'E' | 'S' | 'W';
+  dealer?: 'N' | 'E' | 'S' | 'W';
+  vul?: 'none' | 'ns' | 'ew' | 'both';
+  handLayout?: 'row' | 'fan';
+  bidPad?: 'grid' | 'columns';
+  showCoach?: boolean;
+  robotDelayMs?: number;
 }
 
 export interface Block {

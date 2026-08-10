@@ -8,8 +8,9 @@ import { OBJECTS } from '../../../lib/data';
 import type {
   Block, QuizContent, QuestionContent, FlashcardSetContent, BridgePlayContent, BiddingSequenceContent,
   ImageContent, VideoEmbedContent, VideoScriptContent, ConceptCardContent, SummaryContent, ReflectionContent,
-  AssignmentContent, DrillContent, LearningObject,
+  AssignmentContent, DrillContent, LearningObject, BridgeTableContent,
 } from '../../../lib/types';
+import { readBridgeConfig } from '../../../lib/tutorialV2/bridgeEmbed';
 import { resolveLearningObject } from '../../../lib/objectUrls';
 import { getVersion, objectFromVersion } from '../../../lib/objectVersionsStore';
 import { renumberBlockQuestionLabels } from '../../../lib/tutorialOrder.js';
@@ -1138,18 +1139,11 @@ function BlockRenderer({
     case 'bridge-table': {
       // The author's configuration, mounted as the real component. Dormant until
       // the reader opens it, so a lesson with several tables costs nothing to load.
-      const c = (block.content || {}) as {
-        kind?: string; seed?: number; skin?: string; showAllHands?: boolean; caption?: string;
-      };
+      // readBridgeConfig is the same reader the editor uses, so every knob the
+      // author set arrives here and anything a older block lacks falls back.
+      const c = (block.content || {}) as BridgeTableContent;
       return (
-        <BridgeEmbedBlock
-          kind={c.kind}
-          seed={c.seed ?? 7}
-          skin={c.skin}
-          showAllHands={!!c.showAllHands}
-          caption={c.caption}
-          readOnly
-        />
+        <BridgeEmbedBlock config={readBridgeConfig(c)} caption={c.caption} readOnly />
       );
     }
     case 'bridge-play':
