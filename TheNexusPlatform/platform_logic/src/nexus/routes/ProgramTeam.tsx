@@ -31,6 +31,7 @@ import {
   deleteProgramRole,
   devLoginAs,
   inviteProgramLink,
+  inviteProgramMember,
   getProgramGroupsModel,
   getOrgCapabilities,
   updateGroup,
@@ -47,6 +48,7 @@ import {
   type OrgCapabilities,
   type PlatformGroupMember,
   type ProgramGroupsModel,
+  type MemberEnrollResult,
   type ProgramMember,
   type ProgramRole,
   type RoleArea,
@@ -1028,6 +1030,8 @@ function InviteMemberDialog({
   const [groupIds, setGroupIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ redeem_url: string } | null>(null);
+  /** The outcome of adding someone directly: existed already, or newly created. */
+  const [added, setAdded] = useState<MemberEnrollResult | null>(null);
 
   function reset() {
     setName("");
@@ -1035,21 +1039,50 @@ function InviteMemberDialog({
     setRoleId("none");
     setGroupIds(new Set());
     setResult(null);
+    setAdded(null);
   }
 
-  async function submit() {
+  const payload = () => ({
+    email: email.trim(),
+    display_name: name.trim() || undefined,
+    role_id: roleId === "none" ? undefined : roleId,
+    group_ids: groupIds.size ? [...groupIds] : undefined,
+  });
+
+  /**
+   * The default: add them, active immediately.
+   *
+   * Someone already in the system keeps the password they have — this club is
+   * simply added to their account, and there is nothing for them to do. Someone
+   * new gets a starting password to pass on, which the app makes them replace at
+   * first sign-in. Either way there is no "invited" limbo to chase.
+   */
+  async function addDirectly() {
     if (!email.trim()) return;
     setBusy(true);
     try {
-      const res = await inviteProgramLink(programId, {
-        email: email.trim(),
-        display_name: name.trim() || undefined,
-        role_id: roleId === "none" ? undefined : roleId,
-        group_ids: groupIds.size ? [...groupIds] : undefined,
-      });
+      const res = await inviteProgramMember(programId, payload());
+      setAdded(res);
+      onInvited();
+      toast.success(
+        res.created ? `${res.email} added.` : `${res.email} already had an account — added here.`,
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to add the member");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** The alternative: a link they redeem, setting a password you never see. */
+  async function sendLink() {
+    if (!email.trim()) return;
+    setBusy(true);
+    try {
+      const res = await inviteProgramLink(programId, payload());
       setResult(res);
       onInvited();
-      toast.success(`Invitation created for ${email.trim()}.`);
+      toast.success(`Invitation link created for ${email.trim()}.`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create invitation");
     } finally {
@@ -1067,9 +1100,50 @@ function InviteMemberDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Invite member</DialogTitle>
+          <DialogTitle>Add member</DialogTitle>
         </DialogHeader>
-        {result ? (
+        {added ? (
+          <div className="space-y-3">
+            {added.created ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">{added.email}</span> is added and
+                  active. Give them this starting password — the app asks them to choose their own the
+                  first time they sign in, and after that only they can change it.
+                </p>
+                {added.temp_password ? (
+                  <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 select-all text-sm font-mono tracking-wide">
+                        {added.temp_password}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(added.temp_password ?? "");
+                          toast.success("Copied");
+                        }}
+                        className="grid size-7 place-items-center rounded-md hover:bg-accent"
+                        title="Copy starting password"
+                      >
+                        <Copy className="size-3.5" />
+                      </button>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Shown once — it is not stored anywhere you can read it back.
+                    </p>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{added.email}</span> already had an
+                account, so this club was added to it. They keep the password they have — there is
+                nothing for them to do, and nothing to send.
+              </p>
+            )}
+          </div>
+        ) : result ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               Invitation created. Share this activation link — they open it, set their own password at the org
@@ -1177,15 +1251,20 @@ function InviteMemberDialog({
           </div>
         )}
         <DialogFooter>
-          {result ? (
+          {result || added ? (
             <Button onClick={() => onOpenChange(false)}>Done</Button>
           ) : (
             <>
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button onClick={submit} disabled={busy || !email.trim()}>
-                {busy ? "Creating…" : "Send invite"}
+              {/* Secondary: they set a password you never see. Useful for a
+                  stranger; unnecessary for someone already in the system. */}
+              <Button variant="outline" onClick={sendLink} disabled={busy || !email.trim()}>
+                {busy ? "Working…" : "Send a link instead"}
+              </Button>
+              <Button onClick={addDirectly} disabled={busy || !email.trim()}>
+                {busy ? "Adding…" : "Add member"}
               </Button>
             </>
           )}
