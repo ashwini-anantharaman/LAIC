@@ -1944,6 +1944,56 @@ platformRouter.get("/programs/:program_id/partners", async (c) => {
   return c.json((await db.listPartnersForProgram(programId)).map(_programResponse));
 });
 
+/**
+ * Remove a partner FROM the program it is connected to.
+ *
+ * Only from the program's side, never the partner's. That is not a policy check
+ * bolted on: a partner carries `connected_program_id` pointing AT its parent, and
+ * the parent carries none pointing back, so the requirement below — "the target
+ * must be a partner of THIS program" — can only ever be satisfied in one
+ * direction. A partner admin calling this against the program they hang off
+ * fails on the relationship itself, before any permission is considered.
+ *
+ * A partner IS a program, so removing one deletes that program and everything
+ * scoped to it: its memberships, gates, stage nodes and app roles. The console
+ * asks for confirmation; this endpoint does not soft-delete.
+ */
+platformRouter.delete("/programs/:program_id/partners/:partner_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id") ?? "";
+  const partnerId = c.req.param("partner_id") ?? "";
+
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  const partner = await db.getProgram(partnerId);
+  if (!partner) throw new HttpError(404, "Partner not found");
+
+  // The relationship, checked before the permission — this is the one-way guard.
+  if (!partner.is_partner || partner.connected_program_id !== programId) {
+    throw new HttpError(422, "That program is not a partner of this program");
+  }
+  // Belt and braces: a partner and its parent are always in one org, and a
+  // cross-org delete should never be reachable.
+  if (partner.org_id !== program.org_id) {
+    throw new HttpError(422, "That partner belongs to a different organization");
+  }
+  // Authority over the CONNECTING program — its own administrator, or an org
+  // admin. A partner's administrator holds their membership against the partner,
+  // so they never satisfy this for the parent.
+  await _assertProgramConfigAccess(user, program.org_id as string, programId);
+  await _requireOrgCap(user, program.org_id as string, "org.programs.delete");
+
+  await db.deleteProgram(partnerId);
+  await db.recordAuditEvent("partner.removed", {
+    orgId: program.org_id as string,
+    actorUserId: user.id,
+    scopeType: "program",
+    scopeId: partnerId,
+    metadata: { name: partner.name, connected_program_id: programId },
+  });
+  return c.json({ ok: true });
+});
+
 // Partner login-portal context — resolve a partner by its slug (privileged, the
 // visitor is a partner member). Returns the partner + connected program summary.
 platformRouter.get("/partner-portal/:slug", async (c) => {

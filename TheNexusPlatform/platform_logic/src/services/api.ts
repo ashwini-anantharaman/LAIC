@@ -624,6 +624,19 @@ export async function createPartner(
 ): Promise<Program> {
   return request<Program>(`/api/platform/orgs/${orgId}/partners`, { method: "POST", body: JSON.stringify(input) });
 }
+/**
+ * Remove a partner from the program it is connected to. Program side only — the
+ * server refuses it in the other direction on the relationship itself, not on
+ * permissions, so a partner can never delete the program it hangs off.
+ *
+ * A partner IS a program, so this deletes it and everything scoped to it.
+ */
+export function removeProgramPartner(programId: string, partnerId: string): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/api/platform/programs/${programId}/partners/${partnerId}`, {
+    method: "DELETE",
+  });
+}
+
 /** The partners connected to a program (its Partners tab). */
 export async function listPartnersForProgram(programId: string): Promise<Program[]> {
   return request<Program[]>(`/api/platform/programs/${programId}/partners`);
