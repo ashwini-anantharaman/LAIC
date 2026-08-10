@@ -42,10 +42,15 @@ export class JsonFileAssignmentStore extends InMemoryAssignmentStore {
     super(
       existsSync(filePath)
         ? {
+            // Every key defaulted BEFORE the spread: a file written before 0028
+            // holds only `assignments`, and an undefined briefs/reviewers array
+            // makes the first write throw on .findIndex.
             assignments: [],
+            briefs: [],
+            reviewers: [],
             ...(JSON.parse(readFileSync(filePath, "utf8")) as Partial<AssignmentStoreData>),
           }
-        : { assignments: [] },
+        : { assignments: [], briefs: [], reviewers: [] },
     );
     if (!existsSync(filePath)) this.persist();
   }

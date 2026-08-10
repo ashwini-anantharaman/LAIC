@@ -53,6 +53,9 @@ export interface SubmissionFilter {
   learnerId?: string;
   coachId?: string;
   sessionId?: string;
+  /** Several sessions at once — one query where a loop would have made one per
+   *  learner. Empty array means "nothing", never "everything". */
+  sessionIds?: readonly string[];
 }
 
 export interface SubmissionStoreData {
@@ -66,6 +69,13 @@ export interface SubmissionStore {
   listSubmissions(filter?: SubmissionFilter): Promise<PlaySubmission[]>;
   addComment(comment: PlayComment): Promise<void>;
   listComments(submissionId: string): Promise<PlayComment[]>;
+  /**
+   * Drop a submission and the whole conversation on it. The learner removing
+   * one of their games takes its review with it (owner direction 2026-08-09),
+   * so this deletes for BOTH sides — the coach's queue and their written
+   * feedback included. Idempotent: an id that isn't there is a no-op.
+   */
+  deleteSubmission(submissionId: string): Promise<void>;
 }
 
 function matchesSubmission(s: PlaySubmission, f?: SubmissionFilter): boolean {
@@ -79,6 +89,7 @@ function matchesSubmission(s: PlaySubmission, f?: SubmissionFilter): boolean {
   if (f.learnerId !== undefined && s.learnerId !== f.learnerId) return false;
   if (f.coachId !== undefined && s.coachId !== f.coachId) return false;
   if (f.sessionId !== undefined && s.sessionId !== f.sessionId) return false;
+  if (f.sessionIds !== undefined && !f.sessionIds.includes(s.sessionId)) return false;
   return true;
 }
 
@@ -113,5 +124,16 @@ export class InMemorySubmissionStore implements SubmissionStore {
     return this.data.comments
       .filter((c) => c.submissionId === submissionId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+  async deleteSubmission(submissionId: string) {
+    this.data.submissions = this.data.submissions.filter(
+      (s) => s.submissionId !== submissionId,
+    );
+    // Postgres cascades this via the comments FK; in memory it is on us, and a
+    // stranded comment would resurface under a REUSED id.
+    this.data.comments = this.data.comments.filter(
+      (c) => c.submissionId !== submissionId,
+    );
+    this.persist();
   }
 }

@@ -925,10 +925,17 @@ platformRouter.get("/bridge/learners", async (c) => {
   if (access.level !== "edit") throw new HttpError(403, "Coach access required");
   const coaches = await graph.listProgramCoaches(access.orgId, access.programId);
   const me = coaches.find((co) => co.coach_id === access.profileId);
-  if (!me?.group_id) return c.json([]); // nobody has hired this coach yet
+  // The roster is the UNION of the legacy roster group (learners whose
+  // PRIMARY this coach is) and the multi-coach relationship rows (0040) —
+  // a learner's second coach must see them too.
+  const participantIds = await graph.listParticipantIdsForCoach(
+    access.orgId, access.programId, String(access.profileId),
+  );
+  if (!me?.group_id && participantIds.length === 0) return c.json([]); // nobody yet
   return c.json(
     await graph.listProgramLearners(access.orgId, access.programId, {
-      groupId: me.group_id as string,
+      ...(me?.group_id ? { groupId: me.group_id as string } : {}),
+      participantIds,
     }),
   );
 });
@@ -953,6 +960,24 @@ platformRouter.get("/bridge/coaches", async (c) => {
   );
 });
 
+/**
+ * One hired coach as the learner's own surfaces see them: who they are, plus
+ * how many of THIS learner's games sit with them. Deliberately not named
+ * plays_reviewed/reviews_pending — those keys exist at the summary's top level
+ * with the roles flipped (there, "pending" means awaiting MY review as a
+ * coach), and reusing them here would guarantee a future misreading.
+ * Number() guards against the driver handing aggregates back as strings.
+ */
+function learnerCoachOut(co: Row) {
+  return {
+    coach_id: co.coach_id,
+    name: co.name,
+    sent: Number(co.sent ?? 0),
+    reviewed: Number(co.reviewed ?? 0),
+    pending: Number(co.pending ?? 0),
+  };
+}
+
 /** The calling learner's current coach, or { coach: null }. */
 /** Role-aware activity counts for the coach app's live Home screen. */
 platformRouter.get("/bridge/summary", async (c) => {
@@ -963,11 +988,22 @@ platformRouter.get("/bridge/summary", async (c) => {
     access.programId,
     access.profileId,
   );
-  // The learner's coach rides along so Home can show the relationship.
+  // The learner's coaches ride along so Home can show the relationships.
+  // `coach` stays the primary (older callers); `coaches` is the full set.
   let coach: Row | null = null;
+  let coachList: Row[] = [];
   if (user.email) {
     const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
-    if (participant?.group_id) coach = await graph.getCoachForGroup(participant.group_id as string);
+    if (participant) {
+      coachList = await graph.listLearnerCoaches(
+        access.orgId,
+        access.programId,
+        participant,
+        access.profileId,
+      );
+      if (participant.group_id) coach = await graph.getCoachForGroup(participant.group_id as string);
+      if (!coach) coach = coachList[0] ?? null;
+    }
   }
   // The app's Play launcher: unfinished boards to resume, and the day's board.
   const [inProgress, deal] = await Promise.all([
@@ -988,6 +1024,7 @@ platformRouter.get("/bridge/summary", async (c) => {
     reviews_pending: Number(s.reviews_pending ?? 0),
     roster_count: Number(s.roster_count ?? 0),
     coach,
+    coaches: coachList.map(learnerCoachOut),
     in_progress: inProgress.map((r) => ({
       session_id: r.session_id,
       board_name: r.board_name,
@@ -1047,7 +1084,28 @@ platformRouter.get("/bridge/my-coach", async (c) => {
   return c.json({ coach: await graph.getCoachForGroup(participant.group_id as string) });
 });
 
-/** Hire (or switch to) a coach. Learner participants only. */
+/** EVERY coach this learner has hired (multi-coach, 0040). The my-coach
+ *  singular above stays as the PRIMARY (roster group) for older callers. */
+platformRouter.get("/bridge/my-coaches", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  if (!user.email) return c.json({ coaches: [] });
+  const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
+  if (!participant) return c.json({ coaches: [] });
+  const coachList = await graph.listLearnerCoaches(
+    access.orgId,
+    access.programId,
+    participant,
+    access.profileId,
+  );
+  return c.json({ coaches: coachList.map(learnerCoachOut) });
+});
+
+/** Hire a coach — ADDITIVE (owner direction 2026-08-09: a learner can hold
+ *  several coaches and picks per game who reviews it). The FIRST hire also
+ *  becomes the roster-group primary, which is what assignments and legacy
+ *  rosters key on; later hires only join the relationship table. Learner
+ *  participants only. */
 platformRouter.post("/bridge/my-coach", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
@@ -1060,16 +1118,62 @@ platformRouter.post("/bridge/my-coach", async (c) => {
   const coaches = await graph.listProgramCoaches(access.orgId, access.programId);
   const coach = coaches.find((co) => co.coach_id === coachId);
   if (!coach) throw new HttpError(404, "That coach is not part of this program");
-  const group = await graph.ensureCoachRosterGroup(
-    access.orgId, access.programId, coachId, String(coach.name ?? "Coach"),
-  );
-  await graph.setParticipantGroup(participant.id as string, group.id as string);
+  await graph.addLearnerCoach(access.orgId, access.programId, participant.id as string, coachId);
+  // First coach also becomes the primary: the roster group participants.group_id
+  // points at. A learner who already has a primary keeps it — no switching.
+  let groupId = (participant.group_id as string | null) ?? null;
+  if (!groupId) {
+    const group = await graph.ensureCoachRosterGroup(
+      access.orgId, access.programId, coachId, String(coach.name ?? "Coach"),
+    );
+    groupId = group.id as string;
+    await graph.setParticipantGroup(participant.id as string, groupId);
+  }
   await db.recordAuditEvent("bridge.coach.hired", {
     orgId: access.orgId, scopeType: "program", scopeId: access.programId,
-    targetType: "group", targetId: group.id as string,
+    targetType: "group", targetId: groupId ?? coachId,
     metadata: { learner_email: user.email, coach_id: coachId },
   });
   return c.json({ coach: { coach_id: coach.coach_id, name: coach.name } });
+});
+
+/** Part ways with one coach. If they were the primary (roster group), the
+ *  next remaining hire is promoted so assignments keep a home; with nobody
+ *  left the learner is coachless again. */
+platformRouter.delete("/bridge/my-coach/:coach_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  const coachId = c.req.param("coach_id");
+  if (!user.email) throw new HttpError(403, "Only learners can part with a coach");
+  const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
+  if (!participant) throw new HttpError(403, "Only program learners can part with a coach");
+  await graph.removeLearnerCoach(participant.id as string, coachId);
+  const groupCoach = participant.group_id
+    ? await graph.getCoachForGroup(participant.group_id as string)
+    : null;
+  if (groupCoach && String(groupCoach.coach_id) === coachId) {
+    const remaining = (
+      await graph.listLearnerCoaches(access.orgId, access.programId, {
+        ...participant,
+        group_id: null,
+      })
+    ).filter((co) => String(co.coach_id) !== coachId);
+    const next = remaining[0] ?? null;
+    if (next) {
+      const group = await graph.ensureCoachRosterGroup(
+        access.orgId, access.programId, String(next.coach_id), String(next.name ?? "Coach"),
+      );
+      await graph.setParticipantGroup(participant.id as string, group.id as string);
+    } else {
+      await graph.setParticipantGroup(participant.id as string, null);
+    }
+  }
+  await db.recordAuditEvent("bridge.coach.hired", {
+    orgId: access.orgId, scopeType: "program", scopeId: access.programId,
+    targetType: "group", targetId: coachId,
+    metadata: { learner_email: user.email, coach_id: coachId, removed: true },
+  });
+  return c.json({ ok: true });
 });
 
 // ── Platform People & Roles (administered from each platform's own UI) ──────

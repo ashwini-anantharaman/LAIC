@@ -15,7 +15,7 @@ import {
 import type { BridgeRole } from "@laic/learner-contracts";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { accessStore, canEditCatalogue } from "@/lib/access";
+import { accessStore, canEditCatalogue, invalidateCatalogue } from "@/lib/access";
 import { AccessError, requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { getBridgeContext } from "@/lib/nexus";
@@ -59,6 +59,8 @@ export async function saveCatalogueAction(formData: FormData): Promise<void> {
     updatedBy: context.nexusUserId,
     updatedAt: new Date().toISOString(),
   });
+  // The gate must not lag behind its own edit.
+  await invalidateCatalogue();
   await audit(context, "access.catalogue.update", "access_catalogue", GLOBAL_CATALOGUE_ID, {
     changed,
   });
@@ -77,6 +79,8 @@ export async function resetCatalogueAction(): Promise<void> {
     updatedAt: new Date().toISOString(),
   };
   await accessStore().putCatalogue(reset);
+  // The gate must not lag behind its own edit.
+  await invalidateCatalogue();
   await audit(context, "access.catalogue.update", "access_catalogue", GLOBAL_CATALOGUE_ID, {
     reset: true,
   });

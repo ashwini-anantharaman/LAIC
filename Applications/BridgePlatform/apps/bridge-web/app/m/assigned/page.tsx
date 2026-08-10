@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { PlaySubmission } from "@bridge/sessions";
+import { ReviewRows } from "@/components/mobile/ReviewRow";
 import { reconcileAssignments } from "@/lib/assignments";
 import { getBridgeContext, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assignmentStore, submissionStore } from "@/lib/sessions";
@@ -37,25 +39,56 @@ export default async function MobileAssignedPage() {
   });
   const assignments = await reconcileAssignments(raw);
 
-  // Done boards open their play for review: completion auto-submits, so each
-  // completed assignment's session normally has a submission (deal + tricks
-  // + the coach's comment thread). Map sessionId → submissionId for links.
-  const reviewLink = new Map<string, string>();
-  for (const a of assignments) {
-    if (a.status !== "completed" || !a.sessionId) continue;
+  // Done boards open their feedback. A finished board now carries one thread per
+  // REVIEWER (0028), so this lists them ALL, named — it used to pick whichever
+  // submission came back first, which with two reviewers opened an arbitrary
+  // coach's thread and, because the comment action authorizes on the posted
+  // submission id, let the learner's reply land on the wrong person.
+  //
+  // One query, not one per assignment: every thread on every board this learner
+  // owns, grouped by session.
+  const mySubs = await submissionStore()
+    .listSubmissions({
+      programOrganizationId: orgScopeOf(context),
+      ...(programId ? { nexusProgramId: programId } : {}),
+      learnerId: context.nexusUserId,
+    })
+    .catch(() => [] as PlaySubmission[]);
+  const threadsBySession = new Map<string, PlaySubmission[]>();
+  for (const sub of mySubs) {
+    const list = threadsBySession.get(sub.sessionId) ?? [];
+    list.push(sub);
+    threadsBySession.set(sub.sessionId, list);
+  }
+  const threadsFor = (sessionId?: string): PlaySubmission[] =>
+    sessionId ? (threadsBySession.get(sessionId) ?? []) : [];
+
+  // Per BRIEF (not per assignment, and not at all for pre-0028 rows): how many
+  // coaches will review it, and the coach's instruction.
+  //
+  // THE INSTRUCTION COMES FROM THE BRIEF, which is its only home. It used to be
+  // copied onto every learner's row on each save so this page could render
+  // `a.note` — two writable copies of one sentence, with nothing keeping them
+  // equal. The row's `note` is now legacy-only: still read for assignments made
+  // before briefs existed, never written again.
+  const briefIds = [...new Set(assignments.map((a) => a.briefId).filter(Boolean))] as string[];
+  const reviewerCounts = new Map<string, number>();
+  const briefNotes = new Map<string, string | undefined>();
+  for (const briefId of briefIds) {
     try {
-      const subs = await submissionStore().listSubmissions({ sessionId: a.sessionId });
-      const mine = subs.find((s) => s.learnerId === context.nexusUserId);
-      // Pre-auto-submit completions have no submission: open the finished
-      // table itself instead, so the board is never a dead end.
-      reviewLink.set(
-        a.assignmentId,
-        mine ? `/m/review/${mine.submissionId}` : `/m/table/${a.sessionId}?from=assigned`,
-      );
+      const [reviewers, brief] = await Promise.all([
+        assignmentStore().listReviewers({ briefId }),
+        assignmentStore().getBrief(briefId),
+      ]);
+      reviewerCounts.set(briefId, reviewers.length);
+      if (brief) briefNotes.set(briefId, brief.note);
     } catch {
-      reviewLink.set(a.assignmentId, `/m/table/${a.sessionId}?from=assigned`);
+      // A missing lookup only costs a line of copy — never the card.
     }
   }
+  /** The instruction to show: the brief's, or a legacy row's own. */
+  const noteFor = (a: (typeof assignments)[number]): string | undefined =>
+    a.briefId && briefNotes.has(a.briefId) ? briefNotes.get(a.briefId) : a.note;
 
   return (
     <main
@@ -123,6 +156,8 @@ export default async function MobileAssignedPage() {
                 // green — each sitting on its darker stacked edge.
                 const suit = i % 2 === 0 ? MAROON : GREEN;
                 const edge = i % 2 === 0 ? MAROON_EDGE : GREEN_EDGE;
+                const threads = threadsFor(a.sessionId);
+                const reviewerCount = a.briefId ? (reviewerCounts.get(a.briefId) ?? 0) : 1;
                 return (
                   <div
                     key={a.assignmentId}
@@ -131,74 +166,88 @@ export default async function MobileAssignedPage() {
                       borderRadius: 16,
                       boxShadow: `0 3px 0 ${edge}`,
                       padding: "15px 16px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
                     }}
                   >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <p style={{ font: `500 16px ${N}`, color: "#ffffff", margin: 0 }}>
-                        {a.entryName}
-                      </p>
-                      <p
-                        style={{
-                          font: `400 12px ${G}`,
-                          color: "rgba(255,244,215,0.72)",
-                          margin: "3px 0 0",
-                        }}
-                      >
-                        from {a.coachName ?? "your coach"} · {a.createdAt.slice(0, 10)}
-                        {a.status === "completed" && " · completed ✓"}
-                      </p>
-                      {a.note && (
+                    {/* Top row keeps its shape — Start/Continue on the right —
+                        so To play and In progress look untouched. The review
+                        rows below only appear once a board is finished. */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p style={{ font: `500 16px ${N}`, color: "#ffffff", margin: 0 }}>
+                          {a.entryName}
+                        </p>
                         <p
                           style={{
-                            font: `400 12.5px/1.5 ${G}`,
-                            color: "rgba(255,244,215,0.85)",
-                            margin: "6px 0 0",
+                            font: `400 12px ${G}`,
+                            color: "rgba(255,244,215,0.72)",
+                            margin: "3px 0 0",
                           }}
                         >
-                          “{a.note}”
+                          from {a.coachName ?? "your coach"} · {a.createdAt.slice(0, 10)}
+                          {a.status === "completed" && " · completed ✓"}
+                          {/* Only when there's more than one, and never once
+                              finished — the named rows below then say who
+                              concretely, and a future-tense promise above a
+                              list of delivered threads reads as a bug. */}
+                          {a.status !== "completed" &&
+                            reviewerCount > 1 &&
+                            ` · ${reviewerCount} coaches will review`}
                         </p>
-                      )}
-                    </div>
-                    {a.status === "completed" && reviewLink.has(a.assignmentId) && (
-                      <Link
-                        href={reviewLink.get(a.assignmentId)!}
-                        style={{
-                          flex: "none",
-                          border: "2px solid rgba(255,244,215,0.8)",
-                          background: "transparent",
-                          color: CREAM,
-                          borderRadius: 999,
-                          padding: "7px 15px",
-                          font: `600 12.5px ${G}`,
-                          textDecoration: "none",
-                        }}
-                      >
-                        View
-                      </Link>
-                    )}
-                    {section.button && (
-                      <form action={startAssignmentAction}>
-                        <input type="hidden" name="assignmentId" value={a.assignmentId} />
-                        <button
-                          type="submit"
+                        {noteFor(a) && (
+                          <p
+                            style={{
+                              font: `400 12.5px/1.5 ${G}`,
+                              color: "rgba(255,244,215,0.85)",
+                              margin: "6px 0 0",
+                            }}
+                          >
+                            “{noteFor(a)}”
+                          </p>
+                        )}
+                      </div>
+                      {/* No thread yet (a completion from before auto-submit):
+                          the finished table itself, so a done board is never a
+                          dead end. */}
+                      {a.status === "completed" && threads.length === 0 && a.sessionId && (
+                        <Link
+                          href={`/m/table/${a.sessionId}?from=assigned`}
                           style={{
                             flex: "none",
-                            border: "none",
-                            background: CREAM,
-                            color: INK,
+                            border: "2px solid rgba(255,244,215,0.8)",
+                            background: "transparent",
+                            color: CREAM,
                             borderRadius: 999,
-                            padding: "9px 16px",
+                            padding: "7px 15px",
                             font: `600 12.5px ${G}`,
-                            cursor: "pointer",
+                            textDecoration: "none",
                           }}
                         >
-                          {section.button}
-                        </button>
-                      </form>
-                    )}
+                          View
+                        </Link>
+                      )}
+                      {section.button && (
+                        <form action={startAssignmentAction}>
+                          <input type="hidden" name="assignmentId" value={a.assignmentId} />
+                          <button
+                            type="submit"
+                            style={{
+                              flex: "none",
+                              border: "none",
+                              background: CREAM,
+                              color: INK,
+                              borderRadius: 999,
+                              padding: "9px 16px",
+                              font: `600 12.5px ${G}`,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {section.button}
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                    {/* One row per reviewer, each naming whose feedback it is. */}
+                    <ReviewRows subs={threads} />
                   </div>
                 );
               })}

@@ -38,13 +38,26 @@ export function accessStore(): AccessStore {
  * page down with it.
  */
 export const getCatalogue = cache(async (): Promise<AccessCatalogue> => {
-  try {
-    return (await accessStore().getCatalogue(GLOBAL_CATALOGUE_ID)) ?? defaultCatalogue();
-  } catch (error) {
-    console.error("access catalogue unreadable — serving built-in defaults", error);
-    return defaultCatalogue();
-  }
+  // Cross-REQUEST too: one global row, gating every page, read on every render —
+  // it was ~85ms of round trip on the path someone is waiting on. Editing the
+  // catalogue invalidates it (invalidateCatalogue, called by the save actions),
+  // so a permission change is not left waiting on a TTL.
+  const { cachedRead } = await import("./nexusCache");
+  return cachedRead("catalogue", async () => {
+    try {
+      return (await accessStore().getCatalogue(GLOBAL_CATALOGUE_ID)) ?? defaultCatalogue();
+    } catch (error) {
+      console.error("access catalogue unreadable — serving built-in defaults", error);
+      return defaultCatalogue();
+    }
+  });
 });
+
+/** Call after ANY write to the catalogue — a gate must never lag behind its edit. */
+export async function invalidateCatalogue(): Promise<void> {
+  const { invalidateReads } = await import("./nexusCache");
+  invalidateReads("catalogue");
+}
 
 export async function canUse(context: NexusBridgeContext, key: string): Promise<boolean> {
   return canAccess(await getCatalogue(), key, context.roles);

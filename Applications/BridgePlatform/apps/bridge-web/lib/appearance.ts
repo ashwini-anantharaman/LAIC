@@ -34,15 +34,24 @@ export function tableConfigStore(): TableConfigStore {
  * load must degrade to defaults, never take the table down with it.
  */
 export const getAppearance = cache(async (userId: string): Promise<TableAppearance> => {
-  try {
-    const stored = await tableConfigStore().getForUser(userId);
-    return stored ? normalizeAppearance(stored) : DEFAULT_APPEARANCE;
-  } catch (error) {
-    console.error("table appearance unreadable — serving built-in defaults", error);
-    return DEFAULT_APPEARANCE;
-  }
+  // Cross-REQUEST too, not just within one: this is read on every board open and
+  // was ~80ms of round trip each time for a row that changes only when its owner
+  // saves a skin — and saveAppearance below drops the entry when they do.
+  const { cachedRead } = await import("./nexusCache");
+  return cachedRead(`appearance:${userId}`, async () => {
+    try {
+      const stored = await tableConfigStore().getForUser(userId);
+      return stored ? normalizeAppearance(stored) : DEFAULT_APPEARANCE;
+    } catch (error) {
+      console.error("table appearance unreadable — serving built-in defaults", error);
+      return DEFAULT_APPEARANCE;
+    }
+  });
 });
 
 export async function saveAppearance(userId: string, appearance: TableAppearance): Promise<void> {
   await tableConfigStore().putForUser(userId, normalizeAppearance(appearance));
+  // Their next table must wear what they just chose — not the cached previous.
+  const { invalidateReads } = await import("./nexusCache");
+  invalidateReads(`appearance:${userId}`);
 }

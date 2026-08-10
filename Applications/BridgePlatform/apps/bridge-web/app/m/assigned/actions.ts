@@ -23,9 +23,11 @@ export async function startAssignmentAction(formData: FormData): Promise<void> {
     throw new Error("Only the assigned learner can start this board");
   }
 
-  // Already underway — go back to the table.
+  // Already underway — go back to the table. STRAIGHT to the real table page:
+  // /m/table/<id> only exists to redirect there, and that extra hop is another
+  // server round trip the learner waits through before the board paints.
   if (assignment.sessionId && assignment.status === "started") {
-    redirect(`/m/table/${assignment.sessionId}`);
+    redirect(`/bridge/table2/${assignment.sessionId}`);
   }
 
   const entry = await libraryStore().getEntry(assignment.entryId);
@@ -59,5 +61,5 @@ export async function startAssignmentAction(formData: FormData): Promise<void> {
   await audit(context, "assignment.started", "assignment", assignmentId, {
     sessionId: record.sessionId,
   });
-  redirect(`/m/table/${record.sessionId}`);
+  redirect(`/bridge/table2/${record.sessionId}`);
 }

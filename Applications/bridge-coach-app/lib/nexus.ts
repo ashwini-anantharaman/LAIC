@@ -307,12 +307,36 @@ export type DealOfTheDay = {
   contract_label: string | null;
 };
 
+/**
+ * One hired coach as the summary carries them, with this learner's own tallies
+ * against that coach.
+ *
+ * The counts are OPTIONAL on purpose: the app ships to testers over Expo
+ * independently of the backend deploy, so an older API answers without them.
+ * Absent therefore means UNKNOWN, not zero — a card must say nothing rather
+ * than invent "no games sent".
+ */
+export type SummaryCoach = {
+  coach_id: string;
+  name: string;
+  /** Games this learner has sent them, in total. */
+  sent?: number;
+  /** …of those, how many they have reviewed. */
+  reviewed?: number;
+  /** …and how many are still waiting on them. */
+  pending?: number;
+};
+
 export type BridgeSummary = {
   assignments_open: number;
   plays_reviewed: number;
   reviews_pending: number;
   roster_count: number;
-  coach: { coach_id: string; name: string } | null;
+  /** The PRIMARY coach (legacy single-coach callers). */
+  coach: SummaryCoach | null;
+  /** EVERY hired coach (multi-coach, 2026-08-09), name-sorted by the server —
+   *  so card order, and the suit alternation riding on it, stays stable. */
+  coaches: SummaryCoach[];
   /** Boards started and not finished — the Play tab's Resume. */
   in_progress: InProgressBoard[];
   /** One board a day, same for everyone in the program. */
@@ -391,7 +415,26 @@ export async function fetchMyCoach(token: string): Promise<MyCoach> {
   return res.coach;
 }
 
-/** Hire (or switch to) a coach. */
+/** EVERY coach this learner has hired (multi-coach). */
+export async function fetchMyCoaches(
+  token: string,
+): Promise<{ coach_id: string; name: string }[]> {
+  const res = await request<{ coaches: { coach_id: string; name: string }[] }>(
+    `/api/platform/bridge/my-coaches?program_id=${PROGRAM_ID}`,
+    { token },
+  );
+  return res.coaches ?? [];
+}
+
+/** Part ways with one coach (the others stay). */
+export async function removeCoach(token: string, coachId: string): Promise<void> {
+  await request(
+    `/api/platform/bridge/my-coach/${encodeURIComponent(coachId)}?program_id=${PROGRAM_ID}`,
+    { method: "DELETE", token },
+  );
+}
+
+/** Hire a coach — ADDITIVE: joins your coaches, replaces nobody. */
 export async function hireCoach(token: string, coachId: string): Promise<MyCoach> {
   const res = await request<{ coach: MyCoach }>(
     `/api/platform/bridge/my-coach?program_id=${PROGRAM_ID}`,

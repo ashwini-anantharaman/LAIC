@@ -145,13 +145,14 @@ export function OptionCard({
         <Text style={styles.cardTitle}>{title}</Text>
         {subtitle ? <Text style={styles.cardSubtitle}>{subtitle}</Text> : null}
       </View>
-      {badge !== undefined ? (
+      {badge !== undefined && (
         <View style={styles.cardBadge}>
           <Text style={styles.cardBadgeText}>{badge}</Text>
         </View>
-      ) : (
-        <Text style={styles.cardChevron}>›</Text>
       )}
+      {/* The chevron stays even beside a badge (owner request 2026-08-07):
+          the count says how many, the arrow still says "this navigates". */}
+      <Text style={styles.cardChevron}>›</Text>
     </Pressable>
   );
 }

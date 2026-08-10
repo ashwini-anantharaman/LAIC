@@ -78,6 +78,13 @@ export async function challengeTableContext(
   const userId = context.nexusUserId;
   const sessionId = view.record.sessionId;
 
+  // ORDINARY TABLES LEAVE NOW, before any query. Every challenge sitting is
+  // stamped at creation (`record.challenge`, written by the challenge play
+  // entry), and the rest of this page already trusts that stamp — so a board
+  // without one cannot be a challenge board, and the reverse lookup below was
+  // costing ~80ms of a normal board's open for an answer that is always null.
+  if (!view.record.challenge) return null;
+
   // The reverse lookup, through the RAW store: everything below reads through
   // the request-cached readers, and the freeze must land before they memoize.
   // Scoped to this viewer's own plays, so a challenge board only ever wears its
