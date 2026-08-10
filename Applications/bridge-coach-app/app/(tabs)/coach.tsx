@@ -15,27 +15,29 @@ import { peekBridgeOrigin } from "../../lib/launch-cache";
 import { type BridgeSummary, type SummaryCoach } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
 import { peekSummary, refreshSummary } from "../../lib/summary-cache";
+import { useSelectedClubId } from "../../lib/club-context";
 
 export default function CoachScreen() {
   const { token } = useAuth();
+  const clubId = useSelectedClubId();
   // Both caches are primed at sign-in — seed from them so the first focus
   // shows the real view (and the coach's name below) with no fetch in front.
-  const [coach, setCoach] = useState(() => isCoach(token ? peekRoleContext(token) : null));
+  const [coach, setCoach] = useState(() => isCoach(token ? peekRoleContext(token, clubId ?? undefined) : null));
   // Last known summary renders immediately; the focus effect refreshes it.
   const [summary, setSummary] = useState<BridgeSummary | null>(() =>
-    token ? peekSummary(token) : null,
+    token ? peekSummary(token, clubId ?? undefined) : null,
   );
 
   useEffect(() => {
     let cancelled = false;
     if (!token) return;
-    getBridgeContextCached(token).then((ctx) => {
+    getBridgeContextCached(token, clubId ?? undefined).then((ctx) => {
       if (!cancelled) setCoach(isCoach(ctx));
     });
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, clubId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -49,13 +51,13 @@ export default function CoachScreen() {
         peekBridgeOrigin(token),
       );
       let cancelled = false;
-      refreshSummary(token)
+      refreshSummary(token, clubId ?? undefined)
         .then((s) => !cancelled && setSummary(s))
         .catch(() => {});
       return () => {
         cancelled = true;
       };
-    }, [token]),
+    }, [token, clubId]),
   );
 
   const s = summary;

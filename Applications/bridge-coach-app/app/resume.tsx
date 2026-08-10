@@ -10,25 +10,27 @@ import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { type InProgressBoard } from "../lib/nexus";
 import { peekSummary, refreshSummary } from "../lib/summary-cache";
+import { useSelectedClubId } from "../lib/club-context";
 
 export default function ResumeScreen() {
   const { token } = useAuth();
+  const clubId = useSelectedClubId();
   // Last known list renders immediately; the focus effect refreshes it.
   const [boards, setBoards] = useState<InProgressBoard[] | null>(() =>
-    token ? (peekSummary(token)?.in_progress ?? null) : null,
+    token ? (peekSummary(token, clubId ?? undefined)?.in_progress ?? null) : null,
   );
 
   useFocusEffect(
     useCallback(() => {
       if (!token) return;
       let cancelled = false;
-      refreshSummary(token)
+      refreshSummary(token, clubId ?? undefined)
         .then((s) => !cancelled && setBoards(s.in_progress))
         .catch(() => !cancelled && setBoards((b) => b ?? []));
       return () => {
         cancelled = true;
       };
-    }, [token]),
+    }, [token, clubId]),
   );
 
   return (

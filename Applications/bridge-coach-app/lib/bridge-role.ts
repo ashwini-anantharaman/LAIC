@@ -73,8 +73,10 @@ let inflight: { token: string; promise: Promise<RoleContext> } | null = null;
 /** The last resolved context for this token, synchronously — render it NOW.
  *  Null only before the first resolve (the sign-in prime usually beats any
  *  screen here). */
-export function peekRoleContext(token: string): RoleContext | null {
-  return cached?.token === token ? cached.value : null;
+export function peekRoleContext(token: string, programId?: string): RoleContext | null {
+  // Same key shape as getRoleContext — a bare-token compare would never hit and
+  // would quietly throw away the sign-in prime.
+  return cached?.token === `${token}::${programId ?? ""}` ? cached.value : null;
 }
 
 /**
@@ -92,14 +94,35 @@ async function settle<T>(promise: Promise<T>): Promise<{ answered: boolean; valu
   }
 }
 
-export async function getRoleContext(token: string): Promise<RoleContext> {
-  if (cached && cached.token === token) return cached.value;
-  if (inflight && inflight.token === token) return inflight.promise;
+/**
+ * The caller's context, optionally FOR A CLUB.
+ *
+ * `programId` matters: the bridge context answers "what standing do you have in
+ * THIS program", and a club's people have none in the app-wide Bridge Program —
+ * they are in their club. Asking the wrong program returns no standing, which
+ * reads as "not a coach" however much access the club granted. Pass the selected
+ * club and the answer is about the club.
+ *
+ * Omitting it asks about the app-wide program, which is right for the one caller
+ * that only wants `memberships` (the club LIST — it cannot pass a club, since the
+ * clubs are what it is fetching).
+ *
+ * The cache is keyed by token AND program for the same reason `getAppContext` is:
+ * one person has different standing in each club, so a single slot would serve
+ * the previous club's answer after a switch.
+ */
+export async function getRoleContext(
+  token: string,
+  programId?: string,
+): Promise<RoleContext> {
+  const key = `${token}::${programId ?? ""}`;
+  if (cached && cached.token === key) return cached.value;
+  if (inflight && inflight.token === key) return inflight.promise;
 
   const promise = (async () => {
     // Independent and all optional — one failing must not deny the others.
     const [bridge, me] = await Promise.all([
-      settle(fetchBridgeContext(token)),
+      settle(fetchBridgeContext(token, programId)),
       settle(fetchMe(token)),
     ]);
 
@@ -114,12 +137,12 @@ export async function getRoleContext(token: string): Promise<RoleContext> {
     };
     // Only an ANSWERED resolve is worth remembering; a hiccup retries on the
     // next call instead of masquerading as "learner" until sign-out.
-    if (bridge.answered || me.answered) cached = { token, value };
+    if (bridge.answered || me.answered) cached = { token: key, value };
     return value;
   })().finally(() => {
-    if (inflight?.token === token) inflight = null;
+    if (inflight?.token === key) inflight = null;
   });
-  inflight = { token, promise };
+  inflight = { token: key, promise };
   return promise;
 }
 
@@ -287,13 +310,19 @@ export function subscribeToRoleContext(fn: (ctx: RoleContext) => void): () => vo
  * sign-out to take effect. Called when the app returns to the foreground, which
  * is exactly when someone comes back from changing something.
  */
-export async function refreshRoleContext(token: string): Promise<RoleContext> {
-  if (cached?.token === token) cached = null;
+export async function refreshRoleContext(
+  token: string,
+  programId?: string,
+): Promise<RoleContext> {
+  // The cache key is `token::program`, so match on the PREFIX — a bare-token
+  // compare would leave a club-scoped entry in place and keep serving the stale
+  // permissions this function exists to clear.
+  if (cached?.token.startsWith(`${token}::`)) cached = null;
   inflight = null;
   // Per-club access is part of what a refresh is for — a role edited in the
   // console changes capabilities, not memberships.
   clearAppContext();
-  const value = await getRoleContext(token);
+  const value = await getRoleContext(token, programId);
   for (const fn of roleListeners) fn(value);
   return value;
 }

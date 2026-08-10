@@ -449,9 +449,12 @@ export type BridgeSummary = {
 };
 
 /** Role-aware activity counts for the live Home screen (today-feed). */
-export function fetchBridgeSummary(token: string): Promise<BridgeSummary> {
+export function fetchBridgeSummary(
+  token: string,
+  programId: string | undefined = PROGRAM_ID,
+): Promise<BridgeSummary> {
   return request<BridgeSummary>(
-    `/api/platform/bridge/summary?program_id=${PROGRAM_ID}`,
+    `/api/platform/bridge/summary?program_id=${programId ?? PROGRAM_ID}`,
     { token },
   );
 }
@@ -529,9 +532,12 @@ export function fetchAppMembers(token: string, programId: string): Promise<AppMe
   });
 }
 
-export function fetchBridgeContext(token: string): Promise<BridgeContext> {
+export function fetchBridgeContext(
+  token: string,
+  programId: string | undefined = PROGRAM_ID,
+): Promise<BridgeContext> {
   return request<BridgeContext>(
-    `/api/platform/bridge/context?program_id=${PROGRAM_ID}`,
+    `/api/platform/bridge/context?program_id=${programId ?? PROGRAM_ID}`,
     { token },
   );
 }
@@ -543,10 +549,43 @@ export type ProgramLearner = {
   joined_at: string | null;
 };
 
+/**
+ * A CLUB'S learners, from the club's own roster.
+ *
+ * Not the same question as fetchProgramLearners. For a club's people,
+ * resolvePlatformAccess redirects the data scope to the CONNECTED program (see
+ * its partner branch), so the bridge roster answers about the parent program —
+ * where a club mentor is nobody's coach, and the club's own learners do not
+ * appear at all. /club-app/members resolves against the club itself, so this is
+ * the roster a club actually has.
+ *
+ * Mentors, admins and owners are the people doing the coaching, so they are not
+ * their own learners.
+ */
+const _NOT_A_LEARNER = new Set(["owner", "administrator", "instructor"]);
+
+export async function fetchClubLearners(
+  token: string,
+  programId: string,
+): Promise<ProgramLearner[]> {
+  const members = await fetchAppMembers(token, programId);
+  return members
+    .filter((m) => !_NOT_A_LEARNER.has(m.membership_role))
+    .map((m) => ({
+      user_id: m.profile_id ?? null,
+      email: m.email,
+      name: m.display_name,
+      joined_at: null,
+    }));
+}
+
 /** The coach's learner roster (their hires); admins see the whole program. */
-export function fetchProgramLearners(token: string): Promise<ProgramLearner[]> {
+export function fetchProgramLearners(
+  token: string,
+  programId: string = PROGRAM_ID,
+): Promise<ProgramLearner[]> {
   return request<ProgramLearner[]>(
-    `/api/platform/bridge/learners?program_id=${PROGRAM_ID}`,
+    `/api/platform/bridge/learners?program_id=${programId}`,
     { token },
   );
 }
@@ -560,17 +599,23 @@ export type Coach = {
 export type MyCoach = { coach_id: string; name: string } | null;
 
 /** The program's coaches — visible to learners (names only). */
-export function fetchCoaches(token: string): Promise<Coach[]> {
+export function fetchCoaches(
+  token: string,
+  programId: string = PROGRAM_ID,
+): Promise<Coach[]> {
   return request<Coach[]>(
-    `/api/platform/bridge/coaches?program_id=${PROGRAM_ID}`,
+    `/api/platform/bridge/coaches?program_id=${programId}`,
     { token },
   );
 }
 
 /** The calling learner's current coach (null when none hired yet). */
-export async function fetchMyCoach(token: string): Promise<MyCoach> {
+export async function fetchMyCoach(
+  token: string,
+  programId: string = PROGRAM_ID,
+): Promise<MyCoach> {
   const res = await request<{ coach: MyCoach }>(
-    `/api/platform/bridge/my-coach?program_id=${PROGRAM_ID}`,
+    `/api/platform/bridge/my-coach?program_id=${programId}`,
     { token },
   );
   return res.coach;
@@ -579,26 +624,35 @@ export async function fetchMyCoach(token: string): Promise<MyCoach> {
 /** EVERY coach this learner has hired (multi-coach). */
 export async function fetchMyCoaches(
   token: string,
+  programId: string = PROGRAM_ID,
 ): Promise<{ coach_id: string; name: string }[]> {
   const res = await request<{ coaches: { coach_id: string; name: string }[] }>(
-    `/api/platform/bridge/my-coaches?program_id=${PROGRAM_ID}`,
+    `/api/platform/bridge/my-coaches?program_id=${programId}`,
     { token },
   );
   return res.coaches ?? [];
 }
 
 /** Part ways with one coach (the others stay). */
-export async function removeCoach(token: string, coachId: string): Promise<void> {
+export async function removeCoach(
+  token: string,
+  coachId: string,
+  programId: string = PROGRAM_ID,
+): Promise<void> {
   await request(
-    `/api/platform/bridge/my-coach/${encodeURIComponent(coachId)}?program_id=${PROGRAM_ID}`,
+    `/api/platform/bridge/my-coach/${encodeURIComponent(coachId)}?program_id=${programId}`,
     { method: "DELETE", token },
   );
 }
 
 /** Hire a coach — ADDITIVE: joins your coaches, replaces nobody. */
-export async function hireCoach(token: string, coachId: string): Promise<MyCoach> {
+export async function hireCoach(
+  token: string,
+  coachId: string,
+  programId: string = PROGRAM_ID,
+): Promise<MyCoach> {
   const res = await request<{ coach: MyCoach }>(
-    `/api/platform/bridge/my-coach?program_id=${PROGRAM_ID}`,
+    `/api/platform/bridge/my-coach?program_id=${programId}`,
     { method: "POST", token, body: { coach_id: coachId } },
   );
   return res.coach;

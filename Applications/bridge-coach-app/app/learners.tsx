@@ -11,12 +11,22 @@ import {
 import { OptionCard, PrimaryButton, Screen, ScreenHeader } from "../components/ui";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
-import { fetchProgramLearners, NexusError, ProgramLearner } from "../lib/nexus";
+import { useSelectedClubId } from "../lib/club-context";
+import {
+  fetchClubLearners,
+  fetchProgramLearners,
+  NexusError,
+  ProgramLearner,
+} from "../lib/nexus";
 
 /** Coach view: the program's learner roster (Phase 1 — reviews and
  *  assignments will hang off each learner in Phase 2). */
 export default function LearnersScreen() {
   const { token } = useAuth();
+  // The roster belongs to the club being viewed. The bridge roster cannot answer
+  // for a club at all — its access resolution redirects to the connected program
+  // — so in a club we read the club's own roster instead.
+  const clubId = useSelectedClubId();
   const [learners, setLearners] = useState<ProgramLearner[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +34,9 @@ export default function LearnersScreen() {
     if (!token) return;
     setError(null);
     try {
-      setLearners(await fetchProgramLearners(token));
+      setLearners(
+        clubId ? await fetchClubLearners(token, clubId) : await fetchProgramLearners(token),
+      );
     } catch (e) {
       setError(
         e instanceof NexusError && e.status === 403
@@ -32,7 +44,7 @@ export default function LearnersScreen() {
           : "Couldn't load the learner roster. Check that the backend is running.",
       );
     }
-  }, [token]);
+  }, [token, clubId]);
 
   useEffect(() => {
     load();

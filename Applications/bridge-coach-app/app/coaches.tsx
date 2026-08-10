@@ -16,6 +16,7 @@ import {
 } from "../components/ui";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
+import { useSelectedClubId } from "../lib/club-context";
 import {
   Coach,
   fetchCoaches,
@@ -36,6 +37,8 @@ import { clearSummaryCache, refreshSummary } from "../lib/summary-cache";
  */
 export default function CoachesScreen() {
   const { token } = useAuth();
+  // Coaches, and who you have hired, are the CLUB'S — see fetchProgramLearners.
+  const clubId = useSelectedClubId();
   const [coaches, setCoaches] = useState<Coach[] | null>(null);
   const [hiredIds, setHiredIds] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -47,15 +50,15 @@ export default function CoachesScreen() {
     setError(null);
     try {
       const [list, mine] = await Promise.all([
-        fetchCoaches(token),
-        fetchMyCoaches(token),
+        fetchCoaches(token, clubId ?? undefined),
+        fetchMyCoaches(token, clubId ?? undefined),
       ]);
       setCoaches(list);
       setHiredIds(new Set(mine.map((co) => co.coach_id)));
     } catch {
       setError("Couldn't load the coaches. Check that the backend is running.");
     }
-  }, [token]);
+  }, [token, clubId]);
 
   useEffect(() => {
     load();
@@ -69,12 +72,12 @@ export default function CoachesScreen() {
     setError(null);
     setSubmitting(true);
     try {
-      if (selectedHired) await removeCoach(token, selected.coach_id);
-      else await hireCoach(token, selected.coach_id);
+      if (selectedHired) await removeCoach(token, selected.coach_id, clubId ?? undefined);
+      else await hireCoach(token, selected.coach_id, clubId ?? undefined);
       // The Coach tab's header and My Games' send-picker read the summary —
       // make both see this change on their next look.
       clearSummaryCache();
-      refreshSummary(token).catch(() => {});
+      refreshSummary(token, clubId ?? undefined).catch(() => {});
       setSelectedId(null);
       await load();
     } catch (e) {
