@@ -20,7 +20,7 @@ import { useSession } from "@/nexus/session";
 
 export function AcceptInvite() {
   const { token = "" } = useParams();
-  const { user, refresh, logout } = useSession();
+  const { user, refresh, clearSession } = useSession();
   const navigate = useNavigate();
 
   const [inv, setInv] = useState<Invitation | null>(null);
@@ -120,8 +120,12 @@ export function AcceptInvite() {
                 <Button
                   className="w-full"
                   onClick={() => {
-                    logout();
-                    // Session cleared — the create-account branch below renders.
+                    // clearSession, NOT logout: logout hard-redirects to the
+                    // sign-in door, which navigated away from this very page —
+                    // the invitation could never be accepted by anyone but the
+                    // admin who was already signed in. Clearing in place lets the
+                    // create-account branch below render.
+                    clearSession();
                   }}
                 >
                   Continue as {inv.display_name ?? inv.email}

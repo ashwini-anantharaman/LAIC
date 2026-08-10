@@ -308,6 +308,10 @@ platformRouter.post("/auth/signup", async (c) => {
         metadata: { name: org.name },
       });
     }
+    const ownerProfileId = dbEnabled()
+      ? await db.resolveProfileId(auth.id, null).catch(() => null)
+      : null;
+    if (ownerProfileId) await db.markPasswordClaimed(ownerProfileId).catch(() => {});
     const session = await signInUser(req.email, req.password);
     const user = await loadPlatformUser(auth.id, req.email);
     return c.json(_authUserResponse(user, session.access_token));
@@ -315,7 +319,11 @@ platformRouter.post("/auth/signup", async (c) => {
 
   if (req.signup_type === "student") {
     const auth = await createAuthUser(req.email, req.password);
-    await db.createProfile(auth.id, req.email, "student", req.display_name ?? null);
+    const profile = await db.createProfile(auth.id, req.email, "student", req.display_name ?? null);
+    // They chose this password themselves, so it is theirs from the start (0046).
+    // Without this the app would greet them by asking them to replace the
+    // "temporary password" they had just invented.
+    if (profile?.id) await db.markPasswordClaimed(profile.id as string).catch(() => {});
     const session = await signInUser(req.email, req.password);
     const user = await loadPlatformUser(auth.id, req.email);
     return c.json(_authUserResponse(user, session.access_token));
@@ -343,6 +351,8 @@ platformRouter.post("/auth/signup", async (c) => {
     role: profileRole,
     displayName: req.display_name ?? null,
   });
+  // Chosen by them at signup, so theirs from the start (0046).
+  if (profileId) await db.markPasswordClaimed(profileId as string).catch(() => {});
 
   // Stored membership role uses the canonical "instructor" (Nexus addendum);
   // the public-facing "Coach"/"Teacher" word is derived from program category
