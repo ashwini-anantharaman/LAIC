@@ -16,6 +16,7 @@
 import { Suspense, lazy, useState } from 'react';
 import { Play, X } from 'lucide-react';
 import { bridgeEmbedDef, type BridgeEmbedKind } from '../../../../lib/tutorialV2/bridgeEmbed';
+import { createBenDecider } from '../../../../vendor/bridge-table/table-embed.js';
 
 // The table is a COMPONENT, not a site in a frame — @bridge/table-embed carries
 // the real PlayTable plus the real game law in one 19kB-gzipped module whose only
@@ -24,6 +25,11 @@ import { bridgeEmbedDef, type BridgeEmbedKind } from '../../../../lib/tutorialV2
 const BridgeTable = lazy(async () => ({
   default: (await import('../../../../vendor/bridge-table/table-embed.js')).BridgeTable,
 }));
+
+/** Where BEN answers. Override with VITE_BEN_ENDPOINT. */
+const BEN_ENDPOINT =
+  (import.meta.env?.VITE_BEN_ENDPOINT as string | undefined) ||
+  'https://ben-service.vercel.app';
 
 const FELT = '#1c6b4f';
 
@@ -86,7 +92,14 @@ export function BridgeEmbedBlock({
   readOnly?: boolean;
 }>) {
   const [live, setLive] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const def = bridgeEmbedDef(kind);
+
+  // BEN plays the other three seats. Built once per block so the table's robot
+  // effect does not see a new function identity on every render.
+  const [decide] = useState(() =>
+    createBenDecider({ endpoint: BEN_ENDPOINT, onProblem: setProblem }),
+  );
 
   return (
     <div>
@@ -120,6 +133,7 @@ export function BridgeEmbedBlock({
                 dealer="S"
                 appearance={{ skin, handLayout: 'row' }}
                 showAllHands={showAllHands}
+                decide={decide}
               />
             </Suspense>
             <button
@@ -203,6 +217,9 @@ export function BridgeEmbedBlock({
             padding: '7px 10px',
           }}
         />
+      )}
+      {problem && (
+        <p style={{ fontSize: 11.5, color: '#B42318', marginTop: 6 }}>{problem}</p>
       )}
       {readOnly && caption ? (
         <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 6 }}>{caption}</p>

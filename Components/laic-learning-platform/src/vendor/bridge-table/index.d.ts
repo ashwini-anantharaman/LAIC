@@ -12,4 +12,6 @@
  * Robots are the host's business: pass `decide` and the other three seats play.
  */
 export { BridgeTable } from "./BridgeTable";
+export { createBenDecider } from "./benDecider";
+export type { BenDeciderOptions } from "./benDecider";
 export type { BridgeTableProps, BridgeDecide, BridgeDecision, } from "./BridgeTable";
