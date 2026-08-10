@@ -3537,7 +3537,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ─── Router ──────────────────────────────────────────────────────── */
 
-const server = createServer(async (req, res) => {
+/** Request handler — exported so Vercel serverless (api/index.mjs) can reuse it. */
+export async function handler(req, res) {
   const { method } = req;
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const path = url.pathname;
@@ -4518,9 +4519,12 @@ const server = createServer(async (req, res) => {
   }
 
   return send(res, 404, { code: 'not_found', message: `No route for ${method} ${path}` });
-});
+}
 
-server.listen(PORT, () => {
+const server = createServer(handler);
+
+// Vercel imports the handler; only local dev binds a port.
+if (!process.env.VERCEL) server.listen(PORT, () => {
   console.log(`\nLAIC dev backend → http://localhost:${PORT}`);
   console.log(`LLM: ${ANTHROPIC_API_KEY ? `enabled (model ${LLM_MODEL})` : 'DISABLED — set ANTHROPIC_API_KEY in .env'}`);
   console.log('Tutorial: POST /api/tutorials/ingest-web · POST /api/tutorials/ingest-youtube · POST /api/tutorials/expand-prompt · POST /api/tutorials/suggest-highlights · POST /api/tutorials/suggest-markup-flags · POST /api/tutorials/extract-knowledge · POST /api/tutorials/generate (SSE)');
