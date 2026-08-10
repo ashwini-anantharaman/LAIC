@@ -292,27 +292,27 @@ export async function loadUser(authUserId: string): Promise<{ profile: Row | nul
     if (!persons.length) return { profile: null, memberships: [] };
     const profileIds = persons.map((p) => p.id);
 
-    const mships = await tx.select().from(orgMemberships).where(inArray(orgMemberships.profileId, profileIds));
-    const stageIds = mships.map((m) => m.stageNodeId).filter((x): x is string => Boolean(x));
-    const stages = stageIds.length
-      ? await tx.select().from(stageNodes).where(inArray(stageNodes.id, stageIds))
-      : [];
-    const stageMap = new Map(stages.map((s) => [s.id, s]));
+    // Memberships and their stage rows in ONE query. This runs on every
+    // authenticated request (getCurrentUser), so a third sequential round trip
+    // here was a per-request tax — and under serverless instance scattering
+    // there is no warm cache to hide behind.
+    const joined = await tx
+      .select({ m: orgMemberships, s: stageNodes })
+      .from(orgMemberships)
+      .leftJoin(stageNodes, eq(orgMemberships.stageNodeId, stageNodes.id))
+      .where(inArray(orgMemberships.profileId, profileIds));
 
-    const memberships: Membership[] = mships.map((m) => {
-      const stage = m.stageNodeId ? stageMap.get(m.stageNodeId) : undefined;
-      return {
-        id: m.id,
-        org_id: m.orgId,
-        profile_id: m.profileId,
-        role: normalizeRole(m.role),
-        stage_node_id: m.stageNodeId ?? null,
-        access: (m.access as "view" | "edit") ?? "view",
-        stage_path: stage ? stage.path ?? null : null,
-        stage_type: stage ? (stage.stageType as Membership["stage_type"]) ?? null : null,
-        program_id: m.programId ?? null,
-      };
-    });
+    const memberships: Membership[] = joined.map(({ m, s }) => ({
+      id: m.id,
+      org_id: m.orgId,
+      profile_id: m.profileId,
+      role: normalizeRole(m.role),
+      stage_node_id: m.stageNodeId ?? null,
+      access: (m.access as "view" | "edit") ?? "view",
+      stage_path: s ? s.path ?? null : null,
+      stage_type: s ? ((s.stageType as Membership["stage_type"]) ?? null) : null,
+      program_id: m.programId ?? null,
+    }));
     return { profile: profileRow(persons[0]), memberships };
   });
 }

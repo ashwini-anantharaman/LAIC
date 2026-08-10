@@ -51,6 +51,40 @@ let jwksKeys: Map<string, KeyObject> | null = null;
 let jwksFetchedAt = 0;
 let jwksInFlight: Promise<Map<string, KeyObject> | null> | null = null;
 
+function parseJwks(body: { keys?: Jwk[] }): Map<string, KeyObject> | null {
+  const map = new Map<string, KeyObject>();
+  for (const jwk of body.keys ?? []) {
+    if (!jwk.kid || jwk.kty !== "EC" || jwk.crv !== "P-256") continue;
+    try {
+      map.set(jwk.kid, createPublicKey({ key: jwk as never, format: "jwk" }));
+    } catch {
+      // One malformed key must not take down the others.
+    }
+  }
+  return map.size > 0 ? map : null;
+}
+
+// SUPABASE_JWKS: the JWKS document itself, pinned in an env var. Serverless
+// traffic scatters across many instances (observed: 11 instances over 15
+// sequential requests), so "fetch once and cache" degrades to "fetch once per
+// instance" — a round trip costing about what the auth.getUser hop it
+// replaced cost. The keys are PUBLIC and rotate rarely; pinning them lets a
+// cold instance verify locally from its very first request. Rotation still
+// works without an env change: an unknown kid forces one live JWKS fetch
+// (getKey's forceRefresh), which overrides the pin.
+function seedFromEnv(): void {
+  if (jwksKeys !== null || !process.env.SUPABASE_JWKS) return;
+  try {
+    const parsed = parseJwks(JSON.parse(process.env.SUPABASE_JWKS));
+    if (parsed) {
+      jwksKeys = parsed;
+      jwksFetchedAt = Date.now();
+    }
+  } catch {
+    // A malformed pin must not take auth down — the fetch path still works.
+  }
+}
+
 async function fetchJwks(): Promise<Map<string, KeyObject> | null> {
   const base = getSettings().supabaseUrl;
   if (!base) return null;
@@ -59,23 +93,18 @@ async function fetchJwks(): Promise<Map<string, KeyObject> | null> {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;
-    const body = (await res.json()) as { keys?: Jwk[] };
-    const map = new Map<string, KeyObject>();
-    for (const jwk of body.keys ?? []) {
-      if (!jwk.kid || jwk.kty !== "EC" || jwk.crv !== "P-256") continue;
-      try {
-        map.set(jwk.kid, createPublicKey({ key: jwk as never, format: "jwk" }));
-      } catch {
-        // One malformed key must not take down the others.
-      }
-    }
-    return map.size > 0 ? map : null;
+    return parseJwks((await res.json()) as { keys?: Jwk[] });
   } catch {
     return null;
   }
 }
 
 async function getKey(kid: string, opts?: { forceRefresh?: boolean }): Promise<KeyObject | null> {
+  seedFromEnv();
+  // A pinned key set never goes stale on its own — only an unknown kid
+  // (rotation) forces the live fetch below.
+  const pinned = process.env.SUPABASE_JWKS ? jwksKeys?.has(kid) : false;
+  if (pinned) return jwksKeys?.get(kid) ?? null;
   const fresh = jwksKeys !== null && Date.now() - jwksFetchedAt < JWKS_TTL_MS;
   if (!fresh || (opts?.forceRefresh && !jwksInFlight)) {
     jwksInFlight ??= fetchJwks().then((keys) => {
