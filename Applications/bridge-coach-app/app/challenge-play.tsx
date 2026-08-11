@@ -30,6 +30,16 @@ export default function ChallengePlayScreen() {
       next={id ? `/bridge/challenges/${id}/play` : "/bridge/challenges/latest/play"}
       backTo="/club"
       programId={clubId ?? undefined}
+      // The entry route bounces an unaccepted invite to the platform's OWN
+      // challenges list — a different-looking product the app must never show
+      // (owner direction 2026-08-11). Land back on the app's screens instead:
+      // this challenge's info page (where Accept now lives), or the native
+      // Challenges screen when the id is the platform's to resolve.
+      escapeTo={
+        id
+          ? { path: "/bridge/challenges", href: { pathname: "/challenge-info", params: { id } } }
+          : { path: "/bridge/challenges", href: "/club-challenges" }
+      }
     />
   );
 }

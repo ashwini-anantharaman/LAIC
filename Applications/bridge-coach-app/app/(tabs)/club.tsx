@@ -320,16 +320,17 @@ export default function ClubScreen() {
       id: "latest-challenge",
       kind: "challenge",
       // The summary may not have answered yet (or the club has none): the card
-      // still shows, uncaptioned, and the tap falls back to the bridge-resolved
-      // "latest" play route. With an id in hand it opens the challenge's OWN
-      // info screen, same as the Challenges carousel — never straight into a
-      // table.
+      // still shows, uncaptioned, and the tap falls back to the app's OWN
+      // Challenges screen — never the embed, whose entry page bounces an
+      // unaccepted invite onto the platform's list (a screen the app never
+      // shows; owner direction 2026-08-11). With an id in hand it opens the
+      // challenge's info screen, same as the Challenges carousel.
       title: latest?.name ?? "Challenge",
       ...(latest ? { detail: `${latest.boards} Boards` } : {}),
       onPress: () =>
         latest
           ? router.push({ pathname: "/challenge-info", params: { id: latest.id } })
-          : router.push("/challenge-play"),
+          : router.push("/club-challenges"),
     },
     {
       id: "tutorial-1",

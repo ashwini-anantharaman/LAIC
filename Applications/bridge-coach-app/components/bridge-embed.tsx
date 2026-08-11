@@ -54,6 +54,7 @@ export function BridgeEmbed({
   backTo,
   confirmUnfinishedExit = false,
   fullScreen = false,
+  escapeTo,
 }: {
   title: string;
   next: string;
@@ -78,6 +79,15 @@ export function BridgeEmbed({
    * The chip runs the same guarded back as the header arrow did.
    */
   fullScreen?: boolean;
+  /**
+   * A platform page the learner must NEVER see inside the app (owner
+   * direction 2026-08-11: the challenges list the entry route bounces an
+   * unaccepted invite to). When the embed lands on exactly this PATH, the
+   * screen replaces itself with the app's own `href` instead of showing it.
+   * Path-only, exact — "/bridge/challenges" must not catch
+   * "/bridge/challenges/<id>/play".
+   */
+  escapeTo?: { path: string; href: Href };
 }) {
   const { token } = useAuth();
   // The floating back arrow sits in the LEFT GUTTER, below the table's top
@@ -176,6 +186,26 @@ export function BridgeEmbed({
    */
   const [atTable, setAtTable] = useState(false);
 
+  /** Exact path-only test against `escapeTo`, and the one exit it triggers.
+   *  Guarded so one landing replaces once — a replace mid-transition must not
+   *  fire again off the next location report. */
+  const escaped = useRef(false);
+  const maybeEscape = useCallback(
+    (href: string) => {
+      if (!escapeTo || escaped.current) return false;
+      let path: string;
+      try {
+        path = new URL(href, "http://x").pathname.replace(/\/+$/, "");
+      } catch {
+        return false;
+      }
+      if (path !== escapeTo.path) return false;
+      escaped.current = true;
+      router.replace(escapeTo.href);
+      return true;
+    },
+    [escapeTo],
+  );
 
   const handleHostMessage = useCallback((data: unknown) => {
     const m = data as {
@@ -191,10 +221,11 @@ export function BridgeEmbed({
     // Any other page inside /m reports its location; that is how the web iframe
     // learns the board has been left (a native WebView uses the url change).
     if (m?.type === "bridge:location" && typeof m.href === "string" && !isTableHref(m.href)) {
+      if (maybeEscape(m.href)) return;
       tableState.current = null;
       setAtTable(false);
     }
-  }, []);
+  }, [maybeEscape]);
 
   const goBackNow = useCallback(() => {
     if (discardTimer.current) {
@@ -242,6 +273,8 @@ export function BridgeEmbed({
   const handleUrlChange = useCallback(
     (u: string) => {
       currentUrl.current = u;
+      // A page the app refuses to show — leave for the native screen instead.
+      if (maybeEscape(u)) return;
       // Native's own read of "am I at a board", so the chrome is right even
       // before the page's first state report — and is dropped again the moment
       // the embed navigates back to a list.
@@ -278,7 +311,7 @@ export function BridgeEmbed({
         }
       }
     },
-    [load, goBackNow],
+    [load, goBackNow, maybeEscape],
   );
 
   // Re-entering the tab resets the embed to its start page — CHEAPLY: the
