@@ -5,10 +5,14 @@
 import { useEffect, useState } from "react";
 
 import { useAuth } from "./auth-context";
+import { useSelectedClubId } from "./club-context";
 import { getRoleContext, isCoach } from "./bridge-role";
 
 export function useIsCoach(): boolean {
   const { token } = useAuth();
+  // Coach-ness is PER CLUB: a mentor in one club is a plain member in another,
+  // so the question has to name the club we are looking at.
+  const clubId = useSelectedClubId();
   const [coach, setCoach] = useState(false);
 
   useEffect(() => {
@@ -17,13 +21,13 @@ export function useIsCoach(): boolean {
       setCoach(false);
       return;
     }
-    getRoleContext(token).then((ctx) => {
+    getRoleContext(token, clubId ?? undefined).then((ctx) => {
       if (!cancelled) setCoach(isCoach(ctx));
     });
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, clubId]);
 
   return coach;
 }

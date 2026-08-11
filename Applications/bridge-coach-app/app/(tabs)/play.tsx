@@ -32,11 +32,11 @@ import {
 } from "../../constants/brand-vectors";
 import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
-import { useSelectedClubId } from "../../lib/club-context";
 import { peekBridgeOrigin, prefetchLaunch } from "../../lib/launch-cache";
 import { type BridgeSummary } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
 import { peekSummary, refreshSummary } from "../../lib/summary-cache";
+import { useSelectedClubId } from "../../lib/club-context";
 
 const DESIGN_WIDTH = 390;
 /** The grid's left edge, and its top measured from under the screen title. */
@@ -45,7 +45,6 @@ const GRID_TOP_GAP = 42;
 
 export default function PlayScreen() {
   const { token } = useAuth();
-  // The selected club scopes every bridge read on this screen (null = app-wide).
   const clubId = useSelectedClubId();
   const { width } = useWindowDimensions();
   // Last known summary renders immediately; the focus effect refreshes it.

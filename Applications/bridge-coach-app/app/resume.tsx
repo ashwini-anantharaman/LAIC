@@ -8,13 +8,12 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { OptionCard, Screen, ScreenHeader } from "../components/ui";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
-import { useSelectedClubId } from "../lib/club-context";
 import { type InProgressBoard } from "../lib/nexus";
 import { peekSummary, refreshSummary } from "../lib/summary-cache";
+import { useSelectedClubId } from "../lib/club-context";
 
 export default function ResumeScreen() {
   const { token } = useAuth();
-  // The selected club scopes every bridge read on this screen (null = app-wide).
   const clubId = useSelectedClubId();
   // Last known list renders immediately; the focus effect refreshes it.
   const [boards, setBoards] = useState<InProgressBoard[] | null>(() =>

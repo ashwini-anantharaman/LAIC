@@ -12,13 +12,20 @@ import { OptionCard, PrimaryButton, Screen, ScreenHeader } from "../components/u
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { useSelectedClubId } from "../lib/club-context";
-import { fetchProgramLearners, NexusError, ProgramLearner } from "../lib/nexus";
+import {
+  fetchClubLearners,
+  fetchProgramLearners,
+  NexusError,
+  ProgramLearner,
+} from "../lib/nexus";
 
 /** Coach view: the program's learner roster (Phase 1 — reviews and
  *  assignments will hang off each learner in Phase 2). */
 export default function LearnersScreen() {
   const { token } = useAuth();
-  // The selected club scopes every bridge read on this screen (null = app-wide).
+  // The roster belongs to the club being viewed. The bridge roster cannot answer
+  // for a club at all — its access resolution redirects to the connected program
+  // — so in a club we read the club's own roster instead.
   const clubId = useSelectedClubId();
   const [learners, setLearners] = useState<ProgramLearner[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +34,9 @@ export default function LearnersScreen() {
     if (!token) return;
     setError(null);
     try {
-      setLearners(await fetchProgramLearners(token, clubId ?? undefined));
+      setLearners(
+        clubId ? await fetchClubLearners(token, clubId) : await fetchProgramLearners(token),
+      );
     } catch (e) {
       setError(
         e instanceof NexusError && e.status === 403

@@ -451,10 +451,10 @@ export type BridgeSummary = {
 /** Role-aware activity counts for the live Home screen (today-feed). */
 export function fetchBridgeSummary(
   token: string,
-  programId: string = PROGRAM_ID,
+  programId: string | undefined = PROGRAM_ID,
 ): Promise<BridgeSummary> {
   return request<BridgeSummary>(
-    `/api/platform/bridge/summary?program_id=${programId}`,
+    `/api/platform/bridge/summary?program_id=${programId ?? PROGRAM_ID}`,
     { token },
   );
 }
@@ -532,9 +532,12 @@ export function fetchAppMembers(token: string, programId: string): Promise<AppMe
   });
 }
 
-export function fetchBridgeContext(token: string): Promise<BridgeContext> {
+export function fetchBridgeContext(
+  token: string,
+  programId: string | undefined = PROGRAM_ID,
+): Promise<BridgeContext> {
   return request<BridgeContext>(
-    `/api/platform/bridge/context?program_id=${PROGRAM_ID}`,
+    `/api/platform/bridge/context?program_id=${programId ?? PROGRAM_ID}`,
     { token },
   );
 }
@@ -545,6 +548,36 @@ export type ProgramLearner = {
   name: string | null;
   joined_at: string | null;
 };
+
+/**
+ * A CLUB'S learners, from the club's own roster.
+ *
+ * Not the same question as fetchProgramLearners. For a club's people,
+ * resolvePlatformAccess redirects the data scope to the CONNECTED program (see
+ * its partner branch), so the bridge roster answers about the parent program —
+ * where a club mentor is nobody's coach, and the club's own learners do not
+ * appear at all. /club-app/members resolves against the club itself, so this is
+ * the roster a club actually has.
+ *
+ * Mentors, admins and owners are the people doing the coaching, so they are not
+ * their own learners.
+ */
+const _NOT_A_LEARNER = new Set(["owner", "administrator", "instructor"]);
+
+export async function fetchClubLearners(
+  token: string,
+  programId: string,
+): Promise<ProgramLearner[]> {
+  const members = await fetchAppMembers(token, programId);
+  return members
+    .filter((m) => !_NOT_A_LEARNER.has(m.membership_role))
+    .map((m) => ({
+      user_id: m.profile_id ?? null,
+      email: m.email,
+      name: m.display_name,
+      joined_at: null,
+    }));
+}
 
 /** The coach's learner roster (their hires); admins see the whole program. */
 export function fetchProgramLearners(

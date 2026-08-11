@@ -37,7 +37,7 @@ import { clearSummaryCache, refreshSummary } from "../lib/summary-cache";
  */
 export default function CoachesScreen() {
   const { token } = useAuth();
-  // The selected club scopes every bridge read on this screen (null = app-wide).
+  // Coaches, and who you have hired, are the CLUB'S — see fetchProgramLearners.
   const clubId = useSelectedClubId();
   const [coaches, setCoaches] = useState<Coach[] | null>(null);
   const [hiredIds, setHiredIds] = useState<Set<string>>(new Set());
