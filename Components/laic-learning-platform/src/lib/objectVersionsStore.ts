@@ -145,8 +145,73 @@ function readAll(userId: string): Version[] {
   }
 }
 
+/**
+ * Persist history, shedding weight rather than failing.
+ *
+ * Snapshots carry whole blocks, and images are inlined base64, so a handful of
+ * illustrated versions fills the ~5MB localStorage budget. The old write threw
+ * QuotaExceededError straight through: nothing was stored, and the history an
+ * author could see vanished on the next refresh.
+ *
+ * The version LIST is what must never be lost — an author needs to see that v1…v9
+ * exist even if the browser cannot hold nine copies of their images. So on
+ * overflow we drop CONTENT from the least precious versions, oldest first, and
+ * keep every row. Protected from trimming while anything else remains: the
+ * published version (it is what readers are being served), locked versions (a
+ * lock promises the content will not change), v1 (the original state), and the
+ * newest version (the one being worked on).
+ */
+const SNAPSHOT_PROTECTED = (v: Version, newestPerObject: Map<string, number>) => (
+  !!v.publishedAt
+  || !!v.locked
+  || v.versionNumber === 1
+  || newestPerObject.get(v.objectId) === v.versionNumber
+);
+
+function trimForStorage(list: Version[], pass: number): Version[] {
+  const newest = new Map<string, number>();
+  for (const v of list) {
+    newest.set(v.objectId, Math.max(newest.get(v.objectId) ?? 0, v.versionNumber));
+  }
+  // Oldest first, so the versions an author is least likely to reach for lose
+  // their content before recent ones do.
+  const order = [...list].sort((a, b) => a.versionNumber - b.versionNumber);
+  const doomed = new Set<string>();
+  for (const v of order) {
+    if (!v.snapshot) continue;
+    if (pass < 2 && SNAPSHOT_PROTECTED(v, newest)) continue;
+    // Pass 2 is the last resort: only the published and locked versions keep
+    // their content, because losing those loses something irreplaceable.
+    if (pass >= 2 && (v.publishedAt || v.locked)) continue;
+    doomed.add(v.id);
+    if (pass === 0) break;      // shed one at a time first — stay cheap
+    if (pass === 1 && doomed.size >= 3) break;
+  }
+  if (!doomed.size) return list;
+  return list.map((v) => (
+    doomed.has(v.id)
+      ? { ...v, snapshot: undefined, snapshotTrimmed: true }
+      : v
+  ));
+}
+
 function writeAll(userId: string, list: Version[]) {
-  localStorage.setItem(KEY(userId), JSON.stringify(list));
+  let candidate = list;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      localStorage.setItem(KEY(userId), JSON.stringify(candidate));
+      emit();
+      return;
+    } catch {
+      const pass = attempt < 8 ? 0 : attempt < 20 ? 1 : 2;
+      const slimmer = trimForStorage(candidate, pass);
+      if (slimmer === candidate) break; // nothing left to shed
+      candidate = slimmer;
+    }
+  }
+  // Even metadata-only did not fit. Leave whatever is already stored rather
+  // than clearing it — a stale history beats no history.
+  console.warn('[versions] could not persist history: storage is full');
   emit();
 }
 
