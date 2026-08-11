@@ -557,13 +557,18 @@ export function CoachSheet({
   // spinners (owner direction 2026-08-11). Keyed per CARD, not per trick:
   // each play is its own decision with its own answers.
   useCoachPrefetch(data.ask, decisionEpoch(data));
-  // FIVE SCREENS (owner direction 2026-08-11, extending 2026-08-06's three).
+  // FOUR SCREENS (owner direction 2026-08-11, folding the earlier five).
   // "Now" is the default and faces forward: the position, the think-it-through
-  // scaffold, the advice button, the chat. "Hints" is the ladder — five hints
-  // for the current decision, opened one at a time. "Tell" is the answers side
-  // by side: the coach's card and what BEN would do. The history split in two:
-  // "Play" holds every trick, "Auction" holds the bidding diagram.
-  const [view, setView] = useState<"now" | "hints" | "tell" | "play" | "auction">("now");
+  // scaffold, the chat. "Hints" is the ladder — five hints for the current
+  // decision, opened one at a time. "Tell" is the answers side by side: the
+  // coach's card and what BEN would do. "History" faces back and holds both
+  // records — the bidding diagram and every trick — as two collapsible
+  // sections, so the past is one tab, not two.
+  const [view, setView] = useState<"now" | "hints" | "tell" | "history">("now");
+  // Which history sections (the auction, the play) the learner has toggled.
+  // Untouched, each falls back to where the board is: the play opens once a
+  // card has been led, the auction opens while the bidding is the story.
+  const [historyToggles, setHistoryToggles] = useState<Record<string, boolean>>({});
 
   // Escape closes it, like every other overlay at this table.
   useEffect(() => {
@@ -683,14 +688,12 @@ export function CoachSheet({
           </div>
         </div>
 
-        {/* ── the five screens: Now, Hints and Tell face forward; Play and
-            Auction face back. The forward three wear ICONS (owner direction
+        {/* ── the four screens, each wearing its icon (owner direction
             2026-08-11): a speech bubble carrying an eye (what's in front of
-            you), a bulb (a nudge), and a check (the answer) — the coach's
-            three voices, at a glance. Play and Auction keep their words;
-            they are history, not modes of help, and five pictograms is a
-            puzzle where three is a language. The row still scrolls sideways
-            rather than shrinking the pills below a thumb. ── */}
+            you), a bulb (a nudge), a check (the answer), and a clock (the
+            board's past — the auction and the play, folded into one History
+            tab). The row still scrolls sideways rather than shrinking the
+            pills below a thumb. ── */}
         <div
           style={{
             flex: "none", display: "flex", gap: 6, padding: "10px 14px 0",
@@ -699,13 +702,12 @@ export function CoachSheet({
         >
           {(
             [
-              ["now", "Now", true],
-              ["hints", "Hints", true],
-              ["tell", "Tell", true],
-              ["play", "Play", false],
-              ["auction", "Auction", false],
+              ["now", "Now"],
+              ["hints", "Hints"],
+              ["tell", "Tell"],
+              ["history", "History"],
             ] as const
-          ).map(([v, label, iconed]) => {
+          ).map(([v, label]) => {
             const on = view === v;
             return (
               <button
@@ -716,16 +718,15 @@ export function CoachSheet({
                 title={label}
                 onClick={() => setView(v)}
                 style={{
-                  flex: "none", minHeight: 30, padding: iconed ? "3px 12px" : "4px 13px",
-                  borderRadius: 15,
+                  flex: "none", minHeight: 30, padding: "3px 12px", borderRadius: 15,
                   background: on ? FELT_MID : "transparent",
                   borderWidth: 1, borderStyle: "solid", borderColor: on ? FELT_MID : FELT_LINE,
-                  color: on ? "#fff" : "#8a8071", fontSize: 12, fontWeight: 700,
-                  fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
+                  color: on ? "#fff" : "#8a8071",
+                  fontFamily: "inherit", cursor: "pointer",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}
               >
-                {iconed ? <TabGlyph kind={v as "now" | "hints" | "tell"} /> : label}
+                <TabGlyph kind={v} />
               </button>
             );
           })}
@@ -770,122 +771,131 @@ export function CoachSheet({
               </p>
             ))}
 
-          {/* ── PLAY: every trick, in collapsible sections ── */}
-          {view === "play" &&
+          {/* ── HISTORY: the board's past — the auction and the play, one tab,
+              two collapsible sections (owner direction 2026-08-11). Untouched,
+              the section where the board LIVES is the open one: the auction
+              while the bidding is the story, the play once a card has led. ── */}
+          {view === "history" &&
             (() => {
               const tricks = (data.eventGroups ?? []).filter((g) => g.id !== "auction");
-              if (!tricks.length) {
-                return (
-                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
-                    No cards have been played yet.
-                  </p>
-                );
-              }
-              return (
-                <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
-                  <Label color={FELT_DEEP}>The play so far</Label>
-                  <div style={{ display: "flex", flexDirection: "column" }}>
-                    {tricks.map((group) => {
-                      const isOpen = groupOpen(group);
-                      return (
-                        <div key={group.id}>
-                          <button
-                            type="button"
-                            aria-expanded={isOpen}
-                            onClick={() => setGroupToggles((prev) => ({ ...prev, [group.id]: !isOpen }))}
-                            style={{
-                              display: "flex", alignItems: "center", gap: 6, width: "100%",
-                              minHeight: 30, padding: "4px 1px",
-                              background: "transparent", borderWidth: 0,
-                              borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#e8ddc3",
-                              fontFamily: "inherit", textAlign: "left", cursor: "pointer",
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6,
-                                textTransform: "uppercase", color: isOpen ? FELT_DEEP : FAINT,
-                              }}
-                            >
-                              {group.title}
-                            </span>
-                            {group.note && (
-                              <span style={{ fontSize: 10.5, fontWeight: 500, color: FAINT }}>
-                                · {group.note}
-                              </span>
-                            )}
-                            <span style={{ flex: 1 }} />
-                            {!isOpen && (
-                              <span style={{ fontSize: 10, color: FAINT, fontVariantNumeric: "tabular-nums" }}>
-                                {group.events.length}
-                              </span>
-                            )}
-                            <span
-                              aria-hidden
-                              style={{
-                                flex: "none", width: 13, textAlign: "center", color: FELT_MID, fontSize: 9,
-                                transform: isOpen ? "rotate(180deg)" : undefined, transition: "transform .15s ease",
-                              }}
-                            >
-                              ▼
-                            </span>
-                          </button>
-                          {isOpen &&
-                            group.events.map((ev) => (
-                              <EventRow
-                                key={ev.id}
-                                event={ev}
-                                open={openEvent === ev.id}
-                                onToggle={() => setOpenEvent(openEvent === ev.id ? null : ev.id)}
-                                {...(SHOW_PLAY_ASK && data.ask && ev.who === "You"
-                                  ? {
-                                      // Only the learner's OWN plays take an
-                                      // Ask (owner decision 2026-08-05); the
-                                      // other seats' cards stay plain rows.
-                                      askOpen: openAsk === ev.id,
-                                      onToggleAsk: () => setOpenAsk(openAsk === ev.id ? null : ev.id),
-                                      ask: (
-                                        <CoachEventAsk
-                                          sessionId={data.ask.sessionId}
-                                          eventId={ev.id}
-                                          eventLabel={ev.label}
-                                        />
-                                      ),
-                                    }
-                                  : {})}
-                              />
-                            ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-
-          {/* ── AUCTION: the bidding diagram, whole screen to itself ── */}
-          {view === "auction" &&
-            (() => {
               const auction = (data.eventGroups ?? []).find((g) => g.id === "auction");
-              if (!auction?.events.length) {
-                return (
-                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
-                    Nobody has called yet.
-                  </p>
-                );
-              }
+              const auctionOpen = historyToggles["auction"] ?? tricks.length === 0;
+              const playOpen = historyToggles["play"] ?? tricks.length > 0;
               return (
-                <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
-                  <Label color={FELT_DEEP}>The auction</Label>
-                  {/* Its own screen now, so no collapsible header — the
-                      bidding box prints straight onto the card. */}
-                  <AuctionDiagram
-                    events={auction.events}
-                    selectedId={selectedCall}
-                    onSelect={setSelectedCall}
-                    {...(data.ask ? { ask: data.ask } : {})}
-                  />
-                </div>
+                <>
+                  <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
+                    <HistorySectionHeader
+                      title="The auction"
+                      open={auctionOpen}
+                      count={auction?.events.length ?? 0}
+                      onToggle={() => setHistoryToggles((prev) => ({ ...prev, auction: !auctionOpen }))}
+                    />
+                    {auctionOpen &&
+                      (auction?.events.length ? (
+                        <AuctionDiagram
+                          events={auction.events}
+                          selectedId={selectedCall}
+                          onSelect={setSelectedCall}
+                          {...(data.ask ? { ask: data.ask } : {})}
+                        />
+                      ) : (
+                        <p style={{ margin: "7px 0 0", fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                          Nobody has called yet.
+                        </p>
+                      ))}
+                  </div>
+
+                  <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
+                    <HistorySectionHeader
+                      title="The play"
+                      open={playOpen}
+                      count={tricks.reduce((n, g) => n + g.events.length, 0)}
+                      onToggle={() => setHistoryToggles((prev) => ({ ...prev, play: !playOpen }))}
+                    />
+                    {playOpen &&
+                      (tricks.length ? (
+                        <div style={{ display: "flex", flexDirection: "column" }}>
+                          {tricks.map((group) => {
+                            const isOpen = groupOpen(group);
+                            return (
+                              <div key={group.id}>
+                                <button
+                                  type="button"
+                                  aria-expanded={isOpen}
+                                  onClick={() => setGroupToggles((prev) => ({ ...prev, [group.id]: !isOpen }))}
+                                  style={{
+                                    display: "flex", alignItems: "center", gap: 6, width: "100%",
+                                    minHeight: 30, padding: "4px 1px",
+                                    background: "transparent", borderWidth: 0,
+                                    borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#e8ddc3",
+                                    fontFamily: "inherit", textAlign: "left", cursor: "pointer",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6,
+                                      textTransform: "uppercase", color: isOpen ? FELT_DEEP : FAINT,
+                                    }}
+                                  >
+                                    {group.title}
+                                  </span>
+                                  {group.note && (
+                                    <span style={{ fontSize: 10.5, fontWeight: 500, color: FAINT }}>
+                                      · {group.note}
+                                    </span>
+                                  )}
+                                  <span style={{ flex: 1 }} />
+                                  {!isOpen && (
+                                    <span style={{ fontSize: 10, color: FAINT, fontVariantNumeric: "tabular-nums" }}>
+                                      {group.events.length}
+                                    </span>
+                                  )}
+                                  <span
+                                    aria-hidden
+                                    style={{
+                                      flex: "none", width: 13, textAlign: "center", color: FELT_MID, fontSize: 9,
+                                      transform: isOpen ? "rotate(180deg)" : undefined, transition: "transform .15s ease",
+                                    }}
+                                  >
+                                    ▼
+                                  </span>
+                                </button>
+                                {isOpen &&
+                                  group.events.map((ev) => (
+                                    <EventRow
+                                      key={ev.id}
+                                      event={ev}
+                                      open={openEvent === ev.id}
+                                      onToggle={() => setOpenEvent(openEvent === ev.id ? null : ev.id)}
+                                      {...(SHOW_PLAY_ASK && data.ask && ev.who === "You"
+                                        ? {
+                                            // Only the learner's OWN plays take an
+                                            // Ask (owner decision 2026-08-05); the
+                                            // other seats' cards stay plain rows.
+                                            askOpen: openAsk === ev.id,
+                                            onToggleAsk: () => setOpenAsk(openAsk === ev.id ? null : ev.id),
+                                            ask: (
+                                              <CoachEventAsk
+                                                sessionId={data.ask.sessionId}
+                                                eventId={ev.id}
+                                                eventLabel={ev.label}
+                                              />
+                                            ),
+                                          }
+                                        : {})}
+                                    />
+                                  ))}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p style={{ margin: "7px 0 0", fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                          No cards have been played yet.
+                        </p>
+                      ))}
+                  </div>
+                </>
               );
             })()}
 
@@ -965,15 +975,16 @@ export function CoachSheet({
  * The forward tabs' pictograms (owner-supplied concept, restyled to the
  * app's own theme): a speech bubble — the coach speaking — carrying the
  * screen's symbol.
- *   now    an eye — what the coach is looking at with you
- *   hints  a bulb — a nudge, not the answer
- *   tell   a check — the answer itself
+ *   now      an eye — what the coach is looking at with you
+ *   hints    a bulb — a nudge, not the answer
+ *   tell     a check — the answer itself
+ *   history  a clock — the board's past, auction and play both
  * MONOCHROME IN currentColor, deliberately: the icons wear exactly what the
  * text labels wore — the muted ink on cream when idle, white on the brand
  * green when active — so the row introduces no hue the sheet doesn't already
  * speak (the reference art's leaf green was nobody's palette here).
  */
-function TabGlyph({ kind }: Readonly<{ kind: "now" | "hints" | "tell" }>) {
+function TabGlyph({ kind }: Readonly<{ kind: "now" | "hints" | "tell" | "history" }>) {
   return (
     <svg
       width={20}
@@ -1009,7 +1020,60 @@ function TabGlyph({ kind }: Readonly<{ kind: "now" | "hints" | "tell" }>) {
         </>
       )}
       {kind === "tell" && <path d="M7.8 10.8l3 3.1 5.4-6.3" strokeWidth="2.1" />}
+      {kind === "history" && (
+        <>
+          <circle cx="12" cy="10.4" r="4.6" />
+          <path d="M12 7.9v2.5l1.9 1.4" />
+        </>
+      )}
     </svg>
+  );
+}
+
+/**
+ * A History card's own header — the whole row toggles its section, in the
+ * same visual language as the per-trick headers inside it (uppercase label,
+ * closed rows dim and carry their count, the chevron turns).
+ */
+function HistorySectionHeader({
+  title, open, count, onToggle,
+}: Readonly<{ title: string; open: boolean; count: number; onToggle: () => void }>) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onToggle}
+      style={{
+        display: "flex", alignItems: "center", gap: 6, width: "100%",
+        minHeight: 26, padding: 0,
+        background: "transparent", borderWidth: 0,
+        fontFamily: "inherit", textAlign: "left", cursor: "pointer",
+      }}
+    >
+      <span
+        style={{
+          fontSize: 10, fontWeight: 700, letterSpacing: 0.7,
+          textTransform: "uppercase", color: open ? FELT_DEEP : FAINT,
+        }}
+      >
+        {title}
+      </span>
+      <span style={{ flex: 1 }} />
+      {!open && count > 0 && (
+        <span style={{ fontSize: 10, color: FAINT, fontVariantNumeric: "tabular-nums" }}>
+          {count}
+        </span>
+      )}
+      <span
+        aria-hidden
+        style={{
+          flex: "none", width: 13, textAlign: "center", color: FELT_MID, fontSize: 9,
+          transform: open ? "rotate(180deg)" : undefined, transition: "transform .15s ease",
+        }}
+      >
+        ▼
+      </span>
+    </button>
   );
 }
 
