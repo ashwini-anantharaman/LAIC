@@ -6,7 +6,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Database, FileText, FolderOpen, Loader2,
-  Plus, Sparkles, Type, Image as ImageIcon, Youtube, X, Wand2, LayoutGrid,
+  Plus, Sparkles, Type, Image as ImageIcon, Youtube, X, Wand2, LayoutGrid, ListChecks,
 } from 'lucide-react';
 import { AssistantPanel } from '../AssistantPanel';
 import { MarkupWorkspace } from '../MarkupWorkspace';
@@ -30,7 +30,7 @@ import {
   type LibraryObjectChoice,
 } from '../../../../lib/tutorialV2/tutorialTemplates';
 import { parsePdf, docFromText } from '../../../../lib/pdf';
-import { makeBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
+import { makeBridgeEmbedPart, type BridgeEmbedKind } from '../../../../lib/tutorialV2/bridgeEmbed';
 import { errorMessage, ingestYoutube } from '../../../../lib/api';
 import { useApp } from '../../../App';
 import type { TutorialV2Draft, TutorialV2Part, V2SourceRef, V2TopLevelSlot } from '../../../../lib/tutorialV2/types';
@@ -309,11 +309,13 @@ export function TutorialV2RefineSidebar({
     }
   };
 
-  /** A Bridge Platform component, dormant until a reader opens it. */
-  const addBridgeEmbed = () => {
+  /** A Bridge Platform component, dormant until a reader opens it. The kind is
+   *  the block's MODE — an author picks the one they mean from the Blocks row
+   *  rather than adding a table and then converting it in Configure. */
+  const addBridgeEmbed = (kind: BridgeEmbedKind = 'table') => {
     pushUndo();
     const id = `p-refine-${Date.now().toString(36)}`;
-    onChangeParts([...parts, makeBridgeEmbedPart('table', id)]);
+    onChangeParts([...parts, makeBridgeEmbedPart(kind, id)]);
     onSelectPart(id);
   };
 
@@ -646,8 +648,11 @@ export function TutorialV2RefineSidebar({
                 <button type="button" onClick={() => addManualPart('video')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full border" style={{ fontSize: 11.5, fontWeight: 600, borderColor: 'rgba(0,0,0,0.1)' }}>
                   <Youtube size={12} /> Video
                 </button>
-                <button type="button" onClick={addBridgeEmbed} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full border" style={{ fontSize: 11.5, fontWeight: 600, borderColor: 'rgba(0,0,0,0.1)' }}>
+                <button type="button" onClick={() => addBridgeEmbed('table')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full border" style={{ fontSize: 11.5, fontWeight: 600, borderColor: 'rgba(0,0,0,0.1)' }}>
                   <LayoutGrid size={12} /> Bridge table
+                </button>
+                <button type="button" onClick={() => addBridgeEmbed('bidding')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full border" style={{ fontSize: 11.5, fontWeight: 600, borderColor: 'rgba(0,0,0,0.1)' }}>
+                  <ListChecks size={12} /> Bidding drill
                 </button>
               </div>
             </div>
