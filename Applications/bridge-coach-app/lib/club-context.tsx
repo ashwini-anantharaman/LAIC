@@ -15,7 +15,7 @@
 import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "./auth-context";
-import { getRoleContext } from "./bridge-role";
+import { clubDefaultProgramId, getRoleContext, isClubMembership } from "./bridge-role";
 import type { NexusMembership } from "./nexus";
 
 export type Club = {
@@ -41,10 +41,7 @@ type ClubState = {
 
 const Ctx = createContext<ClubState | null>(null);
 
-/** A membership that represents a club: a partner program the person is in. */
-function isClub(m: NexusMembership): boolean {
-  return !!m.program_id && m.program_category === "partner";
-}
+
 
 export function ClubProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
@@ -65,7 +62,7 @@ export function ClubProvider({ children }: { children: ReactNode }) {
       .then((ctx) => {
         if (cancelled) return;
         const found = ctx.memberships
-          .filter(isClub)
+          .filter(isClubMembership)
           .map((m) => ({
             programId: m.program_id as string,
             name: m.program_name ?? m.org_name,
@@ -76,23 +73,15 @@ export function ClubProvider({ children }: { children: ReactNode }) {
           .filter((c, i, all) => all.findIndex((o) => o.programId === c.programId) === i)
           .sort((a, b) => a.name.localeCompare(b.name));
         setClubs(found);
-        // One club is not a choice — skip My Clubs entirely.
-        //
-        // CLUB-ONLY accounts (no membership outside their clubs) always get a
-        // default, even with several: for them the app-wide program is not a
-        // fallback but a locked door — every screen scoped to it 403s, which
-        // surfaced as "no coach access" / "couldn't load your boards" on every
-        // tab until a club was picked. The switcher still lets them move; the
-        // first club (alphabetical, stable) is merely where they start.
-        const clubIds = new Set(found.map((c) => c.programId));
-        // Every membership is program-scoped AND that program is a club. An
-        // org-LEVEL membership (no program_id — owners, org admins) is standing
-        // everywhere, so it disqualifies: those people keep the app-wide start.
-        const clubOnly =
-          found.length > 0 &&
-          ctx.memberships.length > 0 &&
-          ctx.memberships.every((m) => m.program_id && clubIds.has(m.program_id));
-        setSelectedId(found.length === 1 || clubOnly ? found[0].programId : null);
+        // One club is not a choice — skip My Clubs entirely. CLUB-ONLY
+        // accounts always get a default, even with several: for them the
+        // app-wide program is a locked door, not a fallback (the shared
+        // helper is also what the sign-in prime uses, so the two agree).
+        setSelectedId(
+          found.length === 1
+            ? found[0].programId
+            : clubDefaultProgramId(ctx.memberships),
+        );
       })
       .catch(() => !cancelled && setClubs([]))
       .finally(() => !cancelled && setLoading(false));

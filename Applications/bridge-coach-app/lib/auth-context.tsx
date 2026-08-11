@@ -11,7 +11,7 @@ import {
 import { AppState } from "react-native";
 
 import { clearAvatarCache } from "./avatar-store";
-import { clearBridgeRoleCache, getRoleContext } from "./bridge-role";
+import { clearBridgeRoleCache, clubDefaultProgramId, getRoleContext } from "./bridge-role";
 import { clearDealChats } from "./deal-chat";
 import { clearLaunchCache } from "./launch-cache";
 import { clearLearningCache } from "./learning";
@@ -54,8 +54,15 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  * to fetching on demand, exactly as before.
  */
 function primeSessionCaches(accessToken: string): void {
-  getRoleContext(accessToken).catch(() => {});
-  refreshSummary(accessToken).catch(() => {});
+  // The summary prime waits for the role context so it can ask about the
+  // RIGHT program. Firing immediately looked faster but wasn't: a club-only
+  // account's app-wide summary is a guaranteed 403, so their prime burned a
+  // full round-trip and the first screen still paid the real fetch cold.
+  getRoleContext(accessToken)
+    .then((ctx) =>
+      refreshSummary(accessToken, clubDefaultProgramId(ctx.memberships) ?? undefined),
+    )
+    .catch(() => {});
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

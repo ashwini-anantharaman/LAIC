@@ -339,3 +339,28 @@ export function clearBridgeRoleCache(): void {
  * still typecheck against the richer context.
  */
 export const getBridgeContextCached = getRoleContext;
+
+/** A membership that represents a club: a partner program the person is in. */
+export function isClubMembership(m: NexusMembership): boolean {
+  return !!m.program_id && m.program_category === "partner";
+}
+
+/**
+ * The program a CLUB-ONLY account should start in: their first club
+ * (alphabetical, stable), or null for everyone else. Shared by the club
+ * context's default selection and the sign-in prime — the prime used to fetch
+ * the app-wide summary for these accounts, a guaranteed 403 that cost a full
+ * round-trip before the real fetch could even start.
+ */
+export function clubDefaultProgramId(memberships: NexusMembership[]): string | null {
+  const clubs = memberships
+    .filter(isClubMembership)
+    .map((m) => ({ id: m.program_id as string, name: m.program_name ?? m.org_name ?? "" }))
+    .filter((c, i, all) => all.findIndex((o) => o.id === c.id) === i)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  if (clubs.length === 0 || memberships.length === 0) return null;
+  const clubIds = new Set(clubs.map((c) => c.id));
+  const clubOnly = memberships.every((m) => m.program_id && clubIds.has(m.program_id));
+  return clubOnly ? clubs[0]!.id : null;
+}
+

@@ -10,11 +10,16 @@ import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { type InProgressBoard } from "../lib/nexus";
 import { peekSummary, refreshSummary } from "../lib/summary-cache";
-import { useSelectedClubId } from "../lib/club-context";
+import { useClubs } from "../lib/club-context";
 
 export default function ResumeScreen() {
   const { token } = useAuth();
-  const clubId = useSelectedClubId();
+  // The selected club scopes every bridge read here (null = app-wide). While
+  // clubs are LOADING the scope is unknown, so the effects below fetch nothing
+  // yet: firing early asked about the app-wide program, a guaranteed 403 for a
+  // club-only account, paid in full before the real fetch could start.
+  const { selected, loading: clubsLoading } = useClubs();
+  const clubId = selected?.programId ?? null;
   // Last known list renders immediately; the focus effect refreshes it.
   const [boards, setBoards] = useState<InProgressBoard[] | null>(() =>
     token ? (peekSummary(token, clubId ?? undefined)?.in_progress ?? null) : null,
@@ -22,7 +27,7 @@ export default function ResumeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!token) return;
+      if (!token || clubsLoading) return;
       let cancelled = false;
       refreshSummary(token, clubId ?? undefined)
         .then((s) => !cancelled && setBoards(s.in_progress))
@@ -30,7 +35,7 @@ export default function ResumeScreen() {
       return () => {
         cancelled = true;
       };
-    }, [token, clubId]),
+    }, [token, clubId, clubsLoading]),
   );
 
   return (

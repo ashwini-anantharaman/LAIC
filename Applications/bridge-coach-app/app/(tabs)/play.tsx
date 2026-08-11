@@ -36,7 +36,7 @@ import { peekBridgeOrigin, prefetchLaunch } from "../../lib/launch-cache";
 import { type BridgeSummary } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
 import { peekSummary, refreshSummary } from "../../lib/summary-cache";
-import { useSelectedClubId } from "../../lib/club-context";
+import { useClubs } from "../../lib/club-context";
 
 const DESIGN_WIDTH = 390;
 /** The grid's left edge, and its top measured from under the screen title. */
@@ -45,7 +45,12 @@ const GRID_TOP_GAP = 42;
 
 export default function PlayScreen() {
   const { token } = useAuth();
-  const clubId = useSelectedClubId();
+  // The selected club scopes every bridge read here (null = app-wide). While
+  // clubs are LOADING the scope is unknown, so the effects below fetch nothing
+  // yet: firing early asked about the app-wide program, a guaranteed 403 for a
+  // club-only account, paid in full before the real fetch could start.
+  const { selected, loading: clubsLoading } = useClubs();
+  const clubId = selected?.programId ?? null;
   const { width } = useWindowDimensions();
   // Last known summary renders immediately; the focus effect refreshes it.
   const [summary, setSummary] = useState<BridgeSummary | null>(() =>
@@ -58,7 +63,7 @@ export default function PlayScreen() {
   // Refresh on every visit: what's resumable changes as boards are played.
   useFocusEffect(
     useCallback(() => {
-      if (!token) return;
+      if (!token || clubsLoading) return;
       prefetchLaunch(token, "bridge"); // keep a launch warm — one tap away
       // Warm the screens this grid's cards open, so tapping one lands on a
       // warm function instead of a cold start. THE TABLE ITSELF is on the
@@ -80,7 +85,7 @@ export default function PlayScreen() {
       return () => {
         cancelled = true;
       };
-    }, [token, clubId]),
+    }, [token, clubId, clubsLoading]),
   );
 
   const inProgress = summary?.in_progress ?? [];

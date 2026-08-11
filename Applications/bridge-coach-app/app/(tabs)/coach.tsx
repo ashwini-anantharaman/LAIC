@@ -15,11 +15,16 @@ import { peekBridgeOrigin } from "../../lib/launch-cache";
 import { type BridgeSummary, type SummaryCoach } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
 import { peekSummary, refreshSummary } from "../../lib/summary-cache";
-import { useSelectedClubId } from "../../lib/club-context";
+import { useClubs } from "../../lib/club-context";
 
 export default function CoachScreen() {
   const { token } = useAuth();
-  const clubId = useSelectedClubId();
+  // The selected club scopes every bridge read here (null = app-wide). While
+  // clubs are LOADING the scope is unknown, so the effects below fetch nothing
+  // yet: firing early asked about the app-wide program, a guaranteed 403 for a
+  // club-only account, paid in full before the real fetch could start.
+  const { selected, loading: clubsLoading } = useClubs();
+  const clubId = selected?.programId ?? null;
   // Both caches are primed at sign-in — seed from them so the first focus
   // shows the real view (and the coach's name below) with no fetch in front.
   const [coach, setCoach] = useState(() => isCoach(token ? peekRoleContext(token, clubId ?? undefined) : null));
@@ -30,18 +35,18 @@ export default function CoachScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!token) return;
+    if (!token || clubsLoading) return;
     getBridgeContextCached(token, clubId ?? undefined).then((ctx) => {
       if (!cancelled) setCoach(isCoach(ctx));
     });
     return () => {
       cancelled = true;
     };
-  }, [token, clubId]);
+  }, [token, clubId, clubsLoading]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!token) return;
+      if (!token || clubsLoading) return;
       // Warm the screens this tab's cards open (role decides which are shown,
       // but warming both costs one idempotent GET each).
       prewarmBridgePages(
@@ -57,7 +62,7 @@ export default function CoachScreen() {
       return () => {
         cancelled = true;
       };
-    }, [token, clubId]),
+    }, [token, clubId, clubsLoading]),
   );
 
   const s = summary;
