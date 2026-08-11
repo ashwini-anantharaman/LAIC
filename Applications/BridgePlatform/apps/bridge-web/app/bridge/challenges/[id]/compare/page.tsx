@@ -17,7 +17,12 @@
 // board…" state and the client asks for it in resumable rounds. An empty page
 // is never the answer.
 
-import type { ChallengeBaseline, ChallengePlay, ChallengeSnapshot } from "@bridge/challenges";
+import {
+  isBiddingOnly,
+  type ChallengeBaseline,
+  type ChallengePlay,
+  type ChallengeSnapshot,
+} from "@bridge/challenges";
 import { stubDisplayName } from "@bridge/nexus-client";
 import type { Seat, Vul } from "@bridge/events";
 import { notFound, redirect } from "next/navigation";
@@ -119,6 +124,11 @@ export default async function ChallengeComparePage({
 
   // ── the two lines ─────────────────────────────────────────────────────────
 
+  // WHAT EVERY LINE ON THIS BOARD ASKED FOR. Read once, from the challenge, and
+  // handed to every line: it is what tells a finished auction-only line apart
+  // from a full board abandoned before the opening lead.
+  const biddingOnly = isBiddingOnly(challenge);
+
   const completedPlay = (userId: string): (ChallengePlay & { snapshot: ChallengeSnapshot }) | null => {
     const play = boardPlays.find((p) => p.userId === userId);
     return play && play.status === "completed" && play.snapshot
@@ -165,6 +175,7 @@ export default async function ChallengeComparePage({
           snapshot: baseline.snapshot,
           board,
           rawScore: baseline.rawScore,
+          biddingOnly,
         }),
       };
     return {
@@ -217,6 +228,7 @@ export default async function ChallengeComparePage({
         snapshot: play.snapshot,
         board,
         rawScore: play.rawScore,
+        biddingOnly,
       }),
     };
   };
@@ -242,6 +254,7 @@ export default async function ChallengeComparePage({
       snapshot: play.snapshot,
       board,
       rawScore: play.rawScore,
+      biddingOnly,
     });
     return { sub: `${line.contract} ${line.byLine} · ${line.result}`, res: line.rawText, made: line.made };
   };
@@ -255,6 +268,7 @@ export default async function ChallengeComparePage({
             snapshot: benBaseline.snapshot,
             board,
             rawScore: benBaseline.rawScore,
+            biddingOnly,
           });
           return { sub: `${line.contract} ${line.byLine} · ${line.result}`, res: line.rawText, made: line.made };
         })()
@@ -276,7 +290,11 @@ export default async function ChallengeComparePage({
   // "BEN in your contract" exists precisely for the contract-mismatch case, so
   // it is offered only when one of the two lines is the viewer's own (spec §2).
   const viewerOwnsMine = mineKey === viewerId && mine.ready;
-  if (viewerOwnsMine) {
+  // …and only when there are CARDS for BEN to play differently. A line with
+  // none — a bidding-only board, or a pass-out — would hand back the viewer's
+  // own auction verbatim and call it a comparison.
+  const canReplayContract = mine.ready && mineKey === viewerId && mine.line.play.length > 0;
+  if (canReplayContract) {
     const yc = baselineFor("your_contract", { userId: viewerId });
     sources.push({
       key: YOUR_CONTRACT_KEY,

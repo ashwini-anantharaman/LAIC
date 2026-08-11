@@ -4,6 +4,12 @@
 // thirteen tricks, with a tick at every ply the lines differ and a marker at
 // the first one. Dragging it moves both boards together — that is the whole
 // point of the instrument, so it is a single control, never one per board.
+//
+// WHEN THERE ARE NO CARDS on either line — a bidding-only board, or two
+// pass-outs — the auction IS the timeline: the band fills the track, there is
+// no play band to divide it from, and the legend says so. Read off the timeline
+// itself rather than passed in, because "no cards on this track" is exactly the
+// condition the geometry cares about.
 
 import { useRef, type PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -87,6 +93,7 @@ export function CompareScrubber({
   const trackH = phone ? 34 : 44;
   const bandTop = phone ? 11 : 15;
   const bandH = phone ? 12 : 14;
+  const noCards = timeline.playLen === 0;
   const aucEdge = pct(Math.max(0, timeline.aucLen - 0.5));
 
   return (
@@ -111,7 +118,12 @@ export function CompareScrubber({
           Next ▶
         </button>
         {!phone && (
-          <button type="button" onClick={() => onPly(timeline.maxPly)} title="To the last card" style={btn}>
+          <button
+            type="button"
+            onClick={() => onPly(timeline.maxPly)}
+            title={noCards ? "To the last call" : "To the last card"}
+            style={btn}
+          >
             ⏭
           </button>
         )}
@@ -159,7 +171,7 @@ export function CompareScrubber({
         ref={trackRef}
         role="slider"
         tabIndex={0}
-        aria-label="Timeline — auction plies then tricks"
+        aria-label={noCards ? "Timeline — the auction" : "Timeline — auction plies then tricks"}
         aria-valuemin={0}
         aria-valuemax={timeline.maxPly}
         aria-valuenow={ply}
@@ -189,22 +201,24 @@ export function CompareScrubber({
             left: 0,
             top: bandTop,
             height: bandH,
-            width: aucEdge,
-            borderRadius: `${bandH / 2}px 0 0 ${bandH / 2}px`,
+            width: noCards ? "100%" : aucEdge,
+            borderRadius: noCards ? bandH / 2 : `${bandH / 2}px 0 0 ${bandH / 2}px`,
             background: "#e4e9e6",
           }}
         />
-        <div
-          style={{
-            position: "absolute",
-            top: bandTop,
-            height: bandH,
-            left: aucEdge,
-            right: 0,
-            borderRadius: `0 ${bandH / 2}px ${bandH / 2}px 0`,
-            background: "#eef1ef",
-          }}
-        />
+        {!noCards && (
+          <div
+            style={{
+              position: "absolute",
+              top: bandTop,
+              height: bandH,
+              left: aucEdge,
+              right: 0,
+              borderRadius: `0 ${bandH / 2}px ${bandH / 2}px 0`,
+              background: "#eef1ef",
+            }}
+          />
+        )}
         {/* everything from the first split on is tinted: the lines are no
             longer the same board after this point */}
         {divergeAt !== null && (
@@ -250,17 +264,19 @@ export function CompareScrubber({
             }}
           />
         ))}
-        {/* auction | play boundary */}
-        <div
-          style={{
-            position: "absolute",
-            top: bandTop - 6,
-            height: bandH + 12,
-            width: 2,
-            left: aucEdge,
-            background: "#b6c1bb",
-          }}
-        />
+        {/* auction | play boundary — absent when there is no play to divide */}
+        {!noCards && (
+          <div
+            style={{
+              position: "absolute",
+              top: bandTop - 6,
+              height: bandH + 12,
+              width: 2,
+              left: aucEdge,
+              background: "#b6c1bb",
+            }}
+          />
+        )}
         {/* the first split, callable */}
         {divergeAt !== null && (
           <button
@@ -323,8 +339,8 @@ export function CompareScrubber({
         }}
       >
         <span>Auction</span>
-        <span>{`Play — ${Math.ceil(timeline.playLen / 4)} tricks`}</span>
-        <span>Result</span>
+        <span>{noCards ? "No cards played" : `Play — ${Math.ceil(timeline.playLen / 4)} tricks`}</span>
+        <span>{noCards ? "Contract" : "Result"}</span>
       </div>
 
       {phone && fromHere && <FromHereButton control={fromHere} phone />}

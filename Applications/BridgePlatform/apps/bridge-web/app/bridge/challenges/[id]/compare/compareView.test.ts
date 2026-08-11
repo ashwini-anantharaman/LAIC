@@ -5,6 +5,8 @@
 import type { Card, Rank, Seat, Suit } from "@bridge/events";
 import { describe, expect, it } from "vitest";
 import {
+  BIDDING_ONLY_RESULT,
+  TONE_INK,
   auctionGrid,
   clampPly,
   divergePly,
@@ -66,6 +68,7 @@ function line(over: Partial<CompareLine> = {}): CompareLine {
     declarer: "S",
     result: "Down 1",
     made: false,
+    resultTone: "bad",
     rawText: "-50",
     auction: AUCTION,
     play: [...trick("W", ["S3", "S14", "S6", "S13"]), ...trick("S", ["H10", "H4", "H2", "H7"])],
@@ -350,5 +353,74 @@ describe("handRows", () => {
   it("reads as a hand, high card first, with an em-dash for a void", () => {
     const rows = handRows(SEAT_CARDS);
     expect(rows.map((r) => r.text)).toEqual(["AK", "109", "2", "5"]);
+  });
+});
+
+// ── a board that ended with its auction ─────────────────────────────────────
+//
+// A bidding-only line is frozen at the close of the auction, so it carries a
+// contract and NO cards. Everything the surface derives has to survive that:
+// the shared timeline is the auction and nothing else, and the end state is the
+// contract reached rather than a made/down figure invented from zero tricks.
+
+/** A finished bidding-only line: an auction, a contract, no cards, no score. */
+function auctionOnly(over: Partial<CompareLine> = {}): CompareLine {
+  return line({
+    play: [],
+    trickWinners: [],
+    result: BIDDING_ONLY_RESULT,
+    made: false,
+    resultTone: "neutral",
+    rawText: "",
+    ...over,
+  });
+}
+
+describe("an auction-only line", () => {
+  it("makes a timeline out of the auction alone", () => {
+    const a = auctionOnly();
+    const b = auctionOnly({ key: "BEN" });
+    const t = timelineOf(a, b);
+    expect(t.aucLen).toBe(AUCTION.length);
+    expect(t.playLen).toBe(0);
+    // The last ply is the last call — there is no play band past it.
+    expect(t.maxPly).toBe(AUCTION.length - 1);
+    expect(clampPly(999, t)).toBe(AUCTION.length - 1);
+  });
+
+  it("stays in the auction at every ply on the track", () => {
+    const a = auctionOnly();
+    const t = timelineOf(a, a);
+    for (let ply = 0; ply <= t.maxPly; ply++) {
+      const f = frameAt(a, ply, t, "S");
+      expect(f.phase).toBe("auction");
+      expect(f.trick).toEqual([]);
+      // No card ever leaves the seat's hand.
+      expect(f.remaining).toHaveLength(SEAT_CARDS.length);
+    }
+    expect(positionLabel(t.maxPly, t, a)).toEqual({
+      label: "Auction · West P",
+      sub: `Bidding · ply ${AUCTION.length} of ${AUCTION.length}`,
+    });
+  });
+
+  it("splits on a call, and reports agreement as an AUCTION they shared", () => {
+    const a = auctionOnly();
+    const b = auctionOnly({
+      key: "BEN",
+      auction: [...AUCTION.slice(0, 2), { seat: "N", call: "3H" }, ...AUCTION.slice(3)],
+    });
+    const t = timelineOf(a, b);
+    expect(divergePly(a, b, t)).toBe(2);
+    expect(divergenceLabel(divergePly(a, b, t), t)).toBe("Lines diverge in the auction");
+    // Two identical auctions agreed on the bidding, not on cards nobody played.
+    const same = timelineOf(a, a);
+    expect(divergenceLabel(divergePly(a, a, same), same)).toBe("Both lines bid the same auction");
+  });
+
+  it("reads its result in the quiet ink — a contract reached is not a defeat", () => {
+    expect(auctionOnly().result).toBe("Bidding only");
+    expect(TONE_INK.neutral).not.toBe(TONE_INK.bad);
+    expect(TONE_INK.neutral).not.toBe(TONE_INK.good);
   });
 });

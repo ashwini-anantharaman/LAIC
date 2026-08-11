@@ -29,7 +29,7 @@ import type { CoachData } from "@/components/table/play/coachContent";
 import { patchAppearanceAction } from "./actions";
 import { ChallengeTableChrome } from "./ChallengeTableChrome";
 import { applyControlOverrides } from "./challengeControls";
-import { challengeTableContext, tableControlAccess } from "./challengeTable";
+import { challengeTableContext, practiceIsBiddingOnly, tableControlAccess } from "./challengeTable";
 
 // COACH (phase-2 transplant, owner decision 2 — "his engine, our shell"). His
 // old-path table carried the coach as a felt fab + rising sheet; that UI is
@@ -87,7 +87,14 @@ export default async function PlayTablePage({
   // is treated as FINISHED. Derived from the challenge's format and the phase,
   // never from the freeze: a freeze that failed to store must not leave the
   // robots free to start playing the board out.
-  const auctionWasTheBoard = Boolean(challenge?.biddingOnly) && state.phase !== "auction";
+  //
+  // A PRACTICE REPLAY IS THE SAME BOARD. It carries no chrome, so the format
+  // does not arrive on `challenge`; it comes off the session's own stamp
+  // instead. The alternative — cards in practice on a board the challenge
+  // never asked anyone to play — would be a different exercise wearing the
+  // same deal.
+  const biddingOnly = challenge ? challenge.biddingOnly : await practiceIsBiddingOnly(view);
+  const auctionWasTheBoard = biddingOnly && state.phase !== "auction";
   /** The board has nothing left to do — either phase, either format. */
   const boardOver = state.phase === "complete" || auctionWasTheBoard;
 

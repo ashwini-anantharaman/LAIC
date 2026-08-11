@@ -7,6 +7,10 @@
 // every ordinary table, and null again when the challenge store is unreachable:
 // a challenge read must never take the table down.
 //
+// It also answers the same question for a PRACTICE replay, which has no chrome
+// and no play record but is still a board of this challenge's format —
+// `practiceIsBiddingOnly`, below.
+//
 // It is also where a challenge board's COMPLETION is noticed. The freeze runs
 // here, on the render that first sees the board run out — the last trick
 // resolved, or, in a BIDDING-ONLY challenge, the auction closed — the same lazy
@@ -74,6 +78,31 @@ export interface ChallengeTableContext {
   done: boolean;
   /** Where the done bar sends you: the next board, or the results. */
   onward: OnwardStep;
+}
+
+/**
+ * DOES THIS UNSCORED REPLAY END WITH THE AUCTION? (owner, 2026-08-10.)
+ *
+ * A practice replay wears no challenge chrome — no strip, no Results button, no
+ * control overrides — and that is exactly what makes it practice (spec §2,
+ * "Attempts"). But the chrome is not what a board ASKS FOR: the format is, and
+ * it belongs to the challenge, not to the decoration. A bidding-only board that
+ * could be played out here would set the learner a different exercise from the
+ * one they were given, silently, on the same deal.
+ *
+ * `challengeTableContext` cannot answer this — a practice sitting deliberately
+ * writes no play record, so the reverse lookup finds nothing — so the answer
+ * comes from the SESSION'S OWN STAMP, which every challenge sitting carries.
+ * False for every ordinary table and for a scored challenge board, whose format
+ * arrives on the chrome instead.
+ */
+export async function practiceIsBiddingOnly(view: SessionView): Promise<boolean> {
+  const stamp = view.record.challenge;
+  if (!stamp?.practice) return false;
+  // Degrades to `false` on an unreadable challenge, like every other read here:
+  // nothing is scored on a practice board, so the worst case is an ordinary
+  // table — never a broken one.
+  return isBiddingOnly((await getChallenge(stamp.challengeId)) ?? {});
 }
 
 /** The access catalogue's answer for every control the table gates on. */

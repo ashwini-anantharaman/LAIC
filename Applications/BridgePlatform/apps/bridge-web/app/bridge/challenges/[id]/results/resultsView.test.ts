@@ -16,6 +16,8 @@ import type { Contract } from "@bridge/events";
 import { describe, expect, it } from "vitest";
 import {
   BEN_KEY,
+  BIDDING_PRACTICE_LABEL,
+  PRACTICE_LABEL,
   buildResultsView,
   formatCell,
   formatTotal,
@@ -595,6 +597,16 @@ describe("bidding-only results", () => {
       ["4♠S", "pos"],
       ["2♥S", "neutral"],
     ]);
+  });
+
+  it("offers a replay that names the exercise it opens, not a board to play out", () => {
+    // The practice copy honours the format, so the affordance says which of the
+    // two it is BEFORE it is tapped — a bidding-only replay ends where the
+    // scored board ended, with the auction.
+    expect(buildResultsView(biddingInput()).practiceLabel).toBe(BIDDING_PRACTICE_LABEL);
+    expect(BIDDING_PRACTICE_LABEL).toMatch(/Bid it again/);
+    expect(buildResultsView(baseInput()).practiceLabel).toBe(PRACTICE_LABEL);
+    expect(PRACTICE_LABEL).not.toBe(BIDDING_PRACTICE_LABEL);
   });
 
   it("keeps a half-finished player out of the standings, exactly as a scored one does", () => {

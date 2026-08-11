@@ -38,6 +38,19 @@ export const SUIT_RED = "#c0201f";
 export const GOOD = "#1a7a4b";
 export const BAD = "#b3402f";
 
+/**
+ * How a line's RESULT reads. Made is good news and down is bad, but a board
+ * that ended with its auction is NEITHER: the contract reached is the whole
+ * result, and this format has no negative tone at all (owner, 2026-08-10 — the
+ * same rule the results view's `verdictTone` keeps).
+ */
+export type ResultTone = "good" | "bad" | "neutral";
+export const TONE_INK: Record<ResultTone, string> = {
+  good: GOOD,
+  bad: BAD,
+  neutral: INK_MUTED,
+};
+
 export const GLYPH: Record<string, string> = { S: "♠", H: "♥", C: "♣", D: "♦", N: "NT" };
 export const SEAT_NAME: Record<Seat, string> = {
   N: "North",
@@ -62,6 +75,13 @@ export const cardText = (card: Card): string => `${rankText(card.rank)}${GLYPH[c
 /** Which of the four things a compared line can be. */
 export type LineKind = "user" | "full_ben" | "your_contract" | "from_point";
 
+/**
+ * What a line's `result` reads when the AUCTION WAS THE BOARD. There is no
+ * made/down to report and no score to print; the contract beside it is the end
+ * state, and this says why nothing follows it.
+ */
+export const BIDDING_ONLY_RESULT = "Bidding only";
+
 /** A frozen line, already stripped of bridge law by the server. */
 export interface CompareLine {
   /** The `a`/`b` query key this line travels under. */
@@ -82,9 +102,11 @@ export interface CompareLine {
   /** "by You" / "by North" — who declared. */
   byLine: string;
   declarer: Seat | null;
-  /** "Down 1" / "Made 4" / "Passed out". */
+  /** "Down 1" / "Made 4" / "Passed out" / "Bidding only". */
   result: string;
   made: boolean;
+  /** The ink `result` reads in — neutral where there is no made/down at all. */
+  resultTone: ResultTone;
   /** The duplicate raw score from the human seat's side, signed. */
   rawText: string;
   auction: readonly { seat: Seat; call: Call }[];
@@ -422,7 +444,10 @@ export function positionLabel(
 
 /** "Lines diverge in the auction" / "Lines diverged here · Trick 7". */
 export function divergenceLabel(dvp: number | null, t: CompareTimeline): string {
-  if (dvp === null) return "Both lines played the same cards";
+  // No cards on either line — a bidding-only board, or two pass-outs. The
+  // agreement to report is the AUCTION, because that is all there was.
+  if (dvp === null)
+    return t.playLen === 0 ? "Both lines bid the same auction" : "Both lines played the same cards";
   if (dvp < t.aucLen) return "Lines diverge in the auction";
   return `Lines diverged here · Trick ${Math.floor((dvp - t.aucLen) / 4) + 1}`;
 }

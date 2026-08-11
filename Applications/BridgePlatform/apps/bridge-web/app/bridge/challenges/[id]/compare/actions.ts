@@ -16,6 +16,7 @@
 // catalogue key, then `challengeViewerAccess` — the same two gates the page
 // uses, and the only place `resultsUnlocked` is consulted (ADDENDUM A3).
 
+import { isBiddingOnly } from "@bridge/challenges";
 import { canUse } from "@/lib/access";
 import {
   BaselineInputError,
@@ -96,6 +97,10 @@ export async function ensureComparisonLine(req: EnsureLineRequest): Promise<Ensu
           snapshot: baseline.snapshot,
           board,
           rawScore: baseline.rawScore,
+          // The same format the baseline was PLAYED to — a bidding-only
+          // reference line stops at the close of the auction, and reading it
+          // any other way would label a finished line abandoned.
+          biddingOnly: isBiddingOnly(access.challenge),
         }),
         actions: result.actions,
       };
