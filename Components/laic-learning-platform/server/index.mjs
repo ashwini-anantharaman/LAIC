@@ -867,6 +867,15 @@ async function fetchWebsiteImageAsDataUri(rawUrl) {
 const NEXUS_SUPABASE_URL = process.env.NEXUS_SUPABASE_URL || '';
 const NEXUS_SUPABASE_SERVICE_ROLE_KEY = process.env.NEXUS_SUPABASE_SERVICE_ROLE_KEY || '';
 const LEARNING_ORG_ID = process.env.LEARNING_ORG_ID || '';
+/**
+ * Program the published content belongs to.
+ *
+ * Reader apps ask Nexus for `/learning/objects?program_id=…`, and that query
+ * filters on the column — a row published without one is invisible to them no
+ * matter how correct the rest of it is. Stamping it here is what makes a
+ * published version actually reachable.
+ */
+const LEARNING_PROGRAM_ID = process.env.LEARNING_PROGRAM_ID || '';
 
 async function publishLearningObjectRow(row, share = false) {
   if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
@@ -878,7 +887,7 @@ async function publishLearningObjectRow(row, share = false) {
   const out = {
     id,
     organization_id: LEARNING_ORG_ID,
-    program_id: row.program_id ?? null,
+    program_id: row.program_id ?? (LEARNING_PROGRAM_ID || null),
     type,
     title: String(row.title || ''),
     owner_id: row.owner_id != null ? String(row.owner_id) : null,
