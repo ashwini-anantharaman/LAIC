@@ -10,7 +10,8 @@ import type { LearningObject, ObjectType, ObjectStatus } from '../../../lib/type
 import { useApp } from '../../App';
 import { exportLibrarySnapshot } from '../../../lib/librarySnapshotSeed';
 import { objectEmbedUrl } from '../../../lib/objectUrls';
-import { saveObject, setObjectShared } from '../../../lib/supabase';
+import { objectToPublishRow, saveObject, setObjectShared } from '../../../lib/supabase';
+import { publishLearningObject } from '../../../lib/api';
 import {
   objectCollectionIds,
   getRootCollections,
@@ -268,6 +269,20 @@ export function ObjectLibrary() {
         ok = await setObjectShared(objectId, true);
       } catch {
         ok = false;
+      }
+      if (!ok) {
+        // No Nexus session (the standalone site): both calls above 401, so the
+        // link would be copied but dead. Publish through the CS API instead,
+        // which writes the same row server-side and flags it shared.
+        try {
+          const names = objectCollections
+            .filter((c) => objectCollectionIds(obj).includes(c.id))
+            .map((c) => c.name);
+          const res = await publishLearningObject(objectToPublishRow(obj, names), true);
+          ok = !!res?.ok;
+        } catch {
+          ok = false;
+        }
       }
     }
     setLinkPublic((m) => ({ ...m, [objectId]: ok }));

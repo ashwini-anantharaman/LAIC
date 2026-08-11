@@ -868,7 +868,7 @@ const NEXUS_SUPABASE_URL = process.env.NEXUS_SUPABASE_URL || '';
 const NEXUS_SUPABASE_SERVICE_ROLE_KEY = process.env.NEXUS_SUPABASE_SERVICE_ROLE_KEY || '';
 const LEARNING_ORG_ID = process.env.LEARNING_ORG_ID || '';
 
-async function publishLearningObjectRow(row) {
+async function publishLearningObjectRow(row, share = false) {
   if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
     throw new LlmError(503, 'not_configured', 'Shared-library publishing is not configured on the server.');
   }
@@ -896,6 +896,10 @@ async function publishLearningObjectRow(row) {
     pipeline_draft: row.pipeline_draft ?? null,
     updated_at: new Date().toISOString(),
   };
+  // Sharing is opt-in per object (see migration 0002_public_share.sql). Only
+  // ever set — never cleared here, so re-publishing cannot silently revoke a
+  // link someone already handed out.
+  if (share) out.shared_at = new Date().toISOString();
   const res = await fetch(`${NEXUS_SUPABASE_URL}/rest/v1/learning_objects?on_conflict=id`, {
     method: 'POST',
     headers: {
@@ -3874,7 +3878,7 @@ export async function handler(req, res) {
   if (method === 'POST' && path === '/api/learning/publish') {
     const body = await readJson(req);
     try {
-      const out = await publishLearningObjectRow(body.object || body);
+      const out = await publishLearningObjectRow(body.object || body, !!body.share);
       return send(res, 200, out);
     } catch (e) {
       const status = e instanceof LlmError ? e.status : 500;
