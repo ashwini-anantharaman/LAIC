@@ -56,13 +56,21 @@ export function ObjectVersionsModal({
 
   const onRestore = async (v: Version) => {
     setError(null);
+    const above = versions.filter((x) => x.versionNumber > v.versionNumber);
+    const discarded = above.length
+      ? ` ${above.map((x) => `v${x.versionNumber}`).reverse().join(', ')} `
+        + `${above.length === 1 ? 'is' : 'are'} deleted, so v${v.versionNumber} becomes the newest version.`
+      : '';
     const ok = await confirm({
       title: `Restore to v${v.versionNumber}?`,
       description:
         `“${object.title}” goes back to the content saved in v${v.versionNumber}`
-        + `${v.createdAt ? ` on ${v.createdAt}` : ''}. Your current unsaved content is replaced, and no version is added —`
-        + ' submit afterwards if you want the restored state recorded.',
-      confirmLabel: `Restore to v${v.versionNumber}`,
+        + `${v.createdAt ? ` on ${v.createdAt}` : ''}.${discarded}`
+        + ' Your current content is replaced and nothing new is recorded —'
+        + ' submit afterwards if you want the restored state kept as a version.',
+      confirmLabel: above.length
+        ? `Restore and delete ${above.length} version${above.length === 1 ? '' : 's'}`
+        : `Restore to v${v.versionNumber}`,
       destructive: true,
     });
     if (!ok) return;
@@ -71,7 +79,11 @@ export function ObjectVersionsModal({
       setError(res.error || 'Could not restore that version.');
       return;
     }
-    flash(`Restored to v${v.versionNumber}`);
+    flash(
+      res.removed
+        ? `Restored to v${v.versionNumber} · removed ${res.removed} newer version${res.removed === 1 ? '' : 's'}`
+        : `Restored to v${v.versionNumber}`,
+    );
   };
 
   const onToggleLock = (v: Version) => {

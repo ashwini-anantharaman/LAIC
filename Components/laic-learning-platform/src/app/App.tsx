@@ -36,6 +36,7 @@ import {
   overwriteVersion as storeOverwriteVersion,
   getVersion,
   objectFromVersion,
+  truncateVersionsAfter as storeTruncateVersionsAfter,
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
   deleteVersionsForObject as storeDeleteVersionsForObject,
@@ -115,11 +116,11 @@ export interface AppState {
     versionId: string,
     notes?: string,
   ) => { ok: boolean; version?: Version; error?: string };
-  /** Roll the object's content back to a version (history is left untouched). */
+  /** Roll content AND history back to a version, discarding everything above it. */
   restoreObjectVersion: (
     objectId: string,
     versionId: string,
-  ) => { ok: boolean; version?: Version; error?: string };
+  ) => { ok: boolean; version?: Version; removed?: number; error?: string };
   lockObjectVersion: (versionId: string, locked: boolean) => Version | null;
   deleteObjectVersion: (versionId: string) => { ok: boolean; error?: string };
   openReaderVersion: (objectId: string, versionId: string) => void;
@@ -643,12 +644,16 @@ function StudioApp() {
   }, []);
 
   /**
-   * Roll the live object back to a version's snapshot.
+   * Roll the object back to a version: its content AND its history.
    *
-   * Restoring is a content change, not a history event: it writes the object
-   * and leaves the version list exactly as it was, so the version you restored
-   * from is still sitting there to restore again. Commit the restored state
-   * with Submit as… if you want it recorded.
+   * Everything above the restored version is discarded, so the version you
+   * restored to becomes the tip and the list still describes the object you
+   * have. Nothing new is committed — the restored state is only recorded if
+   * the author submits afterwards.
+   *
+   * History is truncated FIRST: if something above is locked the whole restore
+   * is refused, and refusing after already overwriting the content would leave
+   * the object and its history disagreeing.
    */
   const restoreObjectVersion = useCallback((objectId: string, versionId: string) => {
     const ownerId = activeUserIdRef.current;
@@ -660,6 +665,10 @@ function StudioApp() {
     if (!version.snapshot) {
       return { ok: false, error: `v${version.versionNumber} has no saved content to restore.` };
     }
+
+    const trimmed = storeTruncateVersionsAfter(ownerId, objectId, version.versionNumber);
+    if (!trimmed.ok) return { ok: false, error: trimmed.error };
+
     const restored = objectFromVersion(base, version);
     addObject({
       ...restored,
@@ -667,7 +676,7 @@ function StudioApp() {
       collectionIds: objectCollectionIds(base),
       status: base.status,
     } as any, { version: 'skip' });
-    return { ok: true, version };
+    return { ok: true, version, removed: trimmed.removed };
   }, [addObject]);
 
   const lockObjectVersion = useCallback((versionId: string, locked: boolean) => {

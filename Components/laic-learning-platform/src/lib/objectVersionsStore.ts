@@ -372,6 +372,59 @@ export function deleteVersionsForObject(userId: string, objectId: string): void 
   if (next.length !== all.length) writeAll(userId, next);
 }
 
+/**
+ * Discard every version above `versionNumber` — the history side of a restore.
+ *
+ * Restoring to v2 with v3 and v4 still listed leaves the author looking at
+ * versions newer than the content they now have, so the list stops describing
+ * the object. Truncating makes the restored version the tip again.
+ *
+ * Refuses rather than partially applying when something above cannot be
+ * discarded: a locked version is a promise it will not change, and deleting it
+ * breaks that promise more thoroughly than editing would. Seed catalogue rows
+ * are likewise not ours to remove. The caller reports the reason so the author
+ * can unlock and retry.
+ */
+export function truncateVersionsAfter(
+  userId: string,
+  objectId: string,
+  versionNumber: number,
+): { ok: boolean; removed: number; error?: string } {
+  const above = listVersionsForObject(userId, objectId)
+    .filter((v) => v.versionNumber > versionNumber);
+  if (!above.length) return { ok: true, removed: 0 };
+
+  const locked = above.filter((v) => v.locked);
+  if (locked.length) {
+    const names = locked.map((v) => `v${v.versionNumber}`).join(', ');
+    return { ok: false, removed: 0, error: `Unlock ${names} before restoring past ${names.includes(',') ? 'them' : 'it'}.` };
+  }
+
+  const localIds = new Set(readAll(userId).map((v) => v.id));
+  const undeletable = above.filter((v) => !localIds.has(v.id));
+  if (undeletable.length) {
+    const names = undeletable.map((v) => `v${v.versionNumber}`).join(', ');
+    return { ok: false, removed: 0, error: `Demo catalog versions (${names}) can’t be removed.` };
+  }
+
+  const discard = new Set(above.map((v) => v.id));
+  const kept = readAll(userId).filter((v) => !discard.has(v.id));
+  // The restored version becomes the tip, and carries the live flag if the
+  // version that held it was just discarded.
+  const tookLive = above.some((v) => v.isLive);
+  writeAll(
+    userId,
+    tookLive
+      ? kept.map((v) => (
+        v.objectId === objectId
+          ? { ...v, isLive: v.versionNumber === versionNumber }
+          : v
+      ))
+      : kept,
+  );
+  return { ok: true, removed: above.length };
+}
+
 export function deleteVersion(userId: string, versionId: string): { ok: boolean; error?: string } {
   const all = readAll(userId);
   const hit = all.find((v) => v.id === versionId);
