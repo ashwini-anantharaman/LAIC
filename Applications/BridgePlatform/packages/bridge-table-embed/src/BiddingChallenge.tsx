@@ -34,7 +34,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { legalCalls } from "@bridge/engine";
-import { BidColumns, ResultCard, SeatDiagram } from "@bridge/table-ui";
+import { BidColumns, bidColumnsH, ResultCard, SeatDiagram } from "@bridge/table-ui";
 import {
   OPENING_BID_HANDS,
   hcp,
@@ -236,13 +236,32 @@ export function BiddingChallenge({
   // Same geometry as <BiddingDrill/>: side by side once a readable hand and the
   // pad both fit, stacked below that, and the ask column pinned to the pad's
   // width so the layout does not shift between question and answer.
-  const HAND_MIN = 280;
-  const PAD = 14;
-  const GAP = 14;
-  const wide = width >= HAND_MIN + GAP + 240 + PAD * 2;
+  const HAND_MIN = 260;
+  const PAD = 12;
+  const GAP = 12;
+  const wide = width >= HAND_MIN + GAP + 230 + PAD * 2;
   const forPad = (wide ? width - PAD * 2 - GAP - HAND_MIN : width - PAD * 2) - 6;
-  const cell = Math.max(26, Math.min(46, Math.floor((forPad - 70) / 5.65)));
+  // Capped well below the pad's design 46: this drill asks for ONE call in a
+  // block sitting inside a lesson, not a hand of bridge on a table, and every
+  // px the pad gains is a px the reserved slot below gains on all 25 hands.
+  const cell = Math.max(24, Math.min(34, Math.floor((forPad - 70) / 5.65)));
   const askWidth = 5 * (cell + 14) + 4 * Math.round(cell * 0.13);
+  // ONE HEIGHT FOR THE ASK, WHATEVER IS IN IT. The pad, the pad plus its
+  // Confirm row, and the verdict card are three different heights, and letting
+  // the column take each in turn made the whole block jump twice per hand and
+  // 50 times per run. The slot is priced at the tallest of them — the pad with
+  // Confirm showing — so staging a call fills reserved space instead of
+  // pushing, and the verdict lands in the box the pad left. `bidColumnsH` is
+  // the pad's own arithmetic, exported so this number cannot drift from it.
+  const ASK_LABEL = 24;
+  const askSlot = ASK_LABEL + bidColumnsH(cell, { pending: true });
+  // The hand takes the column it is given. Reserving the ask slot leaves the
+  // left column short of it, and a small diagram floating over dead felt reads
+  // as a bug; a big one reads as the point of the screen. Thirteen ranks plus a
+  // suit glyph is the widest row a hand can have, so the width over that is the
+  // largest font that still cannot wrap.
+  const handW = wide ? width - PAD * 2 - GAP - askWidth : width - PAD * 2;
+  const handFont = Math.max(17, Math.min(28, Math.floor(handW / 13)));
 
   if (asked.length === 0)
     return (
@@ -291,7 +310,7 @@ export function BiddingChallenge({
             detail={`the author's opening bid · ${mark.percent}%`}
           />
         </div>
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 12, maxHeight: 240, overflowY: "auto" }}>
           {answers.map((a) => (
             <div
               key={a.index}
@@ -351,9 +370,9 @@ export function BiddingChallenge({
 
   // ── one hand ─────────────────────────────────────────────────────────────
   const handColumn = (
-    <div style={{ flex: wide ? "1 1 0" : undefined, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-      <SeatDiagram cards={here.hand} panelBg="#fff" width="100%" font={20} suitW={18} pad="6px 10px" />
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12.5, color: QUIET }}>
+    <div style={{ flex: wide ? "1 1 0" : undefined, minWidth: 0, alignSelf: wide ? "stretch" : undefined, display: "flex", flexDirection: "column", justifyContent: "center", gap: 6 }}>
+      <SeatDiagram cards={here.hand} panelBg="#fff" width="100%" font={handFont} suitW={Math.round(handFont * 0.9)} pad="6px 10px" />
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12, color: QUIET }}>
         <span style={{ fontWeight: 700, color: INK }}>{points} HCP</span>
         <span>{here.hand.length} cards</span>
       </div>
@@ -368,7 +387,11 @@ export function BiddingChallenge({
 
   // ── the verdict ──────────────────────────────────────────────────────────
   const feedback = verdict && (
-    <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 10, padding: "10px 12px" }}>
+    // height:100% + the button on `marginTop:auto` — the card fills the slot the
+    // pad vacated and puts "Next hand" on the slot's bottom edge, so it is in
+    // the same place on every one of the 25 hands rather than wherever this
+    // hand's reason happened to end.
+    <div style={{ flex: 1, minHeight: 0, boxSizing: "border-box", display: "flex", flexDirection: "column", background: "#fff", border: `1px solid ${LINE}`, borderRadius: 10, padding: "10px 12px" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 8, fontSize: 13, color: QUIET }}>
         <span>You bid</span>
         <CallText call={verdict.yourCall} size={17} tone={verdict.matched ? RIGHT : INK} />
@@ -383,14 +406,15 @@ export function BiddingChallenge({
         )}
       </div>
       {/* The author's own words, verbatim — not paraphrased, not recomputed. */}
-      <p style={{ fontSize: 13, lineHeight: 1.45, color: INK, marginTop: 8, marginBottom: 0 }}>
+      <p style={{ fontSize: 12.5, lineHeight: 1.4, color: INK, marginTop: 6, marginBottom: 0 }}>
         {here.why}
       </p>
       <button
         type="button"
         onClick={advance}
         style={{
-          marginTop: 12,
+          marginTop: "auto",
+          alignSelf: "flex-start",
           height: 38,
           padding: "0 18px",
           border: 0,
@@ -412,17 +436,19 @@ export function BiddingChallenge({
       style={{
         flex: wide ? `0 0 ${askWidth}px` : undefined,
         width: wide ? askWidth : "100%",
+        minHeight: askSlot,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 8,
+        justifyContent: "flex-start",
+        gap: 6,
       }}
     >
       {verdict ? (
-        <div style={{ width: "100%" }}>{feedback}</div>
+        <div style={{ width: "100%", flex: 1, minHeight: 0, display: "flex" }}>{feedback}</div>
       ) : (
         <>
-          <span style={{ fontSize: 12, color: QUIET, alignSelf: "flex-start" }}>
+          <span style={{ fontSize: 12, lineHeight: `${ASK_LABEL - 6}px`, color: QUIET, alignSelf: "flex-start" }}>
             {staged ? "Confirm your call" : "Your opening call?"}
           </span>
           <BidColumns
@@ -448,24 +474,20 @@ export function BiddingChallenge({
     <div ref={wrap} style={{ background: SURFACE, border: `1px solid ${LINE}`, borderRadius: 12, padding: PAD }}>
       {/* Counter and dots together on the LEFT, clear of whatever the host floats
           in the top-right corner — the learning platform floats a Close there. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: INK }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "2px 10px", marginBottom: 8 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: INK, flex: "none" }}>
           Hand {index + 1} of {asked.length}
+        </span>
+        <span style={{ fontSize: 12, color: QUIET, flex: "none" }}>
+          you deal, nobody vulnerable
         </span>
         {dots}
       </div>
-      <p style={{ fontSize: 12, color: QUIET, margin: "0 0 10px" }}>
-        You are the dealer, nobody vulnerable — what do you open?
-      </p>
       {showDataNotice && problems.length > 0 && <DataNotice problems={problems} />}
       <div style={{ display: "flex", flexDirection: wide ? "row" : "column", gap: GAP, alignItems: "flex-start" }}>
         {handColumn}
         {askColumn}
       </div>
-      <p style={{ fontSize: 11.5, color: QUIET, marginTop: 12, marginBottom: 0, lineHeight: 1.45 }}>
-        The answers are the author's, taken from the lesson this drill belongs to. No engine is
-        consulted.
-      </p>
     </div>
   );
 }
