@@ -47,6 +47,7 @@ import { Layout } from './components/Layout';
 import { ConfirmProvider } from './components/ConfirmDialog';
 import { ObjectEmbedPage } from './components/screens/ObjectEmbedPage';
 import { parseObjectEmbedId } from '../lib/objectUrls';
+import { applyEmbedSkin } from './embedSkin';
 import {
   consumeLaunchFromUrl,
   fetchLearningContext,
@@ -187,7 +188,13 @@ export default function App() {
   // Standalone object-embed route (URL-driven) renders before the studio shell,
   // so the check stays outside the hook-bearing StudioApp (rules of hooks).
   const embedObjectId = typeof window !== 'undefined' ? parseObjectEmbedId() : null;
-  if (embedObjectId) return <ObjectEmbedPage objectId={embedObjectId} />;
+  if (embedObjectId) {
+    // A share link opened INSIDE the club app (?embed=1 — e.g. its tutorial
+    // card) wears the app's skin, for the same cross-origin reason as the
+    // reader boot below. A share link opened as itself keeps its own face.
+    if (new URLSearchParams(window.location.search).get('embed') === '1') applyEmbedSkin();
+    return <ObjectEmbedPage objectId={embedObjectId} />;
+  }
   return <StudioApp />;
 }
 
@@ -358,7 +365,13 @@ function StudioApp() {
       const bootParams = new URLSearchParams(window.location.search);
       const deepLinkObjectId = bootParams.get('object');
       const embedBoot = bootParams.get('embed') === '1';
-      if (embedBoot) setEmbedMode(true);
+      if (embedBoot) {
+        setEmbedMode(true);
+        // Dress the page as its host: the club app's WEB build shows this
+        // reader in a cross-origin iframe it cannot style, so the skin must
+        // come from in here (its native WebView injects the same sheet).
+        applyEmbedSkin();
+      }
       await consumeLaunchFromUrl();
       // Embed boot renders exactly one object — fetch just that object (not
       // the whole org library), in parallel with the context read.
